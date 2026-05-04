@@ -6,6 +6,9 @@ import {
   type DuctShape, type DuctParams, type LocalResistance,
   type NetworkNode, type NetworkBranch, type CrossResult, type BranchCalc,
 } from "@/lib/aero";
+import {
+  FITTINGS, getFittingsByGroup, evalZeta, autoAssignKMS,
+} from "@/lib/fittings";
 
 // ─── Типы UI ────────────────────────────────────────────────────────────────
 
@@ -172,13 +175,20 @@ export default function Index() {
 
   const addKms = (key: string) => {
     if (!selectedBranch) return;
-    const item = BIBLIOTECA_KMS[key];
-    if (!item) return;
+    // Сначала ищем в новой базе фасонок
+    const fitting = FITTINGS[key];
+    const oldItem = BIBLIOTECA_KMS[key];
+    if (!fitting && !oldItem) return;
+
+    const zeta = fitting
+      ? evalZeta(key, fitting.params, selectedBranch.params)
+      : oldItem!.zeta;
+
     const existing = selectedBranch.params.localResistances ?? [];
     const found = existing.find((lr) => lr.type === key);
     const newList: LocalResistance[] = found
       ? existing.map((lr) => lr.type === key ? { ...lr, count: lr.count + 1 } : lr)
-      : [...existing, { type: key, zeta: item.zeta, count: 1 }];
+      : [...existing, { type: key, zeta, count: 1, params: fitting?.params }];
     updateBranchParams({ localResistances: newList });
   };
 
@@ -188,10 +198,63 @@ export default function Index() {
     updateBranchParams({ localResistances: list });
   };
 
+  const updateKmsParam = (key: string, paramName: string, value: number) => {
+    if (!selectedBranch) return;
+    const list = (selectedBranch.params.localResistances ?? []).map((lr) => {
+      if (lr.type !== key) return lr;
+      const newParams = { ...(lr.params ?? {}), [paramName]: value };
+      const newZeta = FITTINGS[key] ? evalZeta(key, newParams, selectedBranch.params) : lr.zeta;
+      return { ...lr, params: newParams, zeta: newZeta };
+    });
+    updateBranchParams({ localResistances: list });
+  };
+
+  const updateKmsCount = (key: string, count: number) => {
+    if (!selectedBranch) return;
+    const list = (selectedBranch.params.localResistances ?? []).map((lr) =>
+      lr.type === key ? { ...lr, count: Math.max(1, count) } : lr
+    );
+    updateBranchParams({ localResistances: list });
+  };
+
   const autoSelectDiameter = () => {
     if (!selectedBranch || !selectedFlow) return;
     const d = recommendDiameter(selectedFlow, 6);
     updateBranchParams({ shape: "round", diameter: d });
+  };
+
+  // ─── Авторасстановка КМС по топологии ───────────────────────────────────
+  const [autoKmsLog, setAutoKmsLog] = useState<string[]>([]);
+
+  const runAutoKMS = () => {
+    const result = autoAssignKMS(
+      nodes.map((n) => ({ id: n.id, type: n.type })),
+      branches.map((b) => ({ id: b.id, from: b.from, to: b.to, params: b.params })),
+    );
+    // Сливаем с существующими (не перезаписываем ручные)
+    setBranches((prev) => prev.map((b) => {
+      const auto = result.branchUpdates[b.id] ?? [];
+      const manual = (b.params.localResistances ?? []).filter((lr) => !lr.auto);
+      const merged = [...manual];
+      auto.forEach((a) => {
+        if (!merged.some((m) => m.type === a.type)) {
+          merged.push({ ...a, params: FITTINGS[a.type]?.params });
+        }
+      });
+      return { ...b, params: { ...b.params, localResistances: merged } };
+    }));
+    setAutoKmsLog(result.log);
+  };
+
+  const clearAutoKMS = () => {
+    setBranches((prev) => prev.map((b) => ({
+      ...b,
+      params: {
+        ...b.params,
+        localResistances: (b.params.localResistances ?? []).filter((lr) => !lr.auto),
+      },
+    })));
+    setAutoKmsLog([]);
   };
 
   const getBranchMid = (br: VentBranch) => {
@@ -228,10 +291,10 @@ export default function Index() {
               style={{ background: "hsl(210,100%,56%)", color: "hsl(220,20%,8%)" }}>А</div>
             <span className="font-semibold text-sm tracking-wide">АэроСхема</span>
             <span className="text-xs font-mono px-1.5 py-0.5 rounded"
-              style={{ background: "hsl(220,15%,16%)", color: "hsl(215,15%,50%)" }}>v1.1 · Кросс</span>
+              style={{ background: "hsl(220,15%,16%)", color: "hsl(215,15%,50%)" }}>v2.0 · Авто-КМС</span>
           </div>
           <div className="w-px h-4 bg-border" />
-          <span className="text-xs text-muted-foreground hidden md:block">СП 60.13330 · метод Кросса</span>
+          <span className="text-xs text-muted-foreground hidden md:block">СП 60.13330 · Кросс · Идельчик</span>
         </div>
         <div className="flex items-center gap-2">
           {calcResult && (
@@ -247,6 +310,13 @@ export default function Index() {
           <div className="text-xs font-mono text-muted-foreground mr-2">
             {nodes.length} узл · {branches.length} ветв
           </div>
+          <button onClick={runAutoKMS}
+            title="Автоматически расставить КМС по топологии"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:brightness-110 active:scale-95"
+            style={{ background: "hsl(45,90%,55%,0.15)", border: "1px solid hsl(45,90%,55%,0.4)", color: "hsl(45,90%,65%)" }}>
+            <Icon name="Wand2" size={12} />
+            Авто-КМС
+          </button>
           <button onClick={runCalculation}
             className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-semibold transition-all hover:brightness-110 active:scale-95"
             style={{ background: "hsl(210,100%,56%)", color: "hsl(220,20%,8%)" }}>
@@ -410,7 +480,7 @@ export default function Index() {
           <div className="flex border-b border-border flex-shrink-0">
             {([
               { id: "properties", label: "Свойства" },
-              { id: "kms", label: "КМС" },
+              { id: "kms", label: "Фасонные ч." },
               { id: "results", label: "Расчёт" },
             ] as const).map((tab) => (
               <button key={tab.id}
@@ -539,7 +609,7 @@ export default function Index() {
                     <div className="pt-3 border-t border-border">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs uppercase tracking-wider" style={{ color: "hsl(215,15%,45%)" }}>
-                          КМС ({(selectedBranch.params.localResistances ?? []).length})
+                          Фасонные части ({(selectedBranch.params.localResistances ?? []).length})
                         </span>
                         <button onClick={() => setShowKmsPicker(true)}
                           className="text-xs px-2 py-0.5 rounded hover:brightness-110"
@@ -547,28 +617,69 @@ export default function Index() {
                           + Добавить
                         </button>
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         {(selectedBranch.params.localResistances ?? []).map((lr) => {
+                          const fitting = FITTINGS[lr.type];
                           const item = BIBLIOTECA_KMS[lr.type];
+                          const name = fitting?.name ?? item?.name ?? lr.type;
+                          const hasParams = fitting?.params && Object.keys(fitting.params).length > 0;
                           return (
-                            <div key={lr.type} className="flex items-center gap-2 px-2 py-1.5 rounded text-xs"
-                              style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,20%)" }}>
-                              <span className="flex-1 truncate" style={{ color: "hsl(210,20%,80%)" }}>
-                                {item?.name ?? lr.type}
-                              </span>
-                              <span className="font-mono text-muted-foreground">×{lr.count}</span>
-                              <span className="font-mono" style={{ color: "hsl(210,100%,65%)" }}>ζ={lr.zeta}</span>
-                              <button onClick={() => removeKms(lr.type)}
-                                className="text-muted-foreground hover:text-red-400 transition-colors">
-                                <Icon name="X" size={12} />
-                              </button>
+                            <div key={lr.type} className="rounded text-xs overflow-hidden"
+                              style={{
+                                background: lr.auto ? "hsl(45,90%,55%,0.07)" : "hsl(220,15%,13%)",
+                                border: lr.auto ? "1px solid hsl(45,90%,55%,0.3)" : "1px solid hsl(220,15%,20%)",
+                              }}>
+                              <div className="flex items-center gap-2 px-2 py-1.5">
+                                {lr.auto && (
+                                  <Icon name="Wand2" size={10} style={{ color: "hsl(45,90%,65%)" }} />
+                                )}
+                                <span className="flex-1 truncate" style={{ color: "hsl(210,20%,80%)" }}>{name}</span>
+                                <input type="number" min={1}
+                                  value={lr.count}
+                                  onChange={(e) => updateKmsCount(lr.type, Number(e.target.value))}
+                                  className="w-10 px-1 py-0.5 rounded text-xs font-mono text-center"
+                                  style={{ background: "hsl(220,20%,8%)", border: "1px solid hsl(220,15%,22%)", color: "hsl(210,20%,80%)" }} />
+                                <span className="font-mono w-14 text-right" style={{ color: "hsl(210,100%,65%)" }}>ζ={lr.zeta.toFixed(2)}</span>
+                                <button onClick={() => removeKms(lr.type)}
+                                  className="text-muted-foreground hover:text-red-400 transition-colors">
+                                  <Icon name="X" size={12} />
+                                </button>
+                              </div>
+                              {/* Параметры */}
+                              {hasParams && (
+                                <div className="px-2 pb-1.5 pt-0.5 grid grid-cols-2 gap-1">
+                                  {fitting!.params!.angle !== undefined && (
+                                    <ParamSlider label="α°" min={15} max={180} value={lr.params?.angle ?? fitting!.params!.angle!}
+                                      onChange={(v) => updateKmsParam(lr.type, "angle", v)} />
+                                  )}
+                                  {fitting!.params!.radiusRatio !== undefined && (
+                                    <ParamSlider label="R/D" min={0.5} max={3} step={0.25} value={lr.params?.radiusRatio ?? fitting!.params!.radiusRatio!}
+                                      onChange={(v) => updateKmsParam(lr.type, "radiusRatio", v)} />
+                                  )}
+                                  {fitting!.params!.areaRatio !== undefined && (
+                                    <ParamSlider label="F2/F1" min={0.1} max={3} step={0.1} value={lr.params?.areaRatio ?? fitting!.params!.areaRatio!}
+                                      onChange={(v) => updateKmsParam(lr.type, "areaRatio", v)} />
+                                  )}
+                                  {fitting!.params!.angleClose !== undefined && (
+                                    <ParamSlider label="закр°" min={0} max={70} step={5} value={lr.params?.angleClose ?? fitting!.params!.angleClose!}
+                                      onChange={(v) => updateKmsParam(lr.type, "angleClose", v)} />
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
                         {!(selectedBranch.params.localResistances ?? []).length && (
-                          <p className="text-xs text-muted-foreground italic py-2">КМС не заданы</p>
+                          <p className="text-xs text-muted-foreground italic py-2">Используйте «Авто-КМС» или добавьте вручную</p>
                         )}
                       </div>
+                      {(selectedBranch.params.localResistances ?? []).some((lr) => lr.auto) && (
+                        <button onClick={clearAutoKMS}
+                          className="mt-2 w-full text-xs py-1 rounded hover:brightness-110"
+                          style={{ background: "hsl(0,72%,51%,0.1)", color: "hsl(0,72%,65%)", border: "1px solid hsl(0,72%,51%,0.2)" }}>
+                          Удалить авто-КМС
+                        </button>
+                      )}
                     </div>
 
                     {/* Результат расчёта по ветви */}
@@ -592,32 +703,51 @@ export default function Index() {
               </div>
             )}
 
-            {/* ── Библиотека КМС ── */}
+            {/* ── База фасонных частей ── */}
             {activeTab === "kms" && (
               <div className="animate-fade-in space-y-4">
-                <div className="text-xs text-muted-foreground">
-                  Библиотека коэффициентов местных сопротивлений (Идельчик И.Е.).
-                  {selectedBranch ? " Кликните, чтобы добавить к выбранной ветви." : " Выберите ветвь для добавления."}
+                <div className="rounded-md p-3" style={{ background: "hsl(45,90%,55%,0.07)", border: "1px solid hsl(45,90%,55%,0.3)" }}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Icon name="Wand2" size={12} style={{ color: "hsl(45,90%,65%)" }} />
+                    <span className="text-xs font-semibold" style={{ color: "hsl(45,90%,70%)" }}>Авторасстановка КМС</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Анализ топологии: тройники в местах разветвления, отводы в проходных узлах, переходы при смене сечения.
+                  </p>
+                  <button onClick={runAutoKMS}
+                    className="w-full py-1.5 rounded text-xs font-semibold hover:brightness-110 active:scale-95 transition-all"
+                    style={{ background: "hsl(45,90%,55%)", color: "hsl(220,20%,8%)" }}>
+                    Расставить по схеме
+                  </button>
+                  {autoKmsLog.length > 0 && (
+                    <div className="mt-2 max-h-24 overflow-y-auto text-xs font-mono space-y-0.5"
+                      style={{ color: "hsl(215,15%,55%)" }}>
+                      {autoKmsLog.map((line, i) => <div key={i}>· {line}</div>)}
+                    </div>
+                  )}
                 </div>
-                {Object.entries(
-                  Object.entries(BIBLIOTECA_KMS).reduce((acc, [k, v]) => {
-                    (acc[v.group] ??= []).push([k, v]);
-                    return acc;
-                  }, {} as Record<string, [string, typeof BIBLIOTECA_KMS[string]][]>)
-                ).map(([group, items]) => (
+
+                <div className="text-xs text-muted-foreground">
+                  База фасонных частей (Идельчик · параметрические ζ).
+                  {selectedBranch ? " Кликните, чтобы добавить." : " Выберите ветвь для добавления."}
+                </div>
+                {Object.entries(getFittingsByGroup()).map(([group, items]) => (
                   <div key={group}>
                     <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "hsl(210,100%,65%)" }}>{group}</p>
                     <div className="space-y-1">
-                      {items.map(([key, item]) => (
-                        <button key={key}
-                          disabled={!selectedBranch}
-                          onClick={() => addKms(key)}
-                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-125"
-                          style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,20%)" }}>
-                          <span style={{ color: "hsl(210,20%,80%)" }}>{item.name}</span>
-                          <span className="font-mono" style={{ color: "hsl(210,100%,65%)" }}>ζ={item.zeta}</span>
-                        </button>
-                      ))}
+                      {items.map(([key, item]) => {
+                        const z = evalZeta(key, item.params, selectedBranch?.params);
+                        return (
+                          <button key={key}
+                            disabled={!selectedBranch}
+                            onClick={() => addKms(key)}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-125"
+                            style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,20%)" }}>
+                            <span className="text-left flex-1" style={{ color: "hsl(210,20%,80%)" }}>{item.name}</span>
+                            <span className="font-mono ml-2" style={{ color: "hsl(210,100%,65%)" }}>ζ≈{z.toFixed(2)}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -724,8 +854,8 @@ export default function Index() {
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-border">
               <div>
-                <h3 className="text-sm font-semibold">Библиотека КМС</h3>
-                <p className="text-xs text-muted-foreground">Идельчик · ветвь {selectedBranch.id}</p>
+                <h3 className="text-sm font-semibold">База фасонных частей</h3>
+                <p className="text-xs text-muted-foreground">Идельчик · параметрические ζ · ветвь {selectedBranch.id}</p>
               </div>
               <button onClick={() => setShowKmsPicker(false)}
                 className="w-8 h-8 rounded hover:bg-muted flex items-center justify-center text-muted-foreground">
@@ -733,24 +863,22 @@ export default function Index() {
               </button>
             </div>
             <div className="overflow-y-auto p-4 space-y-4">
-              {Object.entries(
-                Object.entries(BIBLIOTECA_KMS).reduce((acc, [k, v]) => {
-                  (acc[v.group] ??= []).push([k, v]);
-                  return acc;
-                }, {} as Record<string, [string, typeof BIBLIOTECA_KMS[string]][]>)
-              ).map(([group, items]) => (
+              {Object.entries(getFittingsByGroup()).map(([group, items]) => (
                 <div key={group}>
                   <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "hsl(210,100%,65%)" }}>{group}</p>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {items.map(([key, item]) => (
-                      <button key={key}
-                        onClick={() => { addKms(key); }}
-                        className="flex items-center justify-between px-3 py-2 rounded text-xs transition-all hover:brightness-125 text-left"
-                        style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,20%)" }}>
-                        <span style={{ color: "hsl(210,20%,80%)" }}>{item.name}</span>
-                        <span className="font-mono ml-2" style={{ color: "hsl(210,100%,65%)" }}>ζ={item.zeta}</span>
-                      </button>
-                    ))}
+                    {items.map(([key, item]) => {
+                      const z = evalZeta(key, item.params, selectedBranch.params);
+                      return (
+                        <button key={key}
+                          onClick={() => { addKms(key); }}
+                          className="flex items-center justify-between px-3 py-2 rounded text-xs transition-all hover:brightness-125 text-left"
+                          style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,20%)" }}>
+                          <span className="flex-1" style={{ color: "hsl(210,20%,80%)" }}>{item.name}</span>
+                          <span className="font-mono ml-2" style={{ color: "hsl(210,100%,65%)" }}>ζ≈{z.toFixed(2)}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -782,6 +910,20 @@ function PropField({ label, value, onChange, type = "text" }: {
         style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,22%)", color: "hsl(210,20%,90%)" }}
         onFocus={(e) => e.target.style.borderColor = "hsl(210,100%,56%)"}
         onBlur={(e) => e.target.style.borderColor = "hsl(220,15%,22%)"} />
+    </div>
+  );
+}
+
+function ParamSlider({ label, min, max, step = 1, value, onChange }: {
+  label: string; min: number; max: number; step?: number; value: number; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] font-mono" style={{ color: "hsl(215,15%,50%)", minWidth: 30 }}>{label}</span>
+      <input type="number" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="flex-1 px-1 py-0.5 rounded text-[10px] font-mono"
+        style={{ background: "hsl(220,20%,8%)", border: "1px solid hsl(220,15%,22%)", color: "hsl(210,20%,80%)" }} />
     </div>
   );
 }

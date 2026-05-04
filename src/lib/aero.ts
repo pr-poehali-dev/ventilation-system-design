@@ -16,9 +16,16 @@ export interface DuctParams {
 }
 
 export interface LocalResistance {
-  type: string;          // ключ из BIBLIOTECA_KMS
-  zeta: number;          // ζ
+  type: string;          // ключ из BIBLIOTECA_KMS или FITTINGS
+  zeta: number;          // ζ (рассчитанное)
   count: number;         // количество элементов
+  auto?: boolean;        // расставлено автоматически
+  params?: {             // параметры геометрии
+    angle?: number;
+    radiusRatio?: number;
+    areaRatio?: number;
+    angleClose?: number;
+  };
 }
 
 // ─── Библиотека КМС (коэффициенты местных сопротивлений) ────────────────────
