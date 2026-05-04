@@ -13,6 +13,8 @@ import {
   DEFAULT_FLOORS, project,
   type Floor,
 } from "@/lib/iso";
+import { FAN_CATALOG, type FanModel } from "@/lib/fans";
+import FanSelector from "@/components/FanSelector";
 
 // ─── Типы UI ────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,7 @@ interface VentNode {
   label: string;
   fixedFlow?: number;
   floorId: string;       // привязка к этажу
+  fanModelId?: string;   // подобранная модель вентилятора
 }
 
 interface VentBranch {
@@ -64,7 +67,7 @@ export default function Index() {
   const [viewMode, setViewMode] = useState<ViewMode>("plan");
 
   const [nodes, setNodes] = useState<VentNode[]>([
-    { id: "N1", x: 200, y: 260, type: "supply", label: "П1", fixedFlow: 1000, floorId: "F1" },
+    { id: "N1", x: 200, y: 260, type: "fan", label: "Вент1", fixedFlow: 2000, floorId: "F1" },
     { id: "N2", x: 440, y: 260, type: "junction", label: "У1", floorId: "F1" },
     { id: "N3", x: 660, y: 200, type: "exhaust", label: "В1", fixedFlow: 500, floorId: "F1" },
     { id: "N4", x: 660, y: 340, type: "exhaust", label: "В2", fixedFlow: 500, floorId: "F1" },
@@ -88,6 +91,7 @@ export default function Index() {
   const [calcResult, setCalcResult] = useState<CrossResult | null>(null);
   const [activeTab, setActiveTab] = useState<"properties" | "results" | "kms" | "floors">("properties");
   const [showKmsPicker, setShowKmsPicker] = useState(false);
+  const [showFanSelector, setShowFanSelector] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const counterRef = useRef({ node: 8, branch: 7, floor: 4 });
@@ -362,7 +366,7 @@ export default function Index() {
               style={{ background: "hsl(210,100%,56%)", color: "hsl(220,20%,8%)" }}>А</div>
             <span className="font-semibold text-sm tracking-wide">АэроСхема</span>
             <span className="text-xs font-mono px-1.5 py-0.5 rounded"
-              style={{ background: "hsl(220,15%,16%)", color: "hsl(215,15%,50%)" }}>v3.0 · 3D</span>
+              style={{ background: "hsl(220,15%,16%)", color: "hsl(215,15%,50%)" }}>v4.0 · Подбор</span>
           </div>
           <div className="w-px h-4 bg-border" />
           {/* Переключатель видов */}
@@ -421,6 +425,14 @@ export default function Index() {
             style={{ background: "hsl(45,90%,55%,0.15)", border: "1px solid hsl(45,90%,55%,0.4)", color: "hsl(45,90%,65%)" }}>
             <Icon name="Wand2" size={12} />
             Авто-КМС
+          </button>
+          <button onClick={() => setShowFanSelector(true)}
+            disabled={!calcResult}
+            title="Подобрать вентилятор по сопротивлению сети"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: "hsl(280,80%,60%,0.15)", border: "1px solid hsl(280,80%,60%,0.4)", color: "hsl(280,80%,75%)" }}>
+            <Icon name="Gauge" size={12} />
+            Подбор вентил.
           </button>
           <button onClick={runCalculation}
             className="flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-semibold transition-all hover:brightness-110 active:scale-95"
@@ -601,6 +613,13 @@ export default function Index() {
                     strokeWidth={isSel ? 2.5 : 1.5}
                     filter={isSel ? "url(#glow)" : undefined}
                     style={{ transition: "all 0.15s" }} />
+                  {/* Бейдж модели вентилятора */}
+                  {node.type === "fan" && node.fanModelId && (
+                    <g transform={`translate(${NODE_RADIUS - 4},${-NODE_RADIUS - 2})`}>
+                      <circle r="6" fill="hsl(280,80%,60%)" stroke="hsl(220,20%,8%)" strokeWidth="1.5" />
+                      <text textAnchor="middle" dominantBaseline="middle" fontSize="8" fontWeight="bold" fill="hsl(220,20%,8%)">✓</text>
+                    </g>
+                  )}
                   <text textAnchor="middle" dominantBaseline="middle"
                     fontSize="13" fill={isSel ? "hsl(220,20%,8%)" : color} fontWeight="600">
                     {icon}
@@ -711,6 +730,62 @@ export default function Index() {
                       <PropField label="X" value={String(selectedNode.x)} onChange={(v) => updateNode("x", Number(v))} type="number" />
                       <PropField label="Y" value={String(selectedNode.y)} onChange={(v) => updateNode("y", Number(v))} type="number" />
                     </div>
+
+                    {/* Подобранная модель вентилятора */}
+                    {selectedNode.type === "fan" && (
+                      <div className="pt-3 border-t border-border space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs uppercase tracking-wider" style={{ color: "hsl(215,15%,45%)" }}>
+                            Модель вентилятора
+                          </span>
+                          <button onClick={() => setShowFanSelector(true)}
+                            className="text-xs px-2 py-0.5 rounded hover:brightness-110"
+                            style={{ background: "hsl(280,80%,60%,0.15)", color: "hsl(280,80%,75%)" }}>
+                            Подобрать
+                          </button>
+                        </div>
+                        {selectedNode.fanModelId ? (() => {
+                          const fan = FAN_CATALOG.find((f) => f.id === selectedNode.fanModelId);
+                          if (!fan) return null;
+                          return (
+                            <div className="rounded-md p-2.5 space-y-1"
+                              style={{ background: "hsl(280,80%,60%,0.07)", border: "1px solid hsl(280,80%,60%,0.3)" }}>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-mono text-muted-foreground">{fan.brand}</span>
+                                <button onClick={() => updateNode("fanModelId", undefined)}
+                                  className="text-muted-foreground hover:text-red-400">
+                                  <Icon name="X" size={11} />
+                                </button>
+                              </div>
+                              <p className="text-sm font-medium" style={{ color: "hsl(280,80%,80%)" }}>{fan.model}</p>
+                              <div className="grid grid-cols-3 gap-2 mt-1.5 text-xs font-mono">
+                                <div>
+                                  <span className="text-muted-foreground text-[10px] block">Q опт</span>
+                                  <span style={{ color: "hsl(210,100%,65%)" }}>{fan.Qopt} м³/ч</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-[10px] block">P</span>
+                                  <span style={{ color: "hsl(45,90%,65%)" }}>{fan.power} кВт</span>
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground text-[10px] block">η max</span>
+                                  <span style={{ color: "hsl(142,70%,55%)" }}>{(fan.etaMax * 100).toFixed(0)}%</span>
+                                </div>
+                              </div>
+                              {fan.priceRub && (
+                                <p className="text-xs pt-1.5 border-t border-border" style={{ color: "hsl(142,70%,55%)" }}>
+                                  ≈ {fan.priceRub.toLocaleString("ru-RU")} ₽
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })() : (
+                          <p className="text-xs italic text-muted-foreground py-1">
+                            Модель не выбрана. Запустите расчёт и нажмите «Подбор вентил.»
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -1146,6 +1221,39 @@ export default function Index() {
           </div>
         </div>
       )}
+
+      {/* ── Модал подбора вентилятора ─────────────────────────────────── */}
+      <FanSelector
+        open={showFanSelector}
+        onClose={() => setShowFanSelector(false)}
+        requiredQ={(() => {
+          // Если выбран узел-вентилятор — берём его расход; иначе суммарный по системе
+          if (selectedNode?.type === "fan" && selectedNode.fixedFlow) return selectedNode.fixedFlow;
+          const supply = nodes.filter((n) => n.type === "supply" || n.type === "fan");
+          if (supply.length > 0) return supply.reduce((s, n) => s + (n.fixedFlow ?? 0), 0);
+          return calcResult ? Object.values(calcResult.branchFlows).reduce((s, v) => s + v, 0) / Math.max(branches.length, 1) : 1000;
+        })()}
+        requiredH={(() => {
+          // Берём максимальные потери по самой нагруженной ветви + 15% запас
+          if (!calcResult) return 200;
+          const maxDp = Math.max(...Object.values(calcResult.branchCalcs).map((c) => c.dpTotal));
+          // Суммируем потери последовательной цепочки (приближение — макс ветвь × N средних)
+          const totalDp = Object.values(calcResult.branchCalcs).reduce((s, c) => s + c.dpTotal, 0) / 2;
+          return Math.round(Math.max(maxDp, totalDp) * 1.15);
+        })()}
+        onSelect={(fan: FanModel) => {
+          if (selectedNode?.type === "fan") {
+            updateNode("fanModelId", fan.id);
+          } else {
+            // Если узел-вентилятор не выбран — найдём первый или создадим нотификацию
+            const firstFan = nodes.find((n) => n.type === "fan");
+            if (firstFan) {
+              setNodes((p) => p.map((n) => n.id === firstFan.id ? { ...n, fanModelId: fan.id } : n));
+              setSelected(firstFan.id);
+            }
+          }
+        }}
+      />
     </div>
   );
 }
