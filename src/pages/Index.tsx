@@ -9,10 +9,15 @@ import {
 import {
   FITTINGS, getFittingsByGroup, evalZeta, autoAssignKMS,
 } from "@/lib/fittings";
+import {
+  DEFAULT_FLOORS, project,
+  type Floor,
+} from "@/lib/iso";
 
 // ─── Типы UI ────────────────────────────────────────────────────────────────
 
 type NodeType = "junction" | "supply" | "exhaust" | "fan";
+type ViewMode = "plan" | "iso";
 
 interface VentNode {
   id: string;
@@ -21,6 +26,7 @@ interface VentNode {
   type: NodeType;
   label: string;
   fixedFlow?: number;
+  floorId: string;       // привязка к этажу
 }
 
 interface VentBranch {
@@ -53,16 +59,26 @@ const TOOLS: { id: Tool; icon: string; label: string; color?: string }[] = [
 // ─── Главный компонент ───────────────────────────────────────────────────────
 
 export default function Index() {
+  const [floors, setFloors] = useState<Floor[]>(DEFAULT_FLOORS);
+  const [activeFloor, setActiveFloor] = useState<string>("F1");
+  const [viewMode, setViewMode] = useState<ViewMode>("plan");
+
   const [nodes, setNodes] = useState<VentNode[]>([
-    { id: "N1", x: 200, y: 260, type: "supply", label: "П1", fixedFlow: 1000 },
-    { id: "N2", x: 440, y: 260, type: "junction", label: "У1" },
-    { id: "N3", x: 660, y: 200, type: "exhaust", label: "В1", fixedFlow: 500 },
-    { id: "N4", x: 660, y: 340, type: "exhaust", label: "В2", fixedFlow: 500 },
+    { id: "N1", x: 200, y: 260, type: "supply", label: "П1", fixedFlow: 1000, floorId: "F1" },
+    { id: "N2", x: 440, y: 260, type: "junction", label: "У1", floorId: "F1" },
+    { id: "N3", x: 660, y: 200, type: "exhaust", label: "В1", fixedFlow: 500, floorId: "F1" },
+    { id: "N4", x: 660, y: 340, type: "exhaust", label: "В2", fixedFlow: 500, floorId: "F1" },
+    { id: "N5", x: 440, y: 260, type: "junction", label: "У2", floorId: "F2" },
+    { id: "N6", x: 660, y: 200, type: "exhaust", label: "В3", fixedFlow: 500, floorId: "F2" },
+    { id: "N7", x: 660, y: 340, type: "exhaust", label: "В4", fixedFlow: 500, floorId: "F2" },
   ]);
   const [branches, setBranches] = useState<VentBranch[]>([
-    { id: "B1", from: "N1", to: "N2", params: { shape: "round", diameter: 200, length: 8, localResistances: [{ type: "elbow_90_round", zeta: 0.21, count: 1 }] } },
-    { id: "B2", from: "N2", to: "N3", params: { shape: "round", diameter: 160, length: 5, localResistances: [{ type: "tee_branch", zeta: 1.5, count: 1 }, { type: "grille_supply", zeta: 2, count: 1 }] } },
-    { id: "B3", from: "N2", to: "N4", params: { shape: "round", diameter: 160, length: 6, localResistances: [{ type: "tee_branch", zeta: 1.5, count: 1 }, { type: "grille_supply", zeta: 2, count: 1 }] } },
+    { id: "B1", from: "N1", to: "N2", params: { shape: "round", diameter: 200, length: 8, localResistances: [{ type: "elbow_90_r1", zeta: 0.21, count: 1 }] } },
+    { id: "B2", from: "N2", to: "N3", params: { shape: "round", diameter: 160, length: 5, localResistances: [{ type: "tee_branch_90", zeta: 1.5, count: 1 }, { type: "grille_supply", zeta: 2, count: 1 }] } },
+    { id: "B3", from: "N2", to: "N4", params: { shape: "round", diameter: 160, length: 6, localResistances: [{ type: "tee_branch_90", zeta: 1.5, count: 1 }, { type: "grille_supply", zeta: 2, count: 1 }] } },
+    { id: "B4", from: "N2", to: "N5", params: { shape: "round", diameter: 200, length: 3, localResistances: [{ type: "elbow_90_r1", zeta: 0.21, count: 2 }] } },
+    { id: "B5", from: "N5", to: "N6", params: { shape: "round", diameter: 160, length: 5, localResistances: [{ type: "tee_branch_90", zeta: 1.5, count: 1 }, { type: "grille_supply", zeta: 2, count: 1 }] } },
+    { id: "B6", from: "N5", to: "N7", params: { shape: "round", diameter: 160, length: 6, localResistances: [{ type: "tee_branch_90", zeta: 1.5, count: 1 }, { type: "grille_supply", zeta: 2, count: 1 }] } },
   ]);
 
   const [tool, setTool] = useState<Tool>("select");
@@ -70,12 +86,12 @@ export default function Index() {
   const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number } | null>(null);
   const [branchStart, setBranchStart] = useState<string | null>(null);
   const [calcResult, setCalcResult] = useState<CrossResult | null>(null);
-  const [activeTab, setActiveTab] = useState<"properties" | "results" | "kms">("properties");
+  const [activeTab, setActiveTab] = useState<"properties" | "results" | "kms" | "floors">("properties");
   const [showKmsPicker, setShowKmsPicker] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
-  const counterRef = useRef({ node: 5, branch: 4 });
-  const typeCounters = useRef<Record<NodeType, number>>({ supply: 2, exhaust: 3, junction: 2, fan: 1 });
+  const counterRef = useRef({ node: 8, branch: 7, floor: 4 });
+  const typeCounters = useRef<Record<NodeType, number>>({ supply: 2, exhaust: 5, junction: 3, fan: 1 });
 
   const getSVGPoint = useCallback((e: React.MouseEvent) => {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -87,6 +103,7 @@ export default function Index() {
 
   const handleSVGClick = useCallback((e: React.MouseEvent) => {
     if (dragging) return;
+    if (viewMode === "iso") return; // в аксонометрии добавление выключено
     const { x, y } = getSVGPoint(e);
     if (!tool.startsWith("node-")) {
       if (tool === "select") setSelected(null);
@@ -101,9 +118,9 @@ export default function Index() {
     const cnt = typeCounters.current[type]++;
     const label = type === "supply" ? `П${cnt}` : type === "exhaust" ? `В${cnt}` : type === "junction" ? `У${cnt}` : `Вент${cnt}`;
     const fixedFlow = type === "supply" ? 1000 : type === "exhaust" ? 500 : type === "fan" ? 2000 : undefined;
-    setNodes((prev) => [...prev, { id, x: snap(x), y: snap(y), type, label, fixedFlow }]);
+    setNodes((prev) => [...prev, { id, x: snap(x), y: snap(y), type, label, fixedFlow, floorId: activeFloor }]);
     setSelected(id);
-  }, [tool, dragging, getSVGPoint]);
+  }, [tool, dragging, getSVGPoint, activeFloor, viewMode]);
 
   const handleNodeMouseDown = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -117,9 +134,16 @@ export default function Index() {
       if (!branchStart) { setBranchStart(id); return; }
       if (branchStart !== id) {
         const bid = `B${counterRef.current.branch++}`;
+        // Автодлина для стояка между этажами
+        const fromN = nodes.find((n) => n.id === branchStart);
+        const toN = nodes.find((n) => n.id === id);
+        const fromFloor = fromN ? floors.find((f) => f.id === fromN.floorId) : null;
+        const toFloor = toN ? floors.find((f) => f.id === toN.floorId) : null;
+        const isRiser = fromFloor && toFloor && fromFloor.id !== toFloor.id;
+        const length = isRiser ? Math.abs((toFloor!.level - fromFloor!.level)) : 5;
         setBranches((p) => [...p, {
           id: bid, from: branchStart, to: id,
-          params: { shape: "round", diameter: 160, length: 5, localResistances: [] }
+          params: { shape: "round", diameter: 160, length, localResistances: [] }
         }]);
         setBranchStart(null);
         setSelected(bid);
@@ -129,12 +153,12 @@ export default function Index() {
     if (tool === "select") {
       setSelected(id);
       const node = nodes.find((n) => n.id === id);
-      if (node) {
+      if (node && viewMode === "plan") {
         const { x, y } = getSVGPoint(e);
         setDragging({ id, ox: x - node.x, oy: y - node.y });
       }
     }
-  }, [tool, branchStart, nodes, getSVGPoint]);
+  }, [tool, branchStart, nodes, getSVGPoint, viewMode, floors]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragging) return;
@@ -257,6 +281,53 @@ export default function Index() {
     setAutoKmsLog([]);
   };
 
+  // ─── Управление этажами ──────────────────────────────────────────────────
+  const addFloor = () => {
+    const lastFloor = floors[floors.length - 1];
+    const id = `F${counterRef.current.floor++}`;
+    const palette = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#a855f7", "#ec4899", "#06b6d4"];
+    setFloors((p) => [...p, {
+      id, name: `${p.length + 1} этаж`,
+      level: lastFloor ? lastFloor.level + lastFloor.height : 0,
+      height: 3.0, color: palette[p.length % palette.length], visible: true,
+    }]);
+  };
+
+  const removeFloor = (id: string) => {
+    if (floors.length <= 1) return;
+    setFloors((p) => p.filter((f) => f.id !== id));
+    setNodes((p) => p.filter((n) => n.floorId !== id));
+    if (activeFloor === id) setActiveFloor(floors[0].id);
+  };
+
+  const updateFloor = (id: string, patch: Partial<Floor>) => {
+    setFloors((p) => p.map((f) => f.id === id ? { ...f, ...patch } : f));
+  };
+
+  const getFloor = (id: string) => floors.find((f) => f.id === id);
+
+  // Видимые узлы — для плана только активного этажа, для изометрии все видимые
+  const visibleNodes = useMemo(() => {
+    if (viewMode === "plan") {
+      return nodes.filter((n) => n.floorId === activeFloor);
+    }
+    return nodes.filter((n) => floors.find((f) => f.id === n.floorId)?.visible);
+  }, [nodes, viewMode, activeFloor, floors]);
+
+  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes]);
+
+  const visibleBranches = useMemo(() => {
+    return branches.filter((b) => visibleNodeIds.has(b.from) && visibleNodeIds.has(b.to));
+  }, [branches, visibleNodeIds]);
+
+  // Изометрические координаты узлов
+  const isoOrigin = { x: 600, y: 300 };
+  const getIsoPos = (n: VentNode) => {
+    const floor = getFloor(n.floorId);
+    if (!floor) return { x: n.x, y: n.y };
+    return project({ x: n.x, y: n.y, z: floor.level }, isoOrigin);
+  };
+
   const getBranchMid = (br: VentBranch) => {
     const f = nodes.find((n) => n.id === br.from);
     const t = nodes.find((n) => n.id === br.to);
@@ -291,10 +362,44 @@ export default function Index() {
               style={{ background: "hsl(210,100%,56%)", color: "hsl(220,20%,8%)" }}>А</div>
             <span className="font-semibold text-sm tracking-wide">АэроСхема</span>
             <span className="text-xs font-mono px-1.5 py-0.5 rounded"
-              style={{ background: "hsl(220,15%,16%)", color: "hsl(215,15%,50%)" }}>v2.0 · Авто-КМС</span>
+              style={{ background: "hsl(220,15%,16%)", color: "hsl(215,15%,50%)" }}>v3.0 · 3D</span>
           </div>
           <div className="w-px h-4 bg-border" />
-          <span className="text-xs text-muted-foreground hidden md:block">СП 60.13330 · Кросс · Идельчик</span>
+          {/* Переключатель видов */}
+          <div className="flex items-center rounded-md p-0.5"
+            style={{ background: "hsl(220,15%,14%)", border: "1px solid hsl(220,15%,22%)" }}>
+            {([
+              { id: "plan" as const, icon: "Square", label: "План" },
+              { id: "iso" as const, icon: "Box", label: "Аксонометрия" },
+            ]).map((v) => (
+              <button key={v.id}
+                onClick={() => setViewMode(v.id)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
+                style={viewMode === v.id
+                  ? { background: "hsl(210,100%,56%)", color: "hsl(220,20%,8%)" }
+                  : { color: "hsl(215,15%,55%)" }}>
+                <Icon name={v.icon} size={11} />
+                {v.label}
+              </button>
+            ))}
+          </div>
+          {/* Селектор активного этажа в режиме плана */}
+          {viewMode === "plan" && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded-md"
+              style={{ background: "hsl(220,15%,14%)", border: "1px solid hsl(220,15%,22%)" }}>
+              <Icon name="Layers" size={11} className="text-muted-foreground" />
+              <select value={activeFloor}
+                onChange={(e) => setActiveFloor(e.target.value)}
+                className="bg-transparent text-xs font-medium outline-none cursor-pointer"
+                style={{ color: getFloor(activeFloor)?.color ?? "hsl(210,20%,90%)" }}>
+                {floors.map((f) => (
+                  <option key={f.id} value={f.id} style={{ background: "hsl(220,18%,11%)" }}>
+                    {f.name} ({f.level}м)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {calcResult && (
@@ -355,12 +460,15 @@ export default function Index() {
           )}
 
           <svg ref={svgRef}
-            className="vent-canvas w-full h-full"
+            className={viewMode === "plan" ? "vent-canvas w-full h-full" : "w-full h-full"}
             onClick={handleSVGClick}
             onMouseMove={handleMouseMove}
             onMouseUp={() => setDragging(null)}
             onMouseLeave={() => setDragging(null)}
-            style={{ cursor: tool === "branch" ? "crosshair" : tool === "delete" ? "not-allowed" : dragging ? "grabbing" : "default" }}>
+            style={{
+              background: viewMode === "iso" ? "hsl(220,22%,7%)" : undefined,
+              cursor: tool === "branch" ? "crosshair" : tool === "delete" ? "not-allowed" : dragging ? "grabbing" : viewMode === "iso" ? "default" : "default",
+            }}>
 
             <defs>
               <marker id="arr" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
@@ -373,37 +481,85 @@ export default function Index() {
                 <feGaussianBlur stdDeviation="3" result="blur" />
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
+              <pattern id="iso-grid" width="60" height="35" patternUnits="userSpaceOnUse" patternTransform="skewX(-30) skewY(0)">
+                <path d="M 60 0 L 0 0 0 35" fill="none" stroke="hsl(215,15%,18%)" strokeWidth="0.5" />
+              </pattern>
             </defs>
 
-            {/* Ветви */}
-            {branches.map((br) => {
-              const m = getBranchMid(br);
-              if (!m) return null;
+            {/* ── Изометрические плоскости этажей ─────────────────── */}
+            {viewMode === "iso" && [...floors].sort((a, b) => a.level - b.level).filter((f) => f.visible).map((floor) => {
+              const sizeX = 700, sizeY = 500;
+              const corners = [
+                project({ x: 0, y: 0, z: floor.level }, isoOrigin),
+                project({ x: sizeX, y: 0, z: floor.level }, isoOrigin),
+                project({ x: sizeX, y: sizeY, z: floor.level }, isoOrigin),
+                project({ x: 0, y: sizeY, z: floor.level }, isoOrigin),
+              ];
+              const path = corners.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ") + " Z";
+              const labelPos = project({ x: 0, y: sizeY, z: floor.level }, isoOrigin);
+              return (
+                <g key={floor.id} opacity={activeFloor === floor.id ? 1 : 0.5}>
+                  <path d={path} fill={`${floor.color}08`} stroke={`${floor.color}55`} strokeWidth="1" strokeDasharray="3 4" />
+                  {/* Сетка пола */}
+                  {Array.from({ length: 8 }, (_, i) => i * 100).map((x) => {
+                    const a = project({ x, y: 0, z: floor.level }, isoOrigin);
+                    const b = project({ x, y: sizeY, z: floor.level }, isoOrigin);
+                    return <line key={`vx${x}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={`${floor.color}15`} strokeWidth="0.5" />;
+                  })}
+                  {Array.from({ length: 6 }, (_, i) => i * 100).map((y) => {
+                    const a = project({ x: 0, y, z: floor.level }, isoOrigin);
+                    const b = project({ x: sizeX, y, z: floor.level }, isoOrigin);
+                    return <line key={`hy${y}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={`${floor.color}15`} strokeWidth="0.5" />;
+                  })}
+                  {/* Метка этажа */}
+                  <g transform={`translate(${labelPos.x - 60},${labelPos.y + 10})`}>
+                    <rect x="0" y="-8" width="100" height="18" rx="3" fill="hsl(220,20%,10%)" stroke={floor.color} strokeWidth="1" />
+                    <text x="50" y="2" textAnchor="middle" dominantBaseline="middle" fontSize="9" fontFamily="IBM Plex Mono" fill={floor.color}>
+                      {floor.name} +{floor.level}м
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
+
+            {/* ── Ветви ───────────────────────────────────────────── */}
+            {visibleBranches.map((br) => {
+              const fromNode = nodes.find((n) => n.id === br.from);
+              const toNode = nodes.find((n) => n.id === br.to);
+              if (!fromNode || !toNode) return null;
+              const fromP = viewMode === "iso" ? getIsoPos(fromNode) : { x: fromNode.x, y: fromNode.y };
+              const toP = viewMode === "iso" ? getIsoPos(toNode) : { x: toNode.x, y: toNode.y };
+              const m = { x: (fromP.x + toP.x) / 2, y: (fromP.y + toP.y) / 2 };
+
               const isSel = selected === br.id;
               const flow = calcResult?.branchFlows[br.id];
               const calc = calcResult?.branchCalcs[br.id];
               const v = calc?.velocity;
               const vColor = v && v > 8 ? "#f59e0b" : v && v > 12 ? "#ef4444" : "hsl(210,100%,65%)";
+              // Стояк (вертикальная ветвь между этажами) — выделим цветом
+              const isRiser = fromNode.floorId !== toNode.floorId;
+              const branchColor = isRiser ? "#a855f7" : (isSel ? "hsl(210,100%,56%)" : "hsl(215,15%,32%)");
 
               return (
                 <g key={br.id}>
-                  <line x1={m.from.x} y1={m.from.y} x2={m.to.x} y2={m.to.y}
+                  <line x1={fromP.x} y1={fromP.y} x2={toP.x} y2={toP.y}
                     stroke="transparent" strokeWidth={20}
                     onClick={(e) => handleBranchClick(e, br.id)} style={{ cursor: "pointer" }} />
-                  <line x1={m.from.x} y1={m.from.y} x2={m.to.x} y2={m.to.y}
-                    stroke={isSel ? "hsl(210,100%,56%)" : "hsl(215,15%,32%)"}
-                    strokeWidth={isSel ? 2.5 : 2}
+                  <line x1={fromP.x} y1={fromP.y} x2={toP.x} y2={toP.y}
+                    stroke={branchColor}
+                    strokeWidth={isSel ? 3 : isRiser ? 2.5 : 2}
+                    strokeDasharray={isRiser && !isSel ? "5 3" : undefined}
                     markerEnd={isSel ? "url(#arr-sel)" : "url(#arr)"}
                     filter={isSel ? "url(#glow)" : undefined}
                     onClick={(e) => handleBranchClick(e, br.id)}
                     style={{ cursor: "pointer", transition: "stroke 0.15s" }} />
                   <rect x={m.x - 28} y={m.y - 11} width="56" height={flow ? 24 : 18} rx="3"
                     fill="hsl(220,18%,10%)"
-                    stroke={isSel ? "hsl(210,100%,56%)" : "hsl(220,15%,22%)"}
+                    stroke={isSel ? "hsl(210,100%,56%)" : isRiser ? "#a855f7" : "hsl(220,15%,22%)"}
                     strokeWidth="1" />
                   <text x={m.x} y={m.y - 2} textAnchor="middle" dominantBaseline="middle"
                     fontSize="9" fontFamily="IBM Plex Mono"
-                    fill={isSel ? "hsl(210,100%,70%)" : "hsl(215,15%,55%)"}>
+                    fill={isSel ? "hsl(210,100%,70%)" : isRiser ? "#c084fc" : "hsl(215,15%,55%)"}>
                     {branchLabel(br)} · {br.params.length}м
                   </text>
                   {flow !== undefined && (
@@ -416,18 +572,21 @@ export default function Index() {
               );
             })}
 
-            {/* Узлы */}
-            {nodes.map((node) => {
+            {/* ── Узлы ────────────────────────────────────────────── */}
+            {visibleNodes.map((node) => {
               const isSel = selected === node.id;
               const isBrFrom = branchStart === node.id;
               const color = COLORS[node.type];
               const icon = node.type === "supply" ? "▲" : node.type === "exhaust" ? "▼" : node.type === "fan" ? "⊕" : "●";
+              const pos = viewMode === "iso" ? getIsoPos(node) : { x: node.x, y: node.y };
+              const floor = getFloor(node.floorId);
+              const isOtherFloor = viewMode === "plan" && node.floorId !== activeFloor;
 
               return (
                 <g key={node.id}
-                  transform={`translate(${node.x},${node.y})`}
+                  transform={`translate(${pos.x},${pos.y})`}
                   onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
-                  style={{ cursor: tool === "select" ? "grab" : "pointer" }}>
+                  style={{ cursor: tool === "select" ? (viewMode === "plan" ? "grab" : "pointer") : "pointer", opacity: isOtherFloor ? 0.3 : 1 }}>
                   {(isSel || isBrFrom) && (
                     <circle r={NODE_RADIUS + 7} fill="none" stroke={color}
                       strokeWidth="1.5" strokeDasharray="4 3" opacity="0.6">
@@ -450,6 +609,9 @@ export default function Index() {
                     fontSize="10" fontFamily="IBM Plex Mono"
                     fill={isSel ? color : "hsl(215,15%,60%)"} fontWeight={isSel ? "600" : "400"}>
                     {node.label}
+                    {viewMode === "iso" && floor && (
+                      <tspan dx="3" fill={floor.color} fontSize="8">·{floor.name.charAt(0)}{floor.level}м</tspan>
+                    )}
                   </text>
                   {node.fixedFlow && (
                     <text x="0" y={NODE_RADIUS + 25} textAnchor="middle" dominantBaseline="middle"
@@ -480,7 +642,8 @@ export default function Index() {
           <div className="flex border-b border-border flex-shrink-0">
             {([
               { id: "properties", label: "Свойства" },
-              { id: "kms", label: "Фасонные ч." },
+              { id: "floors", label: "Этажи" },
+              { id: "kms", label: "Фасонки" },
               { id: "results", label: "Расчёт" },
             ] as const).map((tab) => (
               <button key={tab.id}
@@ -530,6 +693,20 @@ export default function Index() {
                         value={String(selectedNode.fixedFlow ?? "")}
                         onChange={(v) => updateNode("fixedFlow", v ? Number(v) : undefined)} type="number" />
                     )}
+                    {/* Привязка к этажу */}
+                    <div>
+                      <label className="text-xs uppercase tracking-wider block mb-1.5" style={{ color: "hsl(215,15%,45%)" }}>Этаж</label>
+                      <select value={selectedNode.floorId}
+                        onChange={(e) => updateNode("floorId", e.target.value)}
+                        className="w-full px-3 py-2 rounded-md text-sm font-mono"
+                        style={{ background: "hsl(220,15%,13%)", border: "1px solid hsl(220,15%,22%)", color: getFloor(selectedNode.floorId)?.color ?? "hsl(210,20%,90%)" }}>
+                        {floors.map((f) => (
+                          <option key={f.id} value={f.id} style={{ background: "hsl(220,18%,11%)" }}>
+                            {f.name} (+{f.level}м)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <PropField label="X" value={String(selectedNode.x)} onChange={(v) => updateNode("x", Number(v))} type="number" />
                       <PropField label="Y" value={String(selectedNode.y)} onChange={(v) => updateNode("y", Number(v))} type="number" />
@@ -700,6 +877,82 @@ export default function Index() {
                     )}
                   </>
                 )}
+              </div>
+            )}
+
+            {/* ── Этажи (менеджер уровней) ── */}
+            {activeTab === "floors" && (
+              <div className="animate-fade-in space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-border">
+                  <p className="text-xs uppercase tracking-wider" style={{ color: "hsl(215,15%,45%)" }}>
+                    Уровни здания ({floors.length})
+                  </p>
+                  <button onClick={addFloor}
+                    className="text-xs px-2 py-1 rounded font-semibold hover:brightness-110 active:scale-95"
+                    style={{ background: "hsl(210,100%,56%)", color: "hsl(220,20%,8%)" }}>
+                    + Этаж
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {[...floors].sort((a, b) => b.level - a.level).map((floor) => {
+                    const isActive = activeFloor === floor.id;
+                    const nodeCount = nodes.filter((n) => n.floorId === floor.id).length;
+                    return (
+                      <div key={floor.id}
+                        className="rounded-md overflow-hidden transition-all"
+                        style={{
+                          background: isActive ? `${floor.color}15` : "hsl(220,15%,13%)",
+                          border: `1px solid ${isActive ? floor.color : "hsl(220,15%,20%)"}`,
+                        }}>
+                        <div className="flex items-center gap-2 px-3 py-2 cursor-pointer"
+                          onClick={() => setActiveFloor(floor.id)}>
+                          <div className="w-3 h-3 rounded" style={{ background: floor.color }} />
+                          <input type="text" value={floor.name}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => updateFloor(floor.id, { name: e.target.value })}
+                            className="bg-transparent flex-1 text-sm font-medium outline-none"
+                            style={{ color: floor.color }} />
+                          <span className="text-xs font-mono text-muted-foreground">{nodeCount} узл</span>
+                          <button onClick={(e) => { e.stopPropagation(); updateFloor(floor.id, { visible: !floor.visible }); }}
+                            className="text-muted-foreground hover:text-foreground">
+                            <Icon name={floor.visible ? "Eye" : "EyeOff"} size={13} />
+                          </button>
+                          {floors.length > 1 && (
+                            <button onClick={(e) => { e.stopPropagation(); removeFloor(floor.id); }}
+                              className="text-muted-foreground hover:text-red-400">
+                              <Icon name="Trash2" size={12} />
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 px-3 pb-2 text-xs">
+                          <div>
+                            <label className="text-muted-foreground text-[10px] uppercase">Отметка, м</label>
+                            <input type="number" step="0.1" value={floor.level}
+                              onChange={(e) => updateFloor(floor.id, { level: Number(e.target.value) })}
+                              className="w-full px-2 py-1 rounded font-mono text-xs"
+                              style={{ background: "hsl(220,20%,8%)", border: "1px solid hsl(220,15%,22%)", color: "hsl(210,20%,80%)" }} />
+                          </div>
+                          <div>
+                            <label className="text-muted-foreground text-[10px] uppercase">Высота, м</label>
+                            <input type="number" step="0.1" value={floor.height}
+                              onChange={(e) => updateFloor(floor.id, { height: Number(e.target.value) })}
+                              className="w-full px-2 py-1 rounded font-mono text-xs"
+                              style={{ background: "hsl(220,20%,8%)", border: "1px solid hsl(220,15%,22%)", color: "hsl(210,20%,80%)" }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="rounded-md p-3 text-xs" style={{ background: "hsl(220,15%,11%)", border: "1px solid hsl(220,15%,18%)" }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon name="Info" size={11} style={{ color: "hsl(210,100%,65%)" }} />
+                    <span style={{ color: "hsl(210,100%,65%)" }}>Подсказка</span>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    Узлы между разными этажами образуют <span style={{ color: "#c084fc" }}>стояки</span> — отображаются пунктирной фиолетовой линией. Длина стояка автоматически = разнице высот.
+                  </p>
+                </div>
               </div>
             )}
 
