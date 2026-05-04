@@ -1,5 +1,10 @@
-import { useState, useRef } from "react";
+import { useState, useMemo } from "react";
 import Icon from "@/components/ui/icon";
+import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
+import {
+  type TopoNode, type TopoBranch,
+  DEMO_NODES, DEMO_BRANCHES, recalcLengths, makeNode, makeBranch,
+} from "@/lib/topology";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -7,7 +12,7 @@ import Icon from "@/components/ui/icon";
 // ─────────────────────────────────────────────────────────────────────────────
 
 type RibbonTab = "file" | "home" | "view" | "schema" | "vent" | "thermo" | "accidents" | "involve" | "pipes" | "costs" | "refs" | "general";
-type SideTab = "general" | "vent" | "thermo" | "accidents" | "areas" | "indicators" | "coords";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords";
 
 interface Excavation {
   id: string;
@@ -84,10 +89,57 @@ const LAYERS = ["Стволы", "Квершлаги", "Штреки", "Укло�
 
 export default function CadPage() {
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
-  const [activeSide, setActiveSide] = useState<SideTab>("general");
+  const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
-  const [zoom, setZoom] = useState(1);
-  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // ─── Топология ─────────────────────────────────────────────────────────
+  const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
+  const [branchesRaw, setBranches] = useState<TopoBranch[]>(DEMO_BRANCHES);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("N2");
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [tool, setTool] = useState<CadTool>("select");
+  const [zLevel, setZLevel] = useState(0);
+
+  // Авто-пересчёт длин по координатам
+  const branches = useMemo(() => recalcLengths(nodes, branchesRaw), [nodes, branchesRaw]);
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
+  const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
+
+  const updateNode = (id: string, patch: Partial<TopoNode>) => {
+    setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
+  };
+
+  const handleNodeAdd = (x: number, y: number, z: number) => {
+    const newId = `N${nodes.length + 1}`;
+    const num = String(nodes.length + 100).padStart(3, "0");
+    const node = makeNode(newId, { x, y, z, name: `Узел ${num}`, number: num });
+    setNodes((p) => [...p, node]);
+    setSelectedNodeId(newId);
+    setTool("select");
+  };
+
+  const handleBranchAdd = (fromId: string, toId: string) => {
+    const id = `B${branches.length + 1}`;
+    const b = makeBranch(id, fromId, toId);
+    setBranches((p) => [...p, b]);
+    setSelectedBranchId(id);
+    setTool("select");
+  };
+
+  const handleNodeMove = (id: string, x: number, y: number) => {
+    updateNode(id, { x, y });
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedBranchId) {
+      setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
+      setSelectedBranchId(null);
+    } else if (selectedNodeId) {
+      setBranches((p) => p.filter((b) => b.fromId !== selectedNodeId && b.toId !== selectedNodeId));
+      setNodes((p) => p.filter((n) => n.id !== selectedNodeId));
+      setSelectedNodeId(null);
+    }
+  };
 
   return (
     <div className="w-screen h-screen flex flex-col"
@@ -207,17 +259,20 @@ export default function CadPage() {
         <div className="w-6 flex flex-col"
           style={{ background: "#e8e8e8", borderRight: "1px solid #b8b8b8" }}>
           {([
+            { id: "params", label: "Параметры" },
+            { id: "measure", label: "Замеры" },
+            { id: "pipes", label: "Трубы" },
+            { id: "indicators", label: "Индикаторы" },
             { id: "general", label: "Общие" },
             { id: "vent", label: "Вентиляция" },
             { id: "thermo", label: "Теплофизика" },
             { id: "accidents", label: "Аварии" },
             { id: "areas", label: "Участки" },
-            { id: "indicators", label: "Индикаторы" },
             { id: "coords", label: "Координаты" },
           ] as { id: SideTab; label: string }[]).map((t) => (
             <button key={t.id}
               onClick={() => setActiveSide(t.id)}
-              className="h-24 flex items-center justify-center transition-colors"
+              className="h-20 flex items-center justify-center transition-colors flex-shrink-0"
               style={{
                 background: activeSide === t.id ? "#ffffff" : "transparent",
                 borderRight: activeSide === t.id ? "1px solid #ffffff" : "1px solid transparent",
@@ -257,8 +312,9 @@ export default function CadPage() {
           </div>
 
           {/* Заголовок секции */}
-          <div className="px-2 py-1.5 border-b border-gray-300">
+          <div className="px-2 py-1.5 border-b border-gray-300 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-800">
+              {activeSide === "params" && (selectedNode ? `Узел: ${selectedNode.number || selectedNode.id}` : selectedBranch ? `Ветвь: ${selectedBranch.id}` : "Параметры")}
               {activeSide === "general" && "Свойства объекта"}
               {activeSide === "vent" && "Аэродинамическое сопротивление"}
               {activeSide === "thermo" && "Теплофизические параметры"}
@@ -266,27 +322,153 @@ export default function CadPage() {
               {activeSide === "areas" && "Учёт по участкам"}
               {activeSide === "indicators" && "Индикаторы"}
               {activeSide === "coords" && "Координаты"}
+              {activeSide === "measure" && "Замеры"}
+              {activeSide === "pipes" && "Трубопроводы"}
             </span>
+            {activeSide === "params" && selectedNode && (
+              <span className="text-[10px] text-gray-500 font-mono">{selectedNode.id}</span>
+            )}
           </div>
 
           {/* Свойства */}
           <div className="flex-1 overflow-y-auto">
 
+            {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (узел) ════════════════════════════ */}
+            {activeSide === "params" && selectedNode && (
+              <div className="p-2 space-y-2">
+                <FrameGroup title="Общие свойства">
+                  <LabeledRow label="Название:">
+                    <input type="text" value={selectedNode.name}
+                      onChange={(e) => updateNode(selectedNode.id, { name: e.target.value })}
+                      className="cad-input flex-1" />
+                  </LabeledRow>
+                  <LabeledRow label="Номер:">
+                    <input type="text" value={selectedNode.number}
+                      onChange={(e) => updateNode(selectedNode.id, { number: e.target.value })}
+                      className="cad-input flex-1" />
+                  </LabeledRow>
+                </FrameGroup>
+
+                <FrameGroup title="Физические координаты">
+                  <LabeledRow label="Высотная отметка Z:">
+                    <NumWithUnit value={selectedNode.z} unit="м"
+                      onChange={(v) => updateNode(selectedNode.id, { z: v })} />
+                  </LabeledRow>
+                  <LabeledRow label="Координата X:">
+                    <NumWithUnit value={selectedNode.x} unit="м"
+                      onChange={(v) => updateNode(selectedNode.id, { x: v })} />
+                  </LabeledRow>
+                  <LabeledRow label="Координата Y:">
+                    <NumWithUnit value={selectedNode.y} unit="м"
+                      onChange={(v) => updateNode(selectedNode.id, { y: v })} />
+                  </LabeledRow>
+                </FrameGroup>
+
+                <FrameGroup title="Вентиляция">
+                  <LabeledRow label="Температура воздуха:">
+                    <NumWithUnit value={selectedNode.airTemp} unit="°C"
+                      onChange={(v) => updateNode(selectedNode.id, { airTemp: v })} />
+                  </LabeledRow>
+                  <LabeledRow label="Связь с атмосферой:">
+                    <input type="checkbox" checked={selectedNode.atmosphereLink}
+                      onChange={(e) => updateNode(selectedNode.id, { atmosphereLink: e.target.checked })}
+                      className="w-[13px] h-[13px] cursor-pointer" />
+                  </LabeledRow>
+                </FrameGroup>
+
+                <FrameGroup title="Теплофизика">
+                  <LabeledRow label="Температура стенок:">
+                    <NumWithUnit value={selectedNode.wallTemp} unit="°C"
+                      onChange={(v) => updateNode(selectedNode.id, { wallTemp: v })} />
+                  </LabeledRow>
+                  <div className="pt-1 mt-1 border-t border-gray-200">
+                    <div className="text-xs font-semibold text-gray-800 mb-1">Вычисленные параметры</div>
+                    <ComputedRow label="Концентрация газа:" value={`${selectedNode.computedGasConc} %`} />
+                    <ComputedRow label="Температура воздуха:" value={`${selectedNode.computedAirTemp} °C`} />
+                    <ComputedRow label="Температура стенок:" value={`${selectedNode.computedWallTemp} °C`} />
+                  </div>
+                </FrameGroup>
+
+                <FrameGroup title="Воздушная съемка">
+                  <LabeledRow label="Приведенное давление:">
+                    <NumWithUnit value={selectedNode.reducedPressure} unit="Па"
+                      onChange={(v) => updateNode(selectedNode.id, { reducedPressure: v })} />
+                  </LabeledRow>
+                  <div className="pt-1 mt-1 border-t border-gray-200">
+                    <div className="text-xs font-semibold text-gray-800 mb-1">Вычисленные параметры</div>
+                    <ComputedRow label="Давление:" value={`${selectedNode.computedPressure} Па`} />
+                  </div>
+                </FrameGroup>
+
+                <FrameGroup title="Аварии">
+                  <div className="text-xs font-semibold text-gray-800 mb-1">Вычисленные параметры</div>
+                  <ComputedRow label="Давление взрыва:" value={`${selectedNode.computedExplosivePressure} КПа`} />
+                </FrameGroup>
+              </div>
+            )}
+
+            {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (ветвь) ═══════════════════════════ */}
+            {activeSide === "params" && !selectedNode && selectedBranch && (
+              <div className="p-2 space-y-2">
+                <FrameGroup title="Ветвь">
+                  <LabeledRow label="ID:">
+                    <input type="text" value={selectedBranch.id} readOnly className="cad-input flex-1" />
+                  </LabeledRow>
+                  <LabeledRow label="Тип:">
+                    <select value={selectedBranch.type}
+                      onChange={(e) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, type: e.target.value } : b))}
+                      className="cad-input flex-1">
+                      {["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.", "Уклон", "Очистной", "Сбойка"].map((t) =>
+                        <option key={t}>{t}</option>)}
+                    </select>
+                  </LabeledRow>
+                  <LabeledRow label="От узла:">
+                    <input type="text" value={selectedBranch.fromId} readOnly className="cad-input flex-1" />
+                  </LabeledRow>
+                  <LabeledRow label="К узлу:">
+                    <input type="text" value={selectedBranch.toId} readOnly className="cad-input flex-1" />
+                  </LabeledRow>
+                </FrameGroup>
+
+                <FrameGroup title="Геометрия">
+                  <LabeledRow label="Длина:">
+                    <NumWithUnit value={selectedBranch.length} unit="м"
+                      onChange={(v) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, length: v, manualLength: true } : b))} />
+                  </LabeledRow>
+                  <LabeledRow label="Площадь:">
+                    <NumWithUnit value={selectedBranch.area} unit="м²"
+                      onChange={(v) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, area: v } : b))} />
+                  </LabeledRow>
+                  <LabeledRow label="Периметр:">
+                    <NumWithUnit value={selectedBranch.perimeter} unit="м"
+                      onChange={(v) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, perimeter: v } : b))} />
+                  </LabeledRow>
+                </FrameGroup>
+              </div>
+            )}
+
+            {/* Пусто — нет выбора */}
+            {activeSide === "params" && !selectedNode && !selectedBranch && (
+              <div className="p-4 text-center text-gray-400 text-xs">
+                Выделите узел или ветвь на схеме, чтобы редактировать параметры
+              </div>
+            )}
+
             {/* ═══ ВКЛАДКА: ОБЩИЕ ════════════════════════════════════════ */}
             {activeSide === "general" && (
               <div className="p-2 space-y-2">
                 <FrameGroup title="Общие свойства">
-                  <LabeledRow label="Название:">
+                  <LabeledRow label="Название:" labelWidth={88}>
                     <input type="text" value={excavation.name}
                       onChange={(e) => setExcavation({ ...excavation, name: e.target.value })}
                       className="cad-input flex-1" />
                   </LabeledRow>
-                  <LabeledRow label="Номер:">
+                  <LabeledRow label="Номер:" labelWidth={88}>
                     <input type="text" value={excavation.number}
                       onChange={(e) => setExcavation({ ...excavation, number: e.target.value })}
                       className="cad-input flex-1" />
                   </LabeledRow>
-                  <LabeledRow label="Ширина:">
+                  <LabeledRow label="Ширина:" labelWidth={88}>
                     <div className="flex-1 flex items-center">
                       <input type="text" value={`${excavation.width} мм`}
                         onChange={(e) => {
@@ -296,7 +478,7 @@ export default function CadPage() {
                         className="cad-input flex-1 text-right" />
                     </div>
                   </LabeledRow>
-                  <LabeledRow label="Граница:">
+                  <LabeledRow label="Граница:" labelWidth={88}>
                     <input type="text" value={`${excavation.border} мм`}
                       onChange={(e) => {
                         const num = parseFloat(e.target.value);
@@ -305,7 +487,7 @@ export default function CadPage() {
                       className="cad-input flex-1 text-right" />
                   </LabeledRow>
 
-                  <LabeledRow label="Слой:">
+                  <LabeledRow label="Слой:" labelWidth={88}>
                     <select value={excavation.layer}
                       onChange={(e) => setExcavation({ ...excavation, layer: e.target.value })}
                       className="cad-input flex-1">
@@ -314,7 +496,7 @@ export default function CadPage() {
                   </LabeledRow>
 
                   {/* Появление */}
-                  <LabeledRow label="Появление:">
+                  <LabeledRow label="Появление:" labelWidth={88}>
                     <div className="flex-1 flex items-center gap-1">
                       <input type="text" value={excavation.appearYear}
                         onChange={(e) => setExcavation({ ...excavation, appearYear: e.target.value })}
@@ -340,7 +522,7 @@ export default function CadPage() {
                   </LabeledRow>
 
                   {/* Исчезновение */}
-                  <LabeledRow label="Исчезновение:">
+                  <LabeledRow label="Исчезновение:" labelWidth={88}>
                     <div className="flex-1 flex items-center gap-1">
                       <input type="text" value={excavation.disappearYear}
                         onChange={(e) => setExcavation({ ...excavation, disappearYear: e.target.value })}
@@ -442,69 +624,61 @@ export default function CadPage() {
 
             {/* ═══ ОСТАЛЬНЫЕ ВКЛАДКИ ═════════════════════════════════════ */}
             {(activeSide === "thermo" || activeSide === "accidents" || activeSide === "areas"
-              || activeSide === "indicators" || activeSide === "coords") && (
+              || activeSide === "indicators" || activeSide === "coords"
+              || activeSide === "measure" || activeSide === "pipes") && (
               <div className="p-4 text-center text-gray-400 text-xs">
-                Вкладка в разработке
+                Вкладка «{activeSide}» в разработке
               </div>
             )}
           </div>
         </div>
 
-        {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS) ──────────────────────────────── */}
-        <div className="flex-1 relative overflow-hidden"
-          ref={canvasRef}
-          style={{ background: "#ffffff" }}>
+        {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS + ИНСТРУМЕНТЫ) ────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#ffffff" }}>
 
-          {/* Сетка */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none">
-            <defs>
-              <pattern id="cad-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" strokeWidth="0.5" />
-              </pattern>
-              <pattern id="cad-grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
-                <rect width="100" height="100" fill="url(#cad-grid)" />
-                <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#e0e0e0" strokeWidth="0.8" />
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#cad-grid-major)" />
-          </svg>
-
-          {/* Координатные оси (CAD-style) */}
-          <div className="absolute bottom-3 left-3 flex items-end gap-0 pointer-events-none">
-            <div className="flex flex-col items-center">
-              <div className="text-[10px] font-mono text-blue-600 mb-0.5">Y</div>
-              <div className="w-[2px] h-8" style={{ background: "#22c55e" }}></div>
-            </div>
-            <div className="flex items-center">
-              <div className="w-2 h-2 rounded-full" style={{ background: "#1f1f1f" }}></div>
-              <div className="h-[2px] w-8" style={{ background: "#ef4444" }}></div>
-              <div className="text-[10px] font-mono text-red-600 ml-0.5">X</div>
-            </div>
-          </div>
-
-          {/* Подсказка пустой области */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center text-gray-400">
-              <Icon name="MousePointer2" size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Рабочая область</p>
-              <p className="text-xs mt-1">Используйте «Добавить выработку» для создания объектов</p>
+          {/* Локальная панель инструментов рисования */}
+          <div className="h-8 flex items-center gap-1 px-2"
+            style={{ background: "#f5f5f5", borderBottom: "1px solid #d0d0d0" }}>
+            <ToolBtn icon="MousePointer2" label="Выбрать" active={tool === "select"} onClick={() => setTool("select")} />
+            <ToolBtn icon="Plus" label="Добавить узел" active={tool === "node"} onClick={() => setTool("node")} />
+            <ToolBtn icon="GitBranch" label="Соединить (ветвь)" active={tool === "branch"} onClick={() => setTool("branch")} />
+            <ToolBtn icon="Move" label="Панорама" active={tool === "pan"} onClick={() => setTool("pan")} />
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+            <ToolBtn icon="Trash2" label="Удалить" disabled={!selectedNodeId && !selectedBranchId}
+              onClick={handleDeleteSelected} />
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+            <span className="text-[11px] text-gray-700">Уровень Z:</span>
+            <select value={zLevel} onChange={(e) => setZLevel(Number(e.target.value))}
+              className="cad-input text-[11px] py-0">
+              <option value="0">0 м (поверхность)</option>
+              <option value="-75">−75 м</option>
+              <option value="-150">−150 м</option>
+              <option value="-240">−240 м</option>
+              <option value="-360">−360 м</option>
+              <option value="-480">−480 м</option>
+            </select>
+            <div className="ml-auto flex items-center gap-2 text-[11px] text-gray-600">
+              <span>Узлов: <b>{nodes.length}</b></span>
+              <span>·</span>
+              <span>Ветвей: <b>{branches.length}</b></span>
             </div>
           </div>
 
-          {/* Zoom-контролы */}
-          <div className="absolute top-2 right-2 flex flex-col gap-0.5">
-            <button onClick={() => setZoom((z) => Math.min(5, z * 1.2))}
-              className="w-6 h-6 bg-white border border-gray-400 hover:bg-gray-100 flex items-center justify-center">
-              <Icon name="Plus" size={12} />
-            </button>
-            <button onClick={() => setZoom(1)}
-              className="w-6 h-6 bg-white border border-gray-400 hover:bg-gray-100 flex items-center justify-center text-[9px] font-mono">
-              {Math.round(zoom * 100)}%
-            </button>
-            <button onClick={() => setZoom((z) => Math.max(0.2, z / 1.2))}
-              className="w-6 h-6 bg-white border border-gray-400 hover:bg-gray-100 flex items-center justify-center">
-              <Icon name="Minus" size={12} />
-            </button>
+          {/* Холст топологии */}
+          <div className="flex-1 relative">
+            <TopoCanvas
+              nodes={nodes}
+              branches={branches}
+              selectedNodeId={selectedNodeId}
+              selectedBranchId={selectedBranchId}
+              tool={tool}
+              zLevel={zLevel}
+              onNodeAdd={handleNodeAdd}
+              onNodeMove={handleNodeMove}
+              onBranchAdd={handleBranchAdd}
+              onSelectNode={(id) => { setSelectedNodeId(id); if (id) setSelectedBranchId(null); }}
+              onSelectBranch={(id) => { setSelectedBranchId(id); if (id) setSelectedNodeId(null); }}
+            />
           </div>
         </div>
       </div>
@@ -515,16 +689,16 @@ export default function CadPage() {
         <div className="flex items-center gap-3">
           <span>Готово</span>
           <span className="text-gray-400">|</span>
-          <span>Объект: <b>{excavation.id}</b></span>
-          <span className="text-gray-400">|</span>
-          <span>X: 0.00  Y: 0.00  Z: 0.00</span>
+          {selectedNode && <span>Узел: <b>{selectedNode.number || selectedNode.id}</b> · X={selectedNode.x} Y={selectedNode.y} Z={selectedNode.z}</span>}
+          {selectedBranch && <span>Ветвь: <b>{selectedBranch.id}</b> ({selectedBranch.fromId} → {selectedBranch.toId}) · L={selectedBranch.length} м</span>}
+          {!selectedNode && !selectedBranch && <span>Выделите узел или ветвь</span>}
         </div>
         <div className="flex items-center gap-3">
-          <span>Сетка: 1 м</span>
+          <span>Инструмент: <b>{toolLabel(tool)}</b></span>
           <span className="text-gray-400">|</span>
-          <span>Масштаб: {Math.round(zoom * 100)}%</span>
+          <span>Z-уровень: {zLevel} м</span>
           <span className="text-gray-400">|</span>
-          <span style={{ color: "#16a34a" }}>● Расчёт актуален</span>
+          <span style={{ color: "#16a34a" }}>● Топология актуальна</span>
         </div>
       </div>
     </div>
@@ -705,10 +879,13 @@ function FrameGroup({ title, children }: { title: string; children: React.ReactN
 }
 
 // Строка с подписью слева (фиксированная ширина) и контентом справа
-function LabeledRow({ label, children }: { label: string; children: React.ReactNode }) {
+function LabeledRow({ label, children, labelWidth = 140 }: {
+  label: string; children: React.ReactNode; labelWidth?: number;
+}) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-xs text-gray-700 w-[88px] flex-shrink-0 text-right">{label}</span>
+      <span className="text-xs text-gray-700 flex-shrink-0 text-right"
+        style={{ width: labelWidth }}>{label}</span>
       {children}
     </div>
   );
@@ -724,4 +901,60 @@ function CadCheckbox({ checked, onChange, label }: {
       <span className="text-xs text-gray-800">{label}</span>
     </label>
   );
+}
+
+// ─── Числовой инпут с единицей измерения справа ────────────────────────────
+function NumWithUnit({ value, unit, onChange }: {
+  value: number; unit: string; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex-1 relative flex items-center">
+      <input type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="cad-input flex-1 text-right pr-7" />
+      <span className="absolute right-2 text-xs text-gray-500 pointer-events-none">{unit}</span>
+    </div>
+  );
+}
+
+// ─── Строка вычисленного параметра (только чтение, серый фон) ──────────────
+function ComputedRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-1.5 py-0.5">
+      <span className="text-xs text-gray-700 w-[140px] flex-shrink-0 text-right">{label}</span>
+      <div className="flex-1 px-2 py-1 text-right text-xs font-bold"
+        style={{ background: "#cfcfcf", color: "#1f1f1f", border: "1px solid #b8b8b8" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// ─── Кнопка инструмента в локальной панели холста ──────────────────────────
+function ToolBtn({ icon, label, active, onClick, disabled }: {
+  icon: string; label: string; active?: boolean; onClick: () => void; disabled?: boolean;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} title={label}
+      className="h-6 px-2 flex items-center gap-1 rounded text-[11px] disabled:opacity-40"
+      style={{
+        background: active ? "#2563eb" : "transparent",
+        color: active ? "white" : "#1f1f1f",
+        border: active ? "1px solid #1d4ed8" : "1px solid transparent",
+      }}>
+      <Icon name={icon} size={13} fallback="Square" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function toolLabel(t: CadTool): string {
+  switch (t) {
+    case "select": return "Выбор";
+    case "node": return "Добавить узел";
+    case "branch": return "Соединить ветвью";
+    case "pan": return "Панорама";
+    default: return "—";
+  }
 }
