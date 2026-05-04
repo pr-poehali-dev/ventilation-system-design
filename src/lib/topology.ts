@@ -56,8 +56,12 @@ export interface TopoBranch {
   vMax: number;             // м/с — макс. допустимая скорость
   // ─── Вентилятор (источник напора) ────────────────────
   hasFan: boolean;          // ветвь содержит вентилятор
-  fanPressure: number;      // Па — депрессия вентилятора (от fromId к toId)
+  fanMode: "constant" | "curve"; // постоянная депрессия или Q-H хар-ка
+  fanPressure: number;      // Па — депрессия (для mode=constant), или фактическая (mode=curve)
   fanName: string;
+  fanCurveId: string;       // ID из справочника FAN_CATALOG (mode=curve)
+  fanEfficiency: number;    // расчётный КПД на рабочей точке
+  fanShaftPower: number;    // расчётная мощность на валу, Вт
   // ─── Расчётные ───────────────────────────────────────
   resistance: number;       // итог R, Н·с²/м⁸
   rFriction: number;        // R от трения
@@ -122,8 +126,12 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     localXi: 0,
     vMax: 15,
     hasFan: false,
+    fanMode: "constant",
     fanPressure: 0,
     fanName: "",
+    fanCurveId: "",
+    fanEfficiency: 0,
+    fanShaftPower: 0,
     // Расчётные
     resistance: 0,
     rFriction: 0,
@@ -224,7 +232,8 @@ export const DEMO_BRANCHES: TopoBranch[] = [
   makeBranch("B7", "N6", "U2", { type: "Ствол СВС",   layer: "Стволы",    shape: "round", diameter: 7,
                                   surfaceId: "shaft_skip", surface: "Ствол со скиповым подъёмом", alphaCoef: 45, roughness: 50,
                                   flow: 211, vMax: 15,
-                                  hasFan: true, fanPressure: 3500, fanName: "ВЦ-32 (главный)" }),
+                                  hasFan: true, fanMode: "curve", fanCurveId: "VC-32",
+                                  fanPressure: 4800, fanName: "ВЦ-32 (главный)" }),
 ];
 
 // Авто-расчёт длин на основе координат

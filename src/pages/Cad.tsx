@@ -7,6 +7,8 @@ import {
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
+import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
+import FanCurveChart from "@/components/cad/FanCurveChart";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -653,17 +655,74 @@ export default function CadPage() {
                       className="w-[13px] h-[13px] cursor-pointer" />
                   </LabeledRow>
                   {selectedBranch.hasFan && (<>
-                    <LabeledRow label="Название:">
-                      <input type="text" value={selectedBranch.fanName}
-                        onChange={(e) => updateBranch(selectedBranch.id, { fanName: e.target.value })}
-                        className="cad-input flex-1" placeholder="напр. ВЦ-32" />
+                    <LabeledRow label="Режим задания:">
+                      <select value={selectedBranch.fanMode}
+                        onChange={(e) => updateBranch(selectedBranch.id, { fanMode: e.target.value as "constant" | "curve" })}
+                        className="cad-input flex-1">
+                        <option value="constant">Постоянная депрессия</option>
+                        <option value="curve">Q-H характеристика</option>
+                      </select>
                     </LabeledRow>
-                    <LabeledRow label="Депрессия H:">
-                      <NumWithUnit value={selectedBranch.fanPressure} unit="Па"
-                        onChange={(v) => updateBranch(selectedBranch.id, { fanPressure: v })} />
-                    </LabeledRow>
-                    <div className="text-[10px] text-gray-500 pl-1">
-                      Положительный H — поток в направлении {selectedBranch.fromId} → {selectedBranch.toId}
+
+                    {selectedBranch.fanMode === "constant" && (<>
+                      <LabeledRow label="Название:">
+                        <input type="text" value={selectedBranch.fanName}
+                          onChange={(e) => updateBranch(selectedBranch.id, { fanName: e.target.value })}
+                          className="cad-input flex-1" placeholder="напр. ВЦ-32" />
+                      </LabeledRow>
+                      <LabeledRow label="Депрессия H:">
+                        <NumWithUnit value={selectedBranch.fanPressure} unit="Па"
+                          onChange={(v) => updateBranch(selectedBranch.id, { fanPressure: v })} />
+                      </LabeledRow>
+                    </>)}
+
+                    {selectedBranch.fanMode === "curve" && (<>
+                      <LabeledRow label="Модель:">
+                        <select value={selectedBranch.fanCurveId}
+                          onChange={(e) => {
+                            const f = getFanById(e.target.value);
+                            updateBranch(selectedBranch.id, {
+                              fanCurveId: e.target.value,
+                              fanName: f?.name ?? "",
+                            });
+                          }}
+                          className="cad-input flex-1">
+                          <option value="">— выберите вентилятор —</option>
+                          {FAN_CATALOG.map((f) => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </select>
+                      </LabeledRow>
+
+                      {selectedBranch.fanCurveId && (() => {
+                        const curve = getFanById(selectedBranch.fanCurveId);
+                        if (!curve) return null;
+                        // Эквивалентное сопротивление сети «увиденное» вентилятором:
+                        // R_экв ≈ ΔP_сети / Q² (без депрессии вентилятора)
+                        const Q = Math.abs(selectedBranch.flow);
+                        const Rnet = Q > 0.1 ? Math.max(0, (selectedBranch.fanPressure) / (Q * Q)) : selectedBranch.resistance;
+                        return (<>
+                          <div className="px-1 py-1 bg-gray-50 rounded">
+                            <FanCurveChart curve={curve}
+                              netResistance={Rnet}
+                              workingQ={Q}
+                              workingH={selectedBranch.fanPressure}
+                              width={300} height={180} />
+                          </div>
+                          <div className="pt-1 mt-1 border-t border-gray-200">
+                            <ComputedRow label="Q раб.:" value={`${Q.toFixed(1)} м³/с`} />
+                            <ComputedRow label="H раб.:" value={`${selectedBranch.fanPressure.toFixed(0)} Па`} />
+                            <ComputedRow label="КПД η:" value={`${(selectedBranch.fanEfficiency * 100).toFixed(1)} %`} />
+                            <ComputedRow label="N на валу:" value={`${(selectedBranch.fanShaftPower / 1000).toFixed(2)} кВт`} />
+                            <ComputedRow label="Q ном.:" value={`${curve.qNominal} м³/с`} />
+                            <ComputedRow label="Диапазон Q:" value={`${curve.qMin}…${curve.qMax} м³/с`} />
+                          </div>
+                        </>);
+                      })()}
+                    </>)}
+
+                    <div className="text-[10px] text-gray-500 pl-1 pt-1">
+                      Положительное направление: {selectedBranch.fromId} → {selectedBranch.toId}
                     </div>
                   </>)}
                 </FrameGroup>

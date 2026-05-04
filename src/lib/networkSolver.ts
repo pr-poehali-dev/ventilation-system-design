@@ -18,16 +18,20 @@
 
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero } from "./topology";
+import { getFanById, fanH, fanDH, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 
 const GND = "@gnd";  // виртуальный атмосферный узел
 
 interface SolverEdge {
   id: string;
-  a: string;        // узел A
-  b: string;        // узел B
-  R: number;        // сопротивление, Н·с²/м⁸
-  Hfan: number;     // депрессия вентилятора (положит = от A к B), Па
-  Q: number;        // расход (от A к B), м³/с
+  a: string;
+  b: string;
+  R: number;
+  hasFan: boolean;
+  fanMode: "constant" | "curve";
+  HfanConst: number;
+  fanCurve?: FanCurve;
+  Q: number;
 }
 
 export interface SolveOptions {
@@ -70,9 +74,22 @@ export function solveNetwork(
     a: remap(b.fromId),
     b: remap(b.toId),
     R: b.resistance,
-    Hfan: b.hasFan ? b.fanPressure : 0,
+    hasFan: b.hasFan,
+    fanMode: b.fanMode,
+    HfanConst: b.fanPressure,
+    fanCurve: b.fanMode === "curve" ? getFanById(b.fanCurveId) : undefined,
     Q: 0,
   }));
+
+  // Для каждой ветви — текущий H_fan и dH/dQ (зависит от Q при mode=curve)
+  const evalHfan = (e: SolverEdge): { H: number; dH: number } => {
+    if (!e.hasFan) return { H: 0, dH: 0 };
+    if (e.fanMode === "curve" && e.fanCurve) {
+      const Q = Math.abs(e.Q);
+      return { H: fanH(e.fanCurve, Q), dH: fanDH(e.fanCurve, Q) };
+    }
+    return { H: e.HfanConst, dH: 0 };
+  };
 
   // Все «логические» узлы (с учётом объединения атмосферных)
   const allNodeIds = new Set<string>();
@@ -191,13 +208,22 @@ export function solveNetwork(
       for (const ce of cyc) {
         const e = edges[ce.edgeIdx];
         const Q = e.Q * ce.dir; // расход в направлении обхода контура
-        num += e.R * Q * Math.abs(Q) - e.Hfan * ce.dir;
-        den += 2 * e.R * Math.abs(Q);
+        const { H, dH } = evalHfan(e);
+        // Знак Hfan: вентилятор поднимает давление от a→b (Hfan > 0).
+        // В обходе контура направление Hfan ⊕ ce.dir.
+        // Также знак Hfan зависит от знака Q (если Q<0, вент. работает реверсом — H тот же по модулю, но действует противоположно).
+        const Hsigned = H * Math.sign(e.Q || 1) * ce.dir;
+        num += e.R * Q * Math.abs(Q) - Hsigned;
+        // d/dQ(R·Q·|Q| - H(|Q|)·sign(Q)) = 2·R·|Q| - dH/dQ
+        den += 2 * e.R * Math.abs(Q) + dH;
       }
       const dQ = den > 1e-12 ? -num / den : 0;
-      if (Math.abs(dQ) > maxDelta) maxDelta = Math.abs(dQ);
+      // Релаксация для устойчивости при Q-H кривой
+      const relax = 0.85;
+      const dQrel = dQ * relax;
+      if (Math.abs(dQrel) > maxDelta) maxDelta = Math.abs(dQrel);
       for (const ce of cyc) {
-        edges[ce.edgeIdx].Q += dQ * ce.dir;
+        edges[ce.edgeIdx].Q += dQrel * ce.dir;
       }
     }
     if (maxDelta < tol) {
@@ -210,12 +236,29 @@ export function solveNetwork(
   // ─── 6. Записываем Q обратно в ветви и пересчитываем все производные ─
   const branchesOut = branchesCalc.map((b) => {
     const e = edges.find((x) => x.id === b.id)!;
-    // Q положителен в направлении fromId→toId исходной ветви.
-    // В solver: a/b — это remap-узлы. Если b.fromId был атмосферным, a=GND.
-    // Восстанавливаем знак: если b.a соответствует remap(b.fromId), то Q совпадает.
     const aOrig = remap(b.fromId);
     const Q = e.a === aOrig ? e.Q : -e.Q;
-    return recalcBranchAero({ ...b, flow: Q });
+
+    // Рабочая точка вентилятора (если есть)
+    let fanPressure = b.fanPressure;
+    let fanEff = 0;
+    let fanShaft = 0;
+    if (b.hasFan) {
+      const { H } = evalHfan(e);
+      fanPressure = H;
+      if (b.fanMode === "curve" && e.fanCurve) {
+        fanEff = fanEfficiency(e.fanCurve, Q);
+        fanShaft = fanShaftPower(H, Q, fanEff);
+      }
+    }
+
+    return recalcBranchAero({
+      ...b,
+      flow: Q,
+      fanPressure,
+      fanEfficiency: fanEff,
+      fanShaftPower: fanShaft,
+    });
   });
 
   // ─── 7. Давления в узлах: обходим дерево от GND ───────────────────────
@@ -230,7 +273,8 @@ export function solveNetwork(
     for (const { edgeIdx, other } of adj.get(u)!) {
       if (!seen.has(other) && treeEdgeIdx.has(edgeIdx)) {
         const e = edges[edgeIdx];
-        const dP = e.R * e.Q * Math.abs(e.Q) - e.Hfan; // ΔP в направлении a→b
+        const { H } = evalHfan(e);
+        const dP = e.R * e.Q * Math.abs(e.Q) - H * Math.sign(e.Q || 1);
         const Pu = nodePressure.get(u)!;
         // Если u==a, то P(b) = P(a) - dP (поток теряет давление от a к b)
         const Pother = e.a === u ? Pu - dP : Pu + dP;
