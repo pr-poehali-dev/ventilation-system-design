@@ -197,11 +197,14 @@ export function project3D(p: { x: number; y: number; z: number }, opts: ProjOpti
   const x1 =  cosA * p.x + sinA * p.y;
   const y1 = -sinA * p.x + cosA * p.y;
 
-  // 2) Наклон: при elevation=90° (план) экран Y совпадает с миром Y; Z = глубина
+  // 2) Наклон: при elevation=90° (план) экран Y совпадает с миром Y; Z = глубина.
+  //    Принято в горном деле: z=0 — поверхность, z<0 — глубина (стволы, лавы).
+  //    Поэтому положительный z должен идти ВВЕРХ на экране (sy меньше),
+  //    а отрицательный — ВНИЗ. Знак при cosE·z подобран соответствующе.
   const cosE = Math.cos(el);
   const sinE = Math.sin(el);
-  const y2 = sinE * y1 - cosE * p.z;
-  const depth = cosE * y1 + sinE * p.z;  // дальность до камеры (для z-sort)
+  const y2 = sinE * y1 + cosE * p.z;
+  const depth = cosE * y1 - sinE * p.z;  // дальность до камеры (для z-sort)
 
   return {
     sx: opts.offsetX + x1 * opts.scale,
@@ -245,7 +248,7 @@ export function unproject2D(sx: number, sy: number, opts: ProjOptions, zLevel: n
 // Прямые формулы (см. project3D):
 //   x1 =  cosA·x + sinA·y                (поворот вокруг Z)
 //   y1 = -sinA·x + cosA·y
-//   y2 = sinE·y1 - cosE·z                (наклон вокруг X')
+//   y2 = sinE·y1 + cosE·z                (наклон вокруг X', +z идёт ВВЕРХ)
 //   sx = ox + x1·s   →   u = (sx-ox)/s = x1
 //   sy = oy - y2·s   →   v = -(sy-oy)/s = y2
 // ──────────────────────────────────────────────────────────────────────────
@@ -270,9 +273,9 @@ export function unprojectToPlane(
   // Извлекаем (x, y, z) при заданной фиксированной координате.
   if (plane.axis === "z") {
     const z0 = plane.value;
-    // y2 = sinE·y1 - cosE·z  →  y1 = (v + cosE·z0) / sinE
     if (Math.abs(sinE) < EPS) return null;     // вид «в горизонт» — Z-плоскость параллельна лучу
-    const y1 = (v + cosE * z0) / sinE;
+    // y2 = sinE·y1 + cosE·z0  →  y1 = (v − cosE·z0)/sinE
+    const y1 = (v - cosE * z0) / sinE;
     // x1 = u; решаем поворот вокруг Z обратно
     const x1 = u;
     const x =  cosA * x1 - sinA * y1;
@@ -286,9 +289,9 @@ export function unprojectToPlane(
     if (Math.abs(cosA) < EPS) return null;
     const x = (u - sinA * y0) / cosA;
     const y1 = -sinA * x + cosA * y0;
-    // y2 = sinE·y1 - cosE·z  →  z = (sinE·y1 - v)/cosE
+    // y2 = sinE·y1 + cosE·z  →  z = (v − sinE·y1)/cosE
     if (Math.abs(cosE) < EPS) return null;     // план — Y-плоскость параллельна лучу (взгляд сверху)
-    const z = (sinE * y1 - v) / cosE;
+    const z = (v - sinE * y1) / cosE;
     return { x, y: y0, z };
   }
 
@@ -299,7 +302,7 @@ export function unprojectToPlane(
   const y = (u - cosA * x0) / sinA;
   const y1 = -sinA * x0 + cosA * y;
   if (Math.abs(cosE) < EPS) return null;
-  const z = (sinE * y1 - v) / cosE;
+  const z = (v - sinE * y1) / cosE;
   return { x: x0, y, z };
 }
 
