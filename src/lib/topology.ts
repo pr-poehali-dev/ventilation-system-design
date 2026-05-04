@@ -163,36 +163,74 @@ export function pressureAtZ(z: number, p0: number = 101325): number {
   return p0 * Math.pow(ratio, 5.25588);
 }
 
-// Изометрическая проекция X/Y/Z → 2D screen
+// ─────────────────────────────────────────────────────────────────────────────
+// Камера / проекция X/Y/Z → 2D screen
+//
+// azimuth (φ): поворот вокруг оси Z (мира), 0° — взгляд вдоль -Y
+// elevation (θ): угол подъёма камеры над горизонтом, 0° — фронт, 90° — план сверху
+//
+// Преобразование:
+//   1) поворот вокруг Z на -azimuth: x' = cos·x + sin·y; y' = -sin·x + cos·y
+//   2) наклон вокруг X' на elevation: y'' = sin(θ)·y' - cos(θ)·z; depth = cos(θ)·y' + sin(θ)·z
+//   3) на экран: sx = offsetX + x'·scale; sy = offsetY - y''·scale
+// ─────────────────────────────────────────────────────────────────────────────
 export interface ProjOptions {
-  scale: number;     // м → px
+  scale: number;       // м → px
   offsetX: number;
   offsetY: number;
-  isoAngle?: number; // 0 = план, 30 = изометрия
-  zScale?: number;   // насколько Z влияет на Y экрана
+  azimuth?: number;    // ° — поворот вокруг Z
+  elevation?: number;  // ° — наклон камеры (90 = план, 0 = фронт)
+  // Совместимость со старым API (план):
+  isoAngle?: number;   // не используется в 3D, оставлено для backward compat
+  zScale?: number;     // ignore in 3D
 }
 
-export function project3D(p: { x: number; y: number; z: number }, opts: ProjOptions): { sx: number; sy: number } {
-  const isoRad = ((opts.isoAngle ?? 0) * Math.PI) / 180;
-  const cos = Math.cos(isoRad);
-  const sin = Math.sin(isoRad);
-  const zScale = opts.zScale ?? 1;
-  // План: X→sx, Y→sy (Y инвертируем)
-  // Изометрия: X→sx*cos+sin*y, Y→-sin*x+cos*y; Z поднимает вверх
-  const xx = p.x * cos + p.y * sin;
-  const yy = -p.x * sin + p.y * cos;
+export interface Projected { sx: number; sy: number; depth: number; }
+
+export function project3D(p: { x: number; y: number; z: number }, opts: ProjOptions): Projected {
+  const az = ((opts.azimuth ?? 0) * Math.PI) / 180;
+  const el = ((opts.elevation ?? 90) * Math.PI) / 180;   // 90° по умолчанию = план
+
+  // 1) Поворот вокруг Z (мира) на -azimuth
+  const cosA = Math.cos(az);
+  const sinA = Math.sin(az);
+  const x1 =  cosA * p.x + sinA * p.y;
+  const y1 = -sinA * p.x + cosA * p.y;
+
+  // 2) Наклон: при elevation=90° (план) экран Y совпадает с миром Y; Z = глубина
+  const cosE = Math.cos(el);
+  const sinE = Math.sin(el);
+  const y2 = sinE * y1 - cosE * p.z;
+  const depth = cosE * y1 + sinE * p.z;  // дальность до камеры (для z-sort)
+
   return {
-    sx: opts.offsetX + xx * opts.scale,
-    sy: opts.offsetY - yy * opts.scale - p.z * opts.scale * zScale,
+    sx: opts.offsetX + x1 * opts.scale,
+    sy: opts.offsetY - y2 * opts.scale,
+    depth,
   };
 }
 
-// Обратная проекция (только для плана, isoAngle=0): screen → world
+// ─── Стандартные ракурсы ────────────────────────────────────────────────────
+export const VIEW_PRESETS = {
+  plan:    { azimuth: 0,    elevation: 90 },   // сверху (XY)
+  front:   { azimuth: 0,    elevation: 0 },    // спереди (XZ), смотрим вдоль -Y
+  back:    { azimuth: 180,  elevation: 0 },    // сзади
+  left:    { azimuth: -90,  elevation: 0 },    // слева (YZ)
+  right:   { azimuth: 90,   elevation: 0 },    // справа
+  isoSW:   { azimuth: -45,  elevation: 30 },   // изометрия Юго-Запад
+  isoSE:   { azimuth: 45,   elevation: 30 },   // изометрия Юго-Восток
+  isoNW:   { azimuth: -135, elevation: 30 },
+  isoNE:   { azimuth: 135,  elevation: 30 },
+} as const;
+
+export type ViewPreset = keyof typeof VIEW_PRESETS;
+
+// Обратная проекция: screen → world (только для плана, elevation=90°, az=0°)
+// Для 3D создание узлов осуществляется на плоскости z=zLevel.
 export function unproject2D(sx: number, sy: number, opts: ProjOptions, zLevel: number = 0): { x: number; y: number; z: number } {
-  const zScale = opts.zScale ?? 1;
   return {
     x: (sx - opts.offsetX) / opts.scale,
-    y: -(sy - opts.offsetY + zLevel * opts.scale * zScale) / opts.scale,
+    y: -(sy - opts.offsetY) / opts.scale,
     z: zLevel,
   };
 }

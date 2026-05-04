@@ -141,6 +141,12 @@ export default function CadPage() {
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
 
+  // ─── Ракурс / 3D ────────────────────────────────────────────────────
+  const [viewPreset, setViewPreset] = useState<{ name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE"; nonce: number } | null>(null);
+  const [viewInfo, setViewInfo] = useState<{ is3D: boolean; azimuth: number; elevation: number }>({ is3D: false, azimuth: 0, elevation: 90 });
+  const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") =>
+    setViewPreset({ name, nonce: Date.now() });
+
   const handleSolve = () => {
     const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
     setBranches(res.branches);
@@ -266,6 +272,43 @@ export default function CadPage() {
             <RibbonBigBtn icon="ClipboardPaste" label="Вставить" sublabel="" disabled />
             <RibbonBigBtn icon="Scissors" label="Вырезать" sublabel="" />
             <RibbonBigBtn icon="Copy" label="Копировать" sublabel="" />
+          </div>
+        </RibbonGroup>
+
+        {/* ── Группа: Виды (2D/3D) ── */}
+        <RibbonGroup label="Вид сети">
+          <div className="flex items-stretch gap-1">
+            <button onClick={() => setPreset("plan")}
+              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
+              title="План — вид сверху (XY)">
+              <Icon name="Square" size={20} className="text-blue-600" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">План</div>
+            </button>
+            <button onClick={() => setPreset("front")}
+              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
+              title="Фронт — вид спереди (XZ)">
+              <Icon name="RectangleHorizontal" size={20} className="text-blue-600" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">Фронт</div>
+            </button>
+            <button onClick={() => setPreset("left")}
+              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
+              title="Профиль — вид сбоку (YZ)">
+              <Icon name="RectangleVertical" size={20} className="text-blue-600" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">Профиль</div>
+            </button>
+            <button onClick={() => setPreset("isoSE")}
+              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-purple-100 hover:border-purple-400 border border-transparent rounded min-w-[58px]"
+              title="Изометрия Юго-Восток (3D)">
+              <Icon name="Box" size={20} className="text-purple-600" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">3D Изо</div>
+            </button>
+            <button onClick={() => setTool(tool === "rotate" ? "select" : "rotate")}
+              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-purple-100 hover:border-purple-400 border border-transparent rounded min-w-[58px]"
+              title="Вращение камеры (правая кнопка мыши также вращает)"
+              style={{ background: tool === "rotate" ? "#ede9fe" : undefined }}>
+              <Icon name="RotateCw" size={20} className="text-purple-600" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">Вращать</div>
+            </button>
           </div>
         </RibbonGroup>
 
@@ -936,17 +979,28 @@ export default function CadPage() {
           <div className="h-8 flex items-center gap-1 px-2"
             style={{ background: "#f5f5f5", borderBottom: "1px solid #d0d0d0" }}>
             <ToolBtn icon="MousePointer2" label="Выбрать" active={tool === "select"} onClick={() => setTool("select")} />
-            <ToolBtn icon="Plus" label="Добавить узел" active={tool === "node"} onClick={() => setTool("node")} />
-            <ToolBtn icon="GitBranch" label="Соединить (ветвь)" active={tool === "branch"} onClick={() => setTool("branch")} />
+            <ToolBtn icon="Plus" label="Узел" active={tool === "node"} onClick={() => setTool("node")} />
+            <ToolBtn icon="GitBranch" label="Ветвь" active={tool === "branch"} onClick={() => setTool("branch")} />
             <ToolBtn icon="Move" label="Панорама" active={tool === "pan"} onClick={() => setTool("pan")} />
+            <ToolBtn icon="RotateCw" label="Вращать 3D" active={tool === "rotate"} onClick={() => setTool("rotate")} />
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
             <ToolBtn icon="Trash2" label="Удалить" disabled={!selectedNodeId && !selectedBranchId}
               onClick={handleDeleteSelected} />
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
-            <span className="text-[11px] text-gray-700">Уровень Z:</span>
+
+            {/* ── Ракурсы ── */}
+            <span className="text-[11px] text-gray-700">Вид:</span>
+            <ViewBtn label="План" preset="plan" current={viewInfo} onClick={setPreset} hint="XY сверху" />
+            <ViewBtn label="Фронт" preset="front" current={viewInfo} onClick={setPreset} hint="XZ спереди" />
+            <ViewBtn label="Профиль" preset="left" current={viewInfo} onClick={setPreset} hint="YZ сбоку" />
+            <ViewBtn label="ИЗО⤴" preset="isoSE" current={viewInfo} onClick={setPreset} hint="Изометрия Ю-В" />
+            <ViewBtn label="ИЗО⤵" preset="isoSW" current={viewInfo} onClick={setPreset} hint="Изометрия Ю-З" />
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+            <span className="text-[11px] text-gray-700">Z:</span>
             <select value={zLevel} onChange={(e) => setZLevel(Number(e.target.value))}
-              className="cad-input text-[11px] py-0">
-              <option value="0">0 м (поверхность)</option>
+              className="cad-input text-[11px] py-0" disabled={viewInfo.is3D}>
+              <option value="0">0 м</option>
               <option value="-75">−75 м</option>
               <option value="-150">−150 м</option>
               <option value="-240">−240 м</option>
@@ -954,6 +1008,10 @@ export default function CadPage() {
               <option value="-480">−480 м</option>
             </select>
             <div className="ml-auto flex items-center gap-2 text-[11px] text-gray-600">
+              <span className={viewInfo.is3D ? "text-purple-700 font-semibold" : ""}>
+                {viewInfo.is3D ? "3D" : "2D"}
+              </span>
+              <span>·</span>
               <span>Узлов: <b>{nodes.length}</b></span>
               <span>·</span>
               <span>Ветвей: <b>{branches.length}</b></span>
@@ -969,6 +1027,8 @@ export default function CadPage() {
               selectedBranchId={selectedBranchId}
               tool={tool}
               zLevel={zLevel}
+              viewPreset={viewPreset}
+              onViewChange={setViewInfo}
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
@@ -991,6 +1051,10 @@ export default function CadPage() {
         </div>
         <div className="flex items-center gap-3">
           <span>Инструмент: <b>{toolLabel(tool)}</b></span>
+          <span className="text-gray-400">|</span>
+          <span style={{ color: viewInfo.is3D ? "#7c3aed" : "#0369a1", fontWeight: 600 }}>
+            {viewInfo.is3D ? `3D · Az ${viewInfo.azimuth.toFixed(0)}° / El ${viewInfo.elevation.toFixed(0)}°` : "2D План"}
+          </span>
           <span className="text-gray-400">|</span>
           <span>Z-уровень: {zLevel} м</span>
           <span className="text-gray-400">|</span>
@@ -1257,6 +1321,42 @@ function toolLabel(t: CadTool): string {
     case "node": return "Добавить узел";
     case "branch": return "Соединить ветвью";
     case "pan": return "Панорама";
+    case "rotate": return "Вращение 3D";
     default: return "—";
   }
+}
+
+// ─── Кнопка ракурса в toolbar холста ───────────────────────────────────────
+type ViewPresetName = "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE";
+function ViewBtn({ label, preset, current, onClick, hint }: {
+  label: string;
+  preset: ViewPresetName;
+  current: { is3D: boolean; azimuth: number; elevation: number };
+  onClick: (p: ViewPresetName) => void;
+  hint?: string;
+}) {
+  const PRESETS: Record<ViewPresetName, { az: number; el: number }> = {
+    plan:  { az: 0,    el: 90 },
+    front: { az: 0,    el: 0 },
+    back:  { az: 180,  el: 0 },
+    left:  { az: -90,  el: 0 },
+    right: { az: 90,   el: 0 },
+    isoSW: { az: -45,  el: 30 },
+    isoSE: { az: 45,   el: 30 },
+    isoNW: { az: -135, el: 30 },
+    isoNE: { az: 135,  el: 30 },
+  };
+  const target = PRESETS[preset];
+  const active = Math.abs(current.azimuth - target.az) < 1 && Math.abs(current.elevation - target.el) < 1;
+  return (
+    <button onClick={() => onClick(preset)} title={hint ?? label}
+      className="h-6 px-2 flex items-center rounded text-[11px]"
+      style={{
+        background: active ? "#7c3aed" : "transparent",
+        color: active ? "white" : "#1f1f1f",
+        border: active ? "1px solid #5b21b6" : "1px solid #d0d0d0",
+      }}>
+      {label}
+    </button>
+  );
 }
