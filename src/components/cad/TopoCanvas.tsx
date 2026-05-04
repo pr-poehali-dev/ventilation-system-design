@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  type TopoNode, type TopoBranch, type ProjOptions, type ViewPreset,
-  project3D, unproject2D, calcBranchLength, VIEW_PRESETS,
+  type TopoNode, type TopoBranch, type ProjOptions, type ViewPreset, type WorkPlane,
+  project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +18,8 @@ interface Props {
   selectedBranchId: string | null;
   tool: CadTool;
   onNodeAdd: (x: number, y: number, z: number) => void;
-  onNodeMove: (id: string, x: number, y: number) => void;
+  /** Перемещение узла (теперь в 3D возможно по любой координате) */
+  onNodeMove: (id: string, x: number, y: number, z?: number) => void;
   onBranchAdd: (fromId: string, toId: string) => void;
   onSelectNode: (id: string | null) => void;
   onSelectBranch: (id: string | null) => void;
@@ -29,6 +30,8 @@ interface Props {
   onViewChange?: (info: { is3D: boolean; azimuth: number; elevation: number }) => void;
   /** Способ отображения направления потока воздуха */
   flowDisplay?: FlowDisplayMode;
+  /** Активная рабочая плоскость для построения в 3D (если null — auto по ракурсу) */
+  workPlane?: WorkPlane | null;
 }
 
 export type FlowDisplayMode =
@@ -49,7 +52,7 @@ export default function TopoCanvas(props: Props) {
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSelectNode, onSelectBranch, zLevel,
-    viewPreset, onViewChange, flowDisplay = "flow",
+    viewPreset, onViewChange, flowDisplay = "flow", workPlane,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -65,7 +68,7 @@ export default function TopoCanvas(props: Props) {
 
   const [panStart, setPanStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [rotStart, setRotStart] = useState<{ x: number; y: number; az: number; el: number } | null>(null);
-  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -113,9 +116,20 @@ export default function TopoCanvas(props: Props) {
     setView((v) => ({ ...v, azimuth: p.azimuth, elevation: p.elevation }));
   }, []);
 
-  const screenToWorld = useCallback((sx: number, sy: number) => {
-    return unproject2D(sx, sy, proj, zLevel);
-  }, [proj, zLevel]);
+  // Эффективная рабочая плоскость: явно заданная пользователем либо подобранная по ракурсу
+  const effPlane: WorkPlane = workPlane ?? autoWorkPlane(view.azimuth, view.elevation, {
+    z: zLevel, y: 0, x: 0,
+  });
+
+  // Универсальная обратная проекция: screen → world через рабочую плоскость
+  const screenToWorld = useCallback((sx: number, sy: number, fixedZ?: number): { x: number; y: number; z: number } | null => {
+    // В 2D-плане используем простую формулу с zLevel (или явно переданным fixedZ)
+    if (!is3D) return unproject2D(sx, sy, proj, fixedZ ?? zLevel);
+    // В 3D — пересечение луча с рабочей плоскостью
+    const plane: WorkPlane = fixedZ !== undefined ? { axis: "z", value: fixedZ } : effPlane;
+    return unprojectToPlane(sx, sy, proj, plane);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proj, zLevel, is3D, effPlane.axis, effPlane.value]);
 
   // ─── Обработчики мыши ───────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -137,10 +151,9 @@ export default function TopoCanvas(props: Props) {
     const sy = e.clientY - rect.top;
 
     if (tool === "node") {
-      // Добавление узла возможно только на плане (иначе неоднозначно)
-      if (is3D) return;
       const w = screenToWorld(sx, sy);
-      onNodeAdd(Math.round(w.x), Math.round(w.y), zLevel);
+      if (!w) return;     // вырожденный случай: смена плоскости нужна
+      onNodeAdd(Math.round(w.x), Math.round(w.y), Math.round(w.z));
       return;
     }
 
@@ -158,8 +171,18 @@ export default function TopoCanvas(props: Props) {
       }
       onSelectNode(hit);
       onSelectBranch(null);
-      // Перетаскивание узла — только в 2D
-      if (!is3D) setDraggingNode(hit);
+      // Перетаскивание узла: и в 2D, и в 3D.
+      // Плоскость дрэга проходит через текущую глубинную координату узла —
+      // так Z/Y/X не «прыгает» при движении.
+      const node = nodes.find((n) => n.id === hit);
+      if (node) {
+        const plane: WorkPlane = !is3D
+          ? { axis: "z", value: node.z }
+          : effPlane.axis === "z" ? { axis: "z", value: node.z }
+          : effPlane.axis === "y" ? { axis: "y", value: node.y }
+          : { axis: "x", value: node.x };
+        setDraggingNode({ id: hit, plane });
+      }
       return;
     }
 
@@ -186,12 +209,10 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    if (!is3D) {
-      const w = screenToWorld(sx, sy);
-      setHoverPos({ x: Math.round(w.x), y: Math.round(w.y) });
-    } else {
-      setHoverPos(null);
-    }
+    // hover-позиция: показываем мировые координаты в текущей рабочей плоскости
+    const w = screenToWorld(sx, sy);
+    if (w) setHoverPos({ x: Math.round(w.x), y: Math.round(w.y) });
+    else setHoverPos(null);
 
     if (rotStart) {
       const dx = e.clientX - rotStart.x;
@@ -207,9 +228,13 @@ export default function TopoCanvas(props: Props) {
       setView((v) => ({ ...v, offsetX: panStart.ox + dx, offsetY: panStart.oy + dy }));
       return;
     }
-    if (draggingNode && !is3D) {
-      const w = screenToWorld(sx, sy);
-      onNodeMove(draggingNode, Math.round(w.x), Math.round(w.y));
+    if (draggingNode) {
+      // Тащим в плоскости, зафиксированной при начале drag
+      const wp = is3D
+        ? unprojectToPlane(sx, sy, proj, draggingNode.plane)
+        : unproject2D(sx, sy, proj, draggingNode.plane.axis === "z" ? draggingNode.plane.value : 0);
+      if (!wp) return;
+      onNodeMove(draggingNode.id, Math.round(wp.x), Math.round(wp.y), Math.round(wp.z));
     }
   };
 
@@ -291,6 +316,34 @@ export default function TopoCanvas(props: Props) {
     );
   };
 
+  // Визуализация активной рабочей плоскости (полупрозрачный квадрат)
+  const renderWorkPlane = () => {
+    if (!is3D) return null;
+    const r = 1500;     // полу-сторона плоскости (м)
+    let corners: Array<{ x: number; y: number; z: number }>;
+    let color: string;
+    if (effPlane.axis === "z") {
+      const z = effPlane.value;
+      corners = [{ x: -r, y: -r, z }, { x: r, y: -r, z }, { x: r, y: r, z }, { x: -r, y: r, z }];
+      color = "#fbbf24";
+    } else if (effPlane.axis === "y") {
+      const y = effPlane.value;
+      corners = [{ x: -r, y, z: -r }, { x: r, y, z: -r }, { x: r, y, z: r }, { x: -r, y, z: r }];
+      color = "#a78bfa";
+    } else {
+      const x = effPlane.value;
+      corners = [{ x, y: -r, z: -r }, { x, y: r, z: -r }, { x, y: r, z: r }, { x, y: -r, z: r }];
+      color = "#60a5fa";
+    }
+    const pts = corners.map((c) => project3D(c, proj));
+    const polyPts = pts.map((p) => `${p.sx},${p.sy}`).join(" ");
+    return (
+      <g>
+        <polygon points={polyPts} fill={color} fillOpacity="0.08" stroke={color} strokeOpacity="0.5" strokeWidth="1" strokeDasharray="6 4" />
+      </g>
+    );
+  };
+
   // Вертикальные «направляющие» от узлов до пола (z=0) — для понимания глубины
   const renderDepthLines = () => {
     if (!is3D) return null;
@@ -353,6 +406,7 @@ export default function TopoCanvas(props: Props) {
         </>)}
 
         {is3D && renderDepthLines()}
+        {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
 
         {/* ─── ВЕТВИ (отсортированы по глубине) ────────────────────────── */}
         {branchesSorted.map(({ branch: b }) => {
@@ -477,10 +531,15 @@ export default function TopoCanvas(props: Props) {
         })}
 
         {/* Превью создания ветви */}
-        {tool === "branch" && branchFrom && hoverPos && !is3D && (() => {
+        {tool === "branch" && branchFrom && hoverPos && (() => {
           const from = projNodes.find((p) => p.node.id === branchFrom);
           if (!from) return null;
-          const to = project3D({ x: hoverPos.x, y: hoverPos.y, z: zLevel }, proj);
+          // Z для превью берём из активной плоскости (если фикс по Z) или у узла-начала
+          const fromNode = from.node;
+          const previewZ = effPlane.axis === "z" ? effPlane.value : fromNode.z;
+          const previewX = effPlane.axis === "x" ? effPlane.value : hoverPos.x;
+          const previewY = effPlane.axis === "y" ? effPlane.value : hoverPos.y;
+          const to = project3D({ x: previewX, y: previewY, z: previewZ }, proj);
           return (
             <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
               stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.7" />
@@ -533,11 +592,22 @@ export default function TopoCanvas(props: Props) {
       {/* Индикаторы */}
       <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"
         style={{ color: "#444" }}>
-        {is3D ? (
-          <>3D · Az: {view.azimuth.toFixed(0)}° · El: {view.elevation.toFixed(0)}°</>
-        ) : (
-          hoverPos && <>X: {hoverPos.x} м · Y: {hoverPos.y} м · Z: {zLevel} м</>
-        )}
+        {is3D && <span className="mr-2">3D · Az: {view.azimuth.toFixed(0)}° · El: {view.elevation.toFixed(0)}°</span>}
+        {hoverPos && (() => {
+          // Вывод координат с учётом активной плоскости
+          const fixZ = effPlane.axis === "z" ? effPlane.value : null;
+          const fixY = effPlane.axis === "y" ? effPlane.value : null;
+          const fixX = effPlane.axis === "x" ? effPlane.value : null;
+          return (
+            <span>
+              X: {fixX ?? hoverPos.x} м · Y: {fixY ?? hoverPos.y} м · Z: {fixZ ?? (is3D ? "?" : zLevel)} м
+            </span>
+          );
+        })()}
+        <span className="ml-3 px-1.5 py-0.5 rounded"
+          style={{ background: "#fef3c7", color: "#92400e" }}>
+          Плоск: {effPlane.axis.toUpperCase()}={effPlane.value} м
+        </span>
       </div>
       <div className="absolute bottom-1 right-2 text-[11px] font-mono pointer-events-none"
         style={{ color: "#444" }}>
@@ -545,16 +615,13 @@ export default function TopoCanvas(props: Props) {
       </div>
 
       {/* Подсказка */}
-      {tool === "node" && !is3D && (
+      {tool === "node" && (
         <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
           style={{ background: "#2563eb", color: "white" }}>
-          ✚ Клик на холсте — создать узел на отметке Z = {zLevel} м
-        </div>
-      )}
-      {tool === "node" && is3D && (
-        <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#dc2626", color: "white" }}>
-          ⚠ Создание узлов доступно только в 2D-плане. Перейдите в вид «План».
+          ✚ Клик на холсте — создать узел на плоскости{" "}
+          {effPlane.axis === "z" ? `Z = ${effPlane.value} м (XY)` :
+           effPlane.axis === "y" ? `Y = ${effPlane.value} м (XZ)` :
+           `X = ${effPlane.value} м (YZ)`}
         </div>
       )}
       {tool === "branch" && (

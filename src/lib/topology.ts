@@ -235,6 +235,94 @@ export function unproject2D(sx: number, sy: number, opts: ProjOptions, zLevel: n
   };
 }
 
+// ─── Универсальная обратная проекция: screen + рабочая плоскость → world ───
+// Принцип: курсор задаёт ЛУЧ в 3D, а рабочая плоскость (x=const, y=const или z=const)
+// — вторую сущность для пересечения. Возвращаем точку пересечения луча с плоскостью.
+//
+// При вырождении (плоскость параллельна лучу взгляда) возвращаем null —
+// в таком случае пользователь должен сменить рабочую плоскость.
+//
+// Прямые формулы (см. project3D):
+//   x1 =  cosA·x + sinA·y                (поворот вокруг Z)
+//   y1 = -sinA·x + cosA·y
+//   y2 = sinE·y1 - cosE·z                (наклон вокруг X')
+//   sx = ox + x1·s   →   u = (sx-ox)/s = x1
+//   sy = oy - y2·s   →   v = -(sy-oy)/s = y2
+// ──────────────────────────────────────────────────────────────────────────
+export type WorkPlane =
+  | { axis: "z"; value: number }   // фикс по Z (горизонтальная плоскость) — для плана/изо
+  | { axis: "y"; value: number }   // фикс по Y (вертикальная) — для фронт/тыл
+  | { axis: "x"; value: number };  // фикс по X (вертикальная) — для лев/прав
+
+const EPS = 1e-6;
+
+export function unprojectToPlane(
+  sx: number, sy: number, opts: ProjOptions, plane: WorkPlane
+): { x: number; y: number; z: number } | null {
+  const az = ((opts.azimuth ?? 0) * Math.PI) / 180;
+  const el = ((opts.elevation ?? 90) * Math.PI) / 180;
+  const cosA = Math.cos(az), sinA = Math.sin(az);
+  const cosE = Math.cos(el), sinE = Math.sin(el);
+
+  const u = (sx - opts.offsetX) / opts.scale;   // = x1
+  const v = -(sy - opts.offsetY) / opts.scale;  // = y2
+
+  // Извлекаем (x, y, z) при заданной фиксированной координате.
+  if (plane.axis === "z") {
+    const z0 = plane.value;
+    // y2 = sinE·y1 - cosE·z  →  y1 = (v + cosE·z0) / sinE
+    if (Math.abs(sinE) < EPS) return null;     // вид «в горизонт» — Z-плоскость параллельна лучу
+    const y1 = (v + cosE * z0) / sinE;
+    // x1 = u; решаем поворот вокруг Z обратно
+    const x1 = u;
+    const x =  cosA * x1 - sinA * y1;
+    const y =  sinA * x1 + cosA * y1;
+    return { x, y, z: z0 };
+  }
+
+  if (plane.axis === "y") {
+    const y0 = plane.value;
+    // x1 = cosA·x + sinA·y0  →  x = (u - sinA·y0)/cosA
+    if (Math.abs(cosA) < EPS) return null;
+    const x = (u - sinA * y0) / cosA;
+    const y1 = -sinA * x + cosA * y0;
+    // y2 = sinE·y1 - cosE·z  →  z = (sinE·y1 - v)/cosE
+    if (Math.abs(cosE) < EPS) return null;     // план — Y-плоскость параллельна лучу (взгляд сверху)
+    const z = (sinE * y1 - v) / cosE;
+    return { x, y: y0, z };
+  }
+
+  // axis === "x"
+  const x0 = plane.value;
+  // x1 = cosA·x0 + sinA·y  →  y = (u - cosA·x0)/sinA
+  if (Math.abs(sinA) < EPS) return null;
+  const y = (u - cosA * x0) / sinA;
+  const y1 = -sinA * x0 + cosA * y;
+  if (Math.abs(cosE) < EPS) return null;
+  const z = (sinE * y1 - v) / cosE;
+  return { x: x0, y, z };
+}
+
+// Подобрать «логичную» рабочую плоскость по текущему ракурсу
+// (для авто-режима в UI). Возвращает плоскость + признак пригодности.
+export function autoWorkPlane(
+  azimuth: number, elevation: number,
+  defaults: { z: number; y: number; x: number }
+): WorkPlane {
+  const el = elevation;
+  const az = ((azimuth % 360) + 360) % 360;
+  // План / почти-план / изометрия — XY-плоскость (фикс Z)
+  if (el >= 25) return { axis: "z", value: defaults.z };
+  // Низкий горизонт: выбираем XZ или YZ по ближайшей оси взгляда
+  // az≈0 или 180 → смотрим вдоль ±Y → рабочая XZ (фикс Y)
+  // az≈90 или 270 → смотрим вдоль ±X → рабочая YZ (фикс X)
+  const distY = Math.min(Math.abs(az - 0), Math.abs(az - 180), Math.abs(az - 360));
+  const distX = Math.min(Math.abs(az - 90), Math.abs(az - 270));
+  return distY <= distX
+    ? { axis: "y", value: defaults.y }
+    : { axis: "x", value: defaults.x };
+}
+
 // ─── Демо-сеть (как в АэроСеть/Вентиляция 2.0) ────────────────────────────
 
 export const DEMO_NODES: TopoNode[] = [

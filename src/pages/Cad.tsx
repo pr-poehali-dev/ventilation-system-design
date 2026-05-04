@@ -134,8 +134,8 @@ export default function CadPage() {
     setTool("select");
   };
 
-  const handleNodeMove = (id: string, x: number, y: number) => {
-    updateNode(id, { x, y });
+  const handleNodeMove = (id: string, x: number, y: number, z?: number) => {
+    updateNode(id, z !== undefined ? { x, y, z } : { x, y });
   };
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
@@ -149,6 +149,10 @@ export default function CadPage() {
 
   // Режим отображения направления воздушного потока
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("flow");
+
+  // Активная рабочая плоскость для построения в 3D
+  // null = автоматически по ракурсу; иначе фиксированная пользователем
+  const [workPlane, setWorkPlane] = useState<{ axis: "x" | "y" | "z"; value: number } | null>(null);
 
   const handleSolve = () => {
     const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
@@ -1015,9 +1019,36 @@ export default function CadPage() {
             </div>
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
-            <span className="text-[11px] text-gray-700">Z:</span>
-            <select value={zLevel} onChange={(e) => setZLevel(Number(e.target.value))}
-              className="cad-input text-[11px] py-0" disabled={viewInfo.is3D}>
+
+            {/* ── Рабочая плоскость для построения ── */}
+            <span className="text-[11px] text-gray-700"
+              title="Плоскость, в которой создаются и перемещаются узлы">Плоск:</span>
+            <div className="flex border border-gray-300 rounded overflow-hidden">
+              <FlowBtn label="Авто" active={workPlane === null}
+                onClick={() => setWorkPlane(null)} hint="Подбирается по ракурсу автоматически" />
+              <FlowBtn label="XY" active={workPlane?.axis === "z"}
+                onClick={() => setWorkPlane({ axis: "z", value: zLevel })} hint={`Горизонтальная (Z = ${zLevel} м)`} />
+              <FlowBtn label="XZ" active={workPlane?.axis === "y"}
+                onClick={() => setWorkPlane({ axis: "y", value: 0 })} hint="Вертикальная (Y = 0 м)" />
+              <FlowBtn label="YZ" active={workPlane?.axis === "x"}
+                onClick={() => setWorkPlane({ axis: "x", value: 0 })} hint="Вертикальная (X = 0 м)" />
+            </div>
+            {workPlane && (
+              <input type="number" value={workPlane.value} step={50}
+                onChange={(e) => setWorkPlane({ ...workPlane, value: Number(e.target.value) })}
+                className="cad-input text-[11px] py-0 w-16"
+                title={`Значение по оси ${workPlane.axis.toUpperCase()} (м)`} />
+            )}
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+            <span className="text-[11px] text-gray-700">Z план:</span>
+            <select value={zLevel} onChange={(e) => {
+                const z = Number(e.target.value);
+                setZLevel(z);
+                // Если активна XY-плоскость в авто-режиме — синхронизируем её значение
+                if (workPlane?.axis === "z") setWorkPlane({ axis: "z", value: z });
+              }}
+              className="cad-input text-[11px] py-0">
               <option value="0">0 м</option>
               <option value="-75">−75 м</option>
               <option value="-150">−150 м</option>
@@ -1048,6 +1079,7 @@ export default function CadPage() {
               viewPreset={viewPreset}
               onViewChange={setViewInfo}
               flowDisplay={flowDisplay}
+              workPlane={workPlane}
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
