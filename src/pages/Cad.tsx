@@ -13,17 +13,36 @@ interface Excavation {
   id: string;
   type: string;
   section: "round" | "rect" | "trap";
-  area: number;        // м²
-  perimeter: number;   // м
-  length: number;      // м
-  alphaCoef: number;   // кг/м³
-  vMax: number;        // м/с
-  resistance: number;  // кМюрг
-  flow: number;        // м³/с
-  velocity: number;    // м/с
-  dP: number;          // Па
-  power: number;       // Вт
+  area: number;
+  perimeter: number;
+  length: number;
+  alphaCoef: number;
+  vMax: number;
+  resistance: number;
+  flow: number;
+  velocity: number;
+  dP: number;
+  power: number;
   surface: string;
+  // ─── Общие свойства ───
+  name: string;
+  number: string;
+  width: number;       // мм (толщина линии)
+  border: number;      // мм (рамка)
+  layer: string;
+  appearYear: string;
+  appearMonth: string;
+  appearDay: string;
+  appearTime: string;
+  disappearYear: string;
+  disappearMonth: string;
+  disappearDay: string;
+  disappearTime: string;
+  isVertical: boolean;
+  dashedBorder: boolean;
+  ignoreLayerColor: boolean;
+  cable04: boolean;
+  cable6: boolean;
 }
 
 const DEFAULT_EXC: Excavation = {
@@ -41,11 +60,31 @@ const DEFAULT_EXC: Excavation = {
   dP: 43,
   power: 9002,
   surface: "Воздухоподающая выработка, без неровностей",
+  name: 'Ствол "Южный - Вентиляционный"',
+  number: "713",
+  width: 3,
+  border: 0.2,
+  layer: "Стволы",
+  appearYear: "2025",
+  appearMonth: "Ноябрь",
+  appearDay: "1",
+  appearTime: "__:__",
+  disappearYear: "",
+  disappearMonth: "",
+  disappearDay: "",
+  disappearTime: "",
+  isVertical: false,
+  dashedBorder: false,
+  ignoreLayerColor: false,
+  cable04: false,
+  cable6: false,
 };
+
+const LAYERS = ["Стволы", "Квершлаги", "Штреки", "Уклоны", "Камеры", "Сбойки", "Скважины"];
 
 export default function CadPage() {
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
-  const [activeSide, setActiveSide] = useState<SideTab>("vent");
+  const [activeSide, setActiveSide] = useState<SideTab>("general");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -219,51 +258,195 @@ export default function CadPage() {
 
           {/* Заголовок секции */}
           <div className="px-2 py-1.5 border-b border-gray-300">
-            <span className="text-xs font-semibold text-gray-800">Аэродинамическое сопротивление</span>
+            <span className="text-xs font-semibold text-gray-800">
+              {activeSide === "general" && "Свойства объекта"}
+              {activeSide === "vent" && "Аэродинамическое сопротивление"}
+              {activeSide === "thermo" && "Теплофизические параметры"}
+              {activeSide === "accidents" && "Аварийные режимы"}
+              {activeSide === "areas" && "Учёт по участкам"}
+              {activeSide === "indicators" && "Индикаторы"}
+              {activeSide === "coords" && "Координаты"}
+            </span>
           </div>
 
           {/* Свойства */}
           <div className="flex-1 overflow-y-auto">
-            <PropGroup title="Тип выработки">
-              <SelectRow value={excavation.type} options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек", "Уклон", "Камера"]}
-                onChange={(v) => setExcavation({ ...excavation, type: v })} />
-            </PropGroup>
 
-            <PropGroup title="Поперечное сечение">
-              <SelectRow value="Круглое" options={["Круглое", "Прямоугольное", "Трапециевидное", "Арочное"]}
-                onChange={() => {}} />
-              <FieldRow label="Площадь:" value={`${excavation.area} м²`} />
-              <CheckRow label="Тип:" caption="Задается вручную" />
-              <FieldRow label="Периметр:" value={`${excavation.perimeter} м`} />
-            </PropGroup>
+            {/* ═══ ВКЛАДКА: ОБЩИЕ ════════════════════════════════════════ */}
+            {activeSide === "general" && (
+              <div className="p-2 space-y-2">
+                <FrameGroup title="Общие свойства">
+                  <LabeledRow label="Название:">
+                    <input type="text" value={excavation.name}
+                      onChange={(e) => setExcavation({ ...excavation, name: e.target.value })}
+                      className="cad-input flex-1" />
+                  </LabeledRow>
+                  <LabeledRow label="Номер:">
+                    <input type="text" value={excavation.number}
+                      onChange={(e) => setExcavation({ ...excavation, number: e.target.value })}
+                      className="cad-input flex-1" />
+                  </LabeledRow>
+                  <LabeledRow label="Ширина:">
+                    <div className="flex-1 flex items-center">
+                      <input type="text" value={`${excavation.width} мм`}
+                        onChange={(e) => {
+                          const num = parseFloat(e.target.value);
+                          if (!isNaN(num)) setExcavation({ ...excavation, width: num });
+                        }}
+                        className="cad-input flex-1 text-right" />
+                    </div>
+                  </LabeledRow>
+                  <LabeledRow label="Граница:">
+                    <input type="text" value={`${excavation.border} мм`}
+                      onChange={(e) => {
+                        const num = parseFloat(e.target.value);
+                        if (!isNaN(num)) setExcavation({ ...excavation, border: num });
+                      }}
+                      className="cad-input flex-1 text-right" />
+                  </LabeledRow>
 
-            <PropGroup title="Длина выработки">
-              <CheckRow label="Тип:" caption="Задается вручную" />
-              <FieldRow label="Длина:" value={`${excavation.length} м`} />
-            </PropGroup>
+                  <LabeledRow label="Слой:">
+                    <select value={excavation.layer}
+                      onChange={(e) => setExcavation({ ...excavation, layer: e.target.value })}
+                      className="cad-input flex-1">
+                      {LAYERS.map((l) => <option key={l}>{l}</option>)}
+                    </select>
+                  </LabeledRow>
 
-            <PropGroup title="Аэродинамическое сопротивление">
-              <SelectRowLabeled label="Задается:" value="Проектными данными"
-                options={["Проектными данными", "По коэффициенту α", "По таблице ВНИИ", "Измеренное"]}
-                onChange={() => {}} />
-              <SelectRowLabeled label="Поверхность:" value={excavation.surface}
-                options={["Воздухоподающая выработка, без неровностей", "Бетонная крепь", "Деревянная крепь", "Анкерная крепь", "Незакреплённая"]}
-                onChange={(v) => setExcavation({ ...excavation, surface: v })} />
-              <FieldRow label="Коэф-т α:" value={`${excavation.alphaCoef.toFixed(3)} кг/м³`} />
-            </PropGroup>
+                  {/* Появление */}
+                  <LabeledRow label="Появление:">
+                    <div className="flex-1 flex items-center gap-1">
+                      <input type="text" value={excavation.appearYear}
+                        onChange={(e) => setExcavation({ ...excavation, appearYear: e.target.value })}
+                        placeholder="Год"
+                        className="cad-input w-12 text-center" />
+                      <input type="text" value={excavation.appearMonth}
+                        onChange={(e) => setExcavation({ ...excavation, appearMonth: e.target.value })}
+                        placeholder="Месяц"
+                        className="cad-input flex-1 text-center" />
+                      <input type="text" value={excavation.appearDay}
+                        onChange={(e) => setExcavation({ ...excavation, appearDay: e.target.value })}
+                        placeholder="День"
+                        className="cad-input w-10 text-center" />
+                      <input type="text" value={excavation.appearTime}
+                        onChange={(e) => setExcavation({ ...excavation, appearTime: e.target.value })}
+                        className="cad-input w-12 text-center" />
+                      <button onClick={() => setExcavation({ ...excavation, appearYear: "", appearMonth: "", appearDay: "", appearTime: "" })}
+                        className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded"
+                        title="Очистить">
+                        <Icon name="Trash2" size={11} className="text-gray-600" />
+                      </button>
+                    </div>
+                  </LabeledRow>
 
-            <PropGroup title="Скорость воздуха">
-              <CheckRow label="Тип:" caption="Задается вручную" />
-              <FieldRow label="V max:" value={`${excavation.vMax} м/с`} />
-            </PropGroup>
+                  {/* Исчезновение */}
+                  <LabeledRow label="Исчезновение:">
+                    <div className="flex-1 flex items-center gap-1">
+                      <input type="text" value={excavation.disappearYear}
+                        onChange={(e) => setExcavation({ ...excavation, disappearYear: e.target.value })}
+                        placeholder="Год"
+                        className="cad-input w-12 text-center text-gray-400" />
+                      <input type="text" value={excavation.disappearMonth}
+                        onChange={(e) => setExcavation({ ...excavation, disappearMonth: e.target.value })}
+                        placeholder="Месяц"
+                        className="cad-input flex-1 text-center text-gray-400" />
+                      <input type="text" value={excavation.disappearDay}
+                        onChange={(e) => setExcavation({ ...excavation, disappearDay: e.target.value })}
+                        placeholder="День"
+                        className="cad-input w-10 text-center text-gray-400" />
+                      <input type="text" value={excavation.disappearTime}
+                        onChange={(e) => setExcavation({ ...excavation, disappearTime: e.target.value })}
+                        className="cad-input w-12 text-center text-gray-400" />
+                      <button onClick={() => setExcavation({ ...excavation, disappearYear: "", disappearMonth: "", disappearDay: "", disappearTime: "" })}
+                        className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded"
+                        title="Очистить">
+                        <Icon name="Trash2" size={11} className="text-gray-600" />
+                      </button>
+                    </div>
+                  </LabeledRow>
 
-            <PropGroup title="Вычисленные параметры">
-              <FieldRow label="Сопротив-ие:" value={`${excavation.resistance.toFixed(6)} кМюрг`} computed />
-              <FieldRow label="Расход:" value={`${excavation.flow} м³/с`} computed />
-              <FieldRow label="V воздуха:" value={`${excavation.velocity} м/с`} computed />
-              <FieldRow label="ΔP:" value={`${excavation.dP} Па`} computed />
-              <FieldRow label="Энергозат-ы:" value={`${excavation.power} Вт`} computed />
-            </PropGroup>
+                  <div className="pt-1 space-y-0.5">
+                    <CadCheckbox
+                      checked={excavation.isVertical}
+                      onChange={(v) => setExcavation({ ...excavation, isVertical: v })}
+                      label="Вертикальная выработка (ходок)" />
+                    <CadCheckbox
+                      checked={excavation.dashedBorder}
+                      onChange={(v) => setExcavation({ ...excavation, dashedBorder: v })}
+                      label="Пунктирная граница" />
+                    <CadCheckbox
+                      checked={excavation.ignoreLayerColor}
+                      onChange={(v) => setExcavation({ ...excavation, ignoreLayerColor: v })}
+                      label="Игнорировать цвет слоя" />
+                  </div>
+                </FrameGroup>
+
+                <FrameGroup title="Электроснабжение">
+                  <CadCheckbox
+                    checked={excavation.cable04}
+                    onChange={(v) => setExcavation({ ...excavation, cable04: v })}
+                    label="Силовой кабель 0,4/0,66 кВ" />
+                  <CadCheckbox
+                    checked={excavation.cable6}
+                    onChange={(v) => setExcavation({ ...excavation, cable6: v })}
+                    label="Силовой кабель 6 кВ" />
+                </FrameGroup>
+              </div>
+            )}
+
+            {/* ═══ ВКЛАДКА: ВЕНТИЛЯЦИЯ ═════════════════════════════════ */}
+            {activeSide === "vent" && (
+              <>
+                <PropGroup title="Тип выработки">
+                  <SelectRow value={excavation.type} options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек", "Уклон", "Камера"]}
+                    onChange={(v) => setExcavation({ ...excavation, type: v })} />
+                </PropGroup>
+
+                <PropGroup title="Поперечное сечение">
+                  <SelectRow value="Круглое" options={["Круглое", "Прямоугольное", "Трапециевидное", "Арочное"]}
+                    onChange={() => {}} />
+                  <FieldRow label="Площадь:" value={`${excavation.area} м²`} />
+                  <CheckRow label="Тип:" caption="Задается вручную" />
+                  <FieldRow label="Периметр:" value={`${excavation.perimeter} м`} />
+                </PropGroup>
+
+                <PropGroup title="Длина выработки">
+                  <CheckRow label="Тип:" caption="Задается вручную" />
+                  <FieldRow label="Длина:" value={`${excavation.length} м`} />
+                </PropGroup>
+
+                <PropGroup title="Аэродинамическое сопротивление">
+                  <SelectRowLabeled label="Задается:" value="Проектными данными"
+                    options={["Проектными данными", "По коэффициенту α", "По таблице ВНИИ", "Измеренное"]}
+                    onChange={() => {}} />
+                  <SelectRowLabeled label="Поверхность:" value={excavation.surface}
+                    options={["Воздухоподающая выработка, без неровностей", "Бетонная крепь", "Деревянная крепь", "Анкерная крепь", "Незакреплённая"]}
+                    onChange={(v) => setExcavation({ ...excavation, surface: v })} />
+                  <FieldRow label="Коэф-т α:" value={`${excavation.alphaCoef.toFixed(3)} кг/м³`} />
+                </PropGroup>
+
+                <PropGroup title="Скорость воздуха">
+                  <CheckRow label="Тип:" caption="Задается вручную" />
+                  <FieldRow label="V max:" value={`${excavation.vMax} м/с`} />
+                </PropGroup>
+
+                <PropGroup title="Вычисленные параметры">
+                  <FieldRow label="Сопротив-ие:" value={`${excavation.resistance.toFixed(6)} кМюрг`} computed />
+                  <FieldRow label="Расход:" value={`${excavation.flow} м³/с`} computed />
+                  <FieldRow label="V воздуха:" value={`${excavation.velocity} м/с`} computed />
+                  <FieldRow label="ΔP:" value={`${excavation.dP} Па`} computed />
+                  <FieldRow label="Энергозат-ы:" value={`${excavation.power} Вт`} computed />
+                </PropGroup>
+              </>
+            )}
+
+            {/* ═══ ОСТАЛЬНЫЕ ВКЛАДКИ ═════════════════════════════════════ */}
+            {(activeSide === "thermo" || activeSide === "accidents" || activeSide === "areas"
+              || activeSide === "indicators" || activeSide === "coords") && (
+              <div className="p-4 text-center text-gray-400 text-xs">
+                Вкладка в разработке
+              </div>
+            )}
           </div>
         </div>
 
@@ -502,5 +685,43 @@ function CheckRow({ label, caption }: { label: string; caption: string }) {
         <span className="text-xs text-gray-700">{caption}</span>
       </label>
     </div>
+  );
+}
+
+// ─── Группа в стиле Windows GroupBox (рамка с заголовком) ───────────────────
+function FrameGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="relative pt-2 pb-2 px-2"
+      style={{ border: "1px solid #b8b8b8", borderRadius: "0" }}>
+      <legend className="px-1 text-xs text-gray-700"
+        style={{ marginLeft: "4px", fontWeight: 400 }}>
+        {title}
+      </legend>
+      <div className="space-y-1">
+        {children}
+      </div>
+    </fieldset>
+  );
+}
+
+// Строка с подписью слева (фиксированная ширина) и контентом справа
+function LabeledRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-gray-700 w-[88px] flex-shrink-0 text-right">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function CadCheckbox({ checked, onChange, label }: {
+  checked: boolean; onChange: (v: boolean) => void; label: string;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
+        className="w-[13px] h-[13px] cursor-pointer" />
+      <span className="text-xs text-gray-800">{label}</span>
+    </label>
   );
 }

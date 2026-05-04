@@ -101,6 +101,31 @@
   animation: pulse-ring 1.5s infinite;
 }
 
+/* CAD-инпут в стиле Windows-приложений */
+.cad-input {
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid #a0a0a0;
+  background: #ffffff;
+  color: #1f1f1f;
+  height: 22px;
+  outline: none;
+  border-radius: 0;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  min-width: 0;
+}
+.cad-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb33;
+}
+.cad-input:hover:not(:focus):not([readonly]) {
+  border-color: #6b7280;
+}
+select.cad-input {
+  padding: 1px 4px;
+  cursor: pointer;
+}
+
 /* Canvas grid */
 .vent-canvas {
   background-color: hsl(220, 20%, 8%);
