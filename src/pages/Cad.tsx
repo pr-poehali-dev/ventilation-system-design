@@ -3,8 +3,9 @@ import Icon from "@/components/ui/icon";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch,
-  DEMO_NODES, DEMO_BRANCHES, recalcLengths, makeNode, makeBranch,
+  DEMO_NODES, DEMO_BRANCHES, recalcAll, makeNode, makeBranch,
 } from "@/lib/topology";
+import { SURFACE_TYPES } from "@/lib/aerodynamics";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -100,13 +101,17 @@ export default function CadPage() {
   const [tool, setTool] = useState<CadTool>("select");
   const [zLevel, setZLevel] = useState(0);
 
-  // Авто-пересчёт длин по координатам
-  const branches = useMemo(() => recalcLengths(nodes, branchesRaw), [nodes, branchesRaw]);
+  // Авто-пересчёт длин и аэродинамики по координатам/параметрам
+  const branches = useMemo(() => recalcAll(nodes, branchesRaw), [nodes, branchesRaw]);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
   const updateNode = (id: string, patch: Partial<TopoNode>) => {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
+  };
+
+  const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
+    setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
   };
 
   const handleNodeAdd = (x: number, y: number, z: number) => {
@@ -414,35 +419,201 @@ export default function CadPage() {
                   <LabeledRow label="ID:">
                     <input type="text" value={selectedBranch.id} readOnly className="cad-input flex-1" />
                   </LabeledRow>
-                  <LabeledRow label="Тип:">
+                  <LabeledRow label="Тип выработки:">
                     <select value={selectedBranch.type}
-                      onChange={(e) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, type: e.target.value } : b))}
+                      onChange={(e) => updateBranch(selectedBranch.id, { type: e.target.value })}
                       className="cad-input flex-1">
-                      {["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.", "Уклон", "Очистной", "Сбойка"].map((t) =>
+                      {["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.", "Уклон", "Очистной", "Сбойка", "Камера"].map((t) =>
                         <option key={t}>{t}</option>)}
                     </select>
                   </LabeledRow>
-                  <LabeledRow label="От узла:">
-                    <input type="text" value={selectedBranch.fromId} readOnly className="cad-input flex-1" />
-                  </LabeledRow>
-                  <LabeledRow label="К узлу:">
-                    <input type="text" value={selectedBranch.toId} readOnly className="cad-input flex-1" />
+                  <LabeledRow label="От узла → К узлу:">
+                    <div className="flex-1 flex items-center gap-1">
+                      <input type="text" value={selectedBranch.fromId} readOnly className="cad-input w-16 text-center" />
+                      <span>→</span>
+                      <input type="text" value={selectedBranch.toId} readOnly className="cad-input w-16 text-center" />
+                    </div>
                   </LabeledRow>
                 </FrameGroup>
 
-                <FrameGroup title="Геометрия">
-                  <LabeledRow label="Длина:">
-                    <NumWithUnit value={selectedBranch.length} unit="м"
-                      onChange={(v) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, length: v, manualLength: true } : b))} />
+                {/* ── Поперечное сечение ─────────────────────────────── */}
+                <FrameGroup title="Поперечное сечение">
+                  <LabeledRow label="Форма сечения:">
+                    <select value={selectedBranch.shape}
+                      onChange={(e) => updateBranch(selectedBranch.id, { shape: e.target.value as TopoBranch["shape"], manualSection: e.target.value === "custom" })}
+                      className="cad-input flex-1">
+                      <option value="round">Круглое</option>
+                      <option value="rect">Прямоугольное</option>
+                      <option value="trap">Трапециевидное</option>
+                      <option value="arch">Арочное (со сводом)</option>
+                      <option value="custom">Задано вручную</option>
+                    </select>
                   </LabeledRow>
-                  <LabeledRow label="Площадь:">
-                    <NumWithUnit value={selectedBranch.area} unit="м²"
-                      onChange={(v) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, area: v } : b))} />
+
+                  {selectedBranch.shape === "round" && (
+                    <LabeledRow label="Диаметр D:">
+                      <NumWithUnit value={selectedBranch.diameter} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { diameter: v })} />
+                    </LabeledRow>
+                  )}
+                  {selectedBranch.shape === "rect" && (<>
+                    <LabeledRow label="Ширина a:">
+                      <NumWithUnit value={selectedBranch.rectWidth} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { rectWidth: v })} />
+                    </LabeledRow>
+                    <LabeledRow label="Высота b:">
+                      <NumWithUnit value={selectedBranch.rectHeight} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { rectHeight: v })} />
+                    </LabeledRow>
+                  </>)}
+                  {selectedBranch.shape === "trap" && (<>
+                    <LabeledRow label="Низ a:">
+                      <NumWithUnit value={selectedBranch.rectWidth} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { rectWidth: v })} />
+                    </LabeledRow>
+                    <LabeledRow label="Верх c:">
+                      <NumWithUnit value={selectedBranch.trapTopWidth} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { trapTopWidth: v })} />
+                    </LabeledRow>
+                    <LabeledRow label="Высота h:">
+                      <NumWithUnit value={selectedBranch.rectHeight} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { rectHeight: v })} />
+                    </LabeledRow>
+                  </>)}
+                  {selectedBranch.shape === "arch" && (<>
+                    <LabeledRow label="Ширина a:">
+                      <NumWithUnit value={selectedBranch.rectWidth} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { rectWidth: v })} />
+                    </LabeledRow>
+                    <LabeledRow label="Высота стен b:">
+                      <NumWithUnit value={selectedBranch.rectHeight} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { rectHeight: v })} />
+                    </LabeledRow>
+                    <LabeledRow label="Свод (полукруг):">
+                      <span className="text-xs text-gray-500 flex-1">радиус a/2 = {(selectedBranch.rectWidth / 2).toFixed(2)} м</span>
+                    </LabeledRow>
+                  </>)}
+                  {selectedBranch.shape === "custom" && (<>
+                    <LabeledRow label="Площадь S:">
+                      <NumWithUnit value={selectedBranch.area} unit="м²"
+                        onChange={(v) => updateBranch(selectedBranch.id, { area: v })} />
+                    </LabeledRow>
+                    <LabeledRow label="Периметр P:">
+                      <NumWithUnit value={selectedBranch.perimeter} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { perimeter: v })} />
+                    </LabeledRow>
+                  </>)}
+
+                  <div className="pt-1 mt-1 border-t border-gray-200">
+                    <ComputedRow label="Площадь S:" value={`${selectedBranch.area.toFixed(2)} м²`} />
+                    <ComputedRow label="Периметр P:" value={`${selectedBranch.perimeter.toFixed(2)} м`} />
+                    <ComputedRow label="Гидр. диаметр Dh:" value={`${selectedBranch.dh.toFixed(2)} м`} />
+                  </div>
+                </FrameGroup>
+
+                {/* ── Длина выработки ───────────────────────────────── */}
+                <FrameGroup title="Длина выработки">
+                  <LabeledRow label="Способ:">
+                    <select value={selectedBranch.manualLength ? "manual" : "auto"}
+                      onChange={(e) => updateBranch(selectedBranch.id, { manualLength: e.target.value === "manual" })}
+                      className="cad-input flex-1">
+                      <option value="auto">Автоматически (по координатам)</option>
+                      <option value="manual">Задаётся вручную</option>
+                    </select>
                   </LabeledRow>
-                  <LabeledRow label="Периметр:">
-                    <NumWithUnit value={selectedBranch.perimeter} unit="м"
-                      onChange={(v) => setBranches((p) => p.map((b) => b.id === selectedBranch.id ? { ...b, perimeter: v } : b))} />
+                  <LabeledRow label="Длина L:">
+                    {selectedBranch.manualLength ? (
+                      <NumWithUnit value={selectedBranch.length} unit="м"
+                        onChange={(v) => updateBranch(selectedBranch.id, { length: v })} />
+                    ) : (
+                      <ComputedRow label="" value={`${selectedBranch.length} м`} />
+                    )}
                   </LabeledRow>
+                </FrameGroup>
+
+                {/* ── Аэродинамическое сопротивление ────────────────── */}
+                <FrameGroup title="Аэродинамическое сопротивление">
+                  <LabeledRow label="Способ задания:">
+                    <select value={selectedBranch.resistanceMode}
+                      onChange={(e) => updateBranch(selectedBranch.id, { resistanceMode: e.target.value as TopoBranch["resistanceMode"] })}
+                      className="cad-input flex-1">
+                      <option value="surface">По типу поверхности (ВНИИГД)</option>
+                      <option value="alpha">По коэффициенту α</option>
+                      <option value="roughness">По шероховатости Δ</option>
+                      <option value="manual">Вручную (R)</option>
+                    </select>
+                  </LabeledRow>
+
+                  {selectedBranch.resistanceMode === "surface" && (
+                    <LabeledRow label="Поверхность:">
+                      <select value={selectedBranch.surfaceId}
+                        onChange={(e) => {
+                          const s = SURFACE_TYPES.find((x) => x.id === e.target.value);
+                          if (s) updateBranch(selectedBranch.id, {
+                            surfaceId: s.id, surface: s.name, alphaCoef: s.alpha, roughness: s.roughness,
+                          });
+                        }}
+                        className="cad-input flex-1">
+                        {SURFACE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </LabeledRow>
+                  )}
+
+                  {(selectedBranch.resistanceMode === "alpha" || selectedBranch.resistanceMode === "surface") && (
+                    <LabeledRow label="Коэф-т α:">
+                      {selectedBranch.resistanceMode === "alpha" ? (
+                        <NumWithUnit value={selectedBranch.alphaCoef} unit="·10⁻⁴"
+                          onChange={(v) => updateBranch(selectedBranch.id, { alphaCoef: v })} />
+                      ) : (
+                        <ComputedRow label="" value={`${selectedBranch.alphaCoef} ·10⁻⁴ Н·с²/м⁴`} />
+                      )}
+                    </LabeledRow>
+                  )}
+
+                  {selectedBranch.resistanceMode === "roughness" && (
+                    <LabeledRow label="Шероховатость Δ:">
+                      <NumWithUnit value={selectedBranch.roughness} unit="мм"
+                        onChange={(v) => updateBranch(selectedBranch.id, { roughness: v })} />
+                    </LabeledRow>
+                  )}
+
+                  {selectedBranch.resistanceMode === "manual" && (
+                    <LabeledRow label="Сопротивление R:">
+                      <NumWithUnit value={selectedBranch.manualR} unit="кμ"
+                        onChange={(v) => updateBranch(selectedBranch.id, { manualR: v })} />
+                    </LabeledRow>
+                  )}
+
+                  <LabeledRow label="Местные ξ (сумма):">
+                    <NumWithUnit value={selectedBranch.localXi} unit="—"
+                      onChange={(v) => updateBranch(selectedBranch.id, { localXi: v })} />
+                  </LabeledRow>
+                </FrameGroup>
+
+                {/* ── Воздушный поток (вход) ───────────────────────── */}
+                <FrameGroup title="Воздушный поток">
+                  <LabeledRow label="Расход Q:">
+                    <NumWithUnit value={selectedBranch.flow} unit="м³/с"
+                      onChange={(v) => updateBranch(selectedBranch.id, { flow: v })} />
+                  </LabeledRow>
+                  <LabeledRow label="V max доп.:">
+                    <NumWithUnit value={selectedBranch.vMax} unit="м/с"
+                      onChange={(v) => updateBranch(selectedBranch.id, { vMax: v })} />
+                  </LabeledRow>
+                </FrameGroup>
+
+                {/* ── Вычисленные параметры ────────────────────────── */}
+                <FrameGroup title="Вычисленные параметры">
+                  <ComputedRow label="R (трение):" value={`${(selectedBranch.rFriction * 1000).toFixed(4)} ·10⁻³ кμ`} />
+                  <ComputedRow label="R (местные):" value={`${(selectedBranch.rLocal * 1000).toFixed(4)} ·10⁻³ кμ`} />
+                  <ComputedRow label="R общее:" value={`${(selectedBranch.resistance * 1000).toFixed(4)} ·10⁻³ кμ`} />
+                  {selectedBranch.resistanceMode === "roughness" && (
+                    <ComputedRow label="λ (Дарси):" value={selectedBranch.lambda.toFixed(4)} />
+                  )}
+                  <ComputedRow label="Скорость V:" value={`${selectedBranch.velocity.toFixed(2)} м/с${selectedBranch.velocity > selectedBranch.vMax ? " ⚠" : ""}`} />
+                  <ComputedRow label="Депрессия ΔP:" value={`${selectedBranch.dP.toFixed(1)} Па`} />
+                  <ComputedRow label="Энергозатраты N:" value={`${selectedBranch.power} Вт`} />
+                  <ComputedRow label="Re (Рейнольдс):" value={`${(selectedBranch.reynolds / 1000).toFixed(0)} тыс.`} />
                 </FrameGroup>
               </div>
             )}

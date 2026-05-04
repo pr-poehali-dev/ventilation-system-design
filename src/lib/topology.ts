@@ -32,22 +32,39 @@ export interface TopoBranch {
   fromId: string;
   toId: string;
   type: string;
-  // Геометрия выработки
-  area: number;         // м²
-  perimeter: number;    // м
-  length: number;       // м (рассчитывается из координат, но может задаваться)
+  // ─── Геометрия выработки ─────────────────────────────
+  shape: "round" | "rect" | "trap" | "arch" | "custom";
+  diameter: number;         // м (для круглого)
+  rectWidth: number;        // м (a — ширина прямоугольника / основание)
+  rectHeight: number;       // м (b — высота прямой части)
+  trapTopWidth: number;     // м (верхнее основание трапеции)
+  archHeight: number;       // м (высота свода)
+  area: number;             // м² — итог сечения
+  perimeter: number;        // м — итог периметра
+  dh: number;               // м — гидравлический диаметр (4S/P)
+  length: number;           // м — рассчитывается из координат, но может задаваться
   manualLength: boolean;
-  // Аэродинамика
-  alphaCoef: number;    // кг/м³
-  surface: string;
-  vMax: number;
-  // Расчётные
-  resistance: number;
-  flow: number;
-  velocity: number;
-  dP: number;
-  power: number;
-  // Общие
+  manualSection: boolean;   // S и P заданы вручную (mode=custom)
+  // ─── Аэродинамика ────────────────────────────────────
+  resistanceMode: "alpha" | "surface" | "roughness" | "manual";
+  alphaCoef: number;        // ×10⁻⁴ Н·с²/м⁴ — коэффициент сопротивления крепи
+  surfaceId: string;        // ID типа поверхности из справочника
+  surface: string;          // подпись (для отображения)
+  roughness: number;        // мм — эквивалентная шероховатость
+  manualR: number;          // Н·с²/м⁸ — ручной ввод сопротивления
+  localXi: number;          // суммарный ξ местных сопротивлений
+  vMax: number;             // м/с — макс. допустимая скорость
+  // ─── Расчётные ───────────────────────────────────────
+  resistance: number;       // итог R, Н·с²/м⁸
+  rFriction: number;        // R от трения
+  rLocal: number;           // R от местных
+  lambda: number;           // коэф. Дарси (если режим roughness)
+  flow: number;             // м³/с
+  velocity: number;         // м/с
+  dP: number;               // Па
+  power: number;            // Вт
+  reynolds: number;         // Re
+  // ─── Общие ───────────────────────────────────────────
   layer: string;
 }
 
@@ -78,18 +95,38 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fromId,
     toId,
     type: "Ствол ЮВС",
+    // Геометрия — по умолчанию прямоугольник 7×5.5 м (≈ 38.5 м²)
+    shape: "rect",
+    diameter: 7,
+    rectWidth: 7,
+    rectHeight: 5.5,
+    trapTopWidth: 5,
+    archHeight: 1.5,
     area: 38.5,
-    perimeter: 22,
+    perimeter: 25,
+    dh: (4 * 38.5) / 25,
     length: 0,
     manualLength: false,
-    alphaCoef: 0.009,
+    manualSection: false,
+    // Аэродинамика
+    resistanceMode: "surface",
+    alphaCoef: 9,                               // ×10⁻⁴ Н·с²/м⁴
+    surfaceId: "smooth",
     surface: "Воздухоподающая выработка, без неровностей",
+    roughness: 1,                               // мм
+    manualR: 0,
+    localXi: 0,
     vMax: 15,
+    // Расчётные
     resistance: 0,
+    rFriction: 0,
+    rLocal: 0,
+    lambda: 0,
     flow: 0,
     velocity: 0,
     dP: 0,
     power: 0,
+    reynolds: 0,
     layer: "Стволы",
     ...partial,
   };
@@ -159,13 +196,27 @@ export const DEMO_NODES: TopoNode[] = [
 ];
 
 export const DEMO_BRANCHES: TopoBranch[] = [
-  makeBranch("B1", "U1", "N1", { type: "Ствол ЮВС",  layer: "Стволы",    area: 38.5, perimeter: 22 }),
-  makeBranch("B2", "N1", "N2", { type: "Квершлаг",   layer: "Квершлаги", area: 14,   perimeter: 15 }),
-  makeBranch("B3", "N2", "N3", { type: "Уклон",      layer: "Уклоны",    area: 12,   perimeter: 14 }),
-  makeBranch("B4", "N3", "N4", { type: "Штрек откат.",layer: "Штреки",   area: 10,   perimeter: 13 }),
-  makeBranch("B5", "N4", "N5", { type: "Очистной",   layer: "Лавы",      area: 4.5,  perimeter: 9 }),
-  makeBranch("B6", "N5", "N6", { type: "Штрек вент.",layer: "Штреки",    area: 10,   perimeter: 13 }),
-  makeBranch("B7", "N6", "U2", { type: "Ствол СВС",  layer: "Стволы",    area: 38.5, perimeter: 22 }),
+  makeBranch("B1", "U1", "N1", { type: "Ствол ЮВС",   layer: "Стволы",    shape: "round", diameter: 7,
+                                  surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью", alphaCoef: 15, roughness: 5,
+                                  flow: 211, vMax: 15 }),
+  makeBranch("B2", "N1", "N2", { type: "Квершлаг",    layer: "Квершлаги", shape: "arch",  rectWidth: 4, rectHeight: 2.5, archHeight: 1.5,
+                                  surfaceId: "concrete", surface: "Бетонная крепь гладкая", alphaCoef: 12, roughness: 3,
+                                  flow: 211 }),
+  makeBranch("B3", "N2", "N3", { type: "Уклон",       layer: "Уклоны",    shape: "rect",  rectWidth: 4, rectHeight: 3,
+                                  surfaceId: "anchor", surface: "Анкерная крепь", alphaCoef: 35, roughness: 50,
+                                  flow: 211 }),
+  makeBranch("B4", "N3", "N4", { type: "Штрек откат.",layer: "Штреки",    shape: "arch",  rectWidth: 4, rectHeight: 2, archHeight: 1.5,
+                                  surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 50, roughness: 60,
+                                  flow: 211 }),
+  makeBranch("B5", "N4", "N5", { type: "Очистной",    layer: "Лавы",      shape: "rect",  rectWidth: 3, rectHeight: 1.5,
+                                  surfaceId: "lava", surface: "Очистной забой (лава)", alphaCoef: 150, roughness: 200,
+                                  flow: 211, localXi: 8 }),
+  makeBranch("B6", "N5", "N6", { type: "Штрек вент.", layer: "Штреки",    shape: "arch",  rectWidth: 4, rectHeight: 2, archHeight: 1.5,
+                                  surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 50, roughness: 60,
+                                  flow: 211 }),
+  makeBranch("B7", "N6", "U2", { type: "Ствол СВС",   layer: "Стволы",    shape: "round", diameter: 7,
+                                  surfaceId: "shaft_skip", surface: "Ствол со скиповым подъёмом", alphaCoef: 45, roughness: 50,
+                                  flow: 211, vMax: 15 }),
 ];
 
 // Авто-расчёт длин на основе координат
@@ -177,4 +228,70 @@ export function recalcLengths(nodes: TopoNode[], branches: TopoBranch[]): TopoBr
     if (!from || !to) return b;
     return { ...b, length: Math.round(calcBranchLength(from, to)) };
   });
+}
+
+// ─── Полный пересчёт аэродинамики ветви ─────────────────────────────────────
+// Пересчитывает: геометрию сечения (S, P, Dh), сопротивление R,
+// скорость, депрессию, мощность, Re — на основании заданных входов.
+import { calcSection, calcResistance, velocity as calcVel, depression, airPower, reynolds } from "./aerodynamics";
+
+export function recalcBranchAero(b: TopoBranch): TopoBranch {
+  // 1) Геометрия сечения (если не задана вручную)
+  let area = b.area;
+  let perimeter = b.perimeter;
+  let dh = b.dh;
+  if (!b.manualSection) {
+    const s = calcSection({
+      shape: b.shape,
+      diameter: b.diameter,
+      width: b.rectWidth,
+      height: b.rectHeight,
+      topWidth: b.trapTopWidth,
+      archHeight: b.archHeight,
+    });
+    area = s.area;
+    perimeter = s.perimeter;
+    dh = s.dh;
+  } else {
+    dh = perimeter > 0 ? Math.round((4 * area) / perimeter * 1000) / 1000 : 0;
+  }
+
+  // 2) Сопротивление
+  const r = calcResistance({
+    mode: b.resistanceMode,
+    alpha: b.alphaCoef,
+    roughness: b.roughness,
+    manualR: b.manualR,
+    localXi: b.localXi,
+    S: area,
+    P: perimeter,
+    L: b.length,
+    Q: b.flow,
+  });
+
+  // 3) Поток
+  const V = calcVel(b.flow, area);
+  const dP = depression(r.R, b.flow);
+  const N = airPower(dP, b.flow);
+  const Re = area > 0 && dh > 0 ? reynolds(V, dh) : 0;
+
+  return {
+    ...b,
+    area,
+    perimeter,
+    dh,
+    resistance: r.R,
+    rFriction: r.Rfriction,
+    rLocal: r.Rlocal,
+    lambda: r.lambda ?? 0,
+    velocity: Math.round(V * 100) / 100,
+    dP: Math.round(dP * 10) / 10,
+    power: Math.round(N),
+    reynolds: Math.round(Re),
+  };
+}
+
+// Пересчёт всех ветвей: длины + аэродинамика
+export function recalcAll(nodes: TopoNode[], branches: TopoBranch[]): TopoBranch[] {
+  return recalcLengths(nodes, branches).map(recalcBranchAero);
 }

@@ -1,0 +1,221 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Аэродинамические расчёты горных выработок (АэроСеть / Вентиляция 2.0)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SectionShape = "round" | "rect" | "trap" | "arch" | "custom";
+
+export interface SectionParams {
+  shape: SectionShape;
+  // Параметры формы (используются в зависимости от shape)
+  diameter?: number;     // м — для круглого
+  width?: number;        // м — a (ширина) для прямоугольного, ширина основания для трапеции/арки
+  height?: number;       // м — b (высота) для прямоугольного, высота сечения
+  topWidth?: number;     // м — верхнее основание для трапеции
+  archHeight?: number;   // м — стрела свода для арочного
+  // Если custom — вводятся напрямую
+  area?: number;         // м²
+  perimeter?: number;    // м
+}
+
+// ─── Геометрия сечения: возвращает { S, P, Dh } ────────────────────────────
+export function calcSection(p: SectionParams): { area: number; perimeter: number; dh: number } {
+  let area = 0;
+  let perimeter = 0;
+
+  switch (p.shape) {
+    case "round": {
+      const d = p.diameter ?? 0;
+      area = (Math.PI * d * d) / 4;
+      perimeter = Math.PI * d;
+      break;
+    }
+    case "rect": {
+      const a = p.width ?? 0;
+      const b = p.height ?? 0;
+      area = a * b;
+      perimeter = 2 * (a + b);
+      break;
+    }
+    case "trap": {
+      const a = p.width ?? 0;       // нижнее
+      const c = p.topWidth ?? a;    // верхнее
+      const h = p.height ?? 0;
+      area = ((a + c) / 2) * h;
+      // боковые стороны (равнобокая трапеция)
+      const side = Math.sqrt(h * h + Math.pow((a - c) / 2, 2));
+      perimeter = a + c + 2 * side;
+      break;
+    }
+    case "arch": {
+      // прямоугольник + полукруг сверху радиусом w/2
+      const a = p.width ?? 0;
+      const b = p.height ?? 0;        // прямая часть стен
+      const r = a / 2;
+      area = a * b + (Math.PI * r * r) / 2;
+      perimeter = a + 2 * b + Math.PI * r;
+      break;
+    }
+    case "custom":
+    default: {
+      area = p.area ?? 0;
+      perimeter = p.perimeter ?? 0;
+    }
+  }
+
+  const dh = perimeter > 0 ? (4 * area) / perimeter : 0;
+  return {
+    area: round(area, 3),
+    perimeter: round(perimeter, 2),
+    dh: round(dh, 3),
+  };
+}
+
+function round(v: number, p: number): number {
+  const k = Math.pow(10, p);
+  return Math.round(v * k) / k;
+}
+
+// ─── Справочник типов поверхностей и α (кН·с²/м⁴ ≡ кг/м³) ──────────────────
+// Значения по справочнику ВНИИГД / Воронина — типовые для горных выработок
+export interface SurfaceType {
+  id: string;
+  name: string;
+  alpha: number;         // ×10⁻⁴ Н·с²/м⁴
+  roughness: number;     // мм — эквивалентная шероховатость
+}
+
+export const SURFACE_TYPES: SurfaceType[] = [
+  { id: "smooth",        name: "Воздухоподающая выработка, без неровностей", alpha: 9,    roughness: 1   },
+  { id: "concrete",      name: "Бетонная крепь гладкая",                      alpha: 12,   roughness: 3   },
+  { id: "concrete_rough",name: "Бетонная крепь, неровности до 50 мм",         alpha: 30,   roughness: 30  },
+  { id: "anchor",        name: "Анкерная крепь",                              alpha: 35,   roughness: 50  },
+  { id: "wood",          name: "Деревянная крепь, рамная",                    alpha: 60,   roughness: 80  },
+  { id: "metal_arch",    name: "Металлическая арочная крепь",                 alpha: 50,   roughness: 60  },
+  { id: "uncoupled",     name: "Незакреплённая, ровная порода",               alpha: 25,   roughness: 25  },
+  { id: "uncoupled_r",   name: "Незакреплённая, рваный контур",               alpha: 80,   roughness: 120 },
+  { id: "shaft_smooth",  name: "Ствол с тюбинговой крепью",                   alpha: 15,   roughness: 5   },
+  { id: "shaft_skip",    name: "Ствол со скиповым подъёмом",                  alpha: 45,   roughness: 50  },
+  { id: "lava",          name: "Очистной забой (лава)",                       alpha: 150,  roughness: 200 },
+];
+
+// ─── Способ задания сопротивления ──────────────────────────────────────────
+export type ResistanceMode =
+  | "alpha"        // По коэффициенту α
+  | "surface"      // По типу поверхности (таблица ВНИИ)
+  | "roughness"    // По эквивалентной шероховатости Δ (Альтшуль/Никурадзе)
+  | "manual";      // Вручную (проектные данные / замеры)
+
+// ─── Расчёт сопротивления R (Н·с²/м⁸ = кмюрг) ──────────────────────────────
+//
+// Базовая формула Аткинсона: R = α · P · L / S³
+//   α — кг/м³ (1 Н·с²/м⁴ = 1 кг/м³)
+//   P — периметр, м
+//   L — длина, м
+//   S — площадь, м²
+//
+export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
+  if (S <= 0) return 0;
+  // alpha в [×10⁻⁴ Н·с²/м⁴], переводим в Н·с²/м⁴
+  const a = alpha * 1e-4;
+  return (a * P * L) / Math.pow(S, 3);
+}
+
+// Расчёт через шероховатость: R = λ·L·P / (8·S³)
+// λ — коэффициент Дарси, по Альтшулю: λ = 0.11·(Δ/Dh + 68/Re)^0.25
+// Для развитой турбулентности в выработках Re→∞: λ = 0.11·(Δ/Dh)^0.25
+export function resistanceFromRoughness(deltaMm: number, S: number, P: number, L: number, Re?: number): number {
+  if (S <= 0 || P <= 0) return 0;
+  const Dh = (4 * S) / P;
+  const relRoughness = (deltaMm / 1000) / Dh;
+  let lambda: number;
+  if (Re && Re > 0) {
+    lambda = 0.11 * Math.pow(relRoughness + 68 / Re, 0.25);
+  } else {
+    lambda = 0.11 * Math.pow(relRoughness, 0.25);
+  }
+  return (lambda * L * P) / (8 * Math.pow(S, 3));
+}
+
+// ─── Производные параметры потока ──────────────────────────────────────────
+export function velocity(Q: number, S: number): number {
+  if (S <= 0) return 0;
+  return Q / S;
+}
+
+// Депрессия ΔP = R·Q² (Па). Знак сохраняется (R·|Q|·Q).
+export function depression(R: number, Q: number): number {
+  return R * Math.abs(Q) * Q;
+}
+
+// Энергозатраты ΔP·Q (Вт)
+export function airPower(dP: number, Q: number): number {
+  return Math.abs(dP * Q);
+}
+
+// Число Рейнольдса (ν воздуха ≈ 1.5×10⁻⁵ м²/с при 20°C)
+export function reynolds(V: number, Dh: number, nu: number = 1.5e-5): number {
+  return (V * Dh) / nu;
+}
+
+// ─── Главная функция: считает R с учётом местных сопротивлений ξ ────────────
+export interface ResistanceInput {
+  mode: ResistanceMode;
+  alpha: number;          // ×10⁻⁴ Н·с²/м⁴
+  roughness: number;      // мм
+  manualR: number;        // Н·с²/м⁸
+  localXi: number;        // суммарный ξ местных сопротивлений
+  S: number;              // м²
+  P: number;              // м
+  L: number;              // м
+  Q?: number;             // м³/с (опц., для уточнения по Re)
+  rho?: number;           // кг/м³, плотность воздуха (по умолч. 1.2)
+}
+
+export function calcResistance(i: ResistanceInput): {
+  R: number;          // итог Н·с²/м⁸
+  Rfriction: number;  // от трения
+  Rlocal: number;     // от местных
+  lambda?: number;
+  Re?: number;
+  Dh: number;
+} {
+  const Dh = i.P > 0 ? (4 * i.S) / i.P : 0;
+  let Rfriction = 0;
+  let lambda: number | undefined;
+  let Re: number | undefined;
+
+  if (i.Q && Dh > 0 && i.S > 0) {
+    Re = reynolds(velocity(i.Q, i.S), Dh);
+  }
+
+  switch (i.mode) {
+    case "alpha":
+      Rfriction = resistanceFromAlpha(i.alpha, i.P, i.L, i.S);
+      break;
+    case "surface":
+      Rfriction = resistanceFromAlpha(i.alpha, i.P, i.L, i.S);
+      break;
+    case "roughness": {
+      Rfriction = resistanceFromRoughness(i.roughness, i.S, i.P, i.L, Re);
+      const relR = (i.roughness / 1000) / (Dh || 1);
+      lambda = 0.11 * Math.pow(relR + (Re ? 68 / Re : 0), 0.25);
+      break;
+    }
+    case "manual":
+      Rfriction = i.manualR;
+      break;
+  }
+
+  // Местные ξ → R_local = ξ · ρ / (2·S²)   (т.к. ΔP_loc = ξ·ρ·V²/2 = ξ·ρ·Q²/(2S²))
+  const rho = i.rho ?? 1.2;
+  const Rlocal = i.S > 0 ? (i.localXi * rho) / (2 * i.S * i.S) : 0;
+
+  return {
+    R: Rfriction + Rlocal,
+    Rfriction,
+    Rlocal,
+    lambda,
+    Re,
+    Dh,
+  };
+}
