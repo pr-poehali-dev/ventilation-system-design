@@ -6,6 +6,7 @@ import {
   DEMO_NODES, DEMO_BRANCHES, recalcAll, makeNode, makeBranch,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
+import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -135,6 +136,16 @@ export default function CadPage() {
     updateNode(id, { x, y });
   };
 
+  // ─── Результат расчёта сети ─────────────────────────────────────────
+  const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
+
+  const handleSolve = () => {
+    const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
+    setBranches(res.branches);
+    setNodes(res.nodes);
+    setSolveResult(res);
+  };
+
   const handleDeleteSelected = () => {
     if (selectedBranchId) {
       setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
@@ -253,6 +264,38 @@ export default function CadPage() {
             <RibbonBigBtn icon="ClipboardPaste" label="Вставить" sublabel="" disabled />
             <RibbonBigBtn icon="Scissors" label="Вырезать" sublabel="" />
             <RibbonBigBtn icon="Copy" label="Копировать" sublabel="" />
+          </div>
+        </RibbonGroup>
+
+        {/* ── Группа: Расчёт сети ── */}
+        <RibbonGroup label="Расчёт сети">
+          <div className="flex items-stretch gap-1">
+            <button onClick={handleSolve}
+              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[64px]"
+              title="Запустить расчёт сети методом контурных расходов (Кросса)">
+              <Icon name="Play" size={22} className="text-green-600" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">
+                <div>Расчёт</div><div>сети</div>
+              </div>
+            </button>
+            <button onClick={() => { setBranches(DEMO_BRANCHES); setNodes(DEMO_NODES); setSolveResult(null); }}
+              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[64px]"
+              title="Сбросить демо-сеть">
+              <Icon name="RotateCcw" size={22} className="text-gray-700" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">
+                <div>Сбросить</div><div>демо</div>
+              </div>
+            </button>
+            {solveResult && (
+              <div className="flex flex-col justify-center px-2 text-[10px] border-l border-gray-300 ml-1">
+                <div className={solveResult.ok ? "text-green-700" : "text-red-700"}>
+                  {solveResult.ok ? "✔ Сошлось" : "✘ Не сошлось"}
+                </div>
+                <div className="text-gray-600">Итераций: {solveResult.iterations}</div>
+                <div className="text-gray-600">Контуров: {solveResult.cyclesCount}</div>
+                <div className="text-gray-500">max ΔQ: {solveResult.maxDeltaQ.toExponential(2)}</div>
+              </div>
+            )}
           </div>
         </RibbonGroup>
       </div>
@@ -602,6 +645,29 @@ export default function CadPage() {
                   </LabeledRow>
                 </FrameGroup>
 
+                {/* ── Вентилятор ────────────────────────────────────── */}
+                <FrameGroup title="Вентилятор (источник напора)">
+                  <LabeledRow label="Установлен:">
+                    <input type="checkbox" checked={selectedBranch.hasFan}
+                      onChange={(e) => updateBranch(selectedBranch.id, { hasFan: e.target.checked })}
+                      className="w-[13px] h-[13px] cursor-pointer" />
+                  </LabeledRow>
+                  {selectedBranch.hasFan && (<>
+                    <LabeledRow label="Название:">
+                      <input type="text" value={selectedBranch.fanName}
+                        onChange={(e) => updateBranch(selectedBranch.id, { fanName: e.target.value })}
+                        className="cad-input flex-1" placeholder="напр. ВЦ-32" />
+                    </LabeledRow>
+                    <LabeledRow label="Депрессия H:">
+                      <NumWithUnit value={selectedBranch.fanPressure} unit="Па"
+                        onChange={(v) => updateBranch(selectedBranch.id, { fanPressure: v })} />
+                    </LabeledRow>
+                    <div className="text-[10px] text-gray-500 pl-1">
+                      Положительный H — поток в направлении {selectedBranch.fromId} → {selectedBranch.toId}
+                    </div>
+                  </>)}
+                </FrameGroup>
+
                 {/* ── Вычисленные параметры ────────────────────────── */}
                 <FrameGroup title="Вычисленные параметры">
                   <ComputedRow label="R (трение):" value={`${(selectedBranch.rFriction * 1000).toFixed(4)} ·10⁻³ кμ`} />
@@ -869,7 +935,13 @@ export default function CadPage() {
           <span className="text-gray-400">|</span>
           <span>Z-уровень: {zLevel} м</span>
           <span className="text-gray-400">|</span>
-          <span style={{ color: "#16a34a" }}>● Топология актуальна</span>
+          {solveResult ? (
+            <span style={{ color: solveResult.ok ? "#16a34a" : "#dc2626" }}>
+              ● Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
+            </span>
+          ) : (
+            <span style={{ color: "#9ca3af" }}>● Расчёт не выполнялся</span>
+          )}
         </div>
       </div>
     </div>

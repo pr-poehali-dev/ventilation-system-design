@@ -54,6 +54,10 @@ export interface TopoBranch {
   manualR: number;          // Н·с²/м⁸ — ручной ввод сопротивления
   localXi: number;          // суммарный ξ местных сопротивлений
   vMax: number;             // м/с — макс. допустимая скорость
+  // ─── Вентилятор (источник напора) ────────────────────
+  hasFan: boolean;          // ветвь содержит вентилятор
+  fanPressure: number;      // Па — депрессия вентилятора (от fromId к toId)
+  fanName: string;
   // ─── Расчётные ───────────────────────────────────────
   resistance: number;       // итог R, Н·с²/м⁸
   rFriction: number;        // R от трения
@@ -117,6 +121,9 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     manualR: 0,
     localXi: 0,
     vMax: 15,
+    hasFan: false,
+    fanPressure: 0,
+    fanName: "",
     // Расчётные
     resistance: 0,
     rFriction: 0,
@@ -216,7 +223,8 @@ export const DEMO_BRANCHES: TopoBranch[] = [
                                   flow: 211 }),
   makeBranch("B7", "N6", "U2", { type: "Ствол СВС",   layer: "Стволы",    shape: "round", diameter: 7,
                                   surfaceId: "shaft_skip", surface: "Ствол со скиповым подъёмом", alphaCoef: 45, roughness: 50,
-                                  flow: 211, vMax: 15 }),
+                                  flow: 211, vMax: 15,
+                                  hasFan: true, fanPressure: 3500, fanName: "ВЦ-32 (главный)" }),
 ];
 
 // Авто-расчёт длин на основе координат

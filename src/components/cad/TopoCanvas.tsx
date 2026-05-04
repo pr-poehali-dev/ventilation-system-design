@@ -208,25 +208,51 @@ export default function TopoCanvas(props: Props) {
           const to = projNodes.find((p) => p.node.id === b.toId);
           if (!from || !to) return null;
           const isSel = selectedBranchId === b.id;
+          // Если Q отрицателен — поток в обратную сторону, разворачиваем визуально
+          const reversed = b.flow < 0;
+          const sx1 = reversed ? to.sx : from.sx;
+          const sy1 = reversed ? to.sy : from.sy;
+          const sx2 = reversed ? from.sx : to.sx;
+          const sy2 = reversed ? from.sy : to.sy;
           const midX = (from.sx + to.sx) / 2;
           const midY = (from.sy + to.sy) / 2;
           const len = b.length || Math.round(calcBranchLength(from.node, to.node));
+          const Q = Math.abs(b.flow);
+          // Цвет по скорости: зелёный (норма), оранжевый (>vMax)
+          const overV = b.velocity > b.vMax;
+          const color = isSel ? "#2563eb" : b.hasFan ? "#7c3aed" : overV ? "#dc2626" : Q > 0 ? "#0369a1" : "#1f2937";
+          // Толщина по расходу
+          const w = isSel ? 3 : Q > 100 ? 3 : Q > 30 ? 2.5 : 2;
 
           return (
             <g key={b.id}>
-              <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                stroke={isSel ? "#2563eb" : "#1f2937"}
-                strokeWidth={isSel ? 3 : 2}
+              <line x1={sx1} y1={sy1} x2={sx2} y2={sy2}
+                stroke={color} strokeWidth={w}
                 markerEnd="url(#topo-arrow)" />
-              {/* Ярлык длины */}
+              {/* Иконка вентилятора */}
+              {b.hasFan && (
+                <g transform={`translate(${midX},${midY - 18})`}>
+                  <circle r="8" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.2" />
+                  <text textAnchor="middle" dominantBaseline="middle"
+                    fontSize="11" fontWeight="bold" fill="#7c3aed">⚙</text>
+                </g>
+              )}
+              {/* Ярлык: длина + расход */}
               {view.scale > 0.15 && (
                 <g transform={`translate(${midX},${midY})`}>
-                  <rect x={-22} y={-9} width={44} height={14} rx="2"
+                  <rect x={-32} y={-12} width={64} height={Q > 0 ? 24 : 14} rx="2"
                     fill="white" stroke={isSel ? "#2563eb" : "#9ca3af"} strokeWidth="0.8" />
-                  <text textAnchor="middle" dominantBaseline="middle"
+                  <text textAnchor="middle" dominantBaseline="middle" y={Q > 0 ? -3 : 0}
                     fontSize="9" fontFamily="Segoe UI" fill="#1f2937">
-                    {len} м
+                    {b.id} · {len}м
                   </text>
+                  {Q > 0 && (
+                    <text textAnchor="middle" dominantBaseline="middle" y="7"
+                      fontSize="9" fontFamily="Segoe UI" fontWeight="600"
+                      fill={overV ? "#dc2626" : "#0369a1"}>
+                      Q={Q.toFixed(1)} м³/с
+                    </text>
+                  )}
                 </g>
               )}
             </g>
@@ -270,11 +296,18 @@ export default function TopoCanvas(props: Props) {
                   </text>
                 )}
               </g>
-              {/* Z-отметка */}
+              {/* Z-отметка + давление */}
               {view.scale > 0.2 && (
                 <text x="0" y={r + 12} textAnchor="middle" fontSize="8" fontFamily="Segoe UI" fill="#9ca3af">
                   Z={node.z}
                 </text>
+              )}
+              {view.scale > 0.25 && node.computedPressure > 0 && !node.atmosphereLink && (
+                <g transform={`translate(8, ${view.scale > 0.25 && node.name ? 22 : 12})`}>
+                  <text fontSize="9" fontFamily="Segoe UI" fontWeight="600" fill="#0369a1">
+                    P={(node.computedPressure / 1000).toFixed(1)} кПа
+                  </text>
+                </g>
               )}
             </g>
           );
