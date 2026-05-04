@@ -147,6 +147,9 @@ export default function CadPage() {
   const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") =>
     setViewPreset({ name, nonce: Date.now() });
 
+  // Режим отображения направления воздушного потока
+  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("flow");
+
   const handleSolve = () => {
     const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
     setBranches(res.branches);
@@ -997,6 +1000,21 @@ export default function CadPage() {
             <ViewBtn label="ИЗО⤵" preset="isoSW" current={viewInfo} onClick={setPreset} hint="Изометрия Ю-З" />
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+
+            {/* ── Направление потока ── */}
+            <span className="text-[11px] text-gray-700" title="Способ показа направления воздушного потока">Поток:</span>
+            <div className="flex border border-gray-300 rounded overflow-hidden">
+              <FlowBtn label="Анимация" active={flowDisplay === "flow"}
+                onClick={() => setFlowDisplay("flow")} hint="Бегущий пунктир в направлении потока" />
+              <FlowBtn label="Стрелки" active={flowDisplay === "chevrons"}
+                onClick={() => setFlowDisplay("chevrons")} hint="Шевроны вдоль ветви" />
+              <FlowBtn label="Оба" active={flowDisplay === "both"}
+                onClick={() => setFlowDisplay("both")} hint="Анимация + шевроны" />
+              <FlowBtn label="Откл" active={flowDisplay === "off"}
+                onClick={() => setFlowDisplay("off")} hint="Без индикации направления" />
+            </div>
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
             <span className="text-[11px] text-gray-700">Z:</span>
             <select value={zLevel} onChange={(e) => setZLevel(Number(e.target.value))}
               className="cad-input text-[11px] py-0" disabled={viewInfo.is3D}>
@@ -1029,6 +1047,7 @@ export default function CadPage() {
               zLevel={zLevel}
               viewPreset={viewPreset}
               onViewChange={setViewInfo}
+              flowDisplay={flowDisplay}
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
@@ -1355,6 +1374,22 @@ function ViewBtn({ label, preset, current, onClick, hint }: {
         background: active ? "#7c3aed" : "transparent",
         color: active ? "white" : "#1f1f1f",
         border: active ? "1px solid #5b21b6" : "1px solid #d0d0d0",
+      }}>
+      {label}
+    </button>
+  );
+}
+
+// ─── Кнопка переключения отображения потока (segmented control) ────────────
+function FlowBtn({ label, active, onClick, hint }: {
+  label: string; active: boolean; onClick: () => void; hint?: string;
+}) {
+  return (
+    <button onClick={onClick} title={hint ?? label}
+      className="h-6 px-2 text-[11px] border-r last:border-r-0 border-gray-300"
+      style={{
+        background: active ? "#0369a1" : "white",
+        color: active ? "white" : "#1f1f1f",
       }}>
       {label}
     </button>

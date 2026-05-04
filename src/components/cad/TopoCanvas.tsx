@@ -27,7 +27,15 @@ interface Props {
   viewPreset?: { name: ViewPreset; nonce: number } | null;
   /** Сообщить наверх о смене режима 2D/3D */
   onViewChange?: (info: { is3D: boolean; azimuth: number; elevation: number }) => void;
+  /** Способ отображения направления потока воздуха */
+  flowDisplay?: FlowDisplayMode;
 }
+
+export type FlowDisplayMode =
+  | "off"        // только статичные линии без направления
+  | "flow"       // бегущая пунктирная анимация (по умолчанию)
+  | "chevrons"   // шевроны ▶ ▶ ▶ вдоль ветви
+  | "both";      // и бегущий пунктир, и шевроны
 
 interface ViewState {
   scale: number;
@@ -41,7 +49,7 @@ export default function TopoCanvas(props: Props) {
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSelectNode, onSelectBranch, zLevel,
-    viewPreset, onViewChange,
+    viewPreset, onViewChange, flowDisplay = "flow",
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -329,10 +337,6 @@ export default function TopoCanvas(props: Props) {
             <rect width={100 * view.scale} height={100 * view.scale} fill="url(#topo-grid-minor)" />
             <path d={`M ${100 * view.scale} 0 L 0 0 0 ${100 * view.scale}`} fill="none" stroke="#dcdcdc" strokeWidth="0.8" />
           </pattern>
-          <marker id="topo-arrow" viewBox="0 0 10 10" refX="9" refY="5"
-            markerWidth="7" markerHeight="7" orient="auto">
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb" />
-          </marker>
         </defs>
 
         {!is3D && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
@@ -357,23 +361,86 @@ export default function TopoCanvas(props: Props) {
           if (!from || !to) return null;
           const isSel = selectedBranchId === b.id;
           const reversed = b.flow < 0;
-          const sx1 = reversed ? to.sx : from.sx;
-          const sy1 = reversed ? to.sy : from.sy;
-          const sx2 = reversed ? from.sx : to.sx;
-          const sy2 = reversed ? from.sy : to.sy;
+          // Координаты «начала потока» → «конца потока»
+          const sxA = reversed ? to.sx : from.sx;
+          const syA = reversed ? to.sy : from.sy;
+          const sxB = reversed ? from.sx : to.sx;
+          const syB = reversed ? from.sy : to.sy;
           const midX = (from.sx + to.sx) / 2;
           const midY = (from.sy + to.sy) / 2;
           const len = b.length || Math.round(calcBranchLength(from.node, to.node));
           const Q = Math.abs(b.flow);
-          const overV = b.velocity > b.vMax;
-          const color = isSel ? "#2563eb" : b.hasFan ? "#7c3aed" : overV ? "#dc2626" : Q > 0 ? "#0369a1" : "#1f2937";
+          const V = b.velocity;
+          const overV = V > b.vMax;
+          // Цвет: фиолетовый = вентилятор, красный = превышение скорости,
+          // голубой = свежая струя (Q>0), серый = без потока
+          const color = isSel ? "#2563eb"
+            : b.hasFan ? "#7c3aed"
+            : overV ? "#dc2626"
+            : Q > 0 ? "#0369a1"
+            : "#9ca3af";
           const w = isSel ? 3 : Q > 100 ? 3 : Q > 30 ? 2.5 : 2;
+          const flowVisible = Q > 0.1 && flowDisplay !== "off";
+          const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
+          const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
+
+          // Длительность анимации (с): ~ обратно пропорц. скорости.
+          // V=15 м/с → 0.6 с, V=1 м/с → 4 с, нижняя граница 0.4 с
+          const animDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V)));
+
+          // Длина отрезка в px и единичный вектор направления
+          const dx = sxB - sxA;
+          const dy = syB - syA;
+          const segLen = Math.hypot(dx, dy);
+          const ux = segLen > 0 ? dx / segLen : 0;
+          const uy = segLen > 0 ? dy / segLen : 0;
 
           return (
             <g key={b.id}>
-              <line x1={sx1} y1={sy1} x2={sx2} y2={sy2}
-                stroke={color} strokeWidth={w}
-                markerEnd="url(#topo-arrow)" />
+              {/* Подложка — статичная линия (всегда от fromId к toId, цвет = тип) */}
+              <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1} />
+
+              {/* Бегущий пунктир в направлении потока (как в Вентиляция 2.0) */}
+              {showDashes && (
+                <line x1={sxA} y1={syA} x2={sxB} y2={syB}
+                  stroke={color} strokeWidth={w} strokeLinecap="butt"
+                  strokeDasharray="10 8" opacity="0.95">
+                  {/* dashoffset уменьшается → штрихи бегут от A к B */}
+                  <animate attributeName="stroke-dashoffset"
+                    from="18" to="0" dur={`${animDur}s`} repeatCount="indefinite" />
+                </line>
+              )}
+
+              {/* Шевроны ▶▶▶ вдоль ветви, повёрнутые по направлению потока */}
+              {showChevrons && segLen > 24 && (() => {
+                const step = 30;                  // px между шевронами
+                const count = Math.max(1, Math.floor(segLen / step));
+                const angle = Math.atan2(uy, ux) * 180 / Math.PI;
+                return (
+                  <g>
+                    {Array.from({ length: count }, (_, i) => {
+                      // фаза смещения для анимации «бегущих» шевронов
+                      const t0 = (i + 1) / (count + 1);
+                      const cx = sxA + dx * t0;
+                      const cy = syA + dy * t0;
+                      return (
+                        <g key={i} transform={`translate(${cx},${cy}) rotate(${angle})`}>
+                          <polygon points="-4,-4 4,0 -4,4"
+                            fill={color} opacity="0.9"
+                            stroke="white" strokeWidth="0.6" />
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
+
+              {/* Маркер «исток» — кружок в начале потока (визуально «входит») */}
+              {flowVisible && (
+                <circle cx={sxA} cy={syA} r="2.5" fill={color} opacity="0.9" />
+              )}
+
               {b.hasFan && (
                 <g transform={`translate(${midX},${midY - 18})`}>
                   <circle r="8" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.2" />
