@@ -80,12 +80,25 @@ export interface TopoBranch {
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
 // Каждый горизонт — это «слой» сети с уникальным цветом и высотной отметкой.
 // Можно скрывать/показывать целиком, перекрашивать ветви, переключать активный.
+// Опционально к горизонту прикрепляется подложка-картинка плана (PNG/JPG).
+export interface HorizonImage {
+  /** PNG/JPG, закодированный в data:URL (хранится локально в браузере). */
+  dataUrl: string;
+  /** Углы прямоугольника подложки в мировых координатах (метры). */
+  bounds: { x1: number; y1: number; x2: number; y2: number };
+  /** Прозрачность 0..1 (по умолчанию 0.6). */
+  opacity: number;
+  /** Видимость подложки (отдельно от видимости ветвей горизонта). */
+  visible: boolean;
+}
+
 export interface Horizon {
   id: string;
   name: string;
   z: number;        // высотная отметка, м
   color: string;    // HEX цвет (#RRGGBB)
   visible: boolean; // отображать ли ветви этого горизонта на схеме
+  image?: HorizonImage; // подложка-картинка (опционально)
 }
 
 export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {

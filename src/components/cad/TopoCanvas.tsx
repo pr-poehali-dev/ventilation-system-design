@@ -18,10 +18,14 @@ interface Props {
   selectedNodeId: string | null;
   selectedBranchId: string | null;
   tool: CadTool;
-  onNodeAdd: (x: number, y: number, z: number) => void;
+  /** Создать новый узел в указанной мировой точке. Возвращает ID нового узла. */
+  onNodeAdd: (x: number, y: number, z: number) => string | void;
   /** Перемещение узла (теперь в 3D возможно по любой координате) */
   onNodeMove: (id: string, x: number, y: number, z?: number) => void;
-  onBranchAdd: (fromId: string, toId: string) => void;
+  /** Создать ветвь между двумя существующими узлами. Возвращает ID новой ветви. */
+  onBranchAdd: (fromId: string, toId: string) => string | void;
+  /** Разделить ветвь, вставив новый узел в указанной точке. Возвращает ID нового узла. */
+  onSplitBranchAt?: (branchId: string, x: number, y: number, z: number) => string | void;
   onSelectNode: (id: string | null) => void;
   onSelectBranch: (id: string | null) => void;
   zLevel: number;
@@ -45,6 +49,16 @@ interface Props {
   colorByHorizon?: boolean;
   /** Показывать стрелки направления свежей струи после расчёта (F9). */
   showFlowArrows?: boolean;
+  /** Внешний управляемый масштаб (px/м). Если задан — синхронизируется в обе стороны. */
+  scaleOverride?: number;
+  /** Колбэк при изменении масштаба внутри (например, колесом мыши). */
+  onScaleChange?: (scale: number) => void;
+  /** Сигнал «вписать всю сеть в экран» — меняется значение → TopoCanvas пересчитывает. */
+  fitToScreenNonce?: number;
+  /** ID горизонта, у которого можно редактировать подложку (тащить углы). */
+  editingHorizonImageId?: string | null;
+  /** Колбэк изменения углов подложки горизонта (после drag). */
+  onHorizonImageBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
 }
 
 export type FlowDisplayMode =
@@ -64,10 +78,12 @@ interface ViewState {
 export default function TopoCanvas(props: Props) {
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
-    onNodeAdd, onNodeMove, onBranchAdd, onSelectNode, onSelectBranch, zLevel,
+    onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
     horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false,
     colorByHorizon = false, showFlowArrows = false,
+    scaleOverride, onScaleChange, fitToScreenNonce,
+    editingHorizonImageId, onHorizonImageBoundsChange,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -99,6 +115,63 @@ export default function TopoCanvas(props: Props) {
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Перетаскивание угла подложки горизонта: какой именно угол тащим.
+  const [draggingCorner, setDraggingCorner] = useState<
+    { horizonId: string; corner: "tl" | "tr" | "bl" | "br" } | null
+  >(null);
+
+  // При смене инструмента сбрасываем «начало ветви» — иначе возникнут призрачные сегменты.
+  useEffect(() => { setBranchFrom(null); }, [tool]);
+
+  // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
+  // Если родитель управляет масштабом (поле «1:N»), применяем его сюда.
+  useEffect(() => {
+    if (scaleOverride === undefined) return;
+    if (Math.abs(scaleOverride - view.scale) < 1e-6) return;
+    setView((v) => ({ ...v, scale: scaleOverride }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scaleOverride]);
+
+  // Сообщаем наверх изменение масштаба (например, после wheel-зума).
+  useEffect(() => {
+    if (onScaleChange) onScaleChange(view.scale);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.scale]);
+
+  // ─── ВПИСАТЬ ВСЮ СЕТЬ В ЭКРАН ───────────────────────────────────────
+  // Реагируем на смену nonce из родителя — пересчитываем scale и offset так,
+  // чтобы все узлы попали в видимую область с отступом 10%.
+  useEffect(() => {
+    if (!fitToScreenNonce) return;
+    if (nodes.length === 0) return;
+    if (size.w < 50 || size.h < 50) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    nodes.forEach((n) => {
+      // Используем «плоскостные» координаты: для плана — x/y, иначе — общая огибающая.
+      const x = n.x;
+      const y = -n.y;       // экран Y — инвертированный мировой Y
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    });
+    const dx = Math.max(1, maxX - minX);
+    const dy = Math.max(1, maxY - minY);
+    const padding = 0.1;
+    const sx = (size.w * (1 - padding * 2)) / dx;
+    const sy = (size.h * (1 - padding * 2)) / dy;
+    const newScale = Math.max(0.005, Math.min(20, Math.min(sx, sy)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    setView((v) => ({
+      ...v,
+      scale: newScale,
+      offsetX: size.w / 2 - cx * newScale,
+      offsetY: size.h / 2 - cy * newScale,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitToScreenNonce]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -178,45 +251,94 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    const hitN = hitNode(sx, sy, projNodes);
+    const hitB = !hitN ? hitBranch(sx, sy, projNodes, branches) : null;
+
+    // ─── ИНСТРУМЕНТ «УЗЕЛ» — непрерывный режим, snap к ветви = split ───
     if (tool === "node") {
+      if (hitN) {
+        // Кликнули по существующему узлу — выделяем, не создаём.
+        onSelectNode(hitN);
+        onSelectBranch(null);
+        return;
+      }
+      if (hitB && onSplitBranchAt) {
+        // Кликнули по ветви — разделяем её новым узлом в точке клика.
+        const w = screenToWorld(sx, sy);
+        if (!w) return;
+        onSplitBranchAt(hitB, Math.round(w.x), Math.round(w.y), Math.round(w.z));
+        return;
+      }
+      // Свободная точка — создаём новый узел.
       const w = screenToWorld(sx, sy);
-      if (!w) return;     // вырожденный случай: смена плоскости нужна
+      if (!w) return;
       onNodeAdd(Math.round(w.x), Math.round(w.y), Math.round(w.z));
       return;
     }
 
-    const hit = hitNode(sx, sy, projNodes);
-    if (hit) {
-      if (tool === "branch") {
+    // ─── ИНСТРУМЕНТ «ВЕТВЬ» — цепочка с промежуточными узлами ─────────
+    if (tool === "branch") {
+      if (hitN) {
         if (!branchFrom) {
-          setBranchFrom(hit);
-          onSelectNode(hit);
-        } else if (branchFrom !== hit) {
-          onBranchAdd(branchFrom, hit);
-          setBranchFrom(null);
+          // Старт цепочки от существующего узла.
+          setBranchFrom(hitN);
+          onSelectNode(hitN);
+          return;
+        }
+        if (branchFrom !== hitN) {
+          // Закрываем сегмент на существующий узел и продолжаем цепочку от него.
+          onBranchAdd(branchFrom, hitN);
+          setBranchFrom(hitN);
+          onSelectNode(hitN);
         }
         return;
       }
-      onSelectNode(hit);
+      if (hitB && onSplitBranchAt && branchFrom) {
+        // Кликнули по чужой ветви, имея активную цепочку → сплит и продолжение.
+        const w = screenToWorld(sx, sy);
+        if (!w) return;
+        const newNodeId = onSplitBranchAt(hitB, Math.round(w.x), Math.round(w.y), Math.round(w.z));
+        if (typeof newNodeId === "string" && newNodeId && newNodeId !== branchFrom) {
+          onBranchAdd(branchFrom, newNodeId);
+          setBranchFrom(newNodeId);
+          onSelectNode(newNodeId);
+        }
+        return;
+      }
+      // Свободная точка: если уже есть начало — создаём промежуточный узел и сегмент.
+      const w = screenToWorld(sx, sy);
+      if (!w) return;
+      const newNodeId = onNodeAdd(Math.round(w.x), Math.round(w.y), Math.round(w.z));
+      if (typeof newNodeId === "string" && newNodeId) {
+        if (branchFrom) {
+          onBranchAdd(branchFrom, newNodeId);
+        }
+        // Продолжаем цепочку от только что созданного узла.
+        setBranchFrom(newNodeId);
+        onSelectNode(newNodeId);
+      }
+      return;
+    }
+
+    // ─── ИНСТРУМЕНТ «ВЫБОР» (по умолчанию) ────────────────────────────
+    if (hitN) {
+      onSelectNode(hitN);
       onSelectBranch(null);
       // Перетаскивание узла: и в 2D, и в 3D.
-      // Плоскость дрэга проходит через текущую глубинную координату узла —
-      // так Z/Y/X не «прыгает» при движении.
-      const node = nodes.find((n) => n.id === hit);
+      const node = nodes.find((n) => n.id === hitN);
       if (node) {
         const plane: WorkPlane = !is3D
           ? { axis: "z", value: node.z }
           : effPlane.axis === "z" ? { axis: "z", value: node.z }
           : effPlane.axis === "y" ? { axis: "y", value: node.y }
           : { axis: "x", value: node.x };
-        setDraggingNode({ id: hit, plane });
+        setDraggingNode({ id: hitN, plane });
       }
       return;
     }
 
-    const branchHit = hitBranch(sx, sy, projNodes, branches);
-    if (branchHit) {
-      onSelectBranch(branchHit);
+    if (hitB) {
+      onSelectBranch(hitB);
       onSelectNode(null);
       return;
     }
@@ -263,6 +385,23 @@ export default function TopoCanvas(props: Props) {
         : unproject2D(sx, sy, proj, draggingNode.plane.axis === "z" ? draggingNode.plane.value : 0);
       if (!wp) return;
       onNodeMove(draggingNode.id, Math.round(wp.x), Math.round(wp.y), Math.round(wp.z));
+      return;
+    }
+    if (draggingCorner && onHorizonImageBoundsChange) {
+      // Перетаскивание угла подложки горизонта в плоскости z=z горизонта.
+      const hz = horizons?.find((hh) => hh.id === draggingCorner.horizonId);
+      if (!hz || !hz.image) return;
+      const plane: WorkPlane = { axis: "z", value: hz.z };
+      const wp = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
+      if (!wp) return;
+      const b = { ...hz.image.bounds };
+      switch (draggingCorner.corner) {
+        case "tl": b.x1 = wp.x; b.y2 = wp.y; break;   // мировой Y растёт вверх; подложка верх=y2
+        case "tr": b.x2 = wp.x; b.y2 = wp.y; break;
+        case "bl": b.x1 = wp.x; b.y1 = wp.y; break;
+        case "br": b.x2 = wp.x; b.y1 = wp.y; break;
+      }
+      onHorizonImageBoundsChange(draggingCorner.horizonId, b);
     }
   };
 
@@ -270,6 +409,7 @@ export default function TopoCanvas(props: Props) {
     setPanStart(null);
     setRotStart(null);
     setDraggingNode(null);
+    setDraggingCorner(null);
   };
 
   const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
@@ -436,6 +576,74 @@ export default function TopoCanvas(props: Props) {
 
         {is3D && renderDepthLines()}
         {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
+
+        {/* ── ПОДЛОЖКИ ГОРИЗОНТОВ (PNG/JPG) ─────────────────────────────── */}
+        {/* Рисуются ПОД ветвями. Видимость подложки = h.image.visible && h.visible */}
+        {(horizons ?? []).map((h) => {
+          if (!h.visible || !h.image || !h.image.visible) return null;
+          const b = h.image.bounds;
+          // Для проекции углы лежат на плоскости z = h.z
+          const p1 = project3D({ x: b.x1, y: b.y1, z: h.z }, proj); // нижний-левый (мировой)
+          const p2 = project3D({ x: b.x2, y: b.y1, z: h.z }, proj);
+          const p3 = project3D({ x: b.x2, y: b.y2, z: h.z }, proj);
+          const p4 = project3D({ x: b.x1, y: b.y2, z: h.z }, proj);
+          // В 2D-плане можем использовать прямой <image> с поворотом 0; в 3D — clip-path/transform.
+          // Универсально рисуем через <image> + transform на четыре точки невозможно в SVG напрямую
+          // (нет 4-точечной перспективы). Поэтому: в 2D — <image> по габаритам;
+          // в 3D — упрощение: <image> по AABB углов p1..p4 (визуально приемлемо для плоских видов).
+          const minSx = Math.min(p1.sx, p2.sx, p3.sx, p4.sx);
+          const maxSx = Math.max(p1.sx, p2.sx, p3.sx, p4.sx);
+          const minSy = Math.min(p1.sy, p2.sy, p3.sy, p4.sy);
+          const maxSy = Math.max(p1.sy, p2.sy, p3.sy, p4.sy);
+          // В чистом плане (azimuth=0, elevation=90) AABB совпадает с реальным прямоугольником.
+          return (
+            <g key={`hi-${h.id}`} style={{ pointerEvents: "none" }}>
+              <image
+                href={h.image.dataUrl}
+                x={minSx} y={minSy}
+                width={Math.max(0, maxSx - minSx)}
+                height={Math.max(0, maxSy - minSy)}
+                opacity={h.image.opacity}
+                preserveAspectRatio="none" />
+              {/* Тонкая обводка горизонтового цвета — чтобы видно было границы подложки */}
+              <rect x={minSx} y={minSy}
+                width={Math.max(0, maxSx - minSx)}
+                height={Math.max(0, maxSy - minSy)}
+                fill="none" stroke={h.color} strokeOpacity="0.5"
+                strokeWidth="1" strokeDasharray="6 4" />
+            </g>
+          );
+        })}
+
+        {/* ── РУЧКИ ДЛЯ РАСТЯГИВАНИЯ ПОДЛОЖКИ (только для активного горизонта) ── */}
+        {editingHorizonImageId && (() => {
+          const h = (horizons ?? []).find((hh) => hh.id === editingHorizonImageId);
+          if (!h || !h.image) return null;
+          const b = h.image.bounds;
+          const corners: Array<{ key: "tl" | "tr" | "bl" | "br"; x: number; y: number; cur: string }> = [
+            { key: "tl", x: b.x1, y: b.y2, cur: "nwse-resize" },
+            { key: "tr", x: b.x2, y: b.y2, cur: "nesw-resize" },
+            { key: "bl", x: b.x1, y: b.y1, cur: "nesw-resize" },
+            { key: "br", x: b.x2, y: b.y1, cur: "nwse-resize" },
+          ];
+          return (
+            <g>
+              {corners.map((c) => {
+                const p = project3D({ x: c.x, y: c.y, z: h.z }, proj);
+                return (
+                  <g key={c.key} style={{ cursor: c.cur }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDraggingCorner({ horizonId: h.id, corner: c.key });
+                    }}>
+                    <circle cx={p.sx} cy={p.sy} r="9" fill="white" stroke={h.color} strokeWidth="2" />
+                    <circle cx={p.sx} cy={p.sy} r="3" fill={h.color} />
+                  </g>
+                );
+              })}
+            </g>
+          );
+        })()}
 
         {/* ─── ВЕТВИ (отсортированы по глубине) ────────────────────────── */}
         {branchesSorted.map(({ branch: b }) => {

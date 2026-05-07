@@ -117,21 +117,200 @@ export default function CadPage() {
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
   };
 
-  const handleNodeAdd = (x: number, y: number, z: number) => {
-    const newId = `N${nodes.length + 1}`;
-    const num = String(nodes.length + 100).padStart(3, "0");
-    const node = makeNode(newId, { x, y, z, name: `Узел ${num}`, number: num });
-    setNodes((p) => [...p, node]);
-    setSelectedNodeId(newId);
-    setTool("select");
+  // ─── ГОРИЗОНТЫ + АКТИВНЫЙ ГОРИЗОНТ (для построения новых узлов) ────
+  // Каждый горизонт = слой ветвей с цветом и Z-отметкой; можно скрывать.
+  // При выборе горизонта новые узлы создаются с его Z и привязкой horizonId.
+  // Существующие объекты НЕ трогаются.
+  // Стартовое состояние горизонтов: пытаемся восстановить из localStorage
+  // (там лежат подложки PNG/JPG как dataURL — не теряются при обновлении страницы).
+  const [horizons, setHorizons] = useState<Horizon[]>(() => {
+    if (typeof window === "undefined") return DEFAULT_HORIZONS;
+    try {
+      const raw = window.localStorage.getItem("vent-cad/horizons");
+      if (!raw) return DEFAULT_HORIZONS;
+      const parsed = JSON.parse(raw) as Horizon[];
+      if (Array.isArray(parsed) && parsed.length) return parsed;
+    } catch { /* игнорируем повреждённые данные */ }
+    return DEFAULT_HORIZONS;
+  });
+  // Сохраняем горизонты при каждом изменении.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem("vent-cad/horizons", JSON.stringify(horizons)); }
+    catch { /* квота переполнена — пропускаем */ }
+  }, [horizons]);
+  const [activeHorizonId, setActiveHorizonId] = useState<string>("");
+  // ID горизонта, у которого пользователь редактирует подложку (тащит углы).
+  const [editingHorizonImageId, setEditingHorizonImageId] = useState<string | null>(null);
+  const activeHorizon = horizons.find((h) => h.id === activeHorizonId) ?? null;
+  const updateHorizon = (id: string, patch: Partial<Horizon>) =>
+    setHorizons((p) => p.map((h) => h.id === id ? { ...h, ...patch } : h));
+  const addHorizon = () => {
+    const id = `H_${Date.now()}`;
+    setHorizons((p) => [...p, { id, name: `Горизонт ${p.length + 1}`, z: 0, color: "#64748b", visible: true }]);
+  };
+  const removeHorizon = (id: string) => {
+    setHorizons((p) => p.filter((h) => h.id !== id));
+    setBranches((p) => p.map((b) => b.horizonId === id ? { ...b, horizonId: "" } : b));
+    if (activeHorizonId === id) setActiveHorizonId("");
+    if (editingHorizonImageId === id) setEditingHorizonImageId(null);
+  };
+  const setHorizonImageBounds = (
+    id: string, bounds: { x1: number; y1: number; x2: number; y2: number },
+  ) => {
+    setHorizons((p) => p.map((h) => {
+      if (h.id !== id || !h.image) return h;
+      return { ...h, image: { ...h.image, bounds } };
+    }));
   };
 
-  const handleBranchAdd = (fromId: string, toId: string) => {
-    const id = `B${branches.length + 1}`;
-    const b = makeBranch(id, fromId, toId);
+  // Загрузка картинки в подложку: читаем файл, сжимаем до 2000 px по большей стороне,
+  // сохраняем как dataURL в state. По умолчанию ставим bounds = ±1000 м вокруг 0.
+  const uploadHorizonImage = async (horizonId: string, file: File) => {
+    if (!file.type.startsWith("image/")) {
+      alert("Поддерживаются только изображения PNG/JPG.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        // Сжимаем до 2000 px по большей стороне, чтобы dataURL не раздувал state.
+        const MAX = 2000;
+        let w = img.width, h = img.height;
+        if (Math.max(w, h) > MAX) {
+          const k = MAX / Math.max(w, h);
+          w = Math.round(w * k); h = Math.round(h * k);
+        }
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = cv.toDataURL("image/jpeg", 0.85);
+        // Подгоняем bounds под пропорции картинки и центр в (0,0)
+        const aspect = w / h;
+        const halfH = 1000;
+        const halfW = halfH * aspect;
+        setHorizons((p) => p.map((hz) => hz.id === horizonId ? {
+          ...hz,
+          image: {
+            dataUrl: compressed,
+            bounds: { x1: -halfW, y1: -halfH, x2: halfW, y2: halfH },
+            opacity: 0.6,
+            visible: true,
+          },
+        } : hz));
+        setEditingHorizonImageId(horizonId);
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeHorizonImage = (id: string) => {
+    setHorizons((p) => p.map((h) => h.id === id ? { ...h, image: undefined } : h));
+    if (editingHorizonImageId === id) setEditingHorizonImageId(null);
+  };
+
+  // Возвращает следующий уникальный числовой ID для узла (учитывает удаления).
+  const nextNodeId = (existing: TopoNode[] = nodes): string => {
+    const used = new Set(existing.map((n) => n.id));
+    let i = 1;
+    while (used.has(`N${i}`)) i++;
+    return `N${i}`;
+  };
+  const nextBranchId = (existing: TopoBranch[] = branchesRaw): string => {
+    const used = new Set(existing.map((b) => b.id));
+    let i = 1;
+    while (used.has(`B${i}`)) i++;
+    return `B${i}`;
+  };
+
+  // Создаёт узел в указанной мировой точке. Если активен горизонт —
+  // навязывает его Z и horizonId. Возвращает ID созданного узла.
+  const handleNodeAdd = (x: number, y: number, z: number): string => {
+    const newId = nextNodeId();
+    const num = String(nodes.length + 100).padStart(3, "0");
+    const finalZ = activeHorizon ? activeHorizon.z : z;
+    const node = makeNode(newId, {
+      x, y, z: finalZ,
+      name: `Узел ${num}`,
+      number: num,
+    });
+    setNodes((p) => [...p, node]);
+    setSelectedNodeId(newId);
+    setSelectedBranchId(null);
+    // ИНСТРУМЕНТ НЕ СБРАСЫВАЕТСЯ — каждый клик добавляет следующий узел.
+    return newId;
+  };
+
+  const handleBranchAdd = (fromId: string, toId: string): string => {
+    const id = nextBranchId();
+    // Если активен горизонт — навешиваем привязку на ветвь
+    const horizonId = activeHorizon ? activeHorizon.id : "";
+    const b = makeBranch(id, fromId, toId, { horizonId });
     setBranches((p) => [...p, b]);
     setSelectedBranchId(id);
-    setTool("select");
+    setSelectedNodeId(null);
+    // ИНСТРУМЕНТ НЕ СБРАСЫВАЕТСЯ — продолжаем строить цепочку ветвей.
+    return id;
+  };
+
+  // ─── РАЗДЕЛЕНИЕ ВЕТВИ НОВЫМ УЗЛОМ ───────────────────────────────────
+  // Используется когда инструмент «Узел» кликает прямо на существующую ветвь
+  // (snap к ветви) или из меню «Разделить выработку».
+  // Логика: A→B превращается в A→N (id ветви сохраняется) и N→B (новая ветвь).
+  // Параметры старой ветви (тип, сечение, поверхность, горизонт, флаг вентилятора)
+  // переносятся на оба сегмента.
+  const handleSplitBranchAt = (branchId: string, x: number, y: number, z: number): string => {
+    const old = branchesRaw.find((b) => b.id === branchId);
+    if (!old) return "";
+    const fromN = nodes.find((n) => n.id === old.fromId);
+    const toN = nodes.find((n) => n.id === old.toId);
+    if (!fromN || !toN) return "";
+
+    // Создаём новый узел в точке разреза
+    const newNodeId = nextNodeId();
+    const num = String(nodes.length + 100).padStart(3, "0");
+    // Если активен горизонт — Z и привязка из горизонта; иначе — из точки.
+    // Сохраняем horizonId родительской ветви, если узел создаётся «на лету».
+    const finalZ = activeHorizon ? activeHorizon.z : z;
+    const horizonId = activeHorizon ? activeHorizon.id : old.horizonId;
+    const newNode = makeNode(newNodeId, {
+      x, y, z: finalZ,
+      name: `Узел ${num}`,
+      number: num,
+    });
+
+    // Создаём вторую половину A→N + N→B; сохраняем все параметры.
+    // Расход распределяем 50/50 (солвер пересчитает).
+    const newBranchId = nextBranchId([...branchesRaw, { ...old, id: "@tmp" }]);
+    const halfFlow = old.flow / 2;
+
+    setNodes((p) => [...p, newNode]);
+    setBranches((p) => p.flatMap((b) => {
+      if (b.id !== branchId) return [b];
+      const segA: TopoBranch = { ...b, toId: newNodeId, manualLength: false, flow: halfFlow };
+      const segB: TopoBranch = makeBranch(newBranchId, newNodeId, old.toId, {
+        ...b,
+        id: newBranchId,
+        fromId: newNodeId,
+        toId: old.toId,
+        manualLength: false,
+        flow: halfFlow,
+        // Вентилятор оставляем только на первой половине, чтобы не задвоить напор.
+        hasFan: false, fanMode: "constant", fanPressure: 0, fanName: "",
+        fanCurveId: "", fanEfficiency: 0, fanShaftPower: 0,
+      });
+      // Подавим неиспользуемые переменные
+      void fromN; void toN;
+      return [segA, segB];
+    }));
+    setSelectedNodeId(newNodeId);
+    setSelectedBranchId(null);
+    return newNodeId;
   };
 
   const handleNodeMove = (id: string, x: number, y: number, z?: number) => {
@@ -154,20 +333,17 @@ export default function CadPage() {
   // null = автоматически по ракурсу; иначе фиксированная пользователем
   const [workPlane, setWorkPlane] = useState<{ axis: "x" | "y" | "z"; value: number } | null>(null);
 
-  // ─── ГОРИЗОНТЫ (как в АэроСеть) ─────────────────────────────────────
-  // Каждый горизонт = слой ветвей с цветом и Z-отметкой; можно скрывать.
-  const [horizons, setHorizons] = useState<Horizon[]>(DEFAULT_HORIZONS);
-  const updateHorizon = (id: string, patch: Partial<Horizon>) =>
-    setHorizons((p) => p.map((h) => h.id === id ? { ...h, ...patch } : h));
-  const addHorizon = () => {
-    const id = `H_${Date.now()}`;
-    setHorizons((p) => [...p, { id, name: `Горизонт ${p.length + 1}`, z: 0, color: "#64748b", visible: true }]);
-  };
-  const removeHorizon = (id: string) => {
-    setHorizons((p) => p.filter((h) => h.id !== id));
-    // Снимаем привязку у ветвей, у которых был этот горизонт
-    setBranches((p) => p.map((b) => b.horizonId === id ? { ...b, horizonId: "" } : b));
-  };
+  // ─── МАСШТАБ И ВПИСЫВАНИЕ ───────────────────────────────────────────
+  // Внешний контролируемый масштаб (px/м). Меняется из тулбара (поле «1:N»).
+  // Внутри TopoCanvas — собственный state, синхронизируемый через onScaleChange.
+  const [viewScale, setViewScale] = useState<number>(0.4);
+  // Nonce для команды «вписать в экран» — TopoCanvas реагирует на смену значения.
+  const [fitToScreenNonce, setFitToScreenNonce] = useState<number>(0);
+  // При первом рендере один раз вписываем сеть в экран (даём DOM смонтироваться).
+  useEffect(() => {
+    const t = window.setTimeout(() => setFitToScreenNonce(Date.now()), 200);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
   const [branchWidth, setBranchWidth] = useState<number>(2.5);   // px
@@ -229,9 +405,11 @@ export default function CadPage() {
       } else if (e.key === "F9") {
         e.preventDefault();
         handleSolve();
-      } else if (e.key === "Escape") {
+      } else if (e.key === "Escape" || e.key === "Enter") {
+        // Завершение цепочки построения: снимаем выделение и сбрасываем инструмент.
         setSelectedNodeId(null);
         setSelectedBranchId(null);
+        setTool("select");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1043,19 +1221,60 @@ export default function CadPage() {
             {/* ═══ ВКЛАДКА: ГОРИЗОНТЫ ═══════════════════════════════════ */}
             {activeSide === "horizons" && (
               <div className="p-2 space-y-2">
-                <FrameGroup title="Горизонты сети">
+                {/* ── Активный горизонт: задаёт Z для всех новых узлов ── */}
+                <FrameGroup title="Активный горизонт (для построения)">
                   <div className="text-[10px] text-gray-600 leading-tight pb-1">
-                    Группировка ветвей по высотным отметкам, как в АэроСеть.
+                    Если выбран — все НОВЫЕ узлы создаются с Z = отметке горизонта
+                    и автоматически получают его привязку.
+                    Существующие объекты не меняются.
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <select value={activeHorizonId}
+                      onChange={(e) => setActiveHorizonId(e.target.value)}
+                      className="cad-input flex-1">
+                      <option value="">— не выбран (Z = текущая плоскость) —</option>
+                      {horizons.map((h) => (
+                        <option key={h.id} value={h.id}>{h.name} (Z = {h.z} м)</option>
+                      ))}
+                    </select>
+                    {activeHorizon && (
+                      <span className="w-4 h-4 rounded-sm border border-gray-400 flex-shrink-0"
+                        style={{ background: activeHorizon.color }}
+                        title="Цвет активного горизонта" />
+                    )}
+                  </div>
+                  {activeHorizon && (
+                    <div className="px-1 py-1 mt-1 text-[11px]"
+                      style={{ background: "#dcfce7", color: "#166534", border: "1px solid #86efac", borderRadius: 3 }}>
+                      ● Новые узлы будут создаваться на отметке <b>{activeHorizon.z} м</b>
+                    </div>
+                  )}
+                </FrameGroup>
+
+                <FrameGroup title="Список горизонтов">
+                  <div className="text-[10px] text-gray-600 leading-tight pb-1">
+                    Группировка ветвей по высотным отметкам.
                     Скрытие горизонта прячет все его ветви на схеме.
+                    Радио — выбор активного горизонта.
                   </div>
                   <div className="space-y-1">
                     {horizons.map((h) => {
                       const usedCount = branches.filter((b) => b.horizonId === h.id).length;
+                      const isActive = activeHorizonId === h.id;
                       return (
-                        <div key={h.id} className="flex items-center gap-1 border border-gray-300 rounded px-1 py-1 bg-white">
+                        <div key={h.id} className="flex items-center gap-1 border rounded px-1 py-1"
+                          style={{
+                            background: isActive ? "#eff6ff" : "white",
+                            borderColor: isActive ? "#3b82f6" : "#d1d5db",
+                          }}>
+                          <input type="radio" name="active-horizon"
+                            checked={isActive}
+                            onChange={() => setActiveHorizonId(h.id)}
+                            title="Сделать активным для построения"
+                            className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
                           <input type="checkbox" checked={h.visible}
                             onChange={(e) => updateHorizon(h.id, { visible: e.target.checked })}
-                            title="Видимость" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
+                            title="Видимость на схеме" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
                           <input type="color" value={h.color}
                             onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
                             className="w-6 h-6 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
@@ -1085,6 +1304,81 @@ export default function CadPage() {
                     className="mt-2 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center gap-1">
                     <Icon name="Plus" size={11} /> Добавить горизонт
                   </button>
+                </FrameGroup>
+
+                {/* ── Подложки горизонтов (PNG/JPG) ────────────────────────── */}
+                <FrameGroup title="Подложка плана (картинка)">
+                  <div className="text-[10px] text-gray-600 leading-tight pb-1">
+                    Загрузите PNG/JPG горного плана. После загрузки потяните за углы,
+                    чтобы выровнять подложку по реальным координатам.
+                    Картинки хранятся локально в браузере.
+                  </div>
+                  <div className="space-y-2">
+                    {horizons.map((h) => (
+                      <div key={`img-${h.id}`} className="border rounded p-1.5"
+                        style={{ borderColor: h.color + "55", background: h.color + "08" }}>
+                        <div className="flex items-center gap-1 mb-1">
+                          <span className="w-3 h-3 rounded-sm border border-gray-400 flex-shrink-0"
+                            style={{ background: h.color }} />
+                          <span className="text-xs font-semibold flex-1 truncate">{h.name}</span>
+                          <span className="text-[10px] text-gray-500">{h.z} м</span>
+                        </div>
+                        {h.image ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <img src={h.image.dataUrl} alt=""
+                                className="w-12 h-12 object-cover border border-gray-300 rounded" />
+                              <div className="flex-1 text-[10px] text-gray-600 leading-tight">
+                                Углы (X×Y, м):<br />
+                                <code>
+                                  {Math.round(h.image.bounds.x1)}…{Math.round(h.image.bounds.x2)}
+                                  {" × "}
+                                  {Math.round(h.image.bounds.y1)}…{Math.round(h.image.bounds.y2)}
+                                </code>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <CadCheckbox checked={h.image.visible}
+                                onChange={(v) => updateHorizon(h.id, { image: h.image ? { ...h.image, visible: v } : undefined })}
+                                label="Показать" />
+                            </div>
+                            <LabeledRow label="Прозрачность:" labelWidth={88}>
+                              <input type="range" min={0} max={100} value={Math.round(h.image.opacity * 100)}
+                                onChange={(e) => updateHorizon(h.id, { image: h.image ? { ...h.image, opacity: Number(e.target.value) / 100 } : undefined })}
+                                className="flex-1" />
+                              <span className="text-[10px] w-8 text-right">{Math.round(h.image.opacity * 100)}%</span>
+                            </LabeledRow>
+                            <div className="flex gap-1">
+                              <button onClick={() => setEditingHorizonImageId(editingHorizonImageId === h.id ? null : h.id)}
+                                className="flex-1 px-2 py-1 text-[11px] border rounded"
+                                style={{
+                                  background: editingHorizonImageId === h.id ? "#2563eb" : "white",
+                                  color: editingHorizonImageId === h.id ? "white" : "#1f1f1f",
+                                  borderColor: editingHorizonImageId === h.id ? "#1d4ed8" : "#d1d5db",
+                                }}>
+                                {editingHorizonImageId === h.id ? "✓ Готово" : "✎ Растянуть"}
+                              </button>
+                              <button onClick={() => removeHorizonImage(h.id)}
+                                className="px-2 py-1 text-[11px] border border-red-300 text-red-700 rounded hover:bg-red-50">
+                                Удалить
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="block px-2 py-1 text-[11px] text-center border border-dashed border-gray-400 rounded cursor-pointer hover:bg-blue-50 hover:border-blue-400">
+                            <input type="file" accept="image/png,image/jpeg" className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) uploadHorizonImage(h.id, f);
+                                e.target.value = "";
+                              }} />
+                            <Icon name="Upload" size={11} className="inline mr-1" />
+                            Загрузить PNG/JPG плана
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </FrameGroup>
 
                 <FrameGroup title="Быстрые действия">
@@ -1259,21 +1553,54 @@ export default function CadPage() {
             )}
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
-            <span className="text-[11px] text-gray-700">Z план:</span>
-            <select value={zLevel} onChange={(e) => {
-                const z = Number(e.target.value);
-                setZLevel(z);
-                // Если активна XY-плоскость в авто-режиме — синхронизируем её значение
-                if (workPlane?.axis === "z") setWorkPlane({ axis: "z", value: z });
+
+            {/* ── Активный горизонт (Z для новых узлов) ── */}
+            <span className="text-[11px] text-gray-700"
+              title="Все новые узлы будут создаваться на отметке выбранного горизонта">Горизонт:</span>
+            <select value={activeHorizonId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setActiveHorizonId(id);
+                const h = horizons.find((hh) => hh.id === id);
+                if (h) {
+                  setZLevel(h.z);
+                  if (workPlane?.axis === "z") setWorkPlane({ axis: "z", value: h.z });
+                }
               }}
-              className="cad-input text-[11px] py-0">
-              <option value="0">0 м</option>
-              <option value="-75">−75 м</option>
-              <option value="-150">−150 м</option>
-              <option value="-240">−240 м</option>
-              <option value="-360">−360 м</option>
-              <option value="-480">−480 м</option>
+              className="cad-input text-[11px] py-0"
+              style={{
+                background: activeHorizon ? activeHorizon.color + "22" : "white",
+                borderColor: activeHorizon ? activeHorizon.color : "#d0d0d0",
+              }}>
+              <option value="">— не выбран —</option>
+              {horizons.map((h) => (
+                <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
+              ))}
             </select>
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+
+            {/* ── Масштаб 1:N ── */}
+            <span className="text-[11px] text-gray-700" title="Масштаб как в АэроСеть: 1:N">М 1:</span>
+            <input type="number" value={Math.round(1 / Math.max(0.0001, viewScale * 0.001))}
+              onChange={(e) => {
+                const n = Math.max(50, Math.min(500000, Number(e.target.value)));
+                // viewScale (px/м) = 1 / (N · 0.001), считаем что 1 px ≈ 1 мм на экране
+                setViewScale(1 / (n * 0.001));
+              }}
+              className="cad-input text-[11px] py-0 w-20 text-right"
+              title="Знаменатель масштаба (например 5000 = 1:5000)" />
+            <button onClick={() => setFitToScreenNonce(Date.now())}
+              className="h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-blue-50"
+              title="Подогнать под экран — показать всю сеть">
+              По экрану
+            </button>
+            <button onClick={() => setViewScale(1)}
+              className="h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-blue-50"
+              title="Масштаб 1:1000 (1 px = 1 м)">
+              1:1000
+            </button>
+
             <div className="ml-auto flex items-center gap-2 text-[11px] text-gray-600">
               <span className={viewInfo.is3D ? "text-purple-700 font-semibold" : ""}>
                 {viewInfo.is3D ? "3D" : "2D"}
@@ -1304,9 +1631,15 @@ export default function CadPage() {
               thinLines={thinLines}
               colorByHorizon={colorByHorizon}
               showFlowArrows={showFlowArrows}
+              scaleOverride={viewScale}
+              onScaleChange={setViewScale}
+              fitToScreenNonce={fitToScreenNonce}
+              editingHorizonImageId={editingHorizonImageId}
+              onHorizonImageBoundsChange={setHorizonImageBounds}
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
+              onSplitBranchAt={handleSplitBranchAt}
               onSelectNode={(id) => { setSelectedNodeId(id); if (id) setSelectedBranchId(null); }}
               onSelectBranch={(id) => { setSelectedBranchId(id); if (id) setSelectedNodeId(null); }}
             />
