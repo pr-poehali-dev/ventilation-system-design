@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
-  type TopoNode, type TopoBranch,
-  DEMO_NODES, DEMO_BRANCHES, recalcAll, makeNode, makeBranch,
+  type TopoNode, type TopoBranch, type Horizon,
+  DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, recalcAll, makeNode, makeBranch,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
@@ -16,7 +16,7 @@ import FanCurveChart from "@/components/cad/FanCurveChart";
 // ─────────────────────────────────────────────────────────────────────────────
 
 type RibbonTab = "file" | "home" | "view" | "schema" | "vent" | "thermo" | "accidents" | "involve" | "pipes" | "costs" | "refs" | "general";
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
 interface Excavation {
   id: string;
@@ -147,19 +147,97 @@ export default function CadPage() {
   const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") =>
     setViewPreset({ name, nonce: Date.now() });
 
-  // Режим отображения направления воздушного потока
-  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("flow");
+  // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
+  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
 
   // Активная рабочая плоскость для построения в 3D
   // null = автоматически по ракурсу; иначе фиксированная пользователем
   const [workPlane, setWorkPlane] = useState<{ axis: "x" | "y" | "z"; value: number } | null>(null);
+
+  // ─── ГОРИЗОНТЫ (как в АэроСеть) ─────────────────────────────────────
+  // Каждый горизонт = слой ветвей с цветом и Z-отметкой; можно скрывать.
+  const [horizons, setHorizons] = useState<Horizon[]>(DEFAULT_HORIZONS);
+  const updateHorizon = (id: string, patch: Partial<Horizon>) =>
+    setHorizons((p) => p.map((h) => h.id === id ? { ...h, ...patch } : h));
+  const addHorizon = () => {
+    const id = `H_${Date.now()}`;
+    setHorizons((p) => [...p, { id, name: `Горизонт ${p.length + 1}`, z: 0, color: "#64748b", visible: true }]);
+  };
+  const removeHorizon = (id: string) => {
+    setHorizons((p) => p.filter((h) => h.id !== id));
+    // Снимаем привязку у ветвей, у которых был этот горизонт
+    setBranches((p) => p.map((b) => b.horizonId === id ? { ...b, horizonId: "" } : b));
+  };
+
+  // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
+  const [branchWidth, setBranchWidth] = useState<number>(2.5);   // px
+  const [branchBorder, setBranchBorder] = useState<number>(0);   // px (контур)
+  const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
+  const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
+  const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
+
+  // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
+  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
+  const [rightTab, setRightTab] = useState<"node" | "branch">("branch");
+  // Автопереключение таба при выборе объекта на схеме
+  useEffect(() => {
+    if (selectedNodeId) setRightTab("node");
+    else if (selectedBranchId) setRightTab("branch");
+  }, [selectedNodeId, selectedBranchId]);
+
+  // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(330);
+  const leftDragRef = useRef<{ startX: number; startW: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!leftDragRef.current) return;
+      const dx = e.clientX - leftDragRef.current.startX;
+      const next = Math.min(640, Math.max(220, leftDragRef.current.startW + dx));
+      setLeftPanelWidth(next);
+    };
+    const onUp = () => { leftDragRef.current = null; document.body.style.cursor = ""; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+  const startLeftDrag = (e: React.MouseEvent) => {
+    leftDragRef.current = { startX: e.clientX, startW: leftPanelWidth };
+    document.body.style.cursor = "col-resize";
+    e.preventDefault();
+  };
 
   const handleSolve = () => {
     const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
     setBranches(res.branches);
     setNodes(res.nodes);
     setSolveResult(res);
+    // После успешного расчёта показываем стрелки направления свежей струи (как в АэроСеть).
+    if (res.ok) setShowFlowArrows(true);
   };
+
+  // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
+  // F6 — переключить «тонкие линии» (как в АэроСеть/Венти-CAD: подача в одну тонкую линию).
+  // F9 — запустить расчёт воздухораспределения. Esc — снять выделение.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Не перехватываем хоткеи во время ввода в input/textarea/select
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "F6") {
+        e.preventDefault();
+        setThinLines((v) => !v);
+      } else if (e.key === "F9") {
+        e.preventDefault();
+        handleSolve();
+      } else if (e.key === "Escape") {
+        setSelectedNodeId(null);
+        setSelectedBranchId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, branchesRaw]);
 
   const handleDeleteSelected = () => {
     if (selectedBranchId) {
@@ -360,6 +438,7 @@ export default function CadPage() {
           style={{ background: "#e8e8e8", borderRight: "1px solid #b8b8b8" }}>
           {([
             { id: "params", label: "Параметры" },
+            { id: "horizons", label: "Горизонты" },
             { id: "measure", label: "Замеры" },
             { id: "pipes", label: "Трубы" },
             { id: "indicators", label: "Индикаторы" },
@@ -394,8 +473,8 @@ export default function CadPage() {
         </div>
 
         {/* ── ПАНЕЛЬ СВОЙСТВ ─────────────────────────────────────────── */}
-        <div className="w-[330px] flex flex-col"
-          style={{ background: "#ffffff", borderRight: "1px solid #b8b8b8" }}>
+        <div className="flex flex-col flex-shrink-0"
+          style={{ width: leftPanelWidth, background: "#ffffff", borderRight: "1px solid #b8b8b8" }}>
 
           {/* Селектор объекта */}
           <div className="px-1 py-1" style={{ borderBottom: "1px solid #d0d0d0" }}>
@@ -416,6 +495,7 @@ export default function CadPage() {
             <span className="text-xs font-semibold text-gray-800">
               {activeSide === "params" && (selectedNode ? `Узел: ${selectedNode.number || selectedNode.id}` : selectedBranch ? `Ветвь: ${selectedBranch.id}` : "Параметры")}
               {activeSide === "general" && "Свойства объекта"}
+              {activeSide === "horizons" && "Горизонты"}
               {activeSide === "vent" && "Аэродинамическое сопротивление"}
               {activeSide === "thermo" && "Теплофизические параметры"}
               {activeSide === "accidents" && "Аварийные режимы"}
@@ -527,6 +607,23 @@ export default function CadPage() {
                       <input type="text" value={selectedBranch.fromId} readOnly className="cad-input w-16 text-center" />
                       <span>→</span>
                       <input type="text" value={selectedBranch.toId} readOnly className="cad-input w-16 text-center" />
+                    </div>
+                  </LabeledRow>
+                  <LabeledRow label="Горизонт:">
+                    <div className="flex-1 flex items-center gap-1">
+                      <select value={selectedBranch.horizonId}
+                        onChange={(e) => updateBranch(selectedBranch.id, { horizonId: e.target.value })}
+                        className="cad-input flex-1">
+                        <option value="">— без привязки —</option>
+                        {horizons.map((h) => (
+                          <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
+                        ))}
+                      </select>
+                      {selectedBranch.horizonId && (
+                        <span className="w-3 h-3 rounded-sm border border-gray-400 flex-shrink-0"
+                          style={{ background: horizons.find((h) => h.id === selectedBranch.horizonId)?.color || "#ccc" }}
+                          title="Цвет горизонта" />
+                      )}
                     </div>
                   </LabeledRow>
                 </FrameGroup>
@@ -919,6 +1016,91 @@ export default function CadPage() {
                     onChange={(v) => setExcavation({ ...excavation, cable6: v })}
                     label="Силовой кабель 6 кВ" />
                 </FrameGroup>
+
+                {/* ── Стиль линий ветвей (общая настройка для всех ветвей) ── */}
+                <FrameGroup title="Ширина и граница ветвей">
+                  <LabeledRow label="Ширина линии:" labelWidth={108}>
+                    <NumWithUnit value={branchWidth} unit="px"
+                      onChange={(v) => setBranchWidth(Math.max(0.5, Math.min(8, v)))} />
+                  </LabeledRow>
+                  <LabeledRow label="Контурная обводка:" labelWidth={108}>
+                    <NumWithUnit value={branchBorder} unit="px"
+                      onChange={(v) => setBranchBorder(Math.max(0, Math.min(4, v)))} />
+                  </LabeledRow>
+                  <div className="text-[10px] text-gray-500 px-1">
+                    Контур = тёмная окантовка вокруг линии (0 — без обводки).
+                  </div>
+                  <div className="pt-1">
+                    <CadCheckbox checked={thinLines} onChange={setThinLines}
+                      label="Тонкие линии 1px (вкл/откл — F6)" />
+                    <CadCheckbox checked={colorByHorizon} onChange={setColorByHorizon}
+                      label="Окрашивать ветви по цвету горизонта" />
+                  </div>
+                </FrameGroup>
+              </div>
+            )}
+
+            {/* ═══ ВКЛАДКА: ГОРИЗОНТЫ ═══════════════════════════════════ */}
+            {activeSide === "horizons" && (
+              <div className="p-2 space-y-2">
+                <FrameGroup title="Горизонты сети">
+                  <div className="text-[10px] text-gray-600 leading-tight pb-1">
+                    Группировка ветвей по высотным отметкам, как в АэроСеть.
+                    Скрытие горизонта прячет все его ветви на схеме.
+                  </div>
+                  <div className="space-y-1">
+                    {horizons.map((h) => {
+                      const usedCount = branches.filter((b) => b.horizonId === h.id).length;
+                      return (
+                        <div key={h.id} className="flex items-center gap-1 border border-gray-300 rounded px-1 py-1 bg-white">
+                          <input type="checkbox" checked={h.visible}
+                            onChange={(e) => updateHorizon(h.id, { visible: e.target.checked })}
+                            title="Видимость" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
+                          <input type="color" value={h.color}
+                            onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
+                            className="w-6 h-6 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
+                            title="Цвет горизонта" />
+                          <input type="text" value={h.name}
+                            onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
+                            className="cad-input flex-1 min-w-0"
+                            placeholder="Название" />
+                          <input type="number" value={h.z}
+                            onChange={(e) => updateHorizon(h.id, { z: Number(e.target.value) })}
+                            className="cad-input w-16 text-right"
+                            title="Высотная отметка, м" />
+                          <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>
+                          <span className="text-[10px] text-gray-400 w-7 text-center" title="Ветвей на горизонте">
+                            {usedCount}
+                          </span>
+                          <button onClick={() => removeHorizon(h.id)}
+                            className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
+                            title="Удалить горизонт">
+                            <Icon name="Trash2" size={11} className="text-gray-600" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={addHorizon}
+                    className="mt-2 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center gap-1">
+                    <Icon name="Plus" size={11} /> Добавить горизонт
+                  </button>
+                </FrameGroup>
+
+                <FrameGroup title="Быстрые действия">
+                  <div className="flex gap-1">
+                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: true })))}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
+                      Показать все
+                    </button>
+                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: false })))}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
+                      Скрыть все
+                    </button>
+                  </div>
+                  <CadCheckbox checked={colorByHorizon} onChange={setColorByHorizon}
+                    label="Окрашивать ветви по цвету горизонта" />
+                </FrameGroup>
               </div>
             )}
 
@@ -979,6 +1161,12 @@ export default function CadPage() {
           </div>
         </div>
 
+        {/* ── РАЗДЕЛИТЕЛЬ ШИРИНЫ ЛЕВОЙ ПАНЕЛИ (drag) ───────────────── */}
+        <div onMouseDown={startLeftDrag}
+          className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
+          style={{ background: "#d0d0d0" }}
+          title="Перетащите, чтобы изменить ширину панели" />
+
         {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS + ИНСТРУМЕНТЫ) ────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#ffffff" }}>
 
@@ -1015,8 +1203,38 @@ export default function CadPage() {
               <FlowBtn label="Оба" active={flowDisplay === "both"}
                 onClick={() => setFlowDisplay("both")} hint="Анимация + шевроны" />
               <FlowBtn label="Откл" active={flowDisplay === "off"}
-                onClick={() => setFlowDisplay("off")} hint="Без индикации направления" />
+                onClick={() => setFlowDisplay("off")} hint="Без индикации направления (по умолчанию)" />
             </div>
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+
+            {/* ── Расчёт воздухораспределения (F9) ── */}
+            <button onClick={handleSolve}
+              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
+              style={{ background: "#16a34a", color: "white", border: "1px solid #15803d" }}
+              title="Запустить расчёт воздухораспределения (F9)">
+              <Icon name="Play" size={11} /> Расчёт <span className="opacity-80 text-[10px]">F9</span>
+            </button>
+            <button onClick={() => setShowFlowArrows((v) => !v)}
+              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
+              style={{
+                background: showFlowArrows ? "#dc2626" : "white",
+                color: showFlowArrows ? "white" : "#1f1f1f",
+                border: "1px solid " + (showFlowArrows ? "#b91c1c" : "#d0d0d0"),
+              }}
+              title="Показать стрелки направления свежей струи">
+              <Icon name="ArrowRight" size={11} /> Стрелки
+            </button>
+            <button onClick={() => setThinLines((v) => !v)}
+              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
+              style={{
+                background: thinLines ? "#2563eb" : "white",
+                color: thinLines ? "white" : "#1f1f1f",
+                border: "1px solid " + (thinLines ? "#1d4ed8" : "#d0d0d0"),
+              }}
+              title="Тонкие линии 1px вкл/откл (F6)">
+              <Icon name="Minus" size={11} /> Тонкие <span className="opacity-80 text-[10px]">F6</span>
+            </button>
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
@@ -1080,14 +1298,265 @@ export default function CadPage() {
               onViewChange={setViewInfo}
               flowDisplay={flowDisplay}
               workPlane={workPlane}
+              horizons={horizons}
+              branchWidth={branchWidth}
+              branchBorder={branchBorder}
+              thinLines={thinLines}
+              colorByHorizon={colorByHorizon}
+              showFlowArrows={showFlowArrows}
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
               onSelectNode={(id) => { setSelectedNodeId(id); if (id) setSelectedBranchId(null); }}
               onSelectBranch={(id) => { setSelectedBranchId(id); if (id) setSelectedNodeId(null); }}
             />
+
+            {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}
+            <button onClick={() => setRightPanelOpen((v) => !v)}
+              className="absolute top-2 right-2 z-10 h-7 px-2 flex items-center gap-1 rounded text-[11px] shadow-sm"
+              style={{ background: rightPanelOpen ? "#2563eb" : "#ffffff", color: rightPanelOpen ? "white" : "#1f1f1f", border: "1px solid #b8b8b8" }}
+              title={rightPanelOpen ? "Скрыть панель свойств" : "Показать панель свойств"}>
+              <Icon name={rightPanelOpen ? "PanelRightClose" : "PanelRightOpen"} size={13} />
+              <span>{rightPanelOpen ? "Свернуть" : "Свойства"}</span>
+            </button>
           </div>
         </div>
+
+        {/* ── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (узлы / ветви) ────────────────── */}
+        {rightPanelOpen && (
+          <div className="w-[340px] flex-shrink-0 flex flex-col"
+            style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
+            {/* Табы */}
+            <div className="flex border-b border-gray-300" style={{ background: "#f5f5f5" }}>
+              <button onClick={() => setRightTab("node")}
+                className="flex-1 h-8 text-xs flex items-center justify-center gap-1"
+                style={{
+                  background: rightTab === "node" ? "#ffffff" : "transparent",
+                  borderBottom: rightTab === "node" ? "2px solid #2563eb" : "2px solid transparent",
+                  fontWeight: rightTab === "node" ? 600 : 400,
+                  color: rightTab === "node" ? "#2563eb" : "#444",
+                }}>
+                <Icon name="Circle" size={11} /> Узлы {selectedNode && `(${selectedNode.number || selectedNode.id})`}
+              </button>
+              <button onClick={() => setRightTab("branch")}
+                className="flex-1 h-8 text-xs flex items-center justify-center gap-1"
+                style={{
+                  background: rightTab === "branch" ? "#ffffff" : "transparent",
+                  borderBottom: rightTab === "branch" ? "2px solid #2563eb" : "2px solid transparent",
+                  fontWeight: rightTab === "branch" ? 600 : 400,
+                  color: rightTab === "branch" ? "#2563eb" : "#444",
+                }}>
+                <Icon name="GitBranch" size={11} /> Ветви {selectedBranch && `(${selectedBranch.id})`}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {/* ─── ВКЛАДКА: УЗЛЫ ───────────────────────────────── */}
+              {rightTab === "node" && (
+                selectedNode ? (
+                  <>
+                    <FrameGroup title="Узел">
+                      <LabeledRow label="Название:">
+                        <input type="text" value={selectedNode.name}
+                          onChange={(e) => updateNode(selectedNode.id, { name: e.target.value })}
+                          className="cad-input flex-1" />
+                      </LabeledRow>
+                      <LabeledRow label="Номер:">
+                        <input type="text" value={selectedNode.number}
+                          onChange={(e) => updateNode(selectedNode.id, { number: e.target.value })}
+                          className="cad-input flex-1" />
+                      </LabeledRow>
+                    </FrameGroup>
+
+                    <FrameGroup title="Координаты, м">
+                      <LabeledRow label="X:">
+                        <NumWithUnit value={selectedNode.x} unit="м"
+                          onChange={(v) => updateNode(selectedNode.id, { x: v })} />
+                      </LabeledRow>
+                      <LabeledRow label="Y:">
+                        <NumWithUnit value={selectedNode.y} unit="м"
+                          onChange={(v) => updateNode(selectedNode.id, { y: v })} />
+                      </LabeledRow>
+                      <LabeledRow label="Z (высотная отметка):">
+                        <NumWithUnit value={selectedNode.z} unit="м"
+                          onChange={(v) => updateNode(selectedNode.id, { z: v })} />
+                      </LabeledRow>
+                    </FrameGroup>
+
+                    {/* ── СВЯЗЬ С АТМОСФЕРОЙ — ключевой переключатель для расчёта ── */}
+                    <FrameGroup title="Связь с атмосферой">
+                      <div className="flex items-start gap-2 p-1">
+                        <input type="checkbox" checked={selectedNode.atmosphereLink}
+                          onChange={(e) => updateNode(selectedNode.id, { atmosphereLink: e.target.checked })}
+                          className="w-4 h-4 mt-0.5 cursor-pointer flex-shrink-0" />
+                        <div className="flex-1 text-xs leading-tight">
+                          <div className="font-semibold text-gray-800">
+                            Узел соединён с атмосферой
+                          </div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            Включается для устьев стволов и порталов штолен —
+                            точки входа/выхода воздуха в рудник.
+                            Требуется для расчёта воздухораспределения (F9).
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-1 py-1 text-[11px]"
+                        style={{
+                          background: selectedNode.atmosphereLink ? "#dcfce7" : "#fef3c7",
+                          color: selectedNode.atmosphereLink ? "#166534" : "#92400e",
+                          border: "1px solid",
+                          borderColor: selectedNode.atmosphereLink ? "#86efac" : "#fcd34d",
+                          borderRadius: 3,
+                        }}>
+                        {selectedNode.atmosphereLink
+                          ? "● Источник/сток воздуха для сети."
+                          : "○ Внутренний узел сети (без обмена с атмосферой)."}
+                      </div>
+                      <div className="px-1 pt-1 text-[10px] text-gray-600">
+                        Всего таких узлов в сети:{" "}
+                        <b>{nodes.filter((n) => n.atmosphereLink).length}</b>
+                        {" "}— минимум 2 (вход + выход) для корректного расчёта.
+                      </div>
+                    </FrameGroup>
+
+                    <FrameGroup title="Климат и расчёт">
+                      <LabeledRow label="Температура воздуха:">
+                        <NumWithUnit value={selectedNode.airTemp} unit="°C"
+                          onChange={(v) => updateNode(selectedNode.id, { airTemp: v })} />
+                      </LabeledRow>
+                      <LabeledRow label="Темп. стенок:">
+                        <NumWithUnit value={selectedNode.wallTemp} unit="°C"
+                          onChange={(v) => updateNode(selectedNode.id, { wallTemp: v })} />
+                      </LabeledRow>
+                      <LabeledRow label="Привед. давление:">
+                        <NumWithUnit value={selectedNode.reducedPressure} unit="Па"
+                          onChange={(v) => updateNode(selectedNode.id, { reducedPressure: v })} />
+                      </LabeledRow>
+                      <div className="pt-1 mt-1 border-t border-gray-200">
+                        <ComputedRow label="Давление расч.:" value={`${selectedNode.computedPressure} Па`} />
+                        <ComputedRow label="Темп. возд. расч.:" value={`${selectedNode.computedAirTemp} °C`} />
+                      </div>
+                    </FrameGroup>
+
+                    <button onClick={handleDeleteSelected}
+                      className="w-full px-2 py-1.5 text-xs border border-red-300 text-red-700 rounded hover:bg-red-50 flex items-center justify-center gap-1">
+                      <Icon name="Trash2" size={12} /> Удалить узел
+                    </button>
+                  </>
+                ) : (
+                  <div className="p-4 text-center text-gray-400 text-xs">
+                    Выберите узел на схеме, чтобы редактировать его свойства.
+                    <br />
+                    Всего в сети: <b>{nodes.length}</b> узлов
+                    {nodes.filter((n) => n.atmosphereLink).length > 0 && (
+                      <>, из них с атмосферой: <b>{nodes.filter((n) => n.atmosphereLink).length}</b></>
+                    )}
+                  </div>
+                )
+              )}
+
+              {/* ─── ВКЛАДКА: ВЕТВИ ──────────────────────────────── */}
+              {rightTab === "branch" && (
+                selectedBranch ? (
+                  <>
+                    <FrameGroup title="Ветвь">
+                      <LabeledRow label="ID:">
+                        <input type="text" value={selectedBranch.id} readOnly className="cad-input flex-1" />
+                      </LabeledRow>
+                      <LabeledRow label="Тип:">
+                        <input type="text" value={selectedBranch.type}
+                          onChange={(e) => updateBranch(selectedBranch.id, { type: e.target.value })}
+                          className="cad-input flex-1" />
+                      </LabeledRow>
+                      <LabeledRow label="Направление:">
+                        <span className="flex-1 px-2 py-1 text-xs bg-gray-100 border border-gray-300 rounded">
+                          {selectedBranch.fromId} → {selectedBranch.toId}
+                        </span>
+                      </LabeledRow>
+                      <LabeledRow label="Горизонт:">
+                        <div className="flex-1 flex items-center gap-1">
+                          <select value={selectedBranch.horizonId}
+                            onChange={(e) => updateBranch(selectedBranch.id, { horizonId: e.target.value })}
+                            className="cad-input flex-1">
+                            <option value="">— без привязки —</option>
+                            {horizons.map((h) => (
+                              <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
+                            ))}
+                          </select>
+                          {selectedBranch.horizonId && (
+                            <span className="w-3 h-3 rounded-sm border border-gray-400 flex-shrink-0"
+                              style={{ background: horizons.find((h) => h.id === selectedBranch.horizonId)?.color || "#ccc" }}
+                              title="Цвет горизонта" />
+                          )}
+                        </div>
+                      </LabeledRow>
+                    </FrameGroup>
+
+                    <FrameGroup title="Геометрия">
+                      <ComputedRow label="Длина L:" value={`${selectedBranch.length} м`} />
+                      <ComputedRow label="Площадь S:" value={`${selectedBranch.area.toFixed(2)} м²`} />
+                      <ComputedRow label="Периметр P:" value={`${selectedBranch.perimeter.toFixed(2)} м`} />
+                      <ComputedRow label="Гидр. диаметр Dh:" value={`${selectedBranch.dh.toFixed(2)} м`} />
+                    </FrameGroup>
+
+                    <FrameGroup title="Аэродинамика">
+                      <ComputedRow label="R общее:" value={`${(selectedBranch.resistance * 1000).toFixed(4)} ·10⁻³ кμ`} />
+                      <ComputedRow label="Расход Q:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} />
+                      <ComputedRow label="Скорость V:" value={`${selectedBranch.velocity.toFixed(2)} м/с${selectedBranch.velocity > selectedBranch.vMax ? " ⚠" : ""}`} />
+                      <ComputedRow label="Депрессия ΔP:" value={`${selectedBranch.dP.toFixed(1)} Па`} />
+                      <ComputedRow label="Энергозатр. N:" value={`${selectedBranch.power} Вт`} />
+                    </FrameGroup>
+
+                    {selectedBranch.hasFan && (
+                      <FrameGroup title="Вентилятор">
+                        <LabeledRow label="Название:">
+                          <input type="text" value={selectedBranch.fanName}
+                            onChange={(e) => updateBranch(selectedBranch.id, { fanName: e.target.value })}
+                            className="cad-input flex-1" />
+                        </LabeledRow>
+                        <ComputedRow label="H рабочее:" value={`${selectedBranch.fanPressure.toFixed(0)} Па`} />
+                        <ComputedRow label="КПД η:" value={`${(selectedBranch.fanEfficiency * 100).toFixed(1)} %`} />
+                      </FrameGroup>
+                    )}
+
+                    <button onClick={handleDeleteSelected}
+                      className="w-full px-2 py-1.5 text-xs border border-red-300 text-red-700 rounded hover:bg-red-50 flex items-center justify-center gap-1">
+                      <Icon name="Trash2" size={12} /> Удалить ветвь
+                    </button>
+                  </>
+                ) : (
+                  <div className="p-4 text-center text-gray-400 text-xs">
+                    Выберите ветвь на схеме, чтобы редактировать её свойства.
+                    <br />
+                    Всего в сети: <b>{branches.length}</b> ветвей
+                  </div>
+                )
+              )}
+            </div>
+
+            {/* ── Подвал панели: быстрые действия ── */}
+            <div className="border-t border-gray-300 p-2 flex gap-1" style={{ background: "#f5f5f5" }}>
+              <button onClick={handleSolve}
+                className="flex-1 h-7 text-xs rounded flex items-center justify-center gap-1"
+                style={{ background: "#16a34a", color: "white" }}
+                title="Расчёт воздухораспределения (F9)">
+                <Icon name="Play" size={11} /> Расчёт (F9)
+              </button>
+              <button onClick={() => setThinLines((v) => !v)}
+                className="h-7 px-2 text-xs rounded border border-gray-300 hover:bg-blue-50"
+                style={{ background: thinLines ? "#dbeafe" : "white" }}
+                title="Тонкие линии (F6)">
+                <Icon name="Minus" size={11} /> F6
+              </button>
+              <button onClick={() => setShowFlowArrows((v) => !v)}
+                className="h-7 px-2 text-xs rounded border border-gray-300 hover:bg-blue-50"
+                style={{ background: showFlowArrows ? "#fee2e2" : "white" }}
+                title="Стрелки направления свежей струи">
+                <Icon name="ArrowRight" size={11} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ═══ STATUS BAR ═══════════════════════════════════════════════════ */}
@@ -1295,13 +1764,14 @@ function FrameGroup({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-// Строка с подписью слева (фиксированная ширина) и контентом справа
+// Строка с подписью слева (фиксированная ширина) и контентом справа.
+// Подпись переносится по словам, чтобы при сужении левой панели текст не обрезался.
 function LabeledRow({ label, children, labelWidth = 140 }: {
   label: string; children: React.ReactNode; labelWidth?: number;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-gray-700 flex-shrink-0 text-right"
+    <div className="flex items-start gap-1.5">
+      <span className="text-xs text-gray-700 flex-shrink-0 text-right whitespace-normal break-words leading-tight pt-1"
         style={{ width: labelWidth }}>{label}</span>
       {children}
     </div>
@@ -1338,9 +1808,9 @@ function NumWithUnit({ value, unit, onChange }: {
 // ─── Строка вычисленного параметра (только чтение, серый фон) ──────────────
 function ComputedRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-1.5 py-0.5">
-      <span className="text-xs text-gray-700 w-[140px] flex-shrink-0 text-right">{label}</span>
-      <div className="flex-1 px-2 py-1 text-right text-xs font-bold"
+    <div className="flex items-start gap-1.5 py-0.5">
+      <span className="text-xs text-gray-700 w-[140px] flex-shrink-0 text-right whitespace-normal break-words leading-tight pt-1">{label}</span>
+      <div className="flex-1 min-w-0 px-2 py-1 text-right text-xs font-bold break-words"
         style={{ background: "#cfcfcf", color: "#1f1f1f", border: "1px solid #b8b8b8" }}>
         {value}
       </div>

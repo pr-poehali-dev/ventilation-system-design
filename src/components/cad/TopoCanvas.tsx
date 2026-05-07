@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   type TopoNode, type TopoBranch, type ProjOptions, type ViewPreset, type WorkPlane,
+  type Horizon,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
 
@@ -32,6 +33,18 @@ interface Props {
   flowDisplay?: FlowDisplayMode;
   /** Активная рабочая плоскость для построения в 3D (если null — auto по ракурсу) */
   workPlane?: WorkPlane | null;
+  /** Список горизонтов для фильтрации/окрашивания ветвей. */
+  horizons?: Horizon[];
+  /** Базовая толщина линии ветви (px), общая настройка. По умолчанию 2.5. */
+  branchWidth?: number;
+  /** Толщина обводки ветви (px), 0 = без обводки. */
+  branchBorder?: number;
+  /** Тонкие линии (F6): всё в 1px без обводки и без анимации, для печатной/схемной подачи. */
+  thinLines?: boolean;
+  /** Окрашивать ветви по цвету горизонта (вместо цвета по скорости/потоку). */
+  colorByHorizon?: boolean;
+  /** Показывать стрелки направления свежей струи после расчёта (F9). */
+  showFlowArrows?: boolean;
 }
 
 export type FlowDisplayMode =
@@ -52,8 +65,23 @@ export default function TopoCanvas(props: Props) {
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSelectNode, onSelectBranch, zLevel,
-    viewPreset, onViewChange, flowDisplay = "flow", workPlane,
+    viewPreset, onViewChange, flowDisplay = "off", workPlane,
+    horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false,
+    colorByHorizon = false, showFlowArrows = false,
   } = props;
+
+  // Карта горизонтов по id (для быстрых lookups)
+  const horizonMap = (() => {
+    const m = new Map<string, Horizon>();
+    (horizons ?? []).forEach((h) => m.set(h.id, h));
+    return m;
+  })();
+  // Видимые ветви: если горизонт привязан и скрыт — фильтруем
+  const visibleBranches = branches.filter((b) => {
+    if (!b.horizonId) return true;
+    const h = horizonMap.get(b.horizonId);
+    return !h || h.visible;
+  });
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -270,7 +298,8 @@ export default function TopoCanvas(props: Props) {
   };
 
   // Сортировка ветвей по средней глубине (painter's алгоритм)
-  const branchesSorted = [...branches].map((b) => {
+  // Только видимые: ветви скрытых горизонтов выпадают из рендера.
+  const branchesSorted = [...visibleBranches].map((b) => {
     const from = projNodes.find((p) => p.node.id === b.fromId);
     const to = projNodes.find((p) => p.node.id === b.toId);
     const depth = from && to ? (from.depth + to.depth) / 2 : 0;
@@ -426,15 +455,28 @@ export default function TopoCanvas(props: Props) {
           const Q = Math.abs(b.flow);
           const V = b.velocity;
           const overV = V > b.vMax;
-          // Цвет: фиолетовый = вентилятор, красный = превышение скорости,
-          // голубой = свежая струя (Q>0), серый = без потока
+          // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
+          // Приоритет: выделена → авария → вентилятор → горизонт (если включён) → поток.
+          const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const color = isSel ? "#2563eb"
-            : b.hasFan ? "#7c3aed"
             : overV ? "#dc2626"
+            : b.hasFan ? "#7c3aed"
+            : (colorByHorizon && horizonColor) ? horizonColor
             : Q > 0 ? "#0369a1"
             : "#9ca3af";
-          const w = isSel ? 3 : Q > 100 ? 3 : Q > 30 ? 2.5 : 2;
-          const flowVisible = Q > 0.1 && flowDisplay !== "off";
+
+          // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
+          // F6 «Тонкие линии» → всё в 1px. Иначе — общая настройка branchWidth
+          // с лёгким масштабированием по расходу + явный «акцент» при выделении.
+          const baseW = isSel ? branchWidth + 1
+            : Q > 100 ? branchWidth + 0.5
+            : Q > 30 ? branchWidth
+            : Math.max(1, branchWidth - 0.5);
+          const w = thinLines ? 1 : baseW;
+          // Обводка (контур вокруг линии): ширина = w + 2*border
+          const borderW = thinLines ? 0 : Math.max(0, branchBorder);
+
+          const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
 
@@ -451,6 +493,12 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={b.id}>
+              {/* Контурная обводка (рисуется ПОД основной линией, шире на 2*borderW) */}
+              {borderW > 0 && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#1f2937" strokeWidth={w + borderW * 2}
+                  strokeLinecap="round" opacity="0.85" />
+              )}
               {/* Подложка — статичная линия (всегда от fromId к toId, цвет = тип) */}
               <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                 stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1} />
@@ -494,6 +542,31 @@ export default function TopoCanvas(props: Props) {
               {flowVisible && (
                 <circle cx={sxA} cy={syA} r="2.5" fill={color} opacity="0.9" />
               )}
+
+              {/* ── Стрелки направления свежей струи (F9, после расчёта) ── */}
+              {/* Красные, статичные, редкие (1 шт на ~120 px), как в АэроСеть. */}
+              {showFlowArrows && !thinLines && Q > 0.1 && segLen > 60 && (() => {
+                const step = 120;
+                const count = Math.max(1, Math.floor(segLen / step));
+                const angle = Math.atan2(uy, ux) * 180 / Math.PI;
+                return (
+                  <g>
+                    {Array.from({ length: count }, (_, i) => {
+                      const t0 = (i + 1) / (count + 1);
+                      const cx = sxA + dx * t0;
+                      const cy = syA + dy * t0;
+                      return (
+                        <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
+                          {/* Жирная красная стрелка с белым контуром для читаемости */}
+                          <polygon points="-7,-5 7,0 -7,5 -3,0"
+                            fill="#dc2626" stroke="white" strokeWidth="1.2"
+                            strokeLinejoin="round" />
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
 
               {b.hasFan && (
                 <g transform={`translate(${midX},${midY - 18})`}>

@@ -74,7 +74,38 @@ export interface TopoBranch {
   reynolds: number;         // Re
   // ─── Общие ───────────────────────────────────────────
   layer: string;
+  horizonId: string;        // ID горизонта (см. Horizon[]), пустая строка = без привязки
 }
+
+// ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
+// Каждый горизонт — это «слой» сети с уникальным цветом и высотной отметкой.
+// Можно скрывать/показывать целиком, перекрашивать ветви, переключать активный.
+export interface Horizon {
+  id: string;
+  name: string;
+  z: number;        // высотная отметка, м
+  color: string;    // HEX цвет (#RRGGBB)
+  visible: boolean; // отображать ли ветви этого горизонта на схеме
+}
+
+export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {
+  return {
+    id,
+    name: id,
+    z: 0,
+    color: "#3b82f6",
+    visible: true,
+    ...partial,
+  };
+}
+
+// Дефолтный набор горизонтов для шахты (поверхность + 3 рабочих горизонта)
+export const DEFAULT_HORIZONS: Horizon[] = [
+  { id: "H_SURFACE", name: "Поверхность",  z:    0, color: "#22c55e", visible: true },
+  { id: "H_-75",     name: "Гор. −75 м",   z:  -75, color: "#3b82f6", visible: true },
+  { id: "H_-240",    name: "Гор. −240 м",  z: -240, color: "#a855f7", visible: true },
+  { id: "H_-480",    name: "Гор. −480 м",  z: -480, color: "#f97316", visible: true },
+];
 
 export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
   return {
@@ -143,6 +174,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     power: 0,
     reynolds: 0,
     layer: "Стволы",
+    horizonId: "",
     ...partial,
   };
 }
@@ -340,25 +372,25 @@ export const DEMO_NODES: TopoNode[] = [
 ];
 
 export const DEMO_BRANCHES: TopoBranch[] = [
-  makeBranch("B1", "U1", "N1", { type: "Ствол ЮВС",   layer: "Стволы",    shape: "round", diameter: 7,
+  makeBranch("B1", "U1", "N1", { type: "Ствол ЮВС",   layer: "Стволы",    horizonId: "H_-75",  shape: "round", diameter: 7,
                                   surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью", alphaCoef: 15, roughness: 5,
                                   flow: 211, vMax: 15 }),
-  makeBranch("B2", "N1", "N2", { type: "Квершлаг",    layer: "Квершлаги", shape: "arch",  rectWidth: 4, rectHeight: 2.5, archHeight: 1.5,
+  makeBranch("B2", "N1", "N2", { type: "Квершлаг",    layer: "Квершлаги", horizonId: "H_-75",  shape: "arch",  rectWidth: 4, rectHeight: 2.5, archHeight: 1.5,
                                   surfaceId: "concrete", surface: "Бетонная крепь гладкая", alphaCoef: 12, roughness: 3,
                                   flow: 211 }),
-  makeBranch("B3", "N2", "N3", { type: "Уклон",       layer: "Уклоны",    shape: "rect",  rectWidth: 4, rectHeight: 3,
+  makeBranch("B3", "N2", "N3", { type: "Уклон",       layer: "Уклоны",    horizonId: "H_-240", shape: "rect",  rectWidth: 4, rectHeight: 3,
                                   surfaceId: "anchor", surface: "Анкерная крепь", alphaCoef: 35, roughness: 50,
                                   flow: 211 }),
-  makeBranch("B4", "N3", "N4", { type: "Штрек откат.",layer: "Штреки",    shape: "arch",  rectWidth: 4, rectHeight: 2, archHeight: 1.5,
+  makeBranch("B4", "N3", "N4", { type: "Штрек откат.",layer: "Штреки",    horizonId: "H_-240", shape: "arch",  rectWidth: 4, rectHeight: 2, archHeight: 1.5,
                                   surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 50, roughness: 60,
                                   flow: 211 }),
-  makeBranch("B5", "N4", "N5", { type: "Очистной",    layer: "Лавы",      shape: "rect",  rectWidth: 3, rectHeight: 1.5,
+  makeBranch("B5", "N4", "N5", { type: "Очистной",    layer: "Лавы",      horizonId: "H_-240", shape: "rect",  rectWidth: 3, rectHeight: 1.5,
                                   surfaceId: "lava", surface: "Очистной забой (лава)", alphaCoef: 150, roughness: 200,
                                   flow: 211, localXi: 8 }),
-  makeBranch("B6", "N5", "N6", { type: "Штрек вент.", layer: "Штреки",    shape: "arch",  rectWidth: 4, rectHeight: 2, archHeight: 1.5,
+  makeBranch("B6", "N5", "N6", { type: "Штрек вент.", layer: "Штреки",    horizonId: "H_-75",  shape: "arch",  rectWidth: 4, rectHeight: 2, archHeight: 1.5,
                                   surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 50, roughness: 60,
                                   flow: 211 }),
-  makeBranch("B7", "N6", "U2", { type: "Ствол СВС",   layer: "Стволы",    shape: "round", diameter: 7,
+  makeBranch("B7", "N6", "U2", { type: "Ствол СВС",   layer: "Стволы",    horizonId: "H_-75",  shape: "round", diameter: 7,
                                   surfaceId: "shaft_skip", surface: "Ствол со скиповым подъёмом", alphaCoef: 45, roughness: 50,
                                   flow: 211, vMax: 15,
                                   hasFan: true, fanMode: "curve", fanCurveId: "VC-32",
