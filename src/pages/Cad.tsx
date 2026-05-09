@@ -7,6 +7,9 @@ import {
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
+import FUNC2URL from "../../backend/func2url.json";
+
+const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 
@@ -319,6 +322,29 @@ export default function CadPage() {
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
+  // Расширенные результаты из Python-ядра VentCore
+  const [vcFire, setVcFire] = useState<Record<string, unknown> | null>(null);
+  const [vcMethane, setVcMethane] = useState<Record<string, unknown> | null>(null);
+  const [vcThermal, setVcThermal] = useState<Record<string, unknown> | null>(null);
+  const [vcSolving, setVcSolving] = useState(false);
+  const [vcError, setVcError] = useState<string | null>(null);
+  // Режим расчёта: local = TypeScript в браузере; server = Python VentCore
+  const [calcMode, setCalcMode] = useState<"local" | "server">("server");
+  // Включённые расчёты (в серверном режиме)
+  const [calcFire, setCalcFire] = useState(false);
+  const [calcMethane, setCalcMethane] = useState(false);
+  const [calcThermal, setCalcThermal] = useState(false);
+  // Параметры пожара
+  const [fireNodeId, setFireNodeId] = useState<string>("");
+  const [fireHeat, setFireHeat] = useState(5000);
+  const [fireSmoke, setFireSmoke] = useState(0.3);
+  // Параметры метана [{nodeId, emissionRate}]
+  const [methSources, setMethSources] = useState<Array<{nodeId: string; rate: number}>>([]);
+  // Параметры теплового режима
+  const [thermalParams, setThermalParams] = useState({
+    inletAirTemp: 10, inletAirHumidity: 70,
+    depth: 300, geothermalGradient: 3.0, surfaceTemp: 8,
+  });
 
   // ─── Ракурс / 3D ────────────────────────────────────────────────────
   const [viewPreset, setViewPreset] = useState<{ name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE"; nonce: number } | null>(null);
@@ -382,13 +408,124 @@ export default function CadPage() {
     e.preventDefault();
   };
 
-  const handleSolve = () => {
+  // Локальный расчёт в браузере (TypeScript, метод Кросса)
+  const handleSolveLocal = () => {
     const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
     setBranches(res.branches);
     setNodes(res.nodes);
     setSolveResult(res);
-    // После успешного расчёта показываем стрелки направления свежей струи (как в АэроСеть).
     if (res.ok) setShowFlowArrows(true);
+  };
+
+  // Серверный расчёт через Python VentCore (все 7 модулей)
+  const handleSolveServer = async () => {
+    setVcSolving(true);
+    setVcError(null);
+    try {
+      const body: Record<string, unknown> = {
+        action: "full",
+        nodes: nodes.map((n) => ({
+          id: n.id, name: n.name,
+          atmosphereLink: n.atmosphereLink,
+          reducedPressure: n.reducedPressure ?? 0,
+          x: n.x, y: n.y, z: n.z,
+        })),
+        branches: branchesRaw.map((b) => ({
+          id: b.id, fromId: b.fromId, toId: b.toId,
+          shape: b.shape, diameter: b.diameter,
+          rectWidth: b.rectWidth, rectHeight: b.rectHeight,
+          trapTopWidth: b.trapTopWidth,
+          area: b.area, perimeter: b.perimeter,
+          length: b.length,
+          resistanceMode: b.resistanceMode,
+          alphaCoef: b.alphaCoef, surfaceId: b.surfaceId,
+          roughness: b.roughness, manualR: b.manualR, localXi: b.localXi,
+          hasFan: b.hasFan, fanMode: b.fanMode, fanPressure: b.fanPressure,
+          resistance: b.resistance,
+        })),
+        options: { maxIter: 300, tolerance: 0.001, initialFlow: 50 },
+      };
+      // Пожар
+      if (calcFire && fireNodeId) {
+        body.fire = {
+          nodeId: fireNodeId,
+          heatRelease: fireHeat,
+          smokeDensity: fireSmoke,
+          coConcentration: 0.01,
+        };
+      }
+      // Метан
+      if (calcMethane && methSources.length > 0) {
+        body.methaneSources = methSources.map((s) => ({
+          nodeId: s.nodeId, emissionRate: s.rate, sourceType: "face",
+        }));
+      }
+      // Тепловой режим
+      if (calcThermal) {
+        body.thermalParams = thermalParams;
+      }
+
+      const resp = await fetch(VENTCORE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        setVcError(data.error || "Ошибка сервера");
+        return;
+      }
+
+      // Применяем результат вентиляции к узлам и ветвям
+      const ventResult = data.ventilation;
+      if (ventResult && ventResult.ok !== false) {
+        // Обновляем computedPressure узлов
+        setNodes((prev) => prev.map((n) => {
+          const updated = ventResult.nodes?.find((x: { id?: string; nodeId?: string }) =>
+            (x.id || x.nodeId) === n.id);
+          return updated ? { ...n, computedPressure: updated.computedPressure ?? 0 } : n;
+        }));
+        // Обновляем flow/velocity/dP ветвей
+        setBranches((prev) => prev.map((b) => {
+          const updated = ventResult.branches?.find((x: { id: string }) => x.id === b.id);
+          return updated ? {
+            ...b,
+            flow: updated.flow ?? b.flow,
+            velocity: updated.velocity ?? b.velocity,
+            dP: updated.dP ?? b.dP,
+            resistance: updated.resistance ?? b.resistance,
+          } : b;
+        }));
+        setSolveResult({
+          ok: ventResult.ok ?? true,
+          iterations: ventResult.iterations ?? 0,
+          maxDeltaQ: ventResult.maxDeltaQ ?? 0,
+          branches: [] as typeof branchesRaw,
+          nodes: [] as typeof nodes,
+          log: ventResult.log ?? [],
+          cyclesCount: ventResult.cyclesCount ?? 0,
+        });
+        setShowFlowArrows(true);
+      }
+
+      // Сохраняем расширенные результаты
+      setVcFire(data.fire ?? null);
+      setVcMethane(data.methane ?? null);
+      setVcThermal(data.thermal ?? null);
+    } catch (e) {
+      setVcError(`Ошибка соединения: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setVcSolving(false);
+    }
+  };
+
+  const handleSolve = () => {
+    if (calcMode === "server") {
+      void handleSolveServer();
+    } else {
+      handleSolveLocal();
+    }
   };
 
   // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
@@ -1444,8 +1581,172 @@ export default function CadPage() {
               </>
             )}
 
+            {/* ═══ ВКЛАДКА: АВАРИЙНЫЕ СИТУАЦИИ (пожар, метан, задымление) ═ */}
+            {activeSide === "accidents" && (
+              <div className="p-2 space-y-2">
+                {/* ── Настройки расчёта ── */}
+                <FrameGroup title="Режим расчёта">
+                  <div className="text-[10px] text-gray-600 pb-1">
+                    VentCore (Python) считает вентиляцию, задымление, метан и тепловой режим
+                    за один запрос. Нажмите F9 или кнопку «Расчёт».
+                  </div>
+                  <div className="flex gap-1 mb-1">
+                    <button onClick={() => { setCalcMode("server"); void handleSolveServer(); }}
+                      disabled={vcSolving}
+                      className="flex-1 h-7 text-[11px] rounded font-semibold flex items-center justify-center gap-1"
+                      style={{ background: "#1d4ed8", color: "white" }}>
+                      {vcSolving ? <><Icon name="Loader" size={11} className="animate-spin" /> Расчёт...</> : <><Icon name="Zap" size={11} /> ⚡ Запустить VentCore</>}
+                    </button>
+                  </div>
+                  {vcError && <div className="text-[10px] text-red-600 bg-red-50 border border-red-200 rounded p-1">{vcError}</div>}
+                </FrameGroup>
+
+                {/* ── Пожар ── */}
+                <FrameGroup title="Пожар / задымление">
+                  <CadCheckbox checked={calcFire} onChange={setCalcFire} label="Рассчитать задымление" />
+                  {calcFire && (
+                    <div className="space-y-1 pt-1">
+                      <LabeledRow label="Узел пожара:" labelWidth={100}>
+                        <select value={fireNodeId} onChange={(e) => setFireNodeId(e.target.value)}
+                          className="cad-input flex-1">
+                          <option value="">— выберите —</option>
+                          {nodes.map((n) => <option key={n.id} value={n.id}>{n.name || n.id}</option>)}
+                        </select>
+                      </LabeledRow>
+                      <LabeledRow label="Тепловыд., кВт:" labelWidth={100}>
+                        <NumWithUnit value={fireHeat} unit="кВт" onChange={setFireHeat} />
+                      </LabeledRow>
+                      <LabeledRow label="Дымность:" labelWidth={100}>
+                        <NumWithUnit value={fireSmoke} unit="" onChange={setFireSmoke} />
+                      </LabeledRow>
+                    </div>
+                  )}
+                  {/* Результаты пожара */}
+                  {vcFire && (() => {
+                    const fireData = vcFire as { nodes?: Array<{nodeId: string; smokeLevel: number; coPpm: number; isDangerous: boolean; alarmLevel: string; visibility: number; temperature: number}>; dangerZones?: string[]; safeExits?: string[]; spreadTimeSec?: number };
+                    return (
+                      <div className="mt-1 space-y-1">
+                        <div className="flex gap-2 text-[11px]">
+                          <span className="text-red-700 font-semibold">⚠ Опасных зон: {fireData.dangerZones?.length ?? 0}</span>
+                          <span className="text-green-700">✓ Безоп. выходов: {fireData.safeExits?.length ?? 0}</span>
+                        </div>
+                        <div className="text-[10px] text-gray-600">Время распр. дыма: {fireData.spreadTimeSec?.toFixed(0)} с</div>
+                        <div className="max-h-36 overflow-y-auto space-y-0.5">
+                          {fireData.nodes?.filter((r) => r.alarmLevel !== "safe").map((r) => (
+                            <div key={r.nodeId} className="flex items-center gap-1 text-[10px] px-1 py-0.5 rounded"
+                              style={{ background: r.alarmLevel === "critical" ? "#fee2e2" : r.alarmLevel === "danger" ? "#fef3c7" : "#fefce8" }}>
+                              <span className="font-semibold">{nodes.find((n) => n.id === r.nodeId)?.name || r.nodeId}</span>
+                              <span>дым {(r.smokeLevel * 100).toFixed(0)}%</span>
+                              <span>CO {r.coPpm.toFixed(0)} ppm</span>
+                              <span>👁 {r.visibility.toFixed(0)} м</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </FrameGroup>
+
+                {/* ── Метан ── */}
+                <FrameGroup title="Газ (CH₄)">
+                  <CadCheckbox checked={calcMethane} onChange={setCalcMethane} label="Рассчитать метан" />
+                  {calcMethane && (
+                    <div className="space-y-1 pt-1">
+                      <div className="text-[10px] text-gray-600 pb-1">Источники выделения CH₄:</div>
+                      {methSources.map((s, i) => (
+                        <div key={i} className="flex gap-1 items-center">
+                          <select value={s.nodeId}
+                            onChange={(e) => setMethSources((p) => p.map((x, j) => j === i ? { ...x, nodeId: e.target.value } : x))}
+                            className="cad-input flex-1">
+                            <option value="">— узел —</option>
+                            {nodes.map((n) => <option key={n.id} value={n.id}>{n.name || n.id}</option>)}
+                          </select>
+                          <input type="number" value={s.rate}
+                            onChange={(e) => setMethSources((p) => p.map((x, j) => j === i ? { ...x, rate: Number(e.target.value) } : x))}
+                            className="cad-input w-14 text-right" placeholder="м³/мин" />
+                          <button onClick={() => setMethSources((p) => p.filter((_, j) => j !== i))}
+                            className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded">
+                            <Icon name="X" size={10} />
+                          </button>
+                        </div>
+                      ))}
+                      <button onClick={() => setMethSources((p) => [...p, { nodeId: "", rate: 1.0 }])}
+                        className="px-2 py-0.5 text-[11px] border border-gray-300 rounded hover:bg-blue-50 flex items-center gap-1">
+                        <Icon name="Plus" size={10} /> Добавить источник
+                      </button>
+                    </div>
+                  )}
+                  {/* Результаты метана */}
+                  {vcMethane && (() => {
+                    const mData = vcMethane as { maxCh4Percent?: number; dangerousNodes?: string[]; explosiveNodes?: string[]; totalEmission?: number; nodes?: Array<{nodeId: string; ch4Percent: number; alarmLevel: string}> };
+                    return (
+                      <div className="mt-1 space-y-1">
+                        <div className="flex gap-2 text-[11px]">
+                          <span style={{ color: mData.maxCh4Percent && mData.maxCh4Percent > 2 ? "#dc2626" : "#16a34a" }}>
+                            MAX CH₄: {mData.maxCh4Percent?.toFixed(3)}%
+                          </span>
+                          {(mData.explosiveNodes?.length ?? 0) > 0 && (
+                            <span className="text-red-700 font-bold">💥 Взрывоопасно!</span>
+                          )}
+                        </div>
+                        <div className="max-h-32 overflow-y-auto space-y-0.5">
+                          {mData.nodes?.filter((r) => r.alarmLevel !== "safe").map((r) => (
+                            <div key={r.nodeId} className="flex gap-1 text-[10px] px-1 py-0.5 rounded"
+                              style={{ background: r.alarmLevel === "critical" ? "#fee2e2" : "#fef3c7" }}>
+                              <span className="font-semibold">{nodes.find((n) => n.id === r.nodeId)?.name || r.nodeId}</span>
+                              <span>{r.ch4Percent.toFixed(3)}% CH₄</span>
+                              <span className="ml-auto capitalize">{r.alarmLevel}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </FrameGroup>
+
+                {/* ── Тепловой режим ── */}
+                <FrameGroup title="Тепловой режим">
+                  <CadCheckbox checked={calcThermal} onChange={setCalcThermal} label="Тепловой расчёт" />
+                  {calcThermal && (
+                    <div className="space-y-1 pt-1">
+                      <LabeledRow label="T воздуха °C:" labelWidth={110}>
+                        <NumWithUnit value={thermalParams.inletAirTemp} unit="°C"
+                          onChange={(v) => setThermalParams((p) => ({ ...p, inletAirTemp: v }))} />
+                      </LabeledRow>
+                      <LabeledRow label="Влажность %:" labelWidth={110}>
+                        <NumWithUnit value={thermalParams.inletAirHumidity} unit="%"
+                          onChange={(v) => setThermalParams((p) => ({ ...p, inletAirHumidity: v }))} />
+                      </LabeledRow>
+                      <LabeledRow label="Глубина м:" labelWidth={110}>
+                        <NumWithUnit value={thermalParams.depth} unit="м"
+                          onChange={(v) => setThermalParams((p) => ({ ...p, depth: v }))} />
+                      </LabeledRow>
+                      <LabeledRow label="Геогр. гр-т:" labelWidth={110}>
+                        <NumWithUnit value={thermalParams.geothermalGradient} unit="°/100м"
+                          onChange={(v) => setThermalParams((p) => ({ ...p, geothermalGradient: v }))} />
+                      </LabeledRow>
+                    </div>
+                  )}
+                  {vcThermal && (() => {
+                    const tData = vcThermal as { maxWetBulb?: number; totalHeatLoad?: number; rockTemp?: number; totalCoolingNeeded?: number; dangerousNodes?: string[] };
+                    return (
+                      <div className="mt-1 text-[10px] space-y-0.5">
+                        <div>T пород: <b>{tData.rockTemp?.toFixed(1)}°C</b></div>
+                        <div>Мокр. терм.: <b style={{ color: (tData.maxWetBulb ?? 0) > 33 ? "#dc2626" : "#16a34a" }}>{tData.maxWetBulb?.toFixed(1)}°C</b></div>
+                        <div>Теплоприток: <b>{tData.totalHeatLoad?.toFixed(1)} кВт</b></div>
+                        <div>Охлаждение: <b>{tData.totalCoolingNeeded?.toFixed(1)} кВт</b></div>
+                        {(tData.dangerousNodes?.length ?? 0) > 0 && (
+                          <div className="text-red-600 font-semibold">⚠ {tData.dangerousNodes?.length} зон перегрева!</div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </FrameGroup>
+              </div>
+            )}
+
             {/* ═══ ОСТАЛЬНЫЕ ВКЛАДКИ ═════════════════════════════════════ */}
-            {(activeSide === "thermo" || activeSide === "accidents" || activeSide === "areas"
+            {(activeSide === "thermo" || activeSide === "areas"
               || activeSide === "indicators" || activeSide === "coords"
               || activeSide === "measure" || activeSide === "pipes") && (
               <div className="p-4 text-center text-gray-400 text-xs">
@@ -1503,12 +1804,32 @@ export default function CadPage() {
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
             {/* ── Расчёт воздухораспределения (F9) ── */}
-            <button onClick={handleSolve}
-              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
-              style={{ background: "#16a34a", color: "white", border: "1px solid #15803d" }}
-              title="Запустить расчёт воздухораспределения (F9)">
-              <Icon name="Play" size={11} /> Расчёт <span className="opacity-80 text-[10px]">F9</span>
-            </button>
+            <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <button onClick={handleSolve} disabled={vcSolving}
+                className="h-6 px-2 flex items-center gap-1 text-[11px]"
+                style={{ background: vcSolving ? "#6b7280" : "#16a34a", color: "white" }}
+                title={`Расчёт (F9) — режим: ${calcMode === "server" ? "Python VentCore" : "браузер"}`}>
+                {vcSolving
+                  ? <><Icon name="Loader" size={11} className="animate-spin" /> Считаю...</>
+                  : <><Icon name="Play" size={11} /> Расчёт <span className="opacity-80 text-[10px]">F9</span></>}
+              </button>
+              <button onClick={() => setCalcMode(calcMode === "server" ? "local" : "server")}
+                className="h-6 px-2 text-[11px] border-l border-gray-400"
+                style={{
+                  background: calcMode === "server" ? "#1d4ed8" : "#f3f4f6",
+                  color: calcMode === "server" ? "white" : "#374151",
+                }}
+                title={calcMode === "server"
+                  ? "Режим: Python VentCore (сервер) — нажмите для переключения на браузер"
+                  : "Режим: браузер (JS) — нажмите для переключения на VentCore"}>
+                {calcMode === "server" ? "⚡ VentCore" : "⚙ JS"}
+              </button>
+            </div>
+            {vcError && (
+              <span className="text-[10px] text-red-600 max-w-[160px] truncate" title={vcError}>
+                ⚠ {vcError}
+              </span>
+            )}
             <button onClick={() => setShowFlowArrows((v) => !v)}
               className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
               style={{

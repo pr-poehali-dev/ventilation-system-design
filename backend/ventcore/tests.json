@@ -1,0 +1,119 @@
+{
+  "tests": [
+    {
+      "name": "Health check",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": { "status": "ok" },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Расчёт вентиляции — простая сеть",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "vent",
+        "nodes": [
+          { "id": "N1", "name": "Ствол", "atmosphereLink": true, "x": 0, "y": 0, "z": 0 },
+          { "id": "N2", "name": "Узел 1", "atmosphereLink": false, "x": 100, "y": 0, "z": -75 },
+          { "id": "N3", "name": "Выход", "atmosphereLink": true, "x": 200, "y": 0, "z": 0 }
+        ],
+        "branches": [
+          {
+            "id": "B1", "fromId": "N1", "toId": "N2",
+            "shape": "rect", "rectWidth": 7, "rectHeight": 5.5,
+            "length": 150, "resistanceMode": "alpha", "alphaCoef": 0.014,
+            "hasFan": true, "fanMode": "constant", "fanPressure": 500
+          },
+          {
+            "id": "B2", "fromId": "N2", "toId": "N3",
+            "shape": "rect", "rectWidth": 5, "rectHeight": 4,
+            "length": 200, "resistanceMode": "alpha", "alphaCoef": 0.016,
+            "hasFan": false, "fanPressure": 0
+          }
+        ],
+        "options": { "maxIter": 100, "tolerance": 0.001 }
+      },
+      "expectedStatus": 200,
+      "expectedBody": { "ok": true },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Расчёт пожара / задымления",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "fire",
+        "nodes": [
+          { "id": "N1", "atmosphereLink": true, "x": 0, "y": 0, "z": 0 },
+          { "id": "N2", "atmosphereLink": false, "x": 100, "y": 0, "z": -75 },
+          { "id": "N3", "atmosphereLink": true, "x": 200, "y": 0, "z": 0 }
+        ],
+        "branches": [
+          { "id": "B1", "fromId": "N1", "toId": "N2", "length": 150, "flow": 50, "area": 38.5, "hasFan": true, "fanPressure": 500 },
+          { "id": "B2", "fromId": "N2", "toId": "N3", "length": 200, "flow": 50, "area": 20, "hasFan": false, "fanPressure": 0 }
+        ],
+        "fire": {
+          "nodeId": "N2",
+          "heatRelease": 5000,
+          "smokeDensity": 0.3,
+          "coConcentration": 0.01
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": { "safeExits": ["N1"] },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Расчёт метана",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "methane",
+        "nodes": [
+          { "id": "N1", "atmosphereLink": true, "x": 0, "y": 0, "z": 0 },
+          { "id": "N2", "atmosphereLink": false, "x": 100, "y": 0, "z": -75 },
+          { "id": "N3", "atmosphereLink": true, "x": 200, "y": 0, "z": 0 }
+        ],
+        "branches": [
+          { "id": "B1", "fromId": "N1", "toId": "N2", "length": 150, "area": 38.5, "hasFan": true, "fanPressure": 500 },
+          { "id": "B2", "fromId": "N2", "toId": "N3", "length": 200, "area": 20, "hasFan": false, "fanPressure": 0 }
+        ],
+        "methaneSources": [
+          { "nodeId": "N2", "emissionRate": 5.0, "sourceType": "face" }
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": { "totalEmission": 5.0 },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Полный расчёт (full)",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "full",
+        "nodes": [
+          { "id": "N1", "atmosphereLink": true, "x": 0, "y": 0, "z": 0 },
+          { "id": "N2", "atmosphereLink": false, "x": 100, "y": 0, "z": -75 },
+          { "id": "N3", "atmosphereLink": true, "x": 200, "y": 0, "z": 0 }
+        ],
+        "branches": [
+          { "id": "B1", "fromId": "N1", "toId": "N2", "length": 150, "shape": "rect", "rectWidth": 7, "rectHeight": 5.5, "resistanceMode": "alpha", "alphaCoef": 0.014, "hasFan": true, "fanMode": "constant", "fanPressure": 500 },
+          { "id": "B2", "fromId": "N2", "toId": "N3", "length": 200, "shape": "rect", "rectWidth": 5, "rectHeight": 4, "resistanceMode": "alpha", "alphaCoef": 0.016, "hasFan": false, "fanPressure": 0 }
+        ],
+        "thermalParams": {
+          "inletAirTemp": 10,
+          "inletAirHumidity": 70,
+          "depth": 300,
+          "geothermalGradient": 3.0,
+          "surfaceTemp": 8
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": { "ventilation": { "ok": true } },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
