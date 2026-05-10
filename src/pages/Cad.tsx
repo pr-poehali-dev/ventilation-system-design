@@ -385,6 +385,21 @@ export default function CadPage() {
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
   const [rightTab, setRightTab] = useState<"node" | "branch">("branch");
 
+  // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
+  const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
+  const handleBranchMultiSelect = (id: string) => {
+    setSelectedBranchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setSelectedBranchId(id);
+    setSelectedNodeId(null);
+  };
+
+  // ─── БУФЕР КОПИРОВАНИЯ ПАРАМЕТРОВ ВЕТВИ ─────────────────────────────
+  const [branchParamBuffer, setBranchParamBuffer] = useState<Partial<TopoBranch> | null>(null);
+
   // ─── КОНТЕКСТНОЕ МЕНЮ ───────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<{
     kind: "node" | "branch" | "canvas";
@@ -618,6 +633,24 @@ export default function CadPage() {
       case "toggle_capital": if (branchId) handleToggleCapital(branchId); break;
       case "toggle_designed": if (branchId) handleToggleDesigned(branchId); break;
       case "reverse_branch": if (branchId) handleReverseBranch(branchId); break;
+      case "copy_branch_params": {
+        const src = branchId ? branches.find((b) => b.id === branchId) : null;
+        if (src) {
+          const { id: _id, fromId: _f, toId: _t, flow: _fl, velocity: _v, dP: _d, power: _p,
+            reynolds: _r, resistance: _res, rFriction: _rf, rLocal: _rl, lambda: _l,
+            ...params } = src;
+          setBranchParamBuffer(params);
+        }
+        break;
+      }
+      case "paste_branch_params": {
+        if (!branchParamBuffer) break;
+        const targets = selectedBranchIds.size > 0
+          ? [...selectedBranchIds]
+          : branchId ? [branchId] : [];
+        targets.forEach((tid) => updateBranch(tid, branchParamBuffer));
+        break;
+      }
       case "add_node":
         setTool("node");
         break;
@@ -1674,6 +1707,8 @@ export default function CadPage() {
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
+              selectedBranchIds={selectedBranchIds}
+              onBranchMultiSelect={handleBranchMultiSelect}
             />
 
             {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}
@@ -1966,7 +2001,9 @@ export default function CadPage() {
             nodes.find((n) => n.id === ctxMenu.id) ?? null
           ) :
           ctxMenu.kind === "branch" ? branchContextItems(
-            branches.find((b) => b.id === ctxMenu.id) ?? null
+            branches.find((b) => b.id === ctxMenu.id) ?? null,
+            !!branchParamBuffer,
+            selectedBranchIds.size
           ) :
           canvasContextItems()
         }
@@ -1991,16 +2028,21 @@ function nodeContextItems(node: TopoNode | null): ContextMenuItem[] {
   ];
 }
 
-function branchContextItems(branch: TopoBranch | null): ContextMenuItem[] {
+function branchContextItems(branch: TopoBranch | null, hasBuffer: boolean, multiCount: number): ContextMenuItem[] {
   return [
     { id: "open_props", label: "Свойства ветви...", icon: "Settings", shortcut: "Ctrl+J" },
     { id: "div1", label: "", divider: true },
+    { id: "copy_branch_params", label: "Копировать параметры ветви", icon: "Copy", shortcut: "Alt+C" },
+    { id: "paste_branch_params", label: multiCount > 0
+        ? `Применить к выделенным (${multiCount} ветв.)`
+        : "Применить параметры...", icon: "ClipboardPaste", disabled: !hasBuffer },
+    { id: "div2", label: "", divider: true },
     { id: "toggle_capital", label: branch?.capital ? "Снять Капитальная" : "Капитальная ветвь", icon: "Star" },
     { id: "toggle_designed", label: branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь", icon: "Pencil" },
     { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight" },
-    { id: "div2", label: "", divider: true },
-    { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
     { id: "div3", label: "", divider: true },
+    { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
+    { id: "div4", label: "", divider: true },
     { id: "delete_branch", label: "Удалить", icon: "Trash2", shortcut: "Del", danger: true },
   ];
 }

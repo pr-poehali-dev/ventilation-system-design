@@ -72,6 +72,11 @@ export interface TopoBranch {
   dP: number;               // Па
   power: number;            // Вт
   reynolds: number;         // Re
+  // ─── Отображение ────────────────────────────────────
+  lineWidth: number;        // px — толщина линии на схеме (по умолчанию 2)
+  lineBorder: number;       // px — толщина обводки (по умолчанию 0.2)
+  capital: boolean;         // Капитальная выработка
+  designed: boolean;        // Проектируемая выработка
   // ─── Общие ───────────────────────────────────────────
   layer: string;
   horizonId: string;        // ID горизонта (см. Horizon[]), пустая строка = без привязки
@@ -186,6 +191,10 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     dP: 0,
     power: 0,
     reynolds: 0,
+    lineWidth: 2,
+    lineBorder: 0.2,
+    capital: false,
+    designed: false,
     layer: "Стволы",
     horizonId: "",
     ...partial,

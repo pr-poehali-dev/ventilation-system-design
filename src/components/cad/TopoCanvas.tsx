@@ -17,6 +17,10 @@ interface Props {
   branches: TopoBranch[];
   selectedNodeId: string | null;
   selectedBranchId: string | null;
+  /** Множество ID выделенных ветвей (Ctrl+клик). */
+  selectedBranchIds?: Set<string>;
+  /** Ctrl+клик по ветви — добавить/убрать из множества. */
+  onBranchMultiSelect?: (id: string) => void;
   tool: CadTool;
   /** Создать новый узел в указанной мировой точке. Возвращает ID нового узла. */
   onNodeAdd: (x: number, y: number, z: number) => string | void;
@@ -91,6 +95,7 @@ export default function TopoCanvas(props: Props) {
     scaleOverride, onScaleChange, fitToScreenNonce,
     editingHorizonImageId, onHorizonImageBoundsChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
+    selectedBranchIds, onBranchMultiSelect,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -368,13 +373,19 @@ export default function TopoCanvas(props: Props) {
     }
 
     if (hitB) {
-      onSelectBranch(hitB);
-      onSelectNode(null);
+      if (e.ctrlKey && onBranchMultiSelect) {
+        onBranchMultiSelect(hitB);
+      } else {
+        onSelectBranch(hitB);
+        onSelectNode(null);
+      }
       return;
     }
 
-    onSelectNode(null);
-    onSelectBranch(null);
+    if (!e.ctrlKey) {
+      onSelectNode(null);
+      onSelectBranch(null);
+    }
     setBranchFrom(null);
     // Свободный клик в 3D = вращение, в 2D = панорама
     if (is3D) {
@@ -680,7 +691,8 @@ export default function TopoCanvas(props: Props) {
           const from = projNodes.find((p) => p.node.id === b.fromId);
           const to = projNodes.find((p) => p.node.id === b.toId);
           if (!from || !to) return null;
-          const isSel = selectedBranchId === b.id;
+          const isSel = selectedBranchId === b.id || (selectedBranchIds?.has(b.id) ?? false);
+          const isMultiSel = selectedBranchIds?.has(b.id) ?? false;
           const reversed = b.flow < 0;
           // Координаты «начала потока» → «конца потока»
           const sxA = reversed ? to.sx : from.sx;
@@ -696,7 +708,7 @@ export default function TopoCanvas(props: Props) {
           // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
           // Приоритет: выделена → авария → вентилятор → горизонт (если включён) → поток.
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
-          const color = isSel ? "#2563eb"
+          const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
             : overV ? "#dc2626"
             : b.hasFan ? "#7c3aed"
             : (colorByHorizon && horizonColor) ? horizonColor
@@ -704,15 +716,13 @@ export default function TopoCanvas(props: Props) {
             : "#9ca3af";
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
-          // F6 «Тонкие линии» → всё в 1px. Иначе — общая настройка branchWidth
-          // с лёгким масштабированием по расходу + явный «акцент» при выделении.
-          const baseW = isSel ? branchWidth + 1
-            : Q > 100 ? branchWidth + 0.5
-            : Q > 30 ? branchWidth
-            : Math.max(1, branchWidth - 0.5);
+          // Приоритет: индивидуальная lineWidth ветви (если задана) → глобальная branchWidth
+          const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+          const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
+          const baseW = isSel ? bw + 1 : bw;
           const w = thinLines ? 1 : baseW;
           // Обводка (контур вокруг линии): ширина = w + 2*border
-          const borderW = thinLines ? 0 : Math.max(0, branchBorder);
+          const borderW = thinLines ? 0 : Math.max(0, bb);
 
           const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
@@ -862,7 +872,7 @@ export default function TopoCanvas(props: Props) {
           const isSel = selectedNodeId === node.id;
           const isBranchFrom = branchFrom === node.id;
           const r = isSel ? 7 : 5;
-          const color = node.atmosphereLink ? "#fbbf24" : zColor(node.z);
+          const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {(isSel || isBranchFrom) && (
