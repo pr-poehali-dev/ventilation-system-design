@@ -59,6 +59,12 @@ interface Props {
   editingHorizonImageId?: string | null;
   /** Колбэк изменения углов подложки горизонта (после drag). */
   onHorizonImageBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
+  /** Контекстное меню по правой кнопке на узле (id узла, экранные координаты). */
+  onNodeContextMenu?: (id: string, screenX: number, screenY: number) => void;
+  /** Контекстное меню по правой кнопке на ветви (id ветви, экранные координаты). */
+  onBranchContextMenu?: (id: string, screenX: number, screenY: number) => void;
+  /** Контекстное меню по правой кнопке на пустом месте (экранные координаты). */
+  onCanvasContextMenu?: (screenX: number, screenY: number) => void;
 }
 
 export type FlowDisplayMode =
@@ -84,6 +90,7 @@ export default function TopoCanvas(props: Props) {
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
     editingHorizonImageId, onHorizonImageBoundsChange,
+    onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -231,6 +238,29 @@ export default function TopoCanvas(props: Props) {
     return unprojectToPlane(sx, sy, proj, plane);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proj, zLevel, is3D, effPlane.axis, effPlane.value]);
+
+  // ─── Контекстное меню по правой кнопке ─────────────────────────────────
+  const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const hitN = hitNode(sx, sy, projNodes);
+    if (hitN) {
+      onSelectNode(hitN);
+      onSelectBranch(null);
+      onNodeContextMenu?.(hitN, e.clientX, e.clientY);
+      return;
+    }
+    const hitB = hitBranch(sx, sy, projNodes, branches);
+    if (hitB) {
+      onSelectBranch(hitB);
+      onSelectNode(null);
+      onBranchContextMenu?.(hitB, e.clientX, e.clientY);
+      return;
+    }
+    onCanvasContextMenu?.(e.clientX, e.clientY);
+  };
 
   // ─── Обработчики мыши ───────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -546,7 +576,7 @@ export default function TopoCanvas(props: Props) {
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
         onWheel={onWheel}
-        onContextMenu={(e) => e.preventDefault()}>
+        onContextMenu={onContextMenuSVG}>
 
         <defs>
           {/* 2D-сетка */}

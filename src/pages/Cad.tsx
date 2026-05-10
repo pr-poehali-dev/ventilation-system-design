@@ -11,6 +11,7 @@ import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
+import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -383,6 +384,14 @@ export default function CadPage() {
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
   const [rightTab, setRightTab] = useState<"node" | "branch">("branch");
+
+  // ─── КОНТЕКСТНОЕ МЕНЮ ───────────────────────────────────────────────
+  const [ctxMenu, setCtxMenu] = useState<{
+    kind: "node" | "branch" | "canvas";
+    id?: string;
+    x: number;
+    y: number;
+  } | null>(null);
   // Автопереключение таба при выборе объекта на схеме
   useEffect(() => {
     if (selectedNodeId) setRightTab("node");
@@ -567,7 +576,62 @@ export default function CadPage() {
     }
   };
 
+  const handleDeleteNode = (id: string) => {
+    setBranches((p) => p.filter((b) => b.fromId !== id && b.toId !== id));
+    setNodes((p) => p.filter((n) => n.id !== id));
+    if (selectedNodeId === id) setSelectedNodeId(null);
+  };
+
+  const handleDeleteBranch = (id: string) => {
+    setBranches((p) => p.filter((b) => b.id !== id));
+    if (selectedBranchId === id) setSelectedBranchId(null);
+  };
+
+  const handleSplitNodeConnections = (id: string) => {
+    setBranches((p) => p.filter((b) => b.fromId !== id && b.toId !== id));
+  };
+
+  const handleToggleAtmosphere = (id: string) => {
+    setNodes((p) => p.map((n) => n.id === id ? { ...n, atmosphereLink: !n.atmosphereLink } : n));
+  };
+
+  const handleToggleCapital = (id: string) => {
+    setBranches((p) => p.map((b) => b.id === id ? { ...b, capital: !b.capital } : b));
+  };
+
+  const handleToggleDesigned = (id: string) => {
+    setBranches((p) => p.map((b) => b.id === id ? { ...b, designed: !b.designed } : b));
+  };
+
+  const handleReverseBranch = (id: string) => {
+    setBranches((p) => p.map((b) => b.id === id ? { ...b, fromId: b.toId, toId: b.fromId } : b));
+  };
+
+  const handleCtxAction = (action: string) => {
+    const nodeId = ctxMenu?.kind === "node" ? ctxMenu.id : undefined;
+    const branchId = ctxMenu?.kind === "branch" ? ctxMenu.id : undefined;
+    switch (action) {
+      case "delete_node": if (nodeId) handleDeleteNode(nodeId); break;
+      case "delete_branch": if (branchId) handleDeleteBranch(branchId); break;
+      case "split_connections": if (nodeId) handleSplitNodeConnections(nodeId); break;
+      case "toggle_atmosphere": if (nodeId) handleToggleAtmosphere(nodeId); break;
+      case "toggle_capital": if (branchId) handleToggleCapital(branchId); break;
+      case "toggle_designed": if (branchId) handleToggleDesigned(branchId); break;
+      case "reverse_branch": if (branchId) handleReverseBranch(branchId); break;
+      case "add_node":
+        setTool("node");
+        break;
+      case "open_props":
+        setRightPanelOpen(true);
+        if (nodeId) { setRightTab("node"); setSelectedNodeId(nodeId); }
+        if (branchId) { setRightTab("branch"); setSelectedBranchId(branchId); }
+        break;
+    }
+    setCtxMenu(null);
+  };
+
   return (
+    <>
     <div className="w-screen h-screen flex flex-col"
       style={{ background: "#f0f0f0", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "#1f1f1f" }}>
 
@@ -1607,6 +1671,9 @@ export default function CadPage() {
               onSplitBranchAt={handleSplitBranchAt}
               onSelectNode={(id) => { setSelectedNodeId(id); if (id) setSelectedBranchId(null); }}
               onSelectBranch={(id) => { setSelectedBranchId(id); if (id) setSelectedNodeId(null); }}
+              onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
+              onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
+              onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
             />
 
             {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}
@@ -1886,7 +1953,62 @@ export default function CadPage() {
         </div>
       </div>
     </div>
+
+    {/* ─── КОНТЕКСТНОЕ МЕНЮ ──────────────────────────────────────────── */}
+    {ctxMenu && (
+      <CadContextMenu
+        x={ctxMenu.x}
+        y={ctxMenu.y}
+        onClose={() => setCtxMenu(null)}
+        onSelect={handleCtxAction}
+        items={
+          ctxMenu.kind === "node" ? nodeContextItems(
+            nodes.find((n) => n.id === ctxMenu.id) ?? null
+          ) :
+          ctxMenu.kind === "branch" ? branchContextItems(
+            branches.find((b) => b.id === ctxMenu.id) ?? null
+          ) :
+          canvasContextItems()
+        }
+      />
+    )}
+    </>
   );
+}
+
+// ─── Пункты контекстного меню ───────────────────────────────────────────────
+
+function nodeContextItems(node: TopoNode | null): ContextMenuItem[] {
+  return [
+    { id: "open_props", label: "Свойства узла...", icon: "Settings", shortcut: "Ctrl+J" },
+    { id: "div1", label: "", divider: true },
+    { id: "toggle_atmosphere", label: node?.atmosphereLink ? "Снять связь с атмосферой" : "Поверхностный узел (атмосфера)", icon: "Wind" },
+    { id: "split_connections", label: "Разорвать связь в узле", icon: "Scissors" },
+    { id: "div2", label: "", divider: true },
+    { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
+    { id: "div3", label: "", divider: true },
+    { id: "delete_node", label: "Удалить", icon: "Trash2", shortcut: "Del", danger: true },
+  ];
+}
+
+function branchContextItems(branch: TopoBranch | null): ContextMenuItem[] {
+  return [
+    { id: "open_props", label: "Свойства ветви...", icon: "Settings", shortcut: "Ctrl+J" },
+    { id: "div1", label: "", divider: true },
+    { id: "toggle_capital", label: branch?.capital ? "Снять Капитальная" : "Капитальная ветвь", icon: "Star" },
+    { id: "toggle_designed", label: branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь", icon: "Pencil" },
+    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight" },
+    { id: "div2", label: "", divider: true },
+    { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
+    { id: "div3", label: "", divider: true },
+    { id: "delete_branch", label: "Удалить", icon: "Trash2", shortcut: "Del", danger: true },
+  ];
+}
+
+function canvasContextItems(): ContextMenuItem[] {
+  return [
+    { id: "add_node", label: "Добавить узел", icon: "PlusCircle" },
+  ];
 }
 
 // ─── Ribbon-компоненты ──────────────────────────────────────────────────────
