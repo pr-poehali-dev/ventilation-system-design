@@ -14,6 +14,8 @@ import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
+import DxfImportDialog from "@/components/cad/DxfImportDialog";
+import { type DxfImportResult } from "@/lib/dxfImport";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -408,6 +410,39 @@ export default function CadPage() {
   // ─── БУФЕР КОПИРОВАНИЯ ПАРАМЕТРОВ ВЕТВИ ─────────────────────────────
   const [branchParamBuffer, setBranchParamBuffer] = useState<Partial<TopoBranch> | null>(null);
 
+  // ─── МЕНЮ ФАЙЛ ──────────────────────────────────────────────────────
+  const [fileSectionState, setFileSectionState] = useState("add");
+
+  // ─── DXF ИМПОРТ ─────────────────────────────────────────────────────
+  const [showDxfImport, setShowDxfImport] = useState(false);
+  const handleDxfImport = (result: DxfImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSelectedNodeId(null);
+      setSelectedBranchId(null);
+    } else {
+      setNodes((prev) => [...prev, ...result.nodes]);
+      setBranches((prev) => [...prev, ...result.branches]);
+    }
+    setShowDxfImport(false);
+    setActiveRibbon("home");
+  };
+
+  // ─── СОЗДАТЬ НОВЫЙ ПРОЕКТ ────────────────────────────────────────────
+  const handleNewProject = () => {
+    if (nodes.length > 0 || branches.length > 0) {
+      if (!window.confirm("Создать новый проект? Все несохранённые данные будут потеряны.")) return;
+    }
+    setNodes([]);
+    setBranches([]);
+    setSelectedNodeId(null);
+    setSelectedBranchId(null);
+    setHorizons(DEFAULT_HORIZONS);
+    setActiveHorizonId("");
+    setActiveRibbon("home");
+  };
+
   // ─── КОНТЕКСТНОЕ МЕНЮ ───────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<{
     kind: "node" | "branch" | "canvas";
@@ -716,84 +751,119 @@ export default function CadPage() {
       </div>
 
       {/* ═══ МЕНЮ ФАЙЛ (выпадающее, как в Аэросеть) ═══════════════════════ */}
-      {activeRibbon === "file" && (
-        <div className="fixed inset-0 z-50" onClick={() => setActiveRibbon("home")}>
-          <div className="absolute top-14 left-0 flex shadow-xl border border-gray-300"
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: "#f9f9f9", minHeight: 400, width: 560 }}>
-            {/* Левая боковая панель */}
-            <div className="w-36 flex flex-col text-xs border-r border-gray-300" style={{ background: "#e8e8e8" }}>
-              {[
-                { id: "new", label: "Создать" },
-                { id: "open", label: "Открыть" },
-                { id: "recent", label: "Последние" },
-                { id: "add", label: "Добавить" },
-                { id: "saveas", label: "Сохранить как" },
-                { id: "save", label: "Сохранить" },
-                { id: "print", label: "Печать" },
-                { id: "export", label: "Экспорт" },
-                { id: "service", label: "Сервис" },
-                { id: "help", label: "Справка" },
-              ].map((item) => (
-                <button key={item.id}
-                  className="px-4 py-2.5 text-left hover:bg-blue-100 text-[12px]"
-                  style={{
-                    background: item.id === "add" ? "#2563eb" : "transparent",
-                    color: item.id === "add" ? "white" : "#1f1f1f",
-                    fontWeight: item.id === "add" ? 600 : 400,
-                  }}>
-                  {item.label}
-                </button>
-              ))}
-              <div className="mt-auto flex flex-col border-t border-gray-400">
-                <button className="px-4 py-2 text-left text-[12px] hover:bg-gray-200 flex items-center gap-2">
-                  <Icon name="Settings" size={13} /> Настройки
-                </button>
-                <button className="px-4 py-2 text-left text-[12px] hover:bg-red-100 text-red-600 flex items-center gap-2"
-                  onClick={() => setActiveRibbon("home")}>
-                  <Icon name="X" size={13} /> Закрыть
-                </button>
+      {activeRibbon === "file" && (() => {
+        const sections: { id: string; label: string }[] = [
+          { id: "new",    label: "Создать" },
+          { id: "open",   label: "Открыть" },
+          { id: "recent", label: "Последние" },
+          { id: "add",    label: "Добавить" },
+          { id: "saveas", label: "Сохранить как" },
+          { id: "save",   label: "Сохранить" },
+          { id: "print",  label: "Печать" },
+          { id: "export", label: "Экспорт" },
+        ];
+        return (
+          <div className="fixed inset-0 z-50" onClick={() => setActiveRibbon("home")}>
+            <div className="absolute top-14 left-0 flex shadow-xl border border-gray-300"
+              onClick={(e) => e.stopPropagation()}
+              style={{ background: "#f9f9f9", minHeight: 420, width: 580 }}>
+              {/* Левая боковая панель */}
+              <div className="w-36 flex flex-col text-xs border-r border-gray-300" style={{ background: "#e8e8e8" }}>
+                {sections.map((item) => (
+                  <button key={item.id}
+                    onClick={() => setFileSectionState(item.id)}
+                    className="px-4 py-2.5 text-left hover:bg-blue-100 text-[12px]"
+                    style={{
+                      background: fileSectionState === item.id ? "#2563eb" : "transparent",
+                      color: fileSectionState === item.id ? "white" : "#1f1f1f",
+                      fontWeight: fileSectionState === item.id ? 600 : 400,
+                    }}>
+                    {item.label}
+                  </button>
+                ))}
+                <div className="mt-auto flex flex-col border-t border-gray-400">
+                  <button className="px-4 py-2 text-left text-[12px] hover:bg-gray-200 flex items-center gap-2">
+                    <Icon name="Settings" size={13} /> Настройки
+                  </button>
+                  <button className="px-4 py-2 text-left text-[12px] hover:bg-red-100 text-red-600 flex items-center gap-2"
+                    onClick={() => setActiveRibbon("home")}>
+                    <Icon name="X" size={13} /> Закрыть
+                  </button>
+                </div>
               </div>
-            </div>
-            {/* Правая область — содержимое "Добавить" */}
-            <div className="flex-1 p-4">
-              <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">
-                Добавить схему из файла
+
+              {/* Правая область */}
+              <div className="flex-1 p-4 overflow-y-auto">
+
+                {/* ── Создать ── */}
+                {fileSectionState === "new" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Создать новый проект</div>
+                    <button
+                      onClick={handleNewProject}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-gray-200 group">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400" style={{ background: "#fff" }}>
+                        <Icon name="FilePlus" size={22} />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-medium text-gray-800">Новый пустой проект</div>
+                        <div className="text-[11px] text-gray-400">Очистить схему и начать с нуля</div>
+                      </div>
+                    </button>
+                  </>
+                )}
+
+                {/* ── Добавить ── */}
+                {fileSectionState === "add" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Добавить схему из файла</div>
+                    {[
+                      { icon: "FileJson" as const, label: "Добавить схему из файла", ext: ".vproj / .json", action: "json" },
+                      { icon: "Code" as const,     label: "Добавить схему из XML",   ext: ".xml",           action: "xml" },
+                      { icon: "Pencil" as const,   label: "Добавить схему из DXF",   ext: ".dxf",           action: "dxf" },
+                      { icon: "FileText" as const, label: "Добавить схему из CSV",   ext: ".csv",           action: "csv" },
+                      { icon: "FileText" as const, label: "Добавить схему из TXT",   ext: ".txt",           action: "txt" },
+                      { icon: "Table" as const,    label: "Добавить таблицу из Excel", ext: ".xlsx",        action: "xlsx" },
+                    ].map((item) => (
+                      <button key={item.label}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 group"
+                        onClick={() => {
+                          if (item.action === "dxf") {
+                            setShowDxfImport(true);
+                            setActiveRibbon("home");
+                          } else {
+                            const inp = document.createElement("input");
+                            inp.type = "file"; inp.accept = item.ext;
+                            inp.click();
+                            setActiveRibbon("home");
+                          }
+                        }}>
+                        <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400"
+                          style={{ background: item.action === "dxf" ? "#dbeafe" : "#fff", borderColor: item.action === "dxf" ? "#93c5fd" : "" }}>
+                          <Icon name={item.icon} size={18} />
+                        </div>
+                        <div>
+                          <div className="text-[12px] font-medium text-gray-800">{item.label}</div>
+                          <div className="text-[10px] text-gray-400">
+                            {item.action === "dxf" ? "✓ Реализовано (НаноКАД, АэроСеть, AutoCAD)" : item.ext}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </>
+                )}
+
+                {/* ── Остальные секции — заглушки ── */}
+                {!["new", "add"].includes(fileSectionState) && (
+                  <div className="text-[12px] text-gray-400 pt-4">
+                    Функция «{sections.find((s) => s.id === fileSectionState)?.label}» будет реализована.
+                  </div>
+                )}
               </div>
-              {[
-                { icon: "FileJson", label: "Добавить схему из файла", ext: ".vproj / .json" },
-                { icon: "FileJson", label: "Добавить оперативную часть из JSON-файла", ext: ".json" },
-                { icon: "Code", label: "Добавить схему из XML", ext: ".xml" },
-                { icon: "Pencil", label: "Добавить схему из DXF", ext: ".dxf" },
-                { icon: "FileText", label: "Добавить схему из CSV", ext: ".csv" },
-                { icon: "FileText", label: "Добавить схему из TXT", ext: ".txt" },
-                { icon: "Table", label: "Добавить таблицу из Excel", ext: ".xlsx" },
-                { icon: "Database", label: "Добавить данные для замерных станций из CSV", ext: ".csv" },
-              ].map((item) => (
-                <button key={item.label}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 group"
-                  onClick={() => {
-                    const inp = document.createElement("input");
-                    inp.type = "file";
-                    inp.accept = item.ext;
-                    inp.onchange = () => { /* импорт — заглушка */ };
-                    inp.click();
-                    setActiveRibbon("home");
-                  }}>
-                  <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400"
-                    style={{ background: "#fff" }}>
-                    <Icon name={item.icon as "FileJson"} size={18} />
-                  </div>
-                  <div>
-                    <div className="text-[12px] font-medium text-gray-800">{item.label}</div>
-                    <div className="text-[10px] text-gray-400">{item.ext}</div>
-                  </div>
-                </button>
-              ))}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
       <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
@@ -1812,235 +1882,39 @@ export default function CadPage() {
           </div>
         </div>
 
-        {/* ── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (узлы / ветви) ────────────────── */}
+        {/* ── ПРАВАЯ ПАНЕЛЬ — только «Панель информации» ─────────────── */}
         {rightPanelOpen && (
-          <div className="w-[340px] flex-shrink-0 flex flex-col"
+          <div className="w-[280px] flex-shrink-0 flex flex-col"
             style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
-            {/* Табы */}
-            <div className="flex border-b border-gray-300" style={{ background: "#f5f5f5" }}>
-              {(["node", "branch", "info"] as const).map((tab) => (
-                <button key={tab} onClick={() => setRightTab(tab)}
-                  className="flex-1 h-8 text-xs flex items-center justify-center gap-1"
-                  style={{
-                    background: rightTab === tab ? "#ffffff" : "transparent",
-                    borderBottom: rightTab === tab ? "2px solid #2563eb" : "2px solid transparent",
-                    fontWeight: rightTab === tab ? 600 : 400,
-                    color: rightTab === tab ? "#2563eb" : "#444",
-                  }}>
-                  {tab === "node" && <><Icon name="Circle" size={11} /> Узлы</>}
-                  {tab === "branch" && <><Icon name="GitBranch" size={11} /> Ветви</>}
-                  {tab === "info" && <><Icon name="LayoutList" size={11} /> Инфо</>}
-                </button>
-              ))}
+            {/* Заголовок */}
+            <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
+              style={{ background: "#f5f5f5", fontSize: 11, fontWeight: 600 }}>
+              <Icon name="LayoutList" size={12} />
+              Панель информации
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-2">
-              {/* ─── ВКЛАДКА: УЗЛЫ ───────────────────────────────── */}
-              {rightTab === "node" && (
-                selectedNode ? (
-                  <>
-                    <FrameGroup title="Узел">
-                      <LabeledRow label="Название:">
-                        <input type="text" value={selectedNode.name}
-                          onChange={(e) => updateNode(selectedNode.id, { name: e.target.value })}
-                          className="cad-input flex-1" />
-                      </LabeledRow>
-                      <LabeledRow label="Номер:">
-                        <input type="text" value={selectedNode.number}
-                          onChange={(e) => updateNode(selectedNode.id, { number: e.target.value })}
-                          className="cad-input flex-1" />
-                      </LabeledRow>
-                    </FrameGroup>
-
-                    <FrameGroup title="Координаты, м">
-                      <LabeledRow label="X:">
-                        <NumWithUnit value={selectedNode.x} unit="м"
-                          onChange={(v) => updateNode(selectedNode.id, { x: v })} />
-                      </LabeledRow>
-                      <LabeledRow label="Y:">
-                        <NumWithUnit value={selectedNode.y} unit="м"
-                          onChange={(v) => updateNode(selectedNode.id, { y: v })} />
-                      </LabeledRow>
-                      <LabeledRow label="Z (высотная отметка):">
-                        <NumWithUnit value={selectedNode.z} unit="м"
-                          onChange={(v) => updateNode(selectedNode.id, { z: v })} />
-                      </LabeledRow>
-                    </FrameGroup>
-
-                    {/* ── СВЯЗЬ С АТМОСФЕРОЙ — ключевой переключатель для расчёта ── */}
-                    <FrameGroup title="Связь с атмосферой">
-                      <div className="flex items-start gap-2 p-1">
-                        <input type="checkbox" checked={selectedNode.atmosphereLink}
-                          onChange={(e) => updateNode(selectedNode.id, { atmosphereLink: e.target.checked })}
-                          className="w-4 h-4 mt-0.5 cursor-pointer flex-shrink-0" />
-                        <div className="flex-1 text-xs leading-tight">
-                          <div className="font-semibold text-gray-800">
-                            Узел соединён с атмосферой
-                          </div>
-                          <div className="text-[10px] text-gray-500 mt-0.5">
-                            Включается для устьев стволов и порталов штолен —
-                            точки входа/выхода воздуха в рудник.
-                            Требуется для расчёта воздухораспределения (F9).
-                          </div>
-                        </div>
-                      </div>
-                      <div className="px-1 py-1 text-[11px]"
-                        style={{
-                          background: selectedNode.atmosphereLink ? "#dcfce7" : "#fef3c7",
-                          color: selectedNode.atmosphereLink ? "#166534" : "#92400e",
-                          border: "1px solid",
-                          borderColor: selectedNode.atmosphereLink ? "#86efac" : "#fcd34d",
-                          borderRadius: 3,
-                        }}>
-                        {selectedNode.atmosphereLink
-                          ? "● Источник/сток воздуха для сети."
-                          : "○ Внутренний узел сети (без обмена с атмосферой)."}
-                      </div>
-                      <div className="px-1 pt-1 text-[10px] text-gray-600">
-                        Всего таких узлов в сети:{" "}
-                        <b>{nodes.filter((n) => n.atmosphereLink).length}</b>
-                        {" "}— минимум 2 (вход + выход) для корректного расчёта.
-                      </div>
-                    </FrameGroup>
-
-                    <FrameGroup title="Климат и расчёт">
-                      <LabeledRow label="Температура воздуха:">
-                        <NumWithUnit value={selectedNode.airTemp} unit="°C"
-                          onChange={(v) => updateNode(selectedNode.id, { airTemp: v })} />
-                      </LabeledRow>
-                      <LabeledRow label="Темп. стенок:">
-                        <NumWithUnit value={selectedNode.wallTemp} unit="°C"
-                          onChange={(v) => updateNode(selectedNode.id, { wallTemp: v })} />
-                      </LabeledRow>
-                      <LabeledRow label="Привед. давление:">
-                        <NumWithUnit value={selectedNode.reducedPressure} unit="Па"
-                          onChange={(v) => updateNode(selectedNode.id, { reducedPressure: v })} />
-                      </LabeledRow>
-                      <div className="pt-1 mt-1 border-t border-gray-200">
-                        <ComputedRow label="Давление расч.:" value={`${selectedNode.computedPressure} Па`} />
-                        <ComputedRow label="Темп. возд. расч.:" value={`${selectedNode.computedAirTemp} °C`} />
-                      </div>
-                    </FrameGroup>
-
-                    <button onClick={handleDeleteSelected}
-                      className="w-full px-2 py-1.5 text-xs border border-red-300 text-red-700 rounded hover:bg-red-50 flex items-center justify-center gap-1">
-                      <Icon name="Trash2" size={12} /> Удалить узел
-                    </button>
-                  </>
-                ) : (
-                  <div className="p-4 text-center text-gray-400 text-xs">
-                    Выберите узел на схеме, чтобы редактировать его свойства.
-                    <br />
-                    Всего в сети: <b>{nodes.length}</b> узлов
-                    {nodes.filter((n) => n.atmosphereLink).length > 0 && (
-                      <>, из них с атмосферой: <b>{nodes.filter((n) => n.atmosphereLink).length}</b></>
-                    )}
-                  </div>
-                )
-              )}
-
-              {/* ─── ВКЛАДКА: ВЕТВИ ──────────────────────────────── */}
-              {rightTab === "branch" && (
-                selectedBranch ? (
-                  <>
-                    <FrameGroup title="Ветвь">
-                      <LabeledRow label="ID:">
-                        <input type="text" value={selectedBranch.id} readOnly className="cad-input flex-1" />
-                      </LabeledRow>
-                      <LabeledRow label="Тип:">
-                        <input type="text" value={selectedBranch.type}
-                          onChange={(e) => updateBranch(selectedBranch.id, { type: e.target.value })}
-                          className="cad-input flex-1" />
-                      </LabeledRow>
-                      <LabeledRow label="Направление:">
-                        <span className="flex-1 px-2 py-1 text-xs bg-gray-100 border border-gray-300 rounded">
-                          {selectedBranch.fromId} → {selectedBranch.toId}
-                        </span>
-                      </LabeledRow>
-                      <LabeledRow label="Горизонт:">
-                        <div className="flex-1 flex items-center gap-1">
-                          <select value={selectedBranch.horizonId}
-                            onChange={(e) => updateBranch(selectedBranch.id, { horizonId: e.target.value })}
-                            className="cad-input flex-1">
-                            <option value="">— без привязки —</option>
-                            {horizons.map((h) => (
-                              <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
-                            ))}
-                          </select>
-                          {selectedBranch.horizonId && (
-                            <span className="w-3 h-3 rounded-sm border border-gray-400 flex-shrink-0"
-                              style={{ background: horizons.find((h) => h.id === selectedBranch.horizonId)?.color || "#ccc" }}
-                              title="Цвет горизонта" />
-                          )}
-                        </div>
-                      </LabeledRow>
-                    </FrameGroup>
-
-                    <FrameGroup title="Геометрия">
-                      <ComputedRow label="Длина L:" value={`${selectedBranch.length} м`} />
-                      <ComputedRow label="Площадь S:" value={`${selectedBranch.area.toFixed(2)} м²`} />
-                      <ComputedRow label="Периметр P:" value={`${selectedBranch.perimeter.toFixed(2)} м`} />
-                      <ComputedRow label="Гидр. диаметр Dh:" value={`${selectedBranch.dh.toFixed(2)} м`} />
-                    </FrameGroup>
-
-                    <FrameGroup title="Аэродинамика">
-                      <ComputedRow label="R общее:" value={`${(selectedBranch.resistance * 1000).toFixed(4)} ·10⁻³ кμ`} />
-                      <ComputedRow label="Расход Q:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} />
-                      <ComputedRow label="Скорость V:" value={`${selectedBranch.velocity.toFixed(2)} м/с${selectedBranch.velocity > selectedBranch.vMax ? " ⚠" : ""}`} />
-                      <ComputedRow label="Депрессия ΔP:" value={`${selectedBranch.dP.toFixed(1)} Па`} />
-                      <ComputedRow label="Энергозатр. N:" value={`${selectedBranch.power} Вт`} />
-                    </FrameGroup>
-
-                    {selectedBranch.hasFan && (
-                      <FrameGroup title="Вентилятор">
-                        <LabeledRow label="Название:">
-                          <input type="text" value={selectedBranch.fanName}
-                            onChange={(e) => updateBranch(selectedBranch.id, { fanName: e.target.value })}
-                            className="cad-input flex-1" />
-                        </LabeledRow>
-                        <ComputedRow label="H рабочее:" value={`${selectedBranch.fanPressure.toFixed(0)} Па`} />
-                        <ComputedRow label="КПД η:" value={`${(selectedBranch.fanEfficiency * 100).toFixed(1)} %`} />
-                      </FrameGroup>
-                    )}
-
-                    <button onClick={handleDeleteSelected}
-                      className="w-full px-2 py-1.5 text-xs border border-red-300 text-red-700 rounded hover:bg-red-50 flex items-center justify-center gap-1">
-                      <Icon name="Trash2" size={12} /> Удалить ветвь
-                    </button>
-                  </>
-                ) : (
-                  <div className="p-4 text-center text-gray-400 text-xs">
-                    Выберите ветвь на схеме, чтобы редактировать её свойства.
-                    <br />
-                    Всего в сети: <b>{branches.length}</b> ветвей
-                  </div>
-                )
-              )}
-
-              {/* ─── ВКЛАДКА: ПАНЕЛЬ ИНФОРМАЦИИ ─────────────────── */}
-              {rightTab === "info" && (
-                <div className="-m-2 h-full flex flex-col" style={{ minHeight: 0 }}>
-                  <InfoPanel config={infoConfig} onChange={updateInfoConfig} />
-                  {/* Масштаб Z */}
-                  <div className="border-t border-gray-300 px-2 py-2" style={{ background: "#f5f5f5" }}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
-                      <button onClick={() => setZScale(1)}
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
-                        Сброс
-                      </button>
-                    </div>
-                    <input type="range" min="0.1" max="10" step="0.1"
-                      value={zScale}
-                      onChange={(e) => setZScale(parseFloat(e.target.value))}
-                      className="w-full"
-                      style={{ accentColor: "#2563eb" }} />
-                    <div className="flex justify-between text-[10px] text-gray-400">
-                      <span>0.1×</span><span>5×</span><span>10×</span>
-                    </div>
-                  </div>
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-hidden">
+                <InfoPanel config={infoConfig} onChange={updateInfoConfig} />
+              </div>
+              {/* Масштаб Z */}
+              <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
+                  <button onClick={() => setZScale(1)}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
+                    Сброс
+                  </button>
                 </div>
-              )}
+                <input type="range" min="0.1" max="10" step="0.1"
+                  value={zScale}
+                  onChange={(e) => setZScale(parseFloat(e.target.value))}
+                  className="w-full"
+                  style={{ accentColor: "#2563eb" }} />
+                <div className="flex justify-between text-[10px] text-gray-400">
+                  <span>0.1×</span><span>5×</span><span>10×</span>
+                </div>
+              </div>
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}
@@ -2116,6 +1990,14 @@ export default function CadPage() {
           ) :
           canvasContextItems()
         }
+      />
+    )}
+
+    {/* ═══ DXF ИМПОРТ ДИАЛОГ ═══════════════════════════════════════════ */}
+    {showDxfImport && (
+      <DxfImportDialog
+        onImport={handleDxfImport}
+        onClose={() => setShowDxfImport(false)}
       />
     )}
     </>
