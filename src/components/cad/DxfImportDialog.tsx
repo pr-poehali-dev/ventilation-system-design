@@ -20,9 +20,13 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const fileTextRef = useRef<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const parseWithEpsilon = (text: string, eps: number) => {
-    const parsed = parseDxf(text, eps);
+  const parseWithEpsilon = (text: string, eps: number, useAutoEpsilon = false) => {
+    const parsed = parseDxf(text, useAutoEpsilon ? undefined : eps);
     setResult(parsed);
+    // При первом парсинге — берём epsilon из файла
+    if (useAutoEpsilon && parsed.epsilonUsed !== undefined) {
+      setEpsilon(parsed.epsilonUsed);
+    }
   };
 
   const handleFile = async (f: File) => {
@@ -44,7 +48,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
       }
       fileTextRef.current = text;
       setFilePreview(text.split("\n").slice(0, 60).join("\n"));
-      parseWithEpsilon(text, epsilon);
+      parseWithEpsilon(text, epsilon, true);  // первый парсинг — автоопределение epsilon
     } catch (e) {
       setError(`Ошибка чтения файла: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -146,6 +150,15 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                   </div>
                 ))}
               </div>
+
+              {/* Единицы */}
+              {result.scaleUsed !== undefined && result.scaleUsed !== 1 && (
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border border-blue-200"
+                  style={{ background: "#eff6ff" }}>
+                  <Icon name="Info" size={13} />
+                  <span>Координаты файла в {result.scaleUsed === 0.001 ? "мм" : "см"} → автоматически переведены в метры.</span>
+                </div>
+              )}
 
               {/* Настройка точности слияния узлов */}
               {result.stats.lines + result.stats.polylines > 0 && (

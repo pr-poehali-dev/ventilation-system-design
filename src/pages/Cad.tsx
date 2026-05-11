@@ -378,6 +378,15 @@ export default function CadPage() {
     return () => window.clearTimeout(t);
   }, []);
 
+  // Nonce для импорта DXF — когда меняется, переключаем вид + fitToScreen
+  const [importNonce, setImportNonce] = useState(0);
+  useEffect(() => {
+    if (importNonce === 0) return;
+    setViewPreset({ name: "plan", nonce: Date.now() });
+    const t = window.setTimeout(() => setFitToScreenNonce(Date.now()), 150);
+    return () => window.clearTimeout(t);
+  }, [importNonce]);  
+
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
   const [branchWidth, setBranchWidth] = useState<number>(2.5);   // px
   const [branchBorder, setBranchBorder] = useState<number>(0);   // px (контур)
@@ -425,9 +434,8 @@ export default function CadPage() {
       setNodes((prev) => [...prev, ...result.nodes]);
       setBranches((prev) => [...prev, ...result.branches]);
     }
-    // Переключаем вид на план (сверху) и вписываем схему в экран
-    setViewPreset({ name: "plan", nonce: Date.now() });
-    setTimeout(() => setFitToScreenNonce(Date.now()), 100);
+    // Переключаем вид на план (сверху) и вписываем схему в экран через useEffect
+    setImportNonce((n) => n + 1);
     setShowDxfImport(false);
     setActiveRibbon("home");
   };
@@ -938,9 +946,10 @@ export default function CadPage() {
         {/* ── Группа: Виды (2D/3D) ── */}
         <RibbonGroup label="Вид сети">
           <div className="flex items-stretch gap-1">
-            <button onClick={() => setPreset("plan")}
+            <button onClick={() => { setPreset("plan"); setTimeout(() => setFitToScreenNonce(Date.now()), 80); }}
               className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
-              title="План — вид сверху (XY)">
+              style={{ background: !viewInfo.is3D ? "#dbeafe" : undefined, borderColor: !viewInfo.is3D ? "#93c5fd" : undefined }}
+              title="План — вид сверху (XY) + вписать в экран">
               <Icon name="Square" size={20} className="text-blue-600" />
               <div className="text-[10px] leading-tight mt-0.5 text-center">План</div>
             </button>

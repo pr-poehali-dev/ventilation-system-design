@@ -929,8 +929,10 @@ export default function TopoCanvas(props: Props) {
                 <text textAnchor="middle" dominantBaseline="middle" fontSize="8" fontWeight="bold" fill="#1f2937">A</text>
               )}
               <g transform="translate(8, -8)">
-                <text fontSize="10" fontWeight="600" fill="#1f2937">{node.number}</text>
-                {view.scale > 0.25 && !is3D && (() => {
+                {view.scale > 0.15 && (
+                  <text fontSize="10" fontWeight="600" fill="#1f2937">{node.number}</text>
+                )}
+                {view.scale > 0.2 && !is3D && (() => {
                   const ic = infoConfig;
                   const nlines: string[] = [];
                   if (!ic) {
@@ -943,16 +945,18 @@ export default function TopoCanvas(props: Props) {
                     if (ic.nodePressure && node.computedPressure > 0)
                       nlines.push(`P=${(node.computedPressure / 10).toFixed(1)}даПа`);
                     if (ic.nodeTemp && node.airTemp !== 0) nlines.push(`T=${node.airTemp}°C`);
+                    if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${node.computedGasConc.toFixed(2)}%`);
                   }
+                  if (nlines.length === 0) return null;
                   return nlines.map((ln, li) => (
                     <text key={li} y={(li + 1) * 11} fontSize="9" fill="#6b7280">{ln}</text>
                   ));
                 })()}
               </g>
-              {view.scale > 0.2 && !is3D && !infoConfig?.nodeZ && (
+              {view.scale > 0.15 && !is3D && !infoConfig?.nodeZ && (
                 <text x="0" y={r + 12} textAnchor="middle" fontSize="8" fill="#9ca3af">Z={node.z}</text>
               )}
-              {view.scale > 0.25 && node.computedPressure > 0 && !node.atmosphereLink && !is3D && !infoConfig?.nodePressure && (
+              {view.scale > 0.2 && node.computedPressure > 0 && !node.atmosphereLink && !is3D && !infoConfig?.nodePressure && (
                 <g transform={`translate(8, ${node.name ? 22 : 12})`}>
                   <text fontSize="9" fontWeight="600" fill="#0369a1">
                     P={(node.computedPressure / 1000).toFixed(1)} кПа

@@ -17,6 +17,10 @@ export interface DxfImportResult {
   warnings: string[];
   stats: { lines: number; polylines: number; nodes: number; branches: number };
   debug?: string;
+  /** Рекомендуемое значение epsilon для этого файла (уже применённое) */
+  epsilonUsed?: number;
+  /** Масштаб конвертации единиц (0.001 = мм→м) */
+  scaleUsed?: number;
 }
 
 interface Pt3 { x: number; y: number; z: number }
@@ -370,5 +374,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     nodes, branches, warnings,
     stats: { lines: lineCount, polylines: polylineCount, nodes: nodes.length, branches: branches.length },
     debug: debugLines.join("\n"),
+    epsilonUsed: epsilon,
+    scaleUsed: scale,
   };
 }

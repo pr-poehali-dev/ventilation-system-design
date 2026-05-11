@@ -88,13 +88,6 @@ export default function InfoPanel({ config, onChange }: InfoPanelProps) {
 
   return (
     <div className="flex flex-col h-full text-xs" style={{ background: "#f5f5f5" }}>
-      {/* Шапка */}
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-gray-300"
-        style={{ background: "#e8e8e8", fontSize: 11, fontWeight: 600 }}>
-        <Icon name="LayoutList" size={12} />
-        Панель информации &gt; Схема
-      </div>
-
       {/* Пресет */}
       <div className="flex items-center gap-1 px-1 py-1 border-b border-gray-300">
         <select
