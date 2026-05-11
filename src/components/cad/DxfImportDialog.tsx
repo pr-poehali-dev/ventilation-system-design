@@ -14,6 +14,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const [mode, setMode] = useState<"replace" | "append">("replace");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [filePreview, setFilePreview] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (f: File) => {
@@ -22,7 +24,21 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     setError(null);
     setLoading(true);
     try {
-      const text = await f.text();
+      // Пробуем UTF-8, при ошибке — CP1251 (частый случай для русских DXF)
+      let text = "";
+      try {
+        text = await f.text();
+        // Если текст содержит мусорные символы (CP1251 прочитан как UTF-8)
+        if (text.includes("â€") || text.includes("\uFFFD")) {
+          const buf = await f.arrayBuffer();
+          text = new TextDecoder("windows-1251").decode(buf);
+        }
+      } catch {
+        const buf = await f.arrayBuffer();
+        text = new TextDecoder("windows-1251").decode(buf);
+      }
+      // Сохраняем первые 50 строк для диагностики
+      setFilePreview(text.split("\n").slice(0, 60).join("\n"));
       const parsed = parseDxf(text);
       setResult(parsed);
     } catch (e) {
@@ -144,6 +160,28 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                       <span>{w}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Диагностика */}
+              {result.stats.branches === 0 && (
+                <div>
+                  <button onClick={() => setShowDebug((v) => !v)}
+                    className="text-[11px] text-blue-600 underline hover:text-blue-800">
+                    {showDebug ? "Скрыть диагностику" : "Показать диагностику файла"}
+                  </button>
+                  {showDebug && (
+                    <div className="mt-2 space-y-2">
+                      <div className="text-[10px] font-semibold text-gray-500">Лог парсера:</div>
+                      <pre className="text-[10px] bg-gray-900 text-green-400 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
+                        {result.debug ?? "нет данных"}
+                      </pre>
+                      <div className="text-[10px] font-semibold text-gray-500">Первые строки файла:</div>
+                      <pre className="text-[10px] bg-gray-100 rounded p-2 overflow-auto max-h-40 whitespace-pre-wrap border border-gray-300">
+                        {filePreview}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               )}
 
