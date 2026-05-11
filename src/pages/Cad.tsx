@@ -425,6 +425,9 @@ export default function CadPage() {
       setNodes((prev) => [...prev, ...result.nodes]);
       setBranches((prev) => [...prev, ...result.branches]);
     }
+    // Переключаем вид на план (сверху) и вписываем схему в экран
+    setViewPreset({ name: "plan", nonce: Date.now() });
+    setTimeout(() => setFitToScreenNonce(Date.now()), 100);
     setShowDxfImport(false);
     setActiveRibbon("home");
   };

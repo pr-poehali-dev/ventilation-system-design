@@ -50,7 +50,7 @@ function clusterPoints(pts: Pt3[], epsilon: number): { clusters: Pt3[]; map: num
 
 // ── Главный парсер ────────────────────────────────────────────────────────────
 
-export function parseDxf(content: string): DxfImportResult {
+export function parseDxf(content: string, epsilonOverride?: number): DxfImportResult {
   const warnings: string[] = [];
   const debugLines: string[] = [];
 
@@ -315,6 +315,10 @@ export function parseDxf(content: string): DxfImportResult {
   const toM = (v: number) => v * scale;
 
   // ── Кластеризация ────────────────────────────────────────────────────────
+  // Координаты уже в метрах (toM применён). Epsilon: точки считаются одним узлом
+  // если расстояние < epsilon. Для DXF из НаноКАД/АэроСеть геометрия точная,
+  // поэтому epsilon = 0.05 м (5 см) — достаточно чтобы слить совпадающие концы,
+  // но не слить близкие но разные узлы выработок.
   const allPts: Pt3[] = [];
   for (const s of segments) {
     allPts.push({ x: toM(s.x1), y: toM(s.y1), z: toM(s.z1) });
@@ -323,28 +327,24 @@ export function parseDxf(content: string): DxfImportResult {
 
   const xs = allPts.map((p) => p.x), ys = allPts.map((p) => p.y);
   const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
-  const epsilon = Math.max(0.1, extent * 0.002);
+
+  // Epsilon: если передан из диалога — используем его, иначе адаптивный
+  const epsilonAuto = Math.min(5, Math.max(0.05, extent * 0.001));
+  const epsilon = epsilonOverride ?? epsilonAuto;
 
   const { clusters, map } = clusterPoints(allPts, epsilon);
-  debugLines.push(`Точек: ${allPts.length}, кластеров (узлов): ${clusters.length}, epsilon: ${epsilon.toFixed(3)}`);
+  debugLines.push(`Точек: ${allPts.length}, кластеров (узлов): ${clusters.length}, epsilon: ${epsilon.toFixed(4)} м, extent: ${extent.toFixed(1)} м`);
 
   // ── Строим узлы ──────────────────────────────────────────────────────────
   const ts = Date.now();
   const nodes: TopoNode[] = clusters.map((pt, i) => {
     const num = String(i + 1).padStart(3, "0");
     return makeNode(`N${ts}_${i}`, {
-      x: Math.round(toM(pt.x / scale) * 10) / 10,  // уже toM применён в allPts
-      y: Math.round(toM(pt.y / scale) * 10) / 10,
-      z: Math.round(toM(pt.z / scale) * 10) / 10,
+      x: Math.round(pt.x * 10) / 10,
+      y: Math.round(pt.y * 10) / 10,
+      z: Math.round(pt.z * 10) / 10,
       number: num, name: `Узел ${num}`,
     });
-  });
-
-  // Исправляем координаты (кластеры уже в метрах через allPts)
-  clusters.forEach((pt, i) => {
-    nodes[i].x = Math.round(pt.x * 10) / 10;
-    nodes[i].y = Math.round(pt.y * 10) / 10;
-    nodes[i].z = Math.round(pt.z * 10) / 10;
   });
 
   // ── Строим ветви ─────────────────────────────────────────────────────────
