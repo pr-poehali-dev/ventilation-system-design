@@ -69,6 +69,10 @@ interface Props {
   onBranchContextMenu?: (id: string, screenX: number, screenY: number) => void;
   /** Контекстное меню по правой кнопке на пустом месте (экранные координаты). */
   onCanvasContextMenu?: (screenX: number, screenY: number) => void;
+  /** Конфигурация панели информации — какие метки рисовать на схеме. */
+  infoConfig?: import("@/lib/infoConfig").InfoDisplayConfig;
+  /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
+  zScale?: number;
 }
 
 export type FlowDisplayMode =
@@ -96,6 +100,7 @@ export default function TopoCanvas(props: Props) {
     editingHorizonImageId, onHorizonImageBoundsChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
+    infoConfig, zScale = 1,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -137,16 +142,25 @@ export default function TopoCanvas(props: Props) {
   useEffect(() => { setBranchFrom(null); }, [tool]);
 
   // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
-  // Если родитель управляет масштабом (поле «1:N»), применяем его сюда.
+  // Флаг для предотвращения цикла: scaleOverride → setView → onScaleChange → scaleOverride
+  const externalScaleUpdate = useRef(false);
+
   useEffect(() => {
     if (scaleOverride === undefined) return;
-    if (Math.abs(scaleOverride - view.scale) < 1e-6) return;
-    setView((v) => ({ ...v, scale: scaleOverride }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setView((v) => {
+      if (Math.abs(scaleOverride - v.scale) < 1e-6) return v;
+      externalScaleUpdate.current = true;
+      return { ...v, scale: scaleOverride };
+    });
+     
   }, [scaleOverride]);
 
-  // Сообщаем наверх изменение масштаба (например, после wheel-зума).
+  // Сообщаем наверх изменение масштаба — только если инициировано внутри (не от scaleOverride).
   useEffect(() => {
+    if (externalScaleUpdate.current) {
+      externalScaleUpdate.current = false;
+      return;
+    }
     if (onScaleChange) onScaleChange(view.scale);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.scale]);
@@ -219,9 +233,14 @@ export default function TopoCanvas(props: Props) {
     offsetY: view.offsetY,
     azimuth: view.azimuth,
     elevation: view.elevation,
+    zScale,
   };
 
-  const projNodes = nodes.map((n) => ({ node: n, ...project3D(n, proj) }));
+  // zScale применяем к Z-координате перед проекцией
+  const projectWithZ = (p: { x: number; y: number; z: number }) =>
+    project3D({ ...p, z: p.z * (zScale ?? 1) }, proj);
+
+  const projNodes = nodes.map((n) => ({ node: n, ...projectWithZ(n) }));
 
   // Применить пресет ракурса
   const applyPreset = useCallback((preset: ViewPreset) => {
@@ -823,21 +842,48 @@ export default function TopoCanvas(props: Props) {
                     fontSize="11" fontWeight="bold" fill="#7c3aed">⚙</text>
                 </g>
               )}
-              {view.scale > 0.15 && !is3D && (
-                <g transform={`translate(${midX},${midY})`}>
-                  <rect x={-32} y={-12} width={64} height={Q > 0 ? 24 : 14} rx="2"
-                    fill="white" stroke={isSel ? "#2563eb" : "#9ca3af"} strokeWidth="0.8" />
-                  <text textAnchor="middle" dominantBaseline="middle" y={Q > 0 ? -3 : 0}
-                    fontSize="9" fill="#1f2937">{b.id} · {len}м</text>
-                  {Q > 0 && (
-                    <text textAnchor="middle" dominantBaseline="middle" y="7"
-                      fontSize="9" fontWeight="600"
-                      fill={overV ? "#dc2626" : "#0369a1"}>
-                      Q={Q.toFixed(1)} м³/с
-                    </text>
-                  )}
-                </g>
-              )}
+              {view.scale > 0.15 && !is3D && (() => {
+                const ic = infoConfig;
+                const lines: string[] = [];
+                if (ic) {
+                  if (ic.branchNumber) lines.push(`№${b.id}`);
+                  if (ic.branchName && b.type) lines.push(b.type);
+                  if (ic.branchLength) lines.push(`L=${len}м`);
+                  if (ic.branchAngle) {
+                    const dz = Math.abs((from.node.z - to.node.z));
+                    const dl = Math.hypot(to.node.x - from.node.x, to.node.y - from.node.y, dz);
+                    const ang = dl > 0 ? Math.round(Math.asin(dz / dl) * 180 / Math.PI) : 0;
+                    lines.push(`A=${ang}°`);
+                  }
+                  if (ic.branchSection) lines.push(`S=${b.area.toFixed(1)}м²`);
+                  if (ic.branchResistance) lines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
+                  if (ic.branchVelocity) lines.push(`V=${b.velocity.toFixed(1)}м/с${overV ? "⚠" : ""}`);
+                  if (ic.branchFlow || ic.branchFlowCalc) lines.push(`Q=${Q.toFixed(1)}м³/с`);
+                  if (ic.branchDepression) lines.push(`Н=${(b.dP / 10).toFixed(1)}даПа`);
+                } else {
+                  lines.push(`${b.id} · ${len}м`);
+                  if (Q > 0) lines.push(`Q=${Q.toFixed(1)}м³/с`);
+                }
+                if (lines.length === 0) return null;
+                const lh = 10;
+                const bh = lines.length * lh + 4;
+                const bw = Math.max(60, lines.reduce((mx, s) => Math.max(mx, s.length * 5.5), 0) + 8);
+                return (
+                  <g transform={`translate(${midX},${midY})`}>
+                    <rect x={-bw / 2} y={-bh / 2} width={bw} height={bh} rx="2"
+                      fill="white" stroke={isSel ? "#2563eb" : "#9ca3af"} strokeWidth="0.8" opacity="0.92" />
+                    {lines.map((ln, li) => (
+                      <text key={li} textAnchor="middle" dominantBaseline="middle"
+                        y={-bh / 2 + lh * (li + 0.6)}
+                        fontSize="9"
+                        fontWeight={li === 0 ? 400 : 600}
+                        fill={ln.startsWith("Q=") && overV ? "#dc2626" : ln.startsWith("V=") && overV ? "#dc2626" : "#1f2937"}>
+                        {ln}
+                      </text>
+                    ))}
+                  </g>
+                );
+              })()}
               {/* В 3D — компактная подпись только при выборе */}
               {is3D && isSel && (
                 <g transform={`translate(${midX},${midY})`}>
@@ -884,14 +930,29 @@ export default function TopoCanvas(props: Props) {
               )}
               <g transform="translate(8, -8)">
                 <text fontSize="10" fontWeight="600" fill="#1f2937">{node.number}</text>
-                {view.scale > 0.25 && node.name && !is3D && (
-                  <text y="11" fontSize="9" fill="#6b7280">{node.name}</text>
-                )}
+                {view.scale > 0.25 && !is3D && (() => {
+                  const ic = infoConfig;
+                  const nlines: string[] = [];
+                  if (!ic) {
+                    if (node.name) nlines.push(node.name);
+                  } else {
+                    if (ic.nodeNumber) nlines.push(`№${node.number}`);
+                    if (ic.nodeX) nlines.push(`X=${node.x}м`);
+                    if (ic.nodeY) nlines.push(`Y=${node.y}м`);
+                    if (ic.nodeZ) nlines.push(`Z=${node.z}м`);
+                    if (ic.nodePressure && node.computedPressure > 0)
+                      nlines.push(`P=${(node.computedPressure / 10).toFixed(1)}даПа`);
+                    if (ic.nodeTemp && node.airTemp !== 0) nlines.push(`T=${node.airTemp}°C`);
+                  }
+                  return nlines.map((ln, li) => (
+                    <text key={li} y={(li + 1) * 11} fontSize="9" fill="#6b7280">{ln}</text>
+                  ));
+                })()}
               </g>
-              {view.scale > 0.2 && !is3D && (
+              {view.scale > 0.2 && !is3D && !infoConfig?.nodeZ && (
                 <text x="0" y={r + 12} textAnchor="middle" fontSize="8" fill="#9ca3af">Z={node.z}</text>
               )}
-              {view.scale > 0.25 && node.computedPressure > 0 && !node.atmosphereLink && !is3D && (
+              {view.scale > 0.25 && node.computedPressure > 0 && !node.atmosphereLink && !is3D && !infoConfig?.nodePressure && (
                 <g transform={`translate(8, ${node.name ? 22 : 12})`}>
                   <text fontSize="9" fontWeight="600" fill="#0369a1">
                     P={(node.computedPressure / 1000).toFixed(1)} кПа

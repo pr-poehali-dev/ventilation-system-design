@@ -12,6 +12,8 @@ import FanCurveChart from "@/components/cad/FanCurveChart";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
+import InfoPanel from "@/components/cad/InfoPanel";
+import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -381,9 +383,15 @@ export default function CadPage() {
   const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
   const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
 
+  // ─── ПАНЕЛЬ ИНФОРМАЦИИ + Z-МАСШТАБ ─────────────────────────────────
+  const [infoConfig, setInfoConfig] = useState<InfoDisplayConfig>(DEFAULT_INFO_CONFIG);
+  const updateInfoConfig = (patch: Partial<InfoDisplayConfig>) =>
+    setInfoConfig((prev) => ({ ...prev, ...patch }));
+  const [zScale, setZScale] = useState<number>(1);
+
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
-  const [rightTab, setRightTab] = useState<"node" | "branch">("branch");
+  const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("branch");
 
   // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
@@ -706,6 +714,86 @@ export default function CadPage() {
           </button>
         </div>
       </div>
+
+      {/* ═══ МЕНЮ ФАЙЛ (выпадающее, как в Аэросеть) ═══════════════════════ */}
+      {activeRibbon === "file" && (
+        <div className="fixed inset-0 z-50" onClick={() => setActiveRibbon("home")}>
+          <div className="absolute top-14 left-0 flex shadow-xl border border-gray-300"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#f9f9f9", minHeight: 400, width: 560 }}>
+            {/* Левая боковая панель */}
+            <div className="w-36 flex flex-col text-xs border-r border-gray-300" style={{ background: "#e8e8e8" }}>
+              {[
+                { id: "new", label: "Создать" },
+                { id: "open", label: "Открыть" },
+                { id: "recent", label: "Последние" },
+                { id: "add", label: "Добавить" },
+                { id: "saveas", label: "Сохранить как" },
+                { id: "save", label: "Сохранить" },
+                { id: "print", label: "Печать" },
+                { id: "export", label: "Экспорт" },
+                { id: "service", label: "Сервис" },
+                { id: "help", label: "Справка" },
+              ].map((item) => (
+                <button key={item.id}
+                  className="px-4 py-2.5 text-left hover:bg-blue-100 text-[12px]"
+                  style={{
+                    background: item.id === "add" ? "#2563eb" : "transparent",
+                    color: item.id === "add" ? "white" : "#1f1f1f",
+                    fontWeight: item.id === "add" ? 600 : 400,
+                  }}>
+                  {item.label}
+                </button>
+              ))}
+              <div className="mt-auto flex flex-col border-t border-gray-400">
+                <button className="px-4 py-2 text-left text-[12px] hover:bg-gray-200 flex items-center gap-2">
+                  <Icon name="Settings" size={13} /> Настройки
+                </button>
+                <button className="px-4 py-2 text-left text-[12px] hover:bg-red-100 text-red-600 flex items-center gap-2"
+                  onClick={() => setActiveRibbon("home")}>
+                  <Icon name="X" size={13} /> Закрыть
+                </button>
+              </div>
+            </div>
+            {/* Правая область — содержимое "Добавить" */}
+            <div className="flex-1 p-4">
+              <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">
+                Добавить схему из файла
+              </div>
+              {[
+                { icon: "FileJson", label: "Добавить схему из файла", ext: ".vproj / .json" },
+                { icon: "FileJson", label: "Добавить оперативную часть из JSON-файла", ext: ".json" },
+                { icon: "Code", label: "Добавить схему из XML", ext: ".xml" },
+                { icon: "Pencil", label: "Добавить схему из DXF", ext: ".dxf" },
+                { icon: "FileText", label: "Добавить схему из CSV", ext: ".csv" },
+                { icon: "FileText", label: "Добавить схему из TXT", ext: ".txt" },
+                { icon: "Table", label: "Добавить таблицу из Excel", ext: ".xlsx" },
+                { icon: "Database", label: "Добавить данные для замерных станций из CSV", ext: ".csv" },
+              ].map((item) => (
+                <button key={item.label}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 group"
+                  onClick={() => {
+                    const inp = document.createElement("input");
+                    inp.type = "file";
+                    inp.accept = item.ext;
+                    inp.onchange = () => { /* импорт — заглушка */ };
+                    inp.click();
+                    setActiveRibbon("home");
+                  }}>
+                  <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400"
+                    style={{ background: "#fff" }}>
+                    <Icon name={item.icon as "FileJson"} size={18} />
+                  </div>
+                  <div>
+                    <div className="text-[12px] font-medium text-gray-800">{item.label}</div>
+                    <div className="text-[10px] text-gray-400">{item.ext}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
       <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
@@ -1709,6 +1797,8 @@ export default function CadPage() {
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
               selectedBranchIds={selectedBranchIds}
               onBranchMultiSelect={handleBranchMultiSelect}
+              infoConfig={infoConfig}
+              zScale={zScale}
             />
 
             {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}
@@ -1728,26 +1818,20 @@ export default function CadPage() {
             style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
             {/* Табы */}
             <div className="flex border-b border-gray-300" style={{ background: "#f5f5f5" }}>
-              <button onClick={() => setRightTab("node")}
-                className="flex-1 h-8 text-xs flex items-center justify-center gap-1"
-                style={{
-                  background: rightTab === "node" ? "#ffffff" : "transparent",
-                  borderBottom: rightTab === "node" ? "2px solid #2563eb" : "2px solid transparent",
-                  fontWeight: rightTab === "node" ? 600 : 400,
-                  color: rightTab === "node" ? "#2563eb" : "#444",
-                }}>
-                <Icon name="Circle" size={11} /> Узлы {selectedNode && `(${selectedNode.number || selectedNode.id})`}
-              </button>
-              <button onClick={() => setRightTab("branch")}
-                className="flex-1 h-8 text-xs flex items-center justify-center gap-1"
-                style={{
-                  background: rightTab === "branch" ? "#ffffff" : "transparent",
-                  borderBottom: rightTab === "branch" ? "2px solid #2563eb" : "2px solid transparent",
-                  fontWeight: rightTab === "branch" ? 600 : 400,
-                  color: rightTab === "branch" ? "#2563eb" : "#444",
-                }}>
-                <Icon name="GitBranch" size={11} /> Ветви {selectedBranch && `(${selectedBranch.id})`}
-              </button>
+              {(["node", "branch", "info"] as const).map((tab) => (
+                <button key={tab} onClick={() => setRightTab(tab)}
+                  className="flex-1 h-8 text-xs flex items-center justify-center gap-1"
+                  style={{
+                    background: rightTab === tab ? "#ffffff" : "transparent",
+                    borderBottom: rightTab === tab ? "2px solid #2563eb" : "2px solid transparent",
+                    fontWeight: rightTab === tab ? 600 : 400,
+                    color: rightTab === tab ? "#2563eb" : "#444",
+                  }}>
+                  {tab === "node" && <><Icon name="Circle" size={11} /> Узлы</>}
+                  {tab === "branch" && <><Icon name="GitBranch" size={11} /> Ветви</>}
+                  {tab === "info" && <><Icon name="LayoutList" size={11} /> Инфо</>}
+                </button>
+              ))}
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -1931,6 +2015,31 @@ export default function CadPage() {
                     Всего в сети: <b>{branches.length}</b> ветвей
                   </div>
                 )
+              )}
+
+              {/* ─── ВКЛАДКА: ПАНЕЛЬ ИНФОРМАЦИИ ─────────────────── */}
+              {rightTab === "info" && (
+                <div className="-m-2 h-full flex flex-col" style={{ minHeight: 0 }}>
+                  <InfoPanel config={infoConfig} onChange={updateInfoConfig} />
+                  {/* Масштаб Z */}
+                  <div className="border-t border-gray-300 px-2 py-2" style={{ background: "#f5f5f5" }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
+                      <button onClick={() => setZScale(1)}
+                        className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
+                        Сброс
+                      </button>
+                    </div>
+                    <input type="range" min="0.1" max="10" step="0.1"
+                      value={zScale}
+                      onChange={(e) => setZScale(parseFloat(e.target.value))}
+                      className="w-full"
+                      style={{ accentColor: "#2563eb" }} />
+                    <div className="flex justify-between text-[10px] text-gray-400">
+                      <span>0.1×</span><span>5×</span><span>10×</span>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
 
