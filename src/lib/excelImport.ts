@@ -300,7 +300,8 @@ export function parseExcel(buffer: ArrayBuffer): ExcelImportResult {
     const p = pos.get(id)!;
     const depth = depthMap.get(id) ?? 0;
     const z = depth > 0 ? -depth : depth;
-    const num = String(id).padStart(3, "0");
+    // Номер узла — точно как в программе Вентиляция (без ведущих нулей)
+    const num = String(id);
     nodeMap.set(id, makeNode(`N${ts}_${id}`, {
       x: Math.round(p.x * 10) / 10,
       y: Math.round(p.y * 10) / 10,

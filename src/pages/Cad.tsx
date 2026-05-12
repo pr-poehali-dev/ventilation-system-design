@@ -248,7 +248,11 @@ export default function CadPage() {
   // навязывает его Z и horizonId. Возвращает ID созданного узла.
   const handleNodeAdd = (x: number, y: number, z: number): string => {
     const newId = nextNodeId();
-    const num = String(nodes.length + 100).padStart(3, "0");
+    // Номер узла — только цифра, без буквенных префиксов
+    const usedNums = new Set(nodes.map((n) => parseInt(n.number, 10)).filter((n) => !isNaN(n)));
+    let nextNum = 1;
+    while (usedNums.has(nextNum)) nextNum++;
+    const num = String(nextNum);
     const finalZ = activeHorizon ? activeHorizon.z : z;
     const node = makeNode(newId, {
       x, y, z: finalZ,
@@ -289,7 +293,11 @@ export default function CadPage() {
 
     // Создаём новый узел в точке разреза
     const newNodeId = nextNodeId();
-    const num = String(nodes.length + 100).padStart(3, "0");
+    // Номер узла — только цифра, без буквенных префиксов
+    const usedNumsSplit = new Set(nodes.map((n) => parseInt(n.number, 10)).filter((n) => !isNaN(n)));
+    let nextNumSplit = 1;
+    while (usedNumsSplit.has(nextNumSplit)) nextNumSplit++;
+    const num = String(nextNumSplit);
     // Если активен горизонт — Z и привязка из горизонта; иначе — из точки.
     // Сохраняем horizonId родительской ветви, если узел создаётся «на лету».
     const finalZ = activeHorizon ? activeHorizon.z : z;
@@ -394,8 +402,8 @@ export default function CadPage() {
   }, [importNonce]);  
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
-  const [branchWidth, setBranchWidth] = useState<number>(2.5);   // px
-  const [branchBorder, setBranchBorder] = useState<number>(0);   // px (контур)
+  const [branchWidth, setBranchWidth] = useState<number>(10);    // px (по умолчанию 10 как в Аэросети)
+  const [branchBorder, setBranchBorder] = useState<number>(1.2); // px (контур, по умолчанию 1.2)
   const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
   const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
   const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
@@ -408,7 +416,7 @@ export default function CadPage() {
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
-  const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("branch");
+  const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
 
   // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
@@ -513,11 +521,7 @@ export default function CadPage() {
     x: number;
     y: number;
   } | null>(null);
-  // Автопереключение таба при выборе объекта на схеме
-  useEffect(() => {
-    if (selectedNodeId) setRightTab("node");
-    else if (selectedBranchId) setRightTab("branch");
-  }, [selectedNodeId, selectedBranchId]);
+  // (автопереключение правого таба при выборе объекта убрано — пользователь выбирает вкладку вручную)
 
   // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(330);
@@ -1317,11 +1321,11 @@ export default function CadPage() {
                 <FrameGroup title="Ширина и граница ветвей">
                   <LabeledRow label="Ширина линии:" labelWidth={108}>
                     <NumWithUnit value={branchWidth} unit="px"
-                      onChange={(v) => setBranchWidth(Math.max(0.5, Math.min(8, v)))} />
+                      onChange={(v) => setBranchWidth(Math.max(0.5, Math.min(20, v)))} />
                   </LabeledRow>
                   <LabeledRow label="Контурная обводка:" labelWidth={108}>
                     <NumWithUnit value={branchBorder} unit="px"
-                      onChange={(v) => setBranchBorder(Math.max(0, Math.min(4, v)))} />
+                      onChange={(v) => setBranchBorder(Math.max(0, Math.min(8, v)))} />
                   </LabeledRow>
                   <div className="text-[10px] text-gray-500 px-1">
                     Контур = тёмная окантовка вокруг линии (0 — без обводки).
@@ -1964,22 +1968,108 @@ export default function CadPage() {
           </div>
         </div>
 
-        {/* ── ПРАВАЯ ПАНЕЛЬ — только «Панель информации» ─────────────── */}
+        {/* ── ПРАВАЯ ПАНЕЛЬ — «Панель информации» ─────────────── */}
         {rightPanelOpen && (
           <div className="w-[280px] flex-shrink-0 flex flex-col"
             style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
-            {/* Заголовок */}
-            <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
-              style={{ background: "#f5f5f5", fontSize: 11, fontWeight: 600 }}>
-              <Icon name="LayoutList" size={12} />
-              Панель информации
+            {/* Вкладки заголовка */}
+            <div className="flex border-b border-gray-300" style={{ background: "#f5f5f5" }}>
+              <button
+                onClick={() => setRightTab("info" as typeof rightTab)}
+                className="flex items-center gap-1 px-3 h-8 text-[11px] font-semibold border-r border-gray-300"
+                style={{
+                  background: rightTab !== "node" && rightTab !== "branch" ? "#ffffff" : "transparent",
+                  borderBottom: rightTab !== "node" && rightTab !== "branch" ? "2px solid #2563eb" : "2px solid transparent",
+                  color: rightTab !== "node" && rightTab !== "branch" ? "#2563eb" : "#555",
+                }}>
+                <Icon name="LayoutList" size={12} /> Информация
+              </button>
+              <button
+                onClick={() => setRightTab("node")}
+                className="flex items-center gap-1 px-3 h-8 text-[11px] font-semibold"
+                style={{
+                  background: rightTab === "node" ? "#ffffff" : "transparent",
+                  borderBottom: rightTab === "node" ? "2px solid #2563eb" : "2px solid transparent",
+                  color: rightTab === "node" ? "#2563eb" : "#555",
+                }}>
+                <Icon name="Circle" size={12} /> Узлы
+              </button>
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Вкладка: Информация */}
+              {rightTab !== "node" && rightTab !== "branch" && (
               <div className="flex-1 overflow-hidden">
                 <InfoPanel config={infoConfig} onChange={updateInfoConfig} />
               </div>
-              {/* Масштаб Z */}
+              )}
+
+              {/* Вкладка: Узлы — управление видимостью */}
+              {rightTab === "node" && (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Кнопки вкл/выкл всех */}
+                <div className="flex items-center gap-1 px-2 py-1 border-b border-gray-200" style={{ background: "#f0f4f8" }}>
+                  <span className="text-[10px] text-gray-600 font-semibold flex-1">Видимость узлов на схеме</span>
+                  <button
+                    onClick={() => setNodes((p) => p.map((n) => ({ ...n, visible: true })))}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-green-400 hover:bg-green-50 text-green-700">
+                    Все вкл
+                  </button>
+                  <button
+                    onClick={() => setNodes((p) => p.map((n) => ({ ...n, visible: false })))}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 hover:bg-red-50 text-red-600">
+                    Все выкл
+                  </button>
+                </div>
+                {/* Список узлов с чекбоксами */}
+                <div className="flex-1 overflow-y-auto">
+                  {nodes.length === 0 && (
+                    <div className="text-[11px] text-gray-400 text-center py-4">Нет узлов</div>
+                  )}
+                  {nodes.map((node) => (
+                    <label key={node.id}
+                      className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-blue-50 select-none"
+                      style={{
+                        borderBottom: "1px solid #f0f0f0",
+                        background: selectedNodeId === node.id ? "#dbeafe" : "transparent",
+                      }}>
+                      <input
+                        type="checkbox"
+                        checked={node.visible !== false}
+                        onChange={(e) => updateNode(node.id, { visible: e.target.checked })}
+                        style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }}
+                      />
+                      <span
+                        className="text-[11px] font-mono font-bold flex-shrink-0"
+                        style={{ color: "#1a3a6b", minWidth: 28 }}>
+                        {node.number}
+                      </span>
+                      <span
+                        className="text-[10px] text-gray-500 truncate flex-1"
+                        title={node.name}>
+                        {node.name || `(${node.x}, ${node.y})`}
+                      </span>
+                      {node.atmosphereLink && (
+                        <span className="text-[10px] px-1 rounded" style={{ background: "#e0f2fe", color: "#0369a1" }}>атм</span>
+                      )}
+                      <button
+                        onClick={(e) => { e.preventDefault(); setSelectedNodeId(node.id); setSelectedBranchId(null); }}
+                        className="w-5 h-5 flex items-center justify-center hover:bg-blue-200 rounded flex-shrink-0"
+                        title="Выделить на схеме">
+                        <Icon name="Crosshair" size={10} className="text-blue-600" />
+                      </button>
+                    </label>
+                  ))}
+                </div>
+                {/* Итог */}
+                <div className="border-t border-gray-300 px-2 py-1 text-[10px] text-gray-500" style={{ background: "#f5f5f5" }}>
+                  Показано: {nodes.filter(n => n.visible !== false).length} / {nodes.length} узлов
+                </div>
+              </div>
+              )}
+              
+              {/* Масштаб Z — только на вкладке информации */}
+              {rightTab !== "node" && rightTab !== "branch" && (
               <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
@@ -1997,6 +2087,7 @@ export default function CadPage() {
                   <span>0.1×</span><span>5×</span><span>10×</span>
                 </div>
               </div>
+              )}
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}

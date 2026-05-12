@@ -194,12 +194,16 @@ function buildResult(
 
   for (const rn of rawNodes) {
     if (rn.z !== 0) nodesWithZ++;
+    // Сохраняем исходный числовой номер узла из АэроСети без изменений
+    // Если ID — число, используем его напрямую; если UUID — берём последние цифры
+    const origNum = rn.id.includes("-")
+      ? rn.id.replace(/[^0-9]/g, "").slice(-4) || rn.id.slice(-4)
+      : rn.id.replace(/^0+/, "") || "0"; // убираем ведущие нули
     nodeMap.set(rn.id, makeNode(`N${ts}_${rn.id}`, {
       x: Math.round(rn.x * 10) / 10,
       y: Math.round(rn.y * 10) / 10,
       z: Math.round(rn.z * 10) / 10,
-      // UUID → короткий номер для отображения (последние 4 символа)
-      number: rn.id.includes("-") ? rn.id.slice(-4).toUpperCase() : rn.id.padStart(3, "0"),
+      number: origNum,
       name: rn.id.includes("-") ? rn.id.slice(-8) : rn.id,
       atmosphereLink: rn.isAtm,
     }));

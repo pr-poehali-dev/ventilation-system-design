@@ -8,6 +8,8 @@ export interface TopoNode {
   // Общие свойства
   name: string;
   number: string;
+  // Видимость на схеме (управляется из панели информации). undefined = видим
+  visible?: boolean;
   // Физические координаты (метры)
   x: number;
   y: number;
@@ -132,6 +134,7 @@ export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
     id,
     name: "",
     number: "",
+    visible: true,
     x: 0,
     y: 0,
     z: 0,
@@ -195,8 +198,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     dP: 0,
     power: 0,
     reynolds: 0,
-    lineWidth: 2,
-    lineBorder: 0.2,
+    lineWidth: 10,
+    lineBorder: 1.2,
     capital: false,
     designed: false,
     layer: "Стволы",

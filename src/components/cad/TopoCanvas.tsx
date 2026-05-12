@@ -915,7 +915,7 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* ─── УЗЛЫ (отсортированы по глубине, ближние сверху) ─────────── */}
-        {nodesSorted.map(({ node, sx, sy }) => {
+        {nodesSorted.filter(({ node }) => node.visible !== false).map(({ node, sx, sy }) => {
           const isSel = selectedNodeId === node.id;
           const isBranchFrom = branchFrom === node.id;
           const r = isSel ? 7 : 5;
@@ -927,7 +927,7 @@ export default function TopoCanvas(props: Props) {
               )}
               <circle r={r} fill={color} stroke="#1f2937" strokeWidth={isSel ? 2 : 1} />
               {node.atmosphereLink && (
-                <text textAnchor="middle" dominantBaseline="middle" fontSize="8" fontWeight="bold" fill="#1f2937">A</text>
+                <circle r={r - 2} fill="none" stroke="#1f2937" strokeWidth="1.5" strokeDasharray="2 1" />
               )}
               <g transform="translate(8, -8)">
                 {view.scale > 0.15 && (
@@ -939,7 +939,7 @@ export default function TopoCanvas(props: Props) {
                   if (!ic) {
                     if (node.name) nlines.push(node.name);
                   } else {
-                    if (ic.nodeNumber) nlines.push(`№${node.number}`);
+                    if (ic.nodeNumber) nlines.push(`${node.number}`);
                     if (ic.nodeX) nlines.push(`X=${node.x}м`);
                     if (ic.nodeY) nlines.push(`Y=${node.y}м`);
                     if (ic.nodeZ) nlines.push(`Z=${node.z}м`);
@@ -974,11 +974,64 @@ export default function TopoCanvas(props: Props) {
           azimuth={view.azimuth} elevation={view.elevation}
           onPick={applyPreset}
         />
+
+        {/* ── МАСШТАБНАЯ ЛИНЕЙКА (как в АэроСети) ─────────────────── */}
+        {(() => {
+          // Подбираем «красивое» значение шага линейки
+          const targetPx = 120;  // целевая длина линейки в пикселях
+          const rawM = targetPx / view.scale;  // метры при текущем масштабе
+          const exp = Math.pow(10, Math.floor(Math.log10(rawM)));
+          const nice = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+          const stepM = nice.find(n => n * view.scale >= 60) ?? nice[nice.length - 1];
+          const barPx = stepM * view.scale;
+          const bx = 16, by = size.h - 36;
+          const segments = 5;
+          const segPx = barPx / segments;
+          void exp;
+          return (
+            <g style={{ pointerEvents: "none" }}>
+              {/* Белая подложка */}
+              <rect x={bx - 4} y={by - 18} width={barPx + 8} height={36}
+                fill="white" fillOpacity="0.88" rx="3"
+                stroke="#c0c0c0" strokeWidth="0.5" />
+              {/* Полосы чёрно-белые как в Аэросети */}
+              {Array.from({ length: segments }).map((_, i) => (
+                <rect key={i}
+                  x={bx + i * segPx} y={by - 8}
+                  width={segPx} height={10}
+                  fill={i % 2 === 0 ? "#1a1a1a" : "#ffffff"}
+                  stroke="#1a1a1a" strokeWidth="0.8" />
+              ))}
+              {/* Левая граница */}
+              <line x1={bx} y1={by - 8} x2={bx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
+              {/* Правая граница */}
+              <line x1={bx + barPx} y1={by - 8} x2={bx + barPx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
+              {/* Деления по середине */}
+              {Array.from({ length: segments - 1 }).map((_, i) => (
+                <line key={i}
+                  x1={bx + (i + 1) * segPx} y1={by - 8}
+                  x2={bx + (i + 1) * segPx} y2={by - 12}
+                  stroke="#1a1a1a" strokeWidth="1" />
+              ))}
+              {/* Метки */}
+              <text x={bx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
+                fill="#111" textAnchor="middle" fontWeight="600">0</text>
+              <text x={bx + barPx / 2} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
+                fill="#111" textAnchor="middle">
+                {stepM / 2 >= 1000 ? `${stepM / 2000}тыс` : `${stepM / 2}`}
+              </text>
+              <text x={bx + barPx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
+                fill="#111" textAnchor="middle" fontWeight="600">
+                {stepM >= 1000 ? `${stepM / 1000} км` : `${stepM} м`}
+              </text>
+            </g>
+          );
+        })()}
       </svg>
 
       {/* Индикаторы */}
       <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"
-        style={{ color: "#444" }}>
+        style={{ color: "#444", marginLeft: "0px", paddingBottom: "0px" }}>
         {is3D && <span className="mr-2">3D · Az: {view.azimuth.toFixed(0)}° · El: {view.elevation.toFixed(0)}°</span>}
         {hoverPos && (() => {
           // Вывод координат с учётом активной плоскости
@@ -998,7 +1051,7 @@ export default function TopoCanvas(props: Props) {
       </div>
       <div className="absolute bottom-1 right-2 text-[11px] font-mono pointer-events-none"
         style={{ color: "#444" }}>
-        Масштаб: 1:{Math.round(1 / view.scale)}
+        М 1:{(1 / Math.max(0.00001, view.scale * 0.001)).toFixed(0)}
       </div>
 
       {/* Подсказка */}
