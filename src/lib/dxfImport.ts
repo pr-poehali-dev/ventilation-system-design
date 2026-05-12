@@ -502,11 +502,28 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   }
 
   // ── Кластеризация узлов ──────────────────────────────────────────────────
-  const extent = (() => {
-    const xs = allPts.map(p => p.x), ys = allPts.map(p => p.y);
-    return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1);
+  // Автоматический epsilon: берём медианное минимальное расстояние между соседними точками.
+  // Это даёт правильный порог даже при больших координатах (2000м+).
+  const epsilonAuto = (() => {
+    if (allPts.length < 2) return 0.5;
+    // Выборка до 200 точек для скорости
+    const sample = allPts.length > 200 ? allPts.filter((_, i) => i % Math.ceil(allPts.length / 200) === 0) : allPts;
+    const minDists: number[] = [];
+    for (let i = 0; i < sample.length; i++) {
+      let minD = Infinity;
+      for (let j = 0; j < sample.length; j++) {
+        if (i === j) continue;
+        const d = dist3(sample[i], sample[j]);
+        if (d < minD) minD = d;
+      }
+      if (minD < Infinity) minDists.push(minD);
+    }
+    minDists.sort((a, b2) => a - b2);
+    // Берём 10й перцентиль минимальных расстояний — это типичная "погрешность концов"
+    const p10 = minDists[Math.floor(minDists.length * 0.10)] ?? 0.5;
+    // Epsilon = max(p10 * 2, 0.1), но не более 10м
+    return Math.min(10, Math.max(0.1, p10 * 2));
   })();
-  const epsilonAuto = Math.min(2, Math.max(0.1, extent * 0.005));
   const epsilon = epsilonOverride ?? epsilonAuto;
 
   const { clusters, map } = clusterPoints(allPts, epsilon);
