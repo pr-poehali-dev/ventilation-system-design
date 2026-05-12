@@ -84,7 +84,7 @@ export function combineImports(
     if (dxfNode) nodesWithXY++;
     if (z !== 0) nodesWithZ++;
 
-    mergedNodes.set(exNode.id, makeNode(`N${ts}_${num}`, {
+    mergedNodes.set(exNode.id, makeNode(`N${ts}_${noLeadZero}`, {
       x: Math.round(x * 10) / 10,
       y: Math.round(y * 10) / 10,
       z: Math.round(z * 10) / 10,
