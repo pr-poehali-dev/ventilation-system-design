@@ -43,6 +43,8 @@ export interface TopoBranch {
   perimeter: number;        // м — итог периметра
   dh: number;               // м — гидравлический диаметр (4S/P)
   length: number;           // м — рассчитывается из координат, но может задаваться
+  angle: number;            // ° — угол наклона (-90..+90), авто из координат или вручную
+  manualAngle: boolean;     // если true — угол задан вручную, не пересчитывается из координат
   manualLength: boolean;
   manualSection: boolean;   // S и P заданы вручную (mode=custom)
   // ─── Аэродинамика ────────────────────────────────────
@@ -163,6 +165,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     perimeter: 25,
     dh: (4 * 38.5) / 25,
     length: 0,
+    angle: 0,
+    manualAngle: false,
     manualLength: false,
     manualSection: false,
     // Аэродинамика
@@ -199,6 +203,18 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     horizonId: "",
     ...partial,
   };
+}
+
+// Угол наклона ветви в градусах (-90..+90) из координат узлов
+// +90 — вертикально вверх, -90 — вертикально вниз, 0 — горизонтально
+export function calcBranchAngle(from: TopoNode, to: TopoNode): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const horizLen = Math.sqrt(dx * dx + dy * dy);
+  const len3d = Math.sqrt(horizLen * horizLen + dz * dz);
+  if (len3d < 0.001) return 0;
+  return Math.round(Math.asin(dz / len3d) * (180 / Math.PI) * 10) / 10;
 }
 
 // Длина ветви в 3D пространстве по координатам узлов
@@ -419,14 +435,19 @@ export const DEMO_BRANCHES: TopoBranch[] = [
                                   fanPressure: 4800, fanName: "ВЦ-32 (главный)" }),
 ];
 
-// Авто-расчёт длин на основе координат
+// Авто-расчёт длин и угла наклона на основе координат узлов
 export function recalcLengths(nodes: TopoNode[], branches: TopoBranch[]): TopoBranch[] {
   return branches.map((b) => {
-    if (b.manualLength) return b;
     const from = nodes.find((n) => n.id === b.fromId);
     const to = nodes.find((n) => n.id === b.toId);
     if (!from || !to) return b;
-    return { ...b, length: Math.round(calcBranchLength(from, to)) };
+    const len = Math.round(calcBranchLength(from, to));
+    const ang = calcBranchAngle(from, to);
+    return {
+      ...b,
+      length: b.manualLength ? b.length : len,
+      angle: b.manualAngle ? b.angle : ang,
+    };
   });
 }
 

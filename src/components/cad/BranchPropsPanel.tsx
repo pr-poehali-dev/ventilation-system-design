@@ -208,9 +208,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate }: BranchP
 
   const horizonColor = horizons.find((h) => h.id === branch.horizonId)?.color;
 
-  const angle = (() => {
-    return 0;
-  })();
+  const angle = branch.angle ?? 0;
 
   const unitR = branch.length > 0 && branch.area > 0
     ? branch.resistance / branch.length
@@ -261,20 +259,49 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate }: BranchP
             </InlineLabel>
 
             <InlineLabel label="Длина, м">
-              {branch.manualLength ? (
-                <EditInput
-                  type="number"
-                  step="0.5"
-                  value={branch.length}
-                  onChange={(v) => onUpdate({ length: parseFloat(v) || 0 })}
-                />
-              ) : (
-                <ComputedInput value={numFmt(branch.length, 1)} />
-              )}
+              <div className="flex items-center gap-0.5 flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
+                  {branch.manualLength ? (
+                    <EditInput
+                      type="number"
+                      step="0.5"
+                      value={branch.length}
+                      onChange={(v) => onUpdate({ length: parseFloat(v) || 0 })}
+                    />
+                  ) : (
+                    <ComputedInput value={numFmt(branch.length, 1)} />
+                  )}
+                </div>
+                <button
+                  onClick={() => onUpdate({ manualLength: !branch.manualLength })}
+                  title={branch.manualLength ? "Вычислять автоматически из координат" : "Задать вручную"}
+                  style={{ fontSize: 10, padding: "1px 4px", border: "1px solid #c8c8c8", borderRadius: 2, background: branch.manualLength ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+                  {branch.manualLength ? "рук" : "авт"}
+                </button>
+              </div>
             </InlineLabel>
 
             <InlineLabel label="Угол наклона, °">
-              <ComputedInput value={numFmt(angle, 1)} />
+              <div className="flex items-center gap-0.5 flex-1 min-w-0">
+                <div className="flex-1 min-w-0">
+                  {branch.manualAngle ? (
+                    <EditInput
+                      type="number"
+                      step="1"
+                      value={angle}
+                      onChange={(v) => onUpdate({ angle: Math.max(-90, Math.min(90, parseFloat(v) || 0)) })}
+                    />
+                  ) : (
+                    <ComputedInput value={numFmt(angle, 1)} />
+                  )}
+                </div>
+                <button
+                  onClick={() => onUpdate({ manualAngle: !branch.manualAngle })}
+                  title={branch.manualAngle ? "Вычислять автоматически из координат" : "Задать вручную"}
+                  style={{ fontSize: 10, padding: "1px 4px", border: "1px solid #c8c8c8", borderRadius: 2, background: branch.manualAngle ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+                  {branch.manualAngle ? "рук" : "авт"}
+                </button>
+              </div>
             </InlineLabel>
 
             <InlineLabel label="Форма сечения">

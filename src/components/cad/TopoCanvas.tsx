@@ -842,7 +842,7 @@ export default function TopoCanvas(props: Props) {
                     fontSize="11" fontWeight="bold" fill="#7c3aed">⚙</text>
                 </g>
               )}
-              {view.scale > 0.15 && !is3D && (() => {
+              {view.scale > 0.12 && (() => {
                 const ic = infoConfig;
                 const lines: string[] = [];
                 if (ic) {
@@ -850,21 +850,31 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchName && b.type) lines.push(b.type);
                   if (ic.branchLength) lines.push(`L=${len}м`);
                   if (ic.branchAngle) {
-                    const dz = Math.abs((from.node.z - to.node.z));
-                    const dl = Math.hypot(to.node.x - from.node.x, to.node.y - from.node.y, dz);
-                    const ang = dl > 0 ? Math.round(Math.asin(dz / dl) * 180 / Math.PI) : 0;
-                    lines.push(`A=${ang}°`);
+                    const ang = b.angle ?? 0;
+                    lines.push(`A=${ang.toFixed(1)}°`);
                   }
                   if (ic.branchSection) lines.push(`S=${b.area.toFixed(1)}м²`);
                   if (ic.branchResistance) lines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
                   if (ic.branchVelocity) lines.push(`V=${b.velocity.toFixed(1)}м/с${overV ? "⚠" : ""}`);
                   if (ic.branchFlow || ic.branchFlowCalc) lines.push(`Q=${Q.toFixed(1)}м³/с`);
                   if (ic.branchDepression) lines.push(`Н=${(b.dP / 10).toFixed(1)}даПа`);
-                } else {
+                } else if (!is3D) {
                   lines.push(`${b.id} · ${len}м`);
                   if (Q > 0) lines.push(`Q=${Q.toFixed(1)}м³/с`);
                 }
-                if (lines.length === 0) return null;
+                if (lines.length === 0) {
+                  if (is3D && isSel) {
+                    return (
+                      <g transform={`translate(${midX},${midY})`}>
+                        <rect x={-26} y={-9} width={52} height={14} rx="2"
+                          fill="white" stroke="#2563eb" strokeWidth="0.8" />
+                        <text textAnchor="middle" dominantBaseline="middle"
+                          fontSize="9" fontWeight="600" fill="#2563eb">{b.id}</text>
+                      </g>
+                    );
+                  }
+                  return null;
+                }
                 const lh = 10;
                 const bh = lines.length * lh + 4;
                 const bw = Math.max(60, lines.reduce((mx, s) => Math.max(mx, s.length * 5.5), 0) + 8);
@@ -884,15 +894,6 @@ export default function TopoCanvas(props: Props) {
                   </g>
                 );
               })()}
-              {/* В 3D — компактная подпись только при выборе */}
-              {is3D && isSel && (
-                <g transform={`translate(${midX},${midY})`}>
-                  <rect x={-26} y={-9} width={52} height={14} rx="2"
-                    fill="white" stroke="#2563eb" strokeWidth="0.8" />
-                  <text textAnchor="middle" dominantBaseline="middle"
-                    fontSize="9" fontWeight="600" fill="#2563eb">{b.id}</text>
-                </g>
-              )}
             </g>
           );
         })}

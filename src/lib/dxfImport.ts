@@ -206,9 +206,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
         } else if (val === "LWPOLYLINE") {
           flushLwPolyline();
           lwPts = []; lwClosed = false; lwX = null; lwY = null; lwZ = 0;
-        } else if (val === "POLYLINE") {
+        } else if (val === "POLYLINE" || val === "3DPOLYLINE") {
           inPolyline = true; polyPts = []; polyClosed = false;
-        } else if (val === "VERTEX" && inPolyline) {
+        } else if ((val === "VERTEX" || val === "3DPOLYLINE") && inPolyline) {
           flushVertex();
           vx = vy = vz = 0; inVertex = true;
         } else if (val === "SEQEND") {
@@ -264,15 +264,15 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
       else if (code === 20) { lwY = num; }
     }
 
-    // Координаты POLYLINE VERTEX
-    else if (entityType === "VERTEX" && inPolyline && inVertex) {
+    // Координаты POLYLINE / 3DPOLYLINE VERTEX
+    else if ((entityType === "VERTEX" || entityType === "3DPOLYLINE") && inPolyline && inVertex) {
       if (code === 10) vx = num;
       else if (code === 20) vy = num;
       else if (code === 30) vz = num;
     }
 
-    // Флаги POLYLINE
-    else if (entityType === "POLYLINE") {
+    // Флаги POLYLINE / 3DPOLYLINE
+    else if (entityType === "POLYLINE" || entityType === "3DPOLYLINE") {
       if (code === 70) polyClosed = (parseInt(value) & 1) === 1;
     }
   }
@@ -283,7 +283,10 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   if (inPolyline) flushPolyline();
 
   debugLines.push(`Сущностей в ENTITIES: ${entityCount}, сегментов собрано: ${segments.length}`);
-  debugLines.push(`LINE: ${lineCount}, POLYLINE/LWPOLY: ${polylineCount}`);
+  debugLines.push(`LINE: ${lineCount}, POLYLINE/3DPOLY/LWPOLY: ${polylineCount}`);
+  const zVals = segments.map(s => Math.abs(s.z1)).concat(segments.map(s => Math.abs(s.z2)));
+  const maxZ = zVals.length > 0 ? Math.max(...zVals) : 0;
+  debugLines.push(`Max |Z|=${maxZ.toFixed(2)}, Max |XY|=${Math.max(...segments.flatMap(s => [Math.abs(s.x1), Math.abs(s.y1), Math.abs(s.x2), Math.abs(s.y2)])).toFixed(2)}`);
 
   if (segments.length === 0) {
     // Дополнительная диагностика
@@ -308,9 +311,10 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   }
 
   // ── Определяем единицы ───────────────────────────────────────────────────
+  // Включаем Z-координаты: вертикальные стволы могут иметь Z >> XY
   const allCoords: number[] = [];
   for (const s of segments) {
-    allCoords.push(Math.abs(s.x1), Math.abs(s.y1), Math.abs(s.x2), Math.abs(s.y2));
+    allCoords.push(Math.abs(s.x1), Math.abs(s.y1), Math.abs(s.z1), Math.abs(s.x2), Math.abs(s.y2), Math.abs(s.z2));
   }
   const maxCoord = Math.max(...allCoords);
   let scale = 1;
