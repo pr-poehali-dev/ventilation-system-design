@@ -215,27 +215,35 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                 </div>
               )}
 
-              {/* Диагностика при 0 ветвях */}
-              {result.stats.branches === 0 && (
-                <div>
-                  <button onClick={() => setShowDebug((v) => !v)}
-                    className="text-[11px] text-blue-600 underline hover:text-blue-800">
-                    {showDebug ? "Скрыть диагностику" : "Показать диагностику файла"}
-                  </button>
-                  {showDebug && (
-                    <div className="mt-2 space-y-2">
-                      <div className="text-[10px] font-semibold text-gray-500">Лог парсера:</div>
-                      <pre className="text-[10px] bg-gray-900 text-green-400 rounded p-2 overflow-auto max-h-28 whitespace-pre-wrap">
-                        {result.debug ?? "нет данных"}
-                      </pre>
-                      <div className="text-[10px] font-semibold text-gray-500">Первые строки файла:</div>
-                      <pre className="text-[10px] bg-gray-100 rounded p-2 overflow-auto max-h-36 whitespace-pre-wrap border border-gray-300">
-                        {filePreview}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Диагностика — всегда доступна */}
+              <div>
+                <button onClick={() => setShowDebug((v) => !v)}
+                  className="text-[11px] text-blue-600 underline hover:text-blue-800">
+                  {showDebug ? "Скрыть диагностику" : "Показать лог парсера"}
+                </button>
+                {showDebug && (
+                  <div className="mt-2 space-y-2">
+                    <div className="text-[10px] font-semibold text-gray-500">Лог парсера:</div>
+                    <pre className="text-[10px] bg-gray-900 text-green-400 rounded p-2 overflow-auto max-h-40 whitespace-pre-wrap">
+                      {result.debug ?? "нет данных"}
+                    </pre>
+                    {result.branches.length > 0 && (
+                      <>
+                        <div className="text-[10px] font-semibold text-gray-500">Ветви (первые 8):</div>
+                        <pre className="text-[10px] bg-gray-100 rounded p-2 overflow-auto max-h-48 whitespace-pre-wrap border border-gray-300">
+                          {result.branches.slice(0, 8).map(b =>
+                            `${b.id.slice(-6)}: L=${b.length}м A=${b.angle}° | S=${b.area}м² P=${b.perimeter}м dh=${b.dh}м | ${b.rectWidth}×${b.rectHeight}`
+                          ).join("\n")}
+                        </pre>
+                      </>
+                    )}
+                    <div className="text-[10px] font-semibold text-gray-500">Первые 60 строк файла:</div>
+                    <pre className="text-[10px] bg-gray-100 rounded p-2 overflow-auto max-h-36 whitespace-pre-wrap border border-gray-300">
+                      {filePreview}
+                    </pre>
+                  </div>
+                )}
+              </div>
 
               {/* Режим импорта */}
               {result.branches.length > 0 && (

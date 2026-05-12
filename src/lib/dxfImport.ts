@@ -550,6 +550,13 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const sectionLayers = [...new Set(sectionPolys.map(p => p.layer))]
     .filter(l => !/_c$/i.test(l) && !/axis/i.test(l) && !/indicator/i.test(l));
 
+  debugLines.push(`Слои полигонов: all=[${[...new Set(sectionPolys.map(p=>p.layer))].join(",")}] section=[${sectionLayers.join(",")}]`);
+  // Логируем первые 6 полигонов для диагностики
+  sectionPolys.slice(0, 6).forEach((p, i) => {
+    const pw = toWorld(p.cx, p.cy, p.cz);
+    debugLines.push(`  poly[${i}] layer=${p.layer} pts=${p.pts.length} dxf=(${p.cx.toFixed(1)},${p.cy.toFixed(1)},${p.cz.toFixed(1)}) world=(${pw.x.toFixed(1)},${pw.y.toFixed(1)},${pw.z.toFixed(1)})`);
+  });
+
   if (sectionPolys.length >= 2 && sectionLayers.length > 0) {
     const sectionPolysFiltered = sectionPolys.filter(p => sectionLayers.includes(p.layer));
     let sectionApplied = 0;
@@ -582,6 +589,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
         .sort((a, b2) => a.perpD - b2.perpD)
         .slice(0, 6);
 
+      if (bi2 < 4) debugLines.push(`  branch[${bi2}] mid=(${mx.toFixed(1)},${my.toFixed(1)},${mz.toFixed(1)}) near=${near.length} gaps будут: ${near.map(p=>p.perpD.toFixed(2)).join(",")}`);
       if (near.length < 2) continue;
 
       // Группируем POLYLINE попарно: ищем пары с минимальным расстоянием между центрами
