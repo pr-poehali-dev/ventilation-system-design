@@ -209,6 +209,11 @@ function buildResult(
     }));
   }
 
+  // Определяем «нулевые» узлы — те у кого x=0 и y=0, но есть хотя бы один узел с ненулевыми координатами
+  // Такие узлы — скорее всего не загружены из positions-файла и дают длинные линии к нулю
+  const hasRealCoords = [...nodeMap.values()].some(n => n.x !== 0 || n.y !== 0);
+  const isZeroNode = (n: TopoNode) => hasRealCoords && n.x === 0 && n.y === 0;
+
   const branches: TopoBranch[] = [];
   const seen = new Set<string>();
   let bi = 0;
@@ -218,6 +223,8 @@ function buildResult(
     const fromNode = nodeMap.get(rb.fromId);
     const toNode   = nodeMap.get(rb.toId);
     if (!fromNode || !toNode) continue;
+    // Пропускаем ветви у которых один из узлов не имеет реальных координат
+    if (isZeroNode(fromNode) || isZeroNode(toNode)) continue;
 
     const key = `${[rb.fromId, rb.toId].sort().join("_")}`;
     if (seen.has(key)) continue;
@@ -245,15 +252,18 @@ function buildResult(
     }));
   }
 
-  debug.push(`Итого: узлов=${nodeMap.size}, ветвей=${branches.length}, с Z≠0=${nodesWithZ}`);
+  // Убираем из результата узлы без реальных координат (они дают точки в нуле)
+  const resultNodes = [...nodeMap.values()].filter(n => !isZeroNode(n));
 
-  if (rawNodes.length > 0 && nodeMap.size === 0) warnings.push("⚠ Узлы не распознаны.");
+  debug.push(`Итого: узлов=${resultNodes.length} (отфильтровано нулевых: ${nodeMap.size - resultNodes.length}), ветвей=${branches.length}, с Z≠0=${nodesWithZ}`);
+
+  if (rawNodes.length > 0 && resultNodes.length === 0) warnings.push("⚠ Узлы не распознаны.");
   if (rawBranches.length > 0 && branches.length === 0)
     warnings.push("⚠ Ветви не созданы — возможно ID узлов не совпадают.");
 
   return {
-    nodes: [...nodeMap.values()], branches, warnings,
-    stats: { nodes: nodeMap.size, branches: branches.length, nodesWithZ },
+    nodes: resultNodes, branches, warnings,
+    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ },
     debug: debug.join("\n"),
   };
 }
