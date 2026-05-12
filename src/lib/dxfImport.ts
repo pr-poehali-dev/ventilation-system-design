@@ -21,6 +21,25 @@ export interface DxfImportResult {
   epsilonUsed?: number;
   /** Масштаб конвертации единиц (0.001 = мм→м) */
   scaleUsed?: number;
+  /** Диапазон Z в исходных единицах (до конвертации) — для диагностики */
+  zRange?: { min: number; max: number; hasZ: boolean };
+  /** Диапазон XY в метрах — для диагностики */
+  xyRange?: { dx: number; dy: number };
+  /** Сырые сегменты (без кластеризации) — для восстановления вертикалей */
+  rawSegmentsCount?: number;
+}
+
+/** Параметры импорта DXF */
+export interface DxfImportOptions {
+  /** Порог слияния узлов в метрах. Undefined = автоматически. */
+  epsilon?: number;
+  /** Если включено — Z-координаты узлов берутся из их выявленного "горизонта" (уровня).
+   *  Это правит ситуации когда DXF — 2D и Z=0 у всех точек, но узлы по факту на разных этажах
+   *  (например, поверхность и горизонт −240м). НЕ работает без подсказки горизонтов.
+   *  Подсказка: список Z-уровней в метрах. */
+  horizonsZ?: number[];
+  /** Если true — для совпадающих по XY точек (вертикальная проекция) считать их одним узлом. */
+  collapseVerticalToZero?: boolean;
 }
 
 interface Pt3 { x: number; y: number; z: number }
@@ -83,9 +102,15 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   // Нам нужна секция ENTITIES
 
   interface Seg { x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; layer: string }
+  interface TextEntity { x: number; y: number; z: number; text: string; layer: string }
   const segments: Seg[] = [];
+  const texts: TextEntity[] = [];
   let lineCount = 0;
   let polylineCount = 0;
+
+  // TEXT/MTEXT state
+  const tx = 0, ty = 0, tz = 0;
+  const tText = "";
 
   let inEntitiesSection = false;
   let sectionName = "";
@@ -115,6 +140,13 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     segments.push({ x1: lx1, y1: ly1, z1: lz1, x2: lx2, y2: ly2, z2: lz2, layer: entityLayer });
     lineCount++;
     lx1 = ly1 = lz1 = lx2 = ly2 = lz2 = 0;
+  };
+
+  const flushText = () => {
+    if (tText && tText.trim()) {
+      texts.push({ x: tx, y: ty, z: tz, text: tText.trim(), layer: entityLayer });
+    }
+    tx = ty = tz = 0; tText = "";
   };
 
   const flushVertex = () => {
@@ -183,6 +215,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
       // Завершаем предыдущую сущность
       if (entityType === "LINE" && inEntitiesSection) flushLine();
       else if (entityType === "LWPOLYLINE" && inEntitiesSection) flushLwPolyline();
+      else if ((entityType === "TEXT" || entityType === "MTEXT") && inEntitiesSection) flushText();
       else if (entityType === "SEQEND" && inPolyline) { /* handled below */ }
       else if (inVertex && inEntitiesSection) flushVertex();
 
@@ -214,6 +247,8 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
         } else if (val === "SEQEND") {
           flushPolyline();
           entityType = "";
+        } else if (val === "TEXT" || val === "MTEXT") {
+          tx = ty = tz = 0; tText = "";
         }
       } else {
         entityType = val;
@@ -275,14 +310,24 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     else if (entityType === "POLYLINE" || entityType === "3DPOLYLINE") {
       if (code === 70) polyClosed = (parseInt(value) & 1) === 1;
     }
+
+    // TEXT/MTEXT — координаты точки вставки и содержимое
+    else if (entityType === "TEXT" || entityType === "MTEXT") {
+      if (code === 10) tx = num;
+      else if (code === 20) ty = num;
+      else if (code === 30) tz = num;
+      else if (code === 1) tText += value;       // основной текст (может быть многострочным)
+      else if (code === 3) tText += value;       // продолжение MTEXT
+    }
   }
 
   // Завершаем последнюю незакрытую сущность
   if (entityType === "LINE" && inEntitiesSection) flushLine();
   if (entityType === "LWPOLYLINE") flushLwPolyline();
   if (inPolyline) flushPolyline();
+  if ((entityType === "TEXT" || entityType === "MTEXT") && inEntitiesSection) flushText();
 
-  debugLines.push(`Сущностей в ENTITIES: ${entityCount}, сегментов собрано: ${segments.length}`);
+  debugLines.push(`Сущностей в ENTITIES: ${entityCount}, сегментов собрано: ${segments.length}, текстов: ${texts.length}`);
   debugLines.push(`LINE: ${lineCount}, POLYLINE/3DPOLY/LWPOLY: ${polylineCount}`);
   const zVals = segments.map(s => Math.abs(s.z1)).concat(segments.map(s => Math.abs(s.z2)));
   const maxZ = zVals.length > 0 ? Math.max(...zVals) : 0;
@@ -322,6 +367,20 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   else if (maxCoord > 10000) { scale = 0.01; warnings.push("Единицы определены как см → конвертированы в м."); }
   const toM = (v: number) => v * scale;
 
+  // ── Анализ диапазона Z (диагностика) ─────────────────────────────────────
+  const zsRaw = segments.flatMap(s => [s.z1, s.z2]);
+  const zMin = Math.min(...zsRaw);
+  const zMax = Math.max(...zsRaw);
+  const hasZ = (zMax - zMin) > 0.001;  // есть ли разница в Z
+  if (!hasZ) {
+    warnings.push(
+      "⚠ В DXF нет 3D-координат: все точки имеют одинаковый Z. " +
+      "Вертикальные стволы будут импортированы как 2D-линии (угол наклона = 0°). " +
+      "Чтобы импортировать настоящую 3D-сеть, экспортируйте DXF c сохранением 3D-координат " +
+      "(в Аэросети: «Вид сети» → «Косоугольная» → экспорт DXF; в НаноКАД: 3DPOLY вместо POLY)."
+    );
+  }
+
   // ── Кластеризация ────────────────────────────────────────────────────────
   // Координаты уже в метрах (toM применён). Epsilon: точки считаются одним узлом
   // если расстояние < epsilon. Для DXF из НаноКАД/АэроСеть геометрия точная,
@@ -355,10 +414,49 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     });
   });
 
+  // ── Парсинг текстов (привязка к ближайшей ветви для извлечения длин/углов/имён) ──
+  // Тексты приведём к координатам в метрах
+  const textsM = texts.map(t => ({ ...t, x: toM(t.x), y: toM(t.y), z: toM(t.z) }));
+  // Регулярки распознавания (поддерживаем разные форматы Аэросети/НаноКАД)
+  const reLen = /(?:L\s*=|Дл(?:ина)?\s*[:=]?\s*|len\s*=\s*)\s*([0-9]+(?:[.,][0-9]+)?)/i;
+  const reAng = /(?:A\s*=|Угол\s*[:=]?\s*|angle\s*=\s*)\s*(-?[0-9]+(?:[.,][0-9]+)?)\s*[°˚]?/i;
+  const reFlow = /(?:Q\s*=|Расход\s*[:=]?\s*)\s*([0-9]+(?:[.,][0-9]+)?)/i;
+  const reName = /Ствол\s+\S+|Квершлаг\s*\S*|Штрек\s*\S*|Уклон\s*\S*|Сбойка\s*\S*/i;
+
+  // Найти текст ближайший к середине каждого сегмента
+  const segLabels: { len?: number; angle?: number; flow?: number; name?: string }[] = segments.map((s) => {
+    const mx = toM((s.x1 + s.x2) / 2);
+    const my = toM((s.y1 + s.y2) / 2);
+    const segLenM = Math.sqrt((toM(s.x2 - s.x1)) ** 2 + (toM(s.y2 - s.y1)) ** 2 + (toM(s.z2 - s.z1)) ** 2);
+    // Радиус поиска — половина длины сегмента + 5 м
+    const r = Math.max(2, segLenM * 0.5 + 5);
+    let best: TextEntity | null = null;
+    let bestDist = Infinity;
+    for (const t of textsM) {
+      const d = Math.sqrt((t.x - mx) ** 2 + (t.y - my) ** 2);
+      if (d < r && d < bestDist) {
+        bestDist = d; best = t;
+      }
+    }
+    if (!best) return {};
+    const result: { len?: number; angle?: number; flow?: number; name?: string } = {};
+    const txt = best.text.replace(/\\P/g, "\n").replace(/[{}]/g, "");
+    const mLen = txt.match(reLen);
+    if (mLen) result.len = parseFloat(mLen[1].replace(",", "."));
+    const mAng = txt.match(reAng);
+    if (mAng) result.angle = parseFloat(mAng[1].replace(",", "."));
+    const mFlow = txt.match(reFlow);
+    if (mFlow) result.flow = parseFloat(mFlow[1].replace(",", "."));
+    const mName = txt.match(reName);
+    if (mName) result.name = mName[0];
+    return result;
+  });
+
   // ── Строим ветви ─────────────────────────────────────────────────────────
   const branches: TopoBranch[] = [];
   const seen = new Set<string>();
   let bi = 0;
+  let labelsApplied = 0;
 
   for (let si = 0; si < segments.length; si++) {
     const fromCluster = map[si * 2];
@@ -369,9 +467,25 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     seen.add(key);
 
     const seg = segments[si];
-    branches.push(makeBranch(`B${ts}_${bi++}`, nodes[fromCluster].id, nodes[toCluster].id, {
+    const lbl = segLabels[si] || {};
+    const patch: Partial<TopoBranch> = {
       layer: seg.layer !== "0" ? seg.layer : "Стволы",
-    }));
+    };
+    if (lbl.len !== undefined && lbl.len > 0) {
+      patch.length = Math.round(lbl.len * 10) / 10;
+      patch.manualLength = true;  // фиксируем — длина из подписи в DXF
+      labelsApplied++;
+    }
+    if (lbl.angle !== undefined) {
+      patch.angle = Math.max(-90, Math.min(90, lbl.angle));
+      patch.manualAngle = true;
+    }
+    if (lbl.flow !== undefined) patch.flow = lbl.flow;
+    if (lbl.name) patch.type = lbl.name;
+    branches.push(makeBranch(`B${ts}_${bi++}`, nodes[fromCluster].id, nodes[toCluster].id, patch));
+  }
+  if (labelsApplied > 0) {
+    warnings.push(`📐 Из подписей в DXF извлечены длины/углы для ${labelsApplied} из ${branches.length} ветвей.`);
   }
 
   return {
@@ -380,5 +494,8 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     debug: debugLines.join("\n"),
     epsilonUsed: epsilon,
     scaleUsed: scale,
+    zRange: { min: zMin, max: zMax, hasZ },
+    xyRange: { dx: Math.max(...xs) - Math.min(...xs), dy: Math.max(...ys) - Math.min(...ys) },
+    rawSegmentsCount: segments.length,
   };
 }

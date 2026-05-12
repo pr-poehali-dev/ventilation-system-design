@@ -160,6 +160,26 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                 </div>
               )}
 
+              {/* Геометрия: диапазон Z и XY */}
+              {result.zRange && result.xyRange && (
+                <div className="rounded text-xs border px-2 py-1.5 space-y-0.5"
+                  style={{ background: result.zRange.hasZ ? "#ecfdf5" : "#fff7ed", borderColor: result.zRange.hasZ ? "#a7f3d0" : "#fed7aa" }}>
+                  <div className="flex items-center gap-1.5 font-semibold" style={{ color: result.zRange.hasZ ? "#047857" : "#9a3412" }}>
+                    <Icon name={result.zRange.hasZ ? "Box" : "Square"} size={12} />
+                    {result.zRange.hasZ ? "3D-схема обнаружена" : "Плоская 2D-схема"}
+                  </div>
+                  <div className="text-[10px] text-gray-700">
+                    XY: {result.xyRange.dx.toFixed(1)} × {result.xyRange.dy.toFixed(1)} м
+                    {result.zRange.hasZ && <> · Z: {result.zRange.min.toFixed(1)} … {result.zRange.max.toFixed(1)} (Δ={(result.zRange.max - result.zRange.min).toFixed(1)} м)</>}
+                  </div>
+                  {!result.zRange.hasZ && (
+                    <div className="text-[10px] text-orange-700 leading-snug">
+                      Вертикальные стволы будут плоскими (угол 0°). Длины и углы можно извлечь из подписей в DXF — см. ниже.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Настройка точности слияния узлов */}
               {result.stats.lines + result.stats.polylines > 0 && (
                 <div className="border rounded px-3 py-2 space-y-1.5"
