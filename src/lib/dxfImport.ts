@@ -145,6 +145,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   // TEXT/MTEXT state
   let tx = 0, ty = 0, tz = 0, tText = "";
 
+  // Слой текущего POLYLINE (сохраняем при открытии, используем при flush через SEQEND)
+  const polyLayer = "0";
+
   const flushLine = () => {
     if (lx1 === lx2 && ly1 === ly2 && lz1 === lz2) return;
     segments.push({ x1: lx1, y1: ly1, z1: lz1, x2: lx2, y2: ly2, z2: lz2, layer: entityLayer });
@@ -187,6 +190,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
 
   const flushPolyline = () => {
     flushVertex();
+    const savedLayer = polyLayer;  // используем слой, сохранённый при открытии POLYLINE
     if (polyPts.length >= 2) {
       // Сохраняем как линию/полигон сечения (для извлечения S и P)
       // Даже 2 точки = ребро контура (АэроСеть использует 2-точечные POLYLINE)
@@ -194,17 +198,17 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
         const avgX = polyPts.reduce((s, p) => s + p.x, 0) / polyPts.length;
         const avgY = polyPts.reduce((s, p) => s + p.y, 0) / polyPts.length;
         const avgZ = polyPts.reduce((s, p) => s + p.z, 0) / polyPts.length;
-        sectionPolys.push({ pts: [...polyPts], layer: entityLayer, cx: avgX, cy: avgY, cz: avgZ });
+        sectionPolys.push({ pts: [...polyPts], layer: savedLayer, cx: avgX, cy: avgY, cz: avgZ });
       }
       for (let k = 0; k < polyPts.length - 1; k++) {
         const a = polyPts[k], b = polyPts[k + 1];
         if (a.x !== b.x || a.y !== b.y || a.z !== b.z)
-          segments.push({ x1: a.x, y1: a.y, z1: a.z, x2: b.x, y2: b.y, z2: b.z, layer: entityLayer });
+          segments.push({ x1: a.x, y1: a.y, z1: a.z, x2: b.x, y2: b.y, z2: b.z, layer: savedLayer });
       }
       if (polyClosed && polyPts.length > 2) {
         const a = polyPts[polyPts.length - 1], b = polyPts[0];
         if (a.x !== b.x || a.y !== b.y || a.z !== b.z)
-          segments.push({ x1: a.x, y1: a.y, z1: a.z, x2: b.x, y2: b.y, z2: b.z, layer: entityLayer });
+          segments.push({ x1: a.x, y1: a.y, z1: a.z, x2: b.x, y2: b.y, z2: b.z, layer: savedLayer });
       }
       polylineCount++;
     }
@@ -243,7 +247,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
         else if (val === "CIRCLE") { cx = cy = cz = cr = 0; }
         else if (val === "TEXT" || val === "MTEXT") { tx = ty = tz = 0; tText = ""; }
         else if (val === "LWPOLYLINE") { flushLwPolyline(); lwPts = []; lwClosed = false; lwX = null; lwY = null; lwZ = 0; }
-        else if (val === "POLYLINE" || val === "3DPOLYLINE") { inPolyline = true; polyPts = []; polyClosed = false; }
+        else if (val === "POLYLINE" || val === "3DPOLYLINE") { inPolyline = true; polyPts = []; polyClosed = false; polyLayer = entityLayer; }
         else if ((val === "VERTEX" || val === "3DPOLYLINE") && inPolyline) { flushVertex(); vx = vy = vz = 0; inVertex = true; }
         else if (val === "SEQEND") { flushPolyline(); entityType = ""; }
       } else {
@@ -535,7 +539,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
 
     // Длину считаем между мировыми координатами узловых кластеров (точнее чем концы LINE)
     const n1 = clusters[c1], n2 = clusters[c2];
-    const realLen = Math.round(dist3(n1, n2) * 10) / 10;
+    const rawLen = dist3(n1, n2);
+    const realLen = Math.round(Math.max(0, rawLen) * 10) / 10;
+    if (bi < 4) debugLines.push(`  seg[${si}] c1=${c1}(${n1.x.toFixed(1)},${n1.y.toFixed(1)},${n1.z.toFixed(1)}) c2=${c2}(${n2.x.toFixed(1)},${n2.y.toFixed(1)},${n2.z.toFixed(1)}) L=${rawLen.toFixed(2)}`);
     // Угол наклона: arcsin(|ΔZ| / L) — всегда положительный (0..90°)
     const dz = Math.abs(n2.z - n1.z);
     const realAngle = realLen > 0 ? Math.round(Math.asin(Math.min(1, dz / realLen)) * 180 / Math.PI * 10) / 10 : 0;
