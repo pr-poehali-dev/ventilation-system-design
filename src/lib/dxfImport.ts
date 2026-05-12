@@ -69,6 +69,26 @@ function clusterPoints(pts: Pt3[], epsilon: number): { clusters: Pt3[]; map: num
   return { clusters, map };
 }
 
+/** Площадь полигона (формула Гаусса) по точкам XY, в м² */
+function polygonArea(pts: Pt3[]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(a) / 2;
+}
+
+/** Периметр полигона по точкам XZ (сечение перпендикулярно оси), в м */
+function polygonPerimeter(pts: Pt3[]): number {
+  let p = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    p += Math.sqrt((pts[j].x - pts[i].x) ** 2 + (pts[j].z - pts[i].z) ** 2);
+  }
+  return p;
+}
+
 // ── Главный парсер ─────────────────────────────────────────────────────────────
 export function parseDxf(content: string, epsilonOverride?: number): DxfImportResult {
   const warnings: string[] = [];
@@ -94,6 +114,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const segments: Seg[] = [];
   const circles: CircleEnt[] = [];
   const texts: TextEnt[] = [];
+  /** Полигоны контуров сечений (слои без суффикса _c) */
+  interface SectionPoly { pts: Pt3[]; layer: string; cx: number; cy: number; cz: number }
+  const sectionPolys: SectionPoly[] = [];
   let lineCount = 0;
   let polylineCount = 0;
 
@@ -165,6 +188,13 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const flushPolyline = () => {
     flushVertex();
     if (polyPts.length >= 2) {
+      // Сохраняем как полигон сечения (для извлечения S и P)
+      if (polyPts.length >= 3) {
+        const avgX = polyPts.reduce((s, p) => s + p.x, 0) / polyPts.length;
+        const avgY = polyPts.reduce((s, p) => s + p.y, 0) / polyPts.length;
+        const avgZ = polyPts.reduce((s, p) => s + p.z, 0) / polyPts.length;
+        sectionPolys.push({ pts: [...polyPts], layer: entityLayer, cx: avgX, cy: avgY, cz: avgZ });
+      }
       for (let k = 0; k < polyPts.length - 1; k++) {
         const a = polyPts[k], b = polyPts[k + 1];
         if (a.x !== b.x || a.y !== b.y || a.z !== b.z)
@@ -461,11 +491,12 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     if (seen.has(key)) continue;
     seen.add(key);
 
-    // Реальная 3D-длина в мировых координатах
-    const realLen = Math.round(dist3(w1, w2) * 10) / 10;
-    // Угол наклона: arcsin(ΔZ / L)
-    const dz = w2.z - w1.z;
-    const realAngle = realLen > 0 ? Math.round(Math.asin(Math.max(-1, Math.min(1, dz / realLen))) * 180 / Math.PI * 10) / 10 : 0;
+    // Длину считаем между мировыми координатами узловых кластеров (точнее чем концы LINE)
+    const n1 = clusters[c1], n2 = clusters[c2];
+    const realLen = Math.round(dist3(n1, n2) * 10) / 10;
+    // Угол наклона: arcsin(|ΔZ| / L) — всегда положительный (0..90°)
+    const dz = Math.abs(n2.z - n1.z);
+    const realAngle = realLen > 0 ? Math.round(Math.asin(Math.min(1, dz / realLen)) * 180 / Math.PI * 10) / 10 : 0;
 
     branches.push(makeBranch(`B${ts}_${bi++}`, nodes[c1].id, nodes[c2].id, {
       layer: seg.layer.replace(/_c$/i, "") || "Стволы",
@@ -501,6 +532,64 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     }
   }
   if (labelsApplied > 0) warnings.push(`Из подписей извлечён расход для ${labelsApplied} ветвей.`);
+
+  // ── Привязка параметров сечения из POLYLINE-контуров ────────────────────
+  // Для каждой ветви ищем 2 ближайших POLYLINE из слоя Sloj-*/non-axis
+  // (Аэросеть рисует 2 полигона на ветвь — верхний и нижний контур сечения)
+  // Площадь берём из одного полигона, периметр = сумма сторон.
+  const sectionLayers = [...new Set(sectionPolys.map(p => p.layer))]
+    .filter(l => !/_c$/i.test(l) && !/axis/i.test(l) && !/indicator/i.test(l));
+
+  if (sectionPolys.length > 0 && sectionLayers.length > 0) {
+    const sectionPolysFiltered = sectionPolys.filter(p => sectionLayers.includes(p.layer));
+    let sectionApplied = 0;
+
+    for (let bi2 = 0; bi2 < branches.length; bi2++) {
+      const b = branches[bi2];
+      const n1 = nodes.find(n => n.id === b.fromId)!;
+      const n2 = nodes.find(n => n.id === b.toId)!;
+      // Середина ветви в DXF-координатах (до обратного преобразования не нужно — ищем в мировых)
+      const mx = (n1.x + n2.x) / 2, my = (n1.y + n2.y) / 2, mz = (n1.z + n2.z) / 2;
+
+      // Ближайшие полигоны (берём до 4 — 2 на каждую сторону)
+      const withDist = sectionPolysFiltered.map(poly => {
+        // Преобразуем центр полигона в мировые координаты
+        const pw = toWorld(poly.cx, poly.cy, poly.cz);
+        const d = Math.sqrt((pw.x - mx) ** 2 + (pw.y - my) ** 2 + (pw.z - mz) ** 2);
+        return { poly, d, pw };
+      }).sort((a, b2) => a.d - b2.d).slice(0, 4);
+
+      if (withDist.length === 0 || withDist[0].d > 20) continue;
+
+      // Берём ближайший полигон для вычисления сечения
+      const nearPoly = withDist[0].poly;
+      // Точки полигона в мировых координатах
+      const worldPts = nearPoly.pts.map(p => toWorld(p.x, p.y, p.z));
+
+      // Площадь: полигон лежит в плоскости перпендикулярной оси ветви
+      // Используем проекцию XZ (для вертикальных) или XY (для горизонтальных)
+      const area2d = polygonArea(worldPts);
+      const perim2d = polygonPerimeter(worldPts);
+
+      if (area2d > 0.1 && area2d < 200) {
+        const areaRounded = Math.round(area2d * 10) / 10;
+        const perimRounded = Math.round(perim2d * 10) / 10;
+        const dh = perim2d > 0 ? Math.round(4 * area2d / perim2d * 100) / 100 : 0;
+        branches[bi2] = {
+          ...branches[bi2],
+          area: areaRounded,
+          perimeter: perimRounded,
+          dh,
+          manualSection: true,
+          shape: "rect",
+        };
+        sectionApplied++;
+      }
+    }
+    if (sectionApplied > 0)
+      warnings.push(`Из контуров сечений извлечены S и P для ${sectionApplied} из ${branches.length} ветвей.`);
+    debugLines.push(`Полигонов сечений: ${sectionPolysFiltered.length}, применено к ветвям: ${sectionApplied}`);
+  }
 
   if (obliqueFactor !== 0) {
     warnings.push(`Косоугольная проекция АэроСети обнаружена (k=${obliqueFactor.toFixed(2)}). Координаты и длины пересчитаны в мировые.`);
