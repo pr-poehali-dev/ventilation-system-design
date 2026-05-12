@@ -16,6 +16,8 @@ import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
+import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
+import { type ExcelImportResult } from "@/lib/excelImport";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -424,6 +426,22 @@ export default function CadPage() {
 
   // ─── DXF ИМПОРТ ─────────────────────────────────────────────────────
   const [showDxfImport, setShowDxfImport] = useState(false);
+  const [showExcelImport, setShowExcelImport] = useState(false);
+
+  const handleExcelImport = (result: ExcelImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSelectedNodeId(null);
+      setSelectedBranchId(null);
+    } else {
+      setNodes((prev) => [...prev, ...result.nodes]);
+      setBranches((prev) => [...prev, ...result.branches]);
+    }
+    setImportNonce((n) => n + 1);
+    setShowExcelImport(false);
+    setActiveRibbon("home");
+  };
   const handleDxfImport = (result: DxfImportResult, mode: "replace" | "append") => {
     if (mode === "replace") {
       setNodes(result.nodes);
@@ -841,6 +859,9 @@ export default function CadPage() {
                         onClick={() => {
                           if (item.action === "dxf") {
                             setShowDxfImport(true);
+                            setActiveRibbon("home");
+                          } else if (item.action === "xlsx") {
+                            setShowExcelImport(true);
                             setActiveRibbon("home");
                           } else {
                             const inp = document.createElement("input");
@@ -2010,6 +2031,14 @@ export default function CadPage() {
       <DxfImportDialog
         onImport={handleDxfImport}
         onClose={() => setShowDxfImport(false)}
+      />
+    )}
+
+    {/* ═══ EXCEL ИМПОРТ ДИАЛОГ (Вентиляция 2.0) ══════════════════════════ */}
+    {showExcelImport && (
+      <ExcelImportDialog
+        onImport={handleExcelImport}
+        onClose={() => setShowExcelImport(false)}
       />
     )}
     </>
