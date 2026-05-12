@@ -505,6 +505,83 @@ export default function CadPage() {
   const [showEquipRef, setShowEquipRef] = useState(false);
   const [equipRefTab, setEquipRefTab] = useState<"fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport">("fans");
 
+  // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
+  const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
+
+  const buildProjectData = () => ({
+    version: 1,
+    name: projectFileName,
+    savedAt: new Date().toISOString(),
+    nodes,
+    branches: branchesRaw,
+    horizons,
+  });
+
+  const handleSave = () => {
+    const data = buildProjectData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = projectFileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveAs = () => {
+    const name = window.prompt("Имя файла:", projectFileName);
+    if (!name) return;
+    const fname = name.endsWith(".vproj") ? name : `${name}.vproj`;
+    setProjectFileName(fname);
+    const data = { ...buildProjectData(), name: fname };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fname;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpen = () => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = ".vproj,.json";
+    inp.onchange = () => {
+      const file = inp.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result as string);
+          if (data.nodes && Array.isArray(data.nodes)) {
+            if (nodes.length > 0 || branchesRaw.length > 0) {
+              if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
+            }
+            setNodes(data.nodes);
+            setBranches(data.branches ?? []);
+            if (data.horizons) setHorizons(data.horizons);
+            setProjectFileName(data.name ?? file.name);
+            setSelectedNodeId(null);
+            setSelectedBranchId(null);
+            setImportNonce((n) => n + 1);
+            setActiveRibbon("home");
+          } else {
+            alert("Файл не является проектом Вентиляция-CAD.");
+          }
+        } catch {
+          alert("Ошибка чтения файла.");
+        }
+      };
+      reader.readAsText(file);
+    };
+    inp.click();
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   // ─── СОЗДАТЬ НОВЫЙ ПРОЕКТ ────────────────────────────────────────────
   const handleNewProject = () => {
     if (nodes.length > 0 || branches.length > 0) {
@@ -677,12 +754,18 @@ export default function CadPage() {
       // Не перехватываем хоткеи во время ввода в input/textarea/select
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "F6") {
+      if (e.ctrlKey && e.key === "s") {
+        e.preventDefault();
+        handleSave();
+      } else if (e.key === "F6") {
         e.preventDefault();
         setThinLines((v) => !v);
       } else if (e.key === "F9") {
         e.preventDefault();
         handleSolve();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        handleDeleteSelected();
       } else if (e.key === "Escape" || e.key === "Enter") {
         // Завершение цепочки построения: снимаем выделение и сбрасываем инструмент.
         setSelectedNodeId(null);
@@ -789,7 +872,7 @@ export default function CadPage() {
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded-sm flex items-center justify-center"
             style={{ background: "#2563eb", color: "white", fontSize: "10px", fontWeight: "bold" }}>В</div>
-          <span className="text-xs font-medium">Вентиляция-CAD — Проект1.vproj</span>
+          <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}</span>
         </div>
         <div className="flex items-center gap-1">
           <button className="w-7 h-5 hover:bg-black/10 flex items-center justify-center text-xs">—</button>
@@ -943,8 +1026,116 @@ export default function CadPage() {
                   </>
                 )}
 
+                {/* ── Открыть ── */}
+                {fileSectionState === "open" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Открыть проект</div>
+                    <button onClick={handleOpen}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-gray-200 group">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400" style={{ background: "#fff" }}>
+                        <Icon name="FolderOpen" size={22} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-medium text-gray-800">Открыть файл проекта</div>
+                        <div className="text-[11px] text-gray-400">Формат .vproj или .json</div>
+                      </div>
+                    </button>
+                  </>
+                )}
+
+                {/* ── Сохранить ── */}
+                {fileSectionState === "save" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Сохранить проект</div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="text-[11px] text-gray-600">Файл:</span>
+                      <input type="text" value={projectFileName}
+                        onChange={(e) => setProjectFileName(e.target.value)}
+                        className="flex-1 text-[12px] px-2 py-1 border border-gray-300 rounded"
+                        style={{ fontFamily: "inherit" }} />
+                    </div>
+                    <button onClick={() => { handleSave(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group mb-2">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#dbeafe" }}>
+                        <Icon name="Save" size={22} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-medium text-blue-700">Сохранить</div>
+                        <div className="text-[11px] text-gray-400">Ctrl+S — скачать файл {projectFileName}</div>
+                      </div>
+                    </button>
+                    <div className="text-[11px] text-gray-500 mt-2 px-1">
+                      Узлов: <b>{nodes.length}</b> · Ветвей: <b>{branchesRaw.length}</b> · Горизонтов: <b>{horizons.length}</b>
+                    </div>
+                  </>
+                )}
+
+                {/* ── Сохранить как ── */}
+                {fileSectionState === "saveas" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Сохранить как</div>
+                    <button onClick={() => { handleSaveAs(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-green-50 border border-gray-200 group mb-2">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-green-400" style={{ background: "#f0fdf4" }}>
+                        <Icon name="SaveAll" size={22} className="text-green-600" />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-medium text-gray-800">Сохранить как новый файл</div>
+                        <div className="text-[11px] text-gray-400">Выбрать имя и скачать</div>
+                      </div>
+                    </button>
+                    <button onClick={() => { handleSave(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 border border-gray-200 group">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "#fff" }}>
+                        <Icon name="FileJson" size={16} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Сохранить как JSON (.vproj)</div>
+                        <div className="text-[10px] text-gray-400">Вся схема, горизонты, параметры</div>
+                      </div>
+                    </button>
+                  </>
+                )}
+
+                {/* ── Печать ── */}
+                {fileSectionState === "print" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Печать схемы</div>
+                    <button onClick={() => { handlePrint(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-gray-50 border border-gray-200 group mb-2">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-gray-400" style={{ background: "#f9fafb" }}>
+                        <Icon name="Printer" size={22} className="text-gray-600" />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-medium text-gray-800">Печать / PDF</div>
+                        <div className="text-[11px] text-gray-400">Открыть диалог печати браузера (Ctrl+P)</div>
+                      </div>
+                    </button>
+                    <div className="text-[11px] text-gray-500 px-1 mt-1">
+                      Совет: в диалоге печати выберите «Сохранить как PDF» для экспорта в PDF.
+                    </div>
+                  </>
+                )}
+
+                {/* ── Экспорт ── */}
+                {fileSectionState === "export" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Экспорт</div>
+                    <button onClick={() => { handleSave(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 border border-gray-200 group mb-1">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300">
+                        <Icon name="FileJson" size={16} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Экспорт в JSON (.vproj)</div>
+                        <div className="text-[10px] text-gray-400">Полный формат проекта</div>
+                      </div>
+                    </button>
+                  </>
+                )}
+
                 {/* ── Остальные секции — заглушки ── */}
-                {!["new", "add"].includes(fileSectionState) && (
+                {!["new", "add", "open", "save", "saveas", "print", "export"].includes(fileSectionState) && (
                   <div className="text-[12px] text-gray-400 pt-4">
                     Функция «{sections.find((s) => s.id === fileSectionState)?.label}» будет реализована.
                   </div>
