@@ -932,9 +932,6 @@ export default function TopoCanvas(props: Props) {
                 <circle r={r - 2} fill="none" stroke="#1f2937" strokeWidth="1.5" strokeDasharray="2 1" />
               )}
               <g transform="translate(8, -8)">
-                {view.scale > 0.15 && (
-                  <text fontSize="10" fontWeight="600" fill="#1f2937">{node.number}</text>
-                )}
                 {view.scale > 0.2 && (() => {
                   const ic = infoConfig;
                   const nlines: string[] = [];
