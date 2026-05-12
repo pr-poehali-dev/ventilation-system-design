@@ -23,6 +23,7 @@ import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
+import LegendDialog from "@/components/cad/LegendDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -504,6 +505,7 @@ export default function CadPage() {
   // ─── СПРАВОЧНИК ОБОРУДОВАНИЯ ─────────────────────────────────────────
   const [showEquipRef, setShowEquipRef] = useState(false);
   const [equipRefTab, setEquipRefTab] = useState<"fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport">("fans");
+  const [showLegend, setShowLegend] = useState(false);
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
   const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
@@ -1174,6 +1176,7 @@ export default function CadPage() {
         <RibbonGroup label="Общее">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="Truck" label="Транспорт" sublabel="" onClick={() => { setEquipRefTab("transport"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="BookMarked" label="Условные" sublabel="обозначения" onClick={() => setShowLegend(true)} />
           </div>
         </RibbonGroup>
       </div>
@@ -2358,6 +2361,11 @@ export default function CadPage() {
         onTabChange={setEquipRefTab}
         onClose={() => setShowEquipRef(false)}
       />
+    )}
+
+    {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
+    {showLegend && (
+      <LegendDialog onClose={() => setShowLegend(false)} />
     )}
     </>
   );
