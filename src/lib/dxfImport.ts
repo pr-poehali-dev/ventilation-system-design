@@ -341,10 +341,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   debugLines.push(`LINE: ${lineCount}, POLY: ${polylineCount}, CIRCLE: ${circles.length}, TEXT: ${texts.length}`);
 
   // ── Определяем слои осей ─────────────────────────────────────────────────
-  // АэроСеть: оси ветвей — слои *_c, *_axis, axis
-  // Остальные слои (без суффикса _c) — контуры сечений, игнорируем для топологии
   const allLayers = [...new Set(segments.map(s => s.layer))];
-  // Логируем количество сегментов по каждому слою
   const cntByLayer = new Map<string, number>();
   for (const s of segments) cntByLayer.set(s.layer, (cntByLayer.get(s.layer) ?? 0) + 1);
   const layerInfo = [...cntByLayer.entries()].sort((a,b) => b[1]-a[1]).map(([l,c]) => `${l}:${c}`).join(", ");
@@ -366,15 +363,19 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     );
   }
   if (axisLayers.length === 0 && circles.length > 0) {
-    // Если есть CIRCLE-узлы: ищем слой где LINE реально соединяют пары CIRCLE.
-    // Для каждого сегмента проверяем — близки ли оба конца к какому-то CIRCLE.
-    // Слой с наибольшим числом таких "попаданий в узлы" — и есть осевой.
-    const circleRs = circles.map(c => ({ x: toM(c.cx), y: toM(c.cy), z: toM(c.cz), r: toM(c.r) * 3 + 1 }));
+    // Если есть CIRCLE-узлы: ищем слой где LINE соединяют пары CIRCLE.
+    // Используем сырые DXF-координаты (без toM/toWorld — они ещё не объявлены).
+    // Радиус поиска: max(radius * 3, 5) в DXF-единицах.
     const hitsByLayer = new Map<string, number>();
     for (const s of segments) {
-      const p1 = toWorld(s.x1, s.y1, s.z1), p2 = toWorld(s.x2, s.y2, s.z2);
-      const hit1 = circleRs.some(c => dist3(p1, c) < Math.max(c.r, 2));
-      const hit2 = circleRs.some(c => dist3(p2, c) < Math.max(c.r, 2));
+      const hit1 = circles.some(c => {
+        const r = Math.max(c.r * 3, 5);
+        return Math.sqrt((s.x1-c.cx)**2 + (s.y1-c.cy)**2 + (s.z1-c.cz)**2) < r;
+      });
+      const hit2 = circles.some(c => {
+        const r = Math.max(c.r * 3, 5);
+        return Math.sqrt((s.x2-c.cx)**2 + (s.y2-c.cy)**2 + (s.z2-c.cz)**2) < r;
+      });
       if (hit1 && hit2) hitsByLayer.set(s.layer, (hitsByLayer.get(s.layer) ?? 0) + 1);
     }
     if (hitsByLayer.size > 0) {
@@ -405,9 +406,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     };
   }
 
-  // ── Определяем масштаб единиц ────────────────────────────────────────────
+  // ── Определяем масштаб единиц (по всем сегментам и кругам) ──────────────
   const allAbsCoords: number[] = [];
-  for (const s of topoSegments.length > 0 ? topoSegments : segments) {
+  for (const s of segments) {
     allAbsCoords.push(Math.abs(s.x1), Math.abs(s.y1), Math.abs(s.z1), Math.abs(s.x2), Math.abs(s.y2), Math.abs(s.z2));
   }
   for (const c of circles) {
