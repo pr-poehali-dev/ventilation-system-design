@@ -956,16 +956,7 @@ export default function TopoCanvas(props: Props) {
                   ));
                 })()}
               </g>
-              {view.scale > 0.15 && !infoConfig?.nodeZ && (
-                <text x="0" y={r + 12} textAnchor="middle" fontSize="8" fill="#9ca3af">Z={node.z}</text>
-              )}
-              {view.scale > 0.2 && node.computedPressure > 0 && !node.atmosphereLink && !infoConfig?.nodePressure && (
-                <g transform={`translate(8, ${node.name ? 22 : 12})`}>
-                  <text fontSize="9" fontWeight="600" fill="#0369a1">
-                    P={(node.computedPressure / 1000).toFixed(1)} кПа
-                  </text>
-                </g>
-              )}
+
             </g>
           );
         })}
