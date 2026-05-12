@@ -533,62 +533,112 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   }
   if (labelsApplied > 0) warnings.push(`Из подписей извлечён расход для ${labelsApplied} ветвей.`);
 
-  // ── Привязка параметров сечения из POLYLINE-контуров ────────────────────
-  // Для каждой ветви ищем 2 ближайших POLYLINE из слоя Sloj-*/non-axis
-  // (Аэросеть рисует 2 полигона на ветвь — верхний и нижний контур сечения)
-  // Площадь берём из одного полигона, периметр = сумма сторон.
+  // ── Извлечение параметров сечения из пар POLYLINE (метод АэроСети) ───────
+  // АэроСеть рисует 2 параллельных POLYLINE на ветвь (слой Sloj-1, без суффикса _c).
+  // Каждый POLYLINE — ребро сечения вдоль оси ветви.
+  // Расстояние между двумя POLYLINE = один из размеров сечения (ширина или высота).
+  // Второй размер = расстояние между ПАРАМИ полигонов (2 пары на ветвь = 4 полигона).
+  //
+  // Алгоритм для одной ветви:
+  //   1. Найти все POLYLINE чей центр ближайший к оси ветви (до 4 штук)
+  //   2. Разбить на 2 пары по расстоянию между параллельными
+  //   3. gap1 = расстояние между центрами пары 1 (перпендикулярно оси)
+  //   4. gap2 = расстояние между центрами пары 2 (перпендикулярно оси)
+  //   5. Если 2 пары: w = gap1, h = gap2. Если 1 пара: используем только gap1.
+  //   6. S = w * h, P = 2*(w+h), dh = 4S/P
+
   const sectionLayers = [...new Set(sectionPolys.map(p => p.layer))]
     .filter(l => !/_c$/i.test(l) && !/axis/i.test(l) && !/indicator/i.test(l));
 
-  if (sectionPolys.length > 0 && sectionLayers.length > 0) {
+  if (sectionPolys.length >= 2 && sectionLayers.length > 0) {
     const sectionPolysFiltered = sectionPolys.filter(p => sectionLayers.includes(p.layer));
     let sectionApplied = 0;
 
+    // Строим индекс узлов для быстрого доступа
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
     for (let bi2 = 0; bi2 < branches.length; bi2++) {
       const b = branches[bi2];
-      const n1 = nodes.find(n => n.id === b.fromId)!;
-      const n2 = nodes.find(n => n.id === b.toId)!;
-      // Середина ветви в DXF-координатах (до обратного преобразования не нужно — ищем в мировых)
+      const n1 = nodeMap.get(b.fromId)!;
+      const n2 = nodeMap.get(b.toId)!;
+      if (!n1 || !n2) continue;
+
       const mx = (n1.x + n2.x) / 2, my = (n1.y + n2.y) / 2, mz = (n1.z + n2.z) / 2;
+      // Направление ветви (единичный вектор)
+      const blen = Math.sqrt((n2.x-n1.x)**2 + (n2.y-n1.y)**2 + (n2.z-n1.z)**2) || 1;
+      const bvx = (n2.x-n1.x)/blen, bvy = (n2.y-n1.y)/blen, bvz = (n2.z-n1.z)/blen;
 
-      // Ближайшие полигоны (берём до 4 — 2 на каждую сторону)
-      const withDist = sectionPolysFiltered.map(poly => {
-        // Преобразуем центр полигона в мировые координаты
+      // Ищем все POLYLINE ближе чем halfLen + 5м к середине ветви
+      const halfLen = blen / 2 + 5;
+      const near = sectionPolysFiltered.map(poly => {
         const pw = toWorld(poly.cx, poly.cy, poly.cz);
-        const d = Math.sqrt((pw.x - mx) ** 2 + (pw.y - my) ** 2 + (pw.z - mz) ** 2);
-        return { poly, d, pw };
-      }).sort((a, b2) => a.d - b2.d).slice(0, 4);
+        // Расстояние от центра полигона до оси ветви (перпендикуляр)
+        const dx = pw.x - mx, dy = pw.y - my, dz2 = pw.z - mz;
+        const proj = dx*bvx + dy*bvy + dz2*bvz;  // проекция на ось
+        const perpD = Math.sqrt(Math.max(0, dx*dx+dy*dy+dz2*dz2 - proj*proj));
+        const axisD = Math.abs(proj);
+        return { poly, pw, perpD, axisD };
+      }).filter(p => p.axisD < halfLen && p.perpD < 15)
+        .sort((a, b2) => a.perpD - b2.perpD)
+        .slice(0, 6);
 
-      if (withDist.length === 0 || withDist[0].d > 20) continue;
+      if (near.length < 2) continue;
 
-      // Берём ближайший полигон для вычисления сечения
-      const nearPoly = withDist[0].poly;
-      // Точки полигона в мировых координатах
-      const worldPts = nearPoly.pts.map(p => toWorld(p.x, p.y, p.z));
+      // Группируем POLYLINE попарно: ищем пары с минимальным расстоянием между центрами
+      // Для каждой пары: расстояние = размер сечения
+      const gaps: number[] = [];
+      const used = new Set<number>();
 
-      // Площадь: полигон лежит в плоскости перпендикулярной оси ветви
-      // Используем проекцию XZ (для вертикальных) или XY (для горизонтальных)
-      const area2d = polygonArea(worldPts);
-      const perim2d = polygonPerimeter(worldPts);
-
-      if (area2d > 0.1 && area2d < 200) {
-        const areaRounded = Math.round(area2d * 10) / 10;
-        const perimRounded = Math.round(perim2d * 10) / 10;
-        const dh = perim2d > 0 ? Math.round(4 * area2d / perim2d * 100) / 100 : 0;
-        branches[bi2] = {
-          ...branches[bi2],
-          area: areaRounded,
-          perimeter: perimRounded,
-          dh,
-          manualSection: true,
-          shape: "rect",
-        };
-        sectionApplied++;
+      for (let i = 0; i < near.length; i++) {
+        if (used.has(i)) continue;
+        let bestJ = -1, bestD = Infinity;
+        for (let j = i + 1; j < near.length; j++) {
+          if (used.has(j)) continue;
+          const d = dist3(near[i].pw, near[j].pw);
+          // Только перпендикулярное расстояние (не вдоль оси)
+          const dp = near[i].pw.x-near[j].pw.x, dq = near[i].pw.y-near[j].pw.y, dr = near[i].pw.z-near[j].pw.z;
+          const projPair = dp*bvx + dq*bvy + dr*bvz;
+          const perpPair = Math.sqrt(Math.max(0, d*d - projPair*projPair));
+          if (perpPair > 0.1 && perpPair < bestD) { bestD = perpPair; bestJ = j; }
+        }
+        if (bestJ >= 0) {
+          used.add(i); used.add(bestJ);
+          gaps.push(bestD);
+        }
       }
+
+      if (gaps.length === 0) continue;
+      gaps.sort((a, b2) => b2 - a);  // сначала больший
+
+      // АэроСеть: два POLYLINE симметричны относительно оси ветви.
+      // Расстояние между ними = ПОЛНЫЙ размер сечения (центр-до-центра).
+      // Но т.к. сами POLYLINE проходят по краям сечения (а не по центру),
+      // это и есть реальная ширина/высота.
+      const w = Math.round(gaps[0] * 10) / 10;
+      const h = gaps.length >= 2 ? Math.round(gaps[1] * 10) / 10 : w;
+
+      if (w < 0.5 || w > 30 || h < 0.5 || h > 30) continue;
+
+      const area = Math.round(w * h * 100) / 100;
+      const perim = Math.round(2 * (w + h) * 10) / 10;
+      const dh2 = Math.round(4 * area / perim * 1000) / 1000;
+
+      branches[bi2] = {
+        ...branches[bi2],
+        area,
+        perimeter: perim,
+        dh: dh2,
+        rectWidth: w,
+        rectHeight: h,
+        manualSection: true,
+        shape: "rect",
+      };
+      sectionApplied++;
     }
+
     if (sectionApplied > 0)
-      warnings.push(`Из контуров сечений извлечены S и P для ${sectionApplied} из ${branches.length} ветвей.`);
-    debugLines.push(`Полигонов сечений: ${sectionPolysFiltered.length}, применено к ветвям: ${sectionApplied}`);
+      warnings.push(`Сечения (S, P) извлечены для ${sectionApplied} из ${branches.length} ветвей.`);
+    debugLines.push(`Полигонов сечений: ${sectionPolysFiltered.length}, применено: ${sectionApplied}`);
   }
 
   if (obliqueFactor !== 0) {
