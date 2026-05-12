@@ -188,8 +188,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const flushPolyline = () => {
     flushVertex();
     if (polyPts.length >= 2) {
-      // Сохраняем как полигон сечения (для извлечения S и P)
-      if (polyPts.length >= 3) {
+      // Сохраняем как линию/полигон сечения (для извлечения S и P)
+      // Даже 2 точки = ребро контура (АэроСеть использует 2-точечные POLYLINE)
+      {
         const avgX = polyPts.reduce((s, p) => s + p.x, 0) / polyPts.length;
         const avgY = polyPts.reduce((s, p) => s + p.y, 0) / polyPts.length;
         const avgZ = polyPts.reduce((s, p) => s + p.z, 0) / polyPts.length;
@@ -339,12 +340,53 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   // АэроСеть: оси ветвей — слои *_c, *_axis, axis
   // Остальные слои (без суффикса _c) — контуры сечений, игнорируем для топологии
   const allLayers = [...new Set(segments.map(s => s.layer))];
-  debugLines.push(`Слои сегментов: ${allLayers.join(", ")}`);
+  // Логируем количество сегментов по каждому слою
+  const cntByLayer = new Map<string, number>();
+  for (const s of segments) cntByLayer.set(s.layer, (cntByLayer.get(s.layer) ?? 0) + 1);
+  const layerInfo = [...cntByLayer.entries()].sort((a,b) => b[1]-a[1]).map(([l,c]) => `${l}:${c}`).join(", ");
+  debugLines.push(`Слои сегментов (слой:кол-во): ${layerInfo}`);
 
-  // Определяем "осевые" слои: содержат _c, axis, или если нет таких — берём все
-  const axisLayers = allLayers.filter(l =>
-    /_c$/i.test(l) || /axis/i.test(l) || /ось/i.test(l)
+  // Определяем "осевые" слои — оси ветвей (LINE для топологии).
+  // Приоритет распознавания:
+  // 1. *_c / *_axis / *ось — суффикс АэроСети
+  // 2. Слои содержащие слова: ветви, ветвь, branch, rib — Вентиляция 2.0
+  // 3. Если есть CIRCLE-узлы — берём LINE слой где сегментов = N*(N-1)/2 (по числу ветвей)
+  // 4. Fallback: слой с наименьшим числом сегментов (оси), но не декоративные
+  let axisLayers = allLayers.filter(l =>
+    /_c$/i.test(l) || /\baxis\b/i.test(l) || /ось/i.test(l)
   );
+  if (axisLayers.length === 0) {
+    // Вентиляция 2.0: слои с названием "ветви", "branch" и т.п.
+    axisLayers = allLayers.filter(l =>
+      /ветв/i.test(l) || /branch/i.test(l) || /\brib\b/i.test(l) || /edge/i.test(l)
+    );
+  }
+  if (axisLayers.length === 0 && circles.length > 0) {
+    // Если есть CIRCLE-узлы: ищем слой где LINE реально соединяют пары CIRCLE.
+    // Для каждого сегмента проверяем — близки ли оба конца к какому-то CIRCLE.
+    // Слой с наибольшим числом таких "попаданий в узлы" — и есть осевой.
+    const circleRs = circles.map(c => ({ x: toM(c.cx), y: toM(c.cy), z: toM(c.cz), r: toM(c.r) * 3 + 1 }));
+    const hitsByLayer = new Map<string, number>();
+    for (const s of segments) {
+      const p1 = toWorld(s.x1, s.y1, s.z1), p2 = toWorld(s.x2, s.y2, s.z2);
+      const hit1 = circleRs.some(c => dist3(p1, c) < Math.max(c.r, 2));
+      const hit2 = circleRs.some(c => dist3(p2, c) < Math.max(c.r, 2));
+      if (hit1 && hit2) hitsByLayer.set(s.layer, (hitsByLayer.get(s.layer) ?? 0) + 1);
+    }
+    if (hitsByLayer.size > 0) {
+      const best = [...hitsByLayer.entries()].sort((a, b2) => b2[1] - a[1]);
+      axisLayers = [best[0][0]];
+      debugLines.push(`Осевой слой по попаданиям в CIRCLE: ${best.map(([l,n]) => `${l}:${n}`).join(", ")}`);
+    }
+  }
+  if (axisLayers.length === 0) {
+    // Последний fallback: слой с наименьшим числом сегментов (но >0)
+    const minLayer = [...cntByLayer.entries()]
+      .filter(([, c]) => c > 0)
+      .sort((a, b2) => a[1] - b2[1]);
+    if (minLayer.length > 0) axisLayers = [minLayer[0][0]];
+  }
+
   const topoSegments = axisLayers.length > 0
     ? segments.filter(s => axisLayers.includes(s.layer))
     : segments;
