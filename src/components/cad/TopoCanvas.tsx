@@ -187,7 +187,7 @@ export default function TopoCanvas(props: Props) {
     const padding = 0.1;
     const sx = (size.w * (1 - padding * 2)) / dx;
     const sy = (size.h * (1 - padding * 2)) / dy;
-    const newScale = Math.max(0.005, Math.min(20, Math.min(sx, sy)));
+    const newScale = Math.max(0.001, Math.min(50, Math.min(sx, sy)));
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     setView((v) => ({
@@ -478,7 +478,7 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const newScale = Math.max(0.05, Math.min(10, view.scale * factor));
+    const newScale = Math.max(0.001, Math.min(50, view.scale * factor));
     const wx = (sx - view.offsetX) / view.scale;
     const wy = (sy - view.offsetY) / view.scale;
     setView({
@@ -609,7 +609,8 @@ export default function TopoCanvas(props: Props) {
         onContextMenu={onContextMenuSVG}>
 
         <defs>
-          {/* 2D-сетка */}
+          {/* 2D-сетка — рисуем только если ячейка >= 2px, иначе артефакты */}
+          {view.scale >= 0.1 && (<>
           <pattern id="topo-grid-minor" width={20 * view.scale} height={20 * view.scale} patternUnits="userSpaceOnUse"
             x={view.offsetX % (20 * view.scale)} y={view.offsetY % (20 * view.scale)}>
             <path d={`M ${20 * view.scale} 0 L 0 0 0 ${20 * view.scale}`} fill="none" stroke="#f0f0f0" strokeWidth="0.5" />
@@ -619,9 +620,11 @@ export default function TopoCanvas(props: Props) {
             <rect width={100 * view.scale} height={100 * view.scale} fill="url(#topo-grid-minor)" />
             <path d={`M ${100 * view.scale} 0 L 0 0 0 ${100 * view.scale}`} fill="none" stroke="#dcdcdc" strokeWidth="0.8" />
           </pattern>
+          </>)}
         </defs>
 
-        {!is3D && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
+        {!is3D && view.scale >= 0.1 && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
+        {!is3D && view.scale < 0.1 && <rect width={size.w} height={size.h} fill="#fafafa" />}
         {is3D && renderGroundGrid()}
 
         {/* Оси для 2D */}
