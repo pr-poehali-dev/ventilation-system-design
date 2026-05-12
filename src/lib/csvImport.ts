@@ -52,21 +52,24 @@ function normalizeLines(content: string): string[] {
 export type CsvFileType = "nodes" | "excavations" | "positions" | "bulkheads" | "fans" | "unknown";
 
 export function detectFileType(filename: string, firstLines: string): CsvFileType {
+  // Сначала по содержимому (надёжнее имени файла в АэроСети)
+  const allHeaders = firstLines.split("\n")
+    .filter(l => l.includes(";") || l.includes(","))
+    .slice(0, 3).join(" ").toLowerCase();
+
+  if (/атмосфера|atmosphere|высотн|вершин|идентификатор вершин/i.test(allHeaders)) return "nodes";
+  if (/начальн|конечн|выработ|excavat|начал.*верш|ид.*выраб/i.test(allHeaders)) return "excavations";
+  if (/тип позиции|position type|координата x/i.test(allHeaders)) return "positions";
+  if (/перемычк|bulkhead|тип перемычк/i.test(allHeaders)) return "bulkheads";
+  if (/напор|fan.*id|вентилят|источник тяг/i.test(allHeaders)) return "fans";
+
+  // Fallback по имени файла
   const fn = filename.toLowerCase();
   if (/node|вершин|узл/.test(fn)) return "nodes";
   if (/excavat|выработ|tunnel/.test(fn)) return "excavations";
   if (/position|позиц/.test(fn)) return "positions";
   if (/bulkhead|перемычк|jumper/.test(fn)) return "bulkheads";
   if (/fan|вентилят|source|тяг/.test(fn)) return "fans";
-
-  // Автоопределение по содержимому (заголовок первой строки)
-  const header = firstLines.split("\n").find(l => l.includes(";") || l.includes(",")) ?? "";
-  const h = header.toLowerCase();
-  if (/атмосфера|atmosphere/.test(h)) return "nodes";
-  if (/выработ|excavat|ствол|начальн/.test(h)) return "excavations";
-  if (/тип позиции|position type/.test(h)) return "positions";
-  if (/перемычк|bulkhead/.test(h)) return "bulkheads";
-  if (/напор|fan|вентилят/.test(h)) return "fans";
 
   return "unknown";
 }
