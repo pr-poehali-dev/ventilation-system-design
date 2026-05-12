@@ -57,9 +57,11 @@ export function detectFileType(filename: string, firstLines: string): CsvFileTyp
     .filter(l => l.includes(";") || l.includes(","))
     .slice(0, 3).join(" ").toLowerCase();
 
-  if (/атмосфера|atmosphere|высотн|вершин|идентификатор вершин/i.test(allHeaders)) return "nodes";
+  // nodes: содержит "вершина" + "атмосфера" или "высотная отметка"
+  if (/атмосфера|atmosphere/i.test(allHeaders) || /высотн.*отметк/i.test(allHeaders)) return "nodes";
+  if (/идентификатор вершин/i.test(allHeaders) && !/начальн|выработ/i.test(allHeaders)) return "nodes";
   if (/начальн|конечн|выработ|excavat|начал.*верш|ид.*выраб/i.test(allHeaders)) return "excavations";
-  if (/тип позиции|position type|координата x/i.test(allHeaders)) return "positions";
+  if (/тип позиции|position type/i.test(allHeaders)) return "positions";
   if (/перемычк|bulkhead|тип перемычк/i.test(allHeaders)) return "bulkheads";
   if (/напор|fan.*id|вентилят|источник тяг/i.test(allHeaders)) return "fans";
 
@@ -266,8 +268,10 @@ export function parseCsvMulti(files: CsvFileInput[]): CsvImportResult {
     const lines = normalizeLines(file.content);
     if (lines.length === 0) continue;
     const sep = detectSep(lines.find(l => l.includes(";") || l.includes(",")) ?? "");
+    const header5 = lines.slice(0, 2).join(" | ").slice(0, 120);
     const fileType = detectFileType(file.name, lines.slice(0, 5).join("\n"));
     debug.push(`Файл: ${file.name} → тип: ${fileType}, строк: ${lines.length}, sep: "${sep}"`);
+    debug.push(`  заголовок: ${header5}`);
 
     if (fileType === "nodes") {
       const nodes = parseNodesFile(lines, sep);
