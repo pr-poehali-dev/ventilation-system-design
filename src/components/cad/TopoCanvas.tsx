@@ -915,18 +915,22 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* ─── УЗЛЫ (отсортированы по глубине, ближние сверху) ─────────── */}
-        {nodesSorted.filter(({ node }) => node.visible !== false).map(({ node, sx, sy }) => {
+        {nodesSorted.map(({ node, sx, sy }) => {
           const isSel = selectedNodeId === node.id;
           const isBranchFrom = branchFrom === node.id;
           const r = isSel ? 7 : 5;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
+          const nodeVisible = node.visible !== false;
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
-              {(isSel || isBranchFrom) && (
+              {/* Кружок узла — скрывается через «Видимость узлов» */}
+              {nodeVisible && (isSel || isBranchFrom) && (
                 <circle r={r + 5} fill="none" stroke="#2563eb" strokeWidth="1.2" strokeDasharray="3 2" />
               )}
-              <circle r={r} fill={color} stroke="#1f2937" strokeWidth={isSel ? 2 : 1} />
-              {node.atmosphereLink && (
+              {nodeVisible && (
+                <circle r={r} fill={color} stroke="#1f2937" strokeWidth={isSel ? 2 : 1} />
+              )}
+              {nodeVisible && node.atmosphereLink && (
                 <circle r={r - 2} fill="none" stroke="#1f2937" strokeWidth="1.5" strokeDasharray="2 1" />
               )}
               <g transform="translate(8, -8)">
