@@ -403,8 +403,8 @@ export default function CadPage() {
   }, [importNonce]);  
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
-  const [branchWidth, setBranchWidth] = useState<number>(10);    // px (по умолчанию 10 как в Аэросети)
-  const [branchBorder, setBranchBorder] = useState<number>(1.2); // px (контур, по умолчанию 1.2)
+  const [branchWidth, setBranchWidth] = useState<number>(4);    // px
+  const [branchBorder, setBranchBorder] = useState<number>(0.8); // px
   const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
   const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
   const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
