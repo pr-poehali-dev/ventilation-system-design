@@ -66,14 +66,16 @@ interface InfoPanelProps {
   config: InfoDisplayConfig;
   onChange: (patch: Partial<InfoDisplayConfig>) => void;
   nodes?: TopoNode[];
+  selectedNodeId?: string | null;
   onNodeVisibilityChange?: (id: string, visible: boolean) => void;
   onAllNodesVisibility?: (visible: boolean) => void;
+  onSelectNode?: (id: string) => void;
 }
 
 export default function InfoPanel({
   config, onChange,
-  nodes = [],
-  onNodeVisibilityChange, onAllNodesVisibility,
+  nodes = [], selectedNodeId,
+  onNodeVisibilityChange, onAllNodesVisibility, onSelectNode,
 }: InfoPanelProps) {
   const [nodesOpen, setNodesOpen] = useState(true);
   const [branchesOpen, setBranchesOpen] = useState(true);
@@ -197,21 +199,38 @@ export default function InfoPanel({
             {nodeVisOpen && (
               <div>
                 {nodes.map((node) => (
-                  <label key={node.id}
-                    className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 select-none"
+                  <div key={node.id}
+                    className="flex items-center hover:bg-blue-50 select-none"
                     style={{
-                      paddingLeft: 20, paddingRight: 8, paddingTop: 2, paddingBottom: 2,
+                      paddingLeft: 20, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
                       borderBottom: "1px solid #f0f0f0",
+                      background: selectedNodeId === node.id ? "#dbeafe" : "transparent",
                     }}>
-                    <input
-                      type="checkbox"
-                      checked={node.visible !== false}
-                      onChange={(e) => onNodeVisibilityChange(node.id, e.target.checked)}
-                      className="w-3 h-3 flex-shrink-0"
-                      style={{ accentColor: "#2563eb" }}
-                    />
-                    <span className="text-[11px] text-gray-800">{node.number}</span>
-                  </label>
+                    <label className="flex items-center gap-1.5 flex-1 cursor-pointer min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={node.visible !== false}
+                        onChange={(e) => onNodeVisibilityChange(node.id, e.target.checked)}
+                        className="w-3 h-3 flex-shrink-0"
+                        style={{ accentColor: "#2563eb" }}
+                      />
+                      <span className="text-[11px] font-mono font-bold flex-shrink-0"
+                        style={{ color: "#1a3a6b", minWidth: 24 }}>
+                        {node.number}
+                      </span>
+                      <span className="text-[10px] text-gray-500 truncate">
+                        {node.name || `(${node.x}, ${node.y})`}
+                      </span>
+                    </label>
+                    {onSelectNode && (
+                      <button
+                        onClick={() => onSelectNode(node.id)}
+                        className="w-4 h-4 flex items-center justify-center hover:bg-blue-200 rounded flex-shrink-0"
+                        title="Выделить на схеме">
+                        <Icon name="Crosshair" size={9} className="text-blue-500" />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

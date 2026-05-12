@@ -2025,8 +2025,10 @@ export default function CadPage() {
                   config={infoConfig}
                   onChange={updateInfoConfig}
                   nodes={nodes}
+                  selectedNodeId={selectedNodeId}
                   onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
                   onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
+                  onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
                 />
               </div>
 
