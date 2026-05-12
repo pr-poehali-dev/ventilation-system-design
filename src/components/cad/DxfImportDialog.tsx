@@ -138,10 +138,10 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
               {/* Статистика */}
               <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: "Отрезков LINE", value: result.stats.lines },
-                  { label: "Полилиний",     value: result.stats.polylines },
-                  { label: "Узлов",         value: result.stats.nodes,    hi: true },
-                  { label: "Ветвей",        value: result.stats.branches, hi: true },
+                  { label: "Узлов (CIRCLE)", value: result.stats.circles ?? result.stats.nodes },
+                  { label: "Отрезков LINE",  value: result.stats.lines },
+                  { label: "Узлов итого",    value: result.stats.nodes,    hi: true },
+                  { label: "Ветвей",         value: result.stats.branches, hi: true },
                 ].map((s) => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
                     style={{ background: s.hi ? "#dbeafe" : "#f9f9f9", borderColor: s.hi ? "#93c5fd" : "#e0e0e0" }}>
@@ -151,32 +151,29 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                 ))}
               </div>
 
-              {/* Единицы */}
+              {/* Косоугольная проекция / единицы */}
+              {result.obliqueFactor !== undefined && result.obliqueFactor !== 0 && (
+                <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs border border-green-200"
+                  style={{ background: "#f0fdf4" }}>
+                  <Icon name="Axis3d" size={13} />
+                  <span>Косоугольная проекция АэроСети обнаружена (k={result.obliqueFactor.toFixed(2)}). Координаты и длины пересчитаны в реальные мировые.</span>
+                </div>
+              )}
               {result.scaleUsed !== undefined && result.scaleUsed !== 1 && (
                 <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border border-blue-200"
                   style={{ background: "#eff6ff" }}>
                   <Icon name="Info" size={13} />
-                  <span>Координаты файла в {result.scaleUsed === 0.001 ? "мм" : "см"} → автоматически переведены в метры.</span>
+                  <span>Координаты в {result.scaleUsed === 0.001 ? "мм" : "см"} → переведены в м.</span>
                 </div>
               )}
-
-              {/* Геометрия: диапазон Z и XY */}
-              {result.zRange && result.xyRange && (
-                <div className="rounded text-xs border px-2 py-1.5 space-y-0.5"
+              {result.zRange && (
+                <div className="rounded text-xs border px-2 py-1.5"
                   style={{ background: result.zRange.hasZ ? "#ecfdf5" : "#fff7ed", borderColor: result.zRange.hasZ ? "#a7f3d0" : "#fed7aa" }}>
-                  <div className="flex items-center gap-1.5 font-semibold" style={{ color: result.zRange.hasZ ? "#047857" : "#9a3412" }}>
-                    <Icon name={result.zRange.hasZ ? "Box" : "Square"} size={12} />
-                    {result.zRange.hasZ ? "3D-схема обнаружена" : "Плоская 2D-схема"}
-                  </div>
-                  <div className="text-[10px] text-gray-700">
-                    XY: {result.xyRange.dx.toFixed(1)} × {result.xyRange.dy.toFixed(1)} м
-                    {result.zRange.hasZ && <> · Z: {result.zRange.min.toFixed(1)} … {result.zRange.max.toFixed(1)} (Δ={(result.zRange.max - result.zRange.min).toFixed(1)} м)</>}
-                  </div>
-                  {!result.zRange.hasZ && (
-                    <div className="text-[10px] text-orange-700 leading-snug">
-                      Вертикальные стволы будут плоскими (угол 0°). Длины и углы можно извлечь из подписей в DXF — см. ниже.
-                    </div>
-                  )}
+                  <span style={{ color: result.zRange.hasZ ? "#047857" : "#9a3412" }}>
+                    {result.zRange.hasZ
+                      ? `3D: Z от ${result.zRange.min.toFixed(0)} до ${result.zRange.max.toFixed(0)} м`
+                      : "⚠ Все Z=0 — плоский файл"}
+                  </span>
                 </div>
               )}
 
