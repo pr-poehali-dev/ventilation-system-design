@@ -468,36 +468,55 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const hasZ = (zMax - zMin) * scale > 0.1;
 
   // ── Строим узловые точки ─────────────────────────────────────────────────
-  // CIRCLE из АэроСети = узлы. Но только если их достаточно для покрытия сети.
-  // Проверка: считаем уникальные концы осевых сегментов с eps-кластеризацией.
-  // Если CIRCLE < 80% от числа уникальных концов — CIRCLE недостаточно, берём концы LINE.
   const workSegsForNodes = topoSegments.length > 0 ? topoSegments : segments;
+
+  // TEXT с числовыми номерами — в Вентиляции 2.0 это и есть узлы
+  const numericTexts = texts.filter(t => /^\d+$/.test(t.text.trim()));
+  debugLines.push(`TEXT с числами (узлы): ${numericTexts.length}`);
+
   const endPtsRaw = workSegsForNodes.flatMap(s => [
     toWorld(s.x1, s.y1, s.z1), toWorld(s.x2, s.y2, s.z2)
   ]);
-  // Быстрая оценка числа уникальных концов (грубая кластеризация с eps=1м)
   const roughEps = Math.min(5, Math.max(0.5, (() => {
     const xs = endPtsRaw.map(p => p.x), ys = endPtsRaw.map(p => p.y);
     return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1) * 0.005;
   })()));
   const { clusters: roughClusters } = clusterPoints(endPtsRaw, roughEps);
+
+  // Приоритет источника узлов:
+  // 1. CIRCLE (АэроСеть) — если их >= 80% от числа концов
+  // 2. TEXT с числами (Вентиляция 2.0) — если их >= 50% от числа концов
+  // 3. Концы LINE
   const useCircles = circles.length > 0 && circles.length >= roughClusters.length * 0.8;
-  debugLines.push(`CIRCLE=${circles.length}, roughEndpoints=${roughClusters.length}, useCircles=${useCircles}`);
+  const useTexts   = !useCircles && numericTexts.length >= roughClusters.length * 0.5;
+  debugLines.push(`CIRCLE=${circles.length}, TEXT#=${numericTexts.length}, roughEP=${roughClusters.length}, useCircles=${useCircles}, useTexts=${useTexts}`);
 
   const allPts: Pt3[] = [];
   const circleWorldPts: Pt3[] = [];
+  /** Номера из TEXT: indx соответствует allPts[i] */
+  const textNodeNumbers: string[] = [];
 
   if (useCircles) {
     for (const c of circles) {
       const w = toWorld(c.cx, c.cy, c.cz);
       circleWorldPts.push(w);
       allPts.push(w);
+      textNodeNumbers.push("");
     }
+  } else if (useTexts) {
+    // Вентиляция 2.0: узлы из TEXT (номер = содержимое текста, X/Y = координата текста)
+    for (const t of numericTexts) {
+      const w = toWorld(t.x, t.y, t.z);
+      allPts.push(w);
+      textNodeNumbers.push(t.text.trim());
+    }
+    debugLines.push(`Узлы из TEXT: ${allPts.length}`);
   } else {
-    // Строим по концам осевых сегментов (Вентиляция 2.0 и другие без полных CIRCLE)
+    // Строим по концам осевых сегментов
     for (const s of workSegsForNodes) {
       allPts.push(toWorld(s.x1, s.y1, s.z1));
       allPts.push(toWorld(s.x2, s.y2, s.z2));
+      textNodeNumbers.push("", "");
     }
   }
 
@@ -537,24 +556,32 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const { clusters, map } = clusterPoints(allPts, epsilon);
   debugLines.push(`Точек: ${allPts.length}, кластеров: ${clusters.length}, eps: ${epsilon.toFixed(3)} м`);
 
-  // ── Привязываем TEXT к кластерам для получения реальных номеров узлов ───
-  // Для каждого кластера ищем ближайший TEXT, содержащий число — это номер узла.
-  // Радиус поиска: до 3 * epsilon (тексты рисуются рядом с узлом)
-  const textSearchR = Math.max(epsilon * 5, 20);  // в мировых метрах
-  const clusterNumbers: string[] = clusters.map((pt) => {
-    let bestText = "";
-    let bestD = Infinity;
-    for (const t of texts) {
-      const tw = toWorld(t.x, t.y, t.z);
-      const d = Math.sqrt((tw.x - pt.x) ** 2 + (tw.y - pt.y) ** 2);
-      if (d < textSearchR && d < bestD) {
-        // Извлекаем число из текста
-        const m = t.text.match(/^(\d+)$/);
-        if (m) { bestD = d; bestText = m[1]; }
+  // ── Номера кластеров ─────────────────────────────────────────────────────
+  let clusterNumbers: string[];
+
+  if (useTexts) {
+    // Если узлы из TEXT — номера уже в textNodeNumbers, один к одному с allPts.
+    // Кластеризация могла объединить несколько одинаковых TEXT → берём номер первого.
+    clusterNumbers = clusters.map((_, ci) => {
+      // Находим все allPts которые попали в этот кластер
+      const members = allPts
+        .map((_, pi) => map[pi] === ci ? textNodeNumbers[pi] : "")
+        .filter(n => n !== "");
+      return members[0] ?? "";
+    });
+  } else {
+    // Привязываем ближайший TEXT к каждому кластеру
+    const textSearchR = Math.max(epsilon * 5, 20);
+    clusterNumbers = clusters.map((pt) => {
+      let bestText = "", bestD = Infinity;
+      for (const t of numericTexts) {
+        const tw = toWorld(t.x, t.y, t.z);
+        const d = Math.sqrt((tw.x - pt.x) ** 2 + (tw.y - pt.y) ** 2);
+        if (d < textSearchR && d < bestD) { bestD = d; bestText = t.text.trim(); }
       }
-    }
-    return bestText;
-  });
+      return bestText;
+    });
+  }
   const foundByText = clusterNumbers.filter(n => n !== "").length;
   debugLines.push(`Номера из TEXT: найдено ${foundByText}/${clusters.length}`);
 
@@ -562,9 +589,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const ts = Date.now();
   const nodes: TopoNode[] = clusters.map((pt, i) => {
     const realNum = clusterNumbers[i];
-    const num = realNum
-      ? realNum.padStart(3, "0")
-      : String(i + 1).padStart(3, "0");
+    const num = realNum ? realNum.padStart(3, "0") : String(i + 1).padStart(3, "0");
     const name = realNum || String(i + 1);
     return makeNode(`N${ts}_${realNum || i}`, {
       x: Math.round(pt.x * 10) / 10,
@@ -595,8 +620,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     const seg = workSegs[si];
     const w1 = toWorld(seg.x1, seg.y1, seg.z1);
     const w2 = toWorld(seg.x2, seg.y2, seg.z2);
-    const c1 = useCircles ? findCluster(w1) : map[si * 2];
-    const c2 = useCircles ? findCluster(w2) : map[si * 2 + 1];
+    // useCircles или useTexts → findCluster (т.к. узлы не совпадают с концами LINE)
+    const c1 = (useCircles || useTexts) ? findCluster(w1) : map[si * 2];
+    const c2 = (useCircles || useTexts) ? findCluster(w2) : map[si * 2 + 1];
 
     if (c1 === c2) continue;
     const key = `${Math.min(c1, c2)}_${Math.max(c1, c2)}`;
