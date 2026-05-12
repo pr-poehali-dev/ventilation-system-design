@@ -146,7 +146,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   let tx = 0, ty = 0, tz = 0, tText = "";
 
   // Слой текущего POLYLINE (сохраняем при открытии, используем при flush через SEQEND)
-  const polyLayer = "0";
+  let polyLayer = "0";
 
   const flushLine = () => {
     if (lx1 === lx2 && ly1 === ly2 && lz1 === lz2) return;
@@ -460,19 +460,34 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const hasZ = (zMax - zMin) * scale > 0.1;
 
   // ── Строим узловые точки ─────────────────────────────────────────────────
-  // Приоритет: CIRCLE (узлы Аэросети) > концы LINE
+  // CIRCLE из АэроСети = узлы. Но только если их достаточно для покрытия сети.
+  // Проверка: считаем уникальные концы осевых сегментов с eps-кластеризацией.
+  // Если CIRCLE < 80% от числа уникальных концов — CIRCLE недостаточно, берём концы LINE.
+  const workSegsForNodes = topoSegments.length > 0 ? topoSegments : segments;
+  const endPtsRaw = workSegsForNodes.flatMap(s => [
+    toWorld(s.x1, s.y1, s.z1), toWorld(s.x2, s.y2, s.z2)
+  ]);
+  // Быстрая оценка числа уникальных концов (грубая кластеризация с eps=1м)
+  const roughEps = Math.min(5, Math.max(0.5, (() => {
+    const xs = endPtsRaw.map(p => p.x), ys = endPtsRaw.map(p => p.y);
+    return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1) * 0.005;
+  })()));
+  const { clusters: roughClusters } = clusterPoints(endPtsRaw, roughEps);
+  const useCircles = circles.length > 0 && circles.length >= roughClusters.length * 0.8;
+  debugLines.push(`CIRCLE=${circles.length}, roughEndpoints=${roughClusters.length}, useCircles=${useCircles}`);
+
   const allPts: Pt3[] = [];
   const circleWorldPts: Pt3[] = [];
 
-  for (const c of circles) {
-    const w = toWorld(c.cx, c.cy, c.cz);
-    circleWorldPts.push(w);
-    allPts.push(w);
-  }
-
-  // Если CIRCLE нет — берём концы осевых сегментов
-  if (circles.length === 0) {
-    for (const s of topoSegments.length > 0 ? topoSegments : segments) {
+  if (useCircles) {
+    for (const c of circles) {
+      const w = toWorld(c.cx, c.cy, c.cz);
+      circleWorldPts.push(w);
+      allPts.push(w);
+    }
+  } else {
+    // Строим по концам осевых сегментов (Вентиляция 2.0 и другие без полных CIRCLE)
+    for (const s of workSegsForNodes) {
       allPts.push(toWorld(s.x1, s.y1, s.z1));
       allPts.push(toWorld(s.x2, s.y2, s.z2));
     }
@@ -511,7 +526,7 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
 
   // ── Строим ветви из осевых сегментов ────────────────────────────────────
   // Для каждого осевого сегмента находим ближайший кластер к каждому концу
-  const workSegs = topoSegments.length > 0 ? topoSegments : segments;
+  const workSegs = workSegsForNodes;
 
   const findCluster = (pt: Pt3): number => {
     let best = 0, bestD = Infinity;
@@ -530,8 +545,8 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
     const seg = workSegs[si];
     const w1 = toWorld(seg.x1, seg.y1, seg.z1);
     const w2 = toWorld(seg.x2, seg.y2, seg.z2);
-    const c1 = circles.length > 0 ? findCluster(w1) : map[si * 2];
-    const c2 = circles.length > 0 ? findCluster(w2) : map[si * 2 + 1];
+    const c1 = useCircles ? findCluster(w1) : map[si * 2];
+    const c2 = useCircles ? findCluster(w2) : map[si * 2 + 1];
 
     if (c1 === c2) continue;
     const key = `${Math.min(c1, c2)}_${Math.max(c1, c2)}`;
