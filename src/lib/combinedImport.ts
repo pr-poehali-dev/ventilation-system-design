@@ -33,7 +33,11 @@ export function combineImports(
   dxfResult: DxfImportResult,
   excelResult: ExcelImportResult
 ): CombinedImportResult {
-  const warnings: string[] = [...dxfResult.warnings, ...excelResult.warnings];
+  // Берём только предупреждения Excel (DXF-предупреждения о Z=0 неактуальны — Z из Excel)
+  const warnings: string[] = [
+    ...dxfResult.warnings.filter(w => !w.includes("Z=0") && !w.includes("Плоский")),
+    ...excelResult.warnings,
+  ];
   const ts = Date.now();
 
   // ── Шаг 1: Базовые узлы из Excel (у них есть номера и Z) ─────────────────
