@@ -161,7 +161,15 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   };
 
   const flushText = () => {
-    const t = tText.replace(/\\P/g, "\n").replace(/[{}\\][a-zA-Z0-9;.]*;?/g, "").trim();
+    let t = tText;
+    // 1. Декодируем \U+XXXX (Unicode-escape, используется в Вентиляции 2.0)
+    t = t.replace(/\\U\+([0-9A-Fa-f]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    );
+    // 2. Убираем MTEXT-форматирование: \fFont|...; \c0; \p...; {groups}
+    t = t.replace(/\\[fFpPcClLkKoOqQtT][^;\\{}]*;?/g, "");
+    t = t.replace(/[{}]/g, "");
+    t = t.replace(/\\P/g, "\n").trim();
     if (t) texts.push({ x: tx, y: ty, z: tz, text: t, layer: entityLayer });
     tx = ty = tz = 0; tText = "";
   };
@@ -529,15 +537,40 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   const { clusters, map } = clusterPoints(allPts, epsilon);
   debugLines.push(`Точек: ${allPts.length}, кластеров: ${clusters.length}, eps: ${epsilon.toFixed(3)} м`);
 
+  // ── Привязываем TEXT к кластерам для получения реальных номеров узлов ───
+  // Для каждого кластера ищем ближайший TEXT, содержащий число — это номер узла.
+  // Радиус поиска: до 3 * epsilon (тексты рисуются рядом с узлом)
+  const textSearchR = Math.max(epsilon * 5, 20);  // в мировых метрах
+  const clusterNumbers: string[] = clusters.map((pt) => {
+    let bestText = "";
+    let bestD = Infinity;
+    for (const t of texts) {
+      const tw = toWorld(t.x, t.y, t.z);
+      const d = Math.sqrt((tw.x - pt.x) ** 2 + (tw.y - pt.y) ** 2);
+      if (d < textSearchR && d < bestD) {
+        // Извлекаем число из текста
+        const m = t.text.match(/^(\d+)$/);
+        if (m) { bestD = d; bestText = m[1]; }
+      }
+    }
+    return bestText;
+  });
+  const foundByText = clusterNumbers.filter(n => n !== "").length;
+  debugLines.push(`Номера из TEXT: найдено ${foundByText}/${clusters.length}`);
+
   // ── Создаём узлы ─────────────────────────────────────────────────────────
   const ts = Date.now();
   const nodes: TopoNode[] = clusters.map((pt, i) => {
-    const num = String(i + 1).padStart(3, "0");
-    return makeNode(`N${ts}_${i}`, {
+    const realNum = clusterNumbers[i];
+    const num = realNum
+      ? realNum.padStart(3, "0")
+      : String(i + 1).padStart(3, "0");
+    const name = realNum || String(i + 1);
+    return makeNode(`N${ts}_${realNum || i}`, {
       x: Math.round(pt.x * 10) / 10,
       y: Math.round(pt.y * 10) / 10,
       z: Math.round(pt.z * 10) / 10,
-      number: num, name: `Узел ${num}`,
+      number: num, name,
     });
   });
 
