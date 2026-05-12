@@ -699,18 +699,40 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
       if (gaps.length === 0) continue;
       gaps.sort((a, b2) => b2 - a);  // сначала больший
 
-      // АэроСеть: два POLYLINE симметричны относительно оси ветви.
-      // Расстояние между ними = ПОЛНЫЙ размер сечения (центр-до-центра).
-      // Но т.к. сами POLYLINE проходят по краям сечения (а не по центру),
-      // это и есть реальная ширина/высота.
-      const w = Math.round(gaps[0] * 10) / 10;
-      const h = gaps.length >= 2 ? Math.round(gaps[1] * 10) / 10 : w;
+      // gap = расстояние между двумя параллельными POLYLINE.
+      // Для АэроСети это полный размер сечения в данном направлении.
+      const dim1 = Math.round(gaps[0] * 10) / 10;
+      const dim2 = gaps.length >= 2 ? Math.round(gaps[1] * 10) / 10 : dim1;
 
-      if (w < 0.5 || w > 30 || h < 0.5 || h > 30) continue;
+      if (dim1 < 0.3 || dim1 > 50) continue;
 
-      const area = Math.round(w * h * 100) / 100;
-      const perim = Math.round(2 * (w + h) * 10) / 10;
-      const dh2 = Math.round(4 * area / perim * 1000) / 1000;
+      // Определяем форму и параметры сечения:
+      // Если dim1 ≈ dim2 → квадрат или круг.
+      // Проверяем круг: S_circle = π*(dim1/2)² и P_circle = π*dim1.
+      // Если одна пара → скорее всего круг (АэроСеть рисует 2 линии для круга).
+      const isLikelyRound = gaps.length === 1 || Math.abs(dim1 - dim2) / Math.max(dim1, dim2) < 0.1;
+      let area: number, perim: number, dh2: number;
+      let shape2: "round" | "rect" | "arch" = "rect";
+      let w = dim1, h = dim2;
+
+      if (isLikelyRound) {
+        // Круглое сечение: diameter = gap
+        const d = dim1;
+        area  = Math.round(Math.PI * (d / 2) ** 2 * 100) / 100;
+        perim = Math.round(Math.PI * d * 10) / 10;
+        dh2   = d;
+        shape2 = "round";
+        w = d; h = d;
+      } else {
+        // Прямоугольное
+        area  = Math.round(w * h * 100) / 100;
+        perim = Math.round(2 * (w + h) * 10) / 10;
+        dh2   = Math.round(4 * area / perim * 1000) / 1000;
+      }
+
+      if (area < 0.1 || area > 200) continue;
+
+      if (bi2 < 3) debugLines.push(`  section[${bi2}] gaps=${gaps.map(g=>g.toFixed(2)).join(",")} shape=${shape2} dim1=${dim1} dim2=${dim2} S=${area} P=${perim}`);
 
       branches[bi2] = {
         ...branches[bi2],
@@ -719,8 +741,9 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
         dh: dh2,
         rectWidth: w,
         rectHeight: h,
+        diameter: shape2 === "round" ? w : 0,
         manualSection: true,
-        shape: "rect",
+        shape: shape2,
       };
       sectionApplied++;
     }
