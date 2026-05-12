@@ -933,7 +933,7 @@ export default function TopoCanvas(props: Props) {
                 {view.scale > 0.15 && (
                   <text fontSize="10" fontWeight="600" fill="#1f2937">{node.number}</text>
                 )}
-                {view.scale > 0.2 && !is3D && (() => {
+                {view.scale > 0.2 && (() => {
                   const ic = infoConfig;
                   const nlines: string[] = [];
                   if (!ic) {
@@ -954,10 +954,10 @@ export default function TopoCanvas(props: Props) {
                   ));
                 })()}
               </g>
-              {view.scale > 0.15 && !is3D && !infoConfig?.nodeZ && (
+              {view.scale > 0.15 && !infoConfig?.nodeZ && (
                 <text x="0" y={r + 12} textAnchor="middle" fontSize="8" fill="#9ca3af">Z={node.z}</text>
               )}
-              {view.scale > 0.2 && node.computedPressure > 0 && !node.atmosphereLink && !is3D && !infoConfig?.nodePressure && (
+              {view.scale > 0.2 && node.computedPressure > 0 && !node.atmosphereLink && !infoConfig?.nodePressure && (
                 <g transform={`translate(8, ${node.name ? 22 : 12})`}>
                   <text fontSize="9" fontWeight="600" fill="#0369a1">
                     P={(node.computedPressure / 1000).toFixed(1)} кПа

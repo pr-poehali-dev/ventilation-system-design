@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
+import { type TopoNode } from "@/lib/topology";
 
 interface CheckRowProps {
   label: string;
@@ -64,11 +65,21 @@ const PRESETS: { label: string; config: Partial<InfoDisplayConfig> }[] = [
 interface InfoPanelProps {
   config: InfoDisplayConfig;
   onChange: (patch: Partial<InfoDisplayConfig>) => void;
+  nodes?: TopoNode[];
+  selectedNodeId?: string | null;
+  onNodeVisibilityChange?: (id: string, visible: boolean) => void;
+  onAllNodesVisibility?: (visible: boolean) => void;
+  onSelectNode?: (id: string) => void;
 }
 
-export default function InfoPanel({ config, onChange }: InfoPanelProps) {
+export default function InfoPanel({
+  config, onChange,
+  nodes = [], selectedNodeId,
+  onNodeVisibilityChange, onAllNodesVisibility, onSelectNode,
+}: InfoPanelProps) {
   const [nodesOpen, setNodesOpen] = useState(true);
   const [branchesOpen, setBranchesOpen] = useState(true);
+  const [nodeVisOpen, setNodeVisOpen] = useState(true);
   const [preset, setPreset] = useState(0);
 
   const applyPreset = (idx: number) => {
@@ -110,7 +121,7 @@ export default function InfoPanel({ config, onChange }: InfoPanelProps) {
       {/* Список параметров */}
       <div className="flex-1 overflow-y-auto">
 
-        {/* ─── Узлы ─── */}
+        {/* ─── Узлы (параметры отображения) ─── */}
         <SectionHeader label="Узлы" expanded={nodesOpen} onToggle={() => setNodesOpen((v) => !v)} />
         {nodesOpen && (
           <div>
@@ -158,6 +169,72 @@ export default function InfoPanel({ config, onChange }: InfoPanelProps) {
             <CheckRow label="Q CO в начале (Q CO нач.), м³/с" checked={config.branchQCOStart} onChange={set("branchQCOStart")} />
             <CheckRow label="Q CO в конце (Q CO кон.), м³/с" checked={config.branchQCOEnd} onChange={set("branchQCOEnd")} />
           </div>
+        )}
+
+        {/* ─── Видимость узлов (как в Аэросети) ─── */}
+        {nodes.length > 0 && onNodeVisibilityChange && (
+          <>
+            <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
+              style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
+              <button onClick={() => setNodeVisOpen((v) => !v)}
+                className="flex items-center gap-1 flex-1 text-left">
+                <Icon name={nodeVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
+                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
+                  Видимость узлов
+                </span>
+              </button>
+              {onAllNodesVisibility && (
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => onAllNodesVisibility(true)}
+                    className="text-[10px] px-1 rounded hover:bg-green-100 text-green-700 border border-green-300">
+                    вкл
+                  </button>
+                  <button onClick={() => onAllNodesVisibility(false)}
+                    className="text-[10px] px-1 rounded hover:bg-red-50 text-red-600 border border-red-200">
+                    выкл
+                  </button>
+                </div>
+              )}
+            </div>
+            {nodeVisOpen && (
+              <div>
+                {nodes.map((node) => (
+                  <div key={node.id}
+                    className="flex items-center hover:bg-blue-50 select-none"
+                    style={{
+                      paddingLeft: 20, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+                      borderBottom: "1px solid #f0f0f0",
+                      background: selectedNodeId === node.id ? "#dbeafe" : "transparent",
+                    }}>
+                    <label className="flex items-center gap-1.5 flex-1 cursor-pointer min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={node.visible !== false}
+                        onChange={(e) => onNodeVisibilityChange(node.id, e.target.checked)}
+                        className="w-3 h-3 flex-shrink-0"
+                        style={{ accentColor: "#2563eb" }}
+                      />
+                      <span className="text-[11px] font-mono font-bold flex-shrink-0"
+                        style={{ color: "#1a3a6b", minWidth: 24 }}>
+                        {node.number}
+                      </span>
+                      <span className="text-[10px] text-gray-500 truncate">
+                        {node.name || `(${node.x}, ${node.y})`}
+                      </span>
+                    </label>
+                    {onSelectNode && (
+                      <button
+                        onClick={() => onSelectNode(node.id)}
+                        className="w-4 h-4 flex items-center justify-center hover:bg-blue-200 rounded flex-shrink-0"
+                        title="Выделить на схеме">
+                        <Icon name="Crosshair" size={9} className="text-blue-500" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -22,6 +22,7 @@ import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
+import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -500,6 +501,10 @@ export default function CadPage() {
     setActiveRibbon("home");
   };
 
+  // ─── СПРАВОЧНИК ОБОРУДОВАНИЯ ─────────────────────────────────────────
+  const [showEquipRef, setShowEquipRef] = useState(false);
+  const [equipRefTab, setEquipRefTab] = useState<"fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport">("fans");
+
   // ─── СОЗДАТЬ НОВЫЙ ПРОЕКТ ────────────────────────────────────────────
   const handleNewProject = () => {
     if (nodes.length > 0 || branches.length > 0) {
@@ -950,7 +955,41 @@ export default function CadPage() {
         );
       })()}
 
+      {/* ═══ RIBBON CONTENT: СПРАВОЧНИКИ ══════════════════════════════════ */}
+      {activeRibbon === "general" && (
+      <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
+        style={{ background: "linear-gradient(180deg,#fafafa,#ececec)", borderBottom: "1px solid #b8b8b8" }}>
+        <RibbonGroup label="Вентиляция">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn icon="Wind" label="Вентиляторы" sublabel="" onClick={() => { setEquipRefTab("fans"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Layers" label="Типы выработок" sublabel="" onClick={() => { setEquipRefTab("types"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Square" label="Перемычки" sublabel="" onClick={() => { setEquipRefTab("bulkheads"); setShowEquipRef(true); }} />
+          </div>
+        </RibbonGroup>
+        <RibbonGroup label="Аварии">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn icon="Phone" label="Телефонная книга" sublabel="" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Users" label="Ответственные" sublabel="и исполнители" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Radio" label="Датчики" sublabel="" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="FileText" label="Типовые мероприятия" sublabel="" onClick={() => { setEquipRefTab("typical"); setShowEquipRef(true); }} />
+          </div>
+        </RibbonGroup>
+        <RibbonGroup label="Трубопровод">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn icon="Gauge" label="Насосы" sublabel="" onClick={() => { setEquipRefTab("pumps"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="GitBranch" label="Трубы" sublabel="" onClick={() => { setEquipRefTab("pipes"); setShowEquipRef(true); }} />
+          </div>
+        </RibbonGroup>
+        <RibbonGroup label="Общее">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn icon="Truck" label="Транспорт" sublabel="" onClick={() => { setEquipRefTab("transport"); setShowEquipRef(true); }} />
+          </div>
+        </RibbonGroup>
+      </div>
+      )}
+
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
+      {activeRibbon !== "general" && (
       <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
         style={{ background: "linear-gradient(180deg,#fafafa,#ececec)", borderBottom: "1px solid #b8b8b8" }}>
 
@@ -1087,6 +1126,7 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
       </div>
+      )}
 
       {/* ═══ MAIN AREA ════════════════════════════════════════════════════ */}
       <div className="flex-1 flex overflow-hidden">
@@ -1972,104 +2012,27 @@ export default function CadPage() {
         {rightPanelOpen && (
           <div className="w-[280px] flex-shrink-0 flex flex-col"
             style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
-            {/* Вкладки заголовка */}
-            <div className="flex border-b border-gray-300" style={{ background: "#f5f5f5" }}>
-              <button
-                onClick={() => setRightTab("info" as typeof rightTab)}
-                className="flex items-center gap-1 px-3 h-8 text-[11px] font-semibold border-r border-gray-300"
-                style={{
-                  background: rightTab !== "node" && rightTab !== "branch" ? "#ffffff" : "transparent",
-                  borderBottom: rightTab !== "node" && rightTab !== "branch" ? "2px solid #2563eb" : "2px solid transparent",
-                  color: rightTab !== "node" && rightTab !== "branch" ? "#2563eb" : "#555",
-                }}>
-                <Icon name="LayoutList" size={12} /> Информация
-              </button>
-              <button
-                onClick={() => setRightTab("node")}
-                className="flex items-center gap-1 px-3 h-8 text-[11px] font-semibold"
-                style={{
-                  background: rightTab === "node" ? "#ffffff" : "transparent",
-                  borderBottom: rightTab === "node" ? "2px solid #2563eb" : "2px solid transparent",
-                  color: rightTab === "node" ? "#2563eb" : "#555",
-                }}>
-                <Icon name="Circle" size={12} /> Узлы
-              </button>
+            {/* Заголовок */}
+            <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
+              style={{ background: "#f5f5f5", fontSize: 11, fontWeight: 600 }}>
+              <Icon name="LayoutList" size={12} />
+              Панель информации
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Вкладка: Информация */}
-              {rightTab !== "node" && rightTab !== "branch" && (
               <div className="flex-1 overflow-hidden">
-                <InfoPanel config={infoConfig} onChange={updateInfoConfig} />
+                <InfoPanel
+                  config={infoConfig}
+                  onChange={updateInfoConfig}
+                  nodes={nodes}
+                  selectedNodeId={selectedNodeId}
+                  onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
+                  onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
+                  onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
+                />
               </div>
-              )}
 
-              {/* Вкладка: Узлы — управление видимостью */}
-              {rightTab === "node" && (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Кнопки вкл/выкл всех */}
-                <div className="flex items-center gap-1 px-2 py-1 border-b border-gray-200" style={{ background: "#f0f4f8" }}>
-                  <span className="text-[10px] text-gray-600 font-semibold flex-1">Видимость узлов на схеме</span>
-                  <button
-                    onClick={() => setNodes((p) => p.map((n) => ({ ...n, visible: true })))}
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-green-400 hover:bg-green-50 text-green-700">
-                    Все вкл
-                  </button>
-                  <button
-                    onClick={() => setNodes((p) => p.map((n) => ({ ...n, visible: false })))}
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 hover:bg-red-50 text-red-600">
-                    Все выкл
-                  </button>
-                </div>
-                {/* Список узлов с чекбоксами */}
-                <div className="flex-1 overflow-y-auto">
-                  {nodes.length === 0 && (
-                    <div className="text-[11px] text-gray-400 text-center py-4">Нет узлов</div>
-                  )}
-                  {nodes.map((node) => (
-                    <label key={node.id}
-                      className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-blue-50 select-none"
-                      style={{
-                        borderBottom: "1px solid #f0f0f0",
-                        background: selectedNodeId === node.id ? "#dbeafe" : "transparent",
-                      }}>
-                      <input
-                        type="checkbox"
-                        checked={node.visible !== false}
-                        onChange={(e) => updateNode(node.id, { visible: e.target.checked })}
-                        style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }}
-                      />
-                      <span
-                        className="text-[11px] font-mono font-bold flex-shrink-0"
-                        style={{ color: "#1a3a6b", minWidth: 28 }}>
-                        {node.number}
-                      </span>
-                      <span
-                        className="text-[10px] text-gray-500 truncate flex-1"
-                        title={node.name}>
-                        {node.name || `(${node.x}, ${node.y})`}
-                      </span>
-                      {node.atmosphereLink && (
-                        <span className="text-[10px] px-1 rounded" style={{ background: "#e0f2fe", color: "#0369a1" }}>атм</span>
-                      )}
-                      <button
-                        onClick={(e) => { e.preventDefault(); setSelectedNodeId(node.id); setSelectedBranchId(null); }}
-                        className="w-5 h-5 flex items-center justify-center hover:bg-blue-200 rounded flex-shrink-0"
-                        title="Выделить на схеме">
-                        <Icon name="Crosshair" size={10} className="text-blue-600" />
-                      </button>
-                    </label>
-                  ))}
-                </div>
-                {/* Итог */}
-                <div className="border-t border-gray-300 px-2 py-1 text-[10px] text-gray-500" style={{ background: "#f5f5f5" }}>
-                  Показано: {nodes.filter(n => n.visible !== false).length} / {nodes.length} узлов
-                </div>
-              </div>
-              )}
-              
-              {/* Масштаб Z — только на вкладке информации */}
-              {rightTab !== "node" && rightTab !== "branch" && (
+              {/* Масштаб Z */}
               <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
@@ -2087,7 +2050,6 @@ export default function CadPage() {
                   <span>0.1×</span><span>5×</span><span>10×</span>
                 </div>
               </div>
-              )}
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}
@@ -2197,6 +2159,15 @@ export default function CadPage() {
         onClose={() => setShowCsvImport(false)}
       />
     )}
+
+    {/* ═══ СПРАВОЧНИК ОБОРУДОВАНИЯ ════════════════════════════════════════ */}
+    {showEquipRef && (
+      <EquipmentRefDialog
+        activeTab={equipRefTab}
+        onTabChange={setEquipRefTab}
+        onClose={() => setShowEquipRef(false)}
+      />
+    )}
     </>
   );
 }
@@ -2284,11 +2255,11 @@ function RibbonGroup({ label, children }: { label: string; children: React.React
   );
 }
 
-function RibbonBigBtn({ icon, label, sublabel, disabled }: {
-  icon: string; label: string; sublabel: string; disabled?: boolean;
+function RibbonBigBtn({ icon, label, sublabel, disabled, onClick }: {
+  icon: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void;
 }) {
   return (
-    <button disabled={disabled}
+    <button disabled={disabled} onClick={onClick}
       className="px-1.5 py-0.5 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded flex flex-col items-center justify-start gap-0.5 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-transparent min-w-[50px]"
       style={{ height: "100%" }}>
       <Icon name={icon} size={22} className="text-gray-700 mt-0.5" fallback="Square" />
