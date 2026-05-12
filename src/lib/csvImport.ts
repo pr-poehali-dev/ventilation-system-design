@@ -83,15 +83,25 @@ interface RawBranch {
   flow: number; resistance: number; layer: string;
 }
 
+// UUID или число — валидный ID строки данных
+function isDataId(s: string): boolean {
+  const t = s.trim().replace(/"/g, "");
+  return /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(t) || /^\d+$/.test(t);
+}
+
+function cleanId(s: string): string {
+  return s.trim().replace(/"/g, "");
+}
+
 function parseNodesFile(lines: string[], sep: string): RawNode[] {
   const result: RawNode[] = [];
   for (const line of lines) {
-    const cols = splitRow(line, sep);
+    const cols = splitRow(line, sep).map(c => c.replace(/"/g, ""));
     if (cols.length < 3) continue;
     const id = cols[0].trim();
-    if (!/^\d/.test(id)) continue;  // пропускаем заголовки
+    if (!isDataId(id)) continue;  // пропускаем заголовки
     result.push({
-      id,
+      id: cleanId(id),
       x: parseNum(cols[1]),
       y: parseNum(cols[2]),
       z: parseNum(cols[3]),
@@ -101,63 +111,68 @@ function parseNodesFile(lines: string[], sep: string): RawNode[] {
   return result;
 }
 
+// Парсит число включая научную нотацию с запятой: "5,77E-05" → 0.0000577
+function parseNumSci(s: string | undefined): number {
+  if (!s) return 0;
+  // Заменяем запятую на точку в мантиссе, но не в экспоненте
+  const normalized = s.trim().replace(/"/g, "").replace(/,(?=\d|E|e)/g, ".");
+  const n = parseFloat(normalized);
+  return isNaN(n) ? 0 : n;
+}
+
 function parseExcavationsFile(lines: string[], sep: string): RawBranch[] {
   const result: RawBranch[] = [];
-  // Ищем строку заголовков для определения порядка колонок
-  // Стандартный порядок АэроСети: ID; НачВерш; КонВерш; Название; Длина; Тип; Сечение; Периметр; Расход; Сопр; Слой; ИдПозиции
   let headerFound = false;
   const colIdx = { id:0, from:1, to:2, name:3, len:4, type:5, area:6, perim:7, flow:8, res:9, layer:10 };
 
   for (const line of lines) {
-    const cols = splitRow(line, sep);
+    const cols = splitRow(line, sep).map(c => c.replace(/"/g, "").trim());
     if (cols.length < 3) continue;
 
-    // Проверяем на заголовок
-    const h = cols[0].toLowerCase();
-    if (!headerFound && (!/^\d/.test(cols[0].trim()) && cols[0].trim() !== "")) {
-      // Это заголовок — определяем порядок колонок
-      const ci = (pat: RegExp) => cols.findIndex(c => pat.test(c.toLowerCase()));
-      const idC   = ci(/^ид|^id$/);
-      const fromC = ci(/нач|from|start/);
-      const toC   = ci(/кон|to$|end/);
-      const nameC = ci(/назван|name/);
-      const lenC  = ci(/длин|length/);
-      const typeC = ci(/^тип|^type/);
-      const areaC = ci(/сечени|area|s\s*м/);
-      const perimC= ci(/периметр|perim/);
-      const flowC = ci(/расход|flow|q\s*[,;]/);
-      const resC  = ci(/сопрот|resist/);
-      const layerC= ci(/слой|layer/);
-      if (idC >= 0) colIdx.id = idC;
-      if (fromC >= 0) colIdx.from = fromC;
-      if (toC >= 0) colIdx.to = toC;
-      if (nameC >= 0) colIdx.name = nameC;
-      if (lenC >= 0) colIdx.len = lenC;
-      if (typeC >= 0) colIdx.type = typeC;
-      if (areaC >= 0) colIdx.area = areaC;
-      if (perimC >= 0) colIdx.perim = perimC;
-      if (flowC >= 0) colIdx.flow = flowC;
-      if (resC >= 0) colIdx.res = resC;
-      if (layerC >= 0) colIdx.layer = layerC;
-      headerFound = true;
+    const firstCell = cols[0];
+    if (!isDataId(firstCell)) {
+      // Это заголовок — определяем индексы колонок
+      if (!headerFound) {
+        const ci = (pat: RegExp) => cols.findIndex(c => pat.test(c.toLowerCase()));
+        const idC    = ci(/идентификатор выработ|^ид выраб|^id/);
+        const fromC  = ci(/начального|начальн|нач.*узл|from|start/);
+        const toC    = ci(/конечного|конечн|кон.*узл|to\b|end/);
+        const nameC  = ci(/название|назван|name/);
+        const lenC   = ci(/длина|длин|length/);
+        const typeC  = ci(/тип выраб|^тип|type/);
+        const areaC  = ci(/площадь|сечени|area/);
+        const perimC = ci(/периметр|perim/);
+        const flowC  = ci(/расход|flow/);
+        const resC   = ci(/сопротивл|resist/);
+        const layerC = ci(/слой|layer/);
+        if (idC >= 0) colIdx.id = idC;
+        if (fromC >= 0) colIdx.from = fromC;
+        if (toC >= 0) colIdx.to = toC;
+        if (nameC >= 0) colIdx.name = nameC;
+        if (lenC >= 0) colIdx.len = lenC;
+        if (typeC >= 0) colIdx.type = typeC;
+        if (areaC >= 0) colIdx.area = areaC;
+        if (perimC >= 0) colIdx.perim = perimC;
+        if (flowC >= 0) colIdx.flow = flowC;
+        if (resC >= 0) colIdx.res = resC;
+        if (layerC >= 0) colIdx.layer = layerC;
+        headerFound = true;
+      }
       continue;
     }
 
-    const id = cols[colIdx.id]?.trim();
-    if (!id || !/^\d/.test(id)) continue;
-
     result.push({
-      id,
-      fromId:     cols[colIdx.from]?.trim() ?? "",
-      toId:       cols[colIdx.to]?.trim() ?? "",
-      name:       cols[colIdx.name]?.trim() ?? "",
-      length:     parseNum(cols[colIdx.len]),
-      typeName:   cols[colIdx.type]?.trim() ?? "",
-      area:       parseNum(cols[colIdx.area]),
-      perimeter:  parseNum(cols[colIdx.perim]),
-      flow:       parseNum(cols[colIdx.flow]),
-      resistance: parseNum(cols[colIdx.res]),
-      layer:      cols[colIdx.layer]?.trim() || "Выработки",
+      id:         cleanId(firstCell),
+      fromId:     cleanId(cols[colIdx.from] ?? ""),
+      toId:       cleanId(cols[colIdx.to] ?? ""),
+      name:       cols[colIdx.name] ?? "",
+      length:     parseNumSci(cols[colIdx.len]),
+      typeName:   cols[colIdx.type] ?? "",
+      area:       parseNumSci(cols[colIdx.area]),
+      perimeter:  parseNumSci(cols[colIdx.perim]),
+      flow:       parseNumSci(cols[colIdx.flow]),
+      resistance: parseNumSci(cols[colIdx.res]),
+      layer:      cols[colIdx.layer] || "Выработки",
     });
   }
   return result;
@@ -181,8 +196,9 @@ function buildResult(
       x: Math.round(rn.x * 10) / 10,
       y: Math.round(rn.y * 10) / 10,
       z: Math.round(rn.z * 10) / 10,
-      number: rn.id.padStart(3, "0"),
-      name: rn.id,
+      // UUID → короткий номер для отображения (последние 4 символа)
+      number: rn.id.includes("-") ? rn.id.slice(-4).toUpperCase() : rn.id.padStart(3, "0"),
+      name: rn.id.includes("-") ? rn.id.slice(-8) : rn.id,
       atmosphereLink: rn.isAtm,
     }));
   }
