@@ -221,29 +221,94 @@ export function parseExcel(buffer: ArrayBuffer): ExcelImportResult {
     if (b.toId > 0   && !depthMap.has(b.toId)   && b.zTo   !== 0) depthMap.set(b.toId,   b.zTo);
   }
 
-  // Авторасположение узлов по кругу / сетке (X/Y нет в данных)
-  // Используем force-directed простой алгоритм: узлы по кругу, соединённые ближе
+  // ── Force-directed layout для X/Y ────────────────────────────────────────
+  // Начальное положение — по кругу. Затем итеративно двигаем:
+  //   - притяжение вдоль ветвей (spring): узлы стремятся быть на расстоянии длины ветви
+  //   - отталкивание всех от всех (repulsion): узлы не накладываются
   const ts = Date.now();
   const nodeArr = [...nodeIds].sort((a, b2) => a - b2);
-  const n = nodeArr.length;
-  const R = Math.max(50, n * 8);  // радиус круга в метрах
+  const N = nodeArr.length;
 
-  const nodeMap = new Map<number, TopoNode>();
+  // Начальные позиции — по кругу с радиусом пропорциональным числу узлов
+  const R0 = Math.max(100, N * 5);
+  const pos = new Map<number, { x: number; y: number }>();
   nodeArr.forEach((id, i) => {
-    const angle = (2 * Math.PI * i) / n;
+    pos.set(id, {
+      x: R0 * Math.cos((2 * Math.PI * i) / N),
+      y: R0 * Math.sin((2 * Math.PI * i) / N),
+    });
+  });
+
+  // Строим список рёбер для layout (из rawBranches)
+  const edges: Array<{ a: number; b: number; len: number }> = [];
+  for (const rb of rawBranches) {
+    if (rb.fromId > 0 && rb.toId > 0 && pos.has(rb.fromId) && pos.has(rb.toId)) {
+      edges.push({ a: rb.fromId, b: rb.toId, len: Math.max(1, rb.length) });
+    }
+  }
+
+  // Итеративный force-directed (упрощённый Fruchterman-Reingold)
+  // Для больших сетей уменьшаем итерации чтобы не тормозить браузер
+  const ITERS = N > 200 ? 30 : N > 100 ? 50 : 80;
+  const k = Math.sqrt((R0 * R0 * 4) / Math.max(N, 1));  // идеальное расстояние
+  let temp = R0 * 0.5;  // начальная «температура»
+
+  for (let iter = 0; iter < ITERS; iter++) {
+    const disp = new Map<number, { dx: number; dy: number }>();
+    for (const id of nodeArr) disp.set(id, { dx: 0, dy: 0 });
+
+    // Отталкивание
+    for (let i = 0; i < nodeArr.length; i++) {
+      for (let j = i + 1; j < nodeArr.length; j++) {
+        const u = nodeArr[i], v = nodeArr[j];
+        const pu = pos.get(u)!, pv = pos.get(v)!;
+        const dx = pu.x - pv.x, dy = pu.y - pv.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const force = (k * k) / dist;
+        const du = disp.get(u)!, dv = disp.get(v)!;
+        du.dx += (dx / dist) * force; du.dy += (dy / dist) * force;
+        dv.dx -= (dx / dist) * force; dv.dy -= (dy / dist) * force;
+      }
+    }
+
+    // Притяжение по рёбрам
+    for (const e of edges) {
+      const pu = pos.get(e.a)!, pv = pos.get(e.b)!;
+      const dx = pu.x - pv.x, dy = pu.y - pv.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      // Целевое расстояние: длина ветви, масштаб ~1м→1px
+      const target = Math.min(e.len, k * 2);
+      const force = (dist - target) / dist;
+      const du = disp.get(e.a)!, dv = disp.get(e.b)!;
+      du.dx -= dx * force * 0.5; du.dy -= dy * force * 0.5;
+      dv.dx += dx * force * 0.5; dv.dy += dy * force * 0.5;
+    }
+
+    // Применяем смещения с ограничением по температуре
+    for (const id of nodeArr) {
+      const p = pos.get(id)!, d = disp.get(id)!;
+      const dlen = Math.sqrt(d.dx * d.dx + d.dy * d.dy) || 1;
+      p.x += (d.dx / dlen) * Math.min(dlen, temp);
+      p.y += (d.dy / dlen) * Math.min(dlen, temp);
+    }
+    temp *= 0.92;  // охлаждение
+  }
+
+  // Строим узлы с финальными координатами
+  const nodeMap = new Map<number, TopoNode>();
+  for (const id of nodeArr) {
+    const p = pos.get(id)!;
     const depth = depthMap.get(id) ?? 0;
-    // Z = -depth (глубина → отрицательная координата Z)
     const z = depth > 0 ? -depth : depth;
     const num = String(id).padStart(3, "0");
-    const node = makeNode(`N${ts}_${id}`, {
-      x: Math.round(R * Math.cos(angle) * 10) / 10,
-      y: Math.round(R * Math.sin(angle) * 10) / 10,
+    nodeMap.set(id, makeNode(`N${ts}_${id}`, {
+      x: Math.round(p.x * 10) / 10,
+      y: Math.round(p.y * 10) / 10,
       z: Math.round(z * 10) / 10,
       number: num,
       name: `${id}`,
-    });
-    nodeMap.set(id, node);
-  });
+    }));
+  }
 
   const nodesWithZ = [...nodeMap.values()].filter(n2 => n2.z !== 0).length;
 
