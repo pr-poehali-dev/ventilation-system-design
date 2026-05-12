@@ -18,6 +18,8 @@ import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
 import { type ExcelImportResult } from "@/lib/excelImport";
+import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
+import { type CombinedImportResult } from "@/lib/combinedImport";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -427,6 +429,22 @@ export default function CadPage() {
   // ─── DXF ИМПОРТ ─────────────────────────────────────────────────────
   const [showDxfImport, setShowDxfImport] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
+  const [showCombinedImport, setShowCombinedImport] = useState(false);
+
+  const handleCombinedImport = (result: CombinedImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSelectedNodeId(null);
+      setSelectedBranchId(null);
+    } else {
+      setNodes((prev) => [...prev, ...result.nodes]);
+      setBranches((prev) => [...prev, ...result.branches]);
+    }
+    setImportNonce((n) => n + 1);
+    setShowCombinedImport(false);
+    setActiveRibbon("home");
+  };
 
   const handleExcelImport = (result: ExcelImportResult, mode: "replace" | "append") => {
     if (mode === "replace") {
@@ -847,12 +865,13 @@ export default function CadPage() {
                   <>
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Добавить схему из файла</div>
                     {[
-                      { icon: "FileJson" as const, label: "Добавить схему из файла", ext: ".vproj / .json", action: "json" },
-                      { icon: "Code" as const,     label: "Добавить схему из XML",   ext: ".xml",           action: "xml" },
-                      { icon: "Pencil" as const,   label: "Добавить схему из DXF",   ext: ".dxf",           action: "dxf" },
-                      { icon: "FileText" as const, label: "Добавить схему из CSV",   ext: ".csv",           action: "csv" },
-                      { icon: "FileText" as const, label: "Добавить схему из TXT",   ext: ".txt",           action: "txt" },
-                      { icon: "Table" as const,    label: "Добавить таблицу из Excel", ext: ".xlsx",        action: "xlsx" },
+                      { icon: "FileJson" as const,    label: "Добавить схему из файла",        ext: ".vproj / .json", action: "json" },
+                      { icon: "Code" as const,        label: "Добавить схему из XML",           ext: ".xml",           action: "xml"  },
+                      { icon: "Pencil" as const,      label: "Добавить схему из DXF",           ext: ".dxf",           action: "dxf"  },
+                      { icon: "Table" as const,       label: "Добавить таблицу из Excel",       ext: ".xlsx",          action: "xlsx" },
+                      { icon: "Layers" as const,      label: "DXF + Excel (Вентиляция 2.0)",   ext: "два файла",      action: "combined", highlight: true },
+                      { icon: "FileText" as const,    label: "Добавить схему из CSV",           ext: ".csv",           action: "csv"  },
+                      { icon: "FileText" as const,    label: "Добавить схему из TXT",           ext: ".txt",           action: "txt"  },
                     ].map((item) => (
                       <button key={item.label}
                         className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 group"
@@ -863,6 +882,9 @@ export default function CadPage() {
                           } else if (item.action === "xlsx") {
                             setShowExcelImport(true);
                             setActiveRibbon("home");
+                          } else if (item.action === "combined") {
+                            setShowCombinedImport(true);
+                            setActiveRibbon("home");
                           } else {
                             const inp = document.createElement("input");
                             inp.type = "file"; inp.accept = item.ext;
@@ -870,14 +892,21 @@ export default function CadPage() {
                             setActiveRibbon("home");
                           }
                         }}>
-                        <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400"
-                          style={{ background: item.action === "dxf" ? "#dbeafe" : "#fff", borderColor: item.action === "dxf" ? "#93c5fd" : "" }}>
+                        <div className="w-8 h-8 flex items-center justify-center rounded border group-hover:border-blue-400"
+                          style={{
+                            background: item.action === "combined" ? "#ede9fe" : item.action === "dxf" ? "#dbeafe" : "#fff",
+                            borderColor: item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "#d1d5db",
+                          }}>
                           <Icon name={item.icon} size={18} />
                         </div>
                         <div>
-                          <div className="text-[12px] font-medium text-gray-800">{item.label}</div>
+                          <div className="text-[12px] font-medium" style={{ color: item.action === "combined" ? "#5b21b6" : "#1f2937" }}>
+                            {item.label}
+                          </div>
                           <div className="text-[10px] text-gray-400">
-                            {item.action === "dxf" ? "✓ Реализовано (НаноКАД, АэроСеть, AutoCAD)" : item.ext}
+                            {item.action === "combined" ? "✓ DXF координаты + Excel параметры и глубины"
+                            : item.action === "dxf" ? "✓ НаноКАД, АэроСеть, AutoCAD"
+                            : item.ext}
                           </div>
                         </div>
                       </button>
@@ -2039,6 +2068,14 @@ export default function CadPage() {
       <ExcelImportDialog
         onImport={handleExcelImport}
         onClose={() => setShowExcelImport(false)}
+      />
+    )}
+
+    {/* ═══ КОМБИНИРОВАННЫЙ ИМПОРТ DXF + EXCEL ════════════════════════════ */}
+    {showCombinedImport && (
+      <CombinedImportDialog
+        onImport={handleCombinedImport}
+        onClose={() => setShowCombinedImport(false)}
       />
     )}
     </>
