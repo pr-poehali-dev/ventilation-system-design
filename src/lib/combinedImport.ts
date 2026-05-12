@@ -40,32 +40,42 @@ export function combineImports(
   // Excel-узлы: number = "001", "002"... name = "1", "2"...
   // DXF-узлы: number = "001"..., x/y из координат
 
-  // Строим карту DXF-узлов по номеру
-  const dxfByNumber = new Map<string, TopoNode>();
+  // Строим карту DXF-узлов по всем вариантам ключа:
+  // number ("001"), name ("1"), number без нулей ("1")
+  const dxfByKey = new Map<string, TopoNode>();
   for (const n of dxfResult.nodes) {
-    const num = n.number.replace(/^0+/, "") || "0";  // "001" → "1"
-    dxfByNumber.set(num, n);
-    dxfByNumber.set(n.number, n);  // тоже "001"
+    const noLeadZero = n.number.replace(/^0+/, "") || "0";
+    dxfByKey.set(n.number, n);       // "001"
+    dxfByKey.set(noLeadZero, n);     // "1"
+    dxfByKey.set(n.name, n);         // "Узел 001" или просто "1" (имя из DXF)
+    // Также извлекаем число из имени: "Узел 42" → "42"
+    const nameNum = n.name.replace(/[^0-9]/g, "");
+    if (nameNum) dxfByKey.set(nameNum, n);
   }
 
-  // Строим карту Excel-узлов по номеру
-  const excelByNumber = new Map<string, TopoNode>();
+  // Строим карту Excel-узлов (для обратного поиска)
+  const excelByKey = new Map<string, TopoNode>();
   for (const n of excelResult.nodes) {
-    const num = n.number.replace(/^0+/, "") || "0";
-    excelByNumber.set(num, n);
-    excelByNumber.set(n.number, n);
+    const noLeadZero = n.number.replace(/^0+/, "") || "0";
+    excelByKey.set(n.number, n);
+    excelByKey.set(noLeadZero, n);
+    excelByKey.set(n.name, n);
   }
+
+  warnings.push(`DXF узлов: ${dxfResult.nodes.length}, Excel узлов: ${excelResult.nodes.length}`);
 
   // ── Шаг 2: Сшиваем узлы ─────────────────────────────────────────────────
-  // Для каждого Excel-узла ищем DXF-узел с тем же номером → берём X/Y из DXF, Z из Excel
   let nodesWithXY = 0;
   let nodesWithZ = 0;
 
   const mergedNodes = new Map<string, TopoNode>();  // ключ = Excel node id
 
   for (const exNode of excelResult.nodes) {
-    const num = exNode.number.replace(/^0+/, "") || "0";
-    const dxfNode = dxfByNumber.get(num) ?? dxfByNumber.get(exNode.number);
+    const noLeadZero = exNode.number.replace(/^0+/, "") || "0";
+    // Пробуем разные ключи: number, number без нулей, name
+    const dxfNode = dxfByKey.get(noLeadZero)
+      ?? dxfByKey.get(exNode.number)
+      ?? dxfByKey.get(exNode.name);
 
     const x = dxfNode ? dxfNode.x : exNode.x;
     const y = dxfNode ? dxfNode.y : exNode.y;
@@ -123,10 +133,18 @@ export function combineImports(
 
   const nodes = [...mergedNodes.values()];
 
+  // Диагностика сшивки
+  const sampleDxf = dxfResult.nodes.slice(0, 5).map(n => `${n.number}(name="${n.name}")`).join(", ");
+  const sampleExcel = excelResult.nodes.slice(0, 5).map(n => `${n.number}(name="${n.name}")`).join(", ");
+  warnings.push(`Примеры DXF узлов: ${sampleDxf}`);
+  warnings.push(`Примеры Excel узлов: ${sampleExcel}`);
+
   if (nodesWithXY === 0) {
     warnings.push(
-      "⚠ Ни один узел Excel не совпал с узлами DXF по номеру. " +
-      "Убедитесь что нумерация узлов совпадает в обоих файлах."
+      "⚠ Ни один узел не сопоставлен. " +
+      `DXF узлы: number="${dxfResult.nodes[0]?.number}", name="${dxfResult.nodes[0]?.name}". ` +
+      `Excel узлы: number="${excelResult.nodes[0]?.number}", name="${excelResult.nodes[0]?.name}". ` +
+      "Нумерация должна совпадать."
     );
   }
 
