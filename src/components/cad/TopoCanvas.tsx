@@ -905,53 +905,65 @@ export default function TopoCanvas(props: Props) {
               )}
               {view.scale > 0.12 && (() => {
                 const ic = infoConfig;
-                const lines: string[] = [];
+                // Порядковый номер ветви (1, 2, 3...) из ID вида "B1"
+                const branchNum = b.id.replace(/^B/, "");
+                const hasCalc = Q > 0 || b.velocity > 0;
+
+                // Кружок с номером ветви — всегда (если branchNumber включён или нет infoConfig)
+                const showCircle = !ic || ic.branchNumber;
+                const circleR = 10;
+
+                // Метки параметров после расчёта (Q и V) — рядом с ветвью, не при клике
+                const dataLines: string[] = [];
                 if (ic) {
-                  if (ic.branchNumber) lines.push(`№${b.id}`);
-                  if (ic.branchName && b.type) lines.push(b.type);
-                  if (ic.branchLength) lines.push(`L=${len}м`);
-                  if (ic.branchAngle) {
-                    const ang = b.angle ?? 0;
-                    lines.push(`A=${ang.toFixed(1)}°`);
-                  }
-                  if (ic.branchSection) lines.push(`S=${b.area.toFixed(1)}м²`);
-                  if (ic.branchResistance) lines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
-                  if (ic.branchVelocity) lines.push(`V=${b.velocity.toFixed(1)}м/с${overV ? "⚠" : ""}`);
-                  if (ic.branchFlow || ic.branchFlowCalc) lines.push(`Q=${Q.toFixed(1)}м³/с`);
-                  if (ic.branchDepression) lines.push(`Н=${(b.dP / 10).toFixed(1)}даПа`);
-                } else if (!is3D) {
-                  lines.push(`${b.id} · ${len}м`);
-                  if (Q > 0) lines.push(`Q=${Q.toFixed(1)}м³/с`);
+                  if (ic.branchName && b.type) dataLines.push(b.type);
+                  if (ic.branchLength) dataLines.push(`L=${len}м`);
+                  if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
+                  if (ic.branchSection) dataLines.push(`S=${b.area.toFixed(1)}м²`);
+                  if (ic.branchResistance) dataLines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
+                  if (ic.branchVelocity && hasCalc) dataLines.push(`V=${b.velocity.toFixed(1)}м/с${overV ? "⚠" : ""}`);
+                  if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Q.toFixed(1)}м³/с`);
+                  if (ic.branchDepression && hasCalc) dataLines.push(`Н=${(b.dP / 10).toFixed(1)}даПа`);
+                } else if (hasCalc) {
+                  // Без infoConfig: только результаты расчёта компактно
+                  dataLines.push(`Q=${Q.toFixed(1)}`);
+                  if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
                 }
-                if (lines.length === 0) {
-                  if (is3D && isSel) {
-                    return (
-                      <g transform={`translate(${midX},${midY})`}>
-                        <rect x={-26} y={-9} width={52} height={14} rx="2"
-                          fill="white" stroke="#2563eb" strokeWidth="0.8" />
-                        <text textAnchor="middle" dominantBaseline="middle"
-                          fontSize="9" fontWeight="600" fill="#2563eb">{b.id}</text>
-                      </g>
-                    );
-                  }
-                  return null;
-                }
+
                 const lh = 10;
-                const bh = lines.length * lh + 4;
-                const bw = Math.max(60, lines.reduce((mx, s) => Math.max(mx, s.length * 5.5), 0) + 8);
+                const bh = dataLines.length * lh + 4;
+                const bwBox = Math.max(44, dataLines.reduce((mx, s) => Math.max(mx, s.length * 5.2), 0) + 8);
+                // Смещение: кружок влево от середины, данные справа
+                const offsetY = -16;
+
                 return (
                   <g transform={`translate(${midX},${midY})`}>
-                    <rect x={-bw / 2} y={-bh / 2} width={bw} height={bh} rx="2"
-                      fill="white" stroke={isSel ? "#2563eb" : "#9ca3af"} strokeWidth="0.8" opacity="0.92" />
-                    {lines.map((ln, li) => (
-                      <text key={li} textAnchor="middle" dominantBaseline="middle"
-                        y={-bh / 2 + lh * (li + 0.6)}
-                        fontSize="9"
-                        fontWeight={li === 0 ? 400 : 600}
-                        fill={ln.startsWith("Q=") && overV ? "#dc2626" : ln.startsWith("V=") && overV ? "#dc2626" : "#1f2937"}>
-                        {ln}
-                      </text>
-                    ))}
+                    {showCircle && (
+                      <g transform={`translate(0,${offsetY})`}>
+                        <circle r={circleR} fill="white" stroke={isSel ? "#2563eb" : "#374151"} strokeWidth={isSel ? 1.5 : 1} />
+                        <text textAnchor="middle" dominantBaseline="middle"
+                          fontSize={branchNum.length > 2 ? "7" : "9"}
+                          fontWeight="600"
+                          fill={isSel ? "#2563eb" : "#111827"}>
+                          {branchNum}
+                        </text>
+                      </g>
+                    )}
+                    {dataLines.length > 0 && (
+                      <g transform={`translate(${circleR + 4 + bwBox / 2},${offsetY})`}>
+                        <rect x={-bwBox / 2} y={-bh / 2} width={bwBox} height={bh} rx="2"
+                          fill="white" stroke="#d1d5db" strokeWidth="0.7" opacity="0.93" />
+                        {dataLines.map((ln, li) => (
+                          <text key={li} textAnchor="middle" dominantBaseline="middle"
+                            y={-bh / 2 + lh * (li + 0.6)}
+                            fontSize="8.5"
+                            fontWeight="500"
+                            fill={overV ? "#dc2626" : "#1f2937"}>
+                            {ln}
+                          </text>
+                        ))}
+                      </g>
+                    )}
                   </g>
                 );
               })()}
