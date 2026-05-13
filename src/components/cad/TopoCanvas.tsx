@@ -538,22 +538,16 @@ export default function TopoCanvas(props: Props) {
     const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
     const factor = delta > 0 ? 1 / 1.12 : 1.12;
     setView((v) => {
-      // Ограничиваем scale: не крупнее 50px/м и не мельче 0.002
-      const newScale = Math.max(0.002, Math.min(50, v.scale * factor));
-      // Мировые координаты точки под курсором (до зума)
+      const newScale = Math.max(0.002, Math.min(500, v.scale * factor));
+      // Мировые координаты точки под курсором — вычисляем по СТАРОМУ scale
       const wx = (px - v.offsetX) / v.scale;
       const wy = (py - v.offsetY) / v.scale;
-      // Новое смещение — точка (wx,wy) остаётся под курсором
-      const newOX = px - wx * newScale;
-      const newOY = py - wy * newScale;
-      // Ограничиваем смещение: схема не может уйти дальше 5×размера экрана
-      const limitX = Math.max(rect.width, rect.height) * 5;
-      const limitY = limitX;
+      // Новый offset: точка (wx,wy) остаётся ровно под курсором
       return {
         ...v,
         scale: newScale,
-        offsetX: Math.max(-limitX, Math.min(limitX + rect.width, newOX)),
-        offsetY: Math.max(-limitY, Math.min(limitY + rect.height, newOY)),
+        offsetX: px - wx * newScale,
+        offsetY: py - wy * newScale,
       };
     });
   };
