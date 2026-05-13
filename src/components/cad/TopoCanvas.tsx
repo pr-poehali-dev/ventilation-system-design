@@ -534,20 +534,26 @@ export default function TopoCanvas(props: Props) {
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
-    // Нормализуем deltaY: trackpad даёт маленькие значения, мышь — большие (100-120)
     const raw = e.deltaY;
     const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
-    // Небольшой постоянный шаг независимо от скорости прокрутки
     const factor = delta > 0 ? 1 / 1.12 : 1.12;
     setView((v) => {
-      const newScale = Math.max(0.001, Math.min(200, v.scale * factor));
+      // Ограничиваем scale: не крупнее 50px/м и не мельче 0.002
+      const newScale = Math.max(0.002, Math.min(50, v.scale * factor));
+      // Мировые координаты точки под курсором (до зума)
       const wx = (px - v.offsetX) / v.scale;
       const wy = (py - v.offsetY) / v.scale;
+      // Новое смещение — точка (wx,wy) остаётся под курсором
+      const newOX = px - wx * newScale;
+      const newOY = py - wy * newScale;
+      // Ограничиваем смещение: схема не может уйти дальше 5×размера экрана
+      const limitX = Math.max(rect.width, rect.height) * 5;
+      const limitY = limitX;
       return {
         ...v,
         scale: newScale,
-        offsetX: px - wx * newScale,
-        offsetY: py - wy * newScale,
+        offsetX: Math.max(-limitX, Math.min(limitX + rect.width, newOX)),
+        offsetY: Math.max(-limitY, Math.min(limitY + rect.height, newOY)),
       };
     });
   };
@@ -782,13 +788,31 @@ export default function TopoCanvas(props: Props) {
           const V = b.velocity;
           const overV = V > b.vMax;
           // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
-          // Приоритет: выделена → авария → вентилятор → горизонт (если включён) → поток.
+          // Градиент по скорости: 0 м/с=серый → 3=синий → 8=зелёный → 15=жёлтый → 25+=красный
+          const velocityColor = (v: number): string => {
+            if (v <= 0) return "#9ca3af";
+            const stops = [
+              { v: 0,  r: 156, g: 163, b: 175 }, // серый
+              { v: 3,  r: 59,  g: 130, b: 246 }, // синий
+              { v: 8,  r: 16,  g: 185, b: 129 }, // зелёный
+              { v: 15, r: 234, g: 179, b: 8   }, // жёлтый
+              { v: 25, r: 239, g: 68,  b: 68  }, // красный
+            ];
+            let lo = stops[0], hi = stops[stops.length - 1];
+            for (let i = 0; i < stops.length - 1; i++) {
+              if (v >= stops[i].v && v <= stops[i + 1].v) { lo = stops[i]; hi = stops[i + 1]; break; }
+            }
+            const t = lo.v === hi.v ? 1 : Math.min(1, (v - lo.v) / (hi.v - lo.v));
+            const r = Math.round(lo.r + (hi.r - lo.r) * t);
+            const g = Math.round(lo.g + (hi.g - lo.g) * t);
+            const bl = Math.round(lo.b + (hi.b - lo.b) * t);
+            return `rgb(${r},${g},${bl})`;
+          };
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
             : overV ? "#dc2626"
-            : b.hasFan ? "#7c3aed"
             : (colorByHorizon && horizonColor) ? horizonColor
-            : Q > 0 ? "#0369a1"
+            : Q > 0 ? velocityColor(V)
             : "#9ca3af";
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
