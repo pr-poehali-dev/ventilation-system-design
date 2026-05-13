@@ -170,28 +170,20 @@ export default function TopoCanvas(props: Props) {
   useEffect(() => { setBranchFrom(null); }, [tool]);
 
   // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
-  // Флаг для предотвращения цикла: scaleOverride → setView → onScaleChange → scaleOverride
-  const externalScaleUpdate = useRef(false);
+  // scaleOverride используется ТОЛЬКО для внешних команд (ввод в поле, fitToScreen).
+  // Wheel-зум работает полностью внутри и не синхронизируется с родителем.
+  const prevScaleOverride = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (scaleOverride === undefined) return;
+    // Реагируем только если значение реально изменилось снаружи
+    if (prevScaleOverride.current === scaleOverride) return;
+    prevScaleOverride.current = scaleOverride;
     setView((v) => {
       if (Math.abs(scaleOverride - v.scale) < 1e-6) return v;
-      externalScaleUpdate.current = true;
       return { ...v, scale: scaleOverride };
     });
-     
   }, [scaleOverride]);
-
-  // Сообщаем наверх изменение масштаба — только если инициировано внутри (не от scaleOverride).
-  useEffect(() => {
-    if (externalScaleUpdate.current) {
-      externalScaleUpdate.current = false;
-      return;
-    }
-    if (onScaleChange) onScaleChange(view.scale);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.scale]);
 
   // ─── ВПИСАТЬ ВСЮ СЕТЬ В ЭКРАН ───────────────────────────────────────
   // Реагируем на смену nonce из родителя — пересчитываем scale и offset так,
@@ -539,16 +531,18 @@ export default function TopoCanvas(props: Props) {
     const factor = delta > 0 ? 1 / 1.12 : 1.12;
     setView((v) => {
       const newScale = Math.max(0.002, Math.min(500, v.scale * factor));
-      // Мировые координаты точки под курсором — вычисляем по СТАРОМУ scale
       const wx = (px - v.offsetX) / v.scale;
       const wy = (py - v.offsetY) / v.scale;
-      // Новый offset: точка (wx,wy) остаётся ровно под курсором
-      return {
+      const newView = {
         ...v,
         scale: newScale,
         offsetX: px - wx * newScale,
         offsetY: py - wy * newScale,
       };
+      // Обновляем поле масштаба в тулбаре — без цикла, т.к. prevScaleOverride не меняется
+      prevScaleOverride.current = newScale;
+      if (onScaleChange) onScaleChange(newScale);
+      return newView;
     });
   };
 
