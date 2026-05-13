@@ -75,13 +75,17 @@ interface Props {
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null }[];
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; scale?: number; label?: string }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */
   selectedSymbolId?: string | null;
   /** Перемещение символа */
   onSymbolMove?: (id: string, x: number, y: number) => void;
+  /** Масштаб символа (delta: +0.2 или -0.2) */
+  onSymbolScale?: (id: string, delta: number) => void;
+  /** Удаление символа */
+  onSymbolDelete?: (id: string) => void;
   /** Активный тип символа для инструмента "symbol" */
   activeSymbolTypeId?: string | null;
   /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь) */
@@ -115,6 +119,7 @@ export default function TopoCanvas(props: Props) {
     selectedBranchIds, onBranchMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
+    onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
   } = props;
 
@@ -968,7 +973,6 @@ export default function TopoCanvas(props: Props) {
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           if (!lt) return null;
 
-          // Если символ привязан к ветви — позиция всегда по середине ветви
           let px: number, py: number;
           if (sym.branchId) {
             const br = branches.find(b => b.id === sym.branchId);
@@ -987,17 +991,24 @@ export default function TopoCanvas(props: Props) {
           }
 
           const isSel = selectedSymbolId === sym.id;
-          const SZ = 32; // px, фиксированный
+          const sc = sym.scale ?? 1;
+          const SZ = Math.round(32 * sc);
           const HX = px - SZ / 2;
-          const HY = py - SZ / 2 - 4; // немного выше середины ветви
+          const HY = py - SZ / 2 - 4;
 
           return (
             <g key={sym.id}
-              style={{ cursor: tool === "select" ? "pointer" : undefined }}
+              style={{ cursor: tool === "select" ? (sym.branchId ? "pointer" : "move") : undefined }}
               onClick={(e) => {
                 if (tool !== "select") return;
                 e.stopPropagation();
                 onSelectSymbol?.(isSel ? null : sym.id);
+              }}
+              onContextMenu={(e) => {
+                if (tool !== "select") return;
+                e.preventDefault();
+                e.stopPropagation();
+                onSelectSymbol?.(sym.id);
               }}
               onMouseDown={(e) => {
                 if (e.button !== 0 || tool !== "select" || sym.branchId) return;
@@ -1016,21 +1027,38 @@ export default function TopoCanvas(props: Props) {
                 window.addEventListener("mousemove", onMove);
                 window.addEventListener("mouseup", onUp);
               }}>
-              {/* Рамка выделения */}
+              {/* Рамка выделения + кнопки управления */}
               {isSel && (
-                <rect x={HX - 3} y={HY - 3} width={SZ + 6} height={SZ + 6}
-                  fill="none" stroke="#2563eb" strokeWidth="1.5"
-                  strokeDasharray="3 2" rx="3" />
+                <>
+                  <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
+                    fill="none" stroke="#2563eb" strokeWidth="1.5"
+                    strokeDasharray="3 2" rx="3" />
+                  {/* Кнопка «+» масштаб */}
+                  <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onSymbolScale?.(sym.id, 0.2); }}>
+                    <rect x={HX + SZ + 2} y={HY - 4} width={14} height={14} rx="2" fill="#2563eb" />
+                    <text x={HX + SZ + 9} y={HY + 6} textAnchor="middle" fontSize="11" fill="white" fontWeight="bold">+</text>
+                  </g>
+                  {/* Кнопка «−» масштаб */}
+                  <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onSymbolScale?.(sym.id, -0.2); }}>
+                    <rect x={HX + SZ + 2} y={HY + 12} width={14} height={14} rx="2" fill="#64748b" />
+                    <text x={HX + SZ + 9} y={HY + 22} textAnchor="middle" fontSize="11" fill="white" fontWeight="bold">−</text>
+                  </g>
+                  {/* Кнопка «×» удалить */}
+                  <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onSymbolDelete?.(sym.id); }}>
+                    <rect x={HX + SZ + 2} y={HY + 28} width={14} height={14} rx="2" fill="#dc2626" />
+                    <text x={HX + SZ + 9} y={HY + 38} textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">×</text>
+                  </g>
+                </>
               )}
               {/* SVG-символ */}
               <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"
                 dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-              {/* Подпись под символом */}
-              {view.scale > 0.15 && (
-                <text x={px} y={HY + SZ + 10} textAnchor="middle"
-                  fontSize="9" fill="#374151" fontFamily="Segoe UI, sans-serif">
-                  {lt.name}
+              {/* Подпись: label (число людей) или название */}
+              {view.scale > 0.12 && (
+                <text x={px} y={HY + SZ + 11} textAnchor="middle"
+                  fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif">
+                  {sym.label ?? lt.name}
                 </text>
               )}
             </g>

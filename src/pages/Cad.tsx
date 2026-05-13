@@ -43,6 +43,8 @@ interface SchemaSymbol {
   x: number;        // мировые координаты
   y: number;
   branchId: string | null; // к какой ветви привязано (null = свободное)
+  scale?: number;   // масштаб (1 = по умолчанию)
+  label?: string;   // подпись (например "5 чел.")
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
@@ -429,14 +431,19 @@ export default function CadPage() {
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
-  const [symbolClipboard, setSymbolClipboard] = useState<string | null>(null); // id типа для вставки
+  const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
 
   const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
+  // Диалог ввода числа людей при размещении отделения
+  const [squadDialog, setSquadDialog] = useState<{ typeId: string; x: number; y: number; branchId: string | null } | null>(null);
+  const [squadCount, setSquadCount] = useState<string>("5");
 
-  const addSymbol = (typeId: string, x: number, y: number, branchId?: string | null) => {
+  const SQUAD_TYPES = ["squad_moving", "squad_working"];
+
+  const addSymbol = (typeId: string, x: number, y: number, branchId?: string | null, label?: string, scale?: number) => {
     const id = `SYM_${Date.now()}`;
-    setSchemaSymbols(prev => [...prev, { id, typeId, x, y, branchId: branchId ?? null }]);
+    setSchemaSymbols(prev => [...prev, { id, typeId, x, y, branchId: branchId ?? null, label, scale }]);
   };
   const removeSymbol = (id: string) => setSchemaSymbols(prev => prev.filter(s => s.id !== id));
 
@@ -794,21 +801,18 @@ export default function CadPage() {
         handleSave();
         return;
       }
-      // Ctrl+V — вставить условное обозначение из буфера в центр канваса
+      // Ctrl+V — вставить условное обозначение из буфера
       if (e.ctrlKey && e.key === "v" && !isEditing) {
         if (symbolClipboard) {
           e.preventDefault();
-          // Центр видимой области в мировых координатах
-          // viewScale — текущий масштаб (px/м), viewOffset — смещение
-          // Упрощённо вставляем в (0,0) если нет информации о viewport
-          addSymbol(symbolClipboard, 0, 0, selectedBranchId ?? undefined);
+          addSymbol(symbolClipboard.typeId, symbolClipboard.x + 5, symbolClipboard.y - 5, null, symbolClipboard.label, symbolClipboard.scale);
         }
         return;
       }
-      // Ctrl+C — скопировать выбранное обозначение (или последнее выбранное)
+      // Ctrl+C — скопировать выбранное обозначение
       if (e.ctrlKey && e.key === "c" && !isEditing && selectedSymbolId) {
         const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
-        if (sym) { e.preventDefault(); setSymbolClipboard(sym.typeId); }
+        if (sym) { e.preventDefault(); setSymbolClipboard(sym); }
         return;
       }
       // F6, F9 — всегда работают
@@ -841,10 +845,13 @@ export default function CadPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, branchesRaw]);
+  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard]);
 
   const handleDeleteSelected = () => {
-    if (selectedBranchId) {
+    if (selectedSymbolId) {
+      removeSymbol(selectedSymbolId);
+      setSelectedSymbolId(null);
+    } else if (selectedBranchId) {
       setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
       setSelectedBranchId(null);
     } else if (selectedNodeId) {
@@ -2324,11 +2331,18 @@ export default function CadPage() {
               selectedSymbolId={selectedSymbolId}
               onSelectSymbol={setSelectedSymbolId}
               onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
+              onSymbolScale={(id, delta) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, scale: Math.max(0.4, Math.min(4, (s.scale ?? 1) + delta)) } : s))}
+              onSymbolDelete={(id) => { removeSymbol(id); setSelectedSymbolId(null); }}
               activeSymbolTypeId={activeSymbolTypeId}
               onSymbolPlace={(typeId, x, y, branchId) => {
-                addSymbol(typeId, x, y, branchId);
-                setTool("select");
-                setActiveSymbolTypeId(null);
+                if (SQUAD_TYPES.includes(typeId)) {
+                  setSquadDialog({ typeId, x, y, branchId });
+                  setSquadCount("5");
+                } else {
+                  addSymbol(typeId, x, y, branchId);
+                  setTool("select");
+                  setActiveSymbolTypeId(null);
+                }
               }}
             />
 
@@ -2507,6 +2521,53 @@ export default function CadPage() {
     {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
     {showLegend && (
       <LegendDialog onClose={() => setShowLegend(false)} />
+    )}
+
+    {/* ═══ ДИАЛОГ: ЧИСЛО ЛЮДЕЙ В ОТДЕЛЕНИИ ════════════════════════════════ */}
+    {squadDialog && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
+        onClick={() => setSquadDialog(null)}>
+        <div className="flex flex-col shadow-2xl border border-gray-400"
+          style={{ width: 320, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+          onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
+            style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+            <span className="text-[12px] font-semibold text-gray-800">Число людей в отделении</span>
+            <button onClick={() => setSquadDialog(null)} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
+              <Icon name="X" size={12} />
+            </button>
+          </div>
+          <div className="p-4 flex flex-col gap-3">
+            <label className="text-[11px] text-gray-600">Количество человек:</label>
+            <input
+              autoFocus
+              type="number" min={1} max={99}
+              value={squadCount}
+              onChange={e => setSquadCount(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  const n = parseInt(squadCount) || 5;
+                  addSymbol(squadDialog.typeId, squadDialog.x, squadDialog.y, squadDialog.branchId, `${n} чел.`);
+                  setTool("select"); setActiveSymbolTypeId(null); setSquadDialog(null);
+                }
+                if (e.key === "Escape") setSquadDialog(null);
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-[13px] text-center w-full outline-none focus:border-blue-500" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setSquadDialog(null)}
+                className="h-7 px-3 text-[11px] border border-gray-300 rounded hover:bg-gray-100">Отмена</button>
+              <button onClick={() => {
+                const n = parseInt(squadCount) || 5;
+                addSymbol(squadDialog.typeId, squadDialog.x, squadDialog.y, squadDialog.branchId, `${n} чел.`);
+                setTool("select"); setActiveSymbolTypeId(null); setSquadDialog(null);
+              }}
+                className="h-7 px-3 text-[11px] rounded text-white" style={{ background: "#2563eb" }}>
+                Разместить
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     )}
     </>
   );
