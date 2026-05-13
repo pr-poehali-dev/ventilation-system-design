@@ -227,6 +227,48 @@ const ITEMS: LegendItem[] = [
       <circle cx={24} cy={20} r={3} fill="#2196f3" />
     </svg>,
   },
+  // ── ГОРНОСПАСАТЕЛИ ──
+  {
+    id: "ground_base", group: "Горноспасатели", name: "Наземная база",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <rect x={4} y={10} width={40} height={22} fill="none" stroke="#222" strokeWidth={2} />
+      <text x={24} y={26} textAnchor="middle" fontSize="13" fontWeight="bold" fill="#222">Н.Б</text>
+    </svg>,
+  },
+  {
+    id: "squad_moving", group: "Горноспасатели", name: "Отделение в движении",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <rect x={2} y={10} width={36} height={22} rx={2} fill="none" stroke="#222" strokeWidth={2} />
+      <text x={16} y={26} textAnchor="middle" fontSize="11" fontWeight="bold" fill="#222">5 чел.</text>
+      <polygon points="38,14 48,21 38,28" fill="#222" />
+    </svg>,
+  },
+  {
+    id: "squad_working", group: "Горноспасатели", name: "Отделение на месте работ",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <rect x={4} y={10} width={40} height={22} rx={2} fill="none" stroke="#222" strokeWidth={2} />
+      <text x={24} y={26} textAnchor="middle" fontSize="11" fontWeight="bold" fill="#222">5 чел.</text>
+    </svg>,
+  },
+  {
+    id: "positioning_reader", group: "Горноспасатели", name: "Считыватель позиционирования",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <circle cx={24} cy={20} r={17} fill="none" stroke="#222" strokeWidth={2} />
+      <path d="M 15 25 Q 24 10 33 25" fill="none" stroke="#1a1aff" strokeWidth={3} />
+      <path d="M 18 25 Q 24 14 30 25" fill="none" stroke="#1a1aff" strokeWidth={2.5} />
+      <path d="M 21 25 Q 24 18 27 25" fill="none" stroke="#1a1aff" strokeWidth={2} />
+      <circle cx={24} cy={26} r={2.5} fill="#111" />
+    </svg>,
+  },
+  {
+    id: "sound_alarm_rgs", group: "Горноспасатели", name: "Звуковая аварийная сигнализация",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <rect x={6} y={12} width={16} height={16} fill="none" stroke="#222" strokeWidth={1.5} />
+      <line x1={6} y1={20} x2={22} y2={20} stroke="#222" strokeWidth={1} />
+      <line x1={14} y1={12} x2={14} y2={28} stroke="#222" strokeWidth={1} />
+      <path d="M 22 13 L 42 6 L 42 34 L 22 27 Z" fill="none" stroke="#222" strokeWidth={1.5} />
+    </svg>,
+  },
 ];
 
 const GROUPS = [...new Set(ITEMS.map(i => i.group))];
