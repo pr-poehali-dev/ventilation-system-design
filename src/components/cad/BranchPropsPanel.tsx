@@ -682,43 +682,48 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               const renderChart = () => {
                 if (!curve) return null;
-                const qMin = curve.qMin, qMax = curve.qMax;
+                // Закон подобия: Q ~ n/n0, H ~ (n/n0)²
                 const k = rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
-                // Характеристики для нескольких углов лопаток (или одна кривая для центробежных)
+                // Масштабированные пределы оси X
+                const qMin = curve.qMin * k;
+                const qMax = curve.qMax * k;
+
                 const anglesToDraw = curve.bladeAngles.length > 0
                   ? curve.bladeAngles
                   : [bladeAngle];
 
-                // Шкала H: берём максимум среди всех кривых
+                // Угловой коэф. лопаток (линейная интерполяция по диапазону углов)
+                const angleFactor = (a: number) => {
+                  if (curve.bladeAngles.length < 2) return 1;
+                  const aMin = curve.bladeAngles[0];
+                  const aMax = curve.bladeAngles[curve.bladeAngles.length - 1];
+                  return 0.55 + 0.9 * (a - aMin) / Math.max(1, aMax - aMin);
+                };
+
+                // Шкала H: максимум по всем углам при номинальных оборотах * k²
                 let hMax = 0;
-                anglesToDraw.forEach(() => {
+                anglesToDraw.forEach(a => {
+                  const af = angleFactor(a);
                   for (let i = 0; i <= 20; i++) {
-                    const q = qMin + (qMax - qMin) * i / 20;
-                    const qn = q / k;
-                    const h = Math.max(0, curve.h0 + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
+                    const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 20;
+                    const h = Math.max(0, curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
                     if (h > hMax) hMax = h;
                   }
                 });
                 hMax = Math.ceil(hMax / 500) * 500 || 2000;
 
+                // Маппинг координат: Q в диапазоне [qMin..qMax] (уже масштабированных)
                 const tx = (q: number) => padL + (q - qMin) / (qMax - qMin) * gW;
-                const ty = (h: number) => padT + gH - (h / hMax) * gH;
-
-                // Угловой коэф. лопаток меняет h0 — имитируем сдвиг кривой
-                const angleFactor = (a: number) => {
-                  if (curve.bladeAngles.length === 0) return 1;
-                  const mid = curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)];
-                  return 0.6 + 0.8 * (a - curve.bladeAngles[0]) / (Math.max(1, curve.bladeAngles[curve.bladeAngles.length - 1] - curve.bladeAngles[0]));
-                  void mid;
-                };
+                const ty = (h: number) => padT + gH - Math.max(0, Math.min(1, h / hMax)) * gH;
 
                 const paths = anglesToDraw.map((a, ai) => {
                   const af = angleFactor(a);
                   const pts: string[] = [];
                   for (let i = 0; i <= 30; i++) {
-                    const q = qMin + (qMax - qMin) * i / 30;
-                    const qn = q / k;
-                    const h = Math.max(0, (curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn)) * k * k;
+                    // qn — номинальный расход, q — масштабированный (= qn * k)
+                    const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
+                    const q = qn * k;
+                    const h = Math.max(0, curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
                     pts.push(`${tx(q).toFixed(1)},${ty(h).toFixed(1)}`);
                   }
                   const isSelected = a === bladeAngle;

@@ -367,7 +367,7 @@ export default function CadPage() {
   const [vcSolving, setVcSolving] = useState(false);
   const [vcError, setVcError] = useState<string | null>(null);
   // Режим расчёта: local = TypeScript в браузере; server = Python VentCore
-  const [calcMode, setCalcMode] = useState<"local" | "server">("server");
+  const [calcMode, setCalcMode] = useState<"local" | "server">("local");
   // Включённые расчёты (в серверном режиме)
   const [calcFire, setCalcFire] = useState(false);
   const [calcMethane, setCalcMethane] = useState(false);
@@ -1434,12 +1434,27 @@ export default function CadPage() {
           <div className="flex items-stretch gap-1">
             <button onClick={handleSolve}
               className="flex flex-col items-center justify-center px-3 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[64px]"
-              title="Запустить расчёт сети методом контурных расходов (Кросса)">
+              title="Запустить расчёт сети (метод Кросса, F9)">
               <Icon name="Play" size={22} className="text-green-600" />
               <div className="text-[10px] leading-tight mt-0.5 text-center">
                 <div>Расчёт</div><div>сети</div>
               </div>
             </button>
+            <div className="flex flex-col justify-center gap-0.5 border-l border-gray-200 pl-1">
+              <div className="text-[9px] text-gray-400 leading-tight mb-0.5">Движок:</div>
+              {(["local", "server"] as const).map(m => (
+                <button key={m}
+                  onClick={() => setCalcMode(m)}
+                  className="text-[10px] px-1.5 py-0.5 rounded leading-tight text-left"
+                  style={{
+                    background: calcMode === m ? "#2563eb" : "transparent",
+                    color: calcMode === m ? "white" : "#374151",
+                    border: calcMode === m ? "1px solid #1d4ed8" : "1px solid #d1d5db",
+                  }}>
+                  {m === "local" ? "Кросс (JS)" : "VentCore (Py)"}
+                </button>
+              ))}
+            </div>
             <button onClick={() => { setBranches(DEMO_BRANCHES); setNodes(DEMO_NODES); setSolveResult(null); }}
               className="flex flex-col items-center justify-center px-3 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[64px]"
               title="Сбросить демо-сеть">
@@ -2363,13 +2378,18 @@ export default function CadPage() {
                   setSquadDialog({ typeId, x, y, branchId });
                   setSquadCount("5");
                 } else {
-                  addSymbol(typeId, x, y, branchId);
                   if (typeId === "fan" && branchId) {
-                    updateBranch(branchId, { hasFan: true, fanMode: "curve" });
-                    setSelectedBranchId(branchId);
-                    setSelectedNodeId(null);
-                    setActiveSide("params");
-                    setFanSymbolBranchId(branchId);
+                    const alreadyHasFan = schemaSymbols.some(s => s.typeId === "fan" && s.branchId === branchId);
+                    if (!alreadyHasFan) {
+                      addSymbol(typeId, x, y, branchId);
+                      updateBranch(branchId, { hasFan: true, fanMode: "curve" });
+                      setSelectedBranchId(branchId);
+                      setSelectedNodeId(null);
+                      setActiveSide("params");
+                      setFanSymbolBranchId(branchId);
+                    }
+                  } else {
+                    addSymbol(typeId, x, y, branchId);
                   }
                   setTool("select");
                   setActiveSymbolTypeId(null);

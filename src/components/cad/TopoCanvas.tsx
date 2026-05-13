@@ -896,7 +896,7 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {b.hasFan && (
+              {b.hasFan && !schemaSymbols.some(s => s.typeId === "fan" && s.branchId === b.id) && (
                 <g transform={`translate(${midX},${midY - 18})`}>
                   <circle r="8" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.2" />
                   <text textAnchor="middle" dominantBaseline="middle"
