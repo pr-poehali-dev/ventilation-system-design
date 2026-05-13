@@ -75,13 +75,17 @@ interface Props {
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; scale?: number; label?: string }[];
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; scale?: number; label?: string }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */
   selectedSymbolId?: string | null;
-  /** Перемещение символа */
+  /** Перемещение свободного символа */
   onSymbolMove?: (id: string, x: number, y: number) => void;
+  /** Перемещение символа вдоль ветви (t: 0..1) */
+  onSymbolMoveAlongBranch?: (id: string, t: number) => void;
+  /** Клик на символ (для открытия свойств) */
+  onSymbolClick?: (id: string) => void;
   /** Масштаб символа (delta: +0.2 или -0.2) */
   onSymbolScale?: (id: string, delta: number) => void;
   /** Удаление символа */
@@ -119,6 +123,7 @@ export default function TopoCanvas(props: Props) {
     selectedBranchIds, onBranchMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
+    onSymbolMoveAlongBranch, onSymbolClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
   } = props;
@@ -974,13 +979,19 @@ export default function TopoCanvas(props: Props) {
           if (!lt) return null;
 
           let px: number, py: number;
+          // Экранные координаты концов ветви (для drag вдоль ветви)
+          let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
+
           if (sym.branchId) {
             const br = branches.find(b => b.id === sym.branchId);
             const fN = br ? projNodes.find(p => p.node.id === br.fromId) : null;
             const tN = br ? projNodes.find(p => p.node.id === br.toId) : null;
             if (fN && tN) {
-              px = (fN.sx + tN.sx) / 2;
-              py = (fN.sy + tN.sy) / 2;
+              fsx = fN.sx; fsy = fN.sy; tsx2 = tN.sx; tsy2 = tN.sy;
+              hasBranchPts = true;
+              const t = sym.t ?? 0.5;
+              px = fsx + (tsx2 - fsx) * t;
+              py = fsy + (tsy2 - fsy) * t;
             } else {
               const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
               px = pt.sx; py = pt.sy;
@@ -998,11 +1009,12 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={sym.id}
-              style={{ cursor: tool === "select" ? (sym.branchId ? "pointer" : "move") : undefined }}
+              style={{ cursor: tool === "select" ? "move" : undefined }}
               onClick={(e) => {
                 if (tool !== "select") return;
                 e.stopPropagation();
                 onSelectSymbol?.(isSel ? null : sym.id);
+                onSymbolClick?.(sym.id);
               }}
               onContextMenu={(e) => {
                 if (tool !== "select") return;
@@ -1011,21 +1023,43 @@ export default function TopoCanvas(props: Props) {
                 onSelectSymbol?.(sym.id);
               }}
               onMouseDown={(e) => {
-                if (e.button !== 0 || tool !== "select" || sym.branchId) return;
+                if (e.button !== 0 || tool !== "select") return;
                 e.stopPropagation();
-                const startX = e.clientX, startY = e.clientY;
-                const origX = sym.x, origY = sym.y;
-                const onMove = (me: MouseEvent) => {
-                  const dx = (me.clientX - startX) / view.scale;
-                  const dy = -(me.clientY - startY) / view.scale;
-                  onSymbolMove?.(sym.id, origX + dx, origY + dy);
-                };
-                const onUp = () => {
-                  window.removeEventListener("mousemove", onMove);
-                  window.removeEventListener("mouseup", onUp);
-                };
-                window.addEventListener("mousemove", onMove);
-                window.addEventListener("mouseup", onUp);
+
+                if (sym.branchId && hasBranchPts) {
+                  // Drag вдоль ветви: проецируем позицию мыши на отрезок ветви
+                  const brLen2 = (tsx2 - fsx) ** 2 + (tsy2 - fsy) ** 2;
+                  const onMove = (me: MouseEvent) => {
+                    const rect = (e.currentTarget as SVGElement).closest("svg")!.getBoundingClientRect();
+                    const mx = me.clientX - rect.left;
+                    const my = me.clientY - rect.top;
+                    if (brLen2 < 1) return;
+                    const raw = ((mx - fsx) * (tsx2 - fsx) + (my - fsy) * (tsy2 - fsy)) / brLen2;
+                    const t = Math.max(0.05, Math.min(0.95, raw));
+                    onSymbolMoveAlongBranch?.(sym.id, t);
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                } else if (!sym.branchId) {
+                  // Свободный символ — обычный drag
+                  const startX = e.clientX, startY = e.clientY;
+                  const origX = sym.x, origY = sym.y;
+                  const onMove = (me: MouseEvent) => {
+                    const dx = (me.clientX - startX) / view.scale;
+                    const dy = -(me.clientY - startY) / view.scale;
+                    onSymbolMove?.(sym.id, origX + dx, origY + dy);
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }
               }}>
               {/* Рамка выделения + кнопки управления */}
               {isSel && (
