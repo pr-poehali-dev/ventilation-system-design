@@ -670,21 +670,7 @@ export default function TopoCanvas(props: Props) {
         {!is3D && view.scale < 0.5 && <rect width={size.w} height={size.h} fill="#f8f9fa" />}
         {is3D && renderGroundGrid()}
 
-        {/* Оси для 2D — тонкие сплошные линии, только если начало координат видно */}
-        {!is3D && view.offsetX > -50 && view.offsetX < size.w + 50 && (
-          <line x1={view.offsetX} y1={0} x2={view.offsetX} y2={size.h}
-            stroke="#22c55e" strokeWidth="0.7" opacity="0.35" />
-        )}
-        {!is3D && view.offsetY > -50 && view.offsetY < size.h + 50 && (
-          <line x1={0} y1={view.offsetY} x2={size.w} y2={view.offsetY}
-            stroke="#ef4444" strokeWidth="0.7" opacity="0.35" />
-        )}
-        {!is3D && view.scale > 0.3 && view.offsetX > 4 && view.offsetX < size.w - 10 && (
-          <text x={view.offsetX + 3} y={11} fontSize="9" fill="#22c55e" opacity="0.6">Y</text>
-        )}
-        {!is3D && view.scale > 0.3 && view.offsetY > 4 && view.offsetY < size.h - 4 && (
-          <text x={size.w - 14} y={view.offsetY - 3} fontSize="9" fill="#ef4444" opacity="0.6">X</text>
-        )}
+
 
         {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
 

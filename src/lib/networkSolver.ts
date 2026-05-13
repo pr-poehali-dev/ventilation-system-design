@@ -50,29 +50,41 @@ export interface SolveResult {
   cyclesCount: number;
 }
 
+// Коэффициент оборотов: k = n / n_nom. fanRpm=0 означает «не задано» → номинал
+function rpmFactor(fanRpm: number | undefined, rpmNominal: number): number {
+  if (!fanRpm || fanRpm <= 0 || rpmNominal <= 0) return 1;
+  return fanRpm / rpmNominal;
+}
+
+// Коэффициент угла лопаток для осевых вентиляторов.
+// Реальные паспортные данные: при изменении угла от min до max
+// напор меняется в ~2-3 раза (например ВОД-30: 25°→55°, H0 меняется от ~1200 до ~3600 Па)
+// Модель: af = (a - aMin) / (aMax - aMin) * 2.2 + 0.4  → диапазон [0.4 .. 2.6]
+function getAngleFactor(curve: FanCurve, angle?: number): number {
+  if (!curve.bladeAngles || curve.bladeAngles.length < 2) return 1;
+  const aMin = curve.bladeAngles[0];
+  const aMax = curve.bladeAngles[curve.bladeAngles.length - 1];
+  // Берём заданный угол, ограничиваем диапазоном
+  const a = Math.min(aMax, Math.max(aMin, angle ?? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)]));
+  const t = (a - aMin) / Math.max(1, aMax - aMin); // 0..1
+  return 0.4 + t * 2.2; // 0.4 (min угол) .. 2.6 (max угол)
+}
+
 // Получить H_fan с учётом оборотов (закон подобия: H ~ k², Q ~ k)
 function evalFanH(e: SolverEdge, Q: number): { H: number; dH: number } {
   if (!e.hasFan) return { H: 0, dH: 0 };
   if (e.fanMode === "curve" && e.fanCurve) {
     const curve = e.fanCurve;
-    const k = (e.fanRpm && curve.rpmNominal > 0) ? e.fanRpm / curve.rpmNominal : 1;
+    const k = rpmFactor(e.fanRpm, curve.rpmNominal);
     // Масштабирование по закону подобия: Q_norm = Q/k, H = H_nom(Q_norm)*k²
-    const Qnorm = Math.abs(Q) / Math.max(0.01, k);
+    const Qnorm = Math.abs(Q) / Math.max(0.001, k);
     const af = getAngleFactor(curve, e.fanBladeAngle);
     const H = Math.max(0, curve.h0 * af + curve.h1 * Qnorm + curve.h2 * Qnorm * Qnorm) * k * k;
-    // dH/dQ = (dH_nom/dQ_norm) * (1/k) * k² = (h1 + 2*h2*Qnorm) * k
+    // dH/dQ = (h1 + 2*h2*Qnorm) / k * k² = (h1 + 2*h2*Qnorm) * k
     const dH = Math.abs((curve.h1 + 2 * curve.h2 * Qnorm) * k);
     return { H, dH };
   }
   return { H: e.HfanConst, dH: 0 };
-}
-
-function getAngleFactor(curve: FanCurve, angle?: number): number {
-  if (!curve.bladeAngles || curve.bladeAngles.length < 2) return 1;
-  const a = angle ?? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)];
-  const aMin = curve.bladeAngles[0];
-  const aMax = curve.bladeAngles[curve.bladeAngles.length - 1];
-  return 0.55 + 0.9 * (a - aMin) / Math.max(1, aMax - aMin);
 }
 
 // ─── Однопроходный решатель для РАЗОМКНУТОЙ сети (дерево) ────────────────────
@@ -109,7 +121,7 @@ function solveOpenNetwork(
   }
 
   const curve = fan.fanCurve;
-  const k = (fan.fanRpm && curve.rpmNominal > 0) ? fan.fanRpm / curve.rpmNominal : 1;
+  const k = rpmFactor(fan.fanRpm, curve.rpmNominal);
   const af = getAngleFactor(curve, fan.fanBladeAngle);
 
   // Бисекция: найти Q где H_fan(Q) = R_total * Q^2
