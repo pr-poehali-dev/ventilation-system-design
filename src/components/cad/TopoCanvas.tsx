@@ -472,21 +472,41 @@ export default function TopoCanvas(props: Props) {
     setDraggingCorner(null);
   };
 
+  // Аккумулятор зума — батчим несколько wheel-событий в один RAF для плавного масштабирования
+  const zoomAccRef = useRef<{ deltaY: number; sx: number; sy: number; raf: number } | null>(null);
+
   const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const newScale = Math.max(0.001, Math.min(50, view.scale * factor));
-    const wx = (sx - view.offsetX) / view.scale;
-    const wy = (sy - view.offsetY) / view.scale;
-    setView({
-      ...view,
-      scale: newScale,
-      offsetX: sx - wx * newScale,
-      offsetY: sy - wy * newScale,
-    });
+
+    if (zoomAccRef.current) {
+      // Накапливаем delta — центр зума берём от первого события в серии
+      zoomAccRef.current.deltaY += e.deltaY;
+    } else {
+      // Первое событие серии — планируем RAF
+      zoomAccRef.current = { deltaY: e.deltaY, sx, sy, raf: 0 };
+      zoomAccRef.current.raf = requestAnimationFrame(() => {
+        if (!zoomAccRef.current) return;
+        const { deltaY, sx: px, sy: py } = zoomAccRef.current;
+        zoomAccRef.current = null;
+        setView((v) => {
+          // Шаг 1.08 на 100px delta (плавно как в Аэросети)
+          const steps = deltaY / 100;
+          const factor = Math.pow(1.08, -steps);
+          const newScale = Math.max(0.001, Math.min(200, v.scale * factor));
+          const wx = (px - v.offsetX) / v.scale;
+          const wy = (py - v.offsetY) / v.scale;
+          return {
+            ...v,
+            scale: newScale,
+            offsetX: px - wx * newScale,
+            offsetY: py - wy * newScale,
+          };
+        });
+      });
+    }
   };
 
   // ─── Вспомогательные ────────────────────────────────────────────────────
@@ -923,7 +943,7 @@ export default function TopoCanvas(props: Props) {
           if (node.visible === false) return null;
           const isSel = selectedNodeId === node.id;
           const isBranchFrom = branchFrom === node.id;
-          const r = isSel ? 7 : 5;
+          const r = isSel ? 5 : 3.5;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>

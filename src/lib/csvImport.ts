@@ -214,6 +214,22 @@ function buildResult(
   const hasRealCoords = [...nodeMap.values()].some(n => n.x !== 0 || n.y !== 0);
   const isZeroNode = (n: TopoNode) => hasRealCoords && n.x === 0 && n.y === 0;
 
+  // Вычисляем медианную длину ветви (для фильтрации «призрачных» ветвей)
+  // Ветви у которых длина в 20+ раз больше медианы — скорее всего идут в нулевую точку
+  const allRawLengths: number[] = rawBranches
+    .map(rb => {
+      const fn = nodeMap.get(rb.fromId);
+      const tn = nodeMap.get(rb.toId);
+      if (!fn || !tn) return 0;
+      return Math.sqrt((tn.x-fn.x)**2 + (tn.y-fn.y)**2);
+    })
+    .filter(l => l > 0)
+    .sort((a, b) => a - b);
+  const medianLen = allRawLengths.length > 0
+    ? allRawLengths[Math.floor(allRawLengths.length / 2)]
+    : Infinity;
+  const maxAllowedScreenLen = Math.max(medianLen * 30, 5000); // порог: 30× медиана
+
   const branches: TopoBranch[] = [];
   const seen = new Set<string>();
   let bi = 0;
@@ -225,6 +241,9 @@ function buildResult(
     if (!fromNode || !toNode) continue;
     // Пропускаем ветви у которых один из узлов не имеет реальных координат
     if (isZeroNode(fromNode) || isZeroNode(toNode)) continue;
+    // Пропускаем «призрачные» ветви — экстремально длинные относительно медианы
+    const screenDist = Math.sqrt((toNode.x-fromNode.x)**2 + (toNode.y-fromNode.y)**2);
+    if (screenDist > maxAllowedScreenLen) continue;
 
     const key = `${[rb.fromId, rb.toId].sort().join("_")}`;
     if (seen.has(key)) continue;
