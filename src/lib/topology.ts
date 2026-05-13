@@ -64,6 +64,10 @@ export interface TopoBranch {
   fanPressure: number;      // Па — депрессия (для mode=constant), или фактическая (mode=curve)
   fanName: string;
   fanCurveId: string;       // ID из справочника FAN_CATALOG (mode=curve)
+  fanRpm: number;           // обороты, об/мин
+  fanBladeAngle: number;    // угол лопаток, °
+  fanParallel: number;      // количество вентиляторов в параллель
+  fanInstall: string;       // установка: "Внутри перемычки" / "Снаружи"
   fanEfficiency: number;    // расчётный КПД на рабочей точке
   fanShaftPower: number;    // расчётная мощность на валу, Вт
   // ─── Расчётные ───────────────────────────────────────
@@ -186,6 +190,10 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fanPressure: 0,
     fanName: "",
     fanCurveId: "",
+    fanRpm: 0,
+    fanBladeAngle: 45,
+    fanParallel: 1,
+    fanInstall: "Внутри перемычки",
     fanEfficiency: 0,
     fanShaftPower: 0,
     // Расчётные
