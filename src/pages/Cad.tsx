@@ -44,6 +44,8 @@ interface SchemaSymbol {
   y: number;
   branchId: string | null; // к какой ветви привязано (null = свободное)
   t?: number;       // позиция вдоль ветви 0..1 (0=from, 1=to), если branchId != null
+  offsetX?: number; // смещение от ветви (экранные px)
+  offsetY?: number; // смещение от ветви (экранные px)
   scale?: number;   // масштаб (1 = по умолчанию)
   label?: string;   // подпись (например "5 чел.")
 }
@@ -436,6 +438,8 @@ export default function CadPage() {
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
 
   const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
+  // ID ветви, для которой открыли панель через клик на fan-символ
+  const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
   // Диалог ввода числа людей при размещении отделения
   const [squadDialog, setSquadDialog] = useState<{ typeId: string; x: number; y: number; branchId: string | null } | null>(null);
   const [squadCount, setSquadCount] = useState<string>("5");
@@ -1558,6 +1562,7 @@ export default function CadPage() {
                 branch={selectedBranch}
                 horizons={horizons}
                 onUpdate={(patch) => updateBranch(selectedBranch.id, patch)}
+                defaultInnerTab={fanSymbolBranchId === selectedBranch.id ? "Вентилятор" : undefined}
               />
             )}
 
@@ -2320,7 +2325,7 @@ export default function CadPage() {
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
               onSelectNode={(id) => { setSelectedNodeId(id); if (id) setSelectedBranchId(null); }}
-              onSelectBranch={(id) => { setSelectedBranchId(id); if (id) setSelectedNodeId(null); }}
+              onSelectBranch={(id) => { setSelectedBranchId(id); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); } }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
@@ -2333,6 +2338,7 @@ export default function CadPage() {
               onSelectSymbol={setSelectedSymbolId}
               onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
               onSymbolMoveAlongBranch={(id, t) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, t } : s))}
+              onSymbolOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, offsetX: ox, offsetY: oy } : s))}
               onSymbolScale={(id, delta) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, scale: Math.max(0.4, Math.min(4, (s.scale ?? 1) + delta)) } : s))}
               onSymbolDelete={(id) => { removeSymbol(id); setSelectedSymbolId(null); }}
               onSymbolClick={(symId) => {
@@ -2340,8 +2346,8 @@ export default function CadPage() {
                 if (sym?.typeId === "fan" && sym.branchId) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
-                  setRightTab("branch");
-                  setRightPanelOpen(true);
+                  setActiveSide("params");
+                  setFanSymbolBranchId(sym.branchId);
                 }
               }}
               activeSymbolTypeId={activeSymbolTypeId}
@@ -2368,79 +2374,48 @@ export default function CadPage() {
           </div>
         </div>
 
-        {/* ── ПРАВАЯ ПАНЕЛЬ — «Свойства / Инфо» ─────────────── */}
+        {/* ── ПРАВАЯ ПАНЕЛЬ — «Панель информации» ─────────────── */}
         {rightPanelOpen && (
           <div className="w-[280px] flex-shrink-0 flex flex-col"
             style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
-            {/* Вкладки панели */}
-            <div className="flex border-b border-gray-300 flex-shrink-0"
-              style={{ background: "#f0f0f0" }}>
-              {(["info", "branch"] as const).map(tab => (
-                <button key={tab}
-                  onClick={() => setRightTab(tab)}
-                  className="flex-1 h-7 text-[11px] font-medium transition-colors"
-                  style={{
-                    background: rightTab === tab ? "#ffffff" : "transparent",
-                    borderBottom: rightTab === tab ? "2px solid #2563eb" : "2px solid transparent",
-                    color: rightTab === tab ? "#2563eb" : "#555",
-                  }}>
-                  {tab === "info" ? "Инфо" : "Свойства"}
-                </button>
-              ))}
+            {/* Заголовок */}
+            <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
+              style={{ background: "#f5f5f5", fontSize: 11, fontWeight: 600 }}>
+              <Icon name="LayoutList" size={12} />
+              Панель информации
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden">
-              {rightTab === "info" && (
-                <>
-                  <div className="flex-1 overflow-hidden">
-                    <InfoPanel
-                      config={infoConfig}
-                      onChange={updateInfoConfig}
-                      nodes={nodes}
-                      selectedNodeId={selectedNodeId}
-                      onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
-                      onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
-                      onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
-                    />
-                  </div>
-                  {/* Масштаб Z */}
-                  <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
-                      <button onClick={() => setZScale(1)}
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
-                        Сброс
-                      </button>
-                    </div>
-                    <input type="range" min="0.1" max="10" step="0.1"
-                      value={zScale}
-                      onChange={(e) => setZScale(parseFloat(e.target.value))}
-                      className="w-full"
-                      style={{ accentColor: "#2563eb" }} />
-                    <div className="flex justify-between text-[10px] text-gray-400">
-                      <span>0.1×</span><span>5×</span><span>10×</span>
-                    </div>
-                  </div>
-                </>
-              )}
+              <div className="flex-1 overflow-hidden">
+                <InfoPanel
+                  config={infoConfig}
+                  onChange={updateInfoConfig}
+                  nodes={nodes}
+                  selectedNodeId={selectedNodeId}
+                  onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
+                  onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
+                  onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
+                />
+              </div>
 
-              {rightTab === "branch" && (() => {
-                const selBranch = branchesRaw.find(b => b.id === selectedBranchId);
-                if (!selBranch) return (
-                  <div className="flex-1 flex items-center justify-center text-[11px] text-gray-400 p-4 text-center">
-                    Выберите ветвь или кликните на символ вентилятора
-                  </div>
-                );
-                return (
-                  <div className="flex-1 overflow-y-auto">
-                    <BranchPropsPanel
-                      branch={selBranch}
-                      horizons={horizons}
-                      onUpdate={(patch) => updateBranch(selBranch.id, patch)}
-                    />
-                  </div>
-                );
-              })()}
+              {/* Масштаб Z */}
+              <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
+                  <button onClick={() => setZScale(1)}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
+                    Сброс
+                  </button>
+                </div>
+                <input type="range" min="0.1" max="10" step="0.1"
+                  value={zScale}
+                  onChange={(e) => setZScale(parseFloat(e.target.value))}
+                  className="w-full"
+                  style={{ accentColor: "#2563eb" }} />
+                <div className="flex justify-between text-[10px] text-gray-400">
+                  <span>0.1×</span><span>5×</span><span>10×</span>
+                </div>
+              </div>
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}

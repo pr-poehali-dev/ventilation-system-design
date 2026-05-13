@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
@@ -7,6 +7,7 @@ interface BranchPropsPanelProps {
   branch: TopoBranch;
   horizons: Horizon[];
   onUpdate: (patch: Partial<TopoBranch>) => void;
+  defaultInnerTab?: InnerTab;
 }
 
 const SH = "#e8eef8";
@@ -180,8 +181,12 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate }: BranchPropsPanelProps) {
-  const [innerTab, setInnerTab] = useState<InnerTab>("Топология");
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab }: BranchPropsPanelProps) {
+  const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
+
+  useEffect(() => {
+    if (defaultInnerTab) setInnerTab(defaultInnerTab);
+  }, [branch.id, defaultInnerTab]);
   const [name, setName] = useState(branch.id);
   const [comment, setComment] = useState("");
   const [isCapital, setIsCapital] = useState(false);

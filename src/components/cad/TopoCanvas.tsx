@@ -75,7 +75,7 @@ interface Props {
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; scale?: number; label?: string }[];
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */
@@ -84,6 +84,8 @@ interface Props {
   onSymbolMove?: (id: string, x: number, y: number) => void;
   /** Перемещение символа вдоль ветви (t: 0..1) */
   onSymbolMoveAlongBranch?: (id: string, t: number) => void;
+  /** Смещение символа от ветви (px offset) */
+  onSymbolOffset?: (id: string, ox: number, oy: number) => void;
   /** Клик на символ (для открытия свойств) */
   onSymbolClick?: (id: string) => void;
   /** Масштаб символа (delta: +0.2 или -0.2) */
@@ -123,7 +125,7 @@ export default function TopoCanvas(props: Props) {
     selectedBranchIds, onBranchMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
-    onSymbolMoveAlongBranch, onSymbolClick,
+    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
   } = props;
@@ -978,8 +980,7 @@ export default function TopoCanvas(props: Props) {
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           if (!lt) return null;
 
-          let px: number, py: number;
-          // Экранные координаты концов ветви (для drag вдоль ветви)
+          let basePx: number, basePy: number;
           let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
 
           if (sym.branchId) {
@@ -990,16 +991,20 @@ export default function TopoCanvas(props: Props) {
               fsx = fN.sx; fsy = fN.sy; tsx2 = tN.sx; tsy2 = tN.sy;
               hasBranchPts = true;
               const t = sym.t ?? 0.5;
-              px = fsx + (tsx2 - fsx) * t;
-              py = fsy + (tsy2 - fsy) * t;
+              basePx = fsx + (tsx2 - fsx) * t;
+              basePy = fsy + (tsy2 - fsy) * t;
             } else {
               const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
-              px = pt.sx; py = pt.sy;
+              basePx = pt.sx; basePy = pt.sy;
             }
           } else {
             const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
-            px = pt.sx; py = pt.sy;
+            basePx = pt.sx; basePy = pt.sy;
           }
+
+          // Применяем offset (смещение в экранных координатах)
+          const px = basePx + (sym.offsetX ?? 0);
+          const py = basePy + (sym.offsetY ?? 0);
 
           const isSel = selectedSymbolId === sym.id;
           const sc = sym.scale ?? 1;
@@ -1026,17 +1031,33 @@ export default function TopoCanvas(props: Props) {
                 if (e.button !== 0 || tool !== "select") return;
                 e.stopPropagation();
 
+                const startX = e.clientX, startY = e.clientY;
+
                 if (sym.branchId && hasBranchPts) {
-                  // Drag вдоль ветви: проецируем позицию мыши на отрезок ветви
                   const brLen2 = (tsx2 - fsx) ** 2 + (tsy2 - fsy) ** 2;
+                  const brLen = Math.sqrt(brLen2);
+                  const origOx = sym.offsetX ?? 0;
+                  const origOy = sym.offsetY ?? 0;
+                  const svgRect = (e.currentTarget as SVGElement).closest("svg")!.getBoundingClientRect();
+
                   const onMove = (me: MouseEvent) => {
-                    const rect = (e.currentTarget as SVGElement).closest("svg")!.getBoundingClientRect();
-                    const mx = me.clientX - rect.left;
-                    const my = me.clientY - rect.top;
-                    if (brLen2 < 1) return;
-                    const raw = ((mx - fsx) * (tsx2 - fsx) + (my - fsy) * (tsy2 - fsy)) / brLen2;
-                    const t = Math.max(0.05, Math.min(0.95, raw));
-                    onSymbolMoveAlongBranch?.(sym.id, t);
+                    const dx = me.clientX - startX;
+                    const dy = me.clientY - startY;
+                    const mx = me.clientX - svgRect.left - (sym.offsetX ?? 0);
+                    const my = me.clientY - svgRect.top - (sym.offsetY ?? 0);
+
+                    if (me.ctrlKey || me.altKey) {
+                      // Ctrl/Alt+drag = смещение в любом направлении
+                      onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
+                    } else {
+                      // Обычный drag = перемещение вдоль ветви
+                      if (brLen2 < 1) return;
+                      const raw = ((mx - fsx) * (tsx2 - fsx) + (my - fsy) * (tsy2 - fsy)) / brLen2;
+                      const t = Math.max(0.05, Math.min(0.95, raw));
+                      onSymbolMoveAlongBranch?.(sym.id, t);
+                      // Сохраняем текущий offset
+                    }
+                    void brLen;
                   };
                   const onUp = () => {
                     window.removeEventListener("mousemove", onMove);
@@ -1046,7 +1067,6 @@ export default function TopoCanvas(props: Props) {
                   window.addEventListener("mouseup", onUp);
                 } else if (!sym.branchId) {
                   // Свободный символ — обычный drag
-                  const startX = e.clientX, startY = e.clientY;
                   const origX = sym.x, origY = sym.y;
                   const onMove = (me: MouseEvent) => {
                     const dx = (me.clientX - startX) / view.scale;
