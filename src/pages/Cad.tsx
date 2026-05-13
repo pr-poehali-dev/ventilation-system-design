@@ -24,7 +24,6 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
-import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -775,9 +774,11 @@ export default function CadPage() {
   // F9 — запустить расчёт воздухораспределения. Esc — снять выделение.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement;
-      const tag = el?.tagName;
-      const isEditing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      // isEditing: true только если активный элемент — поле ввода
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName ?? "";
+      const isEditing = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
+        && active !== document.body;
 
       if (e.ctrlKey && e.key === "s") {
         e.preventDefault();
@@ -1426,37 +1427,7 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
-        {/* ── Группа: Условные обозначения ── */}
-        <RibbonGroup label="Условные обозначения">
-          <div className="flex flex-col gap-0.5 h-full justify-center px-1">
-            <div className="text-[10px] text-gray-500 mb-0.5">Буфер: <b>{symbolClipboard ? LEGEND_TYPES.find(l=>l.id===symbolClipboard)?.name ?? symbolClipboard : '—'}</b></div>
-            <div className="flex flex-wrap gap-0.5" style={{ maxWidth: 200 }}>
-              {LEGEND_TYPES.slice(0, 10).map(lt => (
-                <button key={lt.id}
-                  title={`${lt.name} (Ctrl+C чтобы скопировать, Ctrl+V чтобы вставить на схему)`}
-                  onClick={() => setSymbolClipboard(lt.id)}
-                  className="w-7 h-7 flex items-center justify-center rounded hover:bg-blue-100 border"
-                  style={{ borderColor: symbolClipboard === lt.id ? '#2563eb' : '#d1d5db', background: symbolClipboard === lt.id ? '#dbeafe' : 'white' }}>
-                  <svg width={22} height={22} viewBox="0 0 48 40" style={{ overflow: 'visible' }}>
-                    {lt.miniSvg}
-                  </svg>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-1 mt-0.5">
-              <button onClick={() => setShowLegend(true)}
-                className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1">
-                <Icon name="BookMarked" size={10} /> Все...
-              </button>
-              {selectedSymbolId && (
-                <button onClick={() => { removeSymbol(selectedSymbolId); setSelectedSymbolId(null); }}
-                  className="text-[10px] px-1.5 py-0.5 border border-red-300 rounded hover:bg-red-50 text-red-600">
-                  Удалить
-                </button>
-              )}
-            </div>
-          </div>
-        </RibbonGroup>
+
       </div>
       )}
 
