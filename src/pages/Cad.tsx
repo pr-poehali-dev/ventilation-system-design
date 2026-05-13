@@ -24,6 +24,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
+import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -34,6 +35,15 @@ const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
 // ─────────────────────────────────────────────────────────────────────────────
 
 type RibbonTab = "file" | "home" | "view" | "schema" | "vent" | "thermo" | "accidents" | "involve" | "pipes" | "costs" | "refs" | "general";
+
+// Условное обозначение размещённое на схеме
+interface SchemaSymbol {
+  id: string;
+  typeId: string;   // id из LEGEND_ITEMS (medical, fan, bulkhead, ...)
+  x: number;        // мировые координаты
+  y: number;
+  branchId: string | null; // к какой ветви привязано (null = свободное)
+}
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
 interface Excavation {
@@ -416,6 +426,18 @@ export default function CadPage() {
     setInfoConfig((prev) => ({ ...prev, ...patch }));
   const [zScale, setZScale] = useState<number>(1);
 
+  // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
+  // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
+  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
+  const [symbolClipboard, setSymbolClipboard] = useState<string | null>(null); // id типа для вставки
+  const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
+
+  const addSymbol = (typeId: string, x: number, y: number, branchId?: string) => {
+    const id = `SYM_${Date.now()}`;
+    setSchemaSymbols(prev => [...prev, { id, typeId, x, y, branchId: branchId ?? null }]);
+  };
+  const removeSymbol = (id: string) => setSchemaSymbols(prev => prev.filter(s => s.id !== id));
+
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
   const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
@@ -753,23 +775,54 @@ export default function CadPage() {
   // F9 — запустить расчёт воздухораспределения. Esc — снять выделение.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Не перехватываем хоткеи во время ввода в input/textarea/select
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const el = e.target as HTMLElement;
+      const tag = el?.tagName;
+      const isEditing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
       if (e.ctrlKey && e.key === "s") {
         e.preventDefault();
         handleSave();
-      } else if (e.key === "F6") {
-        e.preventDefault();
-        setThinLines((v) => !v);
-      } else if (e.key === "F9") {
-        e.preventDefault();
-        handleSolve();
-      } else if (e.key === "Delete" || e.key === "Backspace") {
+        return;
+      }
+      // Ctrl+V — вставить условное обозначение из буфера в центр канваса
+      if (e.ctrlKey && e.key === "v" && !isEditing) {
+        if (symbolClipboard) {
+          e.preventDefault();
+          // Центр видимой области в мировых координатах
+          // viewScale — текущий масштаб (px/м), viewOffset — смещение
+          // Упрощённо вставляем в (0,0) если нет информации о viewport
+          addSymbol(symbolClipboard, 0, 0, selectedBranchId ?? undefined);
+        }
+        return;
+      }
+      // Ctrl+C — скопировать выбранное обозначение (или последнее выбранное)
+      if (e.ctrlKey && e.key === "c" && !isEditing && selectedSymbolId) {
+        const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
+        if (sym) { e.preventDefault(); setSymbolClipboard(sym.typeId); }
+        return;
+      }
+      // F6, F9 — всегда работают
+      if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
+      if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
+
+      // Del/Backspace — блокируем только если input активен И имеет текстовое содержимое
+      // (т.е. пользователь действительно редактирует текст, а не просто кликнул по полю)
+      if (e.key === "Delete") {
+        if (isEditing) return; // редактируем текст в поле — не удаляем объект
         e.preventDefault();
         handleDeleteSelected();
-      } else if (e.key === "Escape" || e.key === "Enter") {
-        // Завершение цепочки построения: снимаем выделение и сбрасываем инструмент.
+        return;
+      }
+      if (e.key === "Backspace") {
+        if (isEditing) return;
+        e.preventDefault();
+        handleDeleteSelected();
+        return;
+      }
+
+      if (isEditing) return;
+
+      if (e.key === "Escape" || e.key === "Enter") {
         setSelectedNodeId(null);
         setSelectedBranchId(null);
         setTool("select");
@@ -802,8 +855,47 @@ export default function CadPage() {
     if (selectedBranchId === id) setSelectedBranchId(null);
   };
 
+  // Разорвать связь в узле — как в АэроСети:
+  // каждая ветвь получает свой клон-узел на том же месте, исходный узел удаляется.
+  // Ветви при этом НЕ удаляются — они перепривязываются к новым узлам.
   const handleSplitNodeConnections = (id: string) => {
-    setBranches((p) => p.filter((b) => b.fromId !== id && b.toId !== id));
+    const srcNode = nodes.find((n) => n.id === id);
+    if (!srcNode) return;
+    const connected = branchesRaw.filter((b) => b.fromId === id || b.toId === id);
+    if (connected.length === 0) return;
+
+    // Для каждой ветви создаём отдельный узел-клон в той же позиции
+    const newNodes: typeof nodes = [];
+    const idMap = new Map<string, string>(); // branchId → новый nodeId
+
+    connected.forEach((b) => {
+      const newId = `N${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      newNodes.push(makeNode(newId, {
+        x: srcNode.x, y: srcNode.y, z: srcNode.z,
+        number: srcNode.number,
+        name: srcNode.name,
+        atmosphereLink: srcNode.atmosphereLink,
+      }));
+      idMap.set(b.id, newId);
+    });
+
+    // Перепривязываем ветви к новым узлам
+    setBranches((prev) => prev.map((b) => {
+      const newNodeId = idMap.get(b.id);
+      if (!newNodeId) return b;
+      return {
+        ...b,
+        fromId: b.fromId === id ? newNodeId : b.fromId,
+        toId:   b.toId   === id ? newNodeId : b.toId,
+      };
+    }));
+
+    // Удаляем исходный узел, добавляем клоны
+    setNodes((prev) => [
+      ...prev.filter((n) => n.id !== id),
+      ...newNodes,
+    ]);
+    setSelectedNodeId(null);
   };
 
   const handleToggleAtmosphere = (id: string) => {
@@ -1190,8 +1282,22 @@ export default function CadPage() {
         {/* ── Группа: Объекты ── */}
         <RibbonGroup label="Объекты">
           <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Plus" label="Добавить" sublabel="выработку" />
-            <RibbonBigBtn icon="Scissors" label="Разделить" sublabel="выработку" />
+            <RibbonBigBtn icon="Plus" label="Добавить" sublabel="выработку"
+              onClick={() => setTool("branch")} />
+            <RibbonBigBtn icon="Scissors" label="Разделить" sublabel="выработку"
+              disabled={!selectedBranchId}
+              onClick={() => {
+                if (!selectedBranchId) return;
+                const b = branches.find(br => br.id === selectedBranchId);
+                if (!b) return;
+                const fromN = nodes.find(n => n.id === b.fromId);
+                const toN = nodes.find(n => n.id === b.toId);
+                if (!fromN || !toN) return;
+                const mx = (fromN.x + toN.x) / 2;
+                const my = (fromN.y + toN.y) / 2;
+                const mz = (fromN.z + toN.z) / 2;
+                handleSplitBranchAt(selectedBranchId, mx, my, mz);
+              }} />
           </div>
           <div className="flex flex-col gap-0.5">
             <div className="flex gap-0.5">
@@ -1317,6 +1423,38 @@ export default function CadPage() {
                 <div className="text-gray-500">max ΔQ: {solveResult.maxDeltaQ.toExponential(2)}</div>
               </div>
             )}
+          </div>
+        </RibbonGroup>
+
+        {/* ── Группа: Условные обозначения ── */}
+        <RibbonGroup label="Условные обозначения">
+          <div className="flex flex-col gap-0.5 h-full justify-center px-1">
+            <div className="text-[10px] text-gray-500 mb-0.5">Буфер: <b>{symbolClipboard ? LEGEND_TYPES.find(l=>l.id===symbolClipboard)?.name ?? symbolClipboard : '—'}</b></div>
+            <div className="flex flex-wrap gap-0.5" style={{ maxWidth: 200 }}>
+              {LEGEND_TYPES.slice(0, 10).map(lt => (
+                <button key={lt.id}
+                  title={`${lt.name} (Ctrl+C чтобы скопировать, Ctrl+V чтобы вставить на схему)`}
+                  onClick={() => setSymbolClipboard(lt.id)}
+                  className="w-7 h-7 flex items-center justify-center rounded hover:bg-blue-100 border"
+                  style={{ borderColor: symbolClipboard === lt.id ? '#2563eb' : '#d1d5db', background: symbolClipboard === lt.id ? '#dbeafe' : 'white' }}>
+                  <svg width={22} height={22} viewBox="0 0 48 40" style={{ overflow: 'visible' }}>
+                    {lt.miniSvg}
+                  </svg>
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1 mt-0.5">
+              <button onClick={() => setShowLegend(true)}
+                className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1">
+                <Icon name="BookMarked" size={10} /> Все...
+              </button>
+              {selectedSymbolId && (
+                <button onClick={() => { removeSymbol(selectedSymbolId); setSelectedSymbolId(null); }}
+                  className="text-[10px] px-1.5 py-0.5 border border-red-300 rounded hover:bg-red-50 text-red-600">
+                  Удалить
+                </button>
+              )}
+            </div>
           </div>
         </RibbonGroup>
       </div>
@@ -2189,6 +2327,10 @@ export default function CadPage() {
               onBranchMultiSelect={handleBranchMultiSelect}
               infoConfig={infoConfig}
               zScale={zScale}
+              schemaSymbols={schemaSymbols}
+              selectedSymbolId={selectedSymbolId}
+              onSelectSymbol={setSelectedSymbolId}
+              onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
             />
 
             {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}

@@ -4,6 +4,7 @@ import {
   type Horizon,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
+import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -73,6 +74,14 @@ interface Props {
   infoConfig?: import("@/lib/infoConfig").InfoDisplayConfig;
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
+  /** Условные обозначения на схеме */
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null }[];
+  /** Клик по символу — выбрать */
+  onSelectSymbol?: (id: string | null) => void;
+  /** Выбранный символ */
+  selectedSymbolId?: string | null;
+  /** Перемещение символа */
+  onSymbolMove?: (id: string, x: number, y: number) => void;
 }
 
 export type FlowDisplayMode =
@@ -101,6 +110,7 @@ export default function TopoCanvas(props: Props) {
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
     infoConfig, zScale = 1,
+    schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -911,6 +921,41 @@ export default function TopoCanvas(props: Props) {
               stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.7" />
           );
         })()}
+
+        {/* ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ──────────────────────────── */}
+        {schemaSymbols.map(sym => {
+          const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
+          if (!lt) return null;
+          const p = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+          const isSel = selectedSymbolId === sym.id;
+          // Масштаб иконки: фиксированный 28px
+          const SZ = 28;
+          return (
+            <g key={sym.id}
+              transform={`translate(${p.sx - SZ / 2},${p.sy - SZ / 2})`}
+              style={{ cursor: "pointer" }}
+              onClick={(e) => { e.stopPropagation(); onSelectSymbol?.(sym.id); }}
+              onMouseDown={(e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+                // Перетаскивание символа
+                const startX = e.clientX, startY = e.clientY;
+                const origX = sym.x, origY = sym.y;
+                const onMove = (me: MouseEvent) => {
+                  const dx = (me.clientX - startX) / view.scale;
+                  const dy = -(me.clientY - startY) / view.scale;
+                  onSymbolMove?.(sym.id, origX + dx, origY + dy);
+                };
+                const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+              }}>
+              {isSel && <rect x={-3} y={-3} width={SZ + 6} height={SZ + 6} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="3 2" rx="2" />}
+              <svg width={SZ} height={SZ} viewBox="0 0 48 40"
+                dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+            </g>
+          );
+        })}
 
         {/* ─── УЗЛЫ (отсортированы по глубине, ближние сверху) ─────────── */}
         {nodesSorted.map(({ node, sx, sy }) => {
