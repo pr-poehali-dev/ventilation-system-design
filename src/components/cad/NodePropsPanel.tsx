@@ -119,7 +119,7 @@ function CheckField({
 
 export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) {
   const [visible, setVisible] = useState<Set<string>>(
-    () => new Set(["num", "x", "y", "z", "zsurf", "surface", "exit", "pressure", "temp", "conc", "humidity", "co",
+    () => new Set(["num", "x", "y", "z", "zsurf", "exit", "pressure", "temp", "conc", "humidity", "co",
       "c_gasconc", "c_airtemp", "c_walltemp", "c_pressure", "c_exppressure"])
   );
 
@@ -173,13 +173,6 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
 
       <ParamRow id="zsurf" label="Z поверхности, м" visible={visible.has("zsurf")} onToggle={toggle}>
         <ComputedInput value="0" />
-      </ParamRow>
-
-      <ParamRow id="surface" label="Поверхностный" visible={visible.has("surface")} onToggle={toggle}>
-        <CheckField
-          checked={false}
-          onChange={() => {}}
-        />
       </ParamRow>
 
       <ParamRow id="exit" label="Выход (атмосфера)" visible={visible.has("exit")} onToggle={toggle}>

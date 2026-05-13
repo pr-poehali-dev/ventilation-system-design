@@ -472,41 +472,27 @@ export default function TopoCanvas(props: Props) {
     setDraggingCorner(null);
   };
 
-  // Аккумулятор зума — батчим несколько wheel-событий в один RAF для плавного масштабирования
-  const zoomAccRef = useRef<{ deltaY: number; sx: number; sy: number; raf: number } | null>(null);
-
   const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-
-    if (zoomAccRef.current) {
-      // Накапливаем delta — центр зума берём от первого события в серии
-      zoomAccRef.current.deltaY += e.deltaY;
-    } else {
-      // Первое событие серии — планируем RAF
-      zoomAccRef.current = { deltaY: e.deltaY, sx, sy, raf: 0 };
-      zoomAccRef.current.raf = requestAnimationFrame(() => {
-        if (!zoomAccRef.current) return;
-        const { deltaY, sx: px, sy: py } = zoomAccRef.current;
-        zoomAccRef.current = null;
-        setView((v) => {
-          // Шаг 1.08 на 100px delta (плавно как в Аэросети)
-          const steps = deltaY / 100;
-          const factor = Math.pow(1.08, -steps);
-          const newScale = Math.max(0.001, Math.min(200, v.scale * factor));
-          const wx = (px - v.offsetX) / v.scale;
-          const wy = (py - v.offsetY) / v.scale;
-          return {
-            ...v,
-            scale: newScale,
-            offsetX: px - wx * newScale,
-            offsetY: py - wy * newScale,
-          };
-        });
-      });
-    }
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    // Нормализуем deltaY: trackpad даёт маленькие значения, мышь — большие (100-120)
+    const raw = e.deltaY;
+    const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
+    // Небольшой постоянный шаг независимо от скорости прокрутки
+    const factor = delta > 0 ? 1 / 1.12 : 1.12;
+    setView((v) => {
+      const newScale = Math.max(0.001, Math.min(200, v.scale * factor));
+      const wx = (px - v.offsetX) / v.scale;
+      const wy = (py - v.offsetY) / v.scale;
+      return {
+        ...v,
+        scale: newScale,
+        offsetX: px - wx * newScale,
+        offsetY: py - wy * newScale,
+      };
+    });
   };
 
   // ─── Вспомогательные ────────────────────────────────────────────────────
@@ -748,13 +734,9 @@ export default function TopoCanvas(props: Props) {
             : "#9ca3af";
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
-          // Масштабируемая как в Аэросети: при «вписать» ~3px, при приближении ~8px
-          // scale 0.05→w=2, scale 0.15→w=3, scale 1→w=6, scale 3→w=10
-          const bwBase = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-          const scaledW = Math.min(18, Math.max(1.5, bwBase * Math.pow(view.scale * 8, 0.45)));
-          const bw = scaledW;
+          const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
           const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
-          const baseW = isSel ? bw + 1.5 : bw;
+          const baseW = isSel ? bw + 1 : bw;
           const w = thinLines ? 1 : baseW;
           // Обводка (контур вокруг линии): ширина = w + 2*border
           const borderW = thinLines ? 0 : Math.max(0, bb);
@@ -936,11 +918,8 @@ export default function TopoCanvas(props: Props) {
           if (node.visible === false) return null;
           const isSel = selectedNodeId === node.id;
           const isBranchFrom = branchFrom === node.id;
-          // Масштабируемый радиус как в Аэросети: r растёт при приближении
-          // При «Вписать в экран» (scale ~0.05–0.15) → r~7px (как в Аэросети)
-          // При крупном плане (scale ~1–3) → r~16–22px
-          const rScaled = Math.min(22, Math.max(7, view.scale * 60));
-          const r = isSel ? rScaled + 3 : rScaled;
+          // Фиксированный размер в px — не зависит от масштаба схемы
+          const r = isSel ? 6 : 4;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
