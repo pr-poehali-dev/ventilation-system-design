@@ -210,35 +210,38 @@ export default function TopoCanvas(props: Props) {
   }, [scaleOverride]);
 
   // ─── ВПИСАТЬ ВСЮ СЕТЬ В ЭКРАН ───────────────────────────────────────
-  // Реагируем на смену nonce из родителя — пересчитываем scale и offset так,
-  // чтобы все узлы попали в видимую область с отступом 10%.
+  // Реагируем на смену nonce из родителя — вписываем все узлы в экран.
+  // Используем project3D с текущим ракурсом, чтобы корректно работать для план/фронт/профиль/3D.
   useEffect(() => {
     if (!fitToScreenNonce) return;
     if (nodes.length === 0) return;
     if (size.w < 50 || size.h < 50) return;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    // Проецируем узлы при масштабе 1 и offset(0,0) — получаем "мировые экранные" координаты
+    const tmpProj: ProjOptions = {
+      scale: 1, offsetX: 0, offsetY: 0,
+      azimuth: view.azimuth, elevation: view.elevation, zScale,
+    };
+    let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
     nodes.forEach((n) => {
-      // Используем «плоскостные» координаты: для плана — x/y, иначе — общая огибающая.
-      const x = n.x;
-      const y = -n.y;       // экран Y — инвертированный мировой Y
-      if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
-      if (y < minY) minY = y;
-      if (y > maxY) maxY = y;
+      const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, tmpProj);
+      if (p.sx < minSx) minSx = p.sx;
+      if (p.sx > maxSx) maxSx = p.sx;
+      if (p.sy < minSy) minSy = p.sy;
+      if (p.sy > maxSy) maxSy = p.sy;
     });
-    const dx = Math.max(1, maxX - minX);
-    const dy = Math.max(1, maxY - minY);
-    const padding = 0.1;
-    const sx = (size.w * (1 - padding * 2)) / dx;
-    const sy = (size.h * (1 - padding * 2)) / dy;
-    const newScale = Math.max(0.001, Math.min(50, Math.min(sx, sy)));
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
+    const dw = Math.max(1, maxSx - minSx);
+    const dh = Math.max(1, maxSy - minSy);
+    const pad = 0.1;
+    const scaleX = (size.w * (1 - pad * 2)) / dw;
+    const scaleY = (size.h * (1 - pad * 2)) / dh;
+    const newScale = Math.max(0.002, Math.min(500, Math.min(scaleX, scaleY)));
+    const csx = (minSx + maxSx) / 2;
+    const csy = (minSy + maxSy) / 2;
     setView((v) => ({
       ...v,
       scale: newScale,
-      offsetX: size.w / 2 - cx * newScale,
-      offsetY: size.h / 2 - cy * newScale,
+      offsetX: size.w / 2 - csx * newScale,
+      offsetY: size.h / 2 - csy * newScale,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToScreenNonce]);
@@ -253,13 +256,52 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
+  // Флаг: после применения пресета вписать схему в экран
+  const fitAfterPresetRef = useRef(false);
+
   // Применение пресета ракурса извне
   useEffect(() => {
     if (!viewPreset) return;
     const p = VIEW_PRESETS[viewPreset.name];
+    fitAfterPresetRef.current = true; // вписать после смены угла
     setView((v) => ({ ...v, azimuth: p.azimuth, elevation: p.elevation }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewPreset?.nonce]);
+
+  // Когда угол изменился после пресета — вписываем в экран
+  useEffect(() => {
+    if (!fitAfterPresetRef.current) return;
+    fitAfterPresetRef.current = false;
+    if (nodes.length === 0 || size.w < 50 || size.h < 50) return;
+    const tmpProj: ProjOptions = {
+      scale: 1, offsetX: 0, offsetY: 0,
+      azimuth: view.azimuth, elevation: view.elevation, zScale,
+    };
+    let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+    nodes.forEach((n) => {
+      const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, tmpProj);
+      if (p.sx < minSx) minSx = p.sx;
+      if (p.sx > maxSx) maxSx = p.sx;
+      if (p.sy < minSy) minSy = p.sy;
+      if (p.sy > maxSy) maxSy = p.sy;
+    });
+    const dw = Math.max(1, maxSx - minSx);
+    const dh = Math.max(1, maxSy - minSy);
+    const pad = 0.1;
+    const newScale = Math.max(0.002, Math.min(500, Math.min(
+      (size.w * (1 - pad * 2)) / dw,
+      (size.h * (1 - pad * 2)) / dh,
+    )));
+    const csx = (minSx + maxSx) / 2;
+    const csy = (minSy + maxSy) / 2;
+    setView((v) => ({
+      ...v,
+      scale: newScale,
+      offsetX: size.w / 2 - csx * newScale,
+      offsetY: size.h / 2 - csy * newScale,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.azimuth, view.elevation]);
 
   // Сообщить наверх об изменении вида
   useEffect(() => {

@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { TopoNode, TopoBranch } from "./topology";
-import { recalcBranchAero } from "./topology";
+import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanH, fanDH, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 
 const GND = "@gnd";
@@ -174,7 +174,17 @@ export function solveNetwork(
     return n && n.atmosphereLink ? GND : id;
   };
 
-  const branchesCalc = branchesIn.map((b) => recalcBranchAero({ ...b }));
+  // Если ветвь имеет length=0 и не помечена как ручная — пересчитываем из координат узлов
+  const branchesWithLen = branchesIn.map((b) => {
+    if (b.manualLength || b.length > 0) return b;
+    const fromNode = nodesIn.find((n) => n.id === b.fromId);
+    const toNode = nodesIn.find((n) => n.id === b.toId);
+    if (!fromNode || !toNode) return b;
+    const autoLen = Math.round(calcBranchLength(fromNode, toNode));
+    return autoLen > 0 ? { ...b, length: autoLen } : b;
+  });
+
+  const branchesCalc = branchesWithLen.map((b) => recalcBranchAero({ ...b }));
 
   const edges: SolverEdge[] = branchesCalc.map((b) => ({
     id: b.id,

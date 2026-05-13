@@ -388,9 +388,8 @@ export default function CadPage() {
   const [viewPreset, setViewPreset] = useState<{ name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE"; nonce: number } | null>(null);
   const [viewInfo, setViewInfo] = useState<{ is3D: boolean; azimuth: number; elevation: number }>({ is3D: false, azimuth: 0, elevation: 90 });
   const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") => {
+    // Вписывание в экран теперь происходит внутри TopoCanvas через fitAfterPresetRef
     setViewPreset({ name, nonce: Date.now() });
-    // При смене ориентации — вписываем схему в экран через 50мс (после применения угла)
-    setTimeout(() => setFitToScreenNonce(Date.now()), 80);
   };
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
