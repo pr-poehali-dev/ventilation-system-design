@@ -60,6 +60,10 @@ interface Props {
   onScaleChange?: (scale: number) => void;
   /** Сигнал «вписать всю сеть в экран» — меняется значение → TopoCanvas пересчитывает. */
   fitToScreenNonce?: number;
+  /** Восстановить конкретный вид (при открытии файла с сохранённым view) */
+  restoreView?: { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number } | null;
+  /** Колбэк: сообщать наружу текущий полный вид (для сохранения в файл) */
+  onViewStateChange?: (v: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number }) => void;
   /** ID горизонта, у которого можно редактировать подложку (тащить углы). */
   editingHorizonImageId?: string | null;
   /** Колбэк изменения углов подложки горизонта (после drag). */
@@ -128,6 +132,7 @@ export default function TopoCanvas(props: Props) {
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
+    restoreView, onViewStateChange,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -168,6 +173,25 @@ export default function TopoCanvas(props: Props) {
 
   // При смене инструмента сбрасываем «начало ветви» — иначе возникнут призрачные сегменты.
   useEffect(() => { setBranchFrom(null); }, [tool]);
+
+  // ─── ВОССТАНОВЛЕНИЕ СОХРАНЁННОГО ВИДА ───────────────────────────────
+  useEffect(() => {
+    if (!restoreView) return;
+    setView((v) => ({
+      scale: restoreView.scale ?? v.scale,
+      offsetX: restoreView.offsetX ?? v.offsetX,
+      offsetY: restoreView.offsetY ?? v.offsetY,
+      azimuth: restoreView.azimuth ?? v.azimuth,
+      elevation: restoreView.elevation ?? v.elevation,
+    }));
+     
+  }, [restoreView]);
+
+  // ─── РЕПОРТИНГ ТЕКУЩЕГО ВИДА НАРУЖУ (для сохранения) ────────────────
+  useEffect(() => {
+    onViewStateChange?.(view);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.scale, view.offsetX, view.offsetY, view.azimuth, view.elevation]);
 
   // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
   // scaleOverride используется ТОЛЬКО для внешних команд (ввод в поле, fitToScreen).

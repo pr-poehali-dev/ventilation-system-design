@@ -387,8 +387,11 @@ export default function CadPage() {
   // ─── Ракурс / 3D ────────────────────────────────────────────────────
   const [viewPreset, setViewPreset] = useState<{ name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE"; nonce: number } | null>(null);
   const [viewInfo, setViewInfo] = useState<{ is3D: boolean; azimuth: number; elevation: number }>({ is3D: false, azimuth: 0, elevation: 90 });
-  const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") =>
+  const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") => {
     setViewPreset({ name, nonce: Date.now() });
+    // При смене ориентации — вписываем схему в экран через 50мс (после применения угла)
+    setTimeout(() => setFitToScreenNonce(Date.now()), 80);
+  };
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
@@ -398,16 +401,17 @@ export default function CadPage() {
   const [workPlane, setWorkPlane] = useState<{ axis: "x" | "y" | "z"; value: number } | null>(null);
 
   // ─── МАСШТАБ И ВПИСЫВАНИЕ ───────────────────────────────────────────
-  // Внешний контролируемый масштаб (px/м). Меняется из тулбара (поле «1:N»).
-  // Внутри TopoCanvas — собственный state, синхронизируемый через onScaleChange.
   const [viewScale, setViewScale] = useState<number>(0.4);
-  // Nonce для команды «вписать в экран» — TopoCanvas реагирует на смену значения.
   const [fitToScreenNonce, setFitToScreenNonce] = useState<number>(0);
-  // При первом рендере один раз вписываем сеть в экран (даём DOM смонтироваться).
+  // При первом рендере один раз вписываем сеть в экран
   useEffect(() => {
     const t = window.setTimeout(() => setFitToScreenNonce(Date.now()), 200);
     return () => window.clearTimeout(t);
   }, []);
+
+  // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
+  type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
+  const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
 
   // Nonce для импорта DXF — когда меняется, переключаем вид + fitToScreen
   const [importNonce, setImportNonce] = useState(0);
@@ -416,7 +420,7 @@ export default function CadPage() {
     setViewPreset({ name: "plan", nonce: Date.now() });
     const t = window.setTimeout(() => setFitToScreenNonce(Date.now()), 150);
     return () => window.clearTimeout(t);
-  }, [importNonce]);  
+  }, [importNonce]);
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
   const [branchWidth, setBranchWidth] = useState<number>(3);    // px
@@ -552,17 +556,41 @@ export default function CadPage() {
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
   const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
 
+  // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
+  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
+  // Текущие параметры вида для сохранения в файл
+  const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number } | null>(null);
+
   const buildProjectData = () => ({
-    version: 1,
+    version: 2,
     name: projectFileName,
     savedAt: new Date().toISOString(),
     nodes,
     branches: branchesRaw,
     horizons,
+    view: savedViewState ?? undefined,
   });
 
-  const handleSave = () => {
+  // Записать содержимое в уже открытый FileHandle (перезапись)
+  const writeToHandle = async (handle: FileSystemFileHandle, data: object) => {
+    const writable = await handle.createWritable();
+    await writable.write(JSON.stringify(data, null, 2));
+    await writable.close();
+  };
+
+  const handleSave = async () => {
     const data = buildProjectData();
+    // Если есть открытый handle — перезаписываем без диалога
+    if (fileHandleRef.current) {
+      try {
+        await writeToHandle(fileHandleRef.current, data);
+        return;
+      } catch {
+        // handle стал недоступен — fallback на скачивание
+        fileHandleRef.current = null;
+      }
+    }
+    // Fallback: скачивание (если File System Access API недоступен)
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -572,13 +600,31 @@ export default function CadPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleSaveAs = () => {
+  const handleSaveAs = async () => {
+    const data = buildProjectData();
+    // File System Access API — показываем диалог выбора файла
+    if ("showSaveFilePicker" in window) {
+      try {
+        const handle = await (window as Window & { showSaveFilePicker: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+          suggestedName: projectFileName,
+          types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
+        });
+        fileHandleRef.current = handle;
+        const fname = handle.name;
+        setProjectFileName(fname);
+        await writeToHandle(handle, { ...data, name: fname });
+        return;
+      } catch {
+        // Пользователь отменил — ничего не делаем
+        return;
+      }
+    }
+    // Fallback: prompt + скачивание
     const name = window.prompt("Имя файла:", projectFileName);
     if (!name) return;
     const fname = name.endsWith(".vproj") ? name : `${name}.vproj`;
     setProjectFileName(fname);
-    const data = { ...buildProjectData(), name: fname };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ ...data, name: fname }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -587,7 +633,31 @@ export default function CadPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
+    // File System Access API — открываем с handle для последующей перезаписи
+    if ("showOpenFilePicker" in window) {
+      try {
+        const [handle] = await (window as Window & { showOpenFilePicker: (o: object) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker({
+          types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (data.nodes && Array.isArray(data.nodes)) {
+          if (nodes.length > 0 || branchesRaw.length > 0) {
+            if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
+          }
+          fileHandleRef.current = handle;
+          applyProjectData(data, file.name);
+        } else {
+          alert("Файл не является проектом Вентиляция-CAD.");
+        }
+        return;
+      } catch {
+        // Пользователь отменил или API недоступен — fallback
+      }
+    }
+    // Fallback: <input type=file>
     const inp = document.createElement("input");
     inp.type = "file";
     inp.accept = ".vproj,.json";
@@ -602,14 +672,8 @@ export default function CadPage() {
             if (nodes.length > 0 || branchesRaw.length > 0) {
               if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
             }
-            setNodes(data.nodes);
-            setBranches(data.branches ?? []);
-            if (data.horizons) setHorizons(data.horizons);
-            setProjectFileName(data.name ?? file.name);
-            setSelectedNodeId(null);
-            setSelectedBranchId(null);
-            setImportNonce((n) => n + 1);
-            setActiveRibbon("home");
+            fileHandleRef.current = null;
+            applyProjectData(data, file.name);
           } else {
             alert("Файл не является проектом Вентиляция-CAD.");
           }
@@ -620,6 +684,29 @@ export default function CadPage() {
       reader.readAsText(file);
     };
     inp.click();
+  };
+
+  // Применить данные из JSON — с слиянием дефолтов для ветвей
+  const applyProjectData = (data: Record<string, unknown>, fileName: string) => {
+    setNodes((data.nodes as TopoNode[]) ?? []);
+    // Каждую ветвь прогоняем через makeBranch чтобы гарантировать все поля (fanRpm и т.д.)
+    const rawBranches = (data.branches as TopoBranch[]) ?? [];
+    const mergedBranches = rawBranches.map((b) =>
+      makeBranch(b.id, b.fromId, b.toId, b)
+    );
+    setBranches(mergedBranches);
+    if (data.horizons) setHorizons(data.horizons as typeof horizons);
+    setProjectFileName((data.name as string) ?? fileName);
+    setSelectedNodeId(null);
+    setSelectedBranchId(null);
+    // Восстанавливаем сохранённый вид если есть
+    if (data.view) {
+      const v = data.view as { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
+      setSavedViewToRestore(v);
+    } else {
+      setImportNonce((n) => n + 1);
+    }
+    setActiveRibbon("home");
   };
 
   const handlePrint = () => {
@@ -2333,6 +2420,8 @@ export default function CadPage() {
               scaleOverride={viewScale}
               onScaleChange={setViewScale}
               fitToScreenNonce={fitToScreenNonce}
+              restoreView={savedViewToRestore}
+              onViewStateChange={setSavedViewState}
               editingHorizonImageId={editingHorizonImageId}
               onHorizonImageBoundsChange={setHorizonImageBounds}
               onNodeAdd={handleNodeAdd}
