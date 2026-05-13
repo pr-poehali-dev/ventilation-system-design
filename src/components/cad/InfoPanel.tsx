@@ -77,9 +77,9 @@ export default function InfoPanel({
   nodes = [], selectedNodeId,
   onNodeVisibilityChange, onAllNodesVisibility, onSelectNode,
 }: InfoPanelProps) {
-  const [nodesOpen, setNodesOpen] = useState(true);
-  const [branchesOpen, setBranchesOpen] = useState(true);
-  const [nodeVisOpen, setNodeVisOpen] = useState(true);
+  const [nodesOpen, setNodesOpen] = useState(false);
+  const [branchesOpen, setBranchesOpen] = useState(false);
+  const [nodeVisOpen, setNodeVisOpen] = useState(false);
   const [preset, setPreset] = useState(0);
 
   const applyPreset = (idx: number) => {
