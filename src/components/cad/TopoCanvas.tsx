@@ -593,22 +593,7 @@ export default function TopoCanvas(props: Props) {
     );
   };
 
-  // Вертикальные «направляющие» от узлов до пола (z=0) — для понимания глубины
-  const renderDepthLines = () => {
-    if (!is3D) return null;
-    return (
-      <g>
-        {projNodes.map(({ node, sx, sy }) => {
-          if (node.z === 0 || node.atmosphereLink) return null;
-          const ground = project3D({ x: node.x, y: node.y, z: 0 }, proj);
-          return (
-            <line key={`dl${node.id}`} x1={sx} y1={sy} x2={ground.sx} y2={ground.sy}
-              stroke="#9ca3af" strokeWidth="0.5" strokeDasharray="2 2" opacity="0.5" />
-          );
-        })}
-      </g>
-    );
-  };
+  // Вертикальные направляющие — убраны (создавали сотни пунктирных линий при 3D-виде CSV-схем)
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden"
@@ -663,7 +648,6 @@ export default function TopoCanvas(props: Props) {
           <text x={size.w - 14} y={view.offsetY - 3} fontSize="9" fill="#ef4444" opacity="0.6">X</text>
         )}
 
-        {is3D && renderDepthLines()}
         {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
 
         {/* ── ПОДЛОЖКИ ГОРИЗОНТОВ (PNG/JPG) ─────────────────────────────── */}
@@ -764,11 +748,10 @@ export default function TopoCanvas(props: Props) {
             : "#9ca3af";
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
-          // Приоритет: индивидуальная lineWidth ветви (если задана) → глобальная branchWidth
-          // Масштабируемая ширина: при приближении ветви становятся толще (как в Аэросети)
-          // Базовая ширина в мировых единицах — 4м, масштабируем с ограничением 1-20px
+          // Масштабируемая как в Аэросети: при «вписать» ~3px, при приближении ~8px
+          // scale 0.05→w=2, scale 0.15→w=3, scale 1→w=6, scale 3→w=10
           const bwBase = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-          const scaledW = Math.min(20, Math.max(1, bwBase * Math.pow(view.scale, 0.4)));
+          const scaledW = Math.min(18, Math.max(1.5, bwBase * Math.pow(view.scale * 8, 0.45)));
           const bw = scaledW;
           const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
           const baseW = isSel ? bw + 1.5 : bw;
@@ -954,9 +937,10 @@ export default function TopoCanvas(props: Props) {
           const isSel = selectedNodeId === node.id;
           const isBranchFrom = branchFrom === node.id;
           // Масштабируемый радиус как в Аэросети: r растёт при приближении
-          // Базовый размер — 8м в мировых координатах, min 3px, max 24px
-          const rScaled = Math.min(24, Math.max(3, view.scale * 8));
-          const r = isSel ? rScaled + 2 : rScaled;
+          // При «Вписать в экран» (scale ~0.05–0.15) → r~7px (как в Аэросети)
+          // При крупном плане (scale ~1–3) → r~16–22px
+          const rScaled = Math.min(22, Math.max(7, view.scale * 60));
+          const r = isSel ? rScaled + 3 : rScaled;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
