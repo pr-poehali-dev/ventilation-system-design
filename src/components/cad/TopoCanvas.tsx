@@ -11,7 +11,7 @@ import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 // 2D (план) + 3D с произвольным ракурсом
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CadTool = "select" | "node" | "branch" | "pan" | "rotate";
+export type CadTool = "select" | "node" | "branch" | "pan" | "rotate" | "symbol";
 
 interface Props {
   nodes: TopoNode[];
@@ -82,6 +82,10 @@ interface Props {
   selectedSymbolId?: string | null;
   /** Перемещение символа */
   onSymbolMove?: (id: string, x: number, y: number) => void;
+  /** Активный тип символа для инструмента "symbol" */
+  activeSymbolTypeId?: string | null;
+  /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь) */
+  onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null) => void;
 }
 
 export type FlowDisplayMode =
@@ -111,6 +115,7 @@ export default function TopoCanvas(props: Props) {
     selectedBranchIds, onBranchMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
+    activeSymbolTypeId, onSymbolPlace,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -142,6 +147,7 @@ export default function TopoCanvas(props: Props) {
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const [hoverBranchId, setHoverBranchId] = useState<string | null>(null);
 
   // Перетаскивание угла подложки горизонта: какой именно угол тащим.
   const [draggingCorner, setDraggingCorner] = useState<
@@ -318,6 +324,23 @@ export default function TopoCanvas(props: Props) {
     const hitN = hitNode(sx, sy, projNodes);
     const hitB = !hitN ? hitBranch(sx, sy, projNodes, branches) : null;
 
+    // ─── ИНСТРУМЕНТ «СИМВОЛ» — клик на ветвь = размещает символ посередине ─
+    if (tool === "symbol" && activeSymbolTypeId && onSymbolPlace) {
+      if (hitB) {
+        // Размещаем на середине ветви
+        const fromN = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.fromId)?.node;
+        const toN   = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.toId)?.node;
+        if (fromN && toN) {
+          onSymbolPlace(activeSymbolTypeId, (fromN.x + toN.x) / 2, (fromN.y + toN.y) / 2, hitB);
+        }
+      } else {
+        // Клик на пустом месте — в мировых координатах
+        const w = screenToWorld(sx, sy);
+        if (w) onSymbolPlace(activeSymbolTypeId, Math.round(w.x), Math.round(w.y), null);
+      }
+      return;
+    }
+
     // ─── ИНСТРУМЕНТ «УЗЕЛ» — непрерывный режим, snap к ветви = split ───
     if (tool === "node") {
       if (hitN) {
@@ -435,6 +458,14 @@ export default function TopoCanvas(props: Props) {
     const w = screenToWorld(sx, sy);
     if (w) setHoverPos({ x: Math.round(w.x), y: Math.round(w.y) });
     else setHoverPos(null);
+
+    // Подсветка ветви при tool=symbol
+    if (tool === "symbol") {
+      const hb = hitBranch(sx, sy, projNodes, branches);
+      setHoverBranchId(hb ?? null);
+    } else if (hoverBranchId) {
+      setHoverBranchId(null);
+    }
 
     if (rotStart) {
       const dx = e.clientX - rotStart.x;
@@ -601,6 +632,7 @@ export default function TopoCanvas(props: Props) {
         background: is3D ? "linear-gradient(to bottom, #f0f4f8 0%, #ffffff 60%, #f5f5f5 100%)" : "#ffffff",
         cursor: rotStart ? "grabbing" : panStart ? "grabbing"
           : tool === "node" ? "crosshair"
+          : tool === "symbol" ? "copy"
           : tool === "rotate" ? "grab"
           : tool === "pan" ? "grab" : "default",
       }}>
@@ -772,6 +804,11 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={b.id}>
+              {/* Подсветка ветви при tool=symbol hover */}
+              {hoverBranchId === b.id && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#f59e0b" strokeWidth={w + 8} strokeLinecap="round" opacity="0.35" />
+              )}
               {/* Контурная обводка (рисуется ПОД основной линией, шире на 2*borderW) */}
               {borderW > 0 && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
@@ -930,19 +967,41 @@ export default function TopoCanvas(props: Props) {
         {schemaSymbols.map(sym => {
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           if (!lt) return null;
-          const p = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+
+          // Если символ привязан к ветви — позиция всегда по середине ветви
+          let px: number, py: number;
+          if (sym.branchId) {
+            const br = branches.find(b => b.id === sym.branchId);
+            const fN = br ? projNodes.find(p => p.node.id === br.fromId) : null;
+            const tN = br ? projNodes.find(p => p.node.id === br.toId) : null;
+            if (fN && tN) {
+              px = (fN.sx + tN.sx) / 2;
+              py = (fN.sy + tN.sy) / 2;
+            } else {
+              const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+              px = pt.sx; py = pt.sy;
+            }
+          } else {
+            const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+            px = pt.sx; py = pt.sy;
+          }
+
           const isSel = selectedSymbolId === sym.id;
-          // Масштаб иконки: фиксированный 28px
-          const SZ = 28;
+          const SZ = 32; // px, фиксированный
+          const HX = px - SZ / 2;
+          const HY = py - SZ / 2 - 4; // немного выше середины ветви
+
           return (
             <g key={sym.id}
-              transform={`translate(${p.sx - SZ / 2},${p.sy - SZ / 2})`}
-              style={{ cursor: "pointer" }}
-              onClick={(e) => { e.stopPropagation(); onSelectSymbol?.(sym.id); }}
-              onMouseDown={(e) => {
-                if (e.button !== 0) return;
+              style={{ cursor: tool === "select" ? "pointer" : undefined }}
+              onClick={(e) => {
+                if (tool !== "select") return;
                 e.stopPropagation();
-                // Перетаскивание символа
+                onSelectSymbol?.(isSel ? null : sym.id);
+              }}
+              onMouseDown={(e) => {
+                if (e.button !== 0 || tool !== "select" || sym.branchId) return;
+                e.stopPropagation();
                 const startX = e.clientX, startY = e.clientY;
                 const origX = sym.x, origY = sym.y;
                 const onMove = (me: MouseEvent) => {
@@ -950,13 +1009,30 @@ export default function TopoCanvas(props: Props) {
                   const dy = -(me.clientY - startY) / view.scale;
                   onSymbolMove?.(sym.id, origX + dx, origY + dy);
                 };
-                const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                const onUp = () => {
+                  window.removeEventListener("mousemove", onMove);
+                  window.removeEventListener("mouseup", onUp);
+                };
                 window.addEventListener("mousemove", onMove);
                 window.addEventListener("mouseup", onUp);
               }}>
-              {isSel && <rect x={-3} y={-3} width={SZ + 6} height={SZ + 6} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="3 2" rx="2" />}
-              <svg width={SZ} height={SZ} viewBox="0 0 48 40"
+              {/* Рамка выделения */}
+              {isSel && (
+                <rect x={HX - 3} y={HY - 3} width={SZ + 6} height={SZ + 6}
+                  fill="none" stroke="#2563eb" strokeWidth="1.5"
+                  strokeDasharray="3 2" rx="3" />
+              )}
+              {/* SVG-символ */}
+              <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
+                overflow="visible"
                 dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+              {/* Подпись под символом */}
+              {view.scale > 0.15 && (
+                <text x={px} y={HY + SZ + 10} textAnchor="middle"
+                  fontSize="9" fill="#374151" fontFamily="Segoe UI, sans-serif">
+                  {lt.name}
+                </text>
+              )}
             </g>
           );
         })}

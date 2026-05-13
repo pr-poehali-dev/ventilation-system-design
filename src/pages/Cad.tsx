@@ -24,6 +24,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
+import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -431,11 +432,19 @@ export default function CadPage() {
   const [symbolClipboard, setSymbolClipboard] = useState<string | null>(null); // id типа для вставки
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
 
-  const addSymbol = (typeId: string, x: number, y: number, branchId?: string) => {
+  const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
+
+  const addSymbol = (typeId: string, x: number, y: number, branchId?: string | null) => {
     const id = `SYM_${Date.now()}`;
     setSchemaSymbols(prev => [...prev, { id, typeId, x, y, branchId: branchId ?? null }]);
   };
   const removeSymbol = (id: string) => setSchemaSymbols(prev => prev.filter(s => s.id !== id));
+
+  // Активировать инструмент размещения символа
+  const handlePickSymbol = (typeId: string) => {
+    setActiveSymbolTypeId(typeId);
+    setTool("symbol");
+  };
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
@@ -1318,18 +1327,31 @@ export default function CadPage() {
 
         {/* ── Группа: Объекты на выработках ── */}
         <RibbonGroup label="Объекты на выработках">
-          <div className="grid grid-rows-2 grid-flow-col gap-0.5">
-            {[
-              "Pause", "Wind", "DoorOpen", "Square", "Circle", "Octagon", "Hexagon",
-              "ArrowRight", "ArrowLeftRight", "ArrowUpRight", "Cog", "Fan", "Filter",
-              "Triangle", "Diamond", "Pentagon", "MoveRight", "MoveDown", "Pipette", "Wrench",
-            ].map((ic, i) => (
-              <button key={i}
-                className="w-6 h-6 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded flex items-center justify-center"
-                title={`Объект ${i + 1}`}>
-                <Icon name={ic} size={12} className="text-gray-700" fallback="Square" />
-              </button>
-            ))}
+          <div className="flex flex-col gap-0.5 justify-center h-full">
+            {/* Статус активного символа */}
+            {tool === "symbol" && activeSymbolTypeId && (
+              <div className="text-[9px] text-blue-700 font-semibold px-1 bg-blue-50 rounded border border-blue-200 mb-0.5 truncate max-w-[200px]">
+                ▶ {LEGEND_TYPES.find(l => l.id === activeSymbolTypeId)?.name ?? activeSymbolTypeId}
+                <button className="ml-1 text-gray-400 hover:text-red-500"
+                  onClick={() => { setTool("select"); setActiveSymbolTypeId(null); }}>✕</button>
+              </div>
+            )}
+            <div className="grid grid-rows-2 grid-flow-col gap-0.5">
+              {LEGEND_TYPES.map(lt => (
+                <button key={lt.id}
+                  title={`${lt.name} — кликни на выработку`}
+                  onClick={() => handlePickSymbol(lt.id)}
+                  className="w-7 h-7 flex items-center justify-center rounded border transition-colors"
+                  style={{
+                    borderColor: activeSymbolTypeId === lt.id && tool === "symbol" ? "#2563eb" : "#d1d5db",
+                    background: activeSymbolTypeId === lt.id && tool === "symbol" ? "#dbeafe" : "white",
+                  }}>
+                  <svg width={22} height={18} viewBox="0 0 48 40">
+                    <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                  </svg>
+                </button>
+              ))}
+            </div>
           </div>
         </RibbonGroup>
 
@@ -2302,6 +2324,12 @@ export default function CadPage() {
               selectedSymbolId={selectedSymbolId}
               onSelectSymbol={setSelectedSymbolId}
               onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
+              activeSymbolTypeId={activeSymbolTypeId}
+              onSymbolPlace={(typeId, x, y, branchId) => {
+                addSymbol(typeId, x, y, branchId);
+                setTool("select");
+                setActiveSymbolTypeId(null);
+              }}
             />
 
             {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}
