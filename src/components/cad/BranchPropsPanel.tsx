@@ -644,159 +644,269 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
         {innerTab === "Вентилятор" && (
           <div>
-            <SectionHeader title="Свойства вентилятора" />
+            <SectionHeader title="Режим проветривания" />
 
-            <InlineLabel label="Установлен">
-              <CheckField checked={branch.hasFan} onChange={(v) => onUpdate({ hasFan: v })} />
+            <InlineLabel label="Тип">
+              <select
+                value={branch.fanMode}
+                onChange={(e) => onUpdate({ fanMode: e.target.value as "constant" | "curve" })}
+                className="w-full text-[11px] px-1"
+                style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                <option value="constant">Постоянный напор</option>
+                <option value="curve">Напорная характеристика</option>
+              </select>
             </InlineLabel>
 
-            {branch.hasFan && (
+            {branch.fanMode === "constant" && (
               <>
-                <InlineLabel label="Тип">
-                  <select
-                    value={branch.fanMode}
-                    onChange={(e) => onUpdate({ fanMode: e.target.value as "constant" | "curve" })}
-                    className="w-full text-[11px] px-1"
-                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                    <option value="constant">Постоянный напор</option>
-                    <option value="curve">Напорная характеристика</option>
-                  </select>
-                </InlineLabel>
-
-                {branch.fanMode === "constant" && (
-                  <>
-                    <InlineLabel label="Напор, Па">
-                      <EditInput type="number" step="10" value={branch.fanPressure}
-                        onChange={(v) => onUpdate({ fanPressure: parseFloat(v) || 0 })} />
-                    </InlineLabel>
-                    <InlineLabel label="КПД, %">
-                      <EditInput type="number" step="1" value={Math.round(branch.fanEfficiency * 100) || 65}
-                        onChange={(v) => onUpdate({ fanEfficiency: (parseFloat(v) || 65) / 100 })} />
-                    </InlineLabel>
-                  </>
-                )}
-
-                {branch.fanMode === "curve" && (() => {
-                  const curve = getFanById(branch.fanCurveId);
-                  return (
-                    <>
-                      <InlineLabel label="Шаблон">
-                        <select
-                          value={branch.fanCurveId}
-                          onChange={(e) => {
-                            const f = getFanById(e.target.value);
-                            onUpdate({
-                              fanCurveId: e.target.value,
-                              fanName: f?.name ?? "",
-                              fanRpm: f ? (f.rpmNominal ?? 0) : 0,
-                              fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
-                            });
-                          }}
-                          className="w-full text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                          <option value="">— выберите модель —</option>
-                          {FAN_CATALOG.map((f) => (
-                            <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
-                          ))}
-                        </select>
-                      </InlineLabel>
-
-                      {curve && curve.bladeAngles.length > 0 && (
-                        <InlineLabel label="Лопатки">
-                          <select
-                            value={branch.fanBladeAngle ?? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)]}
-                            onChange={(e) => onUpdate({ fanBladeAngle: Number(e.target.value) })}
-                            className="w-full text-[11px] px-1"
-                            style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                            {curve.bladeAngles.map(a => (
-                              <option key={a} value={a}>Угол {a}°</option>
-                            ))}
-                          </select>
-                        </InlineLabel>
-                      )}
-
-                      {curve && (
-                        <>
-                          <InlineLabel label="Скорость">
-                            <div className="flex items-center gap-1 w-full">
-                              <input
-                                type="range"
-                                min={curve.rpmMin} max={curve.rpmMax} step={10}
-                                value={branch.fanRpm || curve.rpmNominal}
-                                onChange={(e) => onUpdate({ fanRpm: Number(e.target.value) })}
-                                className="flex-1"
-                                style={{ accentColor: "#2563eb" }} />
-                              <span className="text-[10px] text-gray-700 w-16 text-right flex-shrink-0">
-                                {branch.fanRpm || curve.rpmNominal} об/мин
-                              </span>
-                            </div>
-                          </InlineLabel>
-                          <div className="px-1 pb-0.5" style={{ marginLeft: 88 }}>
-                            <span className="text-[9px] text-gray-400">
-                              от {curve.rpmMin} до {curve.rpmMax} об/мин
-                            </span>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  );
-                })()}
-
-                <InlineLabel label="В параллели">
-                  <EditInput type="number" step="1" value={branch.fanParallel ?? 1}
-                    onChange={(v) => onUpdate({ fanParallel: Math.max(1, parseInt(v) || 1) })} />
-                </InlineLabel>
-
-                <InlineLabel label="Установка">
-                  <select
-                    value={branch.fanInstall ?? "Внутри перемычки"}
-                    onChange={(e) => onUpdate({ fanInstall: e.target.value })}
-                    className="w-full text-[11px] px-1"
-                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                    <option>Внутри перемычки</option>
-                    <option>Снаружи перемычки</option>
-                    <option>На сопряжении</option>
-                  </select>
-                </InlineLabel>
-
-                <SectionHeader title="Вычисленные параметры" />
-
-                <InlineLabel label="Q выраб., м³/с">
-                  <ComputedInput value={numFmt(Math.abs(branch.flow), 2)} />
-                </InlineLabel>
                 <InlineLabel label="Напор, Па">
-                  <ComputedInput value={numFmt(branch.fanPressure, 0)} />
-                </InlineLabel>
-                <InlineLabel label="Мощность, кВт">
-                  <ComputedInput value={numFmt(branch.fanShaftPower / 1000, 1)} />
+                  <EditInput type="number" step="10" value={branch.fanPressure}
+                    onChange={(v) => onUpdate({ fanPressure: parseFloat(v) || 0 })} />
                 </InlineLabel>
                 <InlineLabel label="КПД, %">
-                  <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
+                  <EditInput type="number" step="1" value={Math.round(branch.fanEfficiency * 100) || 65}
+                    onChange={(v) => onUpdate({ fanEfficiency: (parseFloat(v) || 65) / 100 })} />
                 </InlineLabel>
-                {(() => {
-                  const curve = getFanById(branch.fanCurveId);
-                  return curve ? (
-                    <InlineLabel label="Диаметр, м">
-                      <ComputedInput value={numFmt(curve.diameter, 1)} />
-                    </InlineLabel>
-                  ) : null;
-                })()}
-
-                <div className="px-1 py-0.5 text-[10px] text-gray-400">
-                  + : {branch.fromId} → {branch.toId}
-                </div>
               </>
             )}
 
-            {!branch.hasFan && (
-              <div className="px-2 py-4 text-[11px] text-gray-400 text-center">
-                Вентилятор не установлен.<br />
-                <button className="mt-1 text-blue-600 underline text-[11px]"
-                  onClick={() => onUpdate({ hasFan: true, fanMode: "curve" })}>
-                  Установить вентилятор
-                </button>
-              </div>
-            )}
+            {branch.fanMode === "curve" && (() => {
+              const curve = getFanById(branch.fanCurveId);
+              const rpm = branch.fanRpm || (curve?.rpmNominal ?? 0);
+              const bladeAngle = branch.fanBladeAngle ?? (curve?.bladeAngles?.length ? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)] : 45);
+
+              // Строим Q-H график (SVG 240×110)
+              const W = 240, H_svg = 110, padL = 36, padR = 8, padT = 8, padB = 24;
+              const gW = W - padL - padR;
+              const gH = H_svg - padT - padB;
+
+              const renderChart = () => {
+                if (!curve) return null;
+                const qMin = curve.qMin, qMax = curve.qMax;
+                const k = rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
+                // Характеристики для нескольких углов лопаток (или одна кривая для центробежных)
+                const anglesToDraw = curve.bladeAngles.length > 0
+                  ? curve.bladeAngles
+                  : [bladeAngle];
+
+                // Шкала H: берём максимум среди всех кривых
+                let hMax = 0;
+                anglesToDraw.forEach(() => {
+                  for (let i = 0; i <= 20; i++) {
+                    const q = qMin + (qMax - qMin) * i / 20;
+                    const qn = q / k;
+                    const h = Math.max(0, curve.h0 + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
+                    if (h > hMax) hMax = h;
+                  }
+                });
+                hMax = Math.ceil(hMax / 500) * 500 || 2000;
+
+                const tx = (q: number) => padL + (q - qMin) / (qMax - qMin) * gW;
+                const ty = (h: number) => padT + gH - (h / hMax) * gH;
+
+                // Угловой коэф. лопаток меняет h0 — имитируем сдвиг кривой
+                const angleFactor = (a: number) => {
+                  if (curve.bladeAngles.length === 0) return 1;
+                  const mid = curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)];
+                  return 0.6 + 0.8 * (a - curve.bladeAngles[0]) / (Math.max(1, curve.bladeAngles[curve.bladeAngles.length - 1] - curve.bladeAngles[0]));
+                  void mid;
+                };
+
+                const paths = anglesToDraw.map((a, ai) => {
+                  const af = angleFactor(a);
+                  const pts: string[] = [];
+                  for (let i = 0; i <= 30; i++) {
+                    const q = qMin + (qMax - qMin) * i / 30;
+                    const qn = q / k;
+                    const h = Math.max(0, (curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn)) * k * k;
+                    pts.push(`${tx(q).toFixed(1)},${ty(h).toFixed(1)}`);
+                  }
+                  const isSelected = a === bladeAngle;
+                  return (
+                    <polyline key={a}
+                      points={pts.join(" ")}
+                      fill="none"
+                      stroke={isSelected ? "#2563eb" : "#93c5fd"}
+                      strokeWidth={isSelected ? 1.8 : 1}
+                      strokeDasharray={isSelected ? undefined : "3,2"}
+                      opacity={isSelected ? 1 : 0.7}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => onUpdate({ fanBladeAngle: a })}
+                    >
+                      <title>Угол {a}°</title>
+                    </polyline>
+                  );
+                  void ai;
+                });
+
+                // Рабочая точка
+                const qWork = Math.abs(branch.flow);
+                const R = qWork > 0.01 ? branch.fanPressure / (qWork * qWork) : 0;
+                const workDot = qWork > 0.01 ? (
+                  <>
+                    <polyline
+                      points={Array.from({ length: 20 }, (_, i) => {
+                        const q = qMin + (qMax - qMin) * i / 19;
+                        return `${tx(q).toFixed(1)},${ty(R * q * q).toFixed(1)}`;
+                      }).join(" ")}
+                      fill="none" stroke="#f59e0b" strokeWidth={1} strokeDasharray="4,2" />
+                    <circle cx={tx(qWork)} cy={ty(branch.fanPressure)} r={4} fill="#ef4444" stroke="white" strokeWidth={1} />
+                  </>
+                ) : null;
+
+                // Оси
+                const nTicks = 4;
+                const hTicks = Array.from({ length: nTicks + 1 }, (_, i) => Math.round(hMax * i / nTicks));
+                const qTicks = Array.from({ length: 5 }, (_, i) => Math.round(qMin + (qMax - qMin) * i / 4));
+
+                return (
+                  <svg width={W} height={H_svg} style={{ display: "block" }}>
+                    <rect x={padL} y={padT} width={gW} height={gH} fill="#f8faff" stroke="#d1d5db" strokeWidth={0.5} />
+                    {hTicks.map(h => (
+                      <g key={h}>
+                        <line x1={padL} y1={ty(h)} x2={padL + gW} y2={ty(h)} stroke="#e5e7eb" strokeWidth={0.5} />
+                        <text x={padL - 3} y={ty(h) + 3} textAnchor="end" fontSize={8} fill="#6b7280">{h}</text>
+                      </g>
+                    ))}
+                    {qTicks.map(q => (
+                      <g key={q}>
+                        <line x1={tx(q)} y1={padT} x2={tx(q)} y2={padT + gH} stroke="#e5e7eb" strokeWidth={0.5} />
+                        <text x={tx(q)} y={padT + gH + 10} textAnchor="middle" fontSize={8} fill="#6b7280">{q}</text>
+                      </g>
+                    ))}
+                    {paths}
+                    {workDot}
+                    <text x={padL + gW / 2} y={H_svg - 2} textAnchor="middle" fontSize={8} fill="#6b7280">Q, м³/с</text>
+                    <text x={6} y={padT + gH / 2} textAnchor="middle" fontSize={8} fill="#6b7280"
+                      transform={`rotate(-90,6,${padT + gH / 2})`}>H, Па</text>
+                    {curve.bladeAngles.length > 0 && (
+                      <text x={padL + gW - 2} y={padT + 10} textAnchor="end" fontSize={7.5} fill="#2563eb">
+                        — Угол {bladeAngle}°
+                      </text>
+                    )}
+                    {qWork > 0.01 && (
+                      <text x={tx(qWork) + 6} y={ty(branch.fanPressure) - 4} fontSize={7.5} fill="#ef4444">
+                        Q={qWork.toFixed(1)}
+                      </text>
+                    )}
+                  </svg>
+                );
+              };
+
+              return (
+                <>
+                  <InlineLabel label="Шаблон">
+                    <select
+                      value={branch.fanCurveId}
+                      onChange={(e) => {
+                        const f = getFanById(e.target.value);
+                        onUpdate({
+                          fanCurveId: e.target.value,
+                          fanName: f?.name ?? "",
+                          fanRpm: f ? (f.rpmNominal ?? 0) : 0,
+                          fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
+                        });
+                      }}
+                      className="w-full text-[11px] px-1"
+                      style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                      <option value="">— выберите модель —</option>
+                      {FAN_CATALOG.map((f) => (
+                        <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
+                      ))}
+                    </select>
+                  </InlineLabel>
+
+                  {curve && curve.bladeAngles.length > 0 && (
+                    <InlineLabel label="Лопатки">
+                      <select
+                        value={bladeAngle}
+                        onChange={(e) => onUpdate({ fanBladeAngle: Number(e.target.value) })}
+                        className="w-full text-[11px] px-1"
+                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                        {curve.bladeAngles.map(a => (
+                          <option key={a} value={a}>Угол {a}°</option>
+                        ))}
+                      </select>
+                    </InlineLabel>
+                  )}
+
+                  {curve && (
+                    <>
+                      <InlineLabel label="Скорость">
+                        <div className="flex items-center gap-1 w-full">
+                          <input
+                            type="range"
+                            min={curve.rpmMin} max={curve.rpmMax} step={10}
+                            value={rpm}
+                            onChange={(e) => onUpdate({ fanRpm: Number(e.target.value) })}
+                            className="flex-1"
+                            style={{ accentColor: "#2563eb" }} />
+                          <span className="text-[10px] text-gray-700 w-16 text-right flex-shrink-0">
+                            {rpm} об/мин
+                          </span>
+                        </div>
+                      </InlineLabel>
+                      <div style={{ marginLeft: 88 }} className="pb-0.5">
+                        <span className="text-[9px] text-gray-400">от {curve.rpmMin} до {curve.rpmMax} об/мин</span>
+                      </div>
+
+                      <SectionHeader title="Характеристики" />
+                      <div className="flex justify-center py-1 overflow-x-auto" style={{ background: "#f8faff" }}>
+                        {renderChart()}
+                      </div>
+                      <div className="px-2 pb-1 flex gap-3 text-[9px] text-gray-400 justify-center flex-wrap">
+                        <span style={{ color: "#2563eb" }}>— выбранный угол</span>
+                        <span style={{ color: "#93c5fd" }}>-- другие углы</span>
+                        {Math.abs(branch.flow) > 0.01 && <span style={{ color: "#ef4444" }}>● рабочая точка</span>}
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+
+            <InlineLabel label="В параллели">
+              <EditInput type="number" step="1" value={branch.fanParallel ?? 1}
+                onChange={(v) => onUpdate({ fanParallel: Math.max(1, parseInt(v) || 1) })} />
+            </InlineLabel>
+
+            <InlineLabel label="Установка">
+              <select
+                value={branch.fanInstall ?? "Внутри перемычки"}
+                onChange={(e) => onUpdate({ fanInstall: e.target.value })}
+                className="w-full text-[11px] px-1"
+                style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                <option>Внутри перемычки</option>
+                <option>Снаружи перемычки</option>
+                <option>На сопряжении</option>
+              </select>
+            </InlineLabel>
+
+            <SectionHeader title="Вычисленные параметры" />
+
+            <InlineLabel label="Q выраб., м³/с">
+              <ComputedInput value={numFmt(Math.abs(branch.flow), 2)} />
+            </InlineLabel>
+            <InlineLabel label="Напор, Па">
+              <ComputedInput value={numFmt(branch.fanPressure, 0)} />
+            </InlineLabel>
+            <InlineLabel label="Мощность, кВт">
+              <ComputedInput value={numFmt(branch.fanShaftPower / 1000, 1)} />
+            </InlineLabel>
+            <InlineLabel label="КПД, %">
+              <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
+            </InlineLabel>
+            {(() => {
+              const curve = getFanById(branch.fanCurveId);
+              return curve ? (
+                <InlineLabel label="Диаметр, м">
+                  <ComputedInput value={numFmt(curve.diameter, 1)} />
+                </InlineLabel>
+              ) : null;
+            })()}
+            <div className="px-1 py-0.5 text-[10px] text-gray-400">
+              + : {branch.fromId} → {branch.toId}
+            </div>
           </div>
         )}
 

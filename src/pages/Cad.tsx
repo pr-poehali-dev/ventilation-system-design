@@ -2340,7 +2340,14 @@ export default function CadPage() {
               onSymbolMoveAlongBranch={(id, t) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, t } : s))}
               onSymbolOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, offsetX: ox, offsetY: oy } : s))}
               onSymbolScale={(id, delta) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, scale: Math.max(0.4, Math.min(4, (s.scale ?? 1) + delta)) } : s))}
-              onSymbolDelete={(id) => { removeSymbol(id); setSelectedSymbolId(null); }}
+              onSymbolDelete={(id) => {
+                const sym = schemaSymbols.find(s => s.id === id);
+                if (sym?.typeId === "fan" && sym.branchId) {
+                  updateBranch(sym.branchId, { hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0 });
+                }
+                removeSymbol(id);
+                setSelectedSymbolId(null);
+              }}
               onSymbolClick={(symId) => {
                 const sym = schemaSymbols.find(s => s.id === symId);
                 if (sym?.typeId === "fan" && sym.branchId) {
@@ -2357,6 +2364,13 @@ export default function CadPage() {
                   setSquadCount("5");
                 } else {
                   addSymbol(typeId, x, y, branchId);
+                  if (typeId === "fan" && branchId) {
+                    updateBranch(branchId, { hasFan: true, fanMode: "curve" });
+                    setSelectedBranchId(branchId);
+                    setSelectedNodeId(null);
+                    setActiveSide("params");
+                    setFanSymbolBranchId(branchId);
+                  }
                   setTool("select");
                   setActiveSymbolTypeId(null);
                 }
