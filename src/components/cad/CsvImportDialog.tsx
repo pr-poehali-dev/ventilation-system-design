@@ -25,7 +25,9 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [rUnit, setRUnit] = useState<"kmu" | "si">("kmu");
   const inputRef = useRef<HTMLInputElement>(null);
+  const filesRef = useRef<CsvFileInput[]>([]);
 
   const readFiles = async (fileList: FileList | File[]) => {
     setError(null); setResult(null); setLoading(true);
@@ -43,8 +45,9 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
         types.push(detectFileType(f.name, text.split("\n").slice(0, 5).join("\n")));
       }
       if (inputs.length === 0) { setError("Не найдено .csv файлов"); setLoading(false); return; }
+      filesRef.current = inputs;
       setFiles(inputs); setFileTypes(types);
-      setResult(parseCsvMulti(inputs));
+      setResult(parseCsvMulti(inputs, { resistanceUnit: rUnit }));
     } catch (e) {
       setError(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -83,6 +86,23 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
             <div className="text-[10px] text-green-600">
               Выберите все 5 файлов сразу: *-nodes.csv, *-excavations.csv и остальные
             </div>
+          </div>
+
+          {/* Единицы сопротивления */}
+          <div className="flex items-center gap-2 text-[11px] text-gray-700">
+            <span className="font-medium">Единицы R в CSV:</span>
+            {(["kmu", "si"] as const).map(u => (
+              <label key={u} className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name="runit" value={u} checked={rUnit === u}
+                  onChange={() => {
+                    setRUnit(u);
+                    if (filesRef.current.length > 0) {
+                      setResult(parseCsvMulti(filesRef.current, { resistanceUnit: u }));
+                    }
+                  }} />
+                {u === "kmu" ? "кмю (АэроСеть, ×10⁻³)" : "Нс²/м⁸ (SI)"}
+              </label>
+            ))}
           </div>
 
           <div

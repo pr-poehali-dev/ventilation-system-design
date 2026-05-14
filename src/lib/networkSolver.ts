@@ -346,7 +346,8 @@ export function solveNetwork(
       const dQ = -num / den;
       // Ограничиваем шаг: не более 60% от максимального |Q| в контуре
       const Qmax = cyc.reduce((m, ce) => Math.max(m, Math.abs(edges[ce.edgeIdx].Q)), 1);
-      const dQclamped = Math.sign(dQ) * Math.min(Math.abs(dQ), Qmax * 0.6);
+      // Демпфирование: ограничиваем шаг и применяем коэффициент релаксации 0.7
+      const dQclamped = Math.sign(dQ) * Math.min(Math.abs(dQ) * 0.7, Qmax * 0.5);
 
       if (Math.abs(dQclamped) > maxDelta) maxDelta = Math.abs(dQclamped);
 
@@ -444,12 +445,18 @@ export function solveNetwork(
     }
   });
 
-  // Аномальные расходы
+  // Аномальные расходы (порог — физически невозможные скорости >50 м/с)
   branchesOut.forEach(b => {
     const Q = Math.abs(b.flow);
-    if (Q > 300) diagnostics.push({ level: "error", category: "branch_flow",
+    const V = b.velocity;
+    // Аномалия — скорость более 50 м/с (для любой горной выработки это нереально)
+    if (V > 50 && b.area > 0) diagnostics.push({ level: "error", category: "branch_flow",
+      message: `Нереальная скорость ${b.id}: V=${V.toFixed(0)} м/с (S=${b.area.toFixed(1)} м²)`,
+      objectId: b.id, value: V });
+    else if (Q > 500) diagnostics.push({ level: "error", category: "branch_flow",
       message: `Аномально высокий расход ${b.id}: Q=${Q.toFixed(1)} м³/с`, objectId: b.id, value: Q });
-    if (b.vMax > 0 && b.velocity > b.vMax) diagnostics.push({ level: "warning", category: "branch_flow",
+    // Превышение V_max — только предупреждение, не ошибка
+    if (b.vMax > 0 && b.vMax < 50 && b.velocity > b.vMax * 1.2) diagnostics.push({ level: "warning", category: "branch_flow",
       message: `Скорость ${b.velocity.toFixed(1)} м/с в ${b.id} > V_max=${b.vMax}`, objectId: b.id, value: b.velocity });
   });
 

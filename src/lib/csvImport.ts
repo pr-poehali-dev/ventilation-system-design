@@ -236,7 +236,8 @@ function buildResult(
   rawBranches: RawBranch[],
   rawFans: RawFan[],
   warnings: string[],
-  debug: string[]
+  debug: string[],
+  resistanceUnit: "kmu" | "si" = "kmu"
 ): CsvImportResult {
   const branchOriginalIdMap: Record<string, string> = {};
   const ts = Date.now();
@@ -312,6 +313,13 @@ function buildResult(
 
     const newBranchId = `B${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = newBranchId;
+    // Перевод R из единиц CSV в Н·с²/м⁸:
+    // "kmu" (кмю, АэроСеть): 1 кмю = 10⁻³ Н·с²/м⁸ → делим на 1000
+    // "si": уже в Н·с²/м⁸ → не трогаем
+    const importedR = rb.resistance > 0
+      ? rb.resistance * (resistanceUnit === "kmu" ? 1e-3 : 1)
+      : 0;
+
     branches.push(makeBranch(newBranchId, fromNode.id, toNode.id, {
       layer: rb.layer,
       length: realLen, manualLength: rb.length > 0,
@@ -319,7 +327,11 @@ function buildResult(
       area: rb.area > 0 ? rb.area : 0,
       perimeter: rb.perimeter > 0 ? rb.perimeter : 0,
       dh: dh > 0 ? dh : 0,
-      flow: rb.flow, resistance: rb.resistance,
+      flow: rb.flow,
+      // Если R задан из CSV — используем ручной режим, чтобы recalcBranchAero не перезаписал его
+      resistanceMode: importedR > 0 ? "manual" : "alpha",
+      manualR: importedR,
+      resistance: importedR,
       manualSection: rb.area > 0, shape,
     }));
   }
@@ -344,7 +356,12 @@ function buildResult(
 
 export interface CsvFileInput { name: string; content: string }
 
-export function parseCsvMulti(files: CsvFileInput[]): CsvImportResult {
+export interface CsvImportOptions {
+  /** Единицы R в CSV: "kmu" = кмю (×10⁻³ Нс²/м⁸, АэроСеть), "si" = Нс²/м⁸ (SI). По умолч. "kmu". */
+  resistanceUnit?: "kmu" | "si";
+}
+
+export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}): CsvImportResult {
   const warnings: string[] = [];
   const debug: string[] = [];
   const allRawNodes: RawNode[] = [];
@@ -398,7 +415,7 @@ export function parseCsvMulti(files: CsvFileInput[]): CsvImportResult {
     };
   }
 
-  return buildResult(allRawNodes, allRawBranches, allRawFans, warnings, debug);
+  return buildResult(allRawNodes, allRawBranches, allRawFans, warnings, debug, opts.resistanceUnit ?? "kmu");
 }
 
 // ── Обратная совместимость: один файл ────────────────────────────────────────
