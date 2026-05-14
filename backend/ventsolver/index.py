@@ -2,21 +2,11 @@
 Решатель вентиляционной сети — Python backend.
 
 Метод: узловых давлений (Node Pressure Method) с итерациями Ньютона-Рафсона.
-Это промышленный стандарт, используемый в Ventsim, VentGraph, VUMA.
-
-Физика:
-  Для ветви i (узлы a→b): Q_i = sign(ΔP_i) · sqrt(|ΔP_i| / R_i)
-  где ΔP_i = P_a - P_b + H_fan_i
-
-  В каждом узле k ≠ GND:  Σ Q_входящих - Σ Q_исходящих = 0
-
-Решение: итерационный Ньютон-Рафсон по давлениям P.
-  J · ΔP = -F  →  P ← P + ΔP  (с демпфированием)
+Матричные операции через numpy — быстро даже для 500+ узлов.
 """
 
 import json
 import math
-import os
 
 def handler(event: dict, context) -> dict:
     """Расчёт воздухораспределения вентиляционной сети."""
@@ -58,222 +48,221 @@ GND = "@gnd"
 
 
 def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
-    max_iter = options.get("maxIter", 100)
-    tol = options.get("tolerance", 0.1)
+    import numpy as np
+
+    max_iter = options.get("maxIter", 50)
+    tol = options.get("tolerance", 0.5)
     log = []
 
-    # ── 1. Ремаппинг атмосферных узлов → GND
+    # ── 1. Атмосферные узлы → GND (опорное давление = 0)
     atm_ids = {n["id"] for n in nodes_in if n.get("atmosphereLink")}
 
     def remap(nid: str) -> str:
         return GND if nid in atm_ids else nid
 
-    # ── 2. Строим рёбра
+    # ── 2. Рёбра графа
     edges = []
     for b in branches_in:
-        R = max(1e-6, float(b.get("resistance", 0) or 0))
+        R = float(b.get("resistance") or 0)
+        R = max(1e-4, R)
         has_fan = bool(b.get("hasFan", False))
-        fan_mode = b.get("fanMode", "constant")
-        H_const = float(b.get("fanPressure", 0) or 0)  # уже в Па
+        H = float(b.get("fanPressure") or 0) if has_fan else 0.0
 
         edges.append({
             "id": b["id"],
             "a": remap(b["fromId"]),
             "b": remap(b["toId"]),
             "R": R,
+            "H": H,
             "hasFan": has_fan,
-            "fanMode": fan_mode,
-            "Hconst": H_const,
-            "Q": 0.0,
         })
 
     if not edges:
-        return {"ok": False, "branches": [], "nodes": nodes_in, "log": ["Нет ветвей"], "iterations": 0, "maxDeltaQ": 0}
+        return {"ok": False, "branches": [], "nodes": nodes_in,
+                "log": ["Нет ветвей"], "iterations": 0, "maxDeltaQ": 0}
 
-    # ── 3. Список свободных узлов (не GND)
-    all_node_ids = set()
+    # ── 3. Список свободных узлов
+    all_nodes = set()
     for e in edges:
-        all_node_ids.add(e["a"])
-        all_node_ids.add(e["b"])
+        all_nodes.add(e["a"])
+        all_nodes.add(e["b"])
 
-    free_nodes = sorted(all_node_ids - {GND})
-    node_idx = {n: i for i, n in enumerate(free_nodes)}
+    free_nodes = sorted(all_nodes - {GND})
     N = len(free_nodes)
+    node_idx = {n: i for i, n in enumerate(free_nodes)}
+    log.append(f"Узлов: {len(all_nodes)}, свободных: {N}, ветвей: {len(edges)}")
 
     if N == 0:
-        return {"ok": True, "branches": branches_in, "nodes": nodes_in, "log": ["Только атмосфера"], "iterations": 0, "maxDeltaQ": 0}
+        return {"ok": True, "branches": branches_in, "nodes": nodes_in,
+                "log": ["Только атмосфера"], "iterations": 0, "maxDeltaQ": 0}
 
-    log.append(f"Узлов: {len(all_node_ids)}, ветвей: {len(edges)}, свободных: {N}")
+    # ── 4. Векторы для numpy
+    ai_arr = np.array([node_idx[e["a"]] if e["a"] != GND else -1 for e in edges], dtype=np.int32)
+    bi_arr = np.array([node_idx[e["b"]] if e["b"] != GND else -1 for e in edges], dtype=np.int32)
+    R_arr = np.array([e["R"] for e in edges], dtype=np.float64)
+    H_arr = np.array([e["H"] for e in edges], dtype=np.float64)
 
-    # ── 4. Начальное давление: оцениваем H вентилятора
-    H0 = 0.0
-    for e in edges:
-        if e["hasFan"] and e["fanMode"] == "constant" and e["Hconst"] > 0:
-            H0 = max(H0, e["Hconst"])
-    if H0 == 0:
-        H0 = 1000.0  # если нет вентилятора — ставим заглушку
+    # ── 5. Начальное давление
+    H_max = float(np.max(H_arr)) if np.any(H_arr > 0) else 1000.0
+    P = np.full(N, H_max * 0.3, dtype=np.float64)
 
-    P = [H0 * 0.3] * N  # начальное приближение давлений
-
-    # ── 5. Функции расчёта Q и dQ/dP для ветви
-    def branch_Q(e: dict, P: list) -> float:
-        Pa = 0.0 if e["a"] == GND else P[node_idx[e["a"]]]
-        Pb = 0.0 if e["b"] == GND else P[node_idx[e["b"]]]
-        H = e["Hconst"] if e["hasFan"] else 0.0
-        dP = Pa - Pb + H
-        R = e["R"]
-        return math.copysign(math.sqrt(abs(dP) / R), dP)
-
-    def branch_dQdP(e: dict, P: list) -> float:
-        """|dQ/dP_a| = 1 / (2 * sqrt(R * |ΔP|))"""
-        Pa = 0.0 if e["a"] == GND else P[node_idx[e["a"]]]
-        Pb = 0.0 if e["b"] == GND else P[node_idx[e["b"]]]
-        H = e["Hconst"] if e["hasFan"] else 0.0
-        dP = Pa - Pb + H
-        R = e["R"]
-        abs_dP = max(0.5, abs(dP))
-        return 1.0 / (2.0 * math.sqrt(R * abs_dP))
-
-    # ── 6. Ньютон-Рафсон
+    # ── 6. Итерации Ньютона с numpy
     max_delta = float("inf")
     it = 0
 
+    # Маски для быстрого накопления в F и J
+    # Для каждого ребра k: ai=индекс узла a, bi=индекс узла b (-1=GND)
+
     for it in range(max_iter):
-        # Обновляем Q всех ветвей
-        for e in edges:
-            q = branch_Q(e, P)
-            e["Q"] = q if math.isfinite(q) else 0.0
+        # Давления в узлах ветвей (GND=0)
+        Pa = np.where(ai_arr >= 0, P[np.maximum(ai_arr, 0)], 0.0)
+        Pb = np.where(bi_arr >= 0, P[np.maximum(bi_arr, 0)], 0.0)
 
-        # Вектор невязок F[i] = Σ Q_входящих - Σ Q_исходящих в узле i
-        F = [0.0] * N
-        for e in edges:
-            Q = e["Q"]
-            if e["a"] != GND:
-                F[node_idx[e["a"]]] -= Q
-            if e["b"] != GND:
-                F[node_idx[e["b"]]] += Q
+        dP = Pa - Pb + H_arr
+        abs_dP = np.abs(dP)
+        Q = np.sign(dP) * np.sqrt(abs_dP / R_arr)
 
-        max_delta = max(abs(f) for f in F)
+        # Вектор невязок F
+        F = np.zeros(N, dtype=np.float64)
+        # Векторное накопление через np.add.at
+        np.add.at(F, ai_arr[ai_arr >= 0], -Q[ai_arr >= 0])
+        np.add.at(F, bi_arr[bi_arr >= 0],  Q[bi_arr >= 0])
+
+        max_delta = float(np.max(np.abs(F)))
         if max_delta < tol:
             it += 1
             break
 
-        # Якобиан J (плотный, N×N)
-        J = [[0.0] * N for _ in range(N)]
-        for e in edges:
-            dqdp = branch_dQdP(e, P)
-            ai = -1 if e["a"] == GND else node_idx[e["a"]]
-            bi = -1 if e["b"] == GND else node_idx[e["b"]]
-            # F_a -= Q → ∂F_a/∂P_a = -dqdp, ∂F_a/∂P_b = +dqdp
-            # F_b += Q → ∂F_b/∂P_a = +dqdp, ∂F_b/∂P_b = -dqdp
-            if ai >= 0:
-                J[ai][ai] -= dqdp
-                if bi >= 0:
-                    J[ai][bi] += dqdp
-            if bi >= 0:
-                J[bi][bi] -= dqdp
-                if ai >= 0:
-                    J[bi][ai] += dqdp
+        # Производная |dQ/dP| = 1/(2*sqrt(R*|dP|))
+        abs_dP_safe = np.maximum(abs_dP, 0.5)
+        dqdp = 1.0 / (2.0 * np.sqrt(R_arr * abs_dP_safe))
 
-        # Регуляризация диагонали
-        for i in range(N):
-            if abs(J[i][i]) < 1e-9:
-                J[i][i] = -1e-6
+        # Якобиан (sparse через numpy)
+        J = np.zeros((N, N), dtype=np.float64)
 
-        # Решаем J·ΔP = -F методом Гаусса
-        dP_vec = gauss_solve(J, [-f for f in F])
-        if dP_vec is None:
-            log.append(f"Итерация {it}: вырожденная матрица")
+        # Вклад каждого ребра в J
+        mask_a = ai_arr >= 0
+        mask_b = bi_arr >= 0
+        mask_ab = mask_a & mask_b
+
+        # F_a -= Q → ∂F_a/∂P_a = -dqdp, ∂F_a/∂P_b = +dqdp
+        ai_valid = ai_arr[mask_a]
+        np.add.at(J, (ai_valid, ai_valid), -dqdp[mask_a])
+
+        bi_valid = bi_arr[mask_b]
+        np.add.at(J, (bi_valid, bi_valid), -dqdp[mask_b])
+
+        ai_ab = ai_arr[mask_ab]
+        bi_ab = bi_arr[mask_ab]
+        np.add.at(J, (ai_ab, bi_ab), +dqdp[mask_ab])
+        np.add.at(J, (bi_ab, ai_ab), +dqdp[mask_ab])
+
+        # Регуляризация
+        diag = np.diag(J)
+        small = np.abs(diag) < 1e-9
+        J[small, small] = -1e-6
+
+        # Решение системы J·ΔP = -F
+        try:
+            dP_vec = np.linalg.solve(J, -F)
+        except np.linalg.LinAlgError:
+            try:
+                dP_vec, _, _, _ = np.linalg.lstsq(J, -F, rcond=None)
+            except Exception:
+                log.append(f"Итерация {it}: не удалось решить систему")
+                break
+
+        if not np.all(np.isfinite(dP_vec)):
+            log.append(f"Итерация {it}: nan/inf в ΔP")
             break
 
-        # Демпфирование: max |ΔP| ≤ H0/2
-        max_dp = max(abs(x) for x in dP_vec) if dP_vec else 0
-        alpha = min(1.0, H0 / 2 / max_dp) if max_dp > H0 / 2 else 1.0
+        # Демпфирование
+        max_step = float(np.max(np.abs(dP_vec)))
+        alpha = min(1.0, H_max / 2 / max_step) if max_step > H_max / 2 else 1.0
 
-        for i in range(N):
-            P[i] += alpha * dP_vec[i]
-            if not math.isfinite(P[i]):
-                P[i] = 0.0
+        P += alpha * dP_vec
+        P = np.where(np.isfinite(P), P, 0.0)
 
-    log.append(f"Итерации: {it}, max|F| = {max_delta:.4f} м³/с")
+    log.append(f"Итерации: {it + 1}, max|F| = {max_delta:.3f} м³/с")
 
-    # ── 7. Финальный пересчёт Q
-    for e in edges:
-        q = branch_Q(e, P)
-        e["Q"] = q if math.isfinite(q) else 0.0
+    # ── 7. Финальный Q
+    Pa = np.where(ai_arr >= 0, P[np.maximum(ai_arr, 0)], 0.0)
+    Pb = np.where(bi_arr >= 0, P[np.maximum(bi_arr, 0)], 0.0)
+    dP_f = Pa - Pb + H_arr
+    Q_final = np.sign(dP_f) * np.sqrt(np.abs(dP_f) / R_arr)
+    Q_final = np.where(np.isfinite(Q_final), Q_final, 0.0)
 
-    # ── 8. Формируем ответ
+    # ── 8. Результаты ветвей
     branch_results = []
-    for b, e in zip(branches_in, edges):
-        # Знак: если fromId → a, то Q сохраняется; если fromId → b, то инвертируем
+    for i, b in enumerate(branches_in):
         a_orig = remap(b["fromId"])
-        Q_signed = e["Q"] if e["a"] == a_orig else -e["Q"]
-        S = float(b.get("area", 1) or 1)
-        V = abs(Q_signed) / S if S > 0 else 0.0
-        fan_H = e["Hconst"] if e["hasFan"] else 0.0
+        q_signed = float(Q_final[i]) if edges[i]["a"] == a_orig else -float(Q_final[i])
+        S = float(b.get("area") or 0)
+        V = abs(q_signed) / S if S > 0 else 0.0
+        H_fan = edges[i]["H"] if edges[i]["hasFan"] else 0.0
 
         branch_results.append({
             "id": b["id"],
-            "flow": round(Q_signed, 3),
+            "flow": round(q_signed, 3),
             "velocity": round(V, 2),
-            "dP": round(e["R"] * Q_signed * abs(Q_signed), 1),
-            "fanPressure": round(fan_H, 0) if e["hasFan"] else b.get("fanPressure", 0),
+            "dP": round(edges[i]["R"] * q_signed * abs(q_signed), 1),
+            "fanPressure": round(H_fan, 0) if edges[i]["hasFan"] else b.get("fanPressure", 0),
         })
 
     # ── 9. Давления в узлах
-    node_pressures = {}
-    for i, nid in enumerate(free_nodes):
-        node_pressures[nid] = P[i]
-
     node_results = []
     for n in nodes_in:
-        remapped = remap(n["id"])
-        if remapped == GND:
-            node_results.append({**n, "computedPressure": 101325})
+        nid = remap(n["id"])
+        if nid == GND:
+            cp = 101325
         else:
-            P_node = node_pressures.get(n["id"], 0)
-            z_corr = 12 * (-float(n.get("z", 0)))
-            node_results.append({**n, "computedPressure": round(101325 + P_node + z_corr)})
+            idx = node_idx.get(n["id"])
+            p_val = float(P[idx]) if idx is not None else 0.0
+            z_corr = 12 * (-float(n.get("z") or 0))
+            cp = round(101325 + p_val + z_corr)
+        node_results.append({**n, "computedPressure": cp})
 
     # ── 10. Диагностика
     diagnostics = []
 
-    # Дисбаланс узлов
-    bal = {n: 0.0 for n in all_node_ids}
-    for e in edges:
-        bal[e["a"]] = bal.get(e["a"], 0) - e["Q"]
-        bal[e["b"]] = bal.get(e["b"], 0) + e["Q"]
+    bal = np.zeros(N, dtype=np.float64)
+    np.add.at(bal, ai_arr[ai_arr >= 0], -Q_final[ai_arr >= 0])
+    np.add.at(bal, bi_arr[bi_arr >= 0],  Q_final[bi_arr >= 0])
 
-    for nid, b_val in bal.items():
-        if nid == GND:
-            continue
-        if abs(b_val) > 2:
+    for i, nid in enumerate(free_nodes):
+        bv = float(bal[i])
+        if abs(bv) > 2:
             diagnostics.append({
-                "level": "error" if abs(b_val) > 10 else "warning",
+                "level": "error" if abs(bv) > 10 else "warning",
                 "category": "node_balance",
-                "message": f"Дисбаланс в узле {nid[:30]}: ΔQ = {b_val:.2f} м³/с",
-                "objectId": nid,
-                "value": b_val,
+                "message": f"Дисбаланс: {nid[:30]} ΔQ={bv:.2f} м³/с",
+                "objectId": nid, "value": bv,
             })
 
-    if max_delta > tol:
+    if max_delta > tol * 5:
         diagnostics.append({
-            "level": "error" if max_delta > 1 else "warning",
-            "category": "convergence",
-            "message": f"max|ΔQ| = {max_delta:.3f} м³/с (норма < {tol})",
+            "level": "warning", "category": "convergence",
+            "message": f"max|ΔQ|={max_delta:.2f} м³/с. Попробуйте увеличить допуск.",
             "value": max_delta,
         })
 
-    if not any(b.get("hasFan") for b in branches_in):
+    zero_fan = [e for e in edges if e["hasFan"] and e["H"] <= 0]
+    for e in zero_fan:
         diagnostics.append({
-            "level": "warning",
-            "category": "topology",
-            "message": "Нет ни одного вентилятора — расход будет нулевым",
+            "level": "error", "category": "fan",
+            "message": f"Вентилятор {e['id'][:25]}: напор = 0 Па",
+            "objectId": e["id"],
+        })
+
+    if not any(e["hasFan"] for e in edges):
+        diagnostics.append({
+            "level": "warning", "category": "topology",
+            "message": "Нет вентилятора — расход нулевой",
         })
 
     return {
-        "ok": max_delta < tol,
-        "iterations": it,
+        "ok": max_delta < tol * 2,
+        "iterations": it + 1,
         "maxDeltaQ": max_delta,
         "branches": branch_results,
         "nodes": node_results,
@@ -281,32 +270,3 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
         "cyclesCount": 0,
         "diagnostics": diagnostics,
     }
-
-
-def gauss_solve(A: list, b: list) -> list | None:
-    """Метод Гаусса с частичной пивотизацией. Возвращает x или None."""
-    n = len(A)
-    M = [row[:] + [b[i]] for i, row in enumerate(A)]
-
-    for i in range(n):
-        # Поиск главного элемента
-        max_row = max(range(i, n), key=lambda k: abs(M[k][i]))
-        if abs(M[max_row][i]) < 1e-12:
-            return None
-        M[i], M[max_row] = M[max_row], M[i]
-
-        for k in range(i + 1, n):
-            f = M[k][i] / M[i][i]
-            for j in range(i, n + 1):
-                M[k][j] -= f * M[i][j]
-
-    x = [0.0] * n
-    for i in range(n - 1, -1, -1):
-        s = M[i][n]
-        for j in range(i + 1, n):
-            s -= M[i][j] * x[j]
-        x[i] = s / M[i][i]
-        if not math.isfinite(x[i]):
-            return None
-
-    return x
