@@ -955,11 +955,11 @@ export default function TopoCanvas(props: Props) {
                         <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
                           {/* Хвостик — линия */}
                           <line x1={-hw} y1={0} x2={hw - 6} y2={0}
-                            stroke="#1d4ed8" strokeWidth={Math.max(1.5, w * 0.7)}
+                            stroke="#dc2626" strokeWidth={Math.max(1.5, w * 0.7)}
                             strokeLinecap="round" />
                           {/* Наконечник — треугольник */}
                           <polygon points={`${hw - 9},-5 ${hw},0 ${hw - 9},5`}
-                            fill="#1d4ed8" stroke="white" strokeWidth="0.8"
+                            fill="#dc2626" stroke="white" strokeWidth="0.8"
                             strokeLinejoin="round" />
                         </g>
                       );
