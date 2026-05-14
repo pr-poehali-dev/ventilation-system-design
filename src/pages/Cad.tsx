@@ -29,6 +29,7 @@ import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
+const VENTSOLVER_URL = (FUNC2URL as Record<string, string>)["ventsolver"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -808,33 +809,82 @@ export default function CadPage() {
     e.preventDefault();
   };
 
-  // Локальный расчёт в браузере (TypeScript, метод Кросса)
-  const handleSolveLocal = () => {
-    // Передаём branches (из useMemo) — они содержат актуальные длины/сечения/R
-    const res = solveNetwork(nodes, branches, { maxIter: 800, tolerance: 0.01, initialFlow: 50 });
-    // Обновляем ТОЛЬКО поля результата расчёта (flow, velocity, dP, fanPressure, fanEfficiency, fanShaftPower)
-    // Исходные параметры геометрии/сопротивления в branchesRaw не трогаем —
-    // иначе useMemo пересчитает R и затрёт Q обратно.
-    setBranches(prev => prev.map(b => {
-      const rb = res.branches.find(r => r.id === b.id);
-      if (!rb) return b;
-      return {
-        ...b,
-        flow: rb.flow,
-        velocity: rb.velocity,
-        dP: rb.dP,
-        fanPressure: rb.hasFan ? rb.fanPressure : b.fanPressure,
-        fanEfficiency: rb.hasFan ? rb.fanEfficiency : b.fanEfficiency,
-        fanShaftPower: rb.hasFan ? rb.fanShaftPower : b.fanShaftPower,
-      };
-    }));
-    setNodes(res.nodes);
-    setSolveResult(res);
-    const hasFlow = res.branches.some(b => Math.abs(b.flow) > 0.1);
-    if (hasFlow) setShowFlowArrows(true);
-    // Показываем диагностику если есть ошибки
-    if (res.diagnostics && res.diagnostics.some(d => d.level === "error")) {
-      setShowDiagnostics(true);
+  // Расчёт через Python backend (метод узловых давлений, scipy)
+  const handleSolveLocal = async () => {
+    setVcSolving(true);
+    setVcError(null);
+    try {
+      const resp = await fetch(VENTSOLVER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodes: nodes.map(n => ({
+            id: n.id,
+            atmosphereLink: n.atmosphereLink,
+            z: n.z,
+            airTemp: n.airTemp,
+          })),
+          branches: branches.map(b => ({
+            id: b.id,
+            fromId: b.fromId,
+            toId: b.toId,
+            resistance: b.resistance,
+            area: b.area,
+            perimeter: b.perimeter,
+            hasFan: b.hasFan,
+            fanMode: b.fanMode,
+            fanPressure: b.fanPressure,
+          })),
+          options: { maxIter: 100, tolerance: 0.1 },
+        }),
+      });
+      const data = await resp.json();
+
+      if (!resp.ok || data.error) {
+        setVcError(data.error || "Ошибка Python-расчёта");
+        return;
+      }
+
+      // Обновляем только поля результата
+      setBranches(prev => prev.map(b => {
+        const rb = (data.branches as { id: string; flow: number; velocity: number; dP: number; fanPressure: number }[])
+          .find(r => r.id === b.id);
+        if (!rb) return b;
+        return {
+          ...b,
+          flow: rb.flow,
+          velocity: rb.velocity,
+          dP: rb.dP,
+          ...(b.hasFan ? { fanPressure: rb.fanPressure } : {}),
+        };
+      }));
+
+      setNodes(prev => prev.map(n => {
+        const rn = (data.nodes as { id: string; computedPressure?: number }[]).find(x => x.id === n.id);
+        return rn ? { ...n, computedPressure: rn.computedPressure ?? n.computedPressure } : n;
+      }));
+
+      setSolveResult({
+        ok: data.ok,
+        iterations: data.iterations,
+        maxDeltaQ: data.maxDeltaQ,
+        branches: [],
+        nodes: [],
+        log: data.log ?? [],
+        cyclesCount: data.cyclesCount ?? 0,
+        diagnostics: data.diagnostics,
+      });
+
+      if (data.branches?.some((b: { flow: number }) => Math.abs(b.flow) > 0.1)) {
+        setShowFlowArrows(true);
+      }
+      if (data.diagnostics?.some((d: { level: string }) => d.level === "error")) {
+        setShowDiagnostics(true);
+      }
+    } catch (e) {
+      setVcError(`Ошибка соединения: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setVcSolving(false);
     }
   };
 
@@ -945,7 +995,7 @@ export default function CadPage() {
     if (calcMode === "server") {
       void handleSolveServer();
     } else {
-      handleSolveLocal();
+      void handleSolveLocal();
     }
   };
 
