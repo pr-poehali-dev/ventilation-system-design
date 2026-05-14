@@ -460,6 +460,18 @@ export default function CadPage() {
   };
   const removeSymbol = (id: string) => setSchemaSymbols(prev => prev.filter(s => s.id !== id));
 
+  // Создать fan-символы для всех ветвей с hasFan у которых ещё нет УО
+  const ensureFanSymbols = (branches: typeof branchesRaw, existingSymbols: SchemaSymbol[]) => {
+    const newSymbols: SchemaSymbol[] = [];
+    branches.forEach(b => {
+      if (!b.hasFan) return;
+      if (existingSymbols.some(s => s.typeId === "fan" && s.branchId === b.id)) return;
+      if (newSymbols.some(s => s.branchId === b.id)) return;
+      newSymbols.push({ id: `SYM_FAN_${b.id}`, typeId: "fan", x: 0, y: 0, branchId: b.id, t: 0.5 });
+    });
+    return newSymbols;
+  };
+
   // Активировать инструмент размещения символа
   const handlePickSymbol = (typeId: string) => {
     setActiveSymbolTypeId(typeId);
@@ -495,21 +507,31 @@ export default function CadPage() {
   const [showCsvImport, setShowCsvImport] = useState(false);
 
   const handleCsvImport = (result: CsvImportResult, mode: "replace" | "append") => {
-    if (mode === "replace") {
-      setNodes(result.nodes); setBranches(result.branches);
-      setSchemaSymbols([]);
-      setSelectedNodeId(null); setSelectedBranchId(null);
-    } else {
-      setNodes(prev => [...prev, ...result.nodes]);
-      setBranches(prev => [...prev, ...result.branches]);
-    }
-    // Применяем параметры вентиляторов из fans.csv к ветвям (без создания символов УО)
-    if (result.fans && result.fans.length > 0) {
-      setBranches(prev => prev.map(b => {
+    // Применяем параметры вентиляторов сразу к ветвям
+    const applyFans = (branches: typeof result.branches) => {
+      if (!result.fans || result.fans.length === 0) return branches;
+      return branches.map(b => {
         const fan = result.fans.find(f => result.branchOriginalIdMap?.[f.branchId] === b.id);
         if (!fan) return b;
         return { ...b, hasFan: true, fanMode: "constant" as const, fanName: fan.name, fanPressure: fan.pressure };
-      }));
+      });
+    };
+    if (mode === "replace") {
+      const finalBranches = applyFans(result.branches);
+      setNodes(result.nodes);
+      setBranches(finalBranches);
+      setSchemaSymbols(ensureFanSymbols(finalBranches, []));
+      setSelectedNodeId(null); setSelectedBranchId(null);
+    } else {
+      setNodes(prev => [...prev, ...result.nodes]);
+      setBranches(prev => {
+        const merged = [...prev, ...applyFans(result.branches)];
+        return merged;
+      });
+      setSchemaSymbols(prev => {
+        const newFans = applyFans(result.branches);
+        return [...prev, ...ensureFanSymbols(newFans, prev)];
+      });
     }
     setImportNonce(n => n + 1);
     setShowCsvImport(false);
@@ -713,7 +735,10 @@ export default function CadPage() {
     );
     setBranches(mergedBranches);
     if (data.horizons) setHorizons(data.horizons as typeof horizons);
-    setSchemaSymbols((data.schemaSymbols as SchemaSymbol[]) ?? []);
+    const loadedSymbols = (data.schemaSymbols as SchemaSymbol[]) ?? [];
+    // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)
+    const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
+    setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);

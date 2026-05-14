@@ -356,6 +356,16 @@ export function solveNetwork(
         edges[ce.edgeIdx].Q += dQrel * ce.dir;
       }
     }
+    // После каждой итерации ограничиваем Q ветвей с вентилятором пределами кривой
+    for (const e of edges) {
+      if (e.hasFan && e.fanMode === "curve" && e.fanCurve) {
+        const k = rpmFactor(e.fanRpm, e.fanCurve.rpmNominal);
+        const qMaxScaled = e.fanCurve.qMax * k;
+        const qMinScaled = e.fanCurve.qMin * k;
+        if (Math.abs(e.Q) > qMaxScaled) e.Q = Math.sign(e.Q || 1) * qMaxScaled;
+        if (Math.abs(e.Q) < qMinScaled && Math.abs(e.Q) > 0.1) e.Q = Math.sign(e.Q || 1) * qMinScaled;
+      }
+    }
     if (maxDelta < tol) { iter++; break; }
   }
   log.push(`Итерации: ${iter}, max|ΔQ|=${maxDelta.toExponential(2)}`);
