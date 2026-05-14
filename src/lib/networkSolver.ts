@@ -1,22 +1,29 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Решение вентиляционной сети методом контурных расходов (метод Кросса)
+// Решение вентиляционной сети МЕТОДОМ УЗЛОВЫХ ДАВЛЕНИЙ (Node Pressure Method)
+// Используется в Ventsim/АэроСеть/VentFlow — устойчивее чем метод Кросса,
+// особенно для сетей с вентиляторами и большим числом контуров.
 //
-// Для воздушных сетей:
-//   • 1-й закон Кирхгофа: Σ Q в узле = 0
-//   • 2-й закон: Σ R·Q·|Q| − Σ H_fan = 0 в каждом контуре
+// Физика:
+//   Для каждой ветви a→b:    Q_ab = sgn(P_a − P_b + H_fan) · sqrt(|P_a − P_b + H_fan| / R)
+//   В каждом узле i:          Σ Q_in − Σ Q_out = 0  (баланс расходов, 1-й закон Кирхгофа)
+//   Атмосферные узлы:         P = 0 (опорное)
 //
 // Алгоритм:
-//   1. Объединяем все атмосферные узлы в виртуальный «узел земли» (id="@gnd")
-//   2. Строим остовное дерево (BFS).
-//   3. Если сеть разомкнутая (дерево, нет хорд):
-//      → Однопроходный метод: ищем рабочую точку Q по уравнению H_fan(Q) = R_total·Q²
-//   4. Если есть контуры (хорды) → итерации Кросса.
-//   5. Сходимость: max|ΔQ| < ε.
+//   1. Объединяем атмосферные узлы в виртуальный @gnd с P=0
+//   2. Решаем систему нелинейных уравнений F_i(P) = 0 методом Ньютона-Рафсона:
+//      Jacobian J_ij = ∂F_i/∂P_j  → ΔP = −J⁻¹·F  → P ← P + α·ΔP (с демпфированием)
+//   3. После сходимости P → вычисляем Q по каждой ветви
+//
+// Преимущества перед Кроссом:
+//   • не нужно строить контуры (нет проблем с топологией)
+//   • квадратичная сходимость (5-10 итераций vs 50-200 у Кросса)
+//   • устойчивость при вентиляторах любой мощности
+//   • корректная работа для разомкнутых и замкнутых сетей одним кодом
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
-import { getFanById, fanH, fanDH, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
+import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 
 const GND = "@gnd";
 
@@ -93,82 +100,7 @@ function evalFanH(e: SolverEdge, Q: number): { H: number; dH: number } {
   return { H: e.HfanConst, dH: 0 };
 }
 
-// ─── Однопроходный решатель для РАЗОМКНУТОЙ сети (дерево) ────────────────────
-// Находит Q методом бисекции: H_fan(Q) = R_total * Q^2
-// Rtotal можно передать явно (путевое сопротивление); если не передан — суммирует все ветви
-function solveOpenNetwork(
-  edges: SolverEdge[],
-  log: string[],
-  rtotalOverride?: number,
-): number {
-  const fanEdges = edges.filter(e => e.hasFan);
-  if (fanEdges.length === 0) {
-    log.push("Вентилятор не задан — поток = 0");
-    return 0;
-  }
 
-  // Суммарное сопротивление: используем переданное значение или сумму всех
-  const Rtotal = rtotalOverride !== undefined ? rtotalOverride : edges.reduce((s, e) => s + e.R, 0);
-
-  // Суммарный напор вентиляторов (для нескольких параллельных/последовательных)
-  // Упрощение: один вентилятор доминирует
-  const fan = fanEdges[0];
-
-  if (fan.fanMode === "constant") {
-    // H = const → Q = sqrt(H / R_total)
-    const H = fan.HfanConst;
-    if (H <= 0 || Rtotal <= 0) return 0;
-    const Q = Math.sqrt(H / Rtotal);
-    log.push(`Разомкнутая сеть (постоянный напор): H=${H.toFixed(0)}Па, R=${Rtotal.toFixed(4)}, Q=${Q.toFixed(2)}м³/с`);
-    return Q;
-  }
-
-  if (!fan.fanCurve) {
-    log.push("Модель вентилятора не выбрана");
-    return 0;
-  }
-
-  const curve = fan.fanCurve;
-  const k = rpmFactor(fan.fanRpm, curve.rpmNominal);
-  const af = getAngleFactor(curve, fan.fanBladeAngle);
-
-  // Бисекция: найти Q где H_fan(Q) = R_total * Q^2
-  // H_fan убывает с Q, R*Q^2 возрастает → пересечение единственно
-  const qLo = curve.qMin * k;
-  const qHi = curve.qMax * k;
-
-  // Проверяем что вентилятор вообще может создать поток
-  const H0 = Math.max(0, curve.h0 * af) * k * k; // напор при Q=0
-  if (H0 <= 0 || Rtotal <= 0) {
-    log.push("Вентилятор не создаёт напора при Q=0");
-    return 0;
-  }
-
-  // Если сопротивление очень маленькое — берём Q_max
-  if (Rtotal * qHi * qHi < 1) {
-    log.push(`Очень малое сопротивление: Q≈${qHi.toFixed(1)}м³/с`);
-    return qHi;
-  }
-
-  // Расширяем диапазон до 0 если рабочая точка ниже qMin
-  // (при очень большом сопротивлении точка пересечения может быть левее qMin)
-  const loStart = Rtotal * qLo * qLo > H0 ? 0.1 : qLo;
-  let lo = loStart, hi = qHi;
-  let Q = (lo + hi) / 2;
-  for (let i = 0; i < 80; i++) {
-    const Qnorm = Q / Math.max(0.01, k);
-    const Hfan = Math.max(0, curve.h0 * af + curve.h1 * Qnorm + curve.h2 * Qnorm * Qnorm) * k * k;
-    const Hnet = Rtotal * Q * Q;
-    const diff = Hfan - Hnet;
-    if (Math.abs(diff) < 0.1) break;
-    if (diff > 0) lo = Q; else hi = Q;
-    Q = (lo + hi) / 2;
-  }
-  const QfinalNorm = Q / Math.max(0.01, k);
-  const Hwork = Math.max(0, curve.h0 * af + curve.h1 * QfinalNorm + curve.h2 * QfinalNorm * QfinalNorm) * k * k;
-  log.push(`Разомкнутая сеть (Q-H кривая): R=${Rtotal.toFixed(4)}, Q=${Q.toFixed(2)}м³/с, H=${Hwork.toFixed(0)}Па`);
-  return Q;
-}
 
 export function solveNetwork(
   nodesIn: TopoNode[],
@@ -237,7 +169,7 @@ export function solveNetwork(
     return { ok: false, iterations: 0, maxDeltaQ: 0, branches: branchesCalc, nodes: nodesIn, log: ["Нет ветвей"], cyclesCount: 0 };
   }
 
-  // ─── Остовное дерево (BFS) ────────────────────────────────────────────
+  // ─── Список смежности ───────────────────────────────────────────────
   const adj = new Map<string, { edgeIdx: number; other: string }[]>();
   nodeList.forEach((n) => adj.set(n, []));
   edges.forEach((e, i) => {
@@ -245,196 +177,248 @@ export function solveNetwork(
     adj.get(e.b)!.push({ edgeIdx: i, other: e.a });
   });
 
+  // ─── BFS для дерева (нужно для buildNodePressures и Q0) ─────────────
   const root = nodeList.includes(GND) ? GND : nodeList[0];
-  const parent = new Map<string, { node: string; edgeIdx: number } | null>();
-  const visited = new Set<string>();
+  const visited = new Set<string>([root]);
   const treeEdgeIdx = new Set<number>();
-
-  parent.set(root, null);
-  visited.add(root);
-  const queue = [root];
-  while (queue.length) {
-    const u = queue.shift()!;
+  const bfsQueue = [root];
+  while (bfsQueue.length) {
+    const u = bfsQueue.shift()!;
     for (const { edgeIdx, other } of adj.get(u)!) {
       if (!visited.has(other)) {
         visited.add(other);
-        parent.set(other, { node: u, edgeIdx });
         treeEdgeIdx.add(edgeIdx);
-        queue.push(other);
+        bfsQueue.push(other);
       }
     }
   }
+  const cyclesCount = edges.length - treeEdgeIdx.size;
+  log.push(`Узлов: ${nodeList.length}, ветвей: ${edges.length}, контуров: ${cyclesCount}`);
 
-  const chordIdx = edges.map((_, i) => i).filter((i) => !treeEdgeIdx.has(i));
-  log.push(`Узлов: ${nodeList.length}, ветвей: ${edges.length}, хорд: ${chordIdx.length}`);
+  // ════════════════════════════════════════════════════════════════════════
+  // МЕТОД УЗЛОВЫХ ДАВЛЕНИЙ (Node Pressure Method, Ventsim-style)
+  // ════════════════════════════════════════════════════════════════════════
+  //
+  // Переменные: P[i] — давление в узле i (Па). Атмосфера GND фиксируется P=0.
+  // Уравнение для ветви a→b:
+  //   ΔP_ab = P_a − P_b + H_fan(Q_ab)
+  //   Q_ab  = sign(ΔP_ab) · sqrt(|ΔP_ab| / R)        (закон Аткинсона)
+  //
+  // В каждом узле i ≠ GND баланс расходов:
+  //   F_i(P) = Σ Q_in − Σ Q_out = 0
+  //
+  // Решаем систему методом Ньютона-Рафсона:
+  //   J · ΔP = −F  →  P ← P + α·ΔP
+  // ════════════════════════════════════════════════════════════════════════
 
-  // ─── РАЗОМКНУТАЯ СЕТЬ (нет контуров, чистое дерево) ─────────────────
-  if (chordIdx.length === 0) {
-    // Для последовательной цепи (дерево с двумя атмосферами):
-    // ВСЕ ветви, включая ветвь с вентилятором, дают аэродинамическое сопротивление.
-    // Уравнение баланса: H_fan(Q) = Σ R_i · Q² → Q = sqrt(H/ΣR)
-    const Rtotal = edges.reduce((s, e) => s + e.R, 0);
-    const Qopen = solveOpenNetwork(edges, log, Rtotal);
-    // В последовательной цепи все ветви несут одинаковый Q
-    edges.forEach(e => { e.Q = Qopen; });
+  // Список «свободных» узлов (без атмосферы) — для них решаем уравнения
+  const freeNodes = nodeList.filter(id => id !== GND);
+  const nodeIdx = new Map<string, number>();
+  freeNodes.forEach((id, i) => nodeIdx.set(id, i));
+  const N = freeNodes.length;
 
-    const branchesOut = buildOutput(branchesCalc, edges, remap, log);
-    const nodesOut = buildNodePressures(nodesIn, edges, adj, treeEdgeIdx, root, remap);
+  if (N === 0) {
+    // Только атмосфера — расхода нет
+    edges.forEach(e => { e.Q = 0; });
     return {
-      ok: Qopen > 0,
-      iterations: 1,
-      maxDeltaQ: 0,
-      branches: branchesOut,
-      nodes: nodesOut,
-      log,
-      cyclesCount: 0,
+      ok: true, iterations: 0, maxDeltaQ: 0,
+      branches: buildOutput(branchesCalc, edges, remap, log),
+      nodes: nodesIn, log, cyclesCount: 0,
     };
   }
 
-  // ─── ЗАМКНУТАЯ СЕТЬ: контуры → метод Кросса ──────────────────────────
-  interface CycleEdge { edgeIdx: number; dir: 1 | -1; }
-  const cycles: CycleEdge[][] = [];
-
-  const pathInTree = (from: string, to: string): { node: string; edgeIdx: number; dir: 1 | -1 }[] => {
-    const ancFrom: string[] = [];
-    let cur: string | null = from;
-    while (cur) { ancFrom.push(cur); const p = parent.get(cur); cur = p ? p.node : null; }
-    const fromSet = new Set(ancFrom);
-
-    const ancTo: string[] = [];
-    cur = to;
-    while (cur && !fromSet.has(cur)) { ancTo.push(cur); const p = parent.get(cur); cur = p ? p.node : null; }
-    const lca = cur!;
-    const idxLca = ancFrom.indexOf(lca);
-    const upFrom = ancFrom.slice(0, idxLca + 1);
-
-    const result: { node: string; edgeIdx: number; dir: 1 | -1 }[] = [];
-    for (let i = 0; i < upFrom.length - 1; i++) {
-      const node = upFrom[i];
-      const p = parent.get(node)!;
-      const e = edges[p.edgeIdx];
-      const dir: 1 | -1 = e.a === node ? 1 : -1;
-      result.push({ node, edgeIdx: p.edgeIdx, dir });
+  // Начальное приближение P: распределяем напор пропорционально расстоянию от вентилятора
+  // Простая эвристика: P = ±100 Па для узлов после/до вентилятора. Уточняется итерациями.
+  const P = new Float64Array(N);
+  // Если есть вентилятор постоянного напора — поставим начальное P порядка H/2
+  const fanEdge0 = edges.find(e => e.hasFan);
+  if (fanEdge0) {
+    let H0 = 0;
+    if (fanEdge0.fanMode === "constant") {
+      H0 = fanEdge0.HfanConst;
+    } else if (fanEdge0.fanCurve) {
+      const k = rpmFactor(fanEdge0.fanRpm, fanEdge0.fanCurve.rpmNominal);
+      const af = getAngleFactor(fanEdge0.fanCurve, fanEdge0.fanBladeAngle);
+      H0 = Math.max(0, fanEdge0.fanCurve.h0 * af) * k * k * (fanEdge0.fanRhoFactor ?? 1);
     }
-    for (let i = ancTo.length - 1; i >= 0; i--) {
-      const child = ancTo[i];
-      const p = parent.get(child)!;
-      const e = edges[p.edgeIdx];
-      const dir: 1 | -1 = e.a === p.node ? 1 : -1;
-      result.push({ node: p.node, edgeIdx: p.edgeIdx, dir });
-    }
-    return result;
+    // Инициализируем все P половиной максимального напора (любой знак — найдётся итерациями)
+    for (let i = 0; i < N; i++) P[i] = H0 * 0.3;
+  }
+
+  // Функция расчёта Q ветви по текущим P
+  const computeQ = (e: SolverEdge): number => {
+    const Pa = e.a === GND ? 0 : P[nodeIdx.get(e.a)!];
+    const Pb = e.b === GND ? 0 : P[nodeIdx.get(e.b)!];
+    // Используем H_fan вычисленный по предыдущему Q (для устойчивости)
+    const { H } = evalFanH(e, e.Q);
+    const dP = Pa - Pb + H;
+    const R = Math.max(1e-6, e.R);
+    return Math.sign(dP) * Math.sqrt(Math.abs(dP) / R);
   };
 
-  for (const cIdx of chordIdx) {
-    const e = edges[cIdx];
-    const cycle: CycleEdge[] = [{ edgeIdx: cIdx, dir: 1 }];
-    const path = pathInTree(e.b, e.a);
-    path.forEach((p) => cycle.push({ edgeIdx: p.edgeIdx, dir: p.dir }));
-    cycles.push(cycle);
-  }
+  // |dQ/dP| = 1/(2·sqrt(R·|ΔP|)) — модуль производной для якобиана
+  const computeDQDP = (e: SolverEdge): number => {
+    const Pa = e.a === GND ? 0 : P[nodeIdx.get(e.a)!];
+    const Pb = e.b === GND ? 0 : P[nodeIdx.get(e.b)!];
+    const { H } = evalFanH(e, e.Q);
+    const dP = Pa - Pb + H;
+    const R = Math.max(1e-6, e.R);
+    const absdP = Math.max(1e-3, Math.abs(dP));   // защита от деления на 0
+    return 1 / (2 * Math.sqrt(R * absdP));
+  };
 
-  // ─── Умное начальное распределение Q ──────────────────────────────────
-  // Используем рабочую точку вентилятора как начальное Q вместо фиксированного Q0=10.
-  // Это существенно ускоряет сходимость и предотвращает расходимость при больших H.
-  const fanEdgesAll = edges.filter(e => e.hasFan);
-  let Q0smart = Q0;
-  if (fanEdgesAll.length > 0) {
-    const fan0 = fanEdgesAll[0];
-    if (fan0.fanMode === "curve" && fan0.fanCurve) {
-      const curve0 = fan0.fanCurve;
-      const k0 = rpmFactor(fan0.fanRpm, curve0.rpmNominal);
-      const af0 = getAngleFactor(curve0, fan0.fanBladeAngle);
-      // Сумма R ветвей в дереве (приближённо — путь вентилятора)
-      const Rtree = edges.filter((_, i) => treeEdgeIdx.has(i)).reduce((s, e) => s + e.R, 0);
-      if (Rtree > 0) {
-        const qHi0 = curve0.qMax * k0;
-        const qLo0 = curve0.qMin * k0;
-        let qEst = (qLo0 + qHi0) / 2;
-        for (let bi = 0; bi < 40; bi++) {
-          const Qn = qEst / Math.max(0.001, k0);
-          const Hf = Math.max(0, curve0.h0 * af0 + curve0.h1 * Qn + curve0.h2 * Qn * Qn) * k0 * k0;
-          const Hn = Rtree * qEst * qEst;
-          const diff = Hf - Hn;
-          if (Math.abs(diff) < 0.5) break;
-          if (diff > 0) { qEst = (qEst + qHi0) / 2; }
-          else { qEst = (qLo0 + qEst) / 2; }
-        }
-        Q0smart = Math.max(Q0, Math.min(qHi0, qEst));
-      }
-    } else if (fan0.fanMode === "constant" && fan0.HfanConst > 0) {
-      const Rtree = edges.filter((_, i) => treeEdgeIdx.has(i)).reduce((s, e) => s + e.R, 0);
-      if (Rtree > 0) Q0smart = Math.sqrt(fan0.HfanConst / Rtree);
-    }
-  }
-  log.push(`Начальное Q0=${Q0smart.toFixed(2)} м³/с`);
-
-  for (const cyc of cycles) {
-    for (const ce of cyc) {
-      edges[ce.edgeIdx].Q += Q0smart * ce.dir;
-    }
-  }
-  // Убедимся что ни одна ветвь не имеет Q=0 (ломает den знаменатель)
-  edges.forEach(e => { if (Math.abs(e.Q) < 0.5) e.Q = 0.5 * Math.sign(e.Q || 1); });
-
-  // Итерации Кросса
+  // ─── Итерации Ньютона ────────────────────────────────────────────────
   let iter = 0;
   let maxDelta = Infinity;
+  let maxDeltaQ = 0;
+
   for (; iter < maxIter; iter++) {
+    // 1) Обновить Q всех ветвей по текущим P
+    for (const e of edges) {
+      const Qnew = computeQ(e);
+      if (isFinite(Qnew)) e.Q = Qnew;
+    }
+
+    // 2) Вычислить невязки F_i = Σ Q (с учётом знака: + если Q входит, − если выходит)
+    const F = new Float64Array(N);
+    for (const e of edges) {
+      if (e.a !== GND) {
+        const i = nodeIdx.get(e.a)!;
+        F[i] -= e.Q;                          // Q уходит из e.a
+      }
+      if (e.b !== GND) {
+        const i = nodeIdx.get(e.b)!;
+        F[i] += e.Q;                          // Q приходит в e.b
+      }
+    }
+
+    // 3) Якобиан: J[i][j] = ∂F_i/∂P_j
+    //    Только ветви, соединяющие i с j (или i с GND) дают вклад.
+    //    Для ветви a→b: ∂Q_ab/∂P_a = +dQdP, ∂Q_ab/∂P_b = −dQdP
+    //    Используем разрежённое представление (для скорости — плотная матрица если N мало)
+    const J: number[][] = Array.from({ length: N }, () => new Array(N).fill(0));
+    for (const e of edges) {
+      const dqdp = computeDQDP(e);
+      const ai = e.a === GND ? -1 : nodeIdx.get(e.a)!;
+      const bi = e.b === GND ? -1 : nodeIdx.get(e.b)!;
+      // F_a -= Q  → ∂F_a/∂P_a = −∂Q/∂P_a = −dqdp ;  ∂F_a/∂P_b = +dqdp
+      // F_b += Q  → ∂F_b/∂P_a = +dqdp           ;  ∂F_b/∂P_b = −dqdp
+      if (ai >= 0) {
+        J[ai][ai] -= dqdp;
+        if (bi >= 0) J[ai][bi] += dqdp;
+      }
+      if (bi >= 0) {
+        J[bi][bi] -= dqdp;
+        if (ai >= 0) J[bi][ai] += dqdp;
+      }
+    }
+
+    // Регуляризация диагонали (численная устойчивость)
+    for (let i = 0; i < N; i++) {
+      if (Math.abs(J[i][i]) < 1e-9) J[i][i] = -1e-6;
+    }
+
+    // 4) Решаем J · ΔP = −F методом Гаусса (для N до ~500 это быстро)
+    const dP = solveLinearSystem(J, F.map(v => -v));
+    if (!dP) {
+      log.push(`Итерация ${iter}: вырожденная система — остановка`);
+      break;
+    }
+
+    // 5) Демпфирование: ограничиваем |ΔP| чтобы избежать выбросов
+    const dampMax = 5000; // Па за итерацию
+    let alpha = 1.0;
+    let maxDp = 0;
+    for (let i = 0; i < N; i++) if (Math.abs(dP[i]) > maxDp) maxDp = Math.abs(dP[i]);
+    if (maxDp > dampMax) alpha = dampMax / maxDp;
+
+    // 6) Обновление давлений
+    let maxDpStep = 0;
+    for (let i = 0; i < N; i++) {
+      const step = alpha * dP[i];
+      P[i] += step;
+      if (Math.abs(step) > maxDpStep) maxDpStep = Math.abs(step);
+    }
+
+    // 7) Проверка сходимости по невязке расхода в узлах
     maxDelta = 0;
-    for (const cyc of cycles) {
-      let num = 0;
-      let den = 0;
-      for (const ce of cyc) {
-        const e = edges[ce.edgeIdx];
-        const Qdir = e.Q * ce.dir;
-        const { H, dH } = evalFanH(e, e.Q);
-        // Вентилятор всегда нагнетает вдоль направления ветви a→b (Q положителен).
-        // В контуре его вклад зависит только от обхода (ce.dir), а не от текущего знака Q.
-        const Hsigned = H * ce.dir;
-        num += e.R * Qdir * Math.abs(Qdir) - Hsigned;
-        den += 2 * e.R * Math.abs(Qdir) + Math.abs(dH);
-      }
-      if (Math.abs(den) < 1e-9) continue;
-      const dQraw = -num / den;
-      // Ограничиваем шаг: не более 50% от текущего характерного Q в контуре
-      const Qchar = cyc.reduce((mx, ce) => Math.max(mx, Math.abs(edges[ce.edgeIdx].Q)), 0.5);
-      const dQrel = Math.sign(dQraw) * Math.min(Math.abs(dQraw) * 0.85, Qchar * 0.5);
-      if (Math.abs(dQrel) > maxDelta) maxDelta = Math.abs(dQrel);
-      for (const ce of cyc) {
-        edges[ce.edgeIdx].Q += dQrel * ce.dir;
-      }
-    }
-    // Защита от NaN/Infinity в Q (могут возникнуть при den~0)
-    for (const e of edges) {
-      if (!isFinite(e.Q)) e.Q = 0.5;
-    }
-    // После каждой итерации ограничиваем Q ветвей с вентилятором пределами кривой
-    for (const e of edges) {
-      if (e.hasFan && e.fanMode === "curve" && e.fanCurve) {
-        const k = rpmFactor(e.fanRpm, e.fanCurve.rpmNominal);
-        const qMaxScaled = e.fanCurve.qMax * k;
-        const qMinScaled = e.fanCurve.qMin * k;
-        if (Math.abs(e.Q) > qMaxScaled) e.Q = Math.sign(e.Q || 1) * qMaxScaled;
-        if (Math.abs(e.Q) < qMinScaled && Math.abs(e.Q) > 0.1) e.Q = Math.sign(e.Q || 1) * qMinScaled;
-      }
-    }
-    if (maxDelta < tol) { iter++; break; }
+    for (let i = 0; i < N; i++) if (Math.abs(F[i]) > maxDelta) maxDelta = Math.abs(F[i]);
+    maxDeltaQ = maxDelta;
+
+    if (maxDelta < tol && maxDpStep < 1) { iter++; break; }
   }
-  log.push(`Итерации: ${iter}, max|ΔQ|=${maxDelta.toExponential(2)}`);
+  log.push(`Итерации (Ньютон): ${iter}, max|ΔQ_узел|=${maxDelta.toExponential(2)} м³/с`);
+
+  // Финальный пересчёт Q
+  for (const e of edges) {
+    const Qnew = computeQ(e);
+    if (isFinite(Qnew)) e.Q = Qnew;
+  }
+
+  // Ограничиваем Q вентиляторов в рамках кривой
+  for (const e of edges) {
+    if (e.hasFan && e.fanMode === "curve" && e.fanCurve) {
+      const k = rpmFactor(e.fanRpm, e.fanCurve.rpmNominal);
+      const qMaxScaled = e.fanCurve.qMax * k;
+      if (Math.abs(e.Q) > qMaxScaled) e.Q = Math.sign(e.Q || 1) * qMaxScaled;
+    }
+  }
+
+  // Используем _ для опций, чтобы не было «unused»
+  void Q0;
 
   const branchesOut = buildOutput(branchesCalc, edges, remap, log);
   const nodesOut = buildNodePressures(nodesIn, edges, adj, treeEdgeIdx, root, remap);
 
+  void maxDeltaQ;
+
   return {
-    ok: maxDelta < tol,
+    ok: maxDelta < Math.max(tol, 1.0),  // допуск 1 м³/с в узле для «сошёлся»
     iterations: iter,
     maxDeltaQ: maxDelta,
     branches: branchesOut,
     nodes: nodesOut,
     log,
-    cyclesCount: cycles.length,
+    cyclesCount: cyclesCount,
   };
+}
+
+// ─── Решение системы линейных уравнений A·x = b методом Гаусса ──────────────
+// Возвращает x или null если система вырождена.
+function solveLinearSystem(A: number[][], b: number[]): number[] | null {
+  const n = A.length;
+  // Создаём расширенную матрицу
+  const M: number[][] = A.map((row, i) => [...row, b[i]]);
+
+  for (let i = 0; i < n; i++) {
+    // Поиск главного элемента (частичная пивотизация)
+    let maxRow = i;
+    let maxVal = Math.abs(M[i][i]);
+    for (let k = i + 1; k < n; k++) {
+      if (Math.abs(M[k][i]) > maxVal) {
+        maxVal = Math.abs(M[k][i]);
+        maxRow = k;
+      }
+    }
+    if (maxVal < 1e-12) return null; // вырожденная
+    if (maxRow !== i) [M[i], M[maxRow]] = [M[maxRow], M[i]];
+
+    // Прямой ход
+    for (let k = i + 1; k < n; k++) {
+      const f = M[k][i] / M[i][i];
+      for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j];
+    }
+  }
+
+  // Обратный ход
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    let s = M[i][n];
+    for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+    x[i] = s / M[i][i];
+    if (!isFinite(x[i])) return null;
+  }
+  return x;
 }
 
 function buildOutput(

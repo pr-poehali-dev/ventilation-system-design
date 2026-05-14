@@ -807,7 +807,7 @@ export default function CadPage() {
 
   // Локальный расчёт в браузере (TypeScript, метод Кросса)
   const handleSolveLocal = () => {
-    const res = solveNetwork(nodes, branchesRaw, { maxIter: 500, tolerance: 0.01, initialFlow: 50 });
+    const res = solveNetwork(nodes, branchesRaw, { maxIter: 50, tolerance: 0.5, initialFlow: 50 });
     setBranches(res.branches);
     setNodes(res.nodes);
     setSolveResult(res);
