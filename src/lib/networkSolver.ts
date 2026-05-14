@@ -95,9 +95,11 @@ function evalFanH(e: SolverEdge, Q: number): { H: number; dH: number } {
 
 // ─── Однопроходный решатель для РАЗОМКНУТОЙ сети (дерево) ────────────────────
 // Находит Q методом бисекции: H_fan(Q) = R_total * Q^2
+// Rtotal можно передать явно (путевое сопротивление); если не передан — суммирует все ветви
 function solveOpenNetwork(
   edges: SolverEdge[],
   log: string[],
+  rtotalOverride?: number,
 ): number {
   const fanEdges = edges.filter(e => e.hasFan);
   if (fanEdges.length === 0) {
@@ -105,8 +107,8 @@ function solveOpenNetwork(
     return 0;
   }
 
-  // Суммарное сопротивление всех ветвей
-  const Rtotal = edges.reduce((s, e) => s + e.R, 0);
+  // Суммарное сопротивление: используем переданное значение или сумму всех
+  const Rtotal = rtotalOverride !== undefined ? rtotalOverride : edges.reduce((s, e) => s + e.R, 0);
 
   // Суммарный напор вентиляторов (для нескольких параллельных/последовательных)
   // Упрощение: один вентилятор доминирует
@@ -148,9 +150,12 @@ function solveOpenNetwork(
     return qHi;
   }
 
-  let lo = qLo, hi = qHi;
+  // Расширяем диапазон до 0 если рабочая точка ниже qMin
+  // (при очень большом сопротивлении точка пересечения может быть левее qMin)
+  const loStart = Rtotal * qLo * qLo > H0 ? 0.1 : qLo;
+  let lo = loStart, hi = qHi;
   let Q = (lo + hi) / 2;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 80; i++) {
     const Qnorm = Q / Math.max(0.01, k);
     const Hfan = Math.max(0, curve.h0 * af + curve.h1 * Qnorm + curve.h2 * Qnorm * Qnorm) * k * k;
     const Hnet = Rtotal * Q * Q;
@@ -263,11 +268,26 @@ export function solveNetwork(
   const chordIdx = edges.map((_, i) => i).filter((i) => !treeEdgeIdx.has(i));
   log.push(`Узлов: ${nodeList.length}, ветвей: ${edges.length}, хорд: ${chordIdx.length}`);
 
-  // ─── РАЗОМКНУТАЯ СЕТЬ (нет контуров) ─────────────────────────────────
+  // ─── РАЗОМКНУТАЯ СЕТЬ (нет контуров, чистое дерево) ─────────────────
   if (chordIdx.length === 0) {
-    const Qopen = solveOpenNetwork(edges, log);
-    // Проставляем Q всем ветвям по направлению от вентилятора
-    // В простой разомкнутой сети все ветви последовательны → один расход
+    // Находим путь от вентилятора до GND (последовательное сопротивление)
+    const fanIdx = edges.findIndex(e => e.hasFan);
+    let Rtotal = 0;
+    if (fanIdx >= 0) {
+      // BFS от одного конца вентилятора до другого через граф (путь в дереве)
+      const fanE = edges[fanIdx];
+      // Для разомкнутой: ищем путь от атмосферы (GND) через вентилятор до другой атмосферы
+      // Упрощение: суммируем R всех ветвей в пути от GND до GND через вентилятор
+      // В последовательной сети это = сумма всех R
+      // Но если есть разветвление — это некорректно. Для чистого дерева с одним атмосферным путём
+      // используем sum всех R (все ветви последовательны по определению дерева с двумя @gnd).
+      Rtotal = edges.reduce((s, e) => s + e.R, 0) - fanE.R; // R сети без вентилятора
+    } else {
+      Rtotal = edges.reduce((s, e) => s + e.R, 0);
+    }
+    const Qopen = solveOpenNetwork(edges, log, Rtotal);
+    // Определяем направление потока: от источника (GND) в направлении вентилятора
+    // Для дерева — все ветви несут одинаковый Q (последовательная цепь)
     edges.forEach(e => { e.Q = Qopen; });
 
     const branchesOut = buildOutput(branchesCalc, edges, remap, log);
@@ -326,12 +346,48 @@ export function solveNetwork(
     cycles.push(cycle);
   }
 
-  // Начальное распределение Q
-  for (const cyc of cycles) {
-    for (const ce of cyc) {
-      edges[ce.edgeIdx].Q += Q0 * ce.dir;
+  // ─── Умное начальное распределение Q ──────────────────────────────────
+  // Используем рабочую точку вентилятора как начальное Q вместо фиксированного Q0=10.
+  // Это существенно ускоряет сходимость и предотвращает расходимость при больших H.
+  const fanEdgesAll = edges.filter(e => e.hasFan);
+  let Q0smart = Q0;
+  if (fanEdgesAll.length > 0) {
+    const fan0 = fanEdgesAll[0];
+    if (fan0.fanMode === "curve" && fan0.fanCurve) {
+      const curve0 = fan0.fanCurve;
+      const k0 = rpmFactor(fan0.fanRpm, curve0.rpmNominal);
+      const af0 = getAngleFactor(curve0, fan0.fanBladeAngle);
+      // Сумма R ветвей в дереве (приближённо — путь вентилятора)
+      const Rtree = edges.filter((_, i) => treeEdgeIdx.has(i)).reduce((s, e) => s + e.R, 0);
+      if (Rtree > 0) {
+        const qHi0 = curve0.qMax * k0;
+        const qLo0 = curve0.qMin * k0;
+        let qEst = (qLo0 + qHi0) / 2;
+        for (let bi = 0; bi < 40; bi++) {
+          const Qn = qEst / Math.max(0.001, k0);
+          const Hf = Math.max(0, curve0.h0 * af0 + curve0.h1 * Qn + curve0.h2 * Qn * Qn) * k0 * k0;
+          const Hn = Rtree * qEst * qEst;
+          const diff = Hf - Hn;
+          if (Math.abs(diff) < 0.5) break;
+          if (diff > 0) { qEst = (qEst + qHi0) / 2; }
+          else { qEst = (qLo0 + qEst) / 2; }
+        }
+        Q0smart = Math.max(Q0, Math.min(qHi0, qEst));
+      }
+    } else if (fan0.fanMode === "constant" && fan0.HfanConst > 0) {
+      const Rtree = edges.filter((_, i) => treeEdgeIdx.has(i)).reduce((s, e) => s + e.R, 0);
+      if (Rtree > 0) Q0smart = Math.sqrt(fan0.HfanConst / Rtree);
     }
   }
+  log.push(`Начальное Q0=${Q0smart.toFixed(2)} м³/с`);
+
+  for (const cyc of cycles) {
+    for (const ce of cyc) {
+      edges[ce.edgeIdx].Q += Q0smart * ce.dir;
+    }
+  }
+  // Убедимся что ни одна ветвь не имеет Q=0 (ломает den знаменатель)
+  edges.forEach(e => { if (Math.abs(e.Q) < 0.5) e.Q = 0.5 * Math.sign(e.Q || 1); });
 
   // Итерации Кросса
   let iter = 0;
@@ -349,8 +405,11 @@ export function solveNetwork(
         num += e.R * Qdir * Math.abs(Qdir) - Hsigned;
         den += 2 * e.R * Math.abs(Qdir) + dH;
       }
-      const dQ = den > 1e-12 ? -num / den : 0;
-      const dQrel = dQ * 0.85;
+      if (den < 1e-9) continue;
+      const dQraw = -num / den;
+      // Ограничиваем шаг: не более 50% от текущего характерного Q в контуре
+      const Qchar = cyc.reduce((mx, ce) => Math.max(mx, Math.abs(edges[ce.edgeIdx].Q)), 0.5);
+      const dQrel = Math.sign(dQraw) * Math.min(Math.abs(dQraw) * 0.85, Qchar * 0.5);
       if (Math.abs(dQrel) > maxDelta) maxDelta = Math.abs(dQrel);
       for (const ce of cyc) {
         edges[ce.edgeIdx].Q += dQrel * ce.dir;

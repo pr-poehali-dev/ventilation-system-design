@@ -807,11 +807,13 @@ export default function CadPage() {
 
   // Локальный расчёт в браузере (TypeScript, метод Кросса)
   const handleSolveLocal = () => {
-    const res = solveNetwork(nodes, branchesRaw, { maxIter: 200, tolerance: 0.001, initialFlow: 50 });
+    const res = solveNetwork(nodes, branchesRaw, { maxIter: 500, tolerance: 0.01, initialFlow: 50 });
     setBranches(res.branches);
     setNodes(res.nodes);
     setSolveResult(res);
-    if (res.ok) setShowFlowArrows(true);
+    // Показываем стрелки если хоть одна ветвь получила ненулевой расход
+    const hasFlow = res.branches.some(b => Math.abs(b.flow) > 0.1);
+    if (hasFlow) setShowFlowArrows(true);
   };
 
   // Серверный расчёт через Python VentCore (все 7 модулей)
