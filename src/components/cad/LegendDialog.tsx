@@ -122,17 +122,11 @@ const ITEMS: LegendItem[] = [
   {
     id: "fan", group: "Вентиляция", name: "Вентилятор",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <circle cx={24} cy={20} r={16} fill="#f0f4ff" stroke="#1a3a6b" strokeWidth="2" />
-      <circle cx={24} cy={20} r={5} fill="#1a3a6b" />
-      <circle cx={24} cy={20} r={3} fill="white" />
-      <line x1={24} y1={4} x2={24} y2={14} stroke="#1a3a6b" strokeWidth="3" strokeLinecap="round" />
-      <line x1={24} y1={26} x2={24} y2={36} stroke="#1a3a6b" strokeWidth="3" strokeLinecap="round" />
-      <line x1={8} y1={20} x2={17} y2={20} stroke="#1a3a6b" strokeWidth="3" strokeLinecap="round" />
-      <line x1={31} y1={20} x2={40} y2={20} stroke="#1a3a6b" strokeWidth="3" strokeLinecap="round" />
-      <line x1={12} y1={8} x2={18.5} y2={14.5} stroke="#1a3a6b" strokeWidth="2" strokeLinecap="round" />
-      <line x1={29.5} y1={25.5} x2={36} y2={32} stroke="#1a3a6b" strokeWidth="2" strokeLinecap="round" />
-      <line x1={36} y1={8} x2={29.5} y2={14.5} stroke="#1a3a6b" strokeWidth="2" strokeLinecap="round" />
-      <line x1={18.5} y1={25.5} x2={12} y2={32} stroke="#1a3a6b" strokeWidth="2" strokeLinecap="round" />
+      <circle cx={24} cy={20} r={16} fill="white" stroke="#222" strokeWidth="2" />
+      <path d="M24,20 C24,12 32,8 36,14 C32,16 28,18 24,20Z" fill="#222" />
+      <path d="M24,20 C16,20 12,12 18,8 C20,12 22,16 24,20Z" fill="#222" />
+      <path d="M24,20 C24,28 16,32 12,26 C16,24 20,22 24,20Z" fill="#222" />
+      <circle cx={24} cy={20} r={3} fill="white" stroke="#222" strokeWidth="1.5" />
     </svg>,
   },
   {

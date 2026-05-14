@@ -976,6 +976,10 @@ export default function CadPage() {
 
   const handleDeleteSelected = () => {
     if (selectedSymbolId) {
+      const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
+      if (sym?.typeId === "fan" && sym.branchId) {
+        updateBranch(sym.branchId, { hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0 });
+      }
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
     } else if (selectedBranchId) {

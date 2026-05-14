@@ -224,7 +224,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
       <div className="flex flex-wrap gap-0 px-0 pt-0"
         style={{ borderBottom: "1px solid #c0c0c0", background: "#f0f0f0" }}>
-        {INNER_TABS.map((t) => (
+        {INNER_TABS.filter(t => t !== "Вентилятор" || branch.hasFan).map((t) => (
           <button
             key={t}
             onClick={() => setInnerTab(t)}

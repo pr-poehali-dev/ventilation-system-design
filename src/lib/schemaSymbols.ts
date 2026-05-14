@@ -16,8 +16,8 @@ export const LEGEND_TYPES: LegendType[] = [
   },
   {
     id: "fan", name: "Вентилятор", group: "Вентиляция",
-    // Символ вентилятора: большой внешний круг + вписанный внутренний круг + центральная ось + треугольник направления (снаружи снизу)
-    svgContent: `<circle cx="24" cy="21" r="17" fill="#e8e8e8" stroke="#222" stroke-width="1.5"/><circle cx="24" cy="21" r="9" fill="white" stroke="#222" stroke-width="1.5"/><circle cx="24" cy="21" r="3" fill="#222"/><polygon points="24,4 30,15 18,15" fill="#222"/>`,
+    // Символ вентилятора по ГОСТ: внешний круг + 3 лопасти (дуги) + центральная точка
+    svgContent: `<circle cx="24" cy="20" r="16" fill="white" stroke="#222" stroke-width="2"/><path d="M24,20 C24,12 32,8 36,14 C32,16 28,18 24,20Z" fill="#222"/><path d="M24,20 C16,20 12,12 18,8 C20,12 22,16 24,20Z" fill="#222"/><path d="M24,20 C24,28 16,32 12,26 C16,24 20,22 24,20Z" fill="#222"/><circle cx="24" cy="20" r="3" fill="white" stroke="#222" stroke-width="1.5"/>`,
   },
   {
     id: "bulkhead", name: "Перемычка глухая", group: "Вентиляция",
