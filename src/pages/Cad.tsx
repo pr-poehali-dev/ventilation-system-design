@@ -808,10 +808,10 @@ export default function CadPage() {
     e.preventDefault();
   };
 
-  // Локальный расчёт в браузере (TypeScript, метод узловых давлений)
+  // Локальный расчёт в браузере (TypeScript, метод Кросса)
   const handleSolveLocal = () => {
     // Передаём branches (из useMemo) — они содержат актуальные длины/сечения/R
-    const res = solveNetwork(nodes, branches, { maxIter: 100, tolerance: 0.1, initialFlow: 50 });
+    const res = solveNetwork(nodes, branches, { maxIter: 800, tolerance: 0.01, initialFlow: 50 });
     // Обновляем ТОЛЬКО поля результата расчёта (flow, velocity, dP, fanPressure, fanEfficiency, fanShaftPower)
     // Исходные параметры геометрии/сопротивления в branchesRaw не трогаем —
     // иначе useMemo пересчитает R и затрёт Q обратно.
