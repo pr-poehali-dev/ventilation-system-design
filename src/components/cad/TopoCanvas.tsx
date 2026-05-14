@@ -79,7 +79,7 @@ interface Props {
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string }[];
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse" }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */
@@ -936,22 +936,28 @@ export default function TopoCanvas(props: Props) {
               )}
 
               {/* ── Стрелки направления свежей струи (F9, после расчёта) ── */}
-              {/* Красные, статичные, редкие (1 шт на ~120 px), как в АэроСеть. */}
-              {showFlowArrows && !thinLines && Q > 0.1 && segLen > 60 && (() => {
-                const step = 120;
+              {/* Полноценные стрелки с хвостиком (─►), как в АэроСеть */}
+              {showFlowArrows && !thinLines && Q > 0.1 && segLen > 80 && (() => {
+                const step = 130;
                 const count = Math.max(1, Math.floor(segLen / step));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
+                const arrowLen = Math.min(28, Math.max(16, w * 4));
                 return (
                   <g>
                     {Array.from({ length: count }, (_, i) => {
                       const t0 = (i + 1) / (count + 1);
                       const cx = sxA + dx * t0;
                       const cy = syA + dy * t0;
+                      const hw = arrowLen / 2;
                       return (
                         <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                          {/* Жирная красная стрелка с белым контуром для читаемости */}
-                          <polygon points="-7,-5 7,0 -7,5 -3,0"
-                            fill="#dc2626" stroke="white" strokeWidth="1.2"
+                          {/* Хвостик — линия */}
+                          <line x1={-hw} y1={0} x2={hw - 6} y2={0}
+                            stroke="#1d4ed8" strokeWidth={Math.max(1.5, w * 0.7)}
+                            strokeLinecap="round" />
+                          {/* Наконечник — треугольник */}
+                          <polygon points={`${hw - 9},-5 ${hw},0 ${hw - 9},5`}
+                            fill="#1d4ed8" stroke="white" strokeWidth="0.8"
                             strokeLinejoin="round" />
                         </g>
                       );
@@ -1184,11 +1190,28 @@ export default function TopoCanvas(props: Props) {
               <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"
                 dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-              {/* Подпись: label (число людей) или название */}
+              {/* Стрелка направления воздуха на символе вентилятора */}
+              {sym.typeId === "fan" && sym.branchId && hasBranchPts && (() => {
+                const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                const arrowAngle = sym.airDirection === "reverse"
+                  ? brAngle + 180 : brAngle;
+                const cx2 = px, cy2 = py + SZ * 0.55;
+                const aLen = Math.max(SZ * 0.45, 12);
+                return (
+                  <g transform={`translate(${cx2},${cy2}) rotate(${arrowAngle})`}>
+                    <line x1={-aLen / 2} y1={0} x2={aLen / 2 - 5} y2={0}
+                      stroke="#1a1a1a" strokeWidth={Math.max(1.2, SZ / 22)} strokeLinecap="round" />
+                    <polygon points={`${aLen / 2 - 8},-4 ${aLen / 2},0 ${aLen / 2 - 8},4`}
+                      fill="#1a1a1a" />
+                  </g>
+                );
+              })()}
+              {/* Подпись: описание или label или название */}
               {view.scale > 0.12 && (
                 <text x={px} y={HY + SZ + 11} textAnchor="middle"
                   fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif">
-                  {sym.label ?? lt.name}
+                  {sym.description || sym.label || lt.name}
                 </text>
               )}
             </g>

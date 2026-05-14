@@ -48,6 +48,8 @@ interface SchemaSymbol {
   offsetY?: number; // смещение от ветви (экранные px)
   scale?: number;   // масштаб (1 = по умолчанию)
   label?: string;   // подпись (например "5 чел.")
+  description?: string; // описание (свободный текст)
+  airDirection?: "forward" | "reverse"; // направление воздуха относительно ветви
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
@@ -1669,8 +1671,62 @@ export default function CadPage() {
 
 
 
+            {/* ═══ Панель выделенного условного обозначения ══════════════ */}
+            {activeSide === "params" && !selectedNode && !selectedBranch && selectedSymbolId && (() => {
+              const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
+              if (!sym) return null;
+              return (
+                <div className="p-2 space-y-1 text-[11px]">
+                  <div className="font-semibold text-[12px] text-gray-700 pb-1 border-b border-gray-200 mb-2">
+                    Общие свойства
+                  </div>
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-gray-500 w-20 flex-shrink-0">Масштаб</span>
+                    <div className="flex items-center gap-1 flex-1">
+                      <input type="range" min={40} max={400} step={10}
+                        value={Math.round((sym.scale ?? 1) * 100)}
+                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
+                          ? { ...s, scale: Number(e.target.value) / 100 } : s))}
+                        className="flex-1" style={{ accentColor: "#2563eb" }} />
+                      <span className="w-10 text-right text-gray-700 flex-shrink-0">
+                        {Math.round((sym.scale ?? 1) * 100)} %
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-gray-500 w-20 flex-shrink-0">Описание</span>
+                    <input type="text"
+                      value={sym.description ?? ""}
+                      onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
+                        ? { ...s, description: e.target.value } : s))}
+                      className="flex-1 px-1 text-[11px]"
+                      style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                  </div>
+                  {sym.typeId === "fan" && (
+                    <div className="flex items-center gap-1 mb-1">
+                      <span className="text-gray-500 w-20 flex-shrink-0">Направление</span>
+                      <select
+                        value={sym.airDirection ?? "forward"}
+                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
+                          ? { ...s, airDirection: e.target.value as "forward" | "reverse" } : s))}
+                        className="flex-1 text-[11px] px-1"
+                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                        <option value="forward">По ветви (→)</option>
+                        <option value="reverse">Против ветви (←)</option>
+                      </select>
+                    </div>
+                  )}
+                  {sym.description && (
+                    <div className="mt-2 p-1 bg-gray-50 rounded text-gray-600 text-[10px] border border-gray-100">
+                      {sym.description}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Пусто — нет выбора */}
-            {activeSide === "params" && !selectedNode && !selectedBranch && (
+            {activeSide === "params" && !selectedNode && !selectedBranch && !selectedSymbolId && (
               <div className="p-4 text-center text-gray-400 text-xs">
                 Выделите узел или ветвь на схеме, чтобы редактировать параметры
               </div>
@@ -2453,11 +2509,16 @@ export default function CadPage() {
               }}
               onSymbolClick={(symId) => {
                 const sym = schemaSymbols.find(s => s.id === symId);
+                setActiveSide("params");
                 if (sym?.typeId === "fan" && sym.branchId) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
-                  setActiveSide("params");
                   setFanSymbolBranchId(sym.branchId);
+                } else {
+                  // Для не-вентиляторных символов — снять выбор ветви/узла, показать панель символа
+                  setSelectedBranchId(null);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
                 }
               }}
               activeSymbolTypeId={activeSymbolTypeId}
