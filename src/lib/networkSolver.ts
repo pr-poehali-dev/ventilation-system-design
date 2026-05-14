@@ -56,6 +56,18 @@ export interface SolveResult {
   nodes: TopoNode[];
   log: string[];
   cyclesCount: number;
+  /** Диагностика проблем в сети (для UI «инспектор расчёта») */
+  diagnostics?: SolveDiagnostic[];
+}
+
+export interface SolveDiagnostic {
+  level: "error" | "warning" | "info";
+  category: "topology" | "node_balance" | "branch_flow" | "fan" | "convergence";
+  message: string;
+  /** ID связанного объекта (узла или ветви) */
+  objectId?: string;
+  /** Значение для отображения */
+  value?: number;
 }
 
 // Коэффициент оборотов: k = n / n_nom. fanRpm=0 означает «не задано» → номинал
@@ -245,32 +257,53 @@ export function solveNetwork(
     for (let i = 0; i < N; i++) P[i] = H0 * 0.3;
   }
 
-  // Функция расчёта Q ветви по текущим P
+  // Вычисляет ΔP и Q ветви по текущим P.
+  // Знак Q: положительный — поток от a к b (по ветви).
+  // Вентилятор всегда нагнетает в направлении a→b (если airDirection не reverse).
+  // Поэтому H_fan суммируется с (P_a − P_b) — увеличивает движущую силу в +направлении.
   const computeQ = (e: SolverEdge): number => {
     const Pa = e.a === GND ? 0 : P[nodeIdx.get(e.a)!];
     const Pb = e.b === GND ? 0 : P[nodeIdx.get(e.b)!];
-    // Используем H_fan вычисленный по предыдущему Q (для устойчивости)
+    // H_fan: используем абс. значение, так как evalFanH(|Q|) > 0
     const { H } = evalFanH(e, e.Q);
-    const dP = Pa - Pb + H;
+    // Движущая сила = разность давлений + напор вентилятора (в направлении a→b)
+    const dP = (Pa - Pb) + H;
     const R = Math.max(1e-6, e.R);
     return Math.sign(dP) * Math.sqrt(Math.abs(dP) / R);
   };
 
-  // |dQ/dP| = 1/(2·sqrt(R·|ΔP|)) — модуль производной для якобиана
+  // |dQ/dP_a| = 1/(2·sqrt(R·|ΔP|)) — модуль производной для якобиана.
+  // ∂Q/∂P_a = +dqdp,  ∂Q/∂P_b = −dqdp.
+  // Вклад H_fan (зависит от Q) даёт неявную связь — учитывается итерациями.
   const computeDQDP = (e: SolverEdge): number => {
     const Pa = e.a === GND ? 0 : P[nodeIdx.get(e.a)!];
     const Pb = e.b === GND ? 0 : P[nodeIdx.get(e.b)!];
     const { H } = evalFanH(e, e.Q);
-    const dP = Pa - Pb + H;
+    const dP = (Pa - Pb) + H;
     const R = Math.max(1e-6, e.R);
-    const absdP = Math.max(1e-3, Math.abs(dP));   // защита от деления на 0
+    // защита: при ΔP→0 производная → ∞, ограничиваем разумным значением
+    const absdP = Math.max(0.5, Math.abs(dP));
     return 1 / (2 * Math.sqrt(R * absdP));
   };
 
-  // ─── Итерации Ньютона ────────────────────────────────────────────────
+  // Вычисление нормы невязки баланса узлов
+  const computeResidual = (): { F: Float64Array; maxF: number } => {
+    const F = new Float64Array(N);
+    for (const e of edges) {
+      const Q = computeQ(e);
+      if (!isFinite(Q)) continue;
+      if (e.a !== GND) F[nodeIdx.get(e.a)!] -= Q;
+      if (e.b !== GND) F[nodeIdx.get(e.b)!] += Q;
+    }
+    let maxF = 0;
+    for (let i = 0; i < N; i++) if (Math.abs(F[i]) > maxF) maxF = Math.abs(F[i]);
+    return { F, maxF };
+  };
+
+  // ─── Итерации Ньютона с line-search ──────────────────────────────────
   let iter = 0;
   let maxDelta = Infinity;
-  let maxDeltaQ = 0;
+  let prevMaxF = Infinity;
 
   for (; iter < maxIter; iter++) {
     // 1) Обновить Q всех ветвей по текущим P
@@ -279,30 +312,19 @@ export function solveNetwork(
       if (isFinite(Qnew)) e.Q = Qnew;
     }
 
-    // 2) Вычислить невязки F_i = Σ Q (с учётом знака: + если Q входит, − если выходит)
-    const F = new Float64Array(N);
-    for (const e of edges) {
-      if (e.a !== GND) {
-        const i = nodeIdx.get(e.a)!;
-        F[i] -= e.Q;                          // Q уходит из e.a
-      }
-      if (e.b !== GND) {
-        const i = nodeIdx.get(e.b)!;
-        F[i] += e.Q;                          // Q приходит в e.b
-      }
-    }
+    // 2) Невязка баланса узлов
+    const { F, maxF } = computeResidual();
 
-    // 3) Якобиан: J[i][j] = ∂F_i/∂P_j
-    //    Только ветви, соединяющие i с j (или i с GND) дают вклад.
-    //    Для ветви a→b: ∂Q_ab/∂P_a = +dQdP, ∂Q_ab/∂P_b = −dQdP
-    //    Используем разрежённое представление (для скорости — плотная матрица если N мало)
+    if (maxF < tol) { iter++; maxDelta = maxF; break; }
+
+    // 3) Якобиан J[i][j] = ∂F_i/∂P_j (плотный, для N до ~500)
     const J: number[][] = Array.from({ length: N }, () => new Array(N).fill(0));
     for (const e of edges) {
       const dqdp = computeDQDP(e);
       const ai = e.a === GND ? -1 : nodeIdx.get(e.a)!;
       const bi = e.b === GND ? -1 : nodeIdx.get(e.b)!;
-      // F_a -= Q  → ∂F_a/∂P_a = −∂Q/∂P_a = −dqdp ;  ∂F_a/∂P_b = +dqdp
-      // F_b += Q  → ∂F_b/∂P_a = +dqdp           ;  ∂F_b/∂P_b = −dqdp
+      // F_a -= Q  → ∂F_a/∂P_a = −dqdp,  ∂F_a/∂P_b = +dqdp
+      // F_b += Q  → ∂F_b/∂P_a = +dqdp,  ∂F_b/∂P_b = −dqdp
       if (ai >= 0) {
         J[ai][ai] -= dqdp;
         if (bi >= 0) J[ai][bi] += dqdp;
@@ -313,39 +335,59 @@ export function solveNetwork(
       }
     }
 
-    // Регуляризация диагонали (численная устойчивость)
+    // Регуляризация диагонали: добавляем (-eps) к диагонали (J ist симм.отриц.определённая)
     for (let i = 0; i < N; i++) {
       if (Math.abs(J[i][i]) < 1e-9) J[i][i] = -1e-6;
     }
 
-    // 4) Решаем J · ΔP = −F методом Гаусса (для N до ~500 это быстро)
+    // 4) Решаем J · ΔP = −F
     const dP = solveLinearSystem(J, F.map(v => -v));
     if (!dP) {
       log.push(`Итерация ${iter}: вырожденная система — остановка`);
+      maxDelta = maxF;
       break;
     }
 
-    // 5) Демпфирование: ограничиваем |ΔP| чтобы избежать выбросов
-    const dampMax = 5000; // Па за итерацию
+    // 5) Глобальное демпфирование шага по максимальному ΔP
+    const dampMax = 8000; // Па за итерацию
     let alpha = 1.0;
-    let maxDp = 0;
-    for (let i = 0; i < N; i++) if (Math.abs(dP[i]) > maxDp) maxDp = Math.abs(dP[i]);
-    if (maxDp > dampMax) alpha = dampMax / maxDp;
+    let maxDpRaw = 0;
+    for (let i = 0; i < N; i++) if (Math.abs(dP[i]) > maxDpRaw) maxDpRaw = Math.abs(dP[i]);
+    if (maxDpRaw > dampMax) alpha = dampMax / maxDpRaw;
 
-    // 6) Обновление давлений
-    let maxDpStep = 0;
-    for (let i = 0; i < N; i++) {
-      const step = alpha * dP[i];
-      P[i] += step;
-      if (Math.abs(step) > maxDpStep) maxDpStep = Math.abs(step);
+    // 6) Line-search: пробуем шаг, если невязка увеличилась — уменьшаем α
+    const Pbackup = new Float64Array(P);
+    let accepted = false;
+    for (let trial = 0; trial < 6; trial++) {
+      // Восстанавливаем и применяем α·ΔP
+      for (let i = 0; i < N; i++) P[i] = Pbackup[i] + alpha * dP[i];
+      // Защита: P не должно быть бесконечным
+      let okP = true;
+      for (let i = 0; i < N; i++) if (!isFinite(P[i])) { okP = false; break; }
+      if (!okP) { alpha *= 0.5; continue; }
+
+      // Пересчитываем Q и невязку
+      for (const e of edges) {
+        const Qnew = computeQ(e);
+        if (isFinite(Qnew)) e.Q = Qnew;
+      }
+      const { maxF: newMaxF } = computeResidual();
+      // Принимаем шаг если невязка не выросла больше чем в 2 раза
+      if (newMaxF < prevMaxF * 2 || newMaxF < tol * 10) {
+        prevMaxF = newMaxF;
+        accepted = true;
+        break;
+      }
+      alpha *= 0.5; // уменьшаем шаг
+    }
+    if (!accepted) {
+      // Не приняли шаг — откатываемся и берём микроскопический
+      for (let i = 0; i < N; i++) P[i] = Pbackup[i] + 0.01 * dP[i];
+      prevMaxF = maxF;
     }
 
-    // 7) Проверка сходимости по невязке расхода в узлах
-    maxDelta = 0;
-    for (let i = 0; i < N; i++) if (Math.abs(F[i]) > maxDelta) maxDelta = Math.abs(F[i]);
-    maxDeltaQ = maxDelta;
-
-    if (maxDelta < tol && maxDpStep < 1) { iter++; break; }
+    maxDelta = maxF;
+    if (alpha * maxDpRaw < 0.1 && maxF < Math.max(tol * 10, 1.0)) { iter++; break; }
   }
   log.push(`Итерации (Ньютон): ${iter}, max|ΔQ_узел|=${maxDelta.toExponential(2)} м³/с`);
 
@@ -364,22 +406,135 @@ export function solveNetwork(
     }
   }
 
-  // Используем _ для опций, чтобы не было «unused»
   void Q0;
 
   const branchesOut = buildOutput(branchesCalc, edges, remap, log);
   const nodesOut = buildNodePressures(nodesIn, edges, adj, treeEdgeIdx, root, remap);
 
-  void maxDeltaQ;
+  // ─── ДИАГНОСТИКА: ищем проблемные узлы и ветви ──────────────────────
+  const diagnostics: SolveDiagnostic[] = [];
+
+  // 1) Дисбаланс в узлах (нарушение 1-го закона Кирхгофа)
+  const nodeBalance = new Map<string, number>();
+  for (const e of edges) {
+    if (e.a !== GND) nodeBalance.set(e.a, (nodeBalance.get(e.a) ?? 0) - e.Q);
+    if (e.b !== GND) nodeBalance.set(e.b, (nodeBalance.get(e.b) ?? 0) + e.Q);
+  }
+  nodeBalance.forEach((bal, nodeId) => {
+    if (Math.abs(bal) > 1.0) {
+      diagnostics.push({
+        level: Math.abs(bal) > 10 ? "error" : "warning",
+        category: "node_balance",
+        message: `Дисбаланс в узле ${nodeId}: ΔQ = ${bal.toFixed(2)} м³/с`,
+        objectId: nodeId,
+        value: bal,
+      });
+    }
+  });
+
+  // 2) Ветви с подозрительно высоким Q (>250 м³/с типично для аварии)
+  for (const b of branchesOut) {
+    const Q = Math.abs(b.flow);
+    if (Q > 300) {
+      diagnostics.push({
+        level: "error",
+        category: "branch_flow",
+        message: `Аномально высокий расход в ветви ${b.id}: Q = ${Q.toFixed(1)} м³/с`,
+        objectId: b.id,
+        value: Q,
+      });
+    } else if (Q > 200 && b.area < 8) {
+      diagnostics.push({
+        level: "warning",
+        category: "branch_flow",
+        message: `Превышение V в ${b.id}: V = ${b.velocity.toFixed(1)} м/с (сечение ${b.area.toFixed(1)} м²)`,
+        objectId: b.id,
+        value: b.velocity,
+      });
+    }
+    // Превышение допустимой скорости
+    if (b.vMax > 0 && b.velocity > b.vMax) {
+      diagnostics.push({
+        level: "warning",
+        category: "branch_flow",
+        message: `Скорость ${b.velocity.toFixed(1)} м/с в ветви ${b.id} превышает V_max=${b.vMax}`,
+        objectId: b.id,
+        value: b.velocity,
+      });
+    }
+  }
+
+  // 3) Вентилятор работает за пределами кривой
+  for (const e of edges) {
+    if (e.hasFan && e.fanMode === "curve" && e.fanCurve) {
+      const k = rpmFactor(e.fanRpm, e.fanCurve.rpmNominal);
+      const Q = Math.abs(e.Q);
+      const qMin = e.fanCurve.qMin * k;
+      const qMax = e.fanCurve.qMax * k;
+      if (Q < qMin * 0.95) {
+        diagnostics.push({
+          level: "warning",
+          category: "fan",
+          message: `Вентилятор ${e.id} в зоне помпажа: Q=${Q.toFixed(1)} < Q_min=${qMin.toFixed(1)} м³/с`,
+          objectId: e.id, value: Q,
+        });
+      } else if (Q > qMax * 0.98) {
+        diagnostics.push({
+          level: "warning",
+          category: "fan",
+          message: `Вентилятор ${e.id} на пределе: Q=${Q.toFixed(1)} ≈ Q_max=${qMax.toFixed(1)} м³/с`,
+          objectId: e.id, value: Q,
+        });
+      }
+    }
+  }
+
+  // 4) Сходимость
+  if (maxDelta > Math.max(tol, 1.0)) {
+    diagnostics.push({
+      level: "error",
+      category: "convergence",
+      message: `Расчёт не сошёлся: max|ΔQ| = ${maxDelta.toFixed(2)} м³/с (норма < ${tol})`,
+      value: maxDelta,
+    });
+  }
+
+  // 5) Изолированные подсети (не достижимые от GND)
+  const reachable = new Set<string>([root]);
+  const stack = [root];
+  while (stack.length) {
+    const u = stack.pop()!;
+    for (const { other } of adj.get(u) ?? []) {
+      if (!reachable.has(other)) { reachable.add(other); stack.push(other); }
+    }
+  }
+  if (reachable.size < nodeList.length) {
+    const isolated = nodeList.filter(n => !reachable.has(n)).slice(0, 5);
+    diagnostics.push({
+      level: "error",
+      category: "topology",
+      message: `Изолированные узлы (нет связи с атмосферой): ${isolated.join(", ")}${isolated.length === 5 ? "..." : ""}`,
+    });
+  }
+
+  // 6) Нет ни одного вентилятора
+  if (!edges.some(e => e.hasFan)) {
+    diagnostics.push({
+      level: "warning",
+      category: "topology",
+      message: "В сети нет ни одного вентилятора — поток будет нулевым",
+    });
+  }
 
   return {
-    ok: maxDelta < Math.max(tol, 1.0),  // допуск 1 м³/с в узле для «сошёлся»
+    ok: maxDelta < Math.max(tol, 1.0),
     iterations: iter,
     maxDeltaQ: maxDelta,
     branches: branchesOut,
     nodes: nodesOut,
     log,
     cyclesCount: cyclesCount,
+    diagnostics,
   };
 }
 

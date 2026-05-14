@@ -487,6 +487,9 @@ export default function CadPage() {
   const [showSelectSimilar, setShowSelectSimilar] = useState(false);
   const lastSPressRef = useRef<number>(0);
 
+  // ─── ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ─────────────────────────────────────
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+
   // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
   const handleBranchMultiSelect = (id: string) => {
@@ -807,7 +810,7 @@ export default function CadPage() {
 
   // Локальный расчёт в браузере (TypeScript, метод Кросса)
   const handleSolveLocal = () => {
-    const res = solveNetwork(nodes, branchesRaw, { maxIter: 50, tolerance: 0.5, initialFlow: 50 });
+    const res = solveNetwork(nodes, branchesRaw, { maxIter: 100, tolerance: 0.1, initialFlow: 50 });
     setBranches(res.branches);
     setNodes(res.nodes);
     setSolveResult(res);
@@ -2768,6 +2771,21 @@ export default function CadPage() {
           ) : (
             <span style={{ color: "#9ca3af" }}>● Расчёт не выполнялся</span>
           )}
+          {solveResult?.diagnostics && solveResult.diagnostics.length > 0 && (() => {
+            const errs = solveResult.diagnostics.filter(d => d.level === "error").length;
+            const warns = solveResult.diagnostics.filter(d => d.level === "warning").length;
+            return (
+              <button
+                onClick={() => setShowDiagnostics(v => !v)}
+                className="ml-1 px-2 py-0.5 rounded text-[11px]"
+                style={{ background: errs > 0 ? "#fee2e2" : "#fef3c7",
+                  color: errs > 0 ? "#b91c1c" : "#92400e",
+                  border: `1px solid ${errs > 0 ? "#fca5a5" : "#fcd34d"}`,
+                  cursor: "pointer" }}>
+                ⚠ Диагностика: {errs} ошибок, {warns} предупр.
+              </button>
+            );
+          })()}
           <span className="text-gray-400">|</span>
           <span style={{ color: "#6b7280" }}>S+S — выделить подобное</span>
         </div>
@@ -2839,6 +2857,64 @@ export default function CadPage() {
     {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
     {showLegend && (
       <LegendDialog onClose={() => setShowLegend(false)} />
+    )}
+
+    {/* ═══ ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ════════════════════════════════════ */}
+    {showDiagnostics && solveResult?.diagnostics && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
+        <div className="bg-white rounded shadow-lg flex flex-col"
+          style={{ width: 560, maxHeight: "80vh", border: "1px solid #9ca3af" }}>
+          <div className="flex items-center justify-between px-3 py-2"
+            style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8" }}>
+            <span className="text-[12px] font-semibold text-gray-800">Диагностика расчёта</span>
+            <button onClick={() => setShowDiagnostics(false)}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#6b7280" }}>✕</button>
+          </div>
+          <div className="overflow-auto flex-1 px-2 py-1">
+            {solveResult.diagnostics.length === 0 ? (
+              <div className="text-center text-[11px] text-gray-500 py-4">Проблем не обнаружено ✓</div>
+            ) : (
+              solveResult.diagnostics.map((d, i) => (
+                <div key={i}
+                  onClick={() => {
+                    if (d.objectId) {
+                      const n = nodes.find(nd => nd.id === d.objectId);
+                      const b = branches.find(br => br.id === d.objectId);
+                      if (n) { setSelectedNodeId(n.id); setSelectedBranchId(null); }
+                      else if (b) { setSelectedBranchId(b.id); setSelectedNodeId(null); }
+                    }
+                  }}
+                  className="flex items-start gap-2 px-2 py-1.5 cursor-pointer hover:bg-gray-50"
+                  style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <span style={{
+                    color: d.level === "error" ? "#dc2626" : d.level === "warning" ? "#d97706" : "#2563eb",
+                    fontSize: 14, lineHeight: "16px", flexShrink: 0,
+                  }}>
+                    {d.level === "error" ? "✕" : d.level === "warning" ? "⚠" : "ℹ"}
+                  </span>
+                  <div className="flex-1 text-[11px]">
+                    <div style={{ color: "#1f2937" }}>{d.message}</div>
+                    <div className="text-[10px] text-gray-400">
+                      {d.category === "node_balance" ? "баланс узла" :
+                       d.category === "branch_flow" ? "поток ветви" :
+                       d.category === "fan" ? "вентилятор" :
+                       d.category === "topology" ? "топология" :
+                       d.category === "convergence" ? "сходимость" : d.category}
+                      {d.objectId && ` · ${d.objectId.substring(0, 24)}`}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex justify-between items-center px-3 py-2" style={{ borderTop: "1px solid #e5e7eb", background: "#f8faff" }}>
+            <span className="text-[10px] text-gray-500">Клик на проблему — выделить объект на схеме</span>
+            <button onClick={() => setShowDiagnostics(false)}
+              className="text-[11px] px-3 py-1 rounded"
+              style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer" }}>Закрыть</button>
+          </div>
+        </div>
+      </div>
     )}
 
     {/* ═══ ВЫДЕЛЕНИЕ ПОДОБНОГО (S+S) ══════════════════════════════════════ */}
