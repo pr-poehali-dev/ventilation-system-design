@@ -320,7 +320,15 @@ function buildResult(
       ? rb.resistance * (resistanceUnit === "kmu" ? 1e-3 : 1)
       : 0;
 
+    // Определяем тип выработки из CSV
+    const branchType = rb.name || rb.typeName || "Выработка";
+    // Если R не задан — используем alpha с типовым коэффициентом по форме сечения (вместо нуля)
+    // Прямоугольник/свод ≈ 9–20 ×10⁻⁴ Нс²/м⁴, круглый ≈ 6–15
+    const defaultAlpha = shape === "round" ? 9 : shape === "arch" ? 15 : 12;
+
     branches.push(makeBranch(newBranchId, fromNode.id, toNode.id, {
+      type: branchType,
+      name: rb.name || rb.id,
       layer: rb.layer,
       length: realLen, manualLength: rb.length > 0,
       angle: realAngle, manualAngle: false,
@@ -328,10 +336,14 @@ function buildResult(
       perimeter: rb.perimeter > 0 ? rb.perimeter : 0,
       dh: dh > 0 ? dh : 0,
       flow: rb.flow,
-      // Если R задан из CSV — используем ручной режим, чтобы recalcBranchAero не перезаписал его
+      // Режим сопротивления:
+      //   R задан → manual (берём из CSV)
+      //   R = 0, S задана → alpha с дефолтным коэффициентом (пересчитается из геометрии)
+      //   R = 0, S не задана → alpha (R будет 0 пока не задана геометрия)
       resistanceMode: importedR > 0 ? "manual" : "alpha",
       manualR: importedR,
       resistance: importedR,
+      alphaCoef: importedR > 0 ? 9 : defaultAlpha,
       manualSection: rb.area > 0, shape,
     }));
   }

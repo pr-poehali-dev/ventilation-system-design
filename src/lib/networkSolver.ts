@@ -299,9 +299,10 @@ export function solveNetwork(
     cyc.forEach(ce => { edges[ce.edgeIdx].Q += Q0 * ce.dir; })
   );
 
-  // Ветвям дерева без Q даём минимальное значение (защита от den=0)
+  // Ветвям без Q даём небольшое стартовое значение только для устойчивости Кросса
+  // (защита от den=0 в первой итерации). Реальный Q будет пересчитан позже.
   edges.forEach(e => {
-    if (Math.abs(e.Q) < 0.5) e.Q = 0.5 * Math.sign(e.Q || 1);
+    if (Math.abs(e.Q) < 0.01) e.Q = 0.01 * Math.sign(e.Q || 1);
   });
 
   // ── 10. Итерации Кросса ────────────────────────────────────────────────
@@ -357,7 +358,7 @@ export function solveNetwork(
     }
 
     // Защита от NaN
-    edges.forEach(e => { if (!isFinite(e.Q)) e.Q = 0.5; });
+    edges.forEach(e => { if (!isFinite(e.Q)) e.Q = 0; });
 
     // Ограничиваем Q вентилятора в диапазоне кривой
     edges.forEach(e => {
@@ -372,6 +373,76 @@ export function solveNetwork(
   }
 
   log.push(`Итерации: ${iterCount}, max|ΔQ| = ${maxDelta.toFixed(4)} м³/с`);
+
+  // ── 10b. Пересчёт Q ветвей дерева из баланса узлов (BFS от листьев) ───
+  // После Кросса хорды имеют верный Q. Ветви дерева пересчитываем из
+  // условия Σ Q = 0 в каждом узле (первый закон Кирхгофа).
+  // Обходим дерево от листьев к корню (обратный BFS).
+  {
+    // Степень узла в дереве (считаем только рёбра дерева)
+    const treeDegree = new Map<string, number>();
+    nodeList.forEach(n => treeDegree.set(n, 0));
+    treeEdgeIdx.forEach(i => {
+      treeDegree.set(edges[i].a, (treeDegree.get(edges[i].a) ?? 0) + 1);
+      treeDegree.set(edges[i].b, (treeDegree.get(edges[i].b) ?? 0) + 1);
+    });
+
+    // Текущий баланс в каждом узле (сумма Q входящих − Q выходящих)
+    // Вклад только хорд (их Q уже известен)
+    const balance = new Map<string, number>();
+    nodeList.forEach(n => balance.set(n, 0));
+    edges.forEach((e, i) => {
+      if (!treeEdgeIdx.has(i)) {
+        // Хорда: вносит вклад в баланс обоих узлов
+        balance.set(e.a, (balance.get(e.a) ?? 0) - e.Q);
+        balance.set(e.b, (balance.get(e.b) ?? 0) + e.Q);
+      }
+    });
+
+    // BFS от листьев дерева (степень=1, кроме корня) к корню
+    // Для каждого листа: Q ребра = -(баланс листа) → идём вверх
+    const processed = new Set<string>([root]);
+    const leafQueue = nodeList.filter(n => n !== root && (treeDegree.get(n) ?? 0) === 1);
+    const processQueue = [...leafQueue];
+
+    while (processQueue.length > 0) {
+      const leaf = processQueue.shift()!;
+      if (processed.has(leaf)) continue;
+      processed.add(leaf);
+
+      // Найдём ребро дерева, соединяющее leaf с родителем
+      const treeEdge = Array.from(treeEdgeIdx)
+        .map(i => edges[i])
+        .find(e => (e.a === leaf || e.b === leaf));
+      if (!treeEdge) continue;
+
+      // Q этого ребра = минус баланс в листе (что нужно «вытянуть» вверх)
+      const bal = balance.get(leaf) ?? 0;
+      // Если bal < 0 → в листе дефицит → Q должен идти к листу → ребро должно нести +Q к листу
+      const parent = treeEdge.a === leaf ? treeEdge.b : treeEdge.a;
+
+      // Вычисляем нужный Q с учётом направления ребра
+      // Q > 0 означает поток от a к b
+      if (treeEdge.a === leaf) {
+        // Лист — начало ребра. Q>0 означает поток ОТ листа. bal < 0 → нужен приток → Q < 0.
+        treeEdge.Q = -bal;
+      } else {
+        // Лист — конец ребра. Q>0 означает поток К листу. bal < 0 → нужен приток → Q > 0.
+        treeEdge.Q = bal;
+      }
+
+      // Обновляем баланс родителя
+      const dBal = treeEdge.a === leaf ? treeEdge.Q : -treeEdge.Q;
+      balance.set(parent, (balance.get(parent) ?? 0) + dBal);
+
+      // Если родитель теперь стал листом (все его соседи обработаны) — добавляем в очередь
+      const parentNeighborsUnprocessed = (adj.get(parent) ?? [])
+        .filter(({ edgeIdx, other }) => treeEdgeIdx.has(edgeIdx) && !processed.has(other));
+      if (parentNeighborsUnprocessed.length <= 1 && parent !== root) {
+        processQueue.push(parent);
+      }
+    }
+  }
 
   // ── 11. Формируем выходные ветви ───────────────────────────────────────
   const branchesOut = branchesCalc.map(b => {
