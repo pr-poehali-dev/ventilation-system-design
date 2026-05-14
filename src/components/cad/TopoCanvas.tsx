@@ -594,7 +594,10 @@ export default function TopoCanvas(props: Props) {
     const py = e.clientY - rect.top;
     const raw = e.deltaY;
     const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
-    const factor = delta > 0 ? 1 / 1.12 : 1.12;
+    // Плавный зум: фактор пропорционален величине delta, ограничен за один шаг
+    const step = Math.min(Math.abs(delta) / 120, 3);
+    const base = 1 + 0.12 * step;
+    const factor = delta > 0 ? 1 / base : base;
     setView((v) => {
       const newScale = Math.max(0.002, Math.min(500, v.scale * factor));
       const wx = (px - v.offsetX) / v.scale;
@@ -605,7 +608,6 @@ export default function TopoCanvas(props: Props) {
         offsetX: px - wx * newScale,
         offsetY: py - wy * newScale,
       };
-      // Обновляем поле масштаба в тулбаре — без цикла, т.к. prevScaleOverride не меняется
       prevScaleOverride.current = newScale;
       if (onScaleChange) onScaleChange(newScale);
       return newView;
@@ -973,8 +975,9 @@ export default function TopoCanvas(props: Props) {
                     fontSize="11" fontWeight="bold" fill="#7c3aed">⚙</text>
                 </g>
               )}
-              {view.scale > 0.12 && (() => {
+              {view.scale > 0.04 && (() => {
                 const ic = infoConfig;
+                const labelOpacity = Math.min(1, (view.scale - 0.04) / 0.08);
                 // Порядковый номер ветви (1, 2, 3...) из ID вида "B1"
                 const branchNum = b.id.replace(/^B/, "");
                 const hasCalc = Q > 0 || b.velocity > 0;
@@ -1007,7 +1010,7 @@ export default function TopoCanvas(props: Props) {
                 const offsetY = -16;
 
                 return (
-                  <g transform={`translate(${midX},${midY})`}>
+                  <g transform={`translate(${midX},${midY})`} opacity={labelOpacity}>
                     {showCircle && (
                       <g transform={`translate(0,${offsetY})`}>
                         <circle r={circleR} fill="white" stroke={isSel ? "#2563eb" : "#374151"} strokeWidth={isSel ? 1.5 : 1} />
@@ -1208,9 +1211,10 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
               {/* Подпись: описание или label или название */}
-              {view.scale > 0.12 && (
+              {view.scale > 0.06 && (
                 <text x={px} y={HY + SZ + 11} textAnchor="middle"
-                  fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif">
+                  fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif"
+                  opacity={Math.min(1, (view.scale - 0.06) / 0.06)}>
                   {sym.description || sym.label || lt.name}
                 </text>
               )}
@@ -1237,8 +1241,9 @@ export default function TopoCanvas(props: Props) {
                 <circle r={Math.max(1.5, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth="1.2" strokeDasharray="2 1" />
               )}
               <g transform="translate(8, -8)">
-                {view.scale > 0.2 && (() => {
+                {view.scale > 0.08 && (() => {
                   const ic = infoConfig;
+                  const nodeOpacity = Math.min(1, (view.scale - 0.08) / 0.12);
                   const nlines: string[] = [];
                   if (!ic) {
                     if (node.name) nlines.push(node.name);
@@ -1254,7 +1259,7 @@ export default function TopoCanvas(props: Props) {
                   }
                   if (nlines.length === 0) return null;
                   return nlines.map((ln, li) => (
-                    <text key={li} y={(li + 1) * 11} fontSize="9" fill="#6b7280">{ln}</text>
+                    <text key={li} y={(li + 1) * 11} fontSize="9" fill="#6b7280" opacity={nodeOpacity}>{ln}</text>
                   ));
                 })()}
               </g>
