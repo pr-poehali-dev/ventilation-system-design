@@ -502,36 +502,13 @@ export default function CadPage() {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
     }
-    // Создаём символы вентиляторов из fans.csv
+    // Применяем параметры вентиляторов из fans.csv к ветвям (без создания символов УО)
     if (result.fans && result.fans.length > 0) {
-      const ts = Date.now();
-      const newSymbols: SchemaSymbol[] = [];
-      const branchUpdates: { id: string; name: string; pressure: number }[] = [];
-      for (const fan of result.fans) {
-        const mappedBranchId = result.branchOriginalIdMap?.[fan.branchId];
-        if (!mappedBranchId) continue;
-        newSymbols.push({
-          id: `SYM_${ts}_${newSymbols.length}`,
-          typeId: "fan",
-          x: 0, y: 0,
-          branchId: mappedBranchId,
-          t: 0.5,
-          label: fan.name,
-          description: fan.name,
-        });
-        branchUpdates.push({ id: mappedBranchId, name: fan.name, pressure: fan.pressure });
-      }
-      if (newSymbols.length > 0) {
-        setSchemaSymbols(prev => {
-          const filtered = mode === "replace" ? [] : prev;
-          return [...filtered, ...newSymbols];
-        });
-        setBranches(prev => prev.map(b => {
-          const upd = branchUpdates.find(u => u.id === b.id);
-          if (!upd) return b;
-          return { ...b, hasFan: true, fanMode: "curve" as const, fanName: upd.name, fanPressure: upd.pressure };
-        }));
-      }
+      setBranches(prev => prev.map(b => {
+        const fan = result.fans.find(f => result.branchOriginalIdMap?.[f.branchId] === b.id);
+        if (!fan) return b;
+        return { ...b, hasFan: true, fanMode: "constant" as const, fanName: fan.name, fanPressure: fan.pressure };
+      }));
     }
     setImportNonce(n => n + 1);
     setShowCsvImport(false);
@@ -1704,6 +1681,12 @@ export default function CadPage() {
                 horizons={horizons}
                 onUpdate={(patch) => updateBranch(selectedBranch.id, patch)}
                 defaultInnerTab={fanSymbolBranchId === selectedBranch.id ? "Вентилятор" : undefined}
+                onRemoveFan={selectedBranch.hasFan ? () => {
+                  const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);
+                  if (sym) removeSymbol(sym.id);
+                  updateBranch(selectedBranch.id, { hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0 });
+                  setFanSymbolBranchId(null);
+                } : undefined}
               />
             )}
 

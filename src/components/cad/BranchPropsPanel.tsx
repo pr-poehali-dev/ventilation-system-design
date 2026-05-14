@@ -8,6 +8,7 @@ interface BranchPropsPanelProps {
   horizons: Horizon[];
   onUpdate: (patch: Partial<TopoBranch>) => void;
   defaultInnerTab?: InnerTab;
+  onRemoveFan?: () => void;
 }
 
 const SH = "#e8eef8";
@@ -181,7 +182,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -644,6 +645,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
         {innerTab === "Вентилятор" && (
           <div>
+            {onRemoveFan && (
+              <div className="px-1 py-1 flex justify-end" style={{ borderBottom: "1px solid #f0d0d0", background: "#fff5f5" }}>
+                <button
+                  onClick={onRemoveFan}
+                  className="text-[11px] px-3 py-0.5 rounded flex items-center gap-1"
+                  style={{ background: "#dc2626", color: "white", border: "none", cursor: "pointer" }}>
+                  ✕ Удалить вентилятор
+                </button>
+              </div>
+            )}
             <SectionHeader title="Режим проветривания" />
 
             <InlineLabel label="Тип">
