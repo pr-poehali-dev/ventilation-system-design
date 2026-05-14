@@ -808,15 +808,34 @@ export default function CadPage() {
     e.preventDefault();
   };
 
-  // Локальный расчёт в браузере (TypeScript, метод Кросса)
+  // Локальный расчёт в браузере (TypeScript, метод узловых давлений)
   const handleSolveLocal = () => {
-    const res = solveNetwork(nodes, branchesRaw, { maxIter: 100, tolerance: 0.1, initialFlow: 50 });
-    setBranches(res.branches);
+    // Передаём branches (из useMemo) — они содержат актуальные длины/сечения/R
+    const res = solveNetwork(nodes, branches, { maxIter: 100, tolerance: 0.1, initialFlow: 50 });
+    // Обновляем ТОЛЬКО поля результата расчёта (flow, velocity, dP, fanPressure, fanEfficiency, fanShaftPower)
+    // Исходные параметры геометрии/сопротивления в branchesRaw не трогаем —
+    // иначе useMemo пересчитает R и затрёт Q обратно.
+    setBranches(prev => prev.map(b => {
+      const rb = res.branches.find(r => r.id === b.id);
+      if (!rb) return b;
+      return {
+        ...b,
+        flow: rb.flow,
+        velocity: rb.velocity,
+        dP: rb.dP,
+        fanPressure: rb.hasFan ? rb.fanPressure : b.fanPressure,
+        fanEfficiency: rb.hasFan ? rb.fanEfficiency : b.fanEfficiency,
+        fanShaftPower: rb.hasFan ? rb.fanShaftPower : b.fanShaftPower,
+      };
+    }));
     setNodes(res.nodes);
     setSolveResult(res);
-    // Показываем стрелки если хоть одна ветвь получила ненулевой расход
     const hasFlow = res.branches.some(b => Math.abs(b.flow) > 0.1);
     if (hasFlow) setShowFlowArrows(true);
+    // Показываем диагностику если есть ошибки
+    if (res.diagnostics && res.diagnostics.some(d => d.level === "error")) {
+      setShowDiagnostics(true);
+    }
   };
 
   // Серверный расчёт через Python VentCore (все 7 модулей)

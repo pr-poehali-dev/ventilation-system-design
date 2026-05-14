@@ -161,7 +161,8 @@ export function solveNetwork(
       id: b.id,
       a: remap(b.fromId),
       b: remap(b.toId),
-      R: Math.max(0, b.resistance),
+      // Минимальное R = 1e-4 Нс²/м⁸: защита от деления на 0 при нулевом сопротивлении
+      R: Math.max(1e-4, b.resistance),
       hasFan: b.hasFan,
       fanMode: b.fanMode,
       HfanConst: b.fanPressure * rhoFactor,

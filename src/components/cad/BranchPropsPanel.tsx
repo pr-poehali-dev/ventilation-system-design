@@ -716,6 +716,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
             {branch.fanMode === "constant" && (
               <>
+                {branch.fanPressure <= 0 && (
+                  <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
+                    style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c" }}>
+                    ⚠ Напор = 0 Па. Расчёт даст Q=0. Задайте напор вентилятора.
+                  </div>
+                )}
                 <InlineLabel label="Напор, Па">
                   <EditInput type="number" step="10" value={branch.fanPressure}
                     onChange={(v) => onUpdate({ fanPressure: parseFloat(v) || 0 })} />
