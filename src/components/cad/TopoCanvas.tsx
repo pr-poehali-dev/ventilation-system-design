@@ -79,7 +79,7 @@ interface Props {
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse" }[];
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */
@@ -1201,9 +1201,9 @@ export default function TopoCanvas(props: Props) {
                 return (
                   <g transform={`translate(${cx2},${cy2}) rotate(${arrowAngle})`}>
                     <line x1={-aLen / 2} y1={0} x2={aLen / 2 - 5} y2={0}
-                      stroke="#1a1a1a" strokeWidth={Math.max(1.2, SZ / 22)} strokeLinecap="round" />
+                      stroke="#dc2626" strokeWidth={Math.max(1.5, SZ / 20)} strokeLinecap="round" />
                     <polygon points={`${aLen / 2 - 8},-4 ${aLen / 2},0 ${aLen / 2 - 8},4`}
-                      fill="#1a1a1a" />
+                      fill="#dc2626" stroke="white" strokeWidth="0.6" />
                   </g>
                 );
               })()}

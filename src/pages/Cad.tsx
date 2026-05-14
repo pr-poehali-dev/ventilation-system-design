@@ -50,6 +50,9 @@ interface SchemaSymbol {
   label?: string;   // подпись (например "5 чел.")
   description?: string; // описание (свободный текст)
   airDirection?: "forward" | "reverse"; // направление воздуха относительно ветви
+  appearYear?: number;  // дата появления — год
+  appearMonth?: string; // дата появления — месяц
+  appearDay?: number;   // дата появления — день
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
@@ -1716,6 +1719,35 @@ export default function CadPage() {
                       </select>
                     </div>
                   )}
+                  {/* Дата появления */}
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-gray-500 w-20 flex-shrink-0">Появление</span>
+                    <div className="flex gap-1 flex-1">
+                      <input type="number" placeholder="Год"
+                        value={sym.appearYear ?? ""}
+                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
+                          ? { ...s, appearYear: e.target.value ? Number(e.target.value) : undefined } : s))}
+                        className="text-[11px] px-1 w-14"
+                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                      <select
+                        value={sym.appearMonth ?? ""}
+                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
+                          ? { ...s, appearMonth: e.target.value || undefined } : s))}
+                        className="text-[11px] px-0.5 flex-1"
+                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                        <option value="">Месяц</option>
+                        {["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"].map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                      <input type="number" placeholder="День" min={1} max={31}
+                        value={sym.appearDay ?? ""}
+                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
+                          ? { ...s, appearDay: e.target.value ? Number(e.target.value) : undefined } : s))}
+                        className="text-[11px] px-1 w-10"
+                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                    </div>
+                  </div>
                   {sym.description && (
                     <div className="mt-2 p-1 bg-gray-50 rounded text-gray-600 text-[10px] border border-gray-100">
                       {sym.description}
