@@ -114,26 +114,31 @@ export type ResistanceMode =
 //   S — площадь, м²
 //
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
-  if (S <= 0) return 0;
+  // Защита от деления на крайне малое сечение (ошибка ввода → R = ∞)
+  if (S <= 0.05 || L <= 0 || P <= 0) return 0;
   // alpha в [×10⁻⁴ Н·с²/м⁴], переводим в Н·с²/м⁴
   const a = alpha * 1e-4;
-  return (a * P * L) / Math.pow(S, 3);
+  const r = (a * P * L) / Math.pow(S, 3);
+  // Ограничение разумным пределом (типичные R шахтных выработок < 10000 кмюрг = 10 Нс²/м⁸)
+  return isFinite(r) ? Math.min(r, 1000) : 0;
 }
 
 // Расчёт через шероховатость: R = λ·L·P / (8·S³)
 // λ — коэффициент Дарси, по Альтшулю: λ = 0.11·(Δ/Dh + 68/Re)^0.25
 // Для развитой турбулентности в выработках Re→∞: λ = 0.11·(Δ/Dh)^0.25
 export function resistanceFromRoughness(deltaMm: number, S: number, P: number, L: number, Re?: number): number {
-  if (S <= 0 || P <= 0) return 0;
+  if (S <= 0.05 || P <= 0 || L <= 0) return 0;
   const Dh = (4 * S) / P;
-  const relRoughness = (deltaMm / 1000) / Dh;
+  if (Dh <= 0) return 0;
+  const relRoughness = Math.max(0, (deltaMm / 1000) / Dh);
   let lambda: number;
   if (Re && Re > 0) {
     lambda = 0.11 * Math.pow(relRoughness + 68 / Re, 0.25);
   } else {
-    lambda = 0.11 * Math.pow(relRoughness, 0.25);
+    lambda = 0.11 * Math.pow(Math.max(1e-9, relRoughness), 0.25);
   }
-  return (lambda * L * P) / (8 * Math.pow(S, 3));
+  const r = (lambda * L * P) / (8 * Math.pow(S, 3));
+  return isFinite(r) ? Math.min(r, 1000) : 0;
 }
 
 // ─── Производные параметры потока ──────────────────────────────────────────
@@ -144,12 +149,14 @@ export function velocity(Q: number, S: number): number {
 
 // Депрессия ΔP = R·Q² (Па). Знак сохраняется (R·|Q|·Q).
 export function depression(R: number, Q: number): number {
-  return R * Math.abs(Q) * Q;
+  const dp = R * Math.abs(Q) * Q;
+  return isFinite(dp) ? dp : 0;
 }
 
 // Энергозатраты ΔP·Q (Вт)
 export function airPower(dP: number, Q: number): number {
-  return Math.abs(dP * Q);
+  const p = Math.abs(dP * Q);
+  return isFinite(p) ? p : 0;
 }
 
 // Число Рейнольдса (ν воздуха ≈ 1.5×10⁻⁵ м²/с при 20°C)

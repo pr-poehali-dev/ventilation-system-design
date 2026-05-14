@@ -270,24 +270,12 @@ export function solveNetwork(
 
   // ─── РАЗОМКНУТАЯ СЕТЬ (нет контуров, чистое дерево) ─────────────────
   if (chordIdx.length === 0) {
-    // Находим путь от вентилятора до GND (последовательное сопротивление)
-    const fanIdx = edges.findIndex(e => e.hasFan);
-    let Rtotal = 0;
-    if (fanIdx >= 0) {
-      // BFS от одного конца вентилятора до другого через граф (путь в дереве)
-      const fanE = edges[fanIdx];
-      // Для разомкнутой: ищем путь от атмосферы (GND) через вентилятор до другой атмосферы
-      // Упрощение: суммируем R всех ветвей в пути от GND до GND через вентилятор
-      // В последовательной сети это = сумма всех R
-      // Но если есть разветвление — это некорректно. Для чистого дерева с одним атмосферным путём
-      // используем sum всех R (все ветви последовательны по определению дерева с двумя @gnd).
-      Rtotal = edges.reduce((s, e) => s + e.R, 0) - fanE.R; // R сети без вентилятора
-    } else {
-      Rtotal = edges.reduce((s, e) => s + e.R, 0);
-    }
+    // Для последовательной цепи (дерево с двумя атмосферами):
+    // ВСЕ ветви, включая ветвь с вентилятором, дают аэродинамическое сопротивление.
+    // Уравнение баланса: H_fan(Q) = Σ R_i · Q² → Q = sqrt(H/ΣR)
+    const Rtotal = edges.reduce((s, e) => s + e.R, 0);
     const Qopen = solveOpenNetwork(edges, log, Rtotal);
-    // Определяем направление потока: от источника (GND) в направлении вентилятора
-    // Для дерева — все ветви несут одинаковый Q (последовательная цепь)
+    // В последовательной цепи все ветви несут одинаковый Q
     edges.forEach(e => { e.Q = Qopen; });
 
     const branchesOut = buildOutput(branchesCalc, edges, remap, log);
@@ -401,11 +389,13 @@ export function solveNetwork(
         const e = edges[ce.edgeIdx];
         const Qdir = e.Q * ce.dir;
         const { H, dH } = evalFanH(e, e.Q);
-        const Hsigned = H * Math.sign(e.Q || 1) * ce.dir;
+        // Вентилятор всегда нагнетает вдоль направления ветви a→b (Q положителен).
+        // В контуре его вклад зависит только от обхода (ce.dir), а не от текущего знака Q.
+        const Hsigned = H * ce.dir;
         num += e.R * Qdir * Math.abs(Qdir) - Hsigned;
-        den += 2 * e.R * Math.abs(Qdir) + dH;
+        den += 2 * e.R * Math.abs(Qdir) + Math.abs(dH);
       }
-      if (den < 1e-9) continue;
+      if (Math.abs(den) < 1e-9) continue;
       const dQraw = -num / den;
       // Ограничиваем шаг: не более 50% от текущего характерного Q в контуре
       const Qchar = cyc.reduce((mx, ce) => Math.max(mx, Math.abs(edges[ce.edgeIdx].Q)), 0.5);
@@ -414,6 +404,10 @@ export function solveNetwork(
       for (const ce of cyc) {
         edges[ce.edgeIdx].Q += dQrel * ce.dir;
       }
+    }
+    // Защита от NaN/Infinity в Q (могут возникнуть при den~0)
+    for (const e of edges) {
+      if (!isFinite(e.Q)) e.Q = 0.5;
     }
     // После каждой итерации ограничиваем Q ветвей с вентилятором пределами кривой
     for (const e of edges) {
@@ -452,7 +446,9 @@ function buildOutput(
   return branchesCalc.map((b) => {
     const e = edges.find((x) => x.id === b.id)!;
     const aOrig = remap(b.fromId);
-    const Q = e.a === aOrig ? e.Q : -e.Q;
+    let Q = e.a === aOrig ? e.Q : -e.Q;
+    // Защита от NaN/Infinity после итераций
+    if (!isFinite(Q)) Q = 0;
 
     let fanPressure = b.fanPressure;
     let fanEff = 0;
@@ -501,7 +497,8 @@ function buildNodePressures(
       if (!seen.has(other) && treeEdgeIdx.has(edgeIdx)) {
         const e = edges[edgeIdx];
         const { H } = evalFanH(e, e.Q);
-        const dP = e.R * e.Q * Math.abs(e.Q) - H * Math.sign(e.Q || 1);
+        // Депрессия от a к b: dP = R·Q·|Q| − H_fan (H_fan создаёт прирост давления вдоль a→b)
+        const dP = e.R * e.Q * Math.abs(e.Q) - H;
         const Pu = nodePressure.get(u)!;
         const Pother = e.a === u ? Pu - dP : Pu + dP;
         nodePressure.set(other, Pother);

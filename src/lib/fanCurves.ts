@@ -136,10 +136,11 @@ export function fanH(curve: FanCurve, Q: number): number {
   return Math.max(0, H);
 }
 
-// dH/dQ — производная (нужна solver-у для метода Ньютона)
+// |dH/dQ| — модуль производной (нужен solver-у для устойчивости знаменателя в Кроссе)
+// h2 обычно отрицательная (кривая H убывает с Q), поэтому без |...| знак может быть любым.
 export function fanDH(curve: FanCurve, Q: number): number {
   const q = Math.abs(Q);
-  return curve.h1 + 2 * curve.h2 * q;
+  return Math.abs(curve.h1 + 2 * curve.h2 * q);
 }
 
 export function fanEfficiency(curve: FanCurve, Q: number): number {
