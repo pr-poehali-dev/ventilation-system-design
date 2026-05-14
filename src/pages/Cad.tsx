@@ -497,6 +497,7 @@ export default function CadPage() {
   const handleCsvImport = (result: CsvImportResult, mode: "replace" | "append") => {
     if (mode === "replace") {
       setNodes(result.nodes); setBranches(result.branches);
+      setSchemaSymbols([]);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
@@ -519,6 +520,7 @@ export default function CadPage() {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
+      setSchemaSymbols([]);
       setSelectedNodeId(null);
       setSelectedBranchId(null);
     } else {
@@ -534,6 +536,7 @@ export default function CadPage() {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
+      setSchemaSymbols([]);
       setSelectedNodeId(null);
       setSelectedBranchId(null);
     } else {
@@ -548,6 +551,7 @@ export default function CadPage() {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
+      setSchemaSymbols([]);
       setSelectedNodeId(null);
       setSelectedBranchId(null);
     } else {
@@ -580,6 +584,7 @@ export default function CadPage() {
     nodes,
     branches: branchesRaw,
     horizons,
+    schemaSymbols,
     view: savedViewState ?? undefined,
   });
 
@@ -708,6 +713,7 @@ export default function CadPage() {
     );
     setBranches(mergedBranches);
     if (data.horizons) setHorizons(data.horizons as typeof horizons);
+    setSchemaSymbols((data.schemaSymbols as SchemaSymbol[]) ?? []);
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
