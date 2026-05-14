@@ -31,6 +31,7 @@ interface SolverEdge {
   fanCurve?: FanCurve;
   fanRpm?: number;
   fanBladeAngle?: number;
+  fanRhoFactor?: number;  // ρ/ρ₀ — поправка напора на плотность воздуха (температура)
   Q: number;
 }
 
@@ -57,17 +58,18 @@ function rpmFactor(fanRpm: number | undefined, rpmNominal: number): number {
 }
 
 // Коэффициент угла лопаток для осевых вентиляторов.
-// Реальные паспортные данные: при изменении угла от min до max
-// напор меняется в ~2-3 раза (например ВОД-30: 25°→55°, H0 меняется от ~1200 до ~3600 Па)
-// Модель: af = (a - aMin) / (aMax - aMin) * 2.2 + 0.4  → диапазон [0.4 .. 2.6]
+// По паспортным данным ВОД/ВО: при изменении угла от min до max
+// напор меняется примерно в 1.5–1.7 раза.
+// Средний угол (индекс 50%) соответствует номинальной кривой (af=1.0).
+// Диапазон: 0.65 (min угол) .. 1.35 (max угол)
 function getAngleFactor(curve: FanCurve, angle?: number): number {
   if (!curve.bladeAngles || curve.bladeAngles.length < 2) return 1;
   const aMin = curve.bladeAngles[0];
   const aMax = curve.bladeAngles[curve.bladeAngles.length - 1];
-  // Берём заданный угол, ограничиваем диапазоном
-  const a = Math.min(aMax, Math.max(aMin, angle ?? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)]));
+  const aMid = (aMin + aMax) / 2;
+  const a = Math.min(aMax, Math.max(aMin, angle ?? aMid));
   const t = (a - aMin) / Math.max(1, aMax - aMin); // 0..1
-  return 0.4 + t * 2.2; // 0.4 (min угол) .. 2.6 (max угол)
+  return 0.65 + t * 0.70; // 0.65 (min) .. 1.35 (max), 1.0 при среднем угле
 }
 
 // Получить H_fan с учётом оборотов (закон подобия: H ~ k², Q ~ k)
@@ -77,11 +79,15 @@ function evalFanH(e: SolverEdge, Q: number): { H: number; dH: number } {
     const curve = e.fanCurve;
     const k = rpmFactor(e.fanRpm, curve.rpmNominal);
     // Масштабирование по закону подобия: Q_norm = Q/k, H = H_nom(Q_norm)*k²
-    const Qnorm = Math.abs(Q) / Math.max(0.001, k);
+    const Qabs = Math.abs(Q);
+    const Qnorm = Qabs / Math.max(0.001, k);
+    // За пределами рабочего диапазона кривой вентилятор не создаёт напора
+    if (Qnorm > curve.qMax) return { H: 0, dH: 0 };
     const af = getAngleFactor(curve, e.fanBladeAngle);
-    const H = Math.max(0, curve.h0 * af + curve.h1 * Qnorm + curve.h2 * Qnorm * Qnorm) * k * k;
+    const rhoF = e.fanRhoFactor ?? 1.0;  // поправка на плотность
+    const H = Math.max(0, curve.h0 * af + curve.h1 * Qnorm + curve.h2 * Qnorm * Qnorm) * k * k * rhoF;
     // dH/dQ = (h1 + 2*h2*Qnorm) / k * k² = (h1 + 2*h2*Qnorm) * k
-    const dH = Math.abs((curve.h1 + 2 * curve.h2 * Qnorm) * k);
+    const dH = Math.abs((curve.h1 + 2 * curve.h2 * Qnorm) * k * rhoF);
     return { H, dH };
   }
   return { H: e.HfanConst, dH: 0 };
@@ -184,21 +190,39 @@ export function solveNetwork(
     return autoLen > 0 ? { ...b, length: autoLen } : b;
   });
 
-  const branchesCalc = branchesWithLen.map((b) => recalcBranchAero({ ...b }));
+  // Плотность воздуха с учётом температуры: ρ = 1.2 × 293 / (273 + T)
+  const airDensity = (tempC: number): number => 1.2 * 293 / (273 + Math.max(-50, Math.min(200, tempC)));
 
-  const edges: SolverEdge[] = branchesCalc.map((b) => ({
-    id: b.id,
-    a: remap(b.fromId),
-    b: remap(b.toId),
-    R: Math.max(0, b.resistance),
-    hasFan: b.hasFan,
-    fanMode: b.fanMode,
-    HfanConst: b.fanPressure,
-    fanCurve: b.fanMode === "curve" ? getFanById(b.fanCurveId) : undefined,
-    fanRpm: b.fanRpm,
-    fanBladeAngle: b.fanBladeAngle,
-    Q: 0,
-  }));
+  const branchesCalc = branchesWithLen.map((b) => {
+    const fromNode = nodesIn.find((n) => n.id === b.fromId);
+    const toNode = nodesIn.find((n) => n.id === b.toId);
+    const T = fromNode && toNode ? (fromNode.airTemp + toNode.airTemp) / 2 : 20;
+    const rho = airDensity(T);
+    return recalcBranchAero({ ...b }, rho);
+  });
+
+  const edges: SolverEdge[] = branchesCalc.map((b) => {
+    const fromNode = nodesIn.find((n) => n.id === b.fromId);
+    const toNode = nodesIn.find((n) => n.id === b.toId);
+    const T = fromNode && toNode ? (fromNode.airTemp + toNode.airTemp) / 2 : 20;
+    const rho = airDensity(T);
+    // Поправка на плотность для H_fan: при температуре выше нормы напор уменьшается пропорционально ρ/ρ₀
+    const rhoFactor = rho / 1.2;
+    return {
+      id: b.id,
+      a: remap(b.fromId),
+      b: remap(b.toId),
+      R: Math.max(0, b.resistance),
+      hasFan: b.hasFan,
+      fanMode: b.fanMode,
+      HfanConst: b.fanPressure * rhoFactor,
+      fanCurve: b.fanMode === "curve" ? getFanById(b.fanCurveId) : undefined,
+      fanRpm: b.fanRpm,
+      fanBladeAngle: b.fanBladeAngle,
+      fanRhoFactor: rhoFactor,
+      Q: 0,
+    };
+  });
 
   const allNodeIds = new Set<string>();
   edges.forEach((e) => { allNodeIds.add(e.a); allNodeIds.add(e.b); });

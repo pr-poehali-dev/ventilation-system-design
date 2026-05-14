@@ -208,6 +208,11 @@ export function calcResistance(i: ResistanceInput): {
 
   // Местные ξ → R_local = ξ · ρ / (2·S²)   (т.к. ΔP_loc = ξ·ρ·V²/2 = ξ·ρ·Q²/(2S²))
   const rho = i.rho ?? 1.2;
+  const rhoFactor = rho / 1.2; // поправка относительно стандартной плотности
+  // alpha уже содержит ρ (единицы α: Н·с²/м⁴ = кг/м³) — масштабируем
+  if (i.mode === "alpha" || i.mode === "surface") {
+    Rfriction = Rfriction * rhoFactor;
+  }
   const Rlocal = i.S > 0 ? (i.localXi * rho) / (2 * i.S * i.S) : 0;
 
   return {

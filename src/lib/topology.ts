@@ -467,7 +467,7 @@ export function recalcLengths(nodes: TopoNode[], branches: TopoBranch[]): TopoBr
 // скорость, депрессию, мощность, Re — на основании заданных входов.
 import { calcSection, calcResistance, velocity as calcVel, depression, airPower, reynolds } from "./aerodynamics";
 
-export function recalcBranchAero(b: TopoBranch): TopoBranch {
+export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
   // 1) Геометрия сечения (если не задана вручную)
   let area = b.area;
   let perimeter = b.perimeter;
@@ -488,7 +488,7 @@ export function recalcBranchAero(b: TopoBranch): TopoBranch {
     dh = perimeter > 0 ? Math.round((4 * area) / perimeter * 1000) / 1000 : 0;
   }
 
-  // 2) Сопротивление
+  // 2) Сопротивление с учётом плотности воздуха
   const r = calcResistance({
     mode: b.resistanceMode,
     alpha: b.alphaCoef,
@@ -499,6 +499,7 @@ export function recalcBranchAero(b: TopoBranch): TopoBranch {
     P: perimeter,
     L: b.length,
     Q: b.flow,
+    rho,
   });
 
   // 3) Поток
