@@ -9,6 +9,12 @@ interface BranchPropsPanelProps {
   onUpdate: (patch: Partial<TopoBranch>) => void;
   defaultInnerTab?: InnerTab;
   onRemoveFan?: () => void;
+  /** Текущий масштаб символа УО вентилятора на схеме */
+  fanSymbolScale?: number;
+  /** Изменить масштаб символа УО */
+  onFanSymbolScale?: (scale: number) => void;
+  /** Удалить только символ УО (без удаления вентилятора из ветви) */
+  onFanSymbolDelete?: () => void;
 }
 
 const SH = "#e8eef8";
@@ -182,7 +188,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -655,6 +661,46 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 </button>
               </div>
             )}
+            <SectionHeader title="Вентилятор" />
+
+            <InlineLabel label="Название">
+              <input
+                type="text"
+                value={branch.fanName ?? ""}
+                onChange={(e) => onUpdate({ fanName: e.target.value })}
+                className="w-full text-[11px] px-1"
+                style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}
+                placeholder="Название вентилятора"
+              />
+            </InlineLabel>
+
+            {onFanSymbolScale && (
+              <InlineLabel label="Масштаб УО">
+                <div className="flex items-center gap-1 w-full">
+                  <button
+                    onClick={() => onFanSymbolScale(Math.max(0.4, (fanSymbolScale ?? 1) - 0.2))}
+                    className="text-[10px] px-1.5 rounded"
+                    style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer", lineHeight: "16px" }}>−</button>
+                  <span className="flex-1 text-center text-[11px]">{((fanSymbolScale ?? 1) * 100).toFixed(0)}%</span>
+                  <button
+                    onClick={() => onFanSymbolScale(Math.min(4, (fanSymbolScale ?? 1) + 0.2))}
+                    className="text-[10px] px-1.5 rounded"
+                    style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer", lineHeight: "16px" }}>+</button>
+                </div>
+              </InlineLabel>
+            )}
+
+            {onFanSymbolDelete && (
+              <div className="px-1 py-1">
+                <button
+                  onClick={onFanSymbolDelete}
+                  className="text-[11px] px-2 py-0.5 rounded"
+                  style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}>
+                  Удалить УО с схемы
+                </button>
+              </div>
+            )}
+
             <SectionHeader title="Режим проветривания" />
 
             <InlineLabel label="Тип">

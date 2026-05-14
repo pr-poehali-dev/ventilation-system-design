@@ -25,6 +25,7 @@ import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
 import { LEGEND_TYPES } from "@/lib/schemaSymbols";
+import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
@@ -37,7 +38,7 @@ const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
 type RibbonTab = "file" | "home" | "view" | "schema" | "vent" | "thermo" | "accidents" | "involve" | "pipes" | "costs" | "refs" | "general";
 
 // Условное обозначение размещённое на схеме
-interface SchemaSymbol {
+export interface SchemaSymbol {
   id: string;
   typeId: string;   // id из LEGEND_ITEMS (medical, fan, bulkhead, ...)
   x: number;        // мировые координаты (если branchId=null)
@@ -481,6 +482,10 @@ export default function CadPage() {
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
   const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
+
+  // ─── ДИАЛОГ «ВЫДЕЛЕНИЕ ПОДОБНОГО» (S+S) ─────────────────────────────
+  const [showSelectSimilar, setShowSelectSimilar] = useState(false);
+  const lastSPressRef = useRef<number>(0);
 
   // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
@@ -953,6 +958,21 @@ export default function CadPage() {
       // F6, F9 — всегда работают
       if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
       if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
+
+      // S+S (двойное S за 500мс) — диалог выделения подобных объектов
+      if (e.key === "s" || e.key === "S") {
+        if (!isEditing) {
+          const now = Date.now();
+          if (now - lastSPressRef.current < 500) {
+            e.preventDefault();
+            setShowSelectSimilar(true);
+            lastSPressRef.current = 0;
+          } else {
+            lastSPressRef.current = now;
+          }
+          return;
+        }
+      }
 
       // Del/Backspace — блокируем только если input активен И имеет текстовое содержимое
       // (т.е. пользователь действительно редактирует текст, а не просто кликнул по полю)
@@ -1717,6 +1737,19 @@ export default function CadPage() {
                   if (sym) removeSymbol(sym.id);
                   updateBranch(selectedBranch.id, { hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0 });
                   setFanSymbolBranchId(null);
+                } : undefined}
+                fanSymbolScale={(() => {
+                  const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);
+                  return sym?.scale ?? 1;
+                })()}
+                onFanSymbolScale={selectedBranch.hasFan ? (scale) => {
+                  setSchemaSymbols(prev => prev.map(s =>
+                    s.typeId === "fan" && s.branchId === selectedBranch.id ? { ...s, scale } : s
+                  ));
+                } : undefined}
+                onFanSymbolDelete={schemaSymbols.some(s => s.typeId === "fan" && s.branchId === selectedBranch.id) ? () => {
+                  const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);
+                  if (sym) removeSymbol(sym.id);
                 } : undefined}
               />
             )}
@@ -2733,6 +2766,8 @@ export default function CadPage() {
           ) : (
             <span style={{ color: "#9ca3af" }}>● Расчёт не выполнялся</span>
           )}
+          <span className="text-gray-400">|</span>
+          <span style={{ color: "#6b7280" }}>S+S — выделить подобное</span>
         </div>
       </div>
     </div>
@@ -2802,6 +2837,29 @@ export default function CadPage() {
     {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
     {showLegend && (
       <LegendDialog onClose={() => setShowLegend(false)} />
+    )}
+
+    {/* ═══ ВЫДЕЛЕНИЕ ПОДОБНОГО (S+S) ══════════════════════════════════════ */}
+    {showSelectSimilar && (
+      <SelectSimilarDialog
+        selectedBranch={selectedBranch}
+        selectedSymbol={schemaSymbols.find(s => s.id === selectedSymbolId) ?? null}
+        branches={branches}
+        symbols={schemaSymbols}
+        onConfirm={(branchIds, symbolIds) => {
+          if (branchIds.size > 0) {
+            const first = Array.from(branchIds)[0];
+            setSelectedBranchId(first);
+            setSelectedBranchIds(branchIds);
+            setSelectedNodeId(null);
+          }
+          if (symbolIds.size > 0) {
+            setSelectedSymbolId(Array.from(symbolIds)[0]);
+          }
+          setShowSelectSimilar(false);
+        }}
+        onClose={() => setShowSelectSimilar(false)}
+      />
     )}
 
     {/* ═══ ДИАЛОГ: ЧИСЛО ЛЮДЕЙ В ОТДЕЛЕНИИ ════════════════════════════════ */}

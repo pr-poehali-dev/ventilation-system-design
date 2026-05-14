@@ -1160,28 +1160,10 @@ export default function TopoCanvas(props: Props) {
                   window.addEventListener("mouseup", onUp);
                 }
               }}>
-              {/* Рамка выделения + кнопки управления */}
+              {/* Рамка выделения (без кнопок — управление в панели свойств) */}
               {isSel && (
-                <>
-                  <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
-                    fill="none" stroke="#2563eb" strokeWidth="1.5"
-                    strokeDasharray="3 2" rx="3" />
-                  {/* Кнопка «+» масштаб */}
-                  <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onSymbolScale?.(sym.id, 0.2); }}>
-                    <rect x={HX + SZ + 2} y={HY - 4} width={14} height={14} rx="2" fill="#2563eb" />
-                    <text x={HX + SZ + 9} y={HY + 6} textAnchor="middle" fontSize="11" fill="white" fontWeight="bold">+</text>
-                  </g>
-                  {/* Кнопка «−» масштаб */}
-                  <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onSymbolScale?.(sym.id, -0.2); }}>
-                    <rect x={HX + SZ + 2} y={HY + 12} width={14} height={14} rx="2" fill="#64748b" />
-                    <text x={HX + SZ + 9} y={HY + 22} textAnchor="middle" fontSize="11" fill="white" fontWeight="bold">−</text>
-                  </g>
-                  {/* Кнопка «×» удалить */}
-                  <g style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onSymbolDelete?.(sym.id); }}>
-                    <rect x={HX + SZ + 2} y={HY + 28} width={14} height={14} rx="2" fill="#dc2626" />
-                    <text x={HX + SZ + 9} y={HY + 38} textAnchor="middle" fontSize="10" fill="white" fontWeight="bold">×</text>
-                  </g>
-                </>
+                <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
+                  fill="none" stroke="#2563eb" strokeWidth="1.5" rx="3" />
               )}
               {/* SVG-символ */}
               <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
