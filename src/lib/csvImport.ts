@@ -13,11 +13,21 @@
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
 
+export interface RawFan {
+  branchId: string;    // ID выработки из АэроСети
+  name: string;        // название вентилятора
+  pressure: number;    // давление (напор), Па
+  flow: number;        // расход, м³/с
+}
+
 export interface CsvImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
+  fans: RawFan[];
+  /** Маппинг: оригинальный ID выработки из АэроСети → сгенерированный ID ветви */
+  branchOriginalIdMap: Record<string, string>;
   warnings: string[];
-  stats: { nodes: number; branches: number; nodesWithZ: number };
+  stats: { nodes: number; branches: number; nodesWithZ: number; fans: number };
   debug: string;
 }
 
@@ -180,14 +190,55 @@ function parseExcavationsFile(lines: string[], sep: string): RawBranch[] {
   return result;
 }
 
+// ── Парсинг файла вентиляторов ────────────────────────────────────────────────
+
+function parseFansFile(lines: string[], sep: string): RawFan[] {
+  const result: RawFan[] = [];
+  const colIdx = { branchId: 0, name: 1, pressure: 2, flow: 3 };
+  let headerFound = false;
+
+  for (const line of lines) {
+    const cols = splitRow(line, sep).map(c => c.replace(/"/g, "").trim());
+    if (cols.length < 2) continue;
+
+    if (!isDataId(cols[0])) {
+      if (!headerFound) {
+        const ci = (pat: RegExp) => cols.findIndex(c => pat.test(c.toLowerCase()));
+        const brC  = ci(/выработ|branch|ид.*выраб|id.*excav/);
+        const nmC  = ci(/назван|имя|name|вентилят/);
+        const prC  = ci(/напор|давлен|pressure|депрессия/);
+        const flC  = ci(/расход|flow|подача/);
+        if (brC >= 0) colIdx.branchId = brC;
+        if (nmC >= 0) colIdx.name = nmC;
+        if (prC >= 0) colIdx.pressure = prC;
+        if (flC >= 0) colIdx.flow = flC;
+        headerFound = true;
+      }
+      continue;
+    }
+
+    const branchId = cleanId(cols[colIdx.branchId] ?? "");
+    if (!branchId) continue;
+    result.push({
+      branchId,
+      name: cols[colIdx.name] ?? "",
+      pressure: parseNumSci(cols[colIdx.pressure]),
+      flow: parseNumSci(cols[colIdx.flow]),
+    });
+  }
+  return result;
+}
+
 // ── Сборка результата ─────────────────────────────────────────────────────────
 
 function buildResult(
   rawNodes: RawNode[],
   rawBranches: RawBranch[],
+  rawFans: RawFan[],
   warnings: string[],
   debug: string[]
 ): CsvImportResult {
+  const branchOriginalIdMap: Record<string, string> = {};
   const ts = Date.now();
   const nodeMap = new Map<string, TopoNode>();
   let nodesWithZ = 0;
@@ -259,7 +310,9 @@ function buildResult(
     const realLen = rb.length > 0 ? rb.length : Math.round(dist3d * 10) / 10;
     const realAngle = realLen > 0 ? Math.round(Math.asin(Math.min(1, dz/realLen)) * 180/Math.PI * 10)/10 : 0;
 
-    branches.push(makeBranch(`B${ts}_${bi++}`, fromNode.id, toNode.id, {
+    const newBranchId = `B${ts}_${bi++}`;
+    branchOriginalIdMap[rb.id] = newBranchId;
+    branches.push(makeBranch(newBranchId, fromNode.id, toNode.id, {
       layer: rb.layer,
       length: realLen, manualLength: rb.length > 0,
       angle: realAngle, manualAngle: false,
@@ -281,8 +334,8 @@ function buildResult(
     warnings.push("⚠ Ветви не созданы — возможно ID узлов не совпадают.");
 
   return {
-    nodes: resultNodes, branches, warnings,
-    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ },
+    nodes: resultNodes, branches, fans: rawFans, branchOriginalIdMap, warnings,
+    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: rawFans.length },
     debug: debug.join("\n"),
   };
 }
@@ -296,6 +349,7 @@ export function parseCsvMulti(files: CsvFileInput[]): CsvImportResult {
   const debug: string[] = [];
   const allRawNodes: RawNode[] = [];
   const allRawBranches: RawBranch[] = [];
+  const allRawFans: RawFan[] = [];
 
   for (const file of files) {
     const lines = normalizeLines(file.content);
@@ -327,20 +381,24 @@ export function parseCsvMulti(files: CsvFileInput[]): CsvImportResult {
       } else {
         warnings.push(`Файл "${file.name}" не распознан.`);
       }
+    } else if (fileType === "fans") {
+      const fans = parseFansFile(lines, sep);
+      debug.push(`  Вентиляторов: ${fans.length}`);
+      allRawFans.push(...fans);
     }
-    // bulkheads, fans, positions — пока пропускаем
+    // bulkheads, positions — пока пропускаем
   }
 
   if (allRawNodes.length === 0 && allRawBranches.length === 0) {
     return {
-      nodes: [], branches: [],
+      nodes: [], branches: [], fans: allRawFans, branchOriginalIdMap: {},
       warnings: ["Файлы не содержат данных. Убедитесь что выбраны *-nodes.csv и *-excavations.csv из АэроСети."],
-      stats: { nodes: 0, branches: 0, nodesWithZ: 0 },
+      stats: { nodes: 0, branches: 0, nodesWithZ: 0, fans: allRawFans.length },
       debug: debug.join("\n"),
     };
   }
 
-  return buildResult(allRawNodes, allRawBranches, warnings, debug);
+  return buildResult(allRawNodes, allRawBranches, allRawFans, warnings, debug);
 }
 
 // ── Обратная совместимость: один файл ────────────────────────────────────────

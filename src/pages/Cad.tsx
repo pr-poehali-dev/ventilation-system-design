@@ -502,6 +502,37 @@ export default function CadPage() {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
     }
+    // Создаём символы вентиляторов из fans.csv
+    if (result.fans && result.fans.length > 0) {
+      const ts = Date.now();
+      const newSymbols: SchemaSymbol[] = [];
+      const branchUpdates: { id: string; name: string; pressure: number }[] = [];
+      for (const fan of result.fans) {
+        const mappedBranchId = result.branchOriginalIdMap?.[fan.branchId];
+        if (!mappedBranchId) continue;
+        newSymbols.push({
+          id: `SYM_${ts}_${newSymbols.length}`,
+          typeId: "fan",
+          x: 0, y: 0,
+          branchId: mappedBranchId,
+          t: 0.5,
+          label: fan.name,
+          description: fan.name,
+        });
+        branchUpdates.push({ id: mappedBranchId, name: fan.name, pressure: fan.pressure });
+      }
+      if (newSymbols.length > 0) {
+        setSchemaSymbols(prev => {
+          const filtered = mode === "replace" ? [] : prev;
+          return [...filtered, ...newSymbols];
+        });
+        setBranches(prev => prev.map(b => {
+          const upd = branchUpdates.find(u => u.id === b.id);
+          if (!upd) return b;
+          return { ...b, hasFan: true, fanMode: "curve" as const, fanName: upd.name, fanPressure: upd.pressure };
+        }));
+      }
+    }
     setImportNonce(n => n + 1);
     setShowCsvImport(false);
     setActiveRibbon("home");
