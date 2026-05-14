@@ -25,7 +25,8 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
-  const [rUnit, setRUnit] = useState<"kmu" | "si">("kmu");
+  const [rUnit, setRUnit] = useState<"kmu" | "si" | "auto">("auto");
+  const [detectedUnit, setDetectedUnit] = useState<"kmu" | "si" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<CsvFileInput[]>([]);
 
@@ -47,7 +48,14 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
       if (inputs.length === 0) { setError("Не найдено .csv файлов"); setLoading(false); return; }
       filesRef.current = inputs;
       setFiles(inputs); setFileTypes(types);
-      setResult(parseCsvMulti(inputs, { resistanceUnit: rUnit }));
+      const parsed = parseCsvMulti(inputs, { resistanceUnit: rUnit });
+      setResult(parsed);
+      if (rUnit === "auto") {
+        const debugLine = parsed.debug.split("\n").find(l => l.includes("Автодетект"));
+        setDetectedUnit(debugLine?.includes("кмю") ? "kmu" : debugLine?.includes("СИ") ? "si" : null);
+      } else {
+        setDetectedUnit(null);
+      }
     } catch (e) {
       setError(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -89,20 +97,34 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
           </div>
 
           {/* Единицы сопротивления */}
-          <div className="flex items-center gap-2 text-[11px] text-gray-700">
-            <span className="font-medium">Единицы R в CSV:</span>
-            {(["kmu", "si"] as const).map(u => (
-              <label key={u} className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name="runit" value={u} checked={rUnit === u}
-                  onChange={() => {
-                    setRUnit(u);
-                    if (filesRef.current.length > 0) {
-                      setResult(parseCsvMulti(filesRef.current, { resistanceUnit: u }));
-                    }
-                  }} />
-                {u === "kmu" ? "кмю (АэроСеть, ×10⁻³)" : "Нс²/м⁸ (SI)"}
-              </label>
-            ))}
+          <div className="text-[11px] text-gray-700">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-medium">Единицы R в CSV:</span>
+              {(["auto", "kmu", "si"] as const).map(u => (
+                <label key={u} className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="runit" value={u} checked={rUnit === u}
+                    onChange={() => {
+                      setRUnit(u);
+                      setDetectedUnit(null);
+                      if (filesRef.current.length > 0) {
+                        const p = parseCsvMulti(filesRef.current, { resistanceUnit: u });
+                        setResult(p);
+                        if (u === "auto") {
+                          const dbg = p.debug.split("\n").find(l => l.includes("Автодетект"));
+                          setDetectedUnit(dbg?.includes("кмю") ? "kmu" : dbg?.includes("СИ") ? "si" : null);
+                        }
+                      }
+                    }} />
+                  {u === "auto" ? "Авто (рекомендуется)" : u === "kmu" ? "кмю (×10⁻³)" : "Нс²/м⁸ (SI)"}
+                </label>
+              ))}
+            </div>
+            {rUnit === "auto" && detectedUnit && (
+              <div className="mt-1 px-2 py-0.5 rounded text-[10px] inline-block"
+                style={{ background: "#dbeafe", color: "#1e40af" }}>
+                Определено: {detectedUnit === "kmu" ? "кмю — значения будут делиться на 1000" : "СИ — значения без изменений"}
+              </div>
+            )}
           </div>
 
           <div

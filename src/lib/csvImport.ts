@@ -357,8 +357,30 @@ function buildResult(
 export interface CsvFileInput { name: string; content: string }
 
 export interface CsvImportOptions {
-  /** Единицы R в CSV: "kmu" = кмю (×10⁻³ Нс²/м⁸, АэроСеть), "si" = Нс²/м⁸ (SI). По умолч. "kmu". */
-  resistanceUnit?: "kmu" | "si";
+  /**
+   * Единицы R в CSV:
+   * "kmu"  = кмю (×10⁻³ Нс²/м⁸, формат АэроСети)
+   * "si"   = Нс²/м⁸ (SI)
+   * "auto" = автодетект по медианному значению (по умолчанию)
+   */
+  resistanceUnit?: "kmu" | "si" | "auto";
+}
+
+/**
+ * Автоопределение единиц R по ненулевым значениям:
+ * — Медиана < 0.5  → скорее всего кмю (типичные выработки: 0.001–0.5 кмю)
+ * — Медиана ≥ 0.5  → уже Нс²/м⁸ (или аномально крупные кмю, но маловероятно)
+ *
+ * Логика: в АэроСети R типичной выработки 0.01–100 кмю.
+ * В SI: 0.00001–0.1 Нс²/м⁸. Граница медианы 0.5 разделяет эти диапазоны надёжно.
+ */
+export function detectResistanceUnit(resistances: number[]): "kmu" | "si" {
+  const nonZero = resistances.filter(r => r > 0);
+  if (nonZero.length === 0) return "kmu"; // нет данных — предполагаем кмю
+  const sorted = [...nonZero].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const unit = median < 0.5 ? "si" : "kmu";
+  return unit;
 }
 
 export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}): CsvImportResult {
@@ -415,7 +437,18 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
     };
   }
 
-  return buildResult(allRawNodes, allRawBranches, allRawFans, warnings, debug, opts.resistanceUnit ?? "kmu");
+  // Определяем единицы R
+  let rUnit: "kmu" | "si";
+  const requestedUnit = opts.resistanceUnit ?? "auto";
+  if (requestedUnit === "auto") {
+    const allR = allRawBranches.map(b => b.resistance).filter(r => r > 0);
+    rUnit = detectResistanceUnit(allR);
+    debug.push(`Автодетект единиц R: медиана=${allR.length > 0 ? [...allR].sort((a,b)=>a-b)[Math.floor(allR.length/2)].toFixed(4) : "н/д"} → ${rUnit === "kmu" ? "кмю (÷1000)" : "СИ (без перевода)"}`);
+  } else {
+    rUnit = requestedUnit;
+  }
+
+  return buildResult(allRawNodes, allRawBranches, allRawFans, warnings, debug, rUnit);
 }
 
 // ── Обратная совместимость: один файл ────────────────────────────────────────
