@@ -294,16 +294,29 @@ export function solveNetwork(
   const Q0 = estimateFanQ(edges, Rtree);
   log.push(`Начальное Q0 = ${Q0.toFixed(2)} м³/с (R_tree = ${Rtree.toFixed(4)})`);
 
-  // Раздаём Q0 по контурам
+  // Начальное распределение Q:
+  // 1. Все ветви дерева получают Q0 (стартовая оценка рабочей точки).
+  //    Направление: от GND к листьям — Q>0 для ребра a→b если b дальше от корня.
+  edges.forEach((e, i) => {
+    if (treeEdgeIdx.has(i)) {
+      // Определяем направление «от корня к листьям» по BFS-позиции
+      // (BFS ещё не запускался для bottom-up — используем parent-map)
+      const parentA = parent.get(e.a);
+      const parentB = parent.get(e.b);
+      if (parentB && parentB.node === e.a) {
+        e.Q = Q0;   // a → b (b ближе к листу)
+      } else if (parentA && parentA.node === e.b) {
+        e.Q = -Q0;  // b → a (a ближе к листу, Q отрицателен в направлении a→b)
+      } else {
+        e.Q = Q0;
+      }
+    }
+  });
+
+  // 2. Раздаём ΔQ по контурам (хорды задают дополнительное перераспределение)
   cycles.forEach(cyc =>
     cyc.forEach(ce => { edges[ce.edgeIdx].Q += Q0 * ce.dir; })
   );
-
-  // Ветвям без Q даём небольшое стартовое значение только для устойчивости Кросса
-  // (защита от den=0 в первой итерации). Реальный Q будет пересчитан позже.
-  edges.forEach(e => {
-    if (Math.abs(e.Q) < 0.01) e.Q = 0.01 * Math.sign(e.Q || 1);
-  });
 
   // ── 10. Итерации Кросса ────────────────────────────────────────────────
   //
@@ -374,72 +387,90 @@ export function solveNetwork(
 
   log.push(`Итерации: ${iterCount}, max|ΔQ| = ${maxDelta.toFixed(4)} м³/с`);
 
-  // ── 10b. Пересчёт Q ветвей дерева из баланса узлов (BFS от листьев) ───
-  // После Кросса хорды имеют верный Q. Ветви дерева пересчитываем из
-  // условия Σ Q = 0 в каждом узле (первый закон Кирхгофа).
-  // Обходим дерево от листьев к корню (обратный BFS).
+  // ── 10b. Пересчёт Q ветвей дерева методом «накопления снизу вверх» ────
+  //
+  // После итераций Кросса Q хорд установлен. Q ветвей дерева вычисляется
+  // из первого закона Кирхгофа (Σ Q_входящих = Σ Q_исходящих в каждом узле).
+  //
+  // Алгоритм (классика, АэроСеть/Вентсим):
+  //   1. Строим дерево с корнем = GND, направляя все рёбра «от корня к листьям».
+  //   2. Обходим в обратном (bottom-up) порядке — от листьев к корню.
+  //   3. Для каждого узла v (кроме корня):
+  //      Q_ребра(parent→v) = Σ Q_хорд_входящих_в_v − Σ Q_хорд_исходящих_из_v
+  //                         + Σ Q_рёбер_дерева_исходящих_из_v_уже_известных
+  //      (т.е. «всё что нужно приплыть в поддерево v из родителя»)
   {
-    // Степень узла в дереве (считаем только рёбра дерева)
-    const treeDegree = new Map<string, number>();
-    nodeList.forEach(n => treeDegree.set(n, 0));
-    treeEdgeIdx.forEach(i => {
-      treeDegree.set(edges[i].a, (treeDegree.get(edges[i].a) ?? 0) + 1);
-      treeDegree.set(edges[i].b, (treeDegree.get(edges[i].b) ?? 0) + 1);
-    });
 
-    // Текущий баланс в каждом узле (сумма Q входящих − Q выходящих)
-    // Вклад только хорд (их Q уже известен)
-    const balance = new Map<string, number>();
-    nodeList.forEach(n => balance.set(n, 0));
+
+    // Вычисляем DFS-порядок от корня (BFS даст нам порядок, обратный = bottom-up)
+    const bfsOrder: string[] = [];
+    const bfsVisit = new Set<string>([root]);
+    const bfsQ2 = [root];
+    while (bfsQ2.length) {
+      const u = bfsQ2.shift()!;
+      bfsOrder.push(u);
+      for (const { edgeIdx, other } of adj.get(u)!) {
+        if (treeEdgeIdx.has(edgeIdx) && !bfsVisit.has(other)) {
+          bfsVisit.add(other);
+          bfsQ2.push(other);
+        }
+      }
+    }
+
+
+    // Индекс позиции узла в BFS-порядке для O(1) сравнения родителя
+    const bfsPos = new Map<string, number>();
+    bfsOrder.forEach((n, i) => bfsPos.set(n, i));
+
+    // nodeQ[v] = суммарный поток через v (с учётом знака).
+    // Знак: Q > 0 в ребре a→b означает отток из a и приток в b.
+    // nodeQ[v] = Σ Q_входящих − Σ Q_исходящих  (без учёта ребра к родителю)
+    const nodeQ = new Map<string, number>();
+    nodeList.forEach(n => nodeQ.set(n, 0));
+
+    // Инициализируем хордами (их Q уже известен)
     edges.forEach((e, i) => {
-      if (!treeEdgeIdx.has(i)) {
-        // Хорда: вносит вклад в баланс обоих узлов
-        balance.set(e.a, (balance.get(e.a) ?? 0) - e.Q);
-        balance.set(e.b, (balance.get(e.b) ?? 0) + e.Q);
-      }
+      if (treeEdgeIdx.has(i)) return;
+      nodeQ.set(e.a, (nodeQ.get(e.a) ?? 0) - e.Q); // отток из a
+      nodeQ.set(e.b, (nodeQ.get(e.b) ?? 0) + e.Q); // приток в b
     });
 
-    // BFS от листьев дерева (степень=1, кроме корня) к корню
-    // Для каждого листа: Q ребра = -(баланс листа) → идём вверх
-    const processed = new Set<string>([root]);
-    const leafQueue = nodeList.filter(n => n !== root && (treeDegree.get(n) ?? 0) === 1);
-    const processQueue = [...leafQueue];
+    // Обход снизу вверх: для каждого узла v (кроме root) находим ребро к родителю,
+    // Q этого ребра = −nodeQ[v] (чтобы компенсировать дисбаланс в v).
+    // После установки Q ребра обновляем nodeQ родителя.
+    for (let idx = bfsOrder.length - 1; idx >= 1; idx--) {
+      const v = bfsOrder[idx];
 
-    while (processQueue.length > 0) {
-      const leaf = processQueue.shift()!;
-      if (processed.has(leaf)) continue;
-      processed.add(leaf);
+      // Ребро дерева к родителю (родитель = сосед с меньшим bfsPos)
+      let treeE: SolverEdge | null = null;
+      for (const { edgeIdx, other } of adj.get(v)!) {
+        if (treeEdgeIdx.has(edgeIdx) && (bfsPos.get(other) ?? Infinity) < (bfsPos.get(v) ?? Infinity)) {
+          treeE = edges[edgeIdx];
+          break;
+        }
+      }
+      if (!treeE) continue;
 
-      // Найдём ребро дерева, соединяющее leaf с родителем
-      const treeEdge = Array.from(treeEdgeIdx)
-        .map(i => edges[i])
-        .find(e => (e.a === leaf || e.b === leaf));
-      if (!treeEdge) continue;
+      const parentNode = treeE.a === v ? treeE.b : treeE.a;
+      const balance = nodeQ.get(v) ?? 0;
 
-      // Q этого ребра = минус баланс в листе (что нужно «вытянуть» вверх)
-      const bal = balance.get(leaf) ?? 0;
-      // Если bal < 0 → в листе дефицит → Q должен идти к листу → ребро должно нести +Q к листу
-      const parent = treeEdge.a === leaf ? treeEdge.b : treeEdge.a;
-
-      // Вычисляем нужный Q с учётом направления ребра
-      // Q > 0 означает поток от a к b
-      if (treeEdge.a === leaf) {
-        // Лист — начало ребра. Q>0 означает поток ОТ листа. bal < 0 → нужен приток → Q < 0.
-        treeEdge.Q = -bal;
+      // Q ребра к родителю = −balance (ребро должно компенсировать дисбаланс в v)
+      // Знак зависит от ориентации ребра:
+      //   treeE.b === v: Q>0 означает приток в v. Нужно compensate −balance → Q = −balance.
+      //   treeE.a === v: Q>0 означает отток из v. Нужно compensate −balance → Q = +balance.
+      if (treeE.b === v) {
+        treeE.Q = -balance;
       } else {
-        // Лист — конец ребра. Q>0 означает поток К листу. bal < 0 → нужен приток → Q > 0.
-        treeEdge.Q = bal;
+        treeE.Q = balance;
       }
 
-      // Обновляем баланс родителя
-      const dBal = treeEdge.a === leaf ? treeEdge.Q : -treeEdge.Q;
-      balance.set(parent, (balance.get(parent) ?? 0) + dBal);
-
-      // Если родитель теперь стал листом (все его соседи обработаны) — добавляем в очередь
-      const parentNeighborsUnprocessed = (adj.get(parent) ?? [])
-        .filter(({ edgeIdx, other }) => treeEdgeIdx.has(edgeIdx) && !processed.has(other));
-      if (parentNeighborsUnprocessed.length <= 1 && parent !== root) {
-        processQueue.push(parent);
+      // Обновляем nodeQ родителя (родитель «принял» от v отток/приток через ребро)
+      // Через ребро: отток из parentNode = treeE.Q (если treeE.a === parentNode)
+      //              приток в parentNode = treeE.Q (если treeE.b === parentNode)
+      if (treeE.a === parentNode) {
+        nodeQ.set(parentNode, (nodeQ.get(parentNode) ?? 0) - treeE.Q);
+      } else {
+        nodeQ.set(parentNode, (nodeQ.get(parentNode) ?? 0) + treeE.Q);
       }
     }
   }
