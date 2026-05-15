@@ -365,6 +365,8 @@ def find_dead_ends(edges):
 
     dead = set()
     for e in edges:
+        if e["hasFan"]:
+            continue  # вентилятор никогда не тупик
         a_dead = (e["a"] != GND and degree[e["a"]] == 1)
         b_dead = (e["b"] != GND and degree[e["b"]] == 1)
         if a_dead or b_dead:
