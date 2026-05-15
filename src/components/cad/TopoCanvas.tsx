@@ -984,8 +984,7 @@ export default function TopoCanvas(props: Props) {
                 // Метки параметров после расчёта (Q и V) — рядом с ветвью, не при клике
                 const dataLines: string[] = [];
                 if (isDead) {
-                  // Тупиковая выработка: проветривание диффузией
-                  if (!ic || ic.branchFlow || ic.branchFlowCalc) dataLines.push("диффузия");
+                  // тупиковая ветвь — ничего не показываем
                 } else if (ic) {
                   if (ic.branchName && b.type) dataLines.push(b.type);
                   if (ic.branchLength) dataLines.push(`L=${len}м`);
