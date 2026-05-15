@@ -354,6 +354,14 @@ def solve(nodes_in, branches_in, options):
     Q  = initial_Q(edges, tree_ids, bfs_depth, Q0)
     log.append(f"Q0={Q0:.2f} м³/с")
 
+    # DEBUG: начальные Q и контуры
+    for e in edges:
+        log.append(f"Q0[{e['id']}]={Q[e['id']]:.1f} a={e['a']} b={e['b']} "
+                   f"da={bfs_depth.get(e['a'],9)} db={bfs_depth.get(e['b'],9)} "
+                   f"tree={'Y' if e['id'] in tree_ids else 'N'}")
+    for i, loop in enumerate(loops):
+        log.append(f"loop{i}: {[(eid,s) for eid,s in loop]}")
+
     edge_by_id = {e["id"]: e for e in edges}
     max_dH = float("inf")
     it = 0
