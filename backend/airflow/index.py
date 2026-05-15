@@ -105,6 +105,7 @@ def build_graph(nodes_in, branches_in):
             "h0": float(b.get("h0", 0)),
             "h1": float(b.get("h1", 0)),
             "h2": float(b.get("h2", 0)),
+            "qMin": float(b.get("qMin", 1.0)),
             "qMax": float(b.get("qMax", 1e9)),
             "area": float(b.get("area", 0)),
         })
@@ -371,8 +372,13 @@ def solve(nodes_in, branches_in, options):
 
 def find_dead_ends(edges):
     """
-    Возвращает множество id тупиковых ветвей.
-    Тупиковая: хотя бы один конец (не GND) имеет степень 1 — подключена только эта ветвь.
+    Возвращает множество id тупиковых ветвей (Q=0).
+
+    Тупиковая: хотя бы один конец (не GND) имеет степень 1
+    И при этом ни одна из примыкающих ветвей НЕ имеет вентилятора.
+
+    Ветви с вентилятором (ВМП) в тупике — НЕ тупиковые:
+    вентилятор создаёт расход, а воздух возвращается диффузией/утечками.
     """
     degree = collections.defaultdict(int)
     for e in edges:
@@ -381,10 +387,20 @@ def find_dead_ends(edges):
         if e["b"] != GND:
             degree[e["b"]] += 1
 
+    # Узлы, к которым примыкает хотя бы один вентилятор
+    fan_nodes = set()
+    for e in edges:
+        if e["hasFan"]:
+            fan_nodes.add(e["a"])
+            fan_nodes.add(e["b"])
+
     dead = set()
     for e in edges:
-        a_dead = (e["a"] != GND and degree[e["a"]] == 1)
-        b_dead = (e["b"] != GND and degree[e["b"]] == 1)
+        # Ветвь с вентилятором — никогда не тупик
+        if e["hasFan"]:
+            continue
+        a_dead = (e["a"] != GND and degree[e["a"]] == 1 and e["a"] not in fan_nodes)
+        b_dead = (e["b"] != GND and degree[e["b"]] == 1 and e["b"] not in fan_nodes)
         if a_dead or b_dead:
             dead.add(e["id"])
     return dead
@@ -395,7 +411,35 @@ def make_result(edges, Q, it, converged, max_res, log, diag):
     out = []
     for e in edges:
         is_dead = e["id"] in dead_ends
-        q = 0.0 if is_dead else Q.get(e["id"], 0.0)
+        q = Q.get(e["id"], 0.0)
+
+        if is_dead:
+            q = 0.0
+        elif e["hasFan"] and abs(q) < 1e-6:
+            # Тупиковая ветвь с ВМП: расход не вычислился методом Кросса
+            # (вентилятор в разомкнутой ветви). Считаем рабочую точку:
+            # H_fan(Q) = R·Q² → бисекция
+            R = e["R"]
+            if R > 0:
+                q_lo = float(e.get("qMin", 1.0))
+                q_hi = float(e.get("qMax", 90.0))
+                def f_local(qv):
+                    return fan_H(e, qv) - R * qv * qv
+                if f_local(q_lo) > 0 and f_local(q_hi) < 0:
+                    for _ in range(60):
+                        q_mid = 0.5 * (q_lo + q_hi)
+                        if f_local(q_mid) > 0:
+                            q_lo = q_mid
+                        else:
+                            q_hi = q_mid
+                        if q_hi - q_lo < 0.01:
+                            break
+                    q = 0.5 * (q_lo + q_hi)
+                elif f_local(q_lo) <= 0:
+                    q = q_lo
+                else:
+                    q = q_hi
+
         H    = e["R"] * q * abs(q)
         Hv   = fan_H(e, abs(q))
         area = e.get("area", 0.0)

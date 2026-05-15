@@ -59,6 +59,29 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Тупик с ВМП — расход не нулевой",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "ATM", "isAtm": true},
+          {"id": "J1"},
+          {"id": "J2"},
+          {"id": "DEAD"}
+        ],
+        "branches": [
+          {"id": "MAIN", "fromId": "ATM", "toId": "J1", "R": 0.05, "hasFan": true, "fanMode": "constant", "fanPressure": 1500},
+          {"id": "RING1", "fromId": "J1", "toId": "J2", "R": 0.1},
+          {"id": "RING2", "fromId": "J2", "toId": "ATM", "R": 0.15},
+          {"id": "VMP", "fromId": "J1", "toId": "DEAD", "R": 0.5, "hasFan": true, "fanMode": "constant", "fanPressure": 300, "area": 3.5}
+        ],
+        "options": {"tolerance": 0.001, "maxIter": 2000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Кольцевая сеть — 2 параллельных ветви, Кросс",
       "method": "POST",
       "path": "/",
