@@ -944,6 +944,13 @@ export default function CadPage() {
       if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
       if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
 
+      // Ctrl+R — развернуть выбранную ветвь
+      if (e.ctrlKey && (e.key === "r" || e.key === "R") && !isEditing) {
+        e.preventDefault();
+        if (selectedBranchId) handleReverseBranch(selectedBranchId);
+        return;
+      }
+
       // S+S (двойное S за 500мс) — диалог выделения подобных объектов
       if (e.key === "s" || e.key === "S") {
         if (!isEditing) {
@@ -3053,7 +3060,7 @@ function branchContextItems(branch: TopoBranch | null, hasBuffer: boolean, multi
     { id: "div2", label: "", divider: true },
     { id: "toggle_capital", label: branch?.capital ? "Снять Капитальная" : "Капитальная ветвь", icon: "Star" },
     { id: "toggle_designed", label: branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь", icon: "Pencil" },
-    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight" },
+    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight", shortcut: "Ctrl+R" },
     { id: "div3", label: "", divider: true },
     { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
     { id: "div4", label: "", divider: true },
