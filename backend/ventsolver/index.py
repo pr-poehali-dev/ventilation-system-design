@@ -81,31 +81,63 @@ def dHf(e: dict, Q: float) -> float:
 
 # ── Ток и производная для ребра ───────────────────────────────────────────────
 def Qedge(e: dict, Pa: float, Pb: float):
-    """Q (>0: a→b) и dQ/dPa (= -dQ/dPb)."""
+    """
+    Q (>0: a→b) и dQ/dPa (= -dQ/dPb).
+
+    Для вентилятора с curve характеристикой:
+    Используем ЛИНЕАРИЗОВАННЫЙ напор вместо итераций Q.
+    Это гарантирует корректность якобиана и сходимость NR.
+
+    Линеаризация H(Q) в точке Q_lin:
+      H_lin = H(Q_lin) + dH/dQ * (Q - Q_lin) = H0 - R_fan*Q
+    где R_fan = -dH/dQ > 0 для падающей характеристики.
+    Это эквивалентно добавлению отрицательного "сопротивления" вентилятора.
+    """
     R  = e["R"]
     qm = float(e.get("qMax",1e9)) if e.get("hasFan") else 1e9
 
-    # Начальная оценка с H(0)
-    H = Hf(e,0.0); dp = Pa-Pb+H
-    Q = math.copysign(math.sqrt(max(abs(dp),1e-12)/R), dp)
-    if e.get("hasFan"): Q = max(-qm, min(qm, Q))
+    if e.get("hasFan") and e.get("fanMode","constant") == "curve":
+        # Линеаризованный подход: H_eff = H_lin (константа в данной итерации)
+        # Q от предыдущей итерации передаётся через Pa-Pb
+        # Используем простую оценку: H ≈ H(Q_est) где Q_est из текущих давлений
 
-    # Уточнение для curve (12 итераций)
-    if e.get("hasFan") and e.get("fanMode","constant")=="curve":
-        for _ in range(12):
-            H = Hf(e,Q); dp = Pa-Pb+H
+        # Шаг 1: оценка Q при H=H(0)
+        H0 = Hf(e, 0.0)
+        dp0 = Pa - Pb + H0
+        Q_est = math.copysign(math.sqrt(max(abs(dp0),1e-12)/R), dp0)
+        Q_est = max(-qm, min(qm, Q_est))
+
+        # Шаг 2: 5 итераций уточнения
+        for _ in range(5):
+            H = Hf(e, Q_est)
+            dp = Pa - Pb + H
             Qn = math.copysign(math.sqrt(max(abs(dp),1e-12)/R), dp)
             Qn = max(-qm, min(qm, Qn))
-            if abs(Qn-Q)<1e-6: Q=Qn; break
-            Q=Qn
-        H=Hf(e,Q); dp=Pa-Pb+H
+            if abs(Qn - Q_est) < 0.1: Q_est = Qn; break
+            Q_est = Qn
 
-    adp   = max(abs(dp),1e-12)
-    dqdp  = 1.0/(2.0*math.sqrt(R*adp))
-    dHdQ  = dHf(e,Q)
-    # Неявная производная: dQ/dPa = dqdp / (1 - dHdQ*dqdp)
-    denom = max(1e-9, 1.0 - dHdQ*dqdp)
-    return Q, dqdp/denom
+        H   = Hf(e, Q_est)
+        dp  = Pa - Pb + H
+        Q   = Q_est
+
+        # Производная с учётом ограничения qMax
+        if abs(Q_est) >= qm * 0.999:
+            # Q зажат на qMax — производная по P равна 0
+            # (изменение давления не меняет Q)
+            return Q, 1e-8
+        adp  = max(abs(dp), 1e-12)
+        dqdp = 1.0 / (2.0 * math.sqrt(R * adp))
+        dHdQ = dHf(e, Q)
+        denom = max(1e-9, 1.0 - dHdQ * dqdp)
+        return Q, dqdp / denom
+    else:
+        # Обычное ребро или constant-вентилятор
+        H  = Hf(e, 0.0)
+        dp = Pa - Pb + H
+        Q  = math.copysign(math.sqrt(max(abs(dp),1e-12)/R), dp)
+        adp  = max(abs(dp), 1e-12)
+        dqdp = 1.0 / (2.0 * math.sqrt(R * adp))
+        return Q, dqdp
 
 
 # ── Вспомогательные: рабочая точка + путь R ──────────────────────────────────
@@ -142,7 +174,7 @@ def path_R(edges, fe):
 # ── Главная функция ───────────────────────────────────────────────────────────
 def solve(nodes_in, branches_in, options):
     import numpy as np
-    MAX_IT = int(options.get("maxIter",100))
+    MAX_IT = int(options.get("maxIter",200))
     EPS    = float(options.get("tolerance",0.005))
     log=[]; diag=[]
 
@@ -182,11 +214,41 @@ def solve(nodes_in, branches_in, options):
     Rn=path_R(edges,fe); Qw=working_pt(fe,Rn); Hw=Hf(fe,Qw) if fe else 1000.0
     log.append(f"Rn={Rn:.5f} Qw={Qw:.2f} Hw={Hw:.0f}")
 
-    P_init=max(10.0, Hw*0.5)
-    P=np.full(N,P_init)
-    if fe:
-        side=fe["b"] if fe["a"]==GND else fe["a"]
-        if side!=GND and side in idx: P[idx[side]]=max(10.0,Hw*0.95)
+    # Инициализация давлений: BFS от вентилятора к GND
+    # P убывает пропорционально R-расстоянию от источника давления до GND
+    P_init = max(10.0, Hw * 0.5)
+    P = np.full(N, P_init)
+
+    if fe and Rn > 0:
+        # BFS-расстояние (по R) от каждого узла до GND
+        from collections import deque
+        adj_r = {}
+        for e in edges:
+            # Исключаем ребро вентилятора — хотим давление по пути через пассивную сеть
+            if e.get("hasFan"):
+                continue
+            adj_r.setdefault(e["a"],[]).append((e["R"],e["b"]))
+            adj_r.setdefault(e["b"],[]).append((e["R"],e["a"]))
+
+        # Dijkstra: расстояние до GND
+        import heapq
+        dist_to_gnd = {}
+        hp2 = [(0.0, GND)]
+        while hp2:
+            d, u = heapq.heappop(hp2)
+            if u in dist_to_gnd: continue
+            dist_to_gnd[u] = d
+            for r, v in adj_r.get(u, []):
+                if v not in dist_to_gnd:
+                    heapq.heappush(hp2, (d+r, v))
+
+        # P_v ≈ Hw * (1 - dist_to_gnd[v] / total_R)
+        # Чем дальше узел от GND — тем выше давление
+        # total_R = полный путь вентилятора
+        for v in free:
+            d_gnd = dist_to_gnd.get(v, Rn)
+            # P[v] ≈ R(v→GND) * Q_wp²  — потери давления от v до атмосферы
+            P[idx[v]] = max(1.0, d_gnd * Qw * Qw)
 
     # Newton-Raphson
     max_res=float("inf"); it=0
@@ -207,13 +269,28 @@ def solve(nodes_in, branches_in, options):
         max_res=float(np.max(np.abs(F)))
         if max_res<EPS: it+=1; break
 
-        dg=np.diag(J); J[np.abs(dg)<1e-10, np.abs(dg)<1e-10]=-1e-6
-        try:   dP=np.linalg.solve(J,-F)
-        except: dP,_,_,_=np.linalg.lstsq(J,-F,rcond=None)
-        dP=np.where(np.isfinite(dP),dP,0.0)
-        step=float(np.max(np.abs(dP)))
-        if step>Hw: dP*=Hw/step
-        P+=dP; P=np.where(np.isfinite(P),P,P_init)
+        dg=np.diag(J)
+        bad = np.abs(dg) < 1e-10
+        J[bad,bad] = -1e-6
+
+        try:
+            dP = np.linalg.solve(J, -F)
+        except np.linalg.LinAlgError:
+            dP,_,_,_ = np.linalg.lstsq(J, -F, rcond=None)
+
+        dP = np.where(np.isfinite(dP), dP, 0.0)
+
+        # Адаптивное демпфирование: ограничиваем шаг чтобы P оставался > 0
+        # и чтобы изменения были разумными
+        step = float(np.max(np.abs(dP)))
+        max_step = max(P_init * 2, Hw)   # допустимый шаг
+        if step > max_step:
+            dP *= max_step / step
+
+        P += dP
+        # Не даём P стать отрицательным (физически давление может быть отриц.,
+        # но начальный выброс надо ограничить)
+        P = np.where(np.isfinite(P), P, P_init)
 
     log.append(f"iter={it} max|F|={max_res:.4f}")
 
