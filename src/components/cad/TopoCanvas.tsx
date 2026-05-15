@@ -852,6 +852,7 @@ export default function TopoCanvas(props: Props) {
           };
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
+            : isDead ? "#9ca3af"
             : overV ? "#dc2626"
             : (colorByHorizon && horizonColor) ? horizonColor
             : Q > 0 ? velocityColor(V)
@@ -865,7 +866,8 @@ export default function TopoCanvas(props: Props) {
           // Обводка (контур вокруг линии): ширина = w + 2*border
           const borderW = thinLines ? 0 : Math.max(0, bb);
 
-          const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off";
+          const isDead = b.isDead ?? false;
+          const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off" && !isDead;
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
 
@@ -974,7 +976,7 @@ export default function TopoCanvas(props: Props) {
                 const labelOpacity = Math.min(1, (view.scale - 0.04) / 0.08);
                 // Порядковый номер ветви (1, 2, 3...) из ID вида "B1"
                 const branchNum = b.id.replace(/^B/, "");
-                const hasCalc = Q > 0 || b.velocity > 0;
+                const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
 
                 // Кружок с номером ветви — всегда (если branchNumber включён или нет infoConfig)
                 const showCircle = !ic || ic.branchNumber;
@@ -982,7 +984,10 @@ export default function TopoCanvas(props: Props) {
 
                 // Метки параметров после расчёта (Q и V) — рядом с ветвью, не при клике
                 const dataLines: string[] = [];
-                if (ic) {
+                if (isDead) {
+                  // Тупиковая выработка: проветривание диффузией
+                  if (!ic || ic.branchFlow || ic.branchFlowCalc) dataLines.push("диффузия");
+                } else if (ic) {
                   if (ic.branchName && b.type) dataLines.push(b.type);
                   if (ic.branchLength) dataLines.push(`L=${len}м`);
                   if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);

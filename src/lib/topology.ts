@@ -78,6 +78,7 @@ export interface TopoBranch {
   flow: number;             // м³/с
   velocity: number;         // м/с
   dP: number;               // Па
+  isDead: boolean;          // тупиковая ветвь (Q=0, проветривание диффузией)
   power: number;            // Вт
   reynolds: number;         // Re
   // ─── Отображение ────────────────────────────────────
@@ -206,6 +207,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     dP: 0,
     power: 0,
     reynolds: 0,
+    isDead: false,
     lineWidth: 3,
     lineBorder: 0.6,
     capital: false,

@@ -351,16 +351,40 @@ def solve(nodes_in, branches_in, options):
                        it, converged, max_dq, log, diag)
 
 
+def find_dead_ends(edges):
+    """
+    Возвращает множество id тупиковых ветвей.
+    Тупиковая: хотя бы один конец (не GND) имеет степень 1 — подключена только эта ветвь.
+    """
+    degree = collections.defaultdict(int)
+    for e in edges:
+        if e["a"] != GND:
+            degree[e["a"]] += 1
+        if e["b"] != GND:
+            degree[e["b"]] += 1
+
+    dead = set()
+    for e in edges:
+        a_dead = (e["a"] != GND and degree[e["a"]] == 1)
+        b_dead = (e["b"] != GND and degree[e["b"]] == 1)
+        if a_dead or b_dead:
+            dead.add(e["id"])
+    return dead
+
+
 def make_result(edges, Q, it, converged, max_res, log, diag):
+    dead_ends = find_dead_ends(edges)
     out = []
     for e in edges:
-        q    = Q.get(e["id"], 0.0)
+        is_dead = e["id"] in dead_ends
+        q = 0.0 if is_dead else Q.get(e["id"], 0.0)
         H    = e["R"] * q * abs(q)
         Hv   = fan_H(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
         out.append({"id": e["id"], "Q": round(q, 4), "H": round(H, 3),
-                    "Hfan": round(Hv, 3), "velocity": round(vel, 3)})
+                    "Hfan": round(Hv, 3), "velocity": round(vel, 3),
+                    "isDead": is_dead})
     return {"branches": out, "nodes": [], "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
             "log": log, "diagnostics": diag}

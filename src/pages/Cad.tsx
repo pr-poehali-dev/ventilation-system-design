@@ -872,10 +872,10 @@ export default function CadPage() {
 
       // Применяем результат
       setBranches(prev => prev.map(b => {
-        const rb = (data.branches as { id: string; Q: number; velocity: number; H: number }[])
+        const rb = (data.branches as { id: string; Q: number; velocity: number; H: number; isDead?: boolean }[])
           .find(r => r.id === b.id);
         if (!rb) return b;
-        return { ...b, flow: rb.Q, velocity: rb.velocity, dP: rb.H };
+        return { ...b, flow: rb.Q, velocity: rb.velocity, dP: rb.H, isDead: rb.isDead ?? false };
       }));
 
       setSolveResult({
