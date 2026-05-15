@@ -147,24 +147,26 @@ def spanning_tree_and_loops(edges):
         adj[e["a"]].append(e)
         adj[e["b"]].append(e)
 
-    # BFS — строим остовное дерево
-    start = next(iter(all_nodes))
-    visited = {start}
-    parent  = {}          # node → (edge_id, parent_node, direction_to_node)
-                          # direction_to_node = True если edge["a"]==parent_node
+    # BFS — строим остовное дерево (обрабатываем все компоненты связности)
+    visited  = set()
+    parent   = {}          # node → (edge_id, parent_node, direction_to_node)
     tree_ids = set()
-    queue = [start]
 
-    while queue:
-        v = queue.pop(0)
-        for e in adj[v]:
-            u = e["b"] if e["a"] == v else e["a"]
-            if u not in visited:
-                visited.add(u)
-                # direction: True = движемся по ребру a→b (v==a, u==b)
-                parent[u] = (e["id"], v, (e["a"] == v))
-                tree_ids.add(e["id"])
-                queue.append(u)
+    for start in all_nodes:
+        if start in visited:
+            continue
+        visited.add(start)
+        queue = [start]
+        while queue:
+            v = queue.pop(0)
+            for e in adj[v]:
+                u = e["b"] if e["a"] == v else e["a"]
+                if u not in visited:
+                    visited.add(u)
+                    # direction: True = движемся по ребру a→b (v==a, u==b)
+                    parent[u] = (e["id"], v, (e["a"] == v))
+                    tree_ids.add(e["id"])
+                    queue.append(u)
 
     edge_by_id = {e["id"]: e for e in edges}
 
@@ -360,7 +362,7 @@ def solve_cross(nodes_in, branches_in, options):
     # Словарь для быстрого доступа к ветвям
     edge_by_id = {e["id"]: e for e in edges}
 
-    # Шаги 3–6: итерации
+    # Шаги 3–6: итерации Кросса
     max_dH = float("inf")
     it = 0
 
@@ -369,24 +371,34 @@ def solve_cross(nodes_in, branches_in, options):
 
         for loop in loops:
             # Невязка депрессии контура k:
-            # ΔH_k = Σ(sign_i · R_i · Q_i · |Q_i|) - Σ(sign_i · H_вент,i)
+            # ΔH_k = Σ_i[ sign_i · (R_i · Q_i · |Q_i| - H_вент,i) ]
             dH    = 0.0
             denom = 0.0   # 2 · Σ R_i · |Q_i|
 
             for eid, sgn in loop:
-                e = edge_by_id[eid]
+                e  = edge_by_id[eid]
                 q  = Q[eid]
                 Hv = Hfan(e, q)
-                # Вклад в невязку: sgn · (R·Q·|Q| - H_вент)
                 dH    += sgn * (e["R"] * q * abs(q) - Hv)
                 denom += 2.0 * e["R"] * abs(q)
 
+            max_dH = max(max_dH, abs(dH))
+
+            # При нулевом знаменателе (Q=0 везде): используем малый denom
+            # чтобы всё равно сделать первый шаг к балансу
             if denom < 1e-12:
-                continue   # нет расхода — пропускаем
+                # Оценка первоначального dQ: если есть вентилятор в контуре,
+                # берём Q ≈ sqrt(H_fan / R_avg)
+                R_avg = sum(edge_by_id[eid]["R"] for eid, _ in loop) / len(loop)
+                Hv_max = max((Hfan(edge_by_id[eid], 0.0) for eid, _ in loop), default=0.0)
+                if Hv_max > 0 and R_avg > 0:
+                    q_est = math.sqrt(Hv_max / R_avg)
+                    denom = 2.0 * R_avg * q_est * len(loop)
+                else:
+                    continue  # нет вентилятора и нет расхода — пропускаем
 
             # Поправка Кросса с демпфированием
             dQ = -alpha * dH / denom
-            max_dH = max(max_dH, abs(dH))
 
             # Обновляем Q для всех ветвей контура
             for eid, sgn in loop:
