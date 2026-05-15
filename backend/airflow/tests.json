@@ -31,24 +31,22 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Кольцевая сеть — МКР",
+      "name": "Кольцевая сеть — 2 параллельных ветви, Кросс",
       "method": "POST",
       "path": "/",
       "body": {
-        "method": "mkr",
+        "method": "cross",
         "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "N2"},
-          {"id": "U2", "isAtm": true}
+          {"id": "A", "isAtm": true},
+          {"id": "B"},
+          {"id": "C", "isAtm": true}
         ],
         "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
-          {"id": "B2", "fromId": "N1", "toId": "N2", "R": 0.1},
-          {"id": "B3", "fromId": "N1", "toId": "N2", "R": 0.2},
-          {"id": "B4", "fromId": "N2", "toId": "U2", "R": 0.05, "hasFan": true, "fanMode": "constant", "fanPressure": 500}
+          {"id": "fan", "fromId": "A", "toId": "B", "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 500},
+          {"id": "e1",  "fromId": "B", "toId": "C", "R": 0.1},
+          {"id": "e2",  "fromId": "B", "toId": "C", "R": 0.2}
         ],
-        "options": {"tolerance": 0.01, "maxIter": 5000}
+        "options": {"tolerance": 0.001, "maxIter": 5000, "alpha": 0.8}
       },
       "expectedStatus": 200,
       "expectedBody": {"converged": true},
