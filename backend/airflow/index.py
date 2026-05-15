@@ -271,50 +271,57 @@ def solve(nodes_in, branches_in, options):
     # Начальный расход
     Q = [0.0] * len(edges)
 
-    # Начальное q0: для curve-вентилятора берём середину рабочего диапазона,
-    # чтобы не стартовать выше qMax и не получить H=0 с первой итерации.
-    def estimate_q0():
+    def bisect_q0():
+        """
+        Находит начальный Q методом бисекции: H_fan(Q) = R_total · Q².
+        Работает строго в диапазоне [qMin, qMax] вентилятора.
+        Для constant-вентилятора: Q = sqrt(H/R).
+        """
         R_total = sum(e["R"] for e in edges)
         if R_total <= 0:
             return 1.0
+
+        # Для curve-вентилятора — бисекция на нисходящей ветви характеристики
         for fan_e in fans:
             if fan_e.get("fanMode", "constant") == "curve":
-                q_start = float(fan_e.get("qMax", 50)) * 0.5
-                return q_start
-        # constant: H = fanPressure, Q = sqrt(H/R)
-        H_fan = sum(fan_H(e, 0.0) for e in edges)
+                q_lo = float(fan_e.get("qMin", 1.0))
+                q_hi = float(fan_e.get("qMax", 90.0))
+                # Проверяем что H(q_lo) > R·q_lo² и H(q_hi) < R·q_hi²
+                # (рабочая точка лежит между ними)
+                def f(q):
+                    return fan_H(fan_e, q) - R_total * q * q
+                # Если в q_hi функция уже отрицательная — рабочая точка внутри
+                if f(q_lo) <= 0:
+                    return q_lo  # сопротивление слишком велико
+                if f(q_hi) >= 0:
+                    return q_hi  # сопротивление слишком мало
+                # Бисекция
+                for _ in range(60):
+                    q_mid = 0.5 * (q_lo + q_hi)
+                    if f(q_mid) > 0:
+                        q_lo = q_mid
+                    else:
+                        q_hi = q_mid
+                    if q_hi - q_lo < 0.01:
+                        break
+                return 0.5 * (q_lo + q_hi)
+
+        # constant-вентилятор
+        H_fan = sum(fan_H(e, 1.0) for e in edges)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # Для линейной сети (нет контуров) — бисекция на кривой H(Q)=R·Q²
+    # Для линейной сети (нет контуров) — рабочая точка = результат бисекции
     if not loops:
-        R_total = sum(e["R"] for e in edges)
-        q0 = estimate_q0()
-        # Уточняем методом бисекции: ищем Q где H_fan(Q) = R·Q²
-        for _ in range(100):
-            H_fan = sum(fan_H(e, q0) for e in edges)
-            if H_fan <= 0 or R_total <= 0:
-                break
-            q_new = math.sqrt(H_fan / R_total)
-            # Ограничиваем q_new диапазоном вентилятора
-            qmax_fan = max((float(e.get("qMax", 1e9)) for e in fans), default=1e9)
-            q_new = min(q_new, qmax_fan * 0.99)
-            if abs(q_new - q0) < tol * 0.1:
-                q0 = q_new
-                break
-            q0 = 0.5 * q0 + 0.5 * q_new
-
+        q0 = bisect_q0()
         for i, e in enumerate(edges):
             Q[i] = q0
-
         return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
-                           100, True, 0.0, log, diag)
+                           1, True, 0.0, log, diag)
 
     # Начальное распределение для сети с контурами
-    q0 = estimate_q0()
-
-    # Задаём начальный Q через обход контуров
+    q0 = bisect_q0()
     for i, e in enumerate(edges):
-        Q[i] = q0 if not e["hasFan"] else q0
+        Q[i] = q0
 
     # Основной цикл Кросса
     max_dq = float("inf")
