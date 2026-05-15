@@ -868,11 +868,12 @@ export default function CadPage() {
         ok: data.ok,
         iterations: data.iterations,
         maxDeltaQ: data.maxDeltaQ,
+        maxDeltaH: data.maxDeltaH ?? 0,
         branches: [],
         nodes: [],
         log: data.log ?? [],
         cyclesCount: data.cyclesCount ?? 0,
-        diagnostics: data.diagnostics,
+        diagnostics: data.diagnostics ?? [],
       });
 
       if (data.branches?.some((b: { flow: number }) => Math.abs(b.flow) > 0.1)) {
@@ -972,10 +973,12 @@ export default function CadPage() {
           ok: ventResult.ok ?? true,
           iterations: ventResult.iterations ?? 0,
           maxDeltaQ: ventResult.maxDeltaQ ?? 0,
+          maxDeltaH: ventResult.maxDeltaH ?? 0,
           branches: [] as typeof branchesRaw,
           nodes: [] as typeof nodes,
           log: ventResult.log ?? [],
           cyclesCount: ventResult.cyclesCount ?? 0,
+          diagnostics: ventResult.diagnostics ?? [],
         });
         setShowFlowArrows(true);
       }
