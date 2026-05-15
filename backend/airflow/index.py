@@ -371,6 +371,11 @@ def solve(nodes_in, branches_in, options):
     log.append(f"Ветвей={len(edges)} дерево={len(tree_ids)} контуров={len(loops)} "
                f"вент={len(fans)} атм={len(atm_orig)}")
 
+    # Без вентилятора — нет напора, Q=0 везде
+    if not fans:
+        Q = {e["id"]: 0.0 for e in edges}
+        return make_result(edges, Q, 0, True, 0.0, log, diag, atm_orig)
+
     if not loops:
         diag.append({"level": "info", "category": "topology",
                      "message": "Контуры не найдены — линейная сеть"})
@@ -435,7 +440,7 @@ def solve(nodes_in, branches_in, options):
     max_imb = max((abs(v) for k, v in node_bal.items() if k != GND), default=0.0)
     log.append(f"Итераций={it} max|ΔH|={max_dH:.4f} дисбаланс={max_imb:.4f}")
 
-    if max_imb > 0.5:
+    if max_imb > 0.5 and fans:
         diag.append({"level": "error", "category": "balance",
                      "message": f"Дисбаланс {max_imb:.2f} м³/с — нарушение 1-го закона Кирхгофа"})
 
