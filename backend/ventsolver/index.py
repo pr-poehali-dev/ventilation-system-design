@@ -94,43 +94,113 @@ def fan_dh(e, Q):
 def edge_q_and_deriv(e, Pa, Pb):
     """
     Вычисляет Q и производные для ребра.
-    Для вентилятора с кривой H(Q): нужно 3-5 итераций для уточнения.
-    Возвращает: Q, dQ/dPa, dQ/dPb
+    Q > 0: ток из a в b.
+    ΔP_eff = Pa - Pb + H_fan(Q)   (H_fan > 0: вентилятор нагнетает a→b)
+    Q = sign(ΔP_eff) * sqrt(|ΔP_eff| / R)
     """
-    R = e["R"]
-    # Начальное приближение H при Q=0
-    H = fan_h(e, 0.0)
-    dPe = Pa - Pb + H
+    R    = e["R"]
+    qmax = float(e.get("qMax") or 1e9) if e.get("hasFan") else 1e9
+
+    # Начальная оценка с H(0)
+    H0  = fan_h(e, 0.0)
+    dPe = Pa - Pb + H0
     Q   = math.copysign(math.sqrt(max(abs(dPe), 1e-12) / R), dPe)
 
-    # Уточнение для curve-вентилятора
+    # Ограничение Q диапазоном кривой вентилятора
+    if e.get("hasFan"):
+        qmin = float(e.get("qMin") or 0)
+        Q = max(-qmax, min(qmax, Q))
+
+    # Итерации для уточнения Q (важно для curve-режима)
     if e.get("hasFan") and str(e.get("fanMode")) == "curve":
-        for _ in range(8):
+        for _ in range(15):
             H_new  = fan_h(e, Q)
             dPe    = Pa - Pb + H_new
             Q_new  = math.copysign(math.sqrt(max(abs(dPe), 1e-12) / R), dPe)
-            if abs(Q_new - Q) < 1e-4: Q = Q_new; break
+            # Ограничение в диапазон [−qmax, qmax]
+            Q_new  = max(-qmax, min(qmax, Q_new))
+            if abs(Q_new - Q) < 1e-5: Q = Q_new; break
             Q = Q_new
-        H = fan_h(e, Q)
+        H   = fan_h(e, Q)
         dPe = Pa - Pb + H
+    else:
+        dPe = Pa - Pb + fan_h(e, Q)
 
-    # dQ/dPa при фиксированном направлении
-    # Q = sign(dPe) * sqrt(|dPe|/R)
-    # dQ/d(dPe) = 1/(2*sqrt(R*|dPe|))
-    # dQ/dPa = dQ/d(dPe) * d(dPe)/dPa = dQ/d(dPe) * (1 + dH/dQ * sign(dPe) * 0)
-    # Упрощённо: dQ/dPa = 1/(2*sqrt(R*|dPe|)) — корректно для constant H
-    # Для curve: добавляем поправку через dH/dQ:
-    # d(dPe)/dPa = 1  (прямо)
-    # dQ/dPa ≈ dqdP = 1/(2*sqrt(R*|dPe|)) / (1 - dH * sign(dPe) / (2*R*|Q|+1e-9))
     abs_dP = max(abs(dPe), 1e-12)
     dqdP   = 1.0 / (2.0 * math.sqrt(R * abs_dP))
     dH     = fan_dh(e, Q)
-    # Нормировка на нелинейность вентилятора (метод Ньютона на ребре)
+    # Производная с учётом нелинейности H(Q):
+    # dQ/dPa из: Q = f(Pa - Pb + H(Q)) → неявное дифференцирование
+    # dQ/dPa = dqdP / (1 - dH * dqdP * sign_correction)
     denom  = max(1e-9, 1.0 - dH * dqdP)
-    dQ_dPa = dqdP / denom
+    dQ_dPa =  dqdP / denom
     dQ_dPb = -dqdP / denom
 
     return Q, dQ_dPa, dQ_dPb
+
+
+def _estimate_r_net(edges, fan_edge):
+    """
+    Оценка суммарного R сети на главном пути вентилятор→атмосфера.
+    Строим BFS от узла вентилятора до GND и суммируем R по пути.
+    """
+    from collections import deque
+    if not fan_edge:
+        return DEFAULT_R
+
+    # Список смежности
+    node_set = set()
+    for e in edges:
+        node_set.add(e["a"]); node_set.add(e["b"])
+    adj = {n: [] for n in node_set}
+    for i, e in enumerate(edges):
+        adj[e["a"]].append((i, e["b"]))
+        adj[e["b"]].append((i, e["a"]))
+
+    # BFS от конца вентилятора ≠ GND до GND, берём путь с минимальным R
+    start = fan_edge["a"] if fan_edge["b"] == GND else fan_edge["b"]
+    if start == GND:
+        start = fan_edge["a"]
+
+    # Dijkstra — путь с минимальным суммарным R
+    import heapq
+    dist = {start: 0.0}
+    heap = [(0.0, start)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if u == GND:
+            return max(MIN_R, fan_edge["R"] + d)
+        if d > dist.get(u, float("inf")) + 1e-9:
+            continue
+        for ei, v in adj.get(u, []):
+            nd = d + edges[ei]["R"]
+            if nd < dist.get(v, float("inf")):
+                dist[v] = nd
+                heapq.heappush(heap, (nd, v))
+
+    # Fallback: среднее R по всем ветвям
+    r_avg = sum(e["R"] for e in edges) / max(1, len(edges))
+    return max(MIN_R, r_avg * max(1, int(len(edges) ** 0.5)))
+
+
+def _find_working_point(fan_edge, R_net):
+    """Рабочая точка: бисекция H_fan(Q) = R_net * Q^2."""
+    if not fan_edge:
+        return 5.0
+    qmax = float(fan_edge.get("qMax") or 100)
+    qmin = float(fan_edge.get("qMin") or 0)
+    if R_net <= 0:
+        return (qmin + qmax) / 2
+
+    lo, hi = max(qmin, 0.0), qmax
+    for _ in range(100):
+        q  = (lo + hi) / 2
+        Hf = fan_h(fan_edge, q)
+        Hn = R_net * q * q
+        if abs(Hf - Hn) < 0.1: break
+        if Hf > Hn: lo = q
+        else:       hi = q
+    return max(max(qmin, 0.1), min(qmax, (lo + hi) / 2))
 
 
 def solve(nodes_in, branches_in, options):
@@ -191,23 +261,28 @@ def solve(nodes_in, branches_in, options):
 
     if N == 0: return _empty(nodes_in, "Только атмосферные узлы")
 
-    # Начальное давление
-    # fan_h_max = максимальный напор вентилятора при Q=0 (статический напор)
-    fan_candidates = [fan_h(e, 0) for e in edges if e["hasFan"]]
-    fan_h_max = max(fan_candidates) if fan_candidates else 0.0
+    # Начальное давление = рабочая точка вентилятора
+    # Находим: H_fan(Q*) = R_сети * Q*^2
+    # Оцениваем R_сети как сумму R всех ветвей / N_branches (среднее по ветви) * типовой путь
+    fan_edge = next((e for e in edges if e["hasFan"]), None)
+    fan_h_max = fan_h(fan_edge, 0) if fan_edge else 1000.0
     if fan_h_max <= 0:
-        # Если H(0)=0 — кривая начинается не с нуля или constant=0
-        # Попробуем H при малом Q
-        for e in edges:
-            if e["hasFan"]:
-                for q_try in [1, 5, 10, 20, 50]:
-                    h_try = fan_h(e, q_try)
-                    if h_try > 0:
-                        fan_h_max = max(fan_h_max, h_try)
-        if fan_h_max <= 0:
-            fan_h_max = 1000.0  # fallback
-    log.append(f"fan_h_max={fan_h_max:.0f} Па")
-    P = np.full(N, fan_h_max * 0.5)
+        fan_h_max = max((fan_h(fan_edge, q) for q in [10, 20, 50, 100]), default=1000.0)
+
+    # Оцениваем R_net от вентилятора до GND по BFS-дереву
+    # Строим быстрое дерево для оценки
+    R_net = _estimate_r_net(edges, fan_edge)
+    log.append(f"fan_h_max={fan_h_max:.0f} Па, R_net≈{R_net:.5f}")
+
+    # Рабочая точка: H_fan(Q*) = R_net * Q*^2
+    Q_work = _find_working_point(fan_edge, R_net)
+    log.append(f"Q_work≈{Q_work:.2f} м³/с")
+
+    # P_init = давление в сети при Q=Q_work
+    # Для узлов между источником и GND: P ≈ R_part * Q_work^2
+    P_init = R_net * Q_work * Q_work * 0.5
+    P_init = max(P_init, fan_h_max * 0.1)
+    P = np.full(N, P_init)
 
     # Newton-Raphson
     max_res = float("inf")
