@@ -271,35 +271,46 @@ def solve(nodes_in, branches_in, options):
     # Начальный расход
     Q = [0.0] * len(edges)
 
-    # Для линейной сети (нет контуров) — простой расчёт
-    if not loops:
-        # Одна цепочка: Q = sqrt(H_fan / R_total) через все ветви
+    # Начальное q0: для curve-вентилятора берём середину рабочего диапазона,
+    # чтобы не стартовать выше qMax и не получить H=0 с первой итерации.
+    def estimate_q0():
         R_total = sum(e["R"] for e in edges)
-        H_fan   = sum(fan_H(e, 0.0) for e in edges)
-        if R_total > 0 and H_fan > 0:
-            q0 = math.sqrt(H_fan / R_total)
-            # Уточняем с реальным H(Q)
-            for _ in range(50):
-                H_fan = sum(fan_H(e, q0) for e in edges)
-                q_new = math.sqrt(max(H_fan / R_total, 0.0))
-                if abs(q_new - q0) < tol * 0.1:
-                    q0 = q_new
-                    break
-                q0 = 0.5 * q0 + 0.5 * q_new
-        else:
-            q0 = 0.0
+        if R_total <= 0:
+            return 1.0
+        for fan_e in fans:
+            if fan_e.get("fanMode", "constant") == "curve":
+                q_start = float(fan_e.get("qMax", 50)) * 0.5
+                return q_start
+        # constant: H = fanPressure, Q = sqrt(H/R)
+        H_fan = sum(fan_H(e, 0.0) for e in edges)
+        return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-        # Определяем направление для каждой ветви
+    # Для линейной сети (нет контуров) — бисекция на кривой H(Q)=R·Q²
+    if not loops:
+        R_total = sum(e["R"] for e in edges)
+        q0 = estimate_q0()
+        # Уточняем методом бисекции: ищем Q где H_fan(Q) = R·Q²
+        for _ in range(100):
+            H_fan = sum(fan_H(e, q0) for e in edges)
+            if H_fan <= 0 or R_total <= 0:
+                break
+            q_new = math.sqrt(H_fan / R_total)
+            # Ограничиваем q_new диапазоном вентилятора
+            qmax_fan = max((float(e.get("qMax", 1e9)) for e in fans), default=1e9)
+            q_new = min(q_new, qmax_fan * 0.99)
+            if abs(q_new - q0) < tol * 0.1:
+                q0 = q_new
+                break
+            q0 = 0.5 * q0 + 0.5 * q_new
+
         for i, e in enumerate(edges):
             Q[i] = q0
 
         return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
-                           50, True, 0.0, log, diag)
+                           100, True, 0.0, log, diag)
 
-    # Начальное распределение: Q = sqrt(H_fan / R_sum) через все ветви
-    H_fan   = sum(fan_H(e, 0.0) for e in edges)
-    R_total = sum(e["R"] for e in edges)
-    q0 = math.sqrt(H_fan / R_total) if R_total > 0 and H_fan > 0 else 1.0
+    # Начальное распределение для сети с контурами
+    q0 = estimate_q0()
 
     # Задаём начальный Q через обход контуров
     for i, e in enumerate(edges):
