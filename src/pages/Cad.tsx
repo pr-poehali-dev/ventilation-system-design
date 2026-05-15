@@ -28,8 +28,7 @@ import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
-const VENTCORE_URL = (FUNC2URL as Record<string, string>)["ventcore"];
-const VENTSOLVER_URL = (FUNC2URL as Record<string, string>)["ventsolver"];
+const AIRFLOW_URL = (FUNC2URL as Record<string, string>)["airflow"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -373,20 +372,22 @@ export default function CadPage() {
   const [vcThermal, setVcThermal] = useState<Record<string, unknown> | null>(null);
   const [vcSolving, setVcSolving] = useState(false);
   const [vcError, setVcError] = useState<string | null>(null);
-  // Режим расчёта: local = TypeScript в браузере; server = Python VentCore
-  const [calcMode, setCalcMode] = useState<"local" | "server">("local");
-  // Включённые расчёты (в серверном режиме)
-  const [calcFire, setCalcFire] = useState(false);
-  const [calcMethane, setCalcMethane] = useState(false);
-  const [calcThermal, setCalcThermal] = useState(false);
-  // Параметры пожара
-  const [fireNodeId, setFireNodeId] = useState<string>("");
-  const [fireHeat, setFireHeat] = useState(5000);
-  const [fireSmoke, setFireSmoke] = useState(0.3);
-  // Параметры метана [{nodeId, emissionRate}]
-  const [methSources, setMethSources] = useState<Array<{nodeId: string; rate: number}>>([]);
-  // Параметры теплового режима
-  const [thermalParams, setThermalParams] = useState({
+  // Метод расчёта: cross = Кросс, mkr = МКР
+  const [calcMode, setCalcMode] = useState<"cross" | "mkr">("cross");
+  // Параметры расчёта
+  const [solverTolerance, setSolverTolerance] = useState(0.0001);
+  const [solverMaxIter, setSolverMaxIter] = useState(50000);
+  const [solverAlpha, setSolverAlpha] = useState(0.8);
+  const [showSolverParams, setShowSolverParams] = useState(false);
+  // Параметры теплового режима (оставляем для совместимости UI)
+  const [calcFire] = useState(false);
+  const [calcMethane] = useState(false);
+  const [calcThermal] = useState(false);
+  const [fireNodeId] = useState<string>("");
+  const [fireHeat] = useState(5000);
+  const [fireSmoke] = useState(0.3);
+  const [methSources] = useState<Array<{nodeId: string; rate: number}>>([]);
+  const [thermalParams] = useState({
     inletAirTemp: 10, inletAirHumidity: 70,
     depth: 300, geothermalGradient: 3.0, surfaceTemp: 8,
   });
@@ -809,93 +810,79 @@ export default function CadPage() {
     e.preventDefault();
   };
 
-  // Расчёт через Python backend (метод узловых давлений, scipy)
+  // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
     setVcError(null);
     try {
-      const resp = await fetch(VENTSOLVER_URL, {
+      const curve_map = new Map(branches.map(b => {
+        const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
+        const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
+        let af = 1.0;
+        if (curve?.bladeAngles && curve.bladeAngles.length >= 2) {
+          const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
+          const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
+          af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
+        }
+        return [b.id, { curve, k, af }];
+      }));
+
+      const resp = await fetch(AIRFLOW_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          method: calcMode,
           nodes: nodes.map(n => ({
             id: n.id,
-            atmosphereLink: n.atmosphereLink,
-            z: n.z,
-            airTemp: n.airTemp,
+            isAtm: n.atmosphereLink,
           })),
           branches: branches.map(b => {
-            // Для curve-режима передаём коэффициенты кривой H(Q) и параметры вентилятора
-            const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
-            const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
-            // Угловой фактор (для осевых вентиляторов с лопатками)
-            let af = 1.0;
-            if (curve?.bladeAngles && curve.bladeAngles.length >= 2) {
-              const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
-              const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
-              af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-            }
+            const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
             return {
               id: b.id,
               fromId: b.fromId,
               toId: b.toId,
-              // Сопротивление и геометрия (для пересчёта R на бекенде если resistance=0)
-              resistance:      b.resistance,
-              area:            b.area,
-              perimeter:       b.perimeter,
-              length:          b.length,
-              alphaCoef:       b.alphaCoef,
-              resistanceMode:  b.resistanceMode,
-              manualR:         b.manualR,
-              roughness:       b.roughness,
-              localXi:         b.localXi,
-              // Вентилятор
-              hasFan:          b.hasFan,
-              fanMode:         b.fanMode,
-              fanPressure:     b.fanPressure,
-              // Кривая вентилятора: передаём скорректированные коэффициенты H(Q) с учётом RPM и угла
+              R: b.resistance,
+              area: b.area,
+              hasFan: b.hasFan,
+              fanMode: b.fanMode,
+              fanPressure: b.fanPressure,
               ...(curve ? {
-                h0:   curve.h0 * af * k * k,
-                h1:   curve.h1 * k,
-                h2:   curve.h2,
+                h0: curve.h0 * af * k * k,
+                h1: curve.h1 * k,
+                h2: curve.h2,
                 qMax: curve.qMax * k,
                 qMin: curve.qMin * k,
               } : {}),
             };
           }),
-          options: { maxIter: 2000, tolerance: 0.01, tolPressure: 0.1 },
+          options: {
+            tolerance: solverTolerance,
+            maxIter: solverMaxIter,
+            alpha: solverAlpha,
+          },
         }),
       });
       const data = await resp.json();
 
       if (!resp.ok || data.error) {
-        setVcError(data.error || "Ошибка Python-расчёта");
+        setVcError(data.error || "Ошибка расчёта");
         return;
       }
 
-      // Обновляем только поля результата расчёта (fanPressure НЕ трогаем — это исходный параметр пользователя)
+      // Применяем результат
       setBranches(prev => prev.map(b => {
-        const rb = (data.branches as { id: string; flow: number; velocity: number; dP: number }[])
+        const rb = (data.branches as { id: string; Q: number; velocity: number; H: number }[])
           .find(r => r.id === b.id);
         if (!rb) return b;
-        return {
-          ...b,
-          flow: rb.flow,
-          velocity: rb.velocity,
-          dP: rb.dP,
-        };
-      }));
-
-      setNodes(prev => prev.map(n => {
-        const rn = (data.nodes as { id: string; computedPressure?: number }[]).find(x => x.id === n.id);
-        return rn ? { ...n, computedPressure: rn.computedPressure ?? n.computedPressure } : n;
+        return { ...b, flow: rb.Q, velocity: rb.velocity, dP: rb.H };
       }));
 
       setSolveResult({
-        ok: data.ok,
+        ok: data.converged,
         iterations: data.iterations,
-        maxDeltaQ: data.maxDeltaQ,
-        maxDeltaH: data.maxDeltaH ?? 0,
+        maxDeltaQ: data.maxResidual,
+        maxDeltaH: data.maxResidual,
         branches: [],
         nodes: [],
         log: data.log ?? [],
@@ -903,7 +890,7 @@ export default function CadPage() {
         diagnostics: data.diagnostics ?? [],
       });
 
-      if (data.branches?.some((b: { flow: number }) => Math.abs(b.flow) > 0.1)) {
+      if (data.branches?.some((b: { Q: number }) => Math.abs(b.Q) > 0.1)) {
         setShowFlowArrows(true);
       }
       if (data.diagnostics?.some((d: { level: string }) => d.level === "error")) {
@@ -916,118 +903,12 @@ export default function CadPage() {
     }
   };
 
-  // Серверный расчёт через Python VentCore (все 7 модулей)
-  const handleSolveServer = async () => {
-    setVcSolving(true);
-    setVcError(null);
-    try {
-      const body: Record<string, unknown> = {
-        action: "full",
-        nodes: nodes.map((n) => ({
-          id: n.id, name: n.name,
-          atmosphereLink: n.atmosphereLink,
-          reducedPressure: n.reducedPressure ?? 0,
-          x: n.x, y: n.y, z: n.z,
-        })),
-        branches: branchesRaw.map((b) => ({
-          id: b.id, fromId: b.fromId, toId: b.toId,
-          shape: b.shape, diameter: b.diameter,
-          rectWidth: b.rectWidth, rectHeight: b.rectHeight,
-          trapTopWidth: b.trapTopWidth,
-          area: b.area, perimeter: b.perimeter,
-          length: b.length,
-          resistanceMode: b.resistanceMode,
-          alphaCoef: b.alphaCoef, surfaceId: b.surfaceId,
-          roughness: b.roughness, manualR: b.manualR, localXi: b.localXi,
-          hasFan: b.hasFan, fanMode: b.fanMode, fanPressure: b.fanPressure,
-          resistance: b.resistance,
-        })),
-        options: { maxIter: 300, tolerance: 0.001, initialFlow: 50 },
-      };
-      // Пожар
-      if (calcFire && fireNodeId) {
-        body.fire = {
-          nodeId: fireNodeId,
-          heatRelease: fireHeat,
-          smokeDensity: fireSmoke,
-          coConcentration: 0.01,
-        };
-      }
-      // Метан
-      if (calcMethane && methSources.length > 0) {
-        body.methaneSources = methSources.map((s) => ({
-          nodeId: s.nodeId, emissionRate: s.rate, sourceType: "face",
-        }));
-      }
-      // Тепловой режим
-      if (calcThermal) {
-        body.thermalParams = thermalParams;
-      }
+  const handleSolve = () => { void handleSolveLocal(); };
 
-      const resp = await fetch(VENTCORE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json();
-
-      if (!resp.ok) {
-        setVcError(data.error || "Ошибка сервера");
-        return;
-      }
-
-      // Применяем результат вентиляции к узлам и ветвям
-      const ventResult = data.ventilation;
-      if (ventResult && ventResult.ok !== false) {
-        // Обновляем computedPressure узлов
-        setNodes((prev) => prev.map((n) => {
-          const updated = ventResult.nodes?.find((x: { id?: string; nodeId?: string }) =>
-            (x.id || x.nodeId) === n.id);
-          return updated ? { ...n, computedPressure: updated.computedPressure ?? 0 } : n;
-        }));
-        // Обновляем flow/velocity/dP ветвей
-        setBranches((prev) => prev.map((b) => {
-          const updated = ventResult.branches?.find((x: { id: string }) => x.id === b.id);
-          return updated ? {
-            ...b,
-            flow: updated.flow ?? b.flow,
-            velocity: updated.velocity ?? b.velocity,
-            dP: updated.dP ?? b.dP,
-            resistance: updated.resistance ?? b.resistance,
-          } : b;
-        }));
-        setSolveResult({
-          ok: ventResult.ok ?? true,
-          iterations: ventResult.iterations ?? 0,
-          maxDeltaQ: ventResult.maxDeltaQ ?? 0,
-          maxDeltaH: ventResult.maxDeltaH ?? 0,
-          branches: [] as typeof branchesRaw,
-          nodes: [] as typeof nodes,
-          log: ventResult.log ?? [],
-          cyclesCount: ventResult.cyclesCount ?? 0,
-          diagnostics: ventResult.diagnostics ?? [],
-        });
-        setShowFlowArrows(true);
-      }
-
-      // Сохраняем расширенные результаты
-      setVcFire(data.fire ?? null);
-      setVcMethane(data.methane ?? null);
-      setVcThermal(data.thermal ?? null);
-    } catch (e) {
-      setVcError(`Ошибка соединения: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setVcSolving(false);
-    }
-  };
-
-  const handleSolve = () => {
-    if (calcMode === "server") {
-      void handleSolveServer();
-    } else {
-      void handleSolveLocal();
-    }
-  };
+  // Подавляем предупреждения unused (используются в UI других вкладок)
+  void calcFire; void calcMethane; void calcThermal;
+  void fireNodeId; void fireHeat; void fireSmoke; void methSources; void thermalParams;
+  void vcFire; void vcMethane; void vcThermal;
 
   // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
   // F6 — переключить «тонкие линии» (как в АэроСеть/Венти-CAD: подача в одну тонкую линию).
@@ -1690,45 +1571,102 @@ export default function CadPage() {
         {/* ── Группа: Расчёт сети ── */}
         <RibbonGroup label="Расчёт сети">
           <div className="flex items-stretch gap-1">
-            <button onClick={handleSolve}
-              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[64px]"
-              title="Запустить расчёт сети (метод Кросса, F9)">
-              <Icon name="Play" size={22} className="text-green-600" />
+            {/* Кнопка запуска */}
+            <button onClick={handleSolve} disabled={vcSolving}
+              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-green-50 hover:border-green-400 border border-transparent rounded min-w-[64px] disabled:opacity-50"
+              title="Запустить расчёт воздухораспределения (F9)">
+              <Icon name={vcSolving ? "Loader" : "Play"} size={22} className={vcSolving ? "text-gray-400 animate-spin" : "text-green-600"} />
               <div className="text-[10px] leading-tight mt-0.5 text-center">
                 <div>Расчёт</div><div>сети</div>
               </div>
             </button>
+
+            {/* Переключатель метода */}
             <div className="flex flex-col justify-center gap-0.5 border-l border-gray-200 pl-1">
-              <div className="text-[9px] text-gray-400 leading-tight mb-0.5">Движок:</div>
-              {(["local", "server"] as const).map(m => (
+              <div className="text-[9px] text-gray-400 leading-tight mb-0.5">Метод:</div>
+              {(["cross", "mkr"] as const).map(m => (
                 <button key={m}
                   onClick={() => setCalcMode(m)}
-                  className="text-[10px] px-1.5 py-0.5 rounded leading-tight text-left"
+                  className="text-[10px] px-1.5 py-0.5 rounded leading-tight text-left font-medium"
                   style={{
-                    background: calcMode === m ? "#2563eb" : "transparent",
+                    background: calcMode === m ? "#1d4ed8" : "transparent",
                     color: calcMode === m ? "white" : "#374151",
-                    border: calcMode === m ? "1px solid #1d4ed8" : "1px solid #d1d5db",
+                    border: calcMode === m ? "1px solid #1e40af" : "1px solid #d1d5db",
                   }}>
-                  {m === "local" ? "Кросс (JS)" : "VentCore (Py)"}
+                  {m === "cross" ? "Кросс" : "МКР"}
                 </button>
               ))}
             </div>
+
+            {/* Кнопка параметров */}
+            <div className="relative flex flex-col justify-center border-l border-gray-200 pl-1">
+              <button onClick={() => setShowSolverParams(v => !v)}
+                className="flex flex-col items-center justify-center px-2 py-1 hover:bg-gray-100 border border-transparent hover:border-gray-300 rounded min-w-[44px]"
+                title="Параметры расчёта">
+                <Icon name="Settings" size={18} className="text-gray-500" />
+                <div className="text-[9px] mt-0.5 text-gray-500">Параметры</div>
+              </button>
+              {showSolverParams && (
+                <div className="absolute top-full left-0 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 min-w-[220px] mt-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold text-gray-700">Параметры расчёта</span>
+                    <button onClick={() => setShowSolverParams(false)} className="text-gray-400 hover:text-gray-600">
+                      <Icon name="X" size={14} />
+                    </button>
+                  </div>
+                  {/* Выбор метода в диалоге */}
+                  <div className="mb-2">
+                    <label className="text-[10px] text-gray-500 block mb-1">Метод расчёта</label>
+                    <select value={calcMode} onChange={e => setCalcMode(e.target.value as "cross" | "mkr")}
+                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1">
+                      <option value="cross">Метод Кросса (Андрияшева–Кросса)</option>
+                      <option value="mkr">МКР — Метод контурных расходов</option>
+                    </select>
+                  </div>
+                  <div className="mb-2">
+                    <label className="text-[10px] text-gray-500 block mb-1">Макс. погрешность (Па)</label>
+                    <input type="number" value={solverTolerance} step="0.00001"
+                      onChange={e => setSolverTolerance(Number(e.target.value))}
+                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                  </div>
+                  <div className="mb-2">
+                    <label className="text-[10px] text-gray-500 block mb-1">Макс. число итераций</label>
+                    <input type="number" value={solverMaxIter} step="1000"
+                      onChange={e => setSolverMaxIter(Number(e.target.value))}
+                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                  </div>
+                  {calcMode === "cross" && (
+                    <div className="mb-2">
+                      <label className="text-[10px] text-gray-500 block mb-1">Фактор сходимости α (Кросс)</label>
+                      <input type="number" value={solverAlpha} step="0.05" min="0.1" max="1.0"
+                        onChange={e => setSolverAlpha(Number(e.target.value))}
+                        className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                    </div>
+                  )}
+                  <button onClick={() => setShowSolverParams(false)}
+                    className="w-full mt-1 py-1 bg-blue-600 text-white text-[11px] rounded hover:bg-blue-700">
+                    Сохранить
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Сброс демо */}
             <button onClick={() => { setBranches(DEMO_BRANCHES); setNodes(DEMO_NODES); setSolveResult(null); }}
-              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[64px]"
+              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-gray-100 hover:border-gray-300 border border-transparent rounded min-w-[48px]"
               title="Сбросить демо-сеть">
-              <Icon name="RotateCcw" size={22} className="text-gray-700" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">
-                <div>Сбросить</div><div>демо</div>
-              </div>
+              <Icon name="RotateCcw" size={18} className="text-gray-500" />
+              <div className="text-[9px] leading-tight mt-0.5 text-center text-gray-500">Демо</div>
             </button>
+
+            {/* Результат */}
             {solveResult && (
-              <div className="flex flex-col justify-center px-2 text-[10px] border-l border-gray-300 ml-1">
-                <div className={solveResult.ok ? "text-green-700" : "text-red-700"}>
+              <div className="flex flex-col justify-center px-2 text-[10px] border-l border-gray-300 ml-1 min-w-[90px]">
+                <div className={`font-semibold ${solveResult.ok ? "text-green-700" : "text-red-600"}`}>
                   {solveResult.ok ? "✔ Сошлось" : "✘ Не сошлось"}
                 </div>
-                <div className="text-gray-600">Итераций: {solveResult.iterations}</div>
-                <div className="text-gray-600">Контуров: {solveResult.cyclesCount}</div>
-                <div className="text-gray-500">max ΔQ: {solveResult.maxDeltaQ.toExponential(2)}</div>
+                <div className="text-gray-500">Итераций: {solveResult.iterations}</div>
+                <div className="text-gray-500">|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
               </div>
             )}
           </div>

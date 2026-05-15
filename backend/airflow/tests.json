@@ -1,0 +1,58 @@
+{
+  "tests": [
+    {
+      "name": "Пустая сеть",
+      "method": "POST",
+      "path": "/",
+      "body": {"method": "cross", "nodes": [], "branches": [], "options": {}},
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Линейная цепь — метод Кросса",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "U1", "isAtm": true},
+          {"id": "N1"},
+          {"id": "U2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
+          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1, "hasFan": true, "fanMode": "constant", "fanPressure": 1000}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 1000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Кольцевая сеть — МКР",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "U1", "isAtm": true},
+          {"id": "N1"},
+          {"id": "N2"},
+          {"id": "U2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
+          {"id": "B2", "fromId": "N1", "toId": "N2", "R": 0.1},
+          {"id": "B3", "fromId": "N1", "toId": "N2", "R": 0.2},
+          {"id": "B4", "fromId": "N2", "toId": "U2", "R": 0.05, "hasFan": true, "fanMode": "constant", "fanPressure": 500}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 5000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
