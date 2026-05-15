@@ -1,10 +1,16 @@
 """
-Расчёт воздухораспределения — Метод Кросса (контурные поправки).
+Расчёт воздухораспределения — МКР (Метод контурных расходов).
 
-Классический итерационный метод для горных вентиляционных сетей.
-Алгоритм идентичен АэроСети и Вентиляции-CAD.
+Алгоритм идентичен src/lib/networkSolver.ts (7 шагов):
+  1. Подготовка данных: граф, атмосферные узлы → GND.
+  2. Инициализация Q^(0) от рабочей точки вентилятора.
+  3. Формирование независимых контуров (BFS-дерево + хорды).
+  4. Итерационный процесс МКР (формула Кросса).
+  5. Пересчёт Q ветвей дерева по 1-му закону Кирхгофа (bottom-up).
+  6. Определение тупиков (итеративное удаление листьев).
+  7. Специальная обработка ВМП в тупиках.
 
-POST: {nodes, branches, options:{tolerance, maxIter, alpha}}
+POST: {nodes, branches, options:{tolerance, maxIter}}
 """
 import json, math, collections
 
@@ -15,10 +21,13 @@ CORS = {
 }
 
 GND = "__GND__"
+EPS1 = 0.1   # Па — критерий ΔH
+EPS2 = 0.01  # м³/с — критерий ΔQ
+MIN_R = 1e-9
 
 
 def handler(event: dict, context) -> dict:
-    """Расчёт воздухораспределения горных выработок (метод Кросса)."""
+    """Расчёт воздухораспределения горных выработок (МКР)."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
     try:
@@ -43,369 +52,152 @@ def handler(event: dict, context) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ВЕНТИЛЯТОР
 # ══════════════════════════════════════════════════════════════════════
 
-def get_R(b):
-    r = float(b.get("R") or b.get("resistance") or 0.0)
-    return max(r, 1e-9)
-
-
 def fan_H(e, Q):
-    """Напор вентилятора H при расходе Q (м³/с → Па)."""
+    """Напор вентилятора H(|Q|) в Па. Нагнетает в направлении a→b."""
     if not e.get("hasFan"):
         return 0.0
     mode = e.get("fanMode", "constant")
     if mode == "curve":
-        if Q <= 0:
-            return 0.0
-        if Q > float(e.get("qMax", 1e9)):
+        Qa = abs(Q)
+        if Qa > float(e.get("qMax", 1e9)):
             return 0.0
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
-        return max(0.0, h0 + h1 * Q + h2 * Q * Q)
-    return float(e.get("fanPressure", 0))
+        return max(0.0, h0 + h1 * Qa + h2 * Qa * Qa)
+    return max(0.0, float(e.get("fanPressure", 0)))
 
 
 def fan_dH(e, Q):
-    """dH/dQ для curve-вентилятора."""
-    if not e.get("hasFan") or Q < 0:
+    """|dH/dQ| для уточнения знаменателя δQ."""
+    if not e.get("hasFan"):
         return 0.0
     if e.get("fanMode", "constant") == "curve":
-        return float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * Q
+        Qa = abs(Q)
+        return abs(float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * Qa)
     return 0.0
 
 
-def build_graph(nodes_in, branches_in):
-    """Строит список рёбер, заменяя атмосферные узлы на GND."""
-    atm = set()
-    for n in nodes_in:
-        if n.get("isAtm") or n.get("atmosphereLink"):
-            atm.add(n["id"])
-    if not atm:
-        for n in nodes_in:
-            nid = str(n.get("id", "")).lower()
-            if any(x in nid for x in ("атм", "atm", "gnd", "surface")):
-                atm.add(n["id"])
+def estimate_q0(edges, R_total):
+    """Оценка рабочей точки бисекцией: H_вент(Q) = R_total·Q²."""
+    fan = next((e for e in edges if e["hasFan"]), None)
+    if not fan:
+        return 5.0
 
-    def to_gnd(nid):
-        return GND if nid in atm else nid
+    if fan.get("fanMode", "constant") == "constant":
+        H0 = fan_H(fan, 0)
+        if H0 > 0 and R_total > 0:
+            return math.sqrt(H0 / R_total)
+        return 5.0
 
-    edges = []
-    for b in branches_in:
-        edges.append({
-            "id":          b["id"],
-            "a":           to_gnd(b["fromId"]),
-            "b":           to_gnd(b["toId"]),
-            "R":           get_R(b),
-            "hasFan":      bool(b.get("hasFan")),
-            "fanMode":     b.get("fanMode", "constant"),
-            "fanPressure": float(b.get("fanPressure", 0)),
-            "h0": float(b.get("h0", 0)),
-            "h1": float(b.get("h1", 0)),
-            "h2": float(b.get("h2", 0)),
-            "qMin": float(b.get("qMin", 1.0)),
-            "qMax": float(b.get("qMax", 1e9)),
-            "area": float(b.get("area", 0)),
-        })
-    return edges, atm
+    # curve
+    q_hi = float(fan.get("qMax", 90.0))
+    if R_total <= 0:
+        return (float(fan.get("qMin", 1.0)) + q_hi) / 2.0
 
-
-# ══════════════════════════════════════════════════════════════════════
-# НАЧАЛЬНОЕ РАСПРЕДЕЛЕНИЕ РАСХОДОВ (первый закон Кирхгофа)
-# ══════════════════════════════════════════════════════════════════════
-
-def init_flows(edges):
-    """
-    Начальное приближение методом обхода дерева (BFS от GND).
-    Даёт Q, удовлетворяющий 1-му закону Кирхгофа во всех узлах.
-    """
-    # Строим граф смежности
-    adj = collections.defaultdict(list)
-    for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"], +1))
-        adj[e["b"]].append((i, e["a"], -1))
-
-    # Начальный Q = 1.0 для всех ветвей (направление a→b)
-    Q = [1.0] * len(edges)
-
-    # BFS-обход: пускаем Q от вентилятора
-    fans = [i for i, e in enumerate(edges) if e["hasFan"]]
-    if fans:
-        fi = fans[0]
-        fe = edges[fi]
-        Q[fi] = 10.0  # начальный расход через вентилятор
-        start = fe["b"] if fe["b"] != GND else fe["a"]
-    else:
-        start = GND
-
-    # Балансируем 1-й закон через BFS
-    visited_nodes = {GND}
-    tree_edges = set()
-    queue = collections.deque([GND])
-
-    while queue:
-        node = queue.popleft()
-        for ei, nb, sign in adj[node]:
-            if nb not in visited_nodes:
-                visited_nodes.add(nb)
-                tree_edges.add(ei)
-                queue.append(nb)
-
-    return Q
-
-
-# ══════════════════════════════════════════════════════════════════════
-# ПОИСК НЕЗАВИСИМЫХ КОНТУРОВ (хорды дерева)
-# ══════════════════════════════════════════════════════════════════════
-
-def find_spanning_tree_and_loops(edges):
-    """
-    Строит остовное дерево и находит независимые контуры (через хорды).
-    Возвращает список контуров: каждый контур = [(edge_idx, sign), ...]
-    sign = +1 если ветвь обходится в направлении a→b, -1 иначе.
-    """
-    # Все узлы
-    nodes = set()
-    for e in edges:
-        nodes.add(e["a"])
-        nodes.add(e["b"])
-
-    # Union-Find для построения дерева
-    parent = {n: n for n in nodes}
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(x, y):
-        px, py = find(x), find(y)
-        if px == py:
-            return False
-        parent[px] = py
-        return True
-
-    tree_edges = []
-    chord_edges = []
-
-    for i, e in enumerate(edges):
-        if union(e["a"], e["b"]):
-            tree_edges.append(i)
+    lo, hi = 0.0, q_hi
+    for _ in range(80):
+        q = (lo + hi) / 2.0
+        Hf = fan_H(fan, q)
+        Hn = R_total * q * q
+        if abs(Hf - Hn) < 0.05:
+            return max(0.1, q)
+        if Hf > Hn:
+            lo = q
         else:
-            chord_edges.append(i)
-
-    if not chord_edges:
-        return []
-
-    # Для каждой хорды находим путь в дереве между её узлами
-    adj_tree = collections.defaultdict(list)
-    for i in tree_edges:
-        e = edges[i]
-        adj_tree[e["a"]].append((i, e["b"]))
-        adj_tree[e["b"]].append((i, e["a"]))
-
-    def find_path(src, dst):
-        """BFS путь src→dst в дереве. Возвращает [(edge_idx, sign), ...]"""
-        if src == dst:
-            return []
-        queue = collections.deque([(src, [])])
-        seen = {src}
-        while queue:
-            node, path = queue.popleft()
-            for ei, nb in adj_tree[node]:
-                if nb in seen:
-                    continue
-                seen.add(nb)
-                e = edges[ei]
-                sign = +1 if e["a"] == node else -1
-                new_path = path + [(ei, sign)]
-                if nb == dst:
-                    return new_path
-                queue.append((nb, new_path))
-        return None
-
-    loops = []
-    for ci in chord_edges:
-        ce = edges[ci]
-        path = find_path(ce["b"], ce["a"])
-        if path is None:
-            continue
-        loop = [(ci, +1)] + path
-        loops.append(loop)
-
-    return loops
+            hi = q
+    return max(0.1, (lo + hi) / 2.0)
 
 
 # ══════════════════════════════════════════════════════════════════════
-# МЕТОД КРОССА
+# ПУТЬ МЕЖДУ УЗЛАМИ ПО ДЕРЕВУ (через LCA)
+# Идентично treePath() в networkSolver.ts
 # ══════════════════════════════════════════════════════════════════════
 
-def solve(nodes_in, branches_in, options):
-    tol      = float(options.get("tolerance", 0.01))
-    max_iter = int(options.get("maxIter", 2000))
-    alpha    = float(options.get("alpha", 1.0))  # релаксация
+def tree_path(from_node, to_node, edges, parent):
+    """
+    Возвращает [(edge_idx, dir), ...] — путь from_node → to_node по дереву.
+    dir = +1 если обход идёт в направлении a→b ребра, -1 иначе.
+    parent: dict node → {node: str, edge_idx: int} | None
+    """
+    def ancestors(start):
+        lst = []
+        cur = start
+        while cur is not None:
+            lst.append(cur)
+            p = parent.get(cur)
+            cur = p["node"] if p else None
+        return lst
 
-    log  = []
-    diag = []
+    ancs_from = ancestors(from_node)
+    ancs_to   = ancestors(to_node)
+    set_from  = {n: i for i, n in enumerate(ancs_from)}
 
-    edges, atm = build_graph(nodes_in, branches_in)
-
-    if not atm:
-        diag.append({"level": "error", "category": "topology",
-                     "message": "Нет атмосферных узлов"})
-
-    fans = [e for e in edges if e["hasFan"]]
-    if not fans:
-        diag.append({"level": "warning", "category": "topology",
-                     "message": "Нет вентилятора — расход нулевой"})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag)
-
-    log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)}")
-
-    # Независимые контуры
-    loops = find_spanning_tree_and_loops(edges)
-    log.append(f"Контуров={len(loops)}")
-
-    # Начальный расход
-    Q = [0.0] * len(edges)
-
-    def bisect_q0():
-        """
-        Находит начальный Q методом бисекции: H_fan(Q) = R_total · Q².
-        Работает строго в диапазоне [qMin, qMax] вентилятора.
-        Для constant-вентилятора: Q = sqrt(H/R).
-        """
-        R_total = sum(e["R"] for e in edges)
-        if R_total <= 0:
-            return 1.0
-
-        # Для curve-вентилятора — бисекция на нисходящей ветви характеристики
-        for fan_e in fans:
-            if fan_e.get("fanMode", "constant") == "curve":
-                q_lo = float(fan_e.get("qMin", 1.0))
-                q_hi = float(fan_e.get("qMax", 90.0))
-                # Проверяем что H(q_lo) > R·q_lo² и H(q_hi) < R·q_hi²
-                # (рабочая точка лежит между ними)
-                def f(q):
-                    return fan_H(fan_e, q) - R_total * q * q
-                # Если в q_hi функция уже отрицательная — рабочая точка внутри
-                if f(q_lo) <= 0:
-                    return q_lo  # сопротивление слишком велико
-                if f(q_hi) >= 0:
-                    return q_hi  # сопротивление слишком мало
-                # Бисекция
-                for _ in range(60):
-                    q_mid = 0.5 * (q_lo + q_hi)
-                    if f(q_mid) > 0:
-                        q_lo = q_mid
-                    else:
-                        q_hi = q_mid
-                    if q_hi - q_lo < 0.01:
-                        break
-                return 0.5 * (q_lo + q_hi)
-
-        # constant-вентилятор
-        H_fan = sum(fan_H(e, 1.0) for e in edges)
-        return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
-
-    # Для линейной сети (нет контуров) — рабочая точка = результат бисекции
-    if not loops:
-        q0 = bisect_q0()
-        for i, e in enumerate(edges):
-            Q[i] = q0
-        return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
-                           1, True, 0.0, log, diag)
-
-    # Начальное распределение для сети с контурами
-    q0 = bisect_q0()
-    for i, e in enumerate(edges):
-        Q[i] = q0
-
-    # Основной цикл Кросса
-    max_dq = float("inf")
-    it     = 0
-
-    for it in range(1, max_iter + 1):
-        max_dq = 0.0
-
-        for loop in loops:
-            # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan) по контуру
-            sum_h   = 0.0  # Σ R·Q·|Q| - H_fan
-            sum_2rq = 0.0  # Σ 2·R·|Q| + |dH/dQ|  (знаменатель)
-
-            for ei, sign in loop:
-                e  = edges[ei]
-                qi = Q[ei] * sign  # расход в направлении обхода
-                R  = e["R"]
-                H  = fan_H(e, abs(qi)) * sign  # напор в направлении обхода
-
-                sum_h   += R * qi * abs(qi) - H
-                sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(qi)))
-
-            if sum_2rq < 1e-12:
-                continue
-
-            dq = alpha * sum_h / sum_2rq
-            max_dq = max(max_dq, abs(dq))
-
-            # Обновляем расходы
-            for ei, sign in loop:
-                Q[ei] -= dq * sign
-
-        if max_dq < tol:
-            it += 1
+    # LCA
+    lca = ancs_to[0]
+    idx_to = 0
+    for i, n in enumerate(ancs_to):
+        if n in set_from:
+            lca = n
+            idx_to = i
             break
+    idx_from = set_from.get(lca, 0)
 
-    converged = max_dq < tol
-    if not converged:
-        diag.append({"level": "warning", "category": "convergence",
-                     "message": f"Не сошлось за {max_iter} итераций. ΔQ={max_dq:.4f} м³/с"})
+    result = []
 
-    log.append(f"Итераций={it} ΔQ={max_dq:.4f} м³/с")
+    # from → LCA (движемся вверх: node → parent)
+    for i in range(idx_from):
+        node = ancs_from[i]
+        p    = parent[node]
+        e    = edges[p["edge_idx"]]
+        # Движение: node → p["node"]
+        # Ребро a→b: если e["a"] == node → движение a→b → dir=+1
+        #            если e["b"] == node → движение b→a → dir=-1
+        result.append((p["edge_idx"], 1 if e["a"] == node else -1))
 
-    return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
-                       it, converged, max_dq, log, diag)
+    # LCA → to (движемся вниз: p["node"] → child)
+    for i in range(idx_to - 1, -1, -1):
+        child = ancs_to[i]
+        p     = parent[child]
+        e     = edges[p["edge_idx"]]
+        # Движение: p["node"] → child
+        # Если e["a"] == p["node"] → движение a→b → dir=+1
+        result.append((p["edge_idx"], 1 if e["a"] == p["node"] else -1))
 
+    return result
+
+
+# ══════════════════════════════════════════════════════════════════════
+# ТУПИКОВЫЕ ВЕТВИ (итеративное удаление листьев)
+# ══════════════════════════════════════════════════════════════════════
 
 def find_dead_ends(edges):
     """
-    Возвращает множество id тупиковых ветвей (Q=0).
-
-    Алгоритм итеративного "обрыва листьев":
-    1. Помечаем узлы-тупики (degree=1, без вентилятора).
-    2. Все ветви, хотя бы один конец которых — мёртвый узел, помечаем мёртвыми.
-    3. Удаляем мёртвые ветви из графа → пересчитываем степени → повторяем.
-    4. Останавливаемся когда новых мёртвых ветвей нет.
-
-    Ветвь с вентилятором (ВМП) — никогда не мёртвая.
+    Итеративно удаляет листья (degree=1, без вентилятора).
+    Возвращает set id мёртвых ветвей.
     """
-    # Строим изменяемый граф: узел → множество id ветвей
-    adj = collections.defaultdict(set)
+    adj       = collections.defaultdict(set)
+    edge_by_id = {}
     for e in edges:
         adj[e["a"]].add(e["id"])
         adj[e["b"]].add(e["id"])
+        edge_by_id[e["id"]] = e
 
-    edge_by_id = {e["id"]: e for e in edges}
-    # Живые ветви (начально все)
-    alive = {e["id"] for e in edges}
-    dead  = set()
-
+    alive   = {e["id"] for e in edges}
+    dead    = set()
     changed = True
+
     while changed:
         changed = False
-        # Пересчитываем степень только по живым ветвям
-        degree = collections.defaultdict(int)
+        degree  = collections.defaultdict(int)
         for eid in alive:
             e = edge_by_id[eid]
-            if e["a"] != GND:
-                degree[e["a"]] += 1
-            if e["b"] != GND:
-                degree[e["b"]] += 1
+            if e["a"] != GND: degree[e["a"]] += 1
+            if e["b"] != GND: degree[e["b"]] += 1
 
-        # Узлы с вентилятором среди живых ветвей
         fan_nodes = set()
         for eid in alive:
             e = edge_by_id[eid]
@@ -413,7 +205,6 @@ def find_dead_ends(edges):
                 fan_nodes.add(e["a"])
                 fan_nodes.add(e["b"])
 
-        # Ищем живые ветви, у которых один конец — листовой мёртвый узел
         to_kill = set()
         for eid in alive:
             e = edge_by_id[eid]
@@ -425,32 +216,245 @@ def find_dead_ends(edges):
                 to_kill.add(eid)
 
         if to_kill:
-            alive -= to_kill
-            dead  |= to_kill
+            alive  -= to_kill
+            dead   |= to_kill
             changed = True
 
     return dead
 
 
-def make_result(edges, Q, it, converged, max_res, log, diag):
+# ══════════════════════════════════════════════════════════════════════
+# ГЛАВНЫЙ РЕШАТЕЛЬ
+# ══════════════════════════════════════════════════════════════════════
+
+def solve(nodes_in, branches_in, options):
+    eps2     = float(options.get("tolerance", EPS2))
+    eps1     = float(options.get("tolPressure", EPS1))
+    max_iter = int(options.get("maxIter", 2000))
+
+    log  = []
+    diag = []
+
+    # ── ШАГ 1. Подготовка данных ──────────────────────────────────────
+    atm = set()
+    for n in nodes_in:
+        if n.get("isAtm") or n.get("atmosphereLink"):
+            atm.add(n["id"])
+    if not atm:
+        for n in nodes_in:
+            nid = str(n.get("id", "")).lower()
+            if any(x in nid for x in ("атм", "atm", "gnd", "surface")):
+                atm.add(n["id"])
+
+    if not atm:
+        diag.append({"level": "error", "category": "topology",
+                     "message": "Нет атмосферных узлов"})
+
+    def to_gnd(nid):
+        return GND if nid in atm else nid
+
+    edges = []
+    for b in branches_in:
+        edges.append({
+            "id":          b["id"],
+            "a":           to_gnd(b["fromId"]),
+            "b":           to_gnd(b["toId"]),
+            "R":           max(MIN_R, float(b.get("R") or b.get("resistance") or 0)),
+            "Q":           0.0,
+            "hasFan":      bool(b.get("hasFan")),
+            "fanMode":     b.get("fanMode", "constant"),
+            "fanPressure": float(b.get("fanPressure", 0)),
+            "h0":          float(b.get("h0", 0)),
+            "h1":          float(b.get("h1", 0)),
+            "h2":          float(b.get("h2", 0)),
+            "qMin":        float(b.get("qMin", 1.0)),
+            "qMax":        float(b.get("qMax", 1e9)),
+            "area":        float(b.get("area", 0)),
+        })
+
+    fans = [e for e in edges if e["hasFan"]]
+    if not fans:
+        diag.append({"level": "warning", "category": "topology",
+                     "message": "Нет вентилятора — расход нулевой"})
+        return make_result(edges, 0, True, 0.0, log, diag)
+
+    # ── ШАГ 3 (BFS-дерево) + ШАГ 4 (контуры) ────────────────────────
+
+    # Все узлы
+    node_set = set()
+    for e in edges:
+        node_set.add(e["a"])
+        node_set.add(e["b"])
+    node_list = list(node_set)
+
+    # Список смежности
+    adj = collections.defaultdict(list)
+    for i, e in enumerate(edges):
+        adj[e["a"]].append({"edge_idx": i, "other": e["b"]})
+        adj[e["b"]].append({"edge_idx": i, "other": e["a"]})
+
+    root = GND if GND in node_set else node_list[0]
+
+    # BFS от root → строим дерево
+    parent    = {root: None}   # node → {"node": str, "edge_idx": int} | None
+    visited   = {root}
+    tree_set  = set()           # set of edge indices в дереве
+    bfs_order = []
+    queue     = collections.deque([root])
+
+    while queue:
+        u = queue.popleft()
+        bfs_order.append(u)
+        for nb in adj[u]:
+            if nb["other"] not in visited:
+                visited.add(nb["other"])
+                parent[nb["other"]] = {"node": u, "edge_idx": nb["edge_idx"]}
+                tree_set.add(nb["edge_idx"])
+                queue.append(nb["other"])
+
+    # Хорды = ребра не в дереве
+    chords = [i for i in range(len(edges)) if i not in tree_set]
+
+    log.append(f"Узлов={len(node_list)} ветвей={len(edges)} контуров={len(chords)}")
+
+    # Контуры: хорда (dir=+1) + путь в дереве от e.b → e.a
+    contours = []
+    for ci in chords:
+        e    = edges[ci]
+        path = tree_path(e["b"], e["a"], edges, parent)
+        contours.append([(ci, 1)] + path)
+
+    # ── ШАГ 2. Инициализация Q^(0) ───────────────────────────────────
+    # R только дерева для оценки рабочей точки
+    R_tree = sum(edges[i]["R"] for i in tree_set)
+    Q0     = max(0.1, estimate_q0(edges, R_tree))
+    log.append(f"Q₀={Q0:.2f} м³/с")
+
+    # BFS-позиция для определения направления
+    bfs_pos = {n: i for i, n in enumerate(bfs_order)}
+
+    for i, e in enumerate(edges):
+        if i not in tree_set:
+            e["Q"] = Q0          # хорда — всегда положительно a→b
+        else:
+            # Ветвь дерева: Q>0 если b дальше от корня (posB > posA)
+            posA = bfs_pos.get(e["a"], 10**9)
+            posB = bfs_pos.get(e["b"], 10**9)
+            e["Q"] = Q0 if posB > posA else -Q0
+
+    # ── ШАГ 5. Итерационный процесс МКР ──────────────────────────────
+    max_dQ = math.inf
+    max_dH = math.inf
+    it     = 0
+
+    for it in range(1, max_iter + 1):
+        max_dQ = 0.0
+        max_dH = 0.0
+
+        for contour in contours:
+            num = 0.0
+            den = 0.0
+
+            for ei, dir_ in contour:
+                e  = edges[ei]
+                Qd = e["Q"] * dir_               # расход в направлении обхода
+                H  = fan_H(e, e["Q"])            # напор вентилятора (≥0, в a→b)
+
+                num += e["R"] * Qd * abs(Qd)
+                # Вклад вентилятора:
+                # dir=+1: обход совпадает с a→b → вентилятор помогает → вычитаем H
+                # dir=-1: против a→b → вентилятор мешает → прибавляем H
+                # Итого: num -= H * dir_
+                num -= H * dir_
+
+                den += 2.0 * e["R"] * abs(Qd) + fan_dH(e, e["Q"])
+
+            if den < 1e-12:
+                continue
+
+            dQ = -num / den
+
+            if abs(num) > max_dH: max_dH = abs(num)
+            if abs(dQ)  > max_dQ: max_dQ = abs(dQ)
+
+            for ei, dir_ in contour:
+                edges[ei]["Q"] += dQ * dir_
+
+        # Защита от NaN
+        for e in edges:
+            if not math.isfinite(e["Q"]):
+                e["Q"] = 0.0
+
+        # Критерий остановки (идентично TS: ИЛИ по ΔH ИЛИ по ΔQ)
+        if max_dH < eps1 or max_dQ < eps2:
+            it += 1
+            break
+
+    converged = max_dH < eps1 or max_dQ < eps2
+    if not converged:
+        diag.append({"level": "warning", "category": "convergence",
+                     "message": f"Не сошлось за {max_iter} итераций. ΔQ={max_dQ:.4f} м³/с, ΔH={max_dH:.2f} Па"})
+
+    log.append(f"Итераций={it} max|ΔH|={max_dH:.3f} Па max|δQ|={max_dQ:.4f} м³/с")
+
+    # ── ПЕРЕСЧЁТ Q ВЕТВЕЙ ДЕРЕВА по 1-му закону Кирхгофа (bottom-up) ─
+    # Идентично блоку lines 498-550 в networkSolver.ts
+
+    # Балансы узлов только от хорд
+    balance = collections.defaultdict(float)
+    for i, e in enumerate(edges):
+        if i in tree_set:
+            continue   # ветви дерева будут пересчитаны
+        balance[e["a"]] -= e["Q"]   # отток из a
+        balance[e["b"]] += e["Q"]   # приток в b
+
+    # Обход снизу вверх (от листьев к корню)
+    for idx in range(len(bfs_order) - 1, 0, -1):
+        v = bfs_order[idx]
+        p = parent.get(v)
+        if not p:
+            continue
+
+        e     = edges[p["edge_idx"]]
+        pNode = p["node"]
+        bal   = balance[v]
+
+        # Нужно balance[v] = 0: Q_ребра_к_v = −bal
+        # Ребро e ориентировано a→b:
+        #   e["b"] == v: Q > 0 = приток в v. Нужен приток = −bal → e.Q = −bal
+        #   e["a"] == v: Q > 0 = отток из v. Нужен отток = bal → e.Q = bal
+        if e["b"] == v:
+            e["Q"] = -bal
+            balance[pNode] -= e["Q"]   # отток из pNode (e["a"] = pNode)
+        else:
+            e["Q"] = bal
+            balance[pNode] += e["Q"]   # приток в pNode (e["b"] = pNode)
+
+    return make_result(edges, it, converged, max_dQ, log, diag)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# ФОРМИРОВАНИЕ РЕЗУЛЬТАТА
+# ══════════════════════════════════════════════════════════════════════
+
+def make_result(edges, it, converged, max_res, log, diag):
     dead_ends = find_dead_ends(edges)
     out = []
+
     for e in edges:
         is_dead = e["id"] in dead_ends
-        q = Q.get(e["id"], 0.0)
+        q = 0.0 if is_dead else e["Q"]
 
-        if is_dead:
-            q = 0.0
-        elif e["hasFan"] and abs(q) < 1e-6:
-            # Тупиковая ветвь с ВМП: расход не вычислился методом Кросса
-            # (вентилятор в разомкнутой ветви). Считаем рабочую точку:
-            # H_fan(Q) = R·Q² → бисекция
+        # ВМП в тупике: вентилятор в разомкнутой ветви → бисекция рабочей точки
+        if not is_dead and e["hasFan"] and abs(q) < 1e-6:
             R = e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
                 q_hi = float(e.get("qMax", 90.0))
-                def f_local(qv):
-                    return fan_H(e, qv) - R * qv * qv
+
+                def f_local(qv, _e=e):
+                    return fan_H(_e, qv) - _e["R"] * qv * qv
+
                 if f_local(q_lo) > 0 and f_local(q_hi) < 0:
                     for _ in range(60):
                         q_mid = 0.5 * (q_lo + q_hi)
@@ -470,18 +474,33 @@ def make_result(edges, Q, it, converged, max_res, log, diag):
         Hv   = fan_H(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
-        out.append({"id": e["id"], "Q": round(q, 4), "H": round(H, 3),
-                    "Hfan": round(Hv, 3), "velocity": round(vel, 3),
-                    "isDead": is_dead})
-    return {"branches": out, "nodes": [], "iterations": it,
-            "converged": converged, "maxResidual": round(max_res, 6),
-            "log": log, "diagnostics": diag}
+
+        out.append({
+            "id":       e["id"],
+            "Q":        round(q, 4),
+            "H":        round(H, 3),
+            "Hfan":     round(Hv, 3),
+            "velocity": round(vel, 3),
+            "isDead":   is_dead,
+        })
+
+    return {
+        "branches":    out,
+        "nodes":       [],
+        "iterations":  it,
+        "converged":   converged,
+        "maxResidual": round(max_res, 6),
+        "log":         log,
+        "diagnostics": diag,
+    }
 
 
 def empty_result(msg):
-    return {"branches": [], "nodes": [], "iterations": 0, "converged": True,
-            "maxResidual": 0.0, "log": [msg],
-            "diagnostics": [{"level": "warning", "category": "topology", "message": msg}]}
+    return {
+        "branches": [], "nodes": [], "iterations": 0, "converged": True,
+        "maxResidual": 0.0, "log": [msg],
+        "diagnostics": [{"level": "warning", "category": "topology", "message": msg}],
+    }
 
 
 def ok(data):
