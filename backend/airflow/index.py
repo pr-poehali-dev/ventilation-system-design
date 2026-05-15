@@ -202,18 +202,9 @@ def solve(nodes_in, branches_in, options):
     H0 = max((fan_H_val(e, 0.0) or float(e.get("fanPressure", 0)) for e in fans), default=1000.0)
     H0 = max(H0, 100.0)
 
-    # Вентилятор нагнетает (a=GND→b) или вытягивает (a→b=GND)?
-    # Нагнетательный: создаёт давление > 0 в сети
-    # Вытяжной:       создаёт давление < 0 (депрессию) в сети
-    fe = fans[0]
-    exhausting = (fe["b"] == GND)   # вытяжной: воздух выходит через b=GND
-    sign = -1.0 if exhausting else 1.0
-    P = np.full(N, sign * H0 * 0.5)
-
-    # Узел рядом с вентилятором
-    near_fan = fe["a"] if exhausting else fe["b"]
-    if near_fan != GND and near_fan in idx:
-        P[idx[near_fan]] = sign * H0 * 0.85
+    # Стартуем с P=0 — нейтральное начальное приближение.
+    # Ньютон сам найдёт нужное давление.
+    P = np.zeros(N)
 
     def get_P(node):
         return float(P[idx[node]]) if node in idx else 0.0
@@ -264,12 +255,15 @@ def solve(nodes_in, branches_in, options):
             dP, _, _, _ = np.linalg.lstsq(J, -F, rcond=None)
 
         dP = np.where(np.isfinite(dP), dP, 0.0)
+
+        # Жёсткое ограничение шага для устойчивости
         step = float(np.max(np.abs(dP)))
-        if step > H0 * 2:
-            dP *= H0 * 2 / step
+        max_step = H0  # не более H0 за итерацию
+        if step > max_step:
+            dP *= max_step / step
 
         P += dP
-        P  = np.where(np.isfinite(P), P, H0 * 0.5)
+        P  = np.where(np.isfinite(P), P, 0.0)
 
     converged = max_F < tol
     if not converged:
