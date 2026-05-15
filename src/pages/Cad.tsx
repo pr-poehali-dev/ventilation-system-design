@@ -839,12 +839,20 @@ export default function CadPage() {
               id: b.id,
               fromId: b.fromId,
               toId: b.toId,
-              resistance: b.resistance,
-              area: b.area,
-              perimeter: b.perimeter,
-              hasFan: b.hasFan,
-              fanMode: b.fanMode,
-              fanPressure: b.fanPressure,
+              // Сопротивление и геометрия (для пересчёта R на бекенде если resistance=0)
+              resistance:      b.resistance,
+              area:            b.area,
+              perimeter:       b.perimeter,
+              length:          b.length,
+              alphaCoef:       b.alphaCoef,
+              resistanceMode:  b.resistanceMode,
+              manualR:         b.manualR,
+              roughness:       b.roughness,
+              localXi:         b.localXi,
+              // Вентилятор
+              hasFan:          b.hasFan,
+              fanMode:         b.fanMode,
+              fanPressure:     b.fanPressure,
               // Кривая вентилятора: передаём скорректированные коэффициенты H(Q) с учётом RPM и угла
               ...(curve ? {
                 h0:   curve.h0 * af * k * k,

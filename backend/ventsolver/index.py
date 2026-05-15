@@ -11,7 +11,7 @@
 Алгоритм МКР (7 шагов):
   Шаг 1. Граф: узлы + рёбра, атмосфера → GND
   Шаг 2. Q^(0) = Q0 (рабочая точка вентилятора), ветви дерева — от корня к листьям
-  Шаг 3. R уже передан с фронтенда (рассчитан через α·P·L/S³)
+  Шаг 3. R = α·P·L/S³ (пересчитывается если resistance=0 или не передано)
   Шаг 4. BFS-дерево + хорды → независимые контуры
   Шаг 5. Итерации: ΔH_k = Σ R·Qd·|Qd| − Σ H_f·dir; δQ = −ΔH/(2ΣR|Qd|)
   Шаг 6. Стоп: max|ΔH| < 0.1 Па  ИЛИ  max|δQ| < 0.01 м³/с
@@ -22,11 +22,14 @@ import json
 import math
 from collections import deque
 
-GND    = "@gnd"
-EPS1   = 0.1       # Па
-EPS2   = 0.01      # м³/с
-MAX_IT = 2000
-MIN_R  = 1e-9
+GND     = "@gnd"
+EPS1    = 0.1       # Па
+EPS2    = 0.01      # м³/с
+MAX_IT  = 2000
+MIN_R   = 1e-6      # Минимальное R (не 1e-9 — слишком мало!)
+# Типовое сопротивление для ветви без параметров (штрек 100м, 10м²)
+# R = α·P·L/S³ = 9e-4 * 12 * 100 / 1000 = 0.001 Н·с²/м⁸
+DEFAULT_R = 0.001
 
 
 def handler(event: dict, context) -> dict:
@@ -72,69 +75,155 @@ def handler(event: dict, context) -> dict:
 
 
 # =============================================================================
+# ШАГ 3. РАСЧЁТ СОПРОТИВЛЕНИЯ R = α·P·L / S³
+# =============================================================================
+
+# Справочные значения α (×10⁻⁴ Н·с²/м⁴) по ID поверхности
+SURFACE_ALPHA = {
+    "smooth":          9,
+    "concrete":       12,
+    "concrete_rough": 30,
+    "anchor":         35,
+    "wood":           60,
+    "metal_arch":     50,
+    "uncoupled":      25,
+    "uncoupled_r":    80,
+    "shaft_smooth":   15,
+    "shaft_skip":     45,
+    "lava":          150,
+}
+
+
+def calc_resistance(b: dict) -> float:
+    """
+    Вычисляет R (Н·с²/м⁸) для ветви.
+    Приоритет:
+      1. Если resistance передан и > MIN_R — используем его.
+      2. Если resistanceMode == "manual" — используем manualR.
+      3. Иначе пересчитываем R = α·P·L / S³ (режим alpha/surface/roughness).
+    """
+    R_given = float(b.get("resistance") or 0)
+    if R_given > MIN_R:
+        return R_given
+
+    mode = str(b.get("resistanceMode") or "alpha")
+
+    if mode == "manual":
+        mr = float(b.get("manualR") or 0)
+        return max(MIN_R, mr) if mr > 0 else DEFAULT_R
+
+    S = float(b.get("area") or 0)
+    P = float(b.get("perimeter") or 0)
+    L = float(b.get("length") or 0)
+
+    if S <= 0.05 or L <= 0 or P <= 0:
+        # Нет геометрии — используем типовое сопротивление
+        return DEFAULT_R
+
+    if mode == "roughness":
+        delta_mm = float(b.get("roughness") or 1)
+        Dh = (4 * S) / P
+        if Dh <= 0:
+            return DEFAULT_R
+        rel = max(1e-9, (delta_mm / 1000.0) / Dh)
+        lam = 0.11 * (rel ** 0.25)
+        R_fric = (lam * L * P) / (8.0 * S ** 3)
+    else:
+        # alpha или surface
+        surf_id = str(b.get("surfaceId") or "")
+        alpha = float(b.get("alphaCoef") or SURFACE_ALPHA.get(surf_id, 9))
+        a = alpha * 1e-4
+        R_fric = (a * P * L) / (S ** 3)
+
+    # Местные сопротивления ξ → R_loc = ξ·ρ/(2·S²)
+    xi   = float(b.get("localXi") or 0)
+    R_loc = (xi * 1.2) / (2 * S * S) if xi > 0 and S > 0 else 0.0
+
+    R = R_fric + R_loc
+    return max(MIN_R, R) if R > 0 else DEFAULT_R
+
+
+# =============================================================================
 # НАПОР ВЕНТИЛЯТОРА
 # =============================================================================
 
 def fan_h(edge: dict, Q: float) -> float:
     """
     H(Q) ≥ 0 Па. Вентилятор нагнетает в направлении a→b.
-    constant: H = fanPressure (не зависит от Q).
-    curve:    H = h0 + h1·|Q| + h2·Q²  (если коэффициенты переданы).
+    constant: H = fanPressure.
+    curve:    H = h0 + h1·|Q| + h2·Q² (коэффициенты уже с учётом RPM и угла лопаток).
     """
     if not edge.get("hasFan"):
         return 0.0
-    fp = float(edge.get("fanPressure") or 0)
-    mode = edge.get("fanMode", "constant")
+    fp   = float(edge.get("fanPressure") or 0)
+    mode = str(edge.get("fanMode") or "constant")
+
     if mode == "constant":
         return max(0.0, fp)
+
     # curve
     h0 = float(edge.get("h0") or 0)
     h1 = float(edge.get("h1") or 0)
     h2 = float(edge.get("h2") or 0)
     if h0 == 0 and h1 == 0 and h2 == 0:
-        return max(0.0, fp)  # кривая не передана — как constant
-    Qn = abs(Q)
+        return max(0.0, fp)  # кривая не передана
+
+    q_max = float(edge.get("qMax") or 1e9)
+    Qn    = abs(Q)
+    if Qn > q_max:
+        return 0.0   # вне диапазона — вентилятор не работает
+
     return max(0.0, h0 + h1 * Qn + h2 * Qn * Qn)
 
 
 def fan_dh(edge: dict, Q: float) -> float:
-    """|dH/dQ| — производная напора (только для curve-режима)."""
-    if not edge.get("hasFan") or edge.get("fanMode") != "curve":
+    """|dH/dQ| — производная напора (только для curve)."""
+    if not edge.get("hasFan") or str(edge.get("fanMode") or "") != "curve":
         return 0.0
     h1 = float(edge.get("h1") or 0)
     h2 = float(edge.get("h2") or 0)
     return abs(h1 + 2 * h2 * abs(Q))
 
 
-def estimate_q0(edges: list, R_total: float) -> float:
+def estimate_q0(edges: list, R_eff: float) -> float:
     """
-    Начальный Q0: рабочая точка вентилятора H(Q) = R·Q².
-    Если вентилятора нет — возвращает 5 м³/с.
+    Начальный Q0: пересечение H_fan(Q) = R_eff·Q².
+    R_eff — ЭФФЕКТИВНОЕ сопротивление сети (не сумма, а оценка главного пути).
     """
     fan = next((e for e in edges if e.get("hasFan")), None)
     if not fan:
         return 5.0
-    H0 = fan_h(fan, 0.0)
-    if fan.get("fanMode", "constant") == "constant":
-        if H0 > 0 and R_total > 0:
-            return max(0.1, math.sqrt(H0 / R_total))
-        return max(0.1, H0 / 1000) if H0 > 0 else 5.0
-    # curve — бисекция
+
+    mode  = str(fan.get("fanMode") or "constant")
+    H0    = fan_h(fan, 0.0)
+    q_min = float(fan.get("qMin") or 0)
     q_max = float(fan.get("qMax") or 100.0)
-    if R_total <= 0:
-        return q_max / 2.0
-    lo, hi = 0.0, q_max
+
+    if mode == "constant":
+        if H0 > 0 and R_eff > 0:
+            q = math.sqrt(H0 / R_eff)
+            return max(q_min or 0.1, min(q_max, q))
+        return max(0.1, q_max * 0.5)
+
+    # curve — бисекция H_fan(q) = R_eff·q²
+    if R_eff <= 0:
+        return (q_min + q_max) / 2.0
+
+    lo, hi = q_min or 0.0, q_max
     for _ in range(80):
         q  = (lo + hi) / 2.0
         Hf = fan_h(fan, q)
-        Hn = R_total * q * q
-        if abs(Hf - Hn) < 0.05:
-            return max(0.1, q)
+        Hn = R_eff * q * q
+        if abs(Hf - Hn) < 0.1:
+            break
         if Hf > Hn:
             lo = q
         else:
             hi = q
-    return max(0.1, (lo + hi) / 2.0)
+
+    q0 = (lo + hi) / 2.0
+    # Ограничиваем диапазоном вентилятора
+    return max(q_min or 0.1, min(q_max, q0))
 
 
 # =============================================================================
@@ -142,14 +231,6 @@ def estimate_q0(edges: list, R_total: float) -> float:
 # =============================================================================
 
 def build_bfs_tree(edges: list, adj: dict, root: str):
-    """
-    BFS от root. Возвращает:
-      parent    dict: v → {node, edgeIdx} или None для root
-      bfs_order list: узлы в BFS-порядке
-      tree_set  set:  индексы рёбер дерева
-      chords    list: индексы хорд (независимые контуры)
-      bfs_pos   dict: v → позиция в BFS-порядке
-    """
     parent    = {root: None}
     visited   = {root}
     tree_set  = set()
@@ -194,12 +275,10 @@ def tree_path(from_v: str, to_v: str, edges: list, parent: dict) -> list:
     at   = ancs(to_v)
     sf   = {n: i for i, n in enumerate(af)}
 
-    lca    = at[0]
-    ito    = 0
+    lca, ito = at[0], 0
     for i, n in enumerate(at):
         if n in sf:
-            lca = n
-            ito = i
+            lca, ito = n, i
             break
 
     ifrom = sf.get(lca, 0)
@@ -210,8 +289,6 @@ def tree_path(from_v: str, to_v: str, edges: list, parent: dict) -> list:
         v = af[i]
         p = parent[v]
         e = edges[p["ei"]]
-        # движение: v → p["node"]
-        # e.a == v → идём a→b → dir=+1; e.b == v → b→a → dir=-1
         res.append({"ei": p["ei"], "dir": 1 if e["a"] == v else -1})
 
     # LCA → to (вниз: p["node"] → child)
@@ -219,8 +296,6 @@ def tree_path(from_v: str, to_v: str, edges: list, parent: dict) -> list:
         child = at[i]
         p     = parent[child]
         e     = edges[p["ei"]]
-        # движение: p["node"] → child
-        # e.a == p["node"] → dir=+1; иначе -1
         res.append({"ei": p["ei"], "dir": 1 if e["a"] == p["node"] else -1})
 
     return res
@@ -231,13 +306,13 @@ def tree_path(from_v: str, to_v: str, edges: list, parent: dict) -> list:
 # =============================================================================
 
 def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
-    max_it = int(options.get("maxIter",     MAX_IT))
+    max_it = int(options.get("maxIter",      MAX_IT))
     eps1   = float(options.get("tolPressure", EPS1))
     eps2   = float(options.get("tolerance",   EPS2))
     log    = []
     diag   = []
 
-    # ── ШАГ 1. ГРАФ ────────────────────────────────────────────────────────
+    # ── ШАГ 1. ГРАФ ──────────────────────────────────────────────────────────
 
     atm_ids = {n["id"] for n in nodes_in if n.get("atmosphereLink")}
 
@@ -246,7 +321,8 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
 
     edges = []
     for b in branches_in:
-        R = max(MIN_R, float(b.get("resistance") or 0))
+        # ШАГ 3. Расчёт R
+        R = calc_resistance(b)
         edges.append({
             "id":          b["id"],
             "a":           gnd(b["fromId"]),
@@ -259,6 +335,7 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             "h0":          float(b.get("h0") or 0),
             "h1":          float(b.get("h1") or 0),
             "h2":          float(b.get("h2") or 0),
+            "qMin":        float(b.get("qMin") or 0),
             "qMax":        float(b.get("qMax") or 100),
             "_fromId":     b["fromId"],
             "_area":       float(b.get("area") or 0),
@@ -267,12 +344,11 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
     if not edges:
         return _empty(nodes_in, "Нет ветвей")
 
-    # Проверяем наличие атмосферных узлов и вентилятора
-    has_fan = any(e["hasFan"] for e in edges)
+    # Диагностика входных данных
     if not atm_ids:
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет атмосферных узлов. Отметьте ≥2 узла как «атмосфера»."})
-    if not has_fan:
+    if not any(e["hasFan"] for e in edges):
         diag.append({"level": "warning", "category": "topology",
                      "message": "Нет вентилятора — расход будет нулевым."})
 
@@ -290,43 +366,51 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
 
     root = GND if GND in node_set else node_list[0]
 
-    # ── ШАГ 4. КОНТУРЫ ─────────────────────────────────────────────────────
+    # ── ШАГ 4. КОНТУРЫ ───────────────────────────────────────────────────────
 
     parent, bfs_order, tree_set, chords, bfs_pos = build_bfs_tree(edges, adj, root)
     log.append(f"Узлов: {len(node_list)}, ветвей: {len(edges)}, контуров: {len(chords)}")
 
-    # Контур = хорда (dir=+1) + путь в дереве от e.b → e.a
     contours = []
     for ci in chords:
         e    = edges[ci]
         path = tree_path(e["b"], e["a"], edges, parent)
         contours.append([{"ei": ci, "dir": 1}] + path)
 
-    # ── ШАГ 2. ИНИЦИАЛИЗАЦИЯ Q^(0) ─────────────────────────────────────────
+    # ── ШАГ 2. ИНИЦИАЛИЗАЦИЯ Q^(0) ───────────────────────────────────────────
     #
-    # Q0 = рабочая точка вентилятора.
-    # Ветви дерева: Q = +Q0 если b дальше от корня, -Q0 иначе.
-    # Вентилятор: ВСЕГДА Q = +Q0 (нагнетает в направлении a→b).
-    # Хорды: Q = +Q0.
+    # R_eff = эффективное сопротивление: оцениваем как среднее R дерева,
+    # делённое на оценку числа параллельных путей (√N).
+    # Это даёт разумный Q0 для разветвлённых сетей.
 
-    R_tree = sum(edges[i]["R"] for i in range(len(edges)) if i in tree_set)
-    Q0     = max(0.1, estimate_q0(edges, R_tree))
-    log.append(f"Q₀ = {Q0:.2f} м³/с")
+    R_tree_list = [edges[i]["R"] for i in range(len(edges)) if i in tree_set]
+    N_tree = len(R_tree_list)
+
+    if N_tree > 0:
+        # Оценка: главный путь от вентилятора до атмосферы
+        # Берём среднее R дерева как грубую оценку
+        R_avg   = sum(R_tree_list) / N_tree
+        # Число "веток" ≈ sqrt(N) для оценки параллельности
+        n_paths = max(1, int(math.sqrt(N_tree)))
+        R_eff   = R_avg * n_paths   # ≈ R главного пути
+    else:
+        R_eff = DEFAULT_R
+
+    Q0 = estimate_q0(edges, R_eff)
+    log.append(f"Q₀ = {Q0:.2f} м³/с, R_eff = {R_eff:.4f}")
 
     for i, e in enumerate(edges):
         if i not in tree_set:
-            # хорда
             e["Q"] = Q0
         elif e["hasFan"]:
-            # вентилятор в дереве — ВСЕГДА положительное направление a→b
+            # Вентилятор ВСЕГДА Q = +Q0 (нагнетает a→b)
             e["Q"] = Q0
         else:
-            # ветвь дерева — от корня к листьям
             pa = bfs_pos.get(e["a"], 10**9)
             pb = bfs_pos.get(e["b"], 10**9)
             e["Q"] = Q0 if pb > pa else -Q0
 
-    # ── ШАГ 5. ИТЕРАЦИИ МКР ────────────────────────────────────────────────
+    # ── ШАГ 5. ИТЕРАЦИИ МКР ──────────────────────────────────────────────────
 
     max_dh = float("inf")
     max_dq = float("inf")
@@ -343,11 +427,11 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             for ce in contour:
                 e  = edges[ce["ei"]]
                 d  = ce["dir"]
-                Qd = e["Q"] * d               # расход в направлении обхода
-                H  = fan_h(e, e["Q"])         # напор (≥0, по a→b)
+                Qd = e["Q"] * d
+                H  = fan_h(e, e["Q"])
 
-                num += e["R"] * Qd * abs(Qd)  # потеря напора
-                num -= H * d                   # вентилятор убавляет ΔH
+                num += e["R"] * Qd * abs(Qd)
+                num -= H * d
 
                 den += 2.0 * e["R"] * abs(Qd) + fan_dh(e, e["Q"])
 
@@ -364,22 +448,22 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             for ce in contour:
                 edges[ce["ei"]]["Q"] += dQ * ce["dir"]
 
-        # Защита от NaN
+        # Защита от NaN и ограничение Q вентилятора диапазоном кривой
         for e in edges:
             if not math.isfinite(e["Q"]):
                 e["Q"] = 0.0
+            if e["hasFan"] and str(e.get("fanMode")) == "curve":
+                qm = e.get("qMax") or 100.0
+                if abs(e["Q"]) > qm:
+                    e["Q"] = math.copysign(qm, e["Q"])
 
-        # ШАГ 6. Критерий остановки
         if max_dh < eps1 or max_dq < eps2:
             it += 1
             break
 
     log.append(f"Итерации: {it}, max|ΔH|={max_dh:.3f} Па, max|δQ|={max_dq:.4f} м³/с")
 
-    # ── ПЕРЕСЧЁТ Q ДЕРЕВА (bottom-up, 1-й закон Кирхгофа) ──────────────────
-    #
-    # balance[v] = Σ Q_вх − Σ Q_вых  (только хорды → баланс от хорд)
-    # Q_ребра_к_родителю = −balance[v]
+    # ── ПЕРЕСЧЁТ Q ДЕРЕВА (bottom-up, 1-й закон Кирхгофа) ───────────────────
 
     balance = {n: 0.0 for n in node_list}
     for i, e in enumerate(edges):
@@ -393,26 +477,23 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
         p = parent.get(v)
         if not p:
             continue
-        e      = edges[p["ei"]]
-        pnode  = p["node"]
-        bal    = balance[v]
+        e     = edges[p["ei"]]
+        pnode = p["node"]
+        bal   = balance[v]
 
         if e["b"] == v:
-            # e.a=pnode, e.b=v: Q>0 → приток в v → нужен приток = -bal
             e["Q"] = -bal
-            balance[pnode] -= e["Q"]   # отток из pnode (= e.a)
+            balance[pnode] -= e["Q"]
         else:
-            # e.a=v, e.b=pnode: Q>0 → отток из v → нужен отток = bal
             e["Q"] = bal
-            balance[pnode] += e["Q"]   # приток в pnode (= e.b)
+            balance[pnode] += e["Q"]
 
-    # ── РЕЗУЛЬТАТЫ ВЕТВЕЙ ───────────────────────────────────────────────────
+    # ── РЕЗУЛЬТАТЫ ВЕТВЕЙ ────────────────────────────────────────────────────
 
     branch_out = []
     for i, b in enumerate(branches_in):
         e        = edges[i]
         a_map    = gnd(b["fromId"])
-        # Знак Q: ребро ориентировано a→b. Если a == fromId → знак тот же.
         Q_signed = e["Q"] if e["a"] == a_map else -e["Q"]
         if not math.isfinite(Q_signed):
             Q_signed = 0.0
@@ -428,11 +509,11 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             "dP":       round(dP, 1),
         })
 
-    # ── ДАВЛЕНИЯ УЗЛОВ (BFS по дереву) ─────────────────────────────────────
+    # ── ДАВЛЕНИЯ УЗЛОВ ───────────────────────────────────────────────────────
 
-    pressure  = {root: 0.0}
-    pvis      = {root}
-    pqueue    = deque([root])
+    pressure = {root: 0.0}
+    pvis     = {root}
+    pqueue   = deque([root])
 
     while pqueue:
         u = pqueue.popleft()
@@ -440,10 +521,10 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             ei, other = item["ei"], item["v"]
             if other in pvis or ei not in tree_set:
                 continue
-            e   = edges[ei]
-            H   = fan_h(e, e["Q"])
-            dP  = e["R"] * e["Q"] * abs(e["Q"]) - H
-            Pu  = pressure[u]
+            e  = edges[ei]
+            H  = fan_h(e, e["Q"])
+            dP = e["R"] * e["Q"] * abs(e["Q"]) - H
+            Pu = pressure[u]
             pressure[other] = (Pu - dP) if e["a"] == u else (Pu + dP)
             pvis.add(other)
             pqueue.append(other)
@@ -459,9 +540,8 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             cp    = round(101325 + p_rel + z_cor)
         node_out.append({**n, "computedPressure": cp})
 
-    # ── ШАГ 7. ДИАГНОСТИКА ─────────────────────────────────────────────────
+    # ── ШАГ 7. ДИАГНОСТИКА ───────────────────────────────────────────────────
 
-    # 7а. Баланс узлов
     final_bal = {n: 0.0 for n in node_list}
     for e in edges:
         final_bal[e["a"]] -= e["Q"]
@@ -474,38 +554,29 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
             "level":    "error" if abs(bv) > 5 else "warning",
             "category": "node_balance",
             "message":  f"Дисбаланс: {nid[:30]} ΔQ={bv:.2f} м³/с",
-            "objectId": nid,
-            "value":    bv,
+            "objectId": nid, "value": bv,
         })
 
-    # 7б. Вентиляторы с нулевым напором
     for e in edges:
         if e["hasFan"]:
             H = fan_h(e, e["Q"])
             if H <= 0:
                 diag.append({
-                    "level":    "error",
-                    "category": "fan",
-                    "message":  f"Вентилятор {e['id'][:25]}: напор = 0 Па (fanPressure={e['fanPressure']})",
+                    "level": "error", "category": "fan",
+                    "message": f"Вентилятор {e['id'][:25]}: напор=0 Па (fp={e['fanPressure']}, h0={e.get('h0',0):.0f})",
                     "objectId": e["id"],
                 })
 
-    # 7в. Сходимость
     converged = max_dh < eps1 or max_dq < eps2
     if not converged:
         diag.append({
-            "level":    "warning",
-            "category": "convergence",
-            "message":  (
-                f"Не сошлось за {it} ит.: "
-                f"max|ΔH|={max_dh:.2f} Па, max|δQ|={max_dq:.3f} м³/с"
-            ),
+            "level": "warning", "category": "convergence",
+            "message": f"Не сошлось: max|ΔH|={max_dh:.2f} Па, max|δQ|={max_dq:.3f} м³/с",
             "value": max_dq,
         })
 
-    # 7г. Изолированные узлы
     reachable = {root}
-    stk       = [root]
+    stk = [root]
     while stk:
         u = stk.pop()
         for item in adj.get(u, []):
@@ -515,10 +586,8 @@ def solve_network(nodes_in: list, branches_in: list, options: dict) -> dict:
                 stk.append(ov)
     isolated = [n for n in node_list if n not in reachable]
     if isolated:
-        diag.append({
-            "level": "error", "category": "topology",
-            "message": f"Изолировано {len(isolated)} узлов без атмосферной связи",
-        })
+        diag.append({"level": "error", "category": "topology",
+                     "message": f"Изолировано {len(isolated)} узлов"})
 
     return {
         "ok":          converged,
