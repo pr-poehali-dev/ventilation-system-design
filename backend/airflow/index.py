@@ -276,10 +276,24 @@ def build_loops(edges, adj, atm):
 # ══════════════════════════════════════════════════════════════════════
 
 def compute_initial_Q(edges, atm, tree_ids, parent_map, dir_to_v):
-    """Начальные Q по 1-му закону Кирхгофа."""
-    # Оценка Q0
+    """
+    Начальные Q строго по 1-му закону Кирхгофа.
+
+    Алгоритм:
+    1. Находим источник давления (вентилятор или первый атмосферный узел).
+    2. BFS от источника по дереву — строим поток от корня к листьям.
+    3. В каждом узле Q_ребра_к_родителю = сумма Q всех дочерних рёбер.
+       (снизу вверх, постордерный обход)
+    4. Хорды = 0.
+
+    Ключевое: используем subtree_size — кол-во листьев под каждым узлом.
+    Q_ребра = Q0 * (subtree_size[v] / total_leaves)
+    Это гарантирует баланс в каждом узле.
+    """
     fans    = [e for e in edges if e["hasFan"]]
     passive = [e for e in edges if not e["hasFan"]]
+
+    # Оценка Q0 из рабочей точки вентилятора
     Q0 = 10.0
     if fans:
         fe    = fans[0]
@@ -292,53 +306,43 @@ def compute_initial_Q(edges, atm, tree_ids, parent_map, dir_to_v):
 
     Q = {e["id"]: 0.0 for e in edges}
 
-    # Узлы и дети в дереве
+    # Строим дерево детей
     all_nodes = set()
     for e in edges:
         all_nodes.add(e["a"])
         all_nodes.add(e["b"])
 
-    children = collections.defaultdict(list)  # parent → [child]
+    children = collections.defaultdict(list)
     for v, (eid, par) in parent_map.items():
         children[par].append(v)
 
-    # Листья дерева = узлы без детей И имеющие родителя (не корни)
-    leaves = [v for v in all_nodes
-              if not children[v] and v in parent_map]
-    if not leaves:
-        # Нет листьев — все узлы корни (линейная сеть, уже обработана выше)
-        for eid in tree_ids:
-            Q[eid] = Q0
-        return Q
+    # Считаем subtree_size[v] = кол-во листьев в поддереве v
+    # Лист = узел без детей в дереве
+    subtree_size = {}
 
-    q_leaf = Q0 / len(leaves)
+    def calc_size(v):
+        if not children[v]:
+            subtree_size[v] = 1
+            return 1
+        s = sum(calc_size(c) for c in children[v])
+        subtree_size[v] = s
+        return s
 
-    # node_flow[v] = расход который v должен передать вверх к родителю
-    node_flow = {v: 0.0 for v in all_nodes}
-    for leaf in leaves:
-        node_flow[leaf] = q_leaf
+    roots = [v for v in all_nodes if v not in parent_map]
+    total_leaves = sum(calc_size(r) for r in roots)
+    if total_leaves == 0:
+        total_leaves = 1
 
-    # Постордерный обход (BFS от листьев к корням)
-    # in_degree = кол-во детей (ждём пока все дети не обработаны)
-    in_deg = {v: len(children[v]) for v in all_nodes}
-    queue  = collections.deque(v for v in all_nodes
-                               if in_deg[v] == 0 and v in parent_map)
-
-    while queue:
-        v = queue.popleft()
-        eid, par = parent_map[v]
-        flow = node_flow[v]
-
-        # dir_to_v[eid]=True → a=par, b=v → ребро par→v
-        # Мы хотим поток v→par (вверх), против ребра → Q<0
-        # dir_to_v[eid]=False → a=v, b=par → ребро v→par
-        # Поток v→par, по ребру → Q>0
-        Q[eid] += (-flow if dir_to_v[eid] else flow)
-        node_flow[par] += flow
-
-        in_deg[par] -= 1
-        if in_deg[par] == 0 and par in parent_map:
-            queue.append(par)
+    # Назначаем Q каждому ребру дерева:
+    # Q_ребра(v) = Q0 * subtree_size[v] / total_leaves
+    # Направление: от корня к листу (вниз по дереву)
+    for v, (eid, par) in parent_map.items():
+        flow = Q0 * subtree_size.get(v, 1) / total_leaves
+        # dir_to_v[eid]=True  → ребро par→v (a=par, b=v)
+        #   поток par→v = по ребру → Q > 0
+        # dir_to_v[eid]=False → ребро v→par (a=v, b=par)
+        #   поток par→v = против ребра → Q < 0
+        Q[eid] = flow if dir_to_v[eid] else -flow
 
     return Q
 
