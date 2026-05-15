@@ -1,23 +1,55 @@
 {
   "tests": [
     {
-      "name": "Линейная сеть: 2 узла, 1 ветвь, вентилятор",
+      "name": "Линейная сеть: вентилятор 1000 Па, R=0.1",
       "method": "POST",
       "path": "/",
       "body": {
         "nodes": [
-          {"id": "U1", "atmosphereLink": true, "z": 0, "airTemp": 20},
-          {"id": "U2", "atmosphereLink": true, "z": 0, "airTemp": 20}
+          {"id": "U1", "atmosphereLink": true,  "z": 0, "airTemp": 20},
+          {"id": "U2", "atmosphereLink": false, "z": 0, "airTemp": 20},
+          {"id": "U3", "atmosphereLink": true,  "z": 0, "airTemp": 20}
         ],
         "branches": [
           {
             "id": "B1", "fromId": "U1", "toId": "U2",
-            "resistance": 0.1,
-            "area": 10, "perimeter": 12,
+            "resistance": 0.1, "area": 10,
             "hasFan": true, "fanMode": "constant", "fanPressure": 1000
+          },
+          {
+            "id": "B2", "fromId": "U2", "toId": "U3",
+            "resistance": 0.1, "area": 10,
+            "hasFan": false, "fanMode": "constant", "fanPressure": 0
           }
         ],
-        "options": {"maxIter": 50, "tolerance": 0.01}
+        "options": {"maxIter": 2000, "tolerance": 0.01}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Кольцевая сеть: 1 вентилятор, 3 ветви",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "A", "atmosphereLink": true,  "z": 0, "airTemp": 20},
+          {"id": "B", "atmosphereLink": false, "z": 0, "airTemp": 20},
+          {"id": "C", "atmosphereLink": false, "z": 0, "airTemp": 20},
+          {"id": "D", "atmosphereLink": true,  "z": 0, "airTemp": 20}
+        ],
+        "branches": [
+          {"id": "e1", "fromId": "A", "toId": "B", "resistance": 0.05, "area": 10,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 500},
+          {"id": "e2", "fromId": "B", "toId": "C", "resistance": 0.1,  "area": 8,
+           "hasFan": false, "fanMode": "constant", "fanPressure": 0},
+          {"id": "e3", "fromId": "B", "toId": "D", "resistance": 0.2,  "area": 6,
+           "hasFan": false, "fanMode": "constant", "fanPressure": 0},
+          {"id": "e4", "fromId": "C", "toId": "D", "resistance": 0.15, "area": 7,
+           "hasFan": false, "fanMode": "constant", "fanPressure": 0}
+        ],
+        "options": {"maxIter": 2000, "tolerance": 0.01}
       },
       "expectedStatus": 200,
       "expectedBody": {"ok": true},
