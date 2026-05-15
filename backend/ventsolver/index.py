@@ -166,6 +166,13 @@ def solve(nodes_in, branches_in, options):
 
     if not edges: return _empty(nodes_in, "Нет ветвей")
 
+    # Диагностический лог виден в UI через diag[info]
+    for e in edges:
+        if e["hasFan"]:
+            diag.append({"level": "info", "category": "fan",
+                "message": f"ВЕНТ {e['id'][:20]}: R={e['R']:.4f}, mode={e['fanMode']}, fp={e['fanPressure']:.0f}, h0={e['h0']:.0f}, h1={e['h1']:.2f}, h2={e['h2']:.4f}, qMax={e['qMax']:.0f}, H(0)={fan_h(e,0):.0f}",
+                "objectId": e["id"]})
+
     if not atm_ids:
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет атмосферных узлов. Отметьте ≥2 узла как «атмосфера»."})
@@ -184,8 +191,22 @@ def solve(nodes_in, branches_in, options):
 
     if N == 0: return _empty(nodes_in, "Только атмосферные узлы")
 
-    # Начальное давление: P = H_fan * 0.5
-    fan_h_max = max((fan_h(e, 0) for e in edges if e["hasFan"]), default=1000.0)
+    # Начальное давление
+    # fan_h_max = максимальный напор вентилятора при Q=0 (статический напор)
+    fan_candidates = [fan_h(e, 0) for e in edges if e["hasFan"]]
+    fan_h_max = max(fan_candidates) if fan_candidates else 0.0
+    if fan_h_max <= 0:
+        # Если H(0)=0 — кривая начинается не с нуля или constant=0
+        # Попробуем H при малом Q
+        for e in edges:
+            if e["hasFan"]:
+                for q_try in [1, 5, 10, 20, 50]:
+                    h_try = fan_h(e, q_try)
+                    if h_try > 0:
+                        fan_h_max = max(fan_h_max, h_try)
+        if fan_h_max <= 0:
+            fan_h_max = 1000.0  # fallback
+    log.append(f"fan_h_max={fan_h_max:.0f} Па")
     P = np.full(N, fan_h_max * 0.5)
 
     # Newton-Raphson
