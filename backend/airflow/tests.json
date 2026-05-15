@@ -31,6 +31,34 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "DEMO: линейная цепь 7 ветвей с вентилятором",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "U1", "isAtm": true},
+          {"id": "N1"}, {"id": "N2"}, {"id": "N3"},
+          {"id": "N4"}, {"id": "N5"}, {"id": "N6"},
+          {"id": "U2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.01},
+          {"id": "B2", "fromId": "N1", "toId": "N2", "R": 0.02},
+          {"id": "B3", "fromId": "N2", "toId": "N3", "R": 0.05},
+          {"id": "B4", "fromId": "N3", "toId": "N4", "R": 0.03},
+          {"id": "B5", "fromId": "N4", "toId": "N5", "R": 0.08},
+          {"id": "B6", "fromId": "N5", "toId": "N6", "R": 0.02},
+          {"id": "B7", "fromId": "N6", "toId": "U2", "R": 0.01,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 2700}
+        ],
+        "options": {"tolerance": 0.001, "maxIter": 5000, "alpha": 0.8}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Кольцевая сеть — 2 параллельных ветви, Кросс",
       "method": "POST",
       "path": "/",

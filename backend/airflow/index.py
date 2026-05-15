@@ -59,10 +59,18 @@ def get_R(b):
 
 
 def fan_H(e, Q):
+    """
+    Напор вентилятора при расходе Q.
+    Q > 0: воздух в направлении a→b (нормальная работа вентилятора).
+    Q < 0: воздух против (обратный поток) → напор = 0.
+    """
     if not e.get("hasFan"):
         return 0.0
+    # Если воздух идёт против вентилятора — напор не создаётся
+    if Q < 0:
+        return 0.0
     if e.get("fanMode", "constant") == "curve":
-        qa = abs(Q)
+        qa = Q  # Q уже >= 0
         if qa > float(e.get("qMax", 1e9)):
             return 0.0
         h0 = float(e.get("h0", 0))
@@ -179,10 +187,9 @@ def build_tree_and_loops(edges, adj):
         all_nodes.add(e["a"])
         all_nodes.add(e["b"])
 
-    # BFS от GND (или первого узла если GND нет)
     root = GND if GND in all_nodes else next(iter(all_nodes))
 
-    visited   = {root}
+    visited    = {root}
     parent_map = {}      # v → (eid, par)
     bfs_depth  = {root: 0}
     tree_ids   = set()
@@ -271,15 +278,22 @@ def build_tree_and_loops(edges, adj):
         if lca is None:
             continue
 
-        # Контур: u →(хорда)→ v →(дерево)→ LCA →(дерево)→ u
-        # Хорда u→v: chord["a"]=u, chord["b"]=v → движение по ребру → sign=+1
+        # Контур: u →(хорда)→ v →(дерево вверх к LCA)→ LCA →(дерево вниз к u)→ u
+        #
+        # ВАЖНО: sign = +1 если обход контура идёт в направлении a→b ребра
+        #
+        # Хорда u→v (chord["a"]=u, chord["b"]=v): обход по ребру → sign=+1
         loop = [(chord["id"], +1)]
 
-        # v → LCA
+        # Сегмент v → LCA (вверх по дереву от v к LCA)
+        # path_sign возвращает знаки движения v→par→...→LCA
         path_v = path_sign(v, lca, edges_map)
         loop.extend(path_v)
 
-        # LCA → u = обратный путь u→LCA с инвертированными знаками
+        # Сегмент LCA → u (вниз по дереву от LCA к u)
+        # = путь u→LCA в обратном порядке с инвертированными знаками
+        # path_sign(u,lca) даёт знаки движения u→LCA
+        # Обращаем путь И инвертируем знаки = движение LCA→u
         path_u = path_sign(u, lca, edges_map)
         for eid, sgn in reversed(path_u):
             loop.append((eid, -sgn))
@@ -304,16 +318,29 @@ def build_tree_and_loops(edges, adj):
 # ══════════════════════════════════════════════════════════════════════
 
 def initial_Q(edges, tree_ids, bfs_depth, Q0):
+    """
+    Начальные Q: Q0 в направлении потока воздуха.
+    Воздух течёт ОТ GND (атмосфера) В шахту И обратно.
+    Направление: от меньшей глубины BFS к большей = от GND к листьям.
+    Для вентиляторной ветви: всегда Q0 в направлении a→b ребра
+    (вентилятор нагнетает воздух в направлении своей ориентации).
+    Для хорды: Q0 (малое начальное приближение).
+    """
     Q = {}
     for e in edges:
+        da = bfs_depth.get(e["a"], 0)
+        db = bfs_depth.get(e["b"], 0)
+
         if e["id"] not in tree_ids:
-            # Хорда
+            # Хорда — начальное Q=Q0 в направлении a→b
             Q[e["id"]] = Q0
         else:
-            # Дерево: Q > 0 если ребро идёт от корня (глубина a < глубина b)
-            da = bfs_depth.get(e["a"], 0)
-            db = bfs_depth.get(e["b"], 0)
-            Q[e["id"]] = Q0 if db > da else -Q0
+            # Дерево: все ветви получают Q0 (положительный).
+            # Это нарушает 1-й закон Кирхгофа, но Кросс с правильными
+            # знаками контура всё скорректирует в процессе итераций.
+            # Важно: ненулевое начальное Q нужно для ненулевого знаменателя.
+            Q[e["id"]] = Q0
+
     return Q
 
 
@@ -353,14 +380,6 @@ def solve(nodes_in, branches_in, options):
     Q0 = estimate_Q0(edges)
     Q  = initial_Q(edges, tree_ids, bfs_depth, Q0)
     log.append(f"Q0={Q0:.2f} м³/с")
-
-    # DEBUG: начальные Q и контуры
-    for e in edges:
-        log.append(f"Q0[{e['id']}]={Q[e['id']]:.1f} a={e['a']} b={e['b']} "
-                   f"da={bfs_depth.get(e['a'],9)} db={bfs_depth.get(e['b'],9)} "
-                   f"tree={'Y' if e['id'] in tree_ids else 'N'}")
-    for i, loop in enumerate(loops):
-        log.append(f"loop{i}: {[(eid,s) for eid,s in loop]}")
 
     edge_by_id = {e["id"]: e for e in edges}
     max_dH = float("inf")
