@@ -835,7 +835,7 @@ export default function CadPage() {
             fanMode: b.fanMode,
             fanPressure: b.fanPressure,
           })),
-          options: { maxIter: 100, tolerance: 0.1 },
+          options: { maxIter: 2000, tolerance: 0.01, tolPressure: 0.1 },
         }),
       });
       const data = await resp.json();
@@ -845,9 +845,9 @@ export default function CadPage() {
         return;
       }
 
-      // Обновляем только поля результата
+      // Обновляем только поля результата расчёта (fanPressure НЕ трогаем — это исходный параметр пользователя)
       setBranches(prev => prev.map(b => {
-        const rb = (data.branches as { id: string; flow: number; velocity: number; dP: number; fanPressure: number }[])
+        const rb = (data.branches as { id: string; flow: number; velocity: number; dP: number }[])
           .find(r => r.id === b.id);
         if (!rb) return b;
         return {
@@ -855,7 +855,6 @@ export default function CadPage() {
           flow: rb.flow,
           velocity: rb.velocity,
           dP: rb.dP,
-          ...(b.hasFan ? { fanPressure: rb.fanPressure } : {}),
         };
       }));
 
