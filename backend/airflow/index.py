@@ -374,61 +374,35 @@ def find_dead_ends(edges):
     """
     Возвращает множество id тупиковых ветвей (Q=0).
 
-    Алгоритм итеративного "обрыва листьев":
-    1. Помечаем узлы-тупики (degree=1, без вентилятора).
-    2. Все ветви, хотя бы один конец которых — мёртвый узел, помечаем мёртвыми.
-    3. Удаляем мёртвые ветви из графа → пересчитываем степени → повторяем.
-    4. Останавливаемся когда новых мёртвых ветвей нет.
+    Тупиковая: хотя бы один конец (не GND) имеет степень 1
+    И при этом ни одна из примыкающих ветвей НЕ имеет вентилятора.
 
-    Ветвь с вентилятором (ВМП) — никогда не мёртвая.
+    Ветви с вентилятором (ВМП) в тупике — НЕ тупиковые:
+    вентилятор создаёт расход, а воздух возвращается диффузией/утечками.
     """
-    # Строим изменяемый граф: узел → множество id ветвей
-    adj = collections.defaultdict(set)
+    degree = collections.defaultdict(int)
     for e in edges:
-        adj[e["a"]].add(e["id"])
-        adj[e["b"]].add(e["id"])
+        if e["a"] != GND:
+            degree[e["a"]] += 1
+        if e["b"] != GND:
+            degree[e["b"]] += 1
 
-    edge_by_id = {e["id"]: e for e in edges}
-    # Живые ветви (начально все)
-    alive = {e["id"] for e in edges}
-    dead  = set()
+    # Узлы, к которым примыкает хотя бы один вентилятор
+    fan_nodes = set()
+    for e in edges:
+        if e["hasFan"]:
+            fan_nodes.add(e["a"])
+            fan_nodes.add(e["b"])
 
-    changed = True
-    while changed:
-        changed = False
-        # Пересчитываем степень только по живым ветвям
-        degree = collections.defaultdict(int)
-        for eid in alive:
-            e = edge_by_id[eid]
-            if e["a"] != GND:
-                degree[e["a"]] += 1
-            if e["b"] != GND:
-                degree[e["b"]] += 1
-
-        # Узлы с вентилятором среди живых ветвей
-        fan_nodes = set()
-        for eid in alive:
-            e = edge_by_id[eid]
-            if e["hasFan"]:
-                fan_nodes.add(e["a"])
-                fan_nodes.add(e["b"])
-
-        # Ищем живые ветви, у которых один конец — листовой мёртвый узел
-        to_kill = set()
-        for eid in alive:
-            e = edge_by_id[eid]
-            if e["hasFan"]:
-                continue
-            a_leaf = (e["a"] != GND and degree[e["a"]] == 1 and e["a"] not in fan_nodes)
-            b_leaf = (e["b"] != GND and degree[e["b"]] == 1 and e["b"] not in fan_nodes)
-            if a_leaf or b_leaf:
-                to_kill.add(eid)
-
-        if to_kill:
-            alive -= to_kill
-            dead  |= to_kill
-            changed = True
-
+    dead = set()
+    for e in edges:
+        # Ветвь с вентилятором — никогда не тупик
+        if e["hasFan"]:
+            continue
+        a_dead = (e["a"] != GND and degree[e["a"]] == 1 and e["a"] not in fan_nodes)
+        b_dead = (e["b"] != GND and degree[e["b"]] == 1 and e["b"] not in fan_nodes)
+        if a_dead or b_dead:
+            dead.add(e["id"])
     return dead
 
 
