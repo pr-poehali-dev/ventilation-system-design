@@ -264,58 +264,120 @@ def spanning_tree_and_loops(edges):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ШАГ 3: НАЧАЛЬНЫЕ Q — удовлетворяют 1-му з-ну Кирхгофа
+# ШАГ 3: НАЧАЛЬНЫЕ Q — строго удовлетворяют 1-му закону Кирхгофа
 #
-# BFS от атмосферных узлов. По дереву назначаем Q=Q0 (оценка по вентилятору).
-# Хордам — Q=0 (или малое число для небаланса).
+# Правильный алгоритм:
+#  1. Хордам (не-дерево) назначаем Q=0.
+#  2. По дереву Q назначаем СНИЗУ ВВЕРХ (от листьев к корню),
+#     суммируя расходы потомков — баланс в каждом узле выполняется автоматически.
+#
+# Суть: дерево ориентируем от корня (атмосфера/вентилятор) к листьям.
+# Каждый лист получает долю Q0 = Q_fan / N_листьев.
+# Каждый внутренний узел = сумма дочерних ветвей.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def initial_flows(edges, atm):
-    """Начальное приближение Q, балансирующее узлы (1-й закон Кирхгофа)."""
+    """
+    Начальное Q строго по 1-му закону Кирхгофа.
+    Хорды = 0. Ветви дерева получают Q снизу-вверх:
+    каждый лист = Q0/кол_листьев, каждый узел = сумма дочерних.
+    """
     fans = [e for e in edges if e["hasFan"]]
 
-    # Оценка рабочего расхода вентилятора
+    # Оценка Q0 — рабочая точка первого вентилятора
     Q0 = 50.0
     if fans:
         fe = fans[0]
-        # Рабочая точка: H(Q) = R_net*Q² → Q = sqrt(H0/R_net)
         fp = Hfan(fe, Q0)
-        # Суммарное R сети (грубая оценка — среднее по всем не-вент. ветвям)
         passive = [e for e in edges if not e["hasFan"]]
-        R_avg = sum(e["R"] for e in passive) / max(len(passive), 1)
-        R_est = max(R_avg * len(passive), fe["R"], 1e-9)
+        R_total = sum(e["R"] for e in passive)
+        R_total = max(R_total, fe["R"], 1e-9)
         if fp > 0:
-            Q0 = math.sqrt(fp / R_est)
-        Q0 = max(1.0, min(Q0, fe.get("qMax", 500)))
-
-    # BFS от атмосферных узлов — строим дерево потоков
-    adj = {}
-    for e in edges:
-        adj.setdefault(e["a"], []).append(e)
-        adj.setdefault(e["b"], []).append(e)
+            Q0 = math.sqrt(fp / R_total)
+        Q0 = max(1.0, min(Q0, float(fe.get("qMax", 500))))
 
     Q = {e["id"]: 0.0 for e in edges}
 
-    # Если нет атмосферных — начинаем с первого узла
-    starts = list(atm) if atm else [edges[0]["a"]]
+    # Строим остовное дерево (те же tree_ids что в spanning_tree_and_loops,
+    # но пересчитываем здесь чтобы не зависеть от порядка вызовов)
+    all_nodes = set()
+    for e in edges:
+        all_nodes.add(e["a"])
+        all_nodes.add(e["b"])
 
-    visited_nodes = set(starts)
-    visited_edges = set()
+    adj = {v: [] for v in all_nodes}
+    for e in edges:
+        adj[e["a"]].append(e)
+        adj[e["b"]].append(e)
+
+    # BFS: строим дерево от атмосферных / вентиляторных узлов
+    starts = list(atm) if atm else []
+    if not starts:
+        # Нет атмосферных — стартуем с узла вентилятора
+        if fans:
+            starts = [fans[0]["a"]]
+        else:
+            starts = [edges[0]["a"]]
+
+    visited = set(starts)
+    parent_edge = {}   # node → edge_id (ребро к родителю в дереве)
+    children   = {v: [] for v in all_nodes}   # дерево: parent → [child]
+    tree_ids   = set()
     queue = list(starts)
 
     while queue:
-        node = queue.pop(0)
-        for e in adj.get(node, []):
-            if e["id"] in visited_edges:
-                continue
-            visited_edges.add(e["id"])
-            other = e["b"] if e["a"] == node else e["a"]
-            if other not in visited_nodes:
-                visited_nodes.add(other)
-                queue.append(other)
-                # Назначаем Q0 в направлении обхода
-                Q[e["id"]] = Q0 if e["a"] == node else -Q0
-            # Хорды остаются Q=0
+        v = queue.pop(0)
+        for e in adj[v]:
+            u = e["b"] if e["a"] == v else e["a"]
+            if u not in visited:
+                visited.add(u)
+                tree_ids.add(e["id"])
+                parent_edge[u] = (e["id"], v, e["a"] == v)
+                # v = родитель, u = ребёнок
+                children[v].append(u)
+                queue.append(u)
+
+    # Находим листья дерева (узлы без детей, не являющиеся атмосферными)
+    atm_set = set(starts)
+    leaves = [v for v in all_nodes
+              if not children[v] and v not in atm_set]
+
+    n_leaves = max(len(leaves), 1)
+    q_leaf   = Q0 / n_leaves   # каждый лист получает равную долю
+
+    # Назначаем Q листьям и суммируем снизу вверх (постордерный обход)
+    # node_flow[v] = суммарный расход через узел v (в дерево к корню)
+    node_flow = {v: 0.0 for v in all_nodes}
+    for leaf in leaves:
+        node_flow[leaf] = q_leaf
+
+    # Топологическая сортировка (от листьев к корню)
+    # Используем BFS в обратном направлении: степень = кол-во детей
+    in_degree = {v: len(children[v]) for v in all_nodes}
+    topo_queue = [v for v in all_nodes if in_degree[v] == 0]  # листья
+    topo_order = []
+    while topo_queue:
+        v = topo_queue.pop(0)
+        topo_order.append(v)
+        if v in parent_edge:
+            _, par, _ = parent_edge[v]
+            in_degree[par] -= 1
+            if in_degree[par] == 0:
+                topo_queue.append(par)
+
+    # Проходим от листьев к корню: суммируем расходы
+    for v in topo_order:
+        if v not in parent_edge:
+            continue  # корень — нечего передавать
+        eid, par, fwd = parent_edge[v]
+        flow_v = node_flow[v]
+        # Направление ребра: fwd=True → ребро par→v, Q>0 означает par→v
+        # Мы хотим передать flow_v ОТ v К par (вверх по дереву)
+        # Если ребро par→v (fwd=True): flow к корню = отрицательное направление = Q<0
+        # Если ребро v→par (fwd=False): flow к корню = положительное направление = Q>0
+        Q[eid] += -flow_v if fwd else flow_v
+        # Накапливаем в родителе
+        node_flow[par] += flow_v
 
     return Q
 
@@ -414,6 +476,39 @@ def solve_cross(nodes_in, branches_in, options):
                      "message": f"Не сошлось за {max_iter} итераций. |ΔH|={max_dH:.4f} Па"})
 
     log.append(f"Итераций: {it}, max|ΔH|={max_dH:.6f} Па")
+
+    # Проверка 1-го закона Кирхгофа (баланс узлов)
+    node_bal = {}
+    all_nodes_set = set()
+    for e in edges:
+        all_nodes_set.add(e["a"])
+        all_nodes_set.add(e["b"])
+    for e in edges:
+        q = Q[e["id"]]
+        node_bal[e["a"]] = node_bal.get(e["a"], 0.0) - q   # вытекает из a
+        node_bal[e["b"]] = node_bal.get(e["b"], 0.0) + q   # втекает в b
+
+    # Атмосферные узлы — баланс не проверяем (источник/сток)
+    atm_set = set()
+    for n in nodes_in:
+        if n.get("isAtm") or n.get("atmosphereLink"):
+            atm_set.add(n["id"])
+
+    max_node_imbalance = 0.0
+    worst_node = None
+    for node, bal in node_bal.items():
+        if node not in atm_set:
+            ab = abs(bal)
+            if ab > max_node_imbalance:
+                max_node_imbalance = ab
+                worst_node = node
+
+    log.append(f"Макс. дисбаланс узла: {max_node_imbalance:.4f} м³/с (узел {worst_node})")
+    if max_node_imbalance > 1.0:
+        diag.append({"level": "error", "category": "balance",
+                     "message": f"Нарушение 1-го закона Кирхгофа: дисбаланс {max_node_imbalance:.2f} м³/с в узле {worst_node}",
+                     "objectId": worst_node})
+
     return make_result(edges, Q, it, converged, max_dH, log, diag)
 
 
