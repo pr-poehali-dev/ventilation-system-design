@@ -850,6 +850,7 @@ export default function TopoCanvas(props: Props) {
             const bl = Math.round(lo.b + (hi.b - lo.b) * t);
             return `rgb(${r},${g},${bl})`;
           };
+          const isDead = b.isDead ?? false;
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
             : isDead ? "#9ca3af"
@@ -865,8 +866,6 @@ export default function TopoCanvas(props: Props) {
           const w = thinLines ? 1 : baseW;
           // Обводка (контур вокруг линии): ширина = w + 2*border
           const borderW = thinLines ? 0 : Math.max(0, bb);
-
-          const isDead = b.isDead ?? false;
           const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off" && !isDead;
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
