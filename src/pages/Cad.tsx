@@ -824,17 +824,37 @@ export default function CadPage() {
             z: n.z,
             airTemp: n.airTemp,
           })),
-          branches: branches.map(b => ({
-            id: b.id,
-            fromId: b.fromId,
-            toId: b.toId,
-            resistance: b.resistance,
-            area: b.area,
-            perimeter: b.perimeter,
-            hasFan: b.hasFan,
-            fanMode: b.fanMode,
-            fanPressure: b.fanPressure,
-          })),
+          branches: branches.map(b => {
+            // Для curve-режима передаём коэффициенты кривой H(Q) и параметры вентилятора
+            const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
+            const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
+            // Угловой фактор (для осевых вентиляторов с лопатками)
+            let af = 1.0;
+            if (curve?.bladeAngles && curve.bladeAngles.length >= 2) {
+              const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
+              const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
+              af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
+            }
+            return {
+              id: b.id,
+              fromId: b.fromId,
+              toId: b.toId,
+              resistance: b.resistance,
+              area: b.area,
+              perimeter: b.perimeter,
+              hasFan: b.hasFan,
+              fanMode: b.fanMode,
+              fanPressure: b.fanPressure,
+              // Кривая вентилятора: передаём скорректированные коэффициенты H(Q) с учётом RPM и угла
+              ...(curve ? {
+                h0:   curve.h0 * af * k * k,
+                h1:   curve.h1 * k,
+                h2:   curve.h2,
+                qMax: curve.qMax * k,
+                qMin: curve.qMin * k,
+              } : {}),
+            };
+          }),
           options: { maxIter: 2000, tolerance: 0.01, tolPressure: 0.1 },
         }),
       });
