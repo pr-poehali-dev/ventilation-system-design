@@ -263,6 +263,9 @@ def solve(nodes_in, branches_in, options):
             "id":   b["id"],
             "a":    gnd(b["fromId"]),
             "b":    gnd(b["toId"]),
+            # Исходные ID до объединения в GND (нужны для построения контуров)
+            "a_raw": b["fromId"],
+            "b_raw": b["toId"],
             "R":    calc_r(b),
             "Q":    0.0,
             "hasFan":      bool(b.get("hasFan", False)),
@@ -304,10 +307,45 @@ def solve(nodes_in, branches_in, options):
     par, order, tree, chords, bpos = build_tree(E, adj, root)
     log.append(f"N={len(nodes)}, E={len(E)}, контуров={len(chords)}")
 
+    # Для построения контуров нам нужен расширенный граф с исходными
+    # атмосферными узлами (до объединения в GND). Это нужно когда хорда
+    # соединяет два атмосферных узла (например вентилятор между двумя стволами):
+    # a=GND, b=GND — tree_path(GND,GND) = [] → контур только из вентилятора!
+    # Правильный контур должен включать весь путь через сеть.
+    #
+    # Строим расширенный граф: каждый атмосферный узел остаётся своим ID,
+    # но все они связаны с GND ребром R=0.
+    ext_nodes = set(nodes)
+    for aid in atm:
+        ext_nodes.add(aid)
+    ext_adj = {n: list(adj.get(n, [])) for n in ext_nodes}
+    # Добавляем нулевые рёбра atm_node ↔ GND для связности
+    N_extra = len(E)  # индексы виртуальных рёбер начинаются отсюда
+    virtual_edges = []
+    for aid in atm:
+        if aid != GND and GND in ext_adj:
+            vi = N_extra + len(virtual_edges)
+            virtual_edges.append({"id": f"_v_{aid}", "a": GND, "b": aid,
+                                   "R": 0.0, "Q": 0.0, "hasFan": False,
+                                   "fanMode": "constant", "fanPressure": 0,
+                                   "h0": 0, "h1": 0, "h2": 0})
+            ext_adj.setdefault(GND, []).append({"ei": vi, "v": aid})
+            ext_adj.setdefault(aid, []).append({"ei": vi, "v": GND})
+    E_ext = E + virtual_edges
+
+    # BFS на расширенном графе
+    par_ext, order_ext, tree_ext, _, bpos_ext = build_tree(E_ext, ext_adj, root)
+
     contours = []
     for ci in chords:
         e = E[ci]
-        contours.append([{"ei": ci, "dir": 1}] + tree_path(e["b"], e["a"], E, par))
+        # Используем исходные ID (до GND) для поиска пути
+        b_orig = e["b_raw"]
+        a_orig = e["a_raw"]
+        path = tree_path(b_orig, a_orig, E_ext, par_ext)
+        # Фильтруем виртуальные рёбра из контура (R=0, не влияют на ΔH)
+        path_real = [ce for ce in path if ce["ei"] < len(E)]
+        contours.append([{"ei": ci, "dir": 1}] + path_real)
 
     # ── 2. Q^(0) ─────────────────────────────────────────────────────────────
     fan_e  = fans[0] if fans else None
