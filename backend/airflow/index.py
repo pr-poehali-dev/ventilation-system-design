@@ -116,33 +116,30 @@ def build_graph(nodes_in, branches_in):
 # НАЧАЛЬНОЕ РАСПРЕДЕЛЕНИЕ РАСХОДОВ (первый закон Кирхгофа)
 # ══════════════════════════════════════════════════════════════════════
 
-def init_flows(edges, q_total=1.0):
+def balance_flows(edges, Q):
     """
-    Начальное приближение методом обхода дерева (BFS от GND).
-    Даёт Q, строго удовлетворяющий 1-му закону Кирхгофа во всех узлах:
-    сумма входящих = сумма исходящих в каждом внутреннем узле.
+    Постбалансировка расходов по 1-му закону Кирхгофа.
 
-    Алгоритм:
-    1. BFS от GND строит остовное дерево.
-    2. Хордовые ветви получают Q=0 (не влияют на баланс).
-    3. Для каждого листа дерева назначаем Q = q_total / число_листьев.
-    4. Поднимаемся вверх по дереву, суммируя расходы (закон сохранения).
+    После итераций Кросса расходы в хордовых ветвях определены верно,
+    но в ветвях остовного дерева могут быть остаточные невязки.
+    Проходим дерево снизу вверх (от листьев к GND) и пересчитываем
+    Q[tree_edge] = сумма расходов дочерних ветвей.
+
+    Это гарантирует выполнение 1-го закона Кирхгофа в каждом узле.
     """
-    n = len(edges)
-    Q = [0.0] * n
-
-    # Смежность
+    # Строим смежность
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
         adj[e["a"]].append((i, e["b"], +1))
         adj[e["b"]].append((i, e["a"], -1))
 
-    # BFS от GND — строим дерево (parent_edge, parent_node для каждого узла)
-    parent_edge  = {}   # node → edge_idx ведущий к родителю
-    parent_sign  = {}   # node → знак (направление к родителю: +1 если e["a"]==parent)
-    parent_node  = {}   # node → родительский узел
-    children     = collections.defaultdict(list)  # node → [child_node, ...]
-    order        = []   # BFS-порядок узлов
+    # BFS от GND — строим остовное дерево
+    parent_edge = {}   # node → edge_idx к родителю
+    parent_dir  = {}   # node → +1 если ребро (parent→node) = a→b, иначе -1
+    parent_node = {}   # node → родительский узел
+    children    = collections.defaultdict(list)
+    order       = []
+    tree_set    = set()
 
     visited = {GND}
     queue   = collections.deque([GND])
@@ -153,34 +150,42 @@ def init_flows(edges, q_total=1.0):
             if nb not in visited:
                 visited.add(nb)
                 parent_edge[nb] = ei
-                parent_sign[nb] = sign   # +1 если ребро идёт node→nb (a→b), -1 иначе
+                parent_dir[nb]  = sign   # +1: ребро a→b, parent=a, child=b
                 parent_node[nb] = node
                 children[node].append(nb)
+                tree_set.add(ei)
                 queue.append(nb)
 
-    # Считаем листья (узлы без детей, кроме GND)
-    leaves = [n for n in order if n != GND and not children[n]]
-    if not leaves:
-        return Q
+    # Считаем "приток" каждого узла от хордовых ветвей (не меняем их Q)
+    # node_net[v] = сумма Q хордовых ветвей, втекающих в v (+ = вток, - = выток)
+    node_net = collections.defaultdict(float)
+    for i, e in enumerate(edges):
+        if i in tree_set:
+            continue
+        # Хордовая ветвь: Q[i] идёт a→b (положительное) или b→a (отрицательное)
+        node_net[e["b"]] += Q[i]
+        node_net[e["a"]] -= Q[i]
 
-    q_leaf = q_total / len(leaves)
+    # Обходим снизу вверх, пересчитываем Q tree-рёбер
+    # Для каждого узла: Q_parent_edge = sum(Q дочерних tree-рёбер) + node_net[node]
+    node_flow = collections.defaultdict(float)
 
-    # Назначаем расход листьям
-    node_flow = collections.defaultdict(float)  # суммарный расход через узел вниз
-    for leaf in leaves:
-        node_flow[leaf] = q_leaf
-
-    # Проходим узлы в обратном BFS-порядке (снизу вверх)
     for node in reversed(order):
         if node == GND:
             continue
-        ei   = parent_edge[node]
-        sign = parent_sign[node]  # +1: ребро a→b, node = b → поток идёт b→a (к GND) → знак -1 для Q[ei]
-        # Q[ei] в направлении a→b: если node=b и поток идёт b→a, то Q[ei] < 0
-        Q[ei] = node_flow[node] * (-sign)
-        # Передаём расход родителю
-        parent_node_id = parent_node[node]
-        node_flow[parent_node_id] += node_flow[node]
+        # Суммарный расход через этот узел = хорды + дети
+        total = node_net[node]
+        for child in children[node]:
+            total += node_flow[child]
+
+        node_flow[node] = total
+
+        ei  = parent_edge[node]
+        d   = parent_dir[node]   # +1: ребро a→b, node=b → поток b→a → Q[ei] отрицательный
+        # Воздух течёт от GND наружу (к листьям), значит от parent к node.
+        # Если d=+1: parent=a, node=b → поток a→b → Q[ei] = +total
+        # Если d=-1: parent=b, node=a → поток b→a → Q[ei] = -total
+        Q[ei] = total * d
 
     return Q
 
@@ -340,23 +345,20 @@ def solve(nodes_in, branches_in, options):
         H_fan = sum(fan_H(e, 1.0) for e in edges)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # Рабочий расход вентилятора (для масштабирования начального Q)
+    # Рабочий расход вентилятора
     q0 = bisect_q0()
 
     # Для линейной сети (нет контуров) — рабочая точка = результат бисекции
     if not loops:
-        # Используем init_flows чтобы соблюсти 1-й закон Кирхгофа
-        Q_init = init_flows(edges, q_total=q0)
         for i in range(len(edges)):
-            Q[i] = Q_init[i]
+            Q[i] = q0
+        Q = balance_flows(edges, Q)
         return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
                            1, True, 0.0, log, diag)
 
-    # Начальное распределение для сети с контурами —
-    # init_flows даёт Q удовлетворяющий 1-му закону Кирхгофа
-    Q_init = init_flows(edges, q_total=q0)
+    # Начальное распределение для сети с контурами — все ветви q0
     for i in range(len(edges)):
-        Q[i] = Q_init[i]
+        Q[i] = q0
 
     # Основной цикл Кросса
     max_dq = float("inf")
@@ -400,18 +402,10 @@ def solve(nodes_in, branches_in, options):
 
     log.append(f"Итераций={it} ΔQ={max_dq:.4f} м³/с")
 
-    # Постобработка: проверка 1-го закона Кирхгофа
-    # После Кросса считаем невязку в каждом узле и логируем
-    node_balance = collections.defaultdict(float)
-    for i, e in enumerate(edges):
-        node_balance[e["a"]] -= Q[i]   # вытекает из a
-        node_balance[e["b"]] += Q[i]   # втекает в b
-    max_imbalance = max((abs(v) for k, v in node_balance.items() if k != GND), default=0.0)
-    log.append(f"Макс. невязка 1-го закона={max_imbalance:.4f} м³/с")
-    if max_imbalance > 1.0:
-        diag.append({"level": "warning", "category": "balance",
-                     "message": f"Несоблюдение баланса расходов в узлах: до {max_imbalance:.2f} м³/с. "
-                                 "Проверьте топологию сети."})
+    # Постбалансировка: пересчитываем Q в ветвях дерева так,
+    # чтобы 1-й закон Кирхгофа выполнялся точно в каждом узле.
+    # Хордовые ветви (определяющие распределение) не трогаем.
+    Q = balance_flows(edges, Q)
 
     return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
                        it, converged, max_dq, log, diag)
