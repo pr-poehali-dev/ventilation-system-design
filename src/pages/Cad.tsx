@@ -2015,11 +2015,11 @@ export default function CadPage() {
 
                 {/* ── Стиль линий ветвей (общая настройка для всех ветвей) ── */}
                 <FrameGroup title="Ширина и граница ветвей">
-                  <LabeledRow label="Ширина линии:" labelWidth={108}>
+                  <LabeledRow label="Ширина:" labelWidth={108}>
                     <NumWithUnit value={branchWidth} unit="px"
                       onChange={(v) => setBranchWidth(Math.max(0.5, Math.min(20, v)))} />
                   </LabeledRow>
-                  <LabeledRow label="Контурная обводка:" labelWidth={108}>
+                  <LabeledRow label="Граница:" labelWidth={108}>
                     <NumWithUnit value={branchBorder} unit="px"
                       onChange={(v) => setBranchBorder(Math.max(0, Math.min(8, v)))} />
                   </LabeledRow>
