@@ -337,6 +337,27 @@ export function solveNetwork(
     };
   }
 
+  // Проверка: GND должен быть подключён минимум к 2 рёбрам (степень ≥ 2).
+  // Если только 1 выход на поверхность — замкнутого контура нет, Q = 0.
+  const atmCount = nodesIn.filter(n => n.atmosphereLink).length;
+  const gndDegree = edges.filter(e => e.a === GND_ID || e.b === GND_ID).length;
+  if (atmCount === 0 || (atmCount > 0 && gndDegree < 2)) {
+    const zeroBranches = brCalc.map(b => ({ ...b, flow: 0, velocity: 0, dP: 0 }));
+    const diag: SolveDiagnostic[] = [{
+      level: "error",
+      category: "topology",
+      message: atmCount === 0
+        ? "Нет узлов, связанных с атмосферой. Добавьте минимум 2 поверхностных узла (входной и выходной стволы)."
+        : "Только один узел связан с атмосферой. Для циркуляции воздуха нужно минимум 2 выхода на поверхность (например, два ствола).",
+    }];
+    return {
+      ok: false, iterations: 0, maxDeltaQ: 0, maxDeltaH: 0,
+      branches: zeroBranches, nodes: nodesIn,
+      log: ["Ошибка топологии: нет замкнутого контура через атмосферу — расход Q=0"],
+      cyclesCount: 0, diagnostics: diag,
+    };
+  }
+
   // Список смежности
   const nodeSet = new Set<string>();
   edges.forEach(e => { nodeSet.add(e.a); nodeSet.add(e.b); });

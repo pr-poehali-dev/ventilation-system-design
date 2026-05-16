@@ -253,9 +253,22 @@ def solve(nodes_in, branches_in, options):
 
     edges, atm = build_graph(nodes_in, branches_in)
 
-    if not atm:
+    # Проверяем связность с атмосферой: GND должен иметь степень >= 2
+    # (подключён минимум к 2 рёбрам, т.е. есть реальный вход и выход на поверхность).
+    # Если степень GND == 1 — только один выход, циркуляция невозможна.
+    gnd_degree = sum(1 for e in edges if e["a"] == GND or e["b"] == GND)
+    atm_count = sum(1 for n in nodes_in if n.get("isAtm") or n.get("atmosphereLink"))
+    if atm_count > 0 and gnd_degree < 2:
+        msg = (
+            "Только один узел связан с атмосферой. Для циркуляции воздуха нужно "
+            "минимум 2 выхода на поверхность (например, два ствола)."
+        )
+        diag.append({"level": "error", "category": "topology", "message": msg})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag)
+    if atm_count == 0:
         diag.append({"level": "error", "category": "topology",
-                     "message": "Нет атмосферных узлов"})
+                     "message": "Нет узлов, связанных с атмосферой. Добавьте минимум 2 поверхностных узла."})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag)
 
     fans = [e for e in edges if e["hasFan"]]
     if not fans:
