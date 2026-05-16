@@ -3270,12 +3270,12 @@ function NumWithUnit({ value, unit, onChange }: {
   value: number; unit: string; onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex-1 relative flex items-center">
+    <div className="flex-1 flex items-center gap-1">
       <input type="number"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="cad-input flex-1 text-right pr-8" />
-      <span className="absolute right-1.5 text-[11px] text-gray-400 pointer-events-none select-none">{unit}</span>
+        className="cad-input flex-1 text-right" />
+      <span className="text-[11px] text-gray-500 flex-shrink-0 w-5">{unit}</span>
     </div>
   );
 }
