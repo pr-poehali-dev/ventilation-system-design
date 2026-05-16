@@ -1090,6 +1090,16 @@ export default function CadPage() {
     setSelectedNodeId(mainId);
   };
 
+  // Выровнить выбранные узлы по оси
+  const handleAlignNodes = (axis: "x" | "y", mode: "min" | "max" | "avg") => {
+    const ids = selectedNodeIds.size >= 2 ? [...selectedNodeIds] : [];
+    if (ids.length < 2) return;
+    const selNodes = nodes.filter((n) => ids.includes(n.id));
+    const vals = selNodes.map((n) => axis === "x" ? n.x : n.y);
+    const target = mode === "min" ? Math.min(...vals) : mode === "max" ? Math.max(...vals) : vals.reduce((a, b) => a + b, 0) / vals.length;
+    setNodes((prev) => prev.map((n) => ids.includes(n.id) ? { ...n, [axis]: target } : n));
+  };
+
   const handleToggleAtmosphere = (id: string) => {
     setNodes((p) => p.map((n) => n.id === id ? { ...n, atmosphereLink: !n.atmosphereLink } : n));
   };
@@ -1120,6 +1130,12 @@ export default function CadPage() {
         if (ids.length >= 2) handleMergeNodes(ids);
         break;
       }
+      case "align_left":   handleAlignNodes("x", "min"); break;
+      case "align_right":  handleAlignNodes("x", "max"); break;
+      case "align_top":    handleAlignNodes("y", "min"); break;
+      case "align_bottom": handleAlignNodes("y", "max"); break;
+      case "align_center_x": handleAlignNodes("x", "avg"); break;
+      case "align_center_y": handleAlignNodes("y", "avg"); break;
       case "toggle_atmosphere": if (nodeId) handleToggleAtmosphere(nodeId); break;
       case "toggle_capital": if (branchId) handleToggleCapital(branchId); break;
       case "toggle_designed": if (branchId) handleToggleDesigned(branchId); break;
@@ -3072,6 +3088,7 @@ export default function CadPage() {
 // ─── Пункты контекстного меню ───────────────────────────────────────────────
 
 function nodeContextItems(node: TopoNode | null, multiNodeCount: number): ContextMenuItem[] {
+  const canAlign = multiNodeCount >= 2;
   return [
     { id: "open_props", label: "Свойства узла...", icon: "Settings", shortcut: "Ctrl+J" },
     { id: "div1", label: "", divider: true },
@@ -3079,7 +3096,12 @@ function nodeContextItems(node: TopoNode | null, multiNodeCount: number): Contex
     { id: "split_connections", label: "Разорвать связь в узле", icon: "Scissors" },
     { id: "merge_nodes", label: multiNodeCount >= 2 ? `Соединить узлы (${multiNodeCount})` : "Соединить узлы", icon: "GitMerge", disabled: multiNodeCount < 2 },
     { id: "div2", label: "", divider: true },
-    { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
+    { id: "align_left",     label: "Выровнить по левому краю",    icon: "AlignStartHorizontal", disabled: !canAlign },
+    { id: "align_right",    label: "Выровнить по правому краю",   icon: "AlignEndHorizontal",   disabled: !canAlign },
+    { id: "align_center_x", label: "Выровнить по центру (гориз.)",icon: "AlignCenterHorizontal", disabled: !canAlign },
+    { id: "align_top",      label: "Выровнить по верхнему краю",  icon: "AlignStartVertical",   disabled: !canAlign },
+    { id: "align_bottom",   label: "Выровнить по нижнему краю",   icon: "AlignEndVertical",     disabled: !canAlign },
+    { id: "align_center_y", label: "Выровнить по центру (верт.)", icon: "AlignCenterVertical",  disabled: !canAlign },
     { id: "div3", label: "", divider: true },
     { id: "delete_node", label: "Удалить", icon: "Trash2", shortcut: "Del", danger: true },
   ];
