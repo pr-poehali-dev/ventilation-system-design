@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Скачать и загрузить шрифты в S3",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"downloaded": 24},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
