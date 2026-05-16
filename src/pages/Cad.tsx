@@ -1986,58 +1986,6 @@ export default function CadPage() {
                     )}
                   </LabeledRow>
 
-                  {/* Появление */}
-                  <LabeledRow label="Появление:" labelWidth={88}>
-                    <div className="flex-1 flex items-center gap-1">
-                      <input type="text" value={excavation.appearYear}
-                        onChange={(e) => setExcavation({ ...excavation, appearYear: e.target.value })}
-                        placeholder="Год"
-                        className="cad-input w-12 text-center" />
-                      <input type="text" value={excavation.appearMonth}
-                        onChange={(e) => setExcavation({ ...excavation, appearMonth: e.target.value })}
-                        placeholder="Месяц"
-                        className="cad-input flex-1 text-center" />
-                      <input type="text" value={excavation.appearDay}
-                        onChange={(e) => setExcavation({ ...excavation, appearDay: e.target.value })}
-                        placeholder="День"
-                        className="cad-input w-10 text-center" />
-                      <input type="text" value={excavation.appearTime}
-                        onChange={(e) => setExcavation({ ...excavation, appearTime: e.target.value })}
-                        className="cad-input w-12 text-center" />
-                      <button onClick={() => setExcavation({ ...excavation, appearYear: "", appearMonth: "", appearDay: "", appearTime: "" })}
-                        className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded"
-                        title="Очистить">
-                        <Icon name="Trash2" size={11} className="text-gray-600" />
-                      </button>
-                    </div>
-                  </LabeledRow>
-
-                  {/* Исчезновение */}
-                  <LabeledRow label="Исчезновение:" labelWidth={88}>
-                    <div className="flex-1 flex items-center gap-1">
-                      <input type="text" value={excavation.disappearYear}
-                        onChange={(e) => setExcavation({ ...excavation, disappearYear: e.target.value })}
-                        placeholder="Год"
-                        className="cad-input w-12 text-center text-gray-400" />
-                      <input type="text" value={excavation.disappearMonth}
-                        onChange={(e) => setExcavation({ ...excavation, disappearMonth: e.target.value })}
-                        placeholder="Месяц"
-                        className="cad-input flex-1 text-center text-gray-400" />
-                      <input type="text" value={excavation.disappearDay}
-                        onChange={(e) => setExcavation({ ...excavation, disappearDay: e.target.value })}
-                        placeholder="День"
-                        className="cad-input w-10 text-center text-gray-400" />
-                      <input type="text" value={excavation.disappearTime}
-                        onChange={(e) => setExcavation({ ...excavation, disappearTime: e.target.value })}
-                        className="cad-input w-12 text-center text-gray-400" />
-                      <button onClick={() => setExcavation({ ...excavation, disappearYear: "", disappearMonth: "", disappearDay: "", disappearTime: "" })}
-                        className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded"
-                        title="Очистить">
-                        <Icon name="Trash2" size={11} className="text-gray-600" />
-                      </button>
-                    </div>
-                  </LabeledRow>
-
                   <div className="pt-1 space-y-0.5">
                     <CadCheckbox
                       checked={excavation.isVertical}
@@ -3326,8 +3274,8 @@ function NumWithUnit({ value, unit, onChange }: {
       <input type="number"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="cad-input flex-1 text-right pr-7" />
-      <span className="absolute right-2 text-xs text-gray-500 pointer-events-none">{unit}</span>
+        className="cad-input flex-1 text-right pr-8" />
+      <span className="absolute right-1.5 text-[11px] text-gray-400 pointer-events-none select-none">{unit}</span>
     </div>
   );
 }
