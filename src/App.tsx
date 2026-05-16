@@ -24,8 +24,16 @@ function useIsMobile() {
 
 const App = () => {
   const isMobile = useIsMobile();
+  const [forceDesktop, setForceDesktop] = useState(
+    () => localStorage.getItem("force-desktop") === "1"
+  );
 
-  if (isMobile) return <MobileStub />;
+  const handleForceDesktop = () => {
+    localStorage.setItem("force-desktop", "1");
+    setForceDesktop(true);
+  };
+
+  if (isMobile && !forceDesktop) return <MobileStub onForceDesktop={handleForceDesktop} />;
 
   return (
   <QueryClientProvider client={queryClient}>

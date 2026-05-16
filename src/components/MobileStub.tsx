@@ -2,7 +2,11 @@ import { useState } from "react";
 import { Monitor, Copy, Check } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
-export default function MobileStub() {
+interface Props {
+  onForceDesktop: () => void;
+}
+
+export default function MobileStub({ onForceDesktop }: Props) {
   const [copied, setCopied] = useState(false);
   const url = window.location.href;
 
@@ -45,7 +49,7 @@ export default function MobileStub() {
       <div className="mb-6 p-4 rounded-2xl"
         style={{ background: "hsl(220, 18%, 11%)", border: "1px solid hsl(220, 15%, 18%)" }}>
         <p className="text-xs mb-3" style={{ color: "hsl(215, 15%, 55%)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          Наведите камеру ПК или отсканируйте QR
+          Отсканируйте с компьютера или планшета
         </p>
         <QRCodeSVG
           value={url}
@@ -58,7 +62,7 @@ export default function MobileStub() {
 
       <button
         onClick={handleCopy}
-        className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-base transition-all active:scale-95"
+        className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-base transition-all active:scale-95 mb-3"
         style={{
           background: copied ? "hsl(140, 60%, 35%)" : "hsl(210, 100%, 56%)",
           color: "hsl(220, 20%, 8%)",
@@ -68,6 +72,17 @@ export default function MobileStub() {
           ? <><Check size={18} /> Ссылка скопирована</>
           : <><Copy size={18} /> Скопировать ссылку</>
         }
+      </button>
+
+      <button
+        onClick={onForceDesktop}
+        className="text-sm px-4 py-2 rounded-lg transition-all active:scale-95"
+        style={{
+          color: "hsl(215, 15%, 50%)",
+          fontFamily: "'IBM Plex Sans', sans-serif",
+          border: "1px solid hsl(220, 15%, 22%)",
+        }}>
+        Всё равно открыть на этом устройстве
       </button>
 
       <p className="mt-8 text-sm" style={{ color: "hsl(215, 15%, 40%)", fontFamily: "'IBM Plex Mono', monospace" }}>
