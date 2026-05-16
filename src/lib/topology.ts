@@ -227,7 +227,7 @@ export function calcBranchAngle(from: TopoNode, to: TopoNode): number {
   const horizLen = Math.sqrt(dx * dx + dy * dy);
   const len3d = Math.sqrt(horizLen * horizLen + dz * dz);
   if (len3d < 0.001) return 0;
-  return Math.round(Math.asin(dz / len3d) * (180 / Math.PI) * 10) / 10;
+  return Math.round(Math.asin(Math.abs(dz) / len3d) * (180 / Math.PI) * 10) / 10;
 }
 
 // Длина ветви в 3D пространстве по координатам узлов

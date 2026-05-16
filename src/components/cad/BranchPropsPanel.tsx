@@ -301,7 +301,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       type="number"
                       step="1"
                       value={angle}
-                      onChange={(v) => onUpdate({ angle: Math.max(-90, Math.min(90, parseFloat(v) || 0)) })}
+                      onChange={(v) => onUpdate({ angle: Math.max(0, Math.min(90, Math.abs(parseFloat(v) || 0))) })}
                     />
                   ) : (
                     <ComputedInput value={numFmt(angle, 1)} />
