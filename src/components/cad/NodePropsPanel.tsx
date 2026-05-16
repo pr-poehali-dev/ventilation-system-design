@@ -137,13 +137,6 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
 
       <SectionHeader title="Геометрия" />
 
-      <ParamRow id="num" label="Номер узла" visible={visible.has("num")} onToggle={toggle}>
-        <EditInput
-          value={node.number}
-          onChange={(v) => onUpdate({ number: v })}
-        />
-      </ParamRow>
-
       <ParamRow id="x" label="X, м" visible={visible.has("x")} onToggle={toggle}>
         <EditInput
           type="number"

@@ -125,7 +125,6 @@ export default function InfoPanel({
         <SectionHeader label="Узлы" expanded={nodesOpen} onToggle={() => setNodesOpen((v) => !v)} />
         {nodesOpen && (
           <div>
-            <CheckRow label="Номер сопряжения" checked={config.nodeNumber} onChange={set("nodeNumber")} />
             <CheckRow label="Координата X (X), м" checked={config.nodeX} onChange={set("nodeX")} />
             <CheckRow label="Координата Y (Y), м" checked={config.nodeY} onChange={set("nodeY")} />
             <CheckRow label="Координата Z (Z), м" checked={config.nodeZ} onChange={set("nodeZ")} />
@@ -216,7 +215,7 @@ export default function InfoPanel({
                       />
                       <span className="text-[11px] font-mono font-bold flex-shrink-0"
                         style={{ color: "#1a3a6b", minWidth: 24 }}>
-                        {node.number}
+                        {node.id}
                       </span>
                       <span className="text-[10px] text-gray-500 truncate">
                         {node.name || `(${node.x}, ${node.y})`}
