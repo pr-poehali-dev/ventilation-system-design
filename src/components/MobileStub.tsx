@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Monitor, Copy, Check } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
 export default function MobileStub() {
   const [copied, setCopied] = useState(false);
+  const url = window.location.href;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
+    navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -40,6 +42,20 @@ export default function MobileStub() {
         Для комфортной работы требуется экран компьютера.
       </p>
 
+      <div className="mb-6 p-4 rounded-2xl"
+        style={{ background: "hsl(220, 18%, 11%)", border: "1px solid hsl(220, 15%, 18%)" }}>
+        <p className="text-xs mb-3" style={{ color: "hsl(215, 15%, 55%)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
+          Наведите камеру ПК или отсканируйте QR
+        </p>
+        <QRCodeSVG
+          value={url}
+          size={160}
+          bgColor="hsl(220, 18%, 11%)"
+          fgColor="hsl(210, 20%, 90%)"
+          level="M"
+        />
+      </div>
+
       <button
         onClick={handleCopy}
         className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-base transition-all active:scale-95"
@@ -54,7 +70,7 @@ export default function MobileStub() {
         }
       </button>
 
-      <p className="mt-10 text-sm" style={{ color: "hsl(215, 15%, 40%)", fontFamily: "'IBM Plex Mono', monospace" }}>
+      <p className="mt-8 text-sm" style={{ color: "hsl(215, 15%, 40%)", fontFamily: "'IBM Plex Mono', monospace" }}>
         ventilation-cad.ru
       </p>
     </div>
