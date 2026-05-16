@@ -257,30 +257,25 @@ export default function CadPage() {
   const nextNodeId = (existing: TopoNode[] = nodes): string => {
     const used = new Set(existing.map((n) => n.id));
     let i = 1;
-    while (used.has(`N${i}`)) i++;
-    return `N${i}`;
+    while (used.has(String(i))) i++;
+    return String(i);
   };
   const nextBranchId = (existing: TopoBranch[] = branchesRaw): string => {
     const used = new Set(existing.map((b) => b.id));
     let i = 1;
-    while (used.has(`B${i}`)) i++;
-    return `B${i}`;
+    while (used.has(String(i))) i++;
+    return String(i);
   };
 
   // Создаёт узел в указанной мировой точке. Если активен горизонт —
   // навязывает его Z и horizonId. Возвращает ID созданного узла.
   const handleNodeAdd = (x: number, y: number, z: number): string => {
     const newId = nextNodeId();
-    // Номер узла — только цифра, без буквенных префиксов
-    const usedNums = new Set(nodes.map((n) => parseInt(n.number, 10)).filter((n) => !isNaN(n)));
-    let nextNum = 1;
-    while (usedNums.has(nextNum)) nextNum++;
-    const num = String(nextNum);
     const finalZ = activeHorizon ? activeHorizon.z : z;
     const node = makeNode(newId, {
       x, y, z: finalZ,
-      name: `Узел ${num}`,
-      number: num,
+      name: `Узел ${newId}`,
+      number: newId,
     });
     setNodes((p) => [...p, node]);
     setSelectedNodeId(newId);
