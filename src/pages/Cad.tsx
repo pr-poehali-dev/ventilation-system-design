@@ -1737,12 +1737,12 @@ export default function CadPage() {
         <div className="w-6 flex flex-col"
           style={{ background: "#e8e8e8", borderRight: "1px solid #b8b8b8" }}>
           {([
+            { id: "general", label: "Общие" },
             { id: "params", label: "Параметры" },
             { id: "horizons", label: "Горизонты" },
             { id: "measure", label: "Замеры" },
             { id: "pipes", label: "Трубы" },
             { id: "indicators", label: "Индикаторы" },
-            { id: "general", label: "Общие" },
             { id: "vent", label: "Вентиляция" },
             { id: "thermo", label: "Теплофизика" },
             { id: "accidents", label: "Аварии" },
