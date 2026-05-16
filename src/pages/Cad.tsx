@@ -1962,25 +1962,6 @@ export default function CadPage() {
                       onChange={(e) => setExcavation({ ...excavation, number: e.target.value })}
                       className="cad-input flex-1" />
                   </LabeledRow>
-                  <LabeledRow label="Ширина:" labelWidth={88}>
-                    <div className="flex-1 flex items-center">
-                      <input type="text" value={`${excavation.width} мм`}
-                        onChange={(e) => {
-                          const num = parseFloat(e.target.value);
-                          if (!isNaN(num)) setExcavation({ ...excavation, width: num });
-                        }}
-                        className="cad-input flex-1 text-right" />
-                    </div>
-                  </LabeledRow>
-                  <LabeledRow label="Граница:" labelWidth={88}>
-                    <input type="text" value={`${excavation.border} мм`}
-                      onChange={(e) => {
-                        const num = parseFloat(e.target.value);
-                        if (!isNaN(num)) setExcavation({ ...excavation, border: num });
-                      }}
-                      className="cad-input flex-1 text-right" />
-                  </LabeledRow>
-
                   <LabeledRow label="Горизонт:" labelWidth={88}>
                     {selectedBranch ? (
                       <select
