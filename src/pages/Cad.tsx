@@ -1734,6 +1734,7 @@ export default function CadPage() {
                 <option>Свойства</option>
                 <option>Стиль отображения</option>
                 <option>Слои</option>
+                <option>Проверка</option>
               </select>
             </div>
           </div>
