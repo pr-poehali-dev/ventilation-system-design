@@ -399,22 +399,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
             <div style={{ borderBottom: "1px solid #e0e0e0", margin: "2px 0" }} />
 
-            <InlineLabel label="Ширина линии, px">
-              <EditInput
-                type="number" step="0.5"
-                value={branch.lineWidth ?? 2}
-                onChange={(v) => onUpdate({ lineWidth: parseFloat(v) || 2 })}
-              />
-            </InlineLabel>
-
-            <InlineLabel label="Граница, px">
-              <EditInput
-                type="number" step="0.1"
-                value={branch.lineBorder ?? 0.2}
-                onChange={(v) => onUpdate({ lineBorder: parseFloat(v) || 0 })}
-              />
-            </InlineLabel>
-
             <InlineLabel label="Капитальная">
               <CheckField checked={isCapital} onChange={setIsCapital} />
             </InlineLabel>
