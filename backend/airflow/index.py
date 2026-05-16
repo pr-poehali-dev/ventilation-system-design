@@ -52,13 +52,7 @@ def get_R(b):
 
 
 def fan_H(e, Q):
-    """
-    Напор вентилятора H(Q) в Па — всегда в направлении a→b ребра.
-    Q передаётся со знаком (положительный = ток a→b).
-    Для constant: напор = +fanPressure при Q>=0, 0 при Q<0
-    (вентилятор не создаёт тягу против потока — если Q<0, значит
-    реверс уже учтён направлением ребра).
-    """
+    """Напор вентилятора H при расходе Q (м³/с → Па)."""
     if not e.get("hasFan"):
         return 0.0
     mode = e.get("fanMode", "constant")
@@ -71,7 +65,6 @@ def fan_H(e, Q):
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
         return max(0.0, h0 + h1 * Q + h2 * Q * Q)
-    # constant: напор всегда в направлении a→b независимо от знака Q
     return float(e.get("fanPressure", 0))
 
 
@@ -348,34 +341,10 @@ def solve(nodes_in, branches_in, options):
         return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
                            1, True, 0.0, log, diag)
 
-    # Начальное распределение для сети с контурами:
-    # BFS от вентилятора, расставляем знаки так чтобы соблюдался 1-й закон Кирхгофа
+    # Начальное распределение для сети с контурами
     q0 = bisect_q0()
-    # Строим граф смежности
-    adj_init = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj_init[e["a"]].append((i, e["b"], +1))
-        adj_init[e["b"]].append((i, e["a"], -1))
-
-    # Начинаем BFS от GND (или от узла вентилятора)
-    fan_idx = next((i for i, e in enumerate(edges) if e["hasFan"]), None)
-    start_node = GND if GND in adj_init else (edges[fan_idx]["a"] if fan_idx is not None else edges[0]["a"])
-
-    visited_init = {start_node}
-    queue_init = collections.deque([start_node])
-    for i in range(len(edges)):
-        Q[i] = q0  # по умолчанию
-
-    while queue_init:
-        node = queue_init.popleft()
-        for ei, nb, sign in adj_init[node]:
-            if nb not in visited_init:
-                visited_init.add(nb)
-                # sign=+1: ребро идёт node→nb (a→b), Q>0 означает ток node→nb
-                # sign=-1: ребро идёт nb→node (b→a), Q>0 означает ток nb→node
-                # Мы хотим ток FROM node TO nb → если sign=+1, Q=+q0; если sign=-1, Q=-q0
-                Q[ei] = q0 * sign
-                queue_init.append(nb)
+        Q[i] = q0
 
     # Основной цикл Кросса
     max_dq = float("inf")
@@ -391,15 +360,12 @@ def solve(nodes_in, branches_in, options):
 
             for ei, sign in loop:
                 e  = edges[ei]
-                qi = Q[ei] * sign  # расход в направлении обхода контура
+                qi = Q[ei] * sign  # расход в направлении обхода
                 R  = e["R"]
-                # fan_H вычисляется для фактического тока в ребре Q[ei] (не qi!)
-                # Вентилятор нагнетает в направлении a→b ребра.
-                # Его вклад в невязку контура: -H * sign (помогает/мешает обходу)
-                H  = fan_H(e, Q[ei]) * sign
+                H  = fan_H(e, abs(qi)) * sign  # напор в направлении обхода
 
                 sum_h   += R * qi * abs(qi) - H
-                sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(Q[ei])))
+                sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(qi)))
 
             if sum_2rq < 1e-12:
                 continue
