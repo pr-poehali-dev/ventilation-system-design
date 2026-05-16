@@ -553,16 +553,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </div>
             </InlineLabel>
 
-            <InlineLabel label="Пласт">
-              <SelectField value={plast} options={PLAST_OPTIONS} onChange={setPlast} />
-            </InlineLabel>
-
             <InlineLabel label="ПЛА">
               <SelectField value={pla} options={PLA_OPTIONS} onChange={setPla} />
-            </InlineLabel>
-
-            <InlineLabel label="Поле">
-              <SelectField value={pole} options={POLE_OPTIONS} onChange={setPole} />
             </InlineLabel>
 
             <SectionHeader title="Вычисленные параметры" />
