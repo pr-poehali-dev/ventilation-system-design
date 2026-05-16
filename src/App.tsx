@@ -31,13 +31,10 @@ const App = () => {
   const applyDesktopViewport = () => {
     const vp = document.getElementById("viewport-meta") as HTMLMetaElement | null;
     if (!vp) return;
-    vp.content = "width=1280, user-scalable=yes";
-    // Растягиваем html/body на весь физический экран
-    document.documentElement.style.width = "100%";
-    document.documentElement.style.height = "100%";
-    document.body.style.width = "100%";
-    document.body.style.height = "100%";
-    document.body.style.background = "#000";
+    // Вычисляем масштаб: физическая ширина экрана / 1280
+    const cssW = window.screen.width;
+    const scale = parseFloat((cssW / 1280).toFixed(3));
+    vp.content = `width=1280, initial-scale=${scale}, minimum-scale=0.1, maximum-scale=10, user-scalable=yes`;
   };
 
   const handleForceDesktop = () => {
