@@ -22,6 +22,10 @@ interface Props {
   selectedBranchIds?: Set<string>;
   /** Ctrl+клик по ветви — добавить/убрать из множества. */
   onBranchMultiSelect?: (id: string) => void;
+  /** Множество ID выделенных узлов (Ctrl+клик). */
+  selectedNodeIds?: Set<string>;
+  /** Ctrl+клик по узлу — добавить/убрать из множества. */
+  onNodeMultiSelect?: (id: string) => void;
   tool: CadTool;
   /** Создать новый узел в указанной мировой точке. Возвращает ID нового узла. */
   onNodeAdd: (x: number, y: number, z: number) => string | void;
@@ -127,6 +131,7 @@ export default function TopoCanvas(props: Props) {
     editingHorizonImageId, onHorizonImageBoundsChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
+    selectedNodeIds, onNodeMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolClick,
@@ -479,19 +484,22 @@ export default function TopoCanvas(props: Props) {
 
     // ─── ИНСТРУМЕНТ «ВЫБОР» (по умолчанию) ────────────────────────────
     if (hitN) {
-      onSelectNode(hitN);
-      onSelectBranch(null);
-      // Перетаскивание узла: и в 2D, и в 3D.
-      const node = nodes.find((n) => n.id === hitN);
-      if (node) {
-        // zScale применяется к Z при проекции → plane.value тоже должен учитывать zScale
-        const zv = node.z * (zScale ?? 1);
-        const plane: WorkPlane = !is3D
-          ? { axis: "z", value: zv }
-          : effPlane.axis === "z" ? { axis: "z", value: zv }
-          : effPlane.axis === "y" ? { axis: "y", value: node.y }
-          : { axis: "x", value: node.x };
-        setDraggingNode({ id: hitN, plane });
+      if (e.ctrlKey && onNodeMultiSelect) {
+        onNodeMultiSelect(hitN);
+      } else {
+        onSelectNode(hitN);
+        onSelectBranch(null);
+        // Перетаскивание узла: и в 2D, и в 3D.
+        const node = nodes.find((n) => n.id === hitN);
+        if (node) {
+          const zv = node.z * (zScale ?? 1);
+          const plane: WorkPlane = !is3D
+            ? { axis: "z", value: zv }
+            : effPlane.axis === "z" ? { axis: "z", value: zv }
+            : effPlane.axis === "y" ? { axis: "y", value: node.y }
+            : { axis: "x", value: node.x };
+          setDraggingNode({ id: hitN, plane });
+        }
       }
       return;
     }
@@ -1205,17 +1213,19 @@ export default function TopoCanvas(props: Props) {
         {nodesSorted.map(({ node, sx, sy }) => {
           // Если узел скрыт через «Видимость узлов» — не рендерим ничего
           if (node.visible === false) return null;
-          const isSel = selectedNodeId === node.id;
+          const isSel = selectedNodeId === node.id || (selectedNodeIds?.has(node.id) ?? false);
+          const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
           // Фиксированный размер в px — не зависит от масштаба схемы
           const r = isSel ? 6 : 4;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
+          const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {(isSel || isBranchFrom) && (
-                <circle r={r + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" />
+                <circle r={r + 4} fill="none" stroke={ringColor} strokeWidth="1.5" />
               )}
-              <circle r={r} fill={color} stroke="#1f2937" strokeWidth={isSel ? 2 : 1} />
+              <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={isSel ? 2 : 1} />
               {node.atmosphereLink && (
                 <circle r={Math.max(1.5, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth="1.2" strokeDasharray="2 1" />
               )}

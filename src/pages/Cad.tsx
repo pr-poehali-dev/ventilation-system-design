@@ -499,6 +499,18 @@ export default function CadPage() {
     setSelectedNodeId(null);
   };
 
+  // ─── МУЛЬТИВЫБОР УЗЛОВ (Ctrl+клик) ─────────────────────────────────
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+  const handleNodeMultiSelect = (id: string) => {
+    setSelectedNodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setSelectedNodeId(id);
+    setSelectedBranchId(null);
+  };
+
   // ─── БУФЕР КОПИРОВАНИЯ ПАРАМЕТРОВ ВЕТВИ ─────────────────────────────
   const [branchParamBuffer, setBranchParamBuffer] = useState<Partial<TopoBranch> | null>(null);
 
@@ -1061,6 +1073,23 @@ export default function CadPage() {
     setSelectedNodeId(null);
   };
 
+  // Соединить выбранные узлы в один — обратная операция к «Разорвать связь».
+  // Все ветви выбранных узлов перепривязываются к первому (главному) узлу,
+  // остальные узлы удаляются.
+  const handleMergeNodes = (nodeIds: string[]) => {
+    if (nodeIds.length < 2) return;
+    const [mainId, ...rest] = nodeIds;
+    const restSet = new Set(rest);
+    setBranches((prev) => prev.map((b) => ({
+      ...b,
+      fromId: restSet.has(b.fromId) ? mainId : b.fromId,
+      toId:   restSet.has(b.toId)   ? mainId : b.toId,
+    })));
+    setNodes((prev) => prev.filter((n) => !restSet.has(n.id)));
+    setSelectedNodeIds(new Set());
+    setSelectedNodeId(mainId);
+  };
+
   const handleToggleAtmosphere = (id: string) => {
     setNodes((p) => p.map((n) => n.id === id ? { ...n, atmosphereLink: !n.atmosphereLink } : n));
   };
@@ -1084,6 +1113,13 @@ export default function CadPage() {
       case "delete_node": if (nodeId) handleDeleteNode(nodeId); break;
       case "delete_branch": if (branchId) handleDeleteBranch(branchId); break;
       case "split_connections": if (nodeId) handleSplitNodeConnections(nodeId); break;
+      case "merge_nodes": {
+        const ids = selectedNodeIds.size >= 2
+          ? [...selectedNodeIds]
+          : nodeId ? [nodeId] : [];
+        if (ids.length >= 2) handleMergeNodes(ids);
+        break;
+      }
       case "toggle_atmosphere": if (nodeId) handleToggleAtmosphere(nodeId); break;
       case "toggle_capital": if (branchId) handleToggleCapital(branchId); break;
       case "toggle_designed": if (branchId) handleToggleDesigned(branchId); break;
@@ -2642,13 +2678,15 @@ export default function CadPage() {
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
-              onSelectNode={(id) => { setSelectedNodeId(id); if (id) setSelectedBranchId(null); }}
+              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) setSelectedBranchId(null); }}
               onSelectBranch={(id) => { setSelectedBranchId(id); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); } }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
               selectedBranchIds={selectedBranchIds}
               onBranchMultiSelect={handleBranchMultiSelect}
+              selectedNodeIds={selectedNodeIds}
+              onNodeMultiSelect={handleNodeMultiSelect}
               infoConfig={infoConfig}
               zScale={zScale}
               schemaSymbols={schemaSymbols}
@@ -2841,7 +2879,8 @@ export default function CadPage() {
         onSelect={handleCtxAction}
         items={
           ctxMenu.kind === "node" ? nodeContextItems(
-            nodes.find((n) => n.id === ctxMenu.id) ?? null
+            nodes.find((n) => n.id === ctxMenu.id) ?? null,
+            selectedNodeIds.size
           ) :
           ctxMenu.kind === "branch" ? branchContextItems(
             branches.find((b) => b.id === ctxMenu.id) ?? null,
@@ -3032,12 +3071,13 @@ export default function CadPage() {
 
 // ─── Пункты контекстного меню ───────────────────────────────────────────────
 
-function nodeContextItems(node: TopoNode | null): ContextMenuItem[] {
+function nodeContextItems(node: TopoNode | null, multiNodeCount: number): ContextMenuItem[] {
   return [
     { id: "open_props", label: "Свойства узла...", icon: "Settings", shortcut: "Ctrl+J" },
     { id: "div1", label: "", divider: true },
     { id: "toggle_atmosphere", label: node?.atmosphereLink ? "Снять связь с атмосферой" : "Поверхностный узел (атмосфера)", icon: "Wind" },
     { id: "split_connections", label: "Разорвать связь в узле", icon: "Scissors" },
+    { id: "merge_nodes", label: multiNodeCount >= 2 ? `Соединить узлы (${multiNodeCount})` : "Соединить узлы", icon: "GitMerge", disabled: multiNodeCount < 2 },
     { id: "div2", label: "", divider: true },
     { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
     { id: "div3", label: "", divider: true },
