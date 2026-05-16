@@ -504,6 +504,10 @@ export default function CadPage() {
   const handleNodeMultiSelect = (id: string) => {
     setSelectedNodeIds((prev) => {
       const next = new Set(prev);
+      // Если Set пуст и есть одиночный выбранный узел — включаем его тоже
+      if (next.size === 0 && selectedNodeId && selectedNodeId !== id) {
+        next.add(selectedNodeId);
+      }
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
