@@ -2130,40 +2130,99 @@ export default function CadPage() {
                       const usedCount = branches.filter((b) => b.horizonId === h.id).length;
                       const isActive = activeHorizonId === h.id;
                       return (
-                        <div key={h.id} className="flex items-center gap-1 border rounded px-1 py-1"
+                        <div key={h.id} className="border rounded"
                           style={{
                             background: isActive ? "#eff6ff" : "white",
                             borderColor: isActive ? "#3b82f6" : "#d1d5db",
                           }}>
-                          <input type="radio" name="active-horizon"
-                            checked={isActive}
-                            onChange={() => setActiveHorizonId(h.id)}
-                            title="Сделать активным для построения"
-                            className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
-                          <input type="checkbox" checked={h.visible}
-                            onChange={(e) => updateHorizon(h.id, { visible: e.target.checked })}
-                            title="Видимость на схеме" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
-                          <input type="color" value={h.color}
-                            onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
-                            className="w-6 h-6 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
-                            title="Цвет горизонта" />
-                          <input type="text" value={h.name}
-                            onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
-                            className="cad-input flex-1 min-w-0"
-                            placeholder="Название" />
-                          <input type="number" value={h.z}
-                            onChange={(e) => updateHorizon(h.id, { z: Number(e.target.value) })}
-                            className="cad-input w-16 text-right"
-                            title="Высотная отметка, м" />
-                          <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>
-                          <span className="text-[10px] text-gray-400 w-7 text-center" title="Ветвей на горизонте">
-                            {usedCount}
-                          </span>
-                          <button onClick={() => removeHorizon(h.id)}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
-                            title="Удалить горизонт">
-                            <Icon name="Trash2" size={11} className="text-gray-600" />
-                          </button>
+                          {/* ── Строка горизонта ── */}
+                          <div className="flex items-center gap-1 px-1 py-1">
+                            <input type="radio" name="active-horizon"
+                              checked={isActive}
+                              onChange={() => setActiveHorizonId(h.id)}
+                              title="Сделать активным для построения"
+                              className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
+                            <input type="checkbox" checked={h.visible}
+                              onChange={(e) => updateHorizon(h.id, { visible: e.target.checked })}
+                              title="Видимость на схеме" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
+                            <input type="color" value={h.color}
+                              onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
+                              className="w-6 h-6 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
+                              title="Цвет горизонта" />
+                            <input type="text" value={h.name}
+                              onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
+                              className="cad-input flex-1 min-w-0"
+                              placeholder="Название" />
+                            <input type="number" value={h.z}
+                              onChange={(e) => updateHorizon(h.id, { z: Number(e.target.value) })}
+                              className="cad-input w-16 text-right"
+                              title="Высотная отметка, м" />
+                            <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>
+                            <span className="text-[10px] text-gray-400 w-7 text-center" title="Ветвей на горизонте">
+                              {usedCount}
+                            </span>
+                            <button onClick={() => removeHorizon(h.id)}
+                              className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
+                              title="Удалить горизонт">
+                              <Icon name="Trash2" size={11} className="text-gray-600" />
+                            </button>
+                          </div>
+                          {/* ── Подложка плана (внутри строки горизонта) ── */}
+                          <div className="px-1 pb-1 pt-0" style={{ borderTop: "1px solid #e5e7eb" }}>
+                            {h.image ? (
+                              <div className="space-y-1 pt-1">
+                                <div className="flex items-center gap-1">
+                                  <img src={h.image.dataUrl} alt=""
+                                    className="w-10 h-10 object-cover border border-gray-300 rounded flex-shrink-0" />
+                                  <div className="flex-1 text-[10px] text-gray-600 leading-tight">
+                                    <div className="font-medium text-gray-700 mb-0.5">План горизонта</div>
+                                    <code className="text-[9px]">
+                                      {Math.round(h.image.bounds.x1)}…{Math.round(h.image.bounds.x2)}
+                                      {" × "}
+                                      {Math.round(h.image.bounds.y1)}…{Math.round(h.image.bounds.y2)} м
+                                    </code>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <CadCheckbox checked={h.image.visible}
+                                    onChange={(v) => updateHorizon(h.id, { image: h.image ? { ...h.image, visible: v } : undefined })}
+                                    label="Показать" />
+                                </div>
+                                <LabeledRow label="Прозрачность:" labelWidth={88}>
+                                  <input type="range" min={0} max={100} value={Math.round(h.image.opacity * 100)}
+                                    onChange={(e) => updateHorizon(h.id, { image: h.image ? { ...h.image, opacity: Number(e.target.value) / 100 } : undefined })}
+                                    className="flex-1" />
+                                  <span className="text-[10px] w-8 text-right">{Math.round(h.image.opacity * 100)}%</span>
+                                </LabeledRow>
+                                <div className="flex gap-1">
+                                  <button onClick={() => setEditingHorizonImageId(editingHorizonImageId === h.id ? null : h.id)}
+                                    className="flex-1 px-2 py-1 text-[11px] border rounded"
+                                    style={{
+                                      background: editingHorizonImageId === h.id ? "#2563eb" : "white",
+                                      color: editingHorizonImageId === h.id ? "white" : "#1f1f1f",
+                                      borderColor: editingHorizonImageId === h.id ? "#1d4ed8" : "#d1d5db",
+                                    }}>
+                                    {editingHorizonImageId === h.id ? "✓ Готово" : "✎ Растянуть"}
+                                  </button>
+                                  <button onClick={() => removeHorizonImage(h.id)}
+                                    className="px-2 py-1 text-[11px] border border-red-300 text-red-700 rounded hover:bg-red-50">
+                                    Удалить
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <label className="mt-1 flex items-center justify-center gap-1 px-2 py-1 text-[11px] text-gray-500 border border-dashed border-gray-300 rounded cursor-pointer hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600">
+                                <input type="file" accept="image/png,image/jpeg" className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) uploadHorizonImage(h.id, f);
+                                    e.target.value = "";
+                                  }} />
+                                <Icon name="Upload" size={10} className="inline flex-shrink-0" />
+                                Загрузить план
+                              </label>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -2172,81 +2231,6 @@ export default function CadPage() {
                     className="mt-2 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center gap-1">
                     <Icon name="Plus" size={11} /> Добавить горизонт
                   </button>
-                </FrameGroup>
-
-                {/* ── Подложки горизонтов (PNG/JPG) ────────────────────────── */}
-                <FrameGroup title="Подложка плана (картинка)">
-                  <div className="text-[10px] text-gray-600 leading-tight pb-1">
-                    Загрузите PNG/JPG горного плана. После загрузки потяните за углы,
-                    чтобы выровнять подложку по реальным координатам.
-                    Картинки хранятся локально в браузере.
-                  </div>
-                  <div className="space-y-2">
-                    {horizons.map((h) => (
-                      <div key={`img-${h.id}`} className="border rounded p-1.5"
-                        style={{ borderColor: h.color + "55", background: h.color + "08" }}>
-                        <div className="flex items-center gap-1 mb-1">
-                          <span className="w-3 h-3 rounded-sm border border-gray-400 flex-shrink-0"
-                            style={{ background: h.color }} />
-                          <span className="text-xs font-semibold flex-1 truncate">{h.name}</span>
-                          <span className="text-[10px] text-gray-500">{h.z} м</span>
-                        </div>
-                        {h.image ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1">
-                              <img src={h.image.dataUrl} alt=""
-                                className="w-12 h-12 object-cover border border-gray-300 rounded" />
-                              <div className="flex-1 text-[10px] text-gray-600 leading-tight">
-                                Углы (X×Y, м):<br />
-                                <code>
-                                  {Math.round(h.image.bounds.x1)}…{Math.round(h.image.bounds.x2)}
-                                  {" × "}
-                                  {Math.round(h.image.bounds.y1)}…{Math.round(h.image.bounds.y2)}
-                                </code>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <CadCheckbox checked={h.image.visible}
-                                onChange={(v) => updateHorizon(h.id, { image: h.image ? { ...h.image, visible: v } : undefined })}
-                                label="Показать" />
-                            </div>
-                            <LabeledRow label="Прозрачность:" labelWidth={88}>
-                              <input type="range" min={0} max={100} value={Math.round(h.image.opacity * 100)}
-                                onChange={(e) => updateHorizon(h.id, { image: h.image ? { ...h.image, opacity: Number(e.target.value) / 100 } : undefined })}
-                                className="flex-1" />
-                              <span className="text-[10px] w-8 text-right">{Math.round(h.image.opacity * 100)}%</span>
-                            </LabeledRow>
-                            <div className="flex gap-1">
-                              <button onClick={() => setEditingHorizonImageId(editingHorizonImageId === h.id ? null : h.id)}
-                                className="flex-1 px-2 py-1 text-[11px] border rounded"
-                                style={{
-                                  background: editingHorizonImageId === h.id ? "#2563eb" : "white",
-                                  color: editingHorizonImageId === h.id ? "white" : "#1f1f1f",
-                                  borderColor: editingHorizonImageId === h.id ? "#1d4ed8" : "#d1d5db",
-                                }}>
-                                {editingHorizonImageId === h.id ? "✓ Готово" : "✎ Растянуть"}
-                              </button>
-                              <button onClick={() => removeHorizonImage(h.id)}
-                                className="px-2 py-1 text-[11px] border border-red-300 text-red-700 rounded hover:bg-red-50">
-                                Удалить
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <label className="block px-2 py-1 text-[11px] text-center border border-dashed border-gray-400 rounded cursor-pointer hover:bg-blue-50 hover:border-blue-400">
-                            <input type="file" accept="image/png,image/jpeg" className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) uploadHorizonImage(h.id, f);
-                                e.target.value = "";
-                              }} />
-                            <Icon name="Upload" size={11} className="inline mr-1" />
-                            Загрузить PNG/JPG плана
-                          </label>
-                        )}
-                      </div>
-                    ))}
-                  </div>
                 </FrameGroup>
 
                 <FrameGroup title="Быстрые действия">
