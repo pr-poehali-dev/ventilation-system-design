@@ -2683,8 +2683,8 @@ export default function CadPage() {
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
-              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) setSelectedBranchId(null); }}
-              onSelectBranch={(id) => { setSelectedBranchId(id); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); } }}
+              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("general"); } }}
+              onSelectBranch={(id) => { setSelectedBranchId(id); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); } }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
