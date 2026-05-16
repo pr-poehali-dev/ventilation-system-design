@@ -2017,11 +2017,19 @@ export default function CadPage() {
                 <FrameGroup title="Ширина и граница ветвей">
                   <LabeledRow label="Ширина:" labelWidth={108}>
                     <NumWithUnit value={branchWidth} unit="px"
-                      onChange={(v) => setBranchWidth(Math.max(0.5, Math.min(20, v)))} />
+                      onChange={(v) => {
+                        const val = Math.max(0.5, Math.min(20, v));
+                        setBranchWidth(val);
+                        setBranches((prev) => prev.map((b) => ({ ...b, lineWidth: val })));
+                      }} />
                   </LabeledRow>
                   <LabeledRow label="Граница:" labelWidth={108}>
                     <NumWithUnit value={branchBorder} unit="px"
-                      onChange={(v) => setBranchBorder(Math.max(0, Math.min(8, v)))} />
+                      onChange={(v) => {
+                        const val = Math.max(0, Math.min(8, v));
+                        setBranchBorder(val);
+                        setBranches((prev) => prev.map((b) => ({ ...b, lineBorder: val })));
+                      }} />
                   </LabeledRow>
                   <div className="text-[10px] text-gray-500 px-1">
                     Контур = тёмная окантовка вокруг линии (0 — без обводки).
