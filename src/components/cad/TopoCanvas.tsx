@@ -1227,6 +1227,7 @@ export default function TopoCanvas(props: Props) {
                   if (!ic) {
                     if (node.name) nlines.push(node.name);
                   } else {
+                    if (ic.nodeNumber) nlines.push(`${node.number}`);
                     if (ic.nodeX) nlines.push(`X=${node.x}м`);
                     if (ic.nodeY) nlines.push(`Y=${node.y}м`);
                     if (ic.nodeZ) nlines.push(`Z=${node.z}м`);
