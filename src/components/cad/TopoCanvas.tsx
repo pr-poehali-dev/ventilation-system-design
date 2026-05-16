@@ -362,8 +362,12 @@ export default function TopoCanvas(props: Props) {
     const sy = e.clientY - rect.top;
     const hitN = hitNode(sx, sy, projNodes);
     if (hitN) {
-      onSelectNode(hitN);
-      onSelectBranch(null);
+      // При правом клике НЕ сбрасываем мультивыбор — передаём только контекстное меню.
+      // onSelectNode сбросил бы selectedNodeIds, поэтому вызываем его только если узел ещё не выбран.
+      if (!selectedNodeIds?.has(hitN)) {
+        onSelectNode(hitN);
+        onSelectBranch(null);
+      }
       onNodeContextMenu?.(hitN, e.clientX, e.clientY);
       return;
     }
