@@ -30,8 +30,17 @@ const App = () => {
 
   const handleForceDesktop = () => {
     localStorage.setItem("force-desktop", "1");
+    const vp = document.getElementById("viewport-meta") as HTMLMetaElement | null;
+    if (vp) vp.content = "width=1280, initial-scale=0.25";
     setForceDesktop(true);
   };
+
+  useEffect(() => {
+    if (forceDesktop) {
+      const vp = document.getElementById("viewport-meta") as HTMLMetaElement | null;
+      if (vp) vp.content = "width=1280, initial-scale=0.25";
+    }
+  }, [forceDesktop]);
 
   if (isMobile && !forceDesktop) return <MobileStub onForceDesktop={handleForceDesktop} />;
 
