@@ -264,17 +264,17 @@ def solve(nodes_in, branches_in, options):
             "минимум 2 выхода на поверхность (например, два ствола)."
         )
         diag.append({"level": "error", "category": "topology", "message": msg})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag)
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
     if atm_count == 0:
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет узлов, связанных с атмосферой. Добавьте минимум 2 поверхностных узла."})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag)
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
     fans = [e for e in edges if e["hasFan"]]
     if not fans:
         diag.append({"level": "warning", "category": "topology",
                      "message": "Нет вентилятора — расход нулевой"})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag)
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
 
     log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)}")
 
@@ -289,7 +289,7 @@ def solve(nodes_in, branches_in, options):
                      "message": "Сеть не имеет замкнутых контуров — циркуляция воздуха невозможна. "
                                 "Проверьте топологию: нужно минимум 2 выхода на поверхность, "
                                 "образующих замкнутый путь."})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag)
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
     # Начальный расход
     Q = [0.0] * len(edges)
@@ -428,7 +428,7 @@ def find_dead_ends(edges):
     return dead
 
 
-def make_result(edges, Q, it, converged, max_res, log, diag):
+def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False):
     dead_ends = find_dead_ends(edges)
     out = []
     for e in edges:
@@ -436,6 +436,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag):
         q = Q.get(e["id"], 0.0)
 
         if is_dead:
+            q = 0.0
+        elif force_zero:
             q = 0.0
         elif e["hasFan"] and abs(q) < 1e-6:
             # Тупиковая ветвь с ВМП: расход не вычислился методом Кросса
