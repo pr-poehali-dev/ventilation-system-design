@@ -1981,12 +1981,28 @@ export default function CadPage() {
                       className="cad-input flex-1 text-right" />
                   </LabeledRow>
 
-                  <LabeledRow label="Слой:" labelWidth={88}>
-                    <select value={excavation.layer}
-                      onChange={(e) => setExcavation({ ...excavation, layer: e.target.value })}
-                      className="cad-input flex-1">
-                      {LAYERS.map((l) => <option key={l}>{l}</option>)}
-                    </select>
+                  <LabeledRow label="Горизонт:" labelWidth={88}>
+                    {selectedBranch ? (
+                      <select
+                        value={selectedBranch.horizonId}
+                        onChange={(e) => updateBranch(selectedBranch.id, { horizonId: e.target.value })}
+                        className="cad-input flex-1">
+                        <option value="">— без привязки —</option>
+                        {horizons.map((h) => (
+                          <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
+                        ))}
+                      </select>
+                    ) : selectedNode ? (
+                      <select className="cad-input flex-1" disabled>
+                        <option>— узел —</option>
+                      </select>
+                    ) : (
+                      <select value={excavation.layer}
+                        onChange={(e) => setExcavation({ ...excavation, layer: e.target.value })}
+                        className="cad-input flex-1">
+                        {LAYERS.map((l) => <option key={l}>{l}</option>)}
+                      </select>
+                    )}
                   </LabeledRow>
 
                   {/* Появление */}
