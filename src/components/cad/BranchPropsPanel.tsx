@@ -509,8 +509,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <div className="text-[11px] text-gray-600 mb-0.5">Название ветви</div>
               <input
                 type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={branch.type}
+                onChange={(e) => onUpdate({ type: e.target.value })}
                 className="w-full text-[11px] px-1"
                 style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}
               />

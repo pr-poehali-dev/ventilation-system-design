@@ -1948,8 +1948,13 @@ export default function CadPage() {
               <div className="p-2 space-y-2">
                 <FrameGroup title="Общие свойства">
                   <LabeledRow label="Название:" labelWidth={88}>
-                    <input type="text" value={excavation.name}
-                      onChange={(e) => setExcavation({ ...excavation, name: e.target.value })}
+                    <input type="text"
+                      value={selectedBranch ? selectedBranch.type : selectedNode ? selectedNode.name : excavation.name}
+                      onChange={(e) => {
+                        if (selectedBranch) updateBranch(selectedBranch.id, { type: e.target.value });
+                        else if (selectedNode) updateNode(selectedNode.id, { name: e.target.value });
+                        else setExcavation({ ...excavation, name: e.target.value });
+                      }}
                       className="cad-input flex-1" />
                   </LabeledRow>
                   <LabeledRow label="Номер:" labelWidth={88}>
