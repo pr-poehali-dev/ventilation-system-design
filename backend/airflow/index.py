@@ -341,10 +341,32 @@ def solve(nodes_in, branches_in, options):
         return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
                            1, True, 0.0, log, diag)
 
-    # Начальное распределение для сети с контурами
+    # Начальное распределение для сети с контурами:
+    # BFS от GND — расставляем знаки Q так чтобы поток шёл "от корня наружу".
+    # Это гарантирует соблюдение 1-го закона Кирхгофа в стартовой точке
+    # и обеспечивает сходимость метода Кросса при любой ориентации рёбер (реверс вентилятора).
     q0 = bisect_q0()
+    adj_init = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        Q[i] = q0
+        adj_init[e["a"]].append((i, e["b"], +1))   # ребро a→b, обход a→b: sign=+1
+        adj_init[e["b"]].append((i, e["a"], -1))   # ребро a→b, обход b→a: sign=-1
+
+    start = GND if GND in adj_init else (edges[0]["a"] if edges else None)
+    visited_bfs = {start} if start else set()
+    queue_bfs = collections.deque([start]) if start else collections.deque()
+
+    for i in range(len(edges)):
+        Q[i] = q0  # по умолчанию
+
+    while queue_bfs:
+        node = queue_bfs.popleft()
+        for ei, nb, direction in adj_init[node]:
+            if nb not in visited_bfs:
+                visited_bfs.add(nb)
+                # direction=+1: ребро идёт node→nb (совпадает a→b), Q>0 = ток a→b = node→nb
+                # direction=-1: ребро идёт nb→node (обратно a→b), Q<0 = ток b→a = node→nb
+                Q[ei] = q0 * direction
+                queue_bfs.append(nb)
 
     # Основной цикл Кросса
     max_dq = float("inf")
