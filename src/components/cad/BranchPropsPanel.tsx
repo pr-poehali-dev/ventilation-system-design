@@ -553,7 +553,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </div>
             </InlineLabel>
 
-            <InlineLabel label="ПЛА">
+            <InlineLabel label="Позиция">
               <SelectField value={pla} options={PLA_OPTIONS} onChange={setPla} />
             </InlineLabel>
 
