@@ -791,7 +791,7 @@ export default function TopoCanvas(props: Props) {
         {/* ── РУЧКИ ДЛЯ РАСТЯГИВАНИЯ ПОДЛОЖКИ (только для активного горизонта) ── */}
         {editingHorizonImageId && (() => {
           const h = (horizons ?? []).find((hh) => hh.id === editingHorizonImageId);
-          if (!h || !h.image) return null;
+          if (!h || !h.image || !h.image.visible || !h.visible) return null;
           const b = h.image.bounds;
           const corners: Array<{ key: "tl" | "tr" | "bl" | "br"; x: number; y: number; cur: string }> = [
             { key: "tl", x: b.x1, y: b.y2, cur: "nwse-resize" },
