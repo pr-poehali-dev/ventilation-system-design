@@ -195,7 +195,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
     if (defaultInnerTab) setInnerTab(defaultInnerTab);
   }, [branch.id, defaultInnerTab]);
   const [name, setName] = useState(branch.id);
-  const [comment, setComment] = useState("");
   const [isCapital, setIsCapital] = useState(false);
   const [isProjected, setIsProjected] = useState(false);
   const [plast, setPlast] = useState(PLAST_OPTIONS[0]);
@@ -488,28 +487,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </InlineLabel>
 
             <SectionHeader title="Название и группы" />
-
-            <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-              <div className="text-[11px] text-gray-600 mb-0.5">Название ветви</div>
-              <input
-                type="text"
-                value={branch.type}
-                onChange={(e) => onUpdate({ type: e.target.value })}
-                className="w-full text-[11px] px-1"
-                style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}
-              />
-            </div>
-
-            <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-              <div className="text-[11px] text-gray-600 mb-0.5">Комментарии</div>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={3}
-                className="w-full text-[11px] px-1"
-                style={{ border: "1px solid #c8c8c8", outline: "none", resize: "vertical", background: "white", fontFamily: "inherit" }}
-              />
-            </div>
 
             <InlineLabel label="Тип выработки">
               <SelectField

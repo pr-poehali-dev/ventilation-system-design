@@ -89,6 +89,7 @@ export interface TopoBranch {
   // ─── Общие ───────────────────────────────────────────
   layer: string;
   horizonId: string;        // ID горизонта (см. Horizon[]), пустая строка = без привязки
+  comment: string;          // Примечание (произвольный текст)
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
@@ -214,6 +215,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     designed: false,
     layer: "Стволы",
     horizonId: "",
+    comment: "",
     ...partial,
   };
 }

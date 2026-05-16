@@ -2062,6 +2062,19 @@ export default function CadPage() {
                       label="Окрашивать ветви по цвету горизонта" />
                   </div>
                 </FrameGroup>
+
+                {selectedBranch && (
+                  <FrameGroup title="Примечание">
+                    <textarea
+                      value={selectedBranch.comment ?? ""}
+                      onChange={(e) => updateBranch(selectedBranch.id, { comment: e.target.value })}
+                      rows={4}
+                      placeholder="Произвольный текст..."
+                      className="w-full text-[11px] px-1"
+                      style={{ border: "1px solid #c8c8c8", outline: "none", resize: "vertical", background: "white", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
+                    />
+                  </FrameGroup>
+                )}
               </div>
             )}
 
