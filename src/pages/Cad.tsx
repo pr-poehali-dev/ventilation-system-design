@@ -1125,8 +1125,8 @@ export default function CadPage() {
 
   return (
     <>
-    <div className="w-full h-screen flex flex-col"
-      style={{ background: "#f0f0f0", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "#1f1f1f" }}>
+    <div className="w-full flex flex-col"
+      style={{ background: "#f0f0f0", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "#1f1f1f", height: "100dvh" }}>
 
       {/* ═══ TITLE BAR ════════════════════════════════════════════════════ */}
       <div className="h-7 flex items-center justify-between px-2 select-none"

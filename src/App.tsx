@@ -31,8 +31,13 @@ const App = () => {
   const applyDesktopViewport = () => {
     const vp = document.getElementById("viewport-meta") as HTMLMetaElement | null;
     if (!vp) return;
-    // Выставляем viewport как у десктопа — браузер сам масштабирует под экран
-    vp.content = "width=1280, shrink-to-fit=yes, user-scalable=yes";
+    vp.content = "width=1280, user-scalable=yes";
+    // Растягиваем html/body на весь физический экран
+    document.documentElement.style.width = "100%";
+    document.documentElement.style.height = "100%";
+    document.body.style.width = "100%";
+    document.body.style.height = "100%";
+    document.body.style.background = "#000";
   };
 
   const handleForceDesktop = () => {
