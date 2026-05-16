@@ -402,6 +402,22 @@ export function solveNetwork(
 
   log.push(`Узлов: ${nodeList.length}, ветвей: ${edges.length}, контуров: ${chords.length}`);
 
+  // Если нет ни одного замкнутого контура — сеть разомкнута, Q = 0 везде.
+  if (chords.length === 0) {
+    const zeroBranches = brCalc.map(b => ({ ...b, flow: 0, velocity: 0, dP: 0 }));
+    return {
+      ok: false, iterations: 0, maxDeltaQ: 0, maxDeltaH: 0,
+      branches: zeroBranches, nodes: nodesIn,
+      log: [...log, "Нет замкнутых контуров — циркуляция невозможна, Q=0"],
+      cyclesCount: 0,
+      diagnostics: [{
+        level: "error",
+        category: "topology",
+        message: "Сеть не имеет замкнутых контуров — циркуляция воздуха невозможна. Проверьте топологию: нужно минимум 2 выхода на поверхность, образующих замкнутый путь.",
+      }],
+    };
+  }
+
   // Контуры: хорда (dir=+1, обход a→b) + путь в дереве от e.b обратно к e.a
   const contours: ContourEdge[][] = chords.map(cIdx => {
     const e = edges[cIdx];

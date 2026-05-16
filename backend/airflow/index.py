@@ -282,6 +282,15 @@ def solve(nodes_in, branches_in, options):
     loops = find_spanning_tree_and_loops(edges)
     log.append(f"Контуров={len(loops)}")
 
+    # Если нет ни одного замкнутого контура — сеть разомкнута, циркуляция невозможна.
+    # Например: после «разорвать связь» один ствол стал тупиком.
+    if not loops:
+        diag.append({"level": "error", "category": "topology",
+                     "message": "Сеть не имеет замкнутых контуров — циркуляция воздуха невозможна. "
+                                "Проверьте топологию: нужно минимум 2 выхода на поверхность, "
+                                "образующих замкнутый путь."})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag)
+
     # Начальный расход
     Q = [0.0] * len(edges)
 
