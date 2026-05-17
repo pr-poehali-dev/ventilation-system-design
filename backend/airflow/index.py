@@ -366,12 +366,20 @@ def solve(nodes_in, branches_in, options):
 
             for ei, sign in loop:
                 e  = edges[ei]
-                qi = Q[ei] * sign  # расход в направлении обхода
+                qi = Q[ei] * sign  # расход в направлении обхода контура
                 R  = e["R"]
-                H  = fan_H(e, abs(Q[ei])) * sign  # напор вентилятора по ориентации ребра a→b
 
-                sum_h   += R * qi * abs(qi) - H
-                sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(qi)))
+                sum_h   += R * qi * abs(qi)
+                sum_2rq += 2.0 * R * abs(qi)
+
+                if e["hasFan"]:
+                    # Вентилятор нагнетает в направлении a→b (физический ток).
+                    # sign(Q[ei]) > 0: ток совпадает с a→b.
+                    # sign_fan = +1 если ток совпадает с обходом, -1 если против.
+                    # Правильный вклад: H · sign(qi) вычитается из невязки.
+                    H = fan_H(e, abs(Q[ei]))
+                    sum_h   -= H * (1.0 if qi >= 0 else -1.0)
+                    sum_2rq += abs(fan_dH(e, abs(Q[ei])))
 
             if sum_2rq < 1e-12:
                 continue
