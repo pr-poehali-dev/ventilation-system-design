@@ -486,20 +486,23 @@ export function solveNetwork(
 
       for (const { edgeIdx, dir } of contour) {
         const e  = edges[edgeIdx];
-        const Qd = e.Q * dir;           // расход в направлении обхода
-        // Вентилятор нагнетает в направлении a→b (e.Q > 0).
-        // Если e.Q < 0 — ток против вентилятора, напор = 0 (вентилятор не помогает).
-        const H  = e.Q >= 0 ? fanH(e, e.Q) : 0;
+        const Qd = e.Q * dir;           // расход в направлении обхода контура
 
         // Потеря напора вдоль ребра (в направлении обхода)
         num += e.R * Qd * Math.abs(Qd);
 
-        // Вклад вентилятора: H нагнетает в a→b.
-        // При dir=+1: вентилятор уменьшает ΔH → вычитаем H
-        // При dir=-1: вентилятор добавляет ΔH → прибавляем H
-        num -= H * dir;
+        // Вклад вентилятора по классическому МКР:
+        // H нагнетает в направлении a→b ребра.
+        // Qd > 0 → ток совпадает с a→b → вентилятор "помогает" → вычитаем H из ΔH
+        // Qd < 0 → ток против a→b → вентилятор "мешает" (или реверс) → прибавляем H к ΔH
+        // Итого: num -= H(|e.Q|) * sign(Qd)
+        if (e.hasFan) {
+          const H = fanH(e, e.Q);      // H всегда ≥ 0, по величине |Q|
+          num -= H * Math.sign(Qd || 1);
+          den += fanDH(e, e.Q);
+        }
 
-        den += 2 * e.R * Math.abs(Qd) + (e.Q >= 0 ? fanDH(e, e.Q) : 0);
+        den += 2 * e.R * Math.abs(Qd);
       }
 
       if (den < 1e-12) continue;
@@ -518,15 +521,6 @@ export function solveNetwork(
     // Защита от NaN
     for (const e of edges) {
       if (!isFinite(e.Q)) e.Q = 0;
-    }
-
-    // Ограничение Q вентилятора диапазоном кривой
-    for (const e of edges) {
-      if (e.hasFan && e.fanMode === "curve" && e.fanCurve) {
-        const k    = (e.fanRpm && e.fanCurve.rpmNominal > 0) ? e.fanRpm / e.fanCurve.rpmNominal : 1;
-        const qMax = e.fanCurve.qMax * k;
-        if (Math.abs(e.Q) > qMax) e.Q = Math.sign(e.Q || 1) * qMax;
-      }
     }
 
     // ШАГ 6. Критерий остановки
