@@ -358,9 +358,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
     fans = [e for e in edges if e["hasFan"]]
+    active_fans = [e for e in fans if not e.get("fanStopped")]
     if not fans:
         diag.append({"level": "warning", "category": "topology",
                      "message": "Нет вентилятора — расход нулевой"})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
+    if not active_fans:
+        diag.append({"level": "warning", "category": "fan",
+                     "message": "Все вентиляторы остановлены (H=0) — расход в сети равен нулю"})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
 
     log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)}")

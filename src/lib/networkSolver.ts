@@ -155,7 +155,7 @@ function fanDH(e: Edge, Q: number): number {
 
 /** Оценка рабочей точки вентилятора методом бисекции H_вент(Q) = R_сети·Q². */
 function estimateQ0(edges: Edge[], Rtotal: number): number {
-  const fan = edges.find(e => e.hasFan);
+  const fan = edges.find(e => e.hasFan && !e.fanStopped);
   if (!fan) return 5;
 
   const H0 = fanH(fan, 0);  // максимальный напор (при Q=0)
@@ -399,6 +399,20 @@ export function solveNetwork(
       branches: zeroBranches, nodes: nodesIn,
       log: ["Ошибка топологии: нет замкнутого контура через атмосферу — расход Q=0"],
       cyclesCount: 0, diagnostics: diag,
+    };
+  }
+
+  // Проверка: есть ли хоть один активный (не остановленный) вентилятор
+  const hasFanEdges   = edges.some(e => e.hasFan);
+  const hasActiveFans = edges.some(e => e.hasFan && !e.fanStopped);
+  if (hasFanEdges && !hasActiveFans) {
+    const zeroBranches = brCalc.map(b => ({ ...b, flow: 0, velocity: 0, dP: 0, fanPressure: 0, fanEfficiency: 0, fanShaftPower: 0 }));
+    return {
+      ok: true, iterations: 0, maxDeltaQ: 0, maxDeltaH: 0,
+      branches: zeroBranches, nodes: nodesIn,
+      log: ["Все вентиляторы остановлены — расход Q=0"],
+      cyclesCount: 0,
+      diagnostics: [{ level: "warning", category: "fan", message: "Все вентиляторы остановлены (H=0) — расход в сети равен нулю" }],
     };
   }
 
