@@ -693,11 +693,15 @@ export function solveNetwork(
       const H = fanH(e, e.Q);   // отрицательный при реверсе
       fanPressure = H;
       if (b.fanMode === "curve" && e.fanCurve) {
-        fanEff   = fanEfficiency(e.fanCurve, Math.abs(Q));
+        // При реверсе КПД снижается на 10% (середина диапазона 5–15% по рекомендации)
+        const etaBase = fanEfficiency(e.fanCurve, Math.abs(Q));
+        fanEff   = b.fanReverse ? Math.max(0.05, etaBase * 0.90) : etaBase;
         fanShaft = fanShaftPower(Math.abs(H), Math.abs(Q), fanEff);
       }
+      // Q показываем с отрицательным знаком при реверсе (поток идёт против направления ветви)
+      const Qdisplay = b.fanReverse ? -Math.abs(Q) : Math.abs(Q);
       const revStr = b.fanReverse ? " [РЕВЕРС]" : "";
-      log.push(`Вент. ${b.id}${revStr}: Q=${Math.abs(Q).toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
+      log.push(`Вент. ${b.id}${revStr}: Q=${Qdisplay.toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
     }
 
     return recalcBranchAero({

@@ -894,6 +894,7 @@ export default function TopoCanvas(props: Props) {
           const midY = (from.sy + to.sy) / 2;
           const len = b.length || Math.round(calcBranchLength(from.node, to.node));
           const Q = Math.abs(b.flow);
+          const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
           const V = b.velocity;
           const overV = V > b.vMax;
           // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
@@ -1059,11 +1060,11 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchSection) dataLines.push(`S=${b.area.toFixed(1)}м²`);
                   if (ic.branchResistance) dataLines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${b.velocity.toFixed(1)}м/с${overV ? "⚠" : ""}`);
-                  if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Q.toFixed(1)}м³/с`);
+                  if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${Q.toFixed(1)}м³/с`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${(b.dP / 10).toFixed(1)}даПа`);
                 } else if (hasCalc) {
                   // Без infoConfig: только результаты расчёта компактно
-                  dataLines.push(`Q=${Q.toFixed(1)}`);
+                  dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
                   if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
                 }
 

@@ -921,17 +921,26 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
             <SectionHeader title="Вычисленные параметры" />
 
+            {branch.fanReverse && (
+              <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
+                style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c" }}>
+                ⟵ Реверс: Q отрицательный, КПД −10%
+              </div>
+            )}
+
             <InlineLabel label="Q выраб., м³/с">
-              <ComputedInput value={numFmt(Math.abs(branch.flow), 2)} />
+              <ComputedInput value={branch.fanReverse
+                ? numFmt(-Math.abs(branch.flow), 2)
+                : numFmt(Math.abs(branch.flow), 2)} />
             </InlineLabel>
             <InlineLabel label="Напор, Па">
-              <ComputedInput value={numFmt(branch.fanPressure, 0)} />
+              <ComputedInput value={numFmt(Math.abs(branch.fanPressure), 0)} />
             </InlineLabel>
             <InlineLabel label="Мощность, кВт">
               <ComputedInput value={numFmt(branch.fanShaftPower / 1000, 1)} />
             </InlineLabel>
             <InlineLabel label="КПД, %">
-              <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
+              <ComputedInput value={`${numFmt(branch.fanEfficiency * 100, 1)}${branch.fanReverse ? " (−10%)" : ""}`} />
             </InlineLabel>
             {(() => {
               const curve = getFanById(branch.fanCurveId);
