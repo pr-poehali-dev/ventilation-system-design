@@ -167,6 +167,7 @@ export default function TopoCanvas(props: Props) {
   const [panStart, setPanStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [rotStart, setRotStart] = useState<{ x: number; y: number; az: number; el: number } | null>(null);
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
+  const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
@@ -1202,6 +1203,22 @@ export default function TopoCanvas(props: Props) {
                 e.stopPropagation();
                 onSelectSymbol?.(sym.id);
               }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                const t = e.touches[0];
+                symTouchRef.current = { x: t.clientX, y: t.clientY };
+              }}
+              onTouchEnd={(e) => {
+                e.stopPropagation();
+                if (tool !== "select" || !symTouchRef.current) return;
+                const t = e.changedTouches[0];
+                const moved = Math.hypot(t.clientX - symTouchRef.current.x, t.clientY - symTouchRef.current.y);
+                symTouchRef.current = null;
+                if (moved < 10) {
+                  onSelectSymbol?.(isSel ? null : sym.id);
+                  onSymbolClick?.(sym.id);
+                }
+              }}
               onMouseDown={(e) => {
                 if (e.button !== 0 || tool !== "select") return;
                 e.stopPropagation();
@@ -1560,4 +1577,3 @@ function hitBranch(sx: number, sy: number,
   branches: TopoBranch[]): string | null {
   return hitBranchR(sx, sy, projNodes, branches, 5);
 }
-
