@@ -173,6 +173,34 @@
       "expectedStatus": 200,
       "expectedBody": {"converged": true},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Тупиковая цепочка 3 ветви — Q=0 во всех тупиках",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "ATM2", "isAtm": true},
+          {"id": "J1"},
+          {"id": "J2"},
+          {"id": "D1"},
+          {"id": "D2"},
+          {"id": "D3"}
+        ],
+        "branches": [
+          {"id": "main_fan", "fromId": "ATM1", "toId": "J1",  "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 2000},
+          {"id": "ring1",    "fromId": "J1",   "toId": "J2",  "R": 0.05},
+          {"id": "ring2",    "fromId": "J2",   "toId": "ATM2","R": 0.05},
+          {"id": "dead1",    "fromId": "J1",   "toId": "D1",  "R": 0.1},
+          {"id": "dead2",    "fromId": "D1",   "toId": "D2",  "R": 0.1},
+          {"id": "dead3",    "fromId": "D2",   "toId": "D3",  "R": 0.1}
+        ],
+        "options": {"tolerance": 0.001, "maxIter": 3000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
     }
   ]
 }

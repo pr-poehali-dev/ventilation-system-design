@@ -382,21 +382,36 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         log.append(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
         print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
 
-    # Независимые контуры
-    loops = find_spanning_tree_and_loops(edges)
-    log.append(f"Контуров={len(loops)}")
-    for li, loop in enumerate(loops):
-        parts = [f"{edges[ei]['id']}({'+'if s>0 else'-'})" for ei, s in loop]
-        log.append(f"[loop-{li}] " + " ".join(parts))
-        print(f"[loop-{li}] " + " ".join(parts))
+    log.append(f"Метод Кросса: всего ветвей={len(edges)}, вентиляторов={len(fans)}")
 
-    # Если нет ни одного замкнутого контура — сеть разомкнута, циркуляция невозможна.
-    # Например: после «разорвать связь» один ствол стал тупиком.
-    if not loops:
+    # ── Определяем тупиковые ветви ДО расчёта ──────────────────────────
+    # Тупиковые ветви ИСКЛЮЧАЮТСЯ из итераций Кросса (Q=0 принудительно).
+    # Причина: они не образуют замкнутых контуров → в них нет циркуляции.
+    # ВМП (вентилятор в тупике) — исключение, их расход вычисляется отдельно.
+    dead_end_ids = find_dead_ends(edges)
+    if dead_end_ids:
+        log.append(f"Тупиков={len(dead_end_ids)}: {', '.join(sorted(dead_end_ids))}")
+        for eid in dead_end_ids:
+            log.append(f"  [тупик] {eid} → Q=0 (нет замкнутого пути)")
+
+    # Активные рёбра для расчёта Кросса (без тупиков)
+    active_edges = [e for e in edges if e["id"] not in dead_end_ids]
+    active_idx   = [i for i, e in enumerate(edges) if e["id"] not in dead_end_ids]
+
+    # Если все рёбра тупиковые — нет контуров
+    if not active_edges:
+        diag.append({"level": "error", "category": "topology",
+                     "message": "Все ветви тупиковые — нет замкнутого контура вентиляции."})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
+    # Перестраиваем контуры только по активным рёбрам
+    loops_active = find_spanning_tree_and_loops(active_edges)
+    log.append(f"Контуров по активным={len(loops_active)}")
+
+    if not loops_active:
         diag.append({"level": "error", "category": "topology",
                      "message": "Сеть не имеет замкнутых контуров — циркуляция воздуха невозможна. "
-                                "Проверьте топологию: нужно минимум 2 выхода на поверхность, "
-                                "образующих замкнутый путь."})
+                                "Проверьте топологию: нужно минимум 2 выхода на поверхность."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
     # Начальный расход
@@ -404,34 +419,30 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
 
     def bisect_q0():
         """
-        Находит начальный Q методом бисекции: H_fan(Q) = R_total · Q².
-        Работает строго в диапазоне [qMin, qMax] вентилятора.
-        Для constant-вентилятора: Q = sqrt(H/R).
+        Находит начальный Q методом бисекции: H_fan(Q) = R_active · Q².
+        Использует только сопротивления активных (не тупиковых) ветвей.
         """
-        R_total = sum(e["R"] for e in edges)
+        R_total = sum(e["R"] for e in active_edges if not e["hasFan"])
         if R_total <= 0:
-            return 1.0
+            R_total = 1e-3
 
         # Для curve-вентилятора — бисекция на нисходящей ветви характеристики
         for fan_e in fans:
             if fan_e.get("fanMode", "constant") == "curve":
-                # При реверсе с отдельной характеристикой — используем её диапазон
                 if fan_e.get("fanReverse") and fan_e.get("reverseH0") is not None:
                     q_lo = float(fan_e.get("qMin", 1.0))
                     q_hi = float(fan_e.get("reverseQMax", fan_e.get("qMax", 90.0)))
                 else:
                     q_lo = float(fan_e.get("qMin", 1.0))
                     q_hi = float(fan_e.get("qMax", 90.0))
-                # Проверяем что H(q_lo) > R·q_lo² и H(q_hi) < R·q_hi²
-                # (рабочая точка лежит между ними)
+
                 def f(q):
                     return fan_H(fan_e, q) - R_total * q * q
-                # Если в q_hi функция уже отрицательная — рабочая точка внутри
+
                 if f(q_lo) <= 0:
-                    return q_lo  # сопротивление слишком велико
+                    return q_lo
                 if f(q_hi) >= 0:
-                    return q_hi  # сопротивление слишком мало
-                # Бисекция
+                    return q_hi
                 for _ in range(60):
                     q_mid = 0.5 * (q_lo + q_hi)
                     if f(q_mid) > 0:
@@ -442,51 +453,50 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                         break
                 return 0.5 * (q_lo + q_hi)
 
-        # constant-вентилятор: H >= 0 (ребро уже развёрнуто при реверсе)
+        # constant-вентилятор
         H_fan = sum(fan_H(e, 1.0) for e in fans)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # Для линейной сети (нет контуров) — рабочая точка = результат бисекции
-    if not loops:
-        q0 = bisect_q0()
-        for i, e in enumerate(edges):
-            Q[i] = q0
-        return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
-                           1, True, 0.0, log, diag)
-
-    # Начальное распределение для сети с контурами
+    # Начальное распределение: только активные ветви
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
     for i, e in enumerate(edges):
-        Q[i] = q0  # знак q0 уже учитывает реверс (отрицательный при fanReverse)
+        if e["id"] not in dead_end_ids:
+            Q[i] = q0
+        # тупики остаются Q=0
 
-    # Основной цикл Кросса
+    # Пересчитываем индексы контуров из active_edges → edges
+    # loops_active[i] = [(ai, sign), ...] где ai — индекс в active_edges
+    # нужно преобразовать в [(gi, sign), ...] где gi — индекс в edges
+    loops_global = []
+    for loop in loops_active:
+        global_loop = [(active_idx[ai], sign) for ai, sign in loop]
+        loops_global.append(global_loop)
+
+    # Основной цикл Кросса (только по активным контурам)
     max_dq = float("inf")
     it     = 0
 
     for it in range(1, max_iter + 1):
         max_dq = 0.0
 
-        for loop in loops:
+        for loop in loops_global:
             # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan) по контуру
             sum_h   = 0.0  # Σ R·Q·|Q| - H_fan
             sum_2rq = 0.0  # Σ 2·R·|Q| + |dH/dQ|  (знаменатель)
 
-            for ei, sign in loop:
-                e  = edges[ei]
-                qi = Q[ei] * sign  # расход в направлении обхода контура
+            for gi, sign in loop:
+                e  = edges[gi]
+                qi = Q[gi] * sign  # расход в направлении обхода контура
                 R  = e["R"]
 
                 sum_h   += R * qi * abs(qi)
                 sum_2rq += 2.0 * R * abs(qi)
 
                 if e["hasFan"]:
-                    # H знаковый: >0 прямой, <0 реверс.
-                    # Вентилятор создаёт напор в направлении a→b при H>0, b→a при H<0.
-                    # Вклад в невязку: -H·sign(qi) — стандартная формула Кросса.
-                    H = fan_H(e, abs(Q[ei]))
+                    H = fan_H(e, abs(Q[gi]))
                     sum_h   -= H * (1.0 if qi >= 0 else -1.0)
-                    sum_2rq += fan_dH(e, abs(Q[ei]))
+                    sum_2rq += fan_dH(e, abs(Q[gi]))
 
             if sum_2rq < 1e-12:
                 continue
@@ -494,9 +504,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
             dq = alpha * sum_h / sum_2rq
             max_dq = max(max_dq, abs(dq))
 
-            # Обновляем расходы
-            for ei, sign in loop:
-                Q[ei] -= dq * sign
+            for gi, sign in loop:
+                Q[gi] -= dq * sign
 
         if max_dq < tol:
             it += 1
@@ -543,75 +552,114 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                     "value": q_actual,
                 })
 
-    # Проверка тупиков — аналог mark_dead_end():
-    # тупиковые ветви должны иметь хоть какой-то расход (диффузия, ВМП)
-    dead_ids = find_dead_ends(edges)
+    # Диагностика тупиковых ветвей (уже определены выше как dead_end_ids)
     for e in edges:
-        if e["id"] not in dead_ids:
+        if e["id"] not in dead_end_ids:
             continue
         q_dead = abs(Q_map.get(e["id"], 0))
-        if q_dead < MIN_DEAD_END_FLOW:
-            diag.append({
-                "level": "warning",
-                "category": "branch_flow",
-                "message": f"Тупик «{e['id']}» не проветривается (Q={q_dead:.2f} м³/с < {MIN_DEAD_END_FLOW} м³/с). "
-                           f"Рекомендуется установить ВМП или проверить топологию.",
-                "objectId": e["id"],
-                "value": q_dead,
-            })
+        diag.append({
+            "level": "warning",
+            "category": "branch_flow",
+            "message": f"Тупик «{e['id']}»: Q=0 (нет замкнутого контура). "
+                       f"Для проветривания установите ВМП с трубопроводом.",
+            "objectId": e["id"],
+            "value": 0.0,
+        })
 
     # Проверка норматива реверса k_rev >= 0.6 (ПБ для шахтных вентиляционных сетей)
     check_reverse(edges, Q_map, normal_flows or {}, diag)
 
-    return make_result(edges, Q_map, it, converged, max_dq, log, diag)
+    return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids)
 
 
 def find_dead_ends(edges):
     """
-    Возвращает множество id тупиковых ветвей (Q=0).
+    Возвращает множество id тупиковых ветвей — т.е. ветвей, не участвующих
+    ни в одном замкнутом пути от GND до GND.
 
-    Тупиковая: хотя бы один конец (не GND) имеет степень 1
-    И при этом ни одна из примыкающих ветвей НЕ имеет вентилятора.
+    Алгоритм: ветвь НЕ тупиковая только если через неё проходит хотя бы
+    один простой путь GND→...→GND (замкнутый контур через атмосферу).
+    Все остальные ветви — тупиковые (Q=0 физически: воздух не может
+    войти и выйти через тупик без источника/стока).
 
-    Ветви с вентилятором (ВМП) в тупике — НЕ тупиковые:
-    вентилятор создаёт расход, а воздух возвращается диффузией/утечками.
-    
-    ВАЖНО: GND считается как нормальный узел для подсчёта степени —
-    ствол, подключённый к атмосфере (GND) с одной стороны, не является тупиком.
+    Исключение: ветвь с ВМП (вентилятором местного проветривания) в тупике —
+    НЕ тупиковая: ВМП нагнетает воздух по трубопроводу в тупик,
+    обратный поток идёт по той же выработке (вентиляция с исходящей струёй).
+    Такие ветви сохраняют ненулевой расход.
+
+    ВАЖНО: определяется ИТЕРАТИВНО — многократное удаление листьев,
+    пока не останутся только ветви с двусторонней связностью.
+    Это правильно находит длинные тупиковые цепочки любой глубины.
     """
-    degree = collections.defaultdict(int)
-    for e in edges:
-        degree[e["a"]] += 1
-        degree[e["b"]] += 1
-
-    # Узлы, к которым примыкает хотя бы один вентилятор
-    fan_nodes = set()
+    # Строим множество «живых» рёбер — начинаем со всех
+    # Узлы с ВМП (вентилятором местного проветривания) не удаляем
+    vmp_nodes = set()
     for e in edges:
         if e["hasFan"]:
-            fan_nodes.add(e["a"])
-            fan_nodes.add(e["b"])
+            vmp_nodes.add(e["a"])
+            vmp_nodes.add(e["b"])
 
-    dead = set()
-    for e in edges:
-        # Ветвь с вентилятором — никогда не тупик
-        if e["hasFan"]:
-            continue
-        a_dead = (e["a"] != GND and degree[e["a"]] == 1 and e["a"] not in fan_nodes)
-        b_dead = (e["b"] != GND and degree[e["b"]] == 1 and e["b"] not in fan_nodes)
-        if a_dead or b_dead:
-            dead.add(e["id"])
-    return dead
+    # Рёбра, которые нельзя удалять (ВМП — тупиковый вентилятор)
+    protected = set(e["id"] for e in edges if e["hasFan"])
+
+    # Граф: узел → список индексов рёбер
+    adj = collections.defaultdict(set)
+    edge_by_id = {}
+    for i, e in enumerate(edges):
+        adj[e["a"]].add(i)
+        adj[e["b"]].add(i)
+        edge_by_id[i] = e
+
+    active_edges = set(range(len(edges)))  # все активные рёбра
+    dead_edges   = set()                   # итогово тупиковые
+
+    # Итеративно удаляем «листья» — узлы со степенью 1 (не GND, не ВМП)
+    changed = True
+    while changed:
+        changed = False
+        # Пересчитываем степени только по активным рёбрам
+        degree = collections.defaultdict(int)
+        for i in active_edges:
+            e = edges[i]
+            degree[e["a"]] += 1
+            degree[e["b"]] += 1
+
+        # Ищем тупиковые узлы: степень 1, не GND
+        dead_nodes = set()
+        for node, deg in degree.items():
+            if node != GND and deg == 1:
+                dead_nodes.add(node)
+
+        if not dead_nodes:
+            break
+
+        # Удаляем рёбра, инцидентные тупиковым узлам (кроме защищённых ВМП)
+        # Итерируем по копии set, чтобы избежать изменения во время итерации
+        to_remove = set()
+        for i in list(active_edges):
+            e = edges[i]
+            if (e["a"] in dead_nodes or e["b"] in dead_nodes):
+                if e["id"] not in protected:
+                    to_remove.add(i)
+                    changed = True
+
+        for i in to_remove:
+            active_edges.discard(i)
+            dead_edges.add(edges[i]["id"])
+
+    return dead_edges
 
 
-def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False):
-    dead_ends = find_dead_ends(edges)
+def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, dead_end_ids=None):
+    # dead_end_ids передаётся из solve() (уже вычислено), иначе пересчитываем
+    dead_ends = dead_end_ids if dead_end_ids is not None else find_dead_ends(edges)
     out = []
     for e in edges:
         is_dead = e["id"] in dead_ends
         q = Q.get(e["id"], 0.0)
 
         if is_dead:
-            q = 0.0
+            q = 0.0  # тупиковые выработки без ВМП — Q=0 всегда
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and abs(q) < 1e-6:
