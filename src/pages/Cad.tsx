@@ -369,6 +369,8 @@ export default function CadPage() {
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
+  // Расходы прямого режима для проверки норматива реверса (k_rev >= 0.6)
+  const [normalFlows, setNormalFlows] = useState<Record<string, number>>({});
   // Расширенные результаты из Python-ядра VentCore
   const [vcFire, setVcFire] = useState<Record<string, unknown> | null>(null);
   const [vcMethane, setVcMethane] = useState<Record<string, unknown> | null>(null);
@@ -892,6 +894,11 @@ export default function CadPage() {
             maxIter: solverMaxIter,
             alpha: solverAlpha,
           },
+          // Расходы прямого режима для проверки норматива реверса (k_rev >= 0.6)
+          // Передаём только если есть реверс и есть сохранённые прямые расходы
+          ...(branches.some(b => b.fanReverse) && Object.keys(normalFlows).length > 0
+            ? { normalFlows }
+            : {}),
         }),
       });
       const data = await resp.json();
@@ -902,12 +909,19 @@ export default function CadPage() {
       }
 
       // Применяем результат
+      const resultBranches = data.branches as { id: string; Q: number; velocity: number; H: number; isDead?: boolean }[];
       setBranches(prev => prev.map(b => {
-        const rb = (data.branches as { id: string; Q: number; velocity: number; H: number; isDead?: boolean }[])
-          .find(r => r.id === b.id);
+        const rb = resultBranches.find(r => r.id === b.id);
         if (!rb) return b;
         return { ...b, flow: rb.Q, velocity: rb.velocity, dP: rb.H, isDead: rb.isDead ?? false };
       }));
+
+      // Сохраняем расходы прямого режима (без реверса) для последующей проверки k_rev >= 0.6
+      if (!branches.some(b => b.fanReverse) && data.converged) {
+        const flows: Record<string, number> = {};
+        resultBranches.forEach(rb => { flows[rb.id] = Math.abs(rb.Q); });
+        setNormalFlows(flows);
+      }
 
       setSolveResult({
         ok: data.converged,
@@ -2888,9 +2902,28 @@ export default function CadPage() {
           <span>Z-уровень: {zLevel} м</span>
           <span className="text-gray-400">|</span>
           {solveResult ? (
-            <span style={{ color: solveResult.ok ? "#16a34a" : "#dc2626" }}>
-              ● Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
-            </span>
+            <>
+              <span style={{ color: solveResult.ok ? "#16a34a" : "#dc2626" }}>
+                ● Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
+              </span>
+              {/* Статус реверса по нормативу ПБ */}
+              {branches.some(b => b.fanReverse) && (() => {
+                const revDiag = solveResult.diagnostics?.find(d => d.category === "fan" && (d.level === "error" || d.level === "warning" || d.level === "info"));
+                if (!revDiag) return null;
+                const colors = { error: "#dc2626", warning: "#d97706", info: "#16a34a" };
+                const icons  = { error: "✕", warning: "⚠", info: "✓" };
+                return (
+                  <span className="ml-1 px-1.5 py-0.5 rounded text-[10px]"
+                    style={{ background: revDiag.level === "error" ? "#fee2e2" : revDiag.level === "warning" ? "#fef3c7" : "#f0fdf4",
+                      color: colors[revDiag.level], border: `1px solid ${revDiag.level === "error" ? "#fca5a5" : revDiag.level === "warning" ? "#fcd34d" : "#86efac"}`,
+                      cursor: "pointer" }}
+                    title={revDiag.message}
+                    onClick={() => setShowDiagnostics(true)}>
+                    {icons[revDiag.level]} Реверс
+                  </span>
+                );
+              })()}
+            </>
           ) : (
             <span style={{ color: "#9ca3af" }}>● Расчёт не выполнялся</span>
           )}

@@ -26,15 +26,16 @@ def handler(event: dict, context) -> dict:
     except Exception:
         return err(400, "Ошибка парсинга JSON")
 
-    nodes_in    = body.get("nodes", [])
-    branches_in = body.get("branches", [])
-    options     = body.get("options", {})
+    nodes_in     = body.get("nodes", [])
+    branches_in  = body.get("branches", [])
+    options      = body.get("options", {})
+    normal_flows = body.get("normalFlows", {})  # расходы прямого режима для проверки k_rev
 
     if not branches_in:
         return ok(empty_result("Нет ветвей"))
 
     try:
-        result = solve(nodes_in, branches_in, options)
+        result = solve(nodes_in, branches_in, options, normal_flows)
     except Exception as ex:
         import traceback
         return err(500, f"Ошибка: {ex}\n{traceback.format_exc()}")
@@ -275,7 +276,55 @@ def find_spanning_tree_and_loops(edges):
 # МЕТОД КРОССА
 # ══════════════════════════════════════════════════════════════════════
 
-def solve(nodes_in, branches_in, options):
+def check_reverse(edges, Q_result, normal_flows, diag):
+    """
+    Проверка норматива реверса по ПБ: расход в каждой выработке при реверсе
+    должен быть не менее 60% от прямого режима.
+    Проверяем только ветви с ненулевым прямым расходом.
+    """
+    has_reverse = any(e.get("fanReverse") for e in edges)
+    if not has_reverse or not normal_flows:
+        return
+
+    failed = []
+    warned = []
+    for e in edges:
+        bid = e["id"]
+        q_normal = float(normal_flows.get(bid, 0))
+        if q_normal < 0.1:  # тупиковые и нулевые пропускаем
+            continue
+        q_rev = abs(Q_result.get(bid, 0))
+        k_rev = q_rev / q_normal
+        if k_rev < 0.6:
+            failed.append((bid, k_rev))
+        elif k_rev < 0.8:
+            warned.append((bid, k_rev))
+
+    if failed:
+        ids = ", ".join(f"{b} ({k:.0%})" for b, k in failed)
+        diag.append({
+            "level": "error",
+            "category": "fan",
+            "message": f"Реверс не соответствует нормативу ПБ (Q_рев < 60% от Q_прям): {ids}",
+            "objectId": failed[0][0],
+            "value": failed[0][1],
+        })
+    elif warned:
+        ids = ", ".join(f"{b} ({k:.0%})" for b, k in warned)
+        diag.append({
+            "level": "warning",
+            "category": "fan",
+            "message": f"Реверс выполнен, но расход в ветвях ниже 80% от нормального: {ids}",
+        })
+    else:
+        diag.append({
+            "level": "info",
+            "category": "fan",
+            "message": "Реверс выполнен успешно — расход во всех ветвях ≥ 60% от прямого режима",
+        })
+
+
+def solve(nodes_in, branches_in, options, normal_flows=None):
     tol      = float(options.get("tolerance", 0.01))
     max_iter = int(options.get("maxIter", 2000))
     alpha    = float(options.get("alpha", 1.0))  # релаксация
@@ -437,8 +486,12 @@ def solve(nodes_in, branches_in, options):
     for i, e in enumerate(edges):
         log.append(f"[Q] {e['id']}: Q={Q[i]:.3f}")
 
-    return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
-                       it, converged, max_dq, log, diag)
+    Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
+
+    # Проверка норматива реверса k_rev >= 0.6 (ПБ для шахтных вентиляционных сетей)
+    check_reverse(edges, Q_map, normal_flows or {}, diag)
+
+    return make_result(edges, Q_map, it, converged, max_dq, log, diag)
 
 
 def find_dead_ends(edges):
