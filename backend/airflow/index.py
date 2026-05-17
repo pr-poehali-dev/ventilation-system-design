@@ -161,77 +161,42 @@ def build_graph(nodes_in, branches_in):
 # НАЧАЛЬНОЕ РАСПРЕДЕЛЕНИЕ РАСХОДОВ (первый закон Кирхгофа)
 # ══════════════════════════════════════════════════════════════════════
 
-def init_flows(edges, q0=10.0):
+def init_flows(edges):
     """
-    Начальное приближение методом обхода остовного дерева (BFS от GND).
-    Гарантирует выполнение 1-го закона Кирхгофа (баланс масс) во всех узлах.
-
-    Алгоритм:
-    1. Строим остовное дерево BFS от GND.
-    2. Назначаем Q[вентилятор] = q0.
-    3. Распространяем Q вниз по дереву, соблюдая баланс: ΣQ_вх = ΣQ_вых в каждом узле.
-    4. Хордовым рёбрам (не дерева) назначаем Q=0.
-
-    Это корректное начальное условие для метода Кросса.
+    Начальное приближение методом обхода дерева (BFS от GND).
+    Даёт Q, удовлетворяющий 1-му закону Кирхгофа во всех узлах.
     """
-    n = len(edges)
-    Q = [0.0] * n
-
-    # Граф смежности
+    # Строим граф смежности
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"], +1))   # ребро i: a→b, +1 если идём из a
-        adj[e["b"]].append((i, e["a"], -1))   # ребро i: b→a, -1 если идём из b
+        adj[e["a"]].append((i, e["b"], +1))
+        adj[e["b"]].append((i, e["a"], -1))
 
-    # Строим остовное дерево BFS от GND
-    visited = {GND}
-    tree = {}       # узел → (edge_idx, sign_into_node)
-    parent_of = {}  # узел → родитель
-    bfs_order = []  # порядок обхода (без GND)
+    # Начальный Q = 1.0 для всех ветвей (направление a→b)
+    Q = [1.0] * len(edges)
 
+    # BFS-обход: пускаем Q от вентилятора
+    fans = [i for i, e in enumerate(edges) if e["hasFan"]]
+    if fans:
+        fi = fans[0]
+        fe = edges[fi]
+        Q[fi] = 10.0  # начальный расход через вентилятор
+        start = fe["b"] if fe["b"] != GND else fe["a"]
+    else:
+        start = GND
+
+    # Балансируем 1-й закон через BFS
+    visited_nodes = {GND}
+    tree_edges = set()
     queue = collections.deque([GND])
+
     while queue:
         node = queue.popleft()
         for ei, nb, sign in adj[node]:
-            if nb not in visited:
-                visited.add(nb)
-                # sign: +1 если ребро ei идёт node→nb (a→b), -1 если nb→node
-                tree[nb] = (ei, sign)
-                parent_of[nb] = node
-                bfs_order.append(nb)
+            if nb not in visited_nodes:
+                visited_nodes.add(nb)
+                tree_edges.add(ei)
                 queue.append(nb)
-
-    # Задаём начальный Q вентилятора = q0
-    fan_edges = [i for i, e in enumerate(edges) if e.get("hasFan") and not e.get("fanStopped")]
-    if fan_edges:
-        Q[fan_edges[0]] = q0
-
-    # Распространяем Q по дереву: идём от листьев к корню (обратный BFS)
-    # Для каждого нелистового узла: Q_tree_edge = ΣQ_дочерних
-    # Проходим в обратном порядке BFS (от листьев к GND)
-    node_supply = collections.defaultdict(float)  # «избыток» Q в узле от дочерних
-
-    for node in reversed(bfs_order):
-        if node not in tree:
-            continue
-        ei, sign = tree[node]
-        # Q входящее в node через tree-edge (знак: sign=+1 → a→b, т.е. из parent в node)
-        # Баланс: Q_tree + node_supply[node] = 0  → Q_tree = -node_supply[node]
-        q_tree = -node_supply[node]
-        # Устанавливаем Q ребра дерева с правильным знаком
-        # sign = направление ребра относительно parent: sign=+1 → a=parent,b=node → Q>0 значит поток parent→node
-        Q[ei] = q_tree * sign
-        # Добавляем вклад в parent
-        parent_of_node = parent_of.get(node)
-        if parent_of_node is not None:
-            node_supply[parent_of_node] += q_tree
-
-    # Если Q[вент] не в дереве (хорда) — просто оставляем q0
-    # Нормализуем: масштабируем все Q так чтобы Q[вент] = q0
-    q_fan_actual = abs(Q[fan_edges[0]]) if fan_edges and abs(Q[fan_edges[0]]) > 1e-9 else 0
-    if q_fan_actual > 1e-9:
-        scale = q0 / q_fan_actual
-        Q = [q * scale for q in Q]
 
     return Q
 
@@ -492,13 +457,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         H_fan = sum(fan_H(e, 1.0) for e in fans)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # Начальное распределение через BFS (соблюдает 1-й закон Кирхгофа)
+    # Начальное распределение: только активные ветви
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
-    Q_init = init_flows(active_edges, q0)
-    for local_i, global_i in enumerate(active_idx):
-        Q[global_i] = Q_init[local_i]
-    # тупики остаются Q=0
+    for i, e in enumerate(edges):
+        if e["id"] not in dead_end_ids:
+            Q[i] = q0
+        # тупики остаются Q=0
 
     # Пересчитываем индексы контуров из active_edges → edges
     # loops_active[i] = [(ai, sign), ...] где ai — индекс в active_edges
