@@ -627,13 +627,15 @@ export default function TopoCanvas(props: Props) {
     });
   };
 
-  // ─── Touch: pan (1 палец) + pinch-zoom (2 пальца) ───────────────────────
+  // ─── Touch: pan (1 палец) + pinch-zoom (2 пальца) + tap для выделения ──
   const onTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
     e.preventDefault();
     const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
     if (e.touches.length === 1) {
       const t = e.touches[0];
-      touchRef.current = { x: t.clientX - rect.left, y: t.clientY - rect.top, ox: view.offsetX, oy: view.offsetY };
+      const sx = t.clientX - rect.left;
+      const sy = t.clientY - rect.top;
+      touchRef.current = { x: sx, y: sy, ox: view.offsetX, oy: view.offsetY };
     } else if (e.touches.length === 2) {
       const t1 = e.touches[0], t2 = e.touches[1];
       const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
@@ -674,6 +676,29 @@ export default function TopoCanvas(props: Props) {
 
   const onTouchEnd = (e: React.TouchEvent<SVGSVGElement>) => {
     e.preventDefault();
+    // Тап: если палец не двигался (< 10px) — выделяем узел/ветвь как при клике мышью
+    if (e.changedTouches.length === 1 && touchRef.current && touchRef.current.dist === undefined) {
+      const t = e.changedTouches[0];
+      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+      const sx = t.clientX - rect.left;
+      const sy = t.clientY - rect.top;
+      const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
+      if (moved < 10) {
+        // Увеличиваем радиус hit-теста для пальца (16px вместо 8px для мыши)
+        const hitN = hitNodeR(sx, sy, projNodes, 16);
+        const hitB = !hitN ? hitBranchR(sx, sy, projNodes, branches, 12) : null;
+        if (hitN) {
+          onSelectNode(hitN);
+          onSelectBranch(null);
+        } else if (hitB) {
+          onSelectBranch(hitB);
+          onSelectNode(null);
+        } else {
+          onSelectNode(null);
+          onSelectBranch(null);
+        }
+      }
+    }
     if (e.touches.length === 0) touchRef.current = null;
   };
 
@@ -1492,20 +1517,27 @@ function ViewCube({ x, y, azimuth, elevation, onPick }: {
 }
 
 // ─── Утилиты попадания ─────────────────────────────────────────────────────
-function hitNode(sx: number, sy: number,
-  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[]): string | null {
+function hitNodeR(sx: number, sy: number,
+  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[],
+  r = 8): string | null {
+  const r2 = r * r;
   for (let i = projNodes.length - 1; i >= 0; i--) {
     const p = projNodes[i];
     const dx = sx - p.sx;
     const dy = sy - p.sy;
-    if (dx * dx + dy * dy < 64) return p.node.id;
+    if (dx * dx + dy * dy < r2) return p.node.id;
   }
   return null;
 }
 
-function hitBranch(sx: number, sy: number,
+function hitNode(sx: number, sy: number,
+  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[]): string | null {
+  return hitNodeR(sx, sy, projNodes, 8);
+}
+
+function hitBranchR(sx: number, sy: number,
   projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[],
-  branches: TopoBranch[]): string | null {
+  branches: TopoBranch[], tol = 5): string | null {
   for (const b of branches) {
     const from = projNodes.find((p) => p.node.id === b.fromId);
     const to = projNodes.find((p) => p.node.id === b.toId);
@@ -1518,7 +1550,14 @@ function hitBranch(sx: number, sy: number,
     const t = Math.max(0, Math.min(1, dot / lenSq));
     const px = from.sx + t * C, py = from.sy + t * D;
     const dist = Math.hypot(sx - px, sy - py);
-    if (dist < 5) return b.id;
+    if (dist < tol) return b.id;
   }
   return null;
 }
+
+function hitBranch(sx: number, sy: number,
+  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[],
+  branches: TopoBranch[]): string | null {
+  return hitBranchR(sx, sy, projNodes, branches, 5);
+}
+
