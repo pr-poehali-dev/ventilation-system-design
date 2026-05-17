@@ -70,6 +70,7 @@ export interface TopoBranch {
   fanInstall: string;       // установка: "Внутри перемычки" / "Снаружи"
   fanEfficiency: number;    // расчётный КПД на рабочей точке
   fanShaftPower: number;    // расчётная мощность на валу, Вт
+  fanReverse: boolean;      // реверс: вентилятор работает в обратном направлении
   // ─── Расчётные ───────────────────────────────────────
   resistance: number;       // итог R, Н·с²/м⁸
   rFriction: number;        // R от трения
@@ -198,6 +199,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fanInstall: "Внутри перемычки",
     fanEfficiency: 0,
     fanShaftPower: 0,
+    fanReverse: false,
     // Расчётные
     resistance: 0,
     rFriction: 0,

@@ -667,6 +667,22 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </select>
             </InlineLabel>
 
+            <InlineLabel label="Направление">
+              <button
+                onClick={() => onUpdate({ fanReverse: !(branch.fanReverse ?? false) })}
+                className="w-full text-[11px] px-2 rounded"
+                style={{
+                  height: 18,
+                  background: branch.fanReverse ? "#fee2e2" : "#f0fdf4",
+                  color: branch.fanReverse ? "#b91c1c" : "#15803d",
+                  border: `1px solid ${branch.fanReverse ? "#fca5a5" : "#86efac"}`,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}>
+                {branch.fanReverse ? "⟵ Реверс (обратный)" : "⟶ Прямой (нормальный)"}
+              </button>
+            </InlineLabel>
+
             {branch.fanMode === "constant" && (
               <>
                 {branch.fanPressure <= 0 && (

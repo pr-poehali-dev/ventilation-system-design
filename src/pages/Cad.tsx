@@ -154,6 +154,14 @@ export default function CadPage() {
 
   const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
+    // Синхронизируем airDirection на символе вентилятора при изменении fanReverse
+    if ("fanReverse" in patch) {
+      setSchemaSymbols((prev) => prev.map((s) =>
+        s.typeId === "fan" && s.branchId === id
+          ? { ...s, airDirection: patch.fanReverse ? "reverse" : "forward" }
+          : s
+      ));
+    }
   };
 
   // ─── ГОРИЗОНТЫ + АКТИВНЫЙ ГОРИЗОНТ (для построения новых узлов) ────

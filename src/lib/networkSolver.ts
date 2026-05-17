@@ -47,6 +47,7 @@ interface Edge {
   fanRpm?:        number;
   fanBladeAngle?: number;
   fanRhoFactor:   number;
+  fanReverse:     boolean;
 }
 
 interface ContourEdge {
@@ -95,14 +96,16 @@ function angleFactor(c: FanCurve, angle?: number): number {
 /**
  * Напор вентилятора H(|Q|) в Па.
  * Вентилятор нагнетает по направлению a→b ребра.
+ * При fanReverse=true нагнетает в направлении b→a (знак напора отрицательный).
  * Q передаётся как e.Q (может быть отрицательным, берём |Q| для H(Q)).
  */
 function fanH(e: Edge, Q: number): number {
   if (!e.hasFan) return 0;
 
+  const sign = e.fanReverse ? -1 : 1;
+
   if (e.fanMode === "constant") {
-    // fanH0 хранится в Па напрямую, rhoFactor уже применяем здесь
-    return Math.max(0, e.fanH0 * e.fanRhoFactor);
+    return sign * Math.max(0, e.fanH0 * e.fanRhoFactor);
   }
 
   if (e.fanMode === "curve" && e.fanCurve) {
@@ -111,7 +114,7 @@ function fanH(e: Edge, Q: number): number {
     const af = angleFactor(c, e.fanBladeAngle);
     const Qn = Math.abs(Q) / Math.max(0.001, k);
     if (Qn > c.qMax) return 0;
-    return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    return sign * Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
   return 0;
@@ -326,6 +329,7 @@ export function solveNetwork(
       fanRpm:        b.fanRpm,
       fanBladeAngle: b.fanBladeAngle,
       fanRhoFactor:  rho,
+      fanReverse:    b.fanReverse ?? false,
     };
   });
 
@@ -532,12 +536,11 @@ export function solveNetwork(
         num += e.R * Qd * Math.abs(Qd);
 
         // Вклад вентилятора по классическому МКР:
-        // H нагнетает в направлении a→b ребра.
-        // Qd > 0 → ток совпадает с a→b → вентилятор "помогает" → вычитаем H из ΔH
-        // Qd < 0 → ток против a→b → вентилятор "мешает" (или реверс) → прибавляем H к ΔH
-        // Итого: num -= H(|e.Q|) * sign(Qd)
+        // H нагнетает в направлении a→b ребра (при реверсе — в направлении b→a, H < 0).
+        // Qd > 0 → ток совпадает с a→b → num -= H * (+1)
+        // Qd < 0 → ток против a→b   → num -= H * (-1)
         if (e.hasFan) {
-          const H = fanH(e, e.Q);      // H всегда ≥ 0, по величине |Q|
+          const H = fanH(e, e.Q);      // ≥ 0 при прямом направлении, ≤ 0 при реверсе
           num -= H * Math.sign(Qd || 1);
           den += fanDH(e, e.Q);
         }
@@ -687,13 +690,14 @@ export function solveNetwork(
     let fanShaft    = 0;
 
     if (b.hasFan) {
-      const H = fanH(e, e.Q);
+      const H = fanH(e, e.Q);   // отрицательный при реверсе
       fanPressure = H;
       if (b.fanMode === "curve" && e.fanCurve) {
         fanEff   = fanEfficiency(e.fanCurve, Math.abs(Q));
-        fanShaft = fanShaftPower(H, Math.abs(Q), fanEff);
+        fanShaft = fanShaftPower(Math.abs(H), Math.abs(Q), fanEff);
       }
-      log.push(`Вент. ${b.id}: Q=${Math.abs(Q).toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
+      const revStr = b.fanReverse ? " [РЕВЕРС]" : "";
+      log.push(`Вент. ${b.id}${revStr}: Q=${Math.abs(Q).toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
     }
 
     return recalcBranchAero({
