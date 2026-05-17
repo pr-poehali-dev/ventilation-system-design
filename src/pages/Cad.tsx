@@ -886,6 +886,7 @@ export default function CadPage() {
               fanMode: b.fanMode,
               fanPressure: b.fanPressure,
               fanReverse:  b.fanReverse ?? false,
+              fanStopped:  b.fanStopped ?? false,
               fanParallel: Math.max(1, b.fanParallel ?? 1),
               ...(curve ? {
                 h0: curve.h0 * af * k * k,

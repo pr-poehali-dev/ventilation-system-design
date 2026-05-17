@@ -130,11 +130,10 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Реверс + normalFlows — проверка k_rev >= 0.6",
+      "name": "Реверс — Q всех ветвей должен быть отрицательным",
       "method": "POST",
       "path": "/",
       "body": {
-        "method": "cross",
         "nodes": [
           {"id": "U1", "isAtm": true},
           {"id": "N1"},
@@ -145,8 +144,52 @@
           {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
            "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanReverse": true}
         ],
-        "options": {"tolerance": 0.01, "maxIter": 2000, "alpha": 0.8},
-        "normalFlows": {"B1": 70.7, "B2": 70.7}
+        "options": {"tolerance": 0.01, "maxIter": 2000, "alpha": 0.8}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Остановка вентилятора — Q=0 во всей сети",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "U1", "isAtm": true},
+          {"id": "N1"},
+          {"id": "U2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
+          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanStopped": true}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 1000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "3 ATM-узла — 2 ствола + 1 тупиковый ATM",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "ATM2", "isAtm": true},
+          {"id": "ATM3", "isAtm": true},
+          {"id": "J1"},
+          {"id": "J2"}
+        ],
+        "branches": [
+          {"id": "fan",   "fromId": "ATM1", "toId": "J1",  "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 1000},
+          {"id": "ring1", "fromId": "J1",   "toId": "J2",  "R": 0.1},
+          {"id": "ring2", "fromId": "J2",   "toId": "ATM2","R": 0.1},
+          {"id": "dead",  "fromId": "J1",   "toId": "ATM3","R": 0.1}
+        ],
+        "options": {"tolerance": 0.001, "maxIter": 3000}
       },
       "expectedStatus": 200,
       "expectedBody": {"converged": true},
