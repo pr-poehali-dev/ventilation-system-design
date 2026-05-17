@@ -695,15 +695,15 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                     "Hfan": round(Hv, 3), "velocity": round(vel, 3),
                     "isDead": is_dead})
 
-    # При реверсе вентилятора весь воздух в сети течёт в обратную сторону.
-    # Солвер работает с «перевёрнутым» ребром вентилятора и возвращает
-    # положительные Q (направление в графе), но физически направление потока
-    # противоположно исходному fromId→toId.
-    # Инвертируем знак Q у ВСЕХ ветвей — тогда на фронте reversed=true
-    # для всех ветвей и стрелки рисуются в обратном направлении.
-    has_reverse = any(e.get("fanReverse") and e.get("hasFan") for e in edges)
-    if has_reverse and not force_zero:
-        out = [dict(b, Q=-b["Q"]) for b in out]
+    # При реверсе:
+    # - Сетевые ветви уже имеют Q < 0 (поток против fromId→toId) — правильно для фронта.
+    # - Ребро вентилятора было развёрнуто в графе (a↔b), поэтому Q вентилятора
+    #   положительное (направление a→b развёрнутого ребра).
+    #   Физически это toId→fromId, т.е. тоже обратное направление — инвертируем
+    #   только ребро вентилятора, чтобы фронт рисовал его стрелку тоже в реверсе.
+    fan_rev_ids = {e["id"] for e in edges if e.get("fanReverse") and e.get("hasFan")}
+    if fan_rev_ids and not force_zero:
+        out = [dict(b, Q=-b["Q"]) if b["id"] in fan_rev_ids else b for b in out]
 
     return {"branches": out, "nodes": [], "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
