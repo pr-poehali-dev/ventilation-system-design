@@ -157,6 +157,7 @@ export default function CadPage() {
 
   const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
+
     // Синхронизируем airDirection на символе вентилятора при изменении fanReverse
     if ("fanReverse" in patch) {
       setSchemaSymbols((prev) => prev.map((s) =>
@@ -169,6 +170,12 @@ export default function CadPage() {
       if (patch.fanReverse === true && Object.keys(normalFlows).length === 0) {
         setTimeout(() => handleSolveRef.current?.(), 100);
       }
+    }
+
+    // Аналог disable_fan(): при остановке/запуске вентилятора — автопересчёт сети.
+    // Это позволяет сразу увидеть критическую ситуацию (сеть не проветривается).
+    if ("fanStopped" in patch) {
+      setTimeout(() => handleSolveRef.current?.(), 100);
     }
   };
 

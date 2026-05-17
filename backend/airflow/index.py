@@ -365,8 +365,11 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                      "message": "Нет вентилятора — расход нулевой"})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
     if not active_fans:
-        diag.append({"level": "warning", "category": "fan",
-                     "message": "Все вентиляторы остановлены (H=0) — расход в сети равен нулю"})
+        # Аналог disable_fan() → "Критическая ошибка: сеть не проветривается"
+        stopped_names = [e["id"] for e in fans if e.get("fanStopped")]
+        diag.append({"level": "error", "category": "fan",
+                     "message": f"Аварийное отключение: все вентиляторы остановлены ({', '.join(stopped_names)}) — "
+                                f"сеть не проветривается. Критическая ситуация!"})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
 
     log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)}")
