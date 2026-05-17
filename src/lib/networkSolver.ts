@@ -48,6 +48,7 @@ interface Edge {
   fanBladeAngle?: number;
   fanRhoFactor:       number;
   fanReverse:         boolean;
+  fanStopped:         boolean;    // вентилятор остановлен: H=0, только сопротивление
   fanParallel:        number;     // кол-во вентиляторов в параллель (≥1)
   // Реверсная P–Q характеристика (если задана в каталоге)
   reverseH0?:         number;
@@ -107,7 +108,7 @@ function angleFactor(c: FanCurve, angle?: number): number {
  * Q передаётся как e.Q (может быть отрицательным, берём |Q| для H(Q)).
  */
 function fanH(e: Edge, Q: number): number {
-  if (!e.hasFan) return 0;
+  if (!e.hasFan || e.fanStopped) return 0;
 
   const sign = e.fanReverse ? -1 : 1;
   const N    = Math.max(1, e.fanParallel ?? 1);
@@ -355,6 +356,7 @@ export function solveNetwork(
       fanBladeAngle: b.fanBladeAngle,
       fanRhoFactor:  rho,
       fanReverse:    b.fanReverse ?? false,
+      fanStopped:    b.fanStopped ?? false,
       fanParallel:   Math.max(1, b.fanParallel ?? 1),
       // Реверсная кривая из каталога (только для curve-вентиляторов)
       ...(() => {

@@ -57,8 +57,9 @@ def fan_H(e, Q):
     При fanReverse ребро в графе развёрнуто (a↔b), поэтому H >= 0 всегда.
     При реверсе используется отдельная P–Q характеристика если задана (reverseH0/H1/H2).
     N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
+    При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
     """
-    if not e.get("hasFan"):
+    if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
@@ -145,6 +146,7 @@ def build_graph(nodes_in, branches_in):
             "reverseH2":   b.get("reverseH2"),
             "reverseQMax": b.get("reverseQMax"),
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
+            "fanStopped":  bool(b.get("fanStopped", False)),
         })
     return edges, atm
 

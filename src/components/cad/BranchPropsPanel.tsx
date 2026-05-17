@@ -670,16 +670,33 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <InlineLabel label="Направление">
               <button
                 onClick={() => onUpdate({ fanReverse: !(branch.fanReverse ?? false) })}
+                disabled={branch.fanStopped}
                 className="w-full text-[11px] px-2 rounded"
                 style={{
                   height: 18,
-                  background: branch.fanReverse ? "#fee2e2" : "#f0fdf4",
-                  color: branch.fanReverse ? "#b91c1c" : "#15803d",
-                  border: `1px solid ${branch.fanReverse ? "#fca5a5" : "#86efac"}`,
-                  cursor: "pointer",
+                  background: branch.fanStopped ? "#f3f4f6" : branch.fanReverse ? "#fee2e2" : "#f0fdf4",
+                  color: branch.fanStopped ? "#9ca3af" : branch.fanReverse ? "#b91c1c" : "#15803d",
+                  border: `1px solid ${branch.fanStopped ? "#d1d5db" : branch.fanReverse ? "#fca5a5" : "#86efac"}`,
+                  cursor: branch.fanStopped ? "not-allowed" : "pointer",
                   fontWeight: 600,
                 }}>
                 {branch.fanReverse ? "⟵ Реверс (обратный)" : "⟶ Прямой (нормальный)"}
+              </button>
+            </InlineLabel>
+
+            <InlineLabel label="Состояние">
+              <button
+                onClick={() => onUpdate({ fanStopped: !(branch.fanStopped ?? false) })}
+                className="w-full text-[11px] px-2 rounded"
+                style={{
+                  height: 18,
+                  background: branch.fanStopped ? "#fef3c7" : "#f0fdf4",
+                  color: branch.fanStopped ? "#92400e" : "#15803d",
+                  border: `1px solid ${branch.fanStopped ? "#fcd34d" : "#86efac"}`,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}>
+                {branch.fanStopped ? "⏹ Остановлен (H=0)" : "▶ Работает"}
               </button>
             </InlineLabel>
 
@@ -947,7 +964,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
             <SectionHeader title="Вычисленные параметры" />
 
-            {branch.fanReverse && (
+            {branch.fanStopped && (
+              <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
+                style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}>
+                ⏹ Вентилятор остановлен — напор H=0, воздух движется по естественной тяге
+              </div>
+            )}
+            {!branch.fanStopped && branch.fanReverse && (
               <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
                 style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c" }}>
                 {(() => {
