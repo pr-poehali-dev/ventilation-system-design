@@ -15,6 +15,7 @@ CORS = {
 }
 
 GND = "__GND__"
+MIN_DEAD_END_FLOW = 0.5   # м³/с — минимальный расход в тупике (ПБ: диффузионное проветривание)
 
 
 def handler(event: dict, context) -> dict:
@@ -515,6 +516,23 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
     if leakage_total > 0.1:
         diag.append({"level": "info", "category": "branch_flow",
                      "message": f"Суммарная утечка через перемычки: {leakage_total:.1f} м³/с"})
+
+    # Проверка тупиков — аналог mark_dead_end():
+    # тупиковые ветви должны иметь хоть какой-то расход (диффузия, ВМП)
+    dead_ids = find_dead_ends(edges)
+    for e in edges:
+        if e["id"] not in dead_ids:
+            continue
+        q_dead = abs(Q_map.get(e["id"], 0))
+        if q_dead < MIN_DEAD_END_FLOW:
+            diag.append({
+                "level": "warning",
+                "category": "branch_flow",
+                "message": f"Тупик «{e['id']}» не проветривается (Q={q_dead:.2f} м³/с < {MIN_DEAD_END_FLOW} м³/с). "
+                           f"Рекомендуется установить ВМП или проверить топологию.",
+                "objectId": e["id"],
+                "value": q_dead,
+            })
 
     # Проверка норматива реверса k_rev >= 0.6 (ПБ для шахтных вентиляционных сетей)
     check_reverse(edges, Q_map, normal_flows or {}, diag)

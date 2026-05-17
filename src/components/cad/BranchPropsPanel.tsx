@@ -508,6 +508,30 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </label>
             </InlineLabel>
 
+            <InlineLabel label="Тупик">
+              <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", height: 18 }}>
+                <input
+                  type="checkbox"
+                  checked={branch.isDead ?? false}
+                  onChange={(e) => onUpdate({ isDead: e.target.checked })}
+                  style={{ accentColor: "#6b7280", width: 13, height: 13 }}
+                />
+                <span style={{
+                  fontSize: 11,
+                  color: branch.isDead ? "#374151" : "#6b7280",
+                  fontWeight: branch.isDead ? 600 : 400,
+                }}>
+                  {branch.isDead ? "Тупиковая (Q→0)" : "Сквозная"}
+                </span>
+              </label>
+            </InlineLabel>
+            {branch.isDead && (
+              <div className="mx-1 mb-1 px-2 py-1 text-[10px] rounded"
+                style={{ background: "#f9fafb", border: "1px solid #d1d5db", color: "#6b7280" }}>
+                Расчёт задаст Q=0. Контролируется MIN_DEAD_END_FLOW = 0.5 м³/с
+              </div>
+            )}
+
             <SectionHeader title="Название и группы" />
 
             <InlineLabel label="Тип выработки">
