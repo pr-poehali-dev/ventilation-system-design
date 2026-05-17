@@ -2570,6 +2570,28 @@ export default function CadPage() {
               <Icon name="Minus" size={11} /> Тонкие <span className="opacity-80 text-[10px]">F6</span>
             </button>
 
+            {/* ── Реверс вентилятора (только если выбрана ветвь с вентилятором) ── */}
+            {selectedBranch?.hasFan && (
+              <>
+                <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+                <button
+                  onClick={() => updateBranch(selectedBranch.id, { fanReverse: !selectedBranch.fanReverse })}
+                  className="h-6 px-2 flex items-center gap-1 rounded text-[11px] font-semibold"
+                  style={{
+                    background: selectedBranch.fanReverse ? "#dc2626" : "#f0fdf4",
+                    color: selectedBranch.fanReverse ? "white" : "#15803d",
+                    border: `1px solid ${selectedBranch.fanReverse ? "#b91c1c" : "#86efac"}`,
+                  }}
+                  title={selectedBranch.fanReverse
+                    ? `Вент. «${selectedBranch.fanName || selectedBranch.id}» — РЕВЕРС. Нажмите для прямого направления`
+                    : `Вент. «${selectedBranch.fanName || selectedBranch.id}» — прямой. Нажмите для реверса`}>
+                  {selectedBranch.fanReverse
+                    ? <><Icon name="ArrowLeft" size={11} /> Реверс</>
+                    : <><Icon name="ArrowRight" size={11} /> Прямой</>}
+                </button>
+              </>
+            )}
+
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
             {/* ── Рабочая плоскость для построения ── */}
