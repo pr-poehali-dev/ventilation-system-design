@@ -822,16 +822,28 @@ export function solveNetwork(
   });
 
   // 7б. Соответствие H(Q) вентиляторов
-  for (const e of edges) {
-    if (!e.hasFan || e.fanMode !== "curve" || !e.fanCurve) continue;
+  for (const b of brOut) {
+    if (!b.hasFan || b.fanMode !== "curve") continue;
+    const e = edges.find(x => x.id === b.id);
+    if (!e?.fanCurve) continue;
     const k    = (e.fanRpm && e.fanCurve.rpmNominal > 0) ? e.fanRpm / e.fanCurve.rpmNominal : 1;
     const Q    = Math.abs(e.Q);
     const qMin = e.fanCurve.qMin * k;
-    const qMax = e.fanCurve.qMax * k;
+    const qMax = (e.fanReverse && e.reverseQMax) ? e.reverseQMax * k : e.fanCurve.qMax * k;
     if (Q < qMin * 0.9)
       diag.push({ level: "warning", category: "fan", message: `${e.id}: помпаж Q=${Q.toFixed(1)} < Qmin=${qMin.toFixed(1)}`, objectId: e.id });
     else if (Q > qMax * 0.97)
       diag.push({ level: "warning", category: "fan", message: `${e.id}: предел Q=${Q.toFixed(1)} ≈ Qmax=${qMax.toFixed(1)}`, objectId: e.id });
+
+    // Аналог generate_report(): проверка КПД в реверсе
+    // fan.efficiency < 0 → риск неустойчивости (рабочая точка за пределами характеристики)
+    if (b.fanReverse && b.fanEfficiency <= 0.05) {
+      diag.push({
+        level: "warning", category: "fan",
+        message: `${b.id} [РЕВЕРС]: КПД=${(b.fanEfficiency * 100).toFixed(0)}% — вентилятор работает за пределами устойчивой зоны. Риск помпажа.`,
+        objectId: b.id, value: b.fanEfficiency,
+      });
+    }
   }
 
   // 7в. Аномальные параметры

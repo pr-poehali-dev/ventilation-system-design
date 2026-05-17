@@ -3084,9 +3084,48 @@ export default function CadPage() {
           </div>
           <div className="flex justify-between items-center px-3 py-2" style={{ borderTop: "1px solid #e5e7eb", background: "#f8faff" }}>
             <span className="text-[10px] text-gray-500">Клик на проблему — выделить объект на схеме</span>
-            <button onClick={() => setShowDiagnostics(false)}
-              className="text-[11px] px-3 py-1 rounded"
-              style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer" }}>Закрыть</button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  // generate_report(): текстовый отчёт по ветвям и вентиляторам
+                  const lines: string[] = [];
+                  lines.push("=== ОТЧЁТ ПО РАСЧЁТУ ВЕНТИЛЯЦИОННОЙ СЕТИ ===");
+                  lines.push(`Дата: ${new Date().toLocaleString("ru")}`);
+                  lines.push(`Итераций: ${solveResult?.iterations ?? 0}, сошлось: ${solveResult?.ok ? "да" : "нет"}`);
+                  lines.push("");
+                  lines.push("--- ВЕТВИ ---");
+                  branches.forEach(b => {
+                    if (b.isDead) return;
+                    lines.push(`${b.id.padEnd(20)} Q=${Math.abs(b.flow).toFixed(2).padStart(7)} м³/с  V=${b.velocity.toFixed(1).padStart(5)} м/с  ΔP=${b.dP.toFixed(0).padStart(6)} Па${b.isLeakage ? "  [УТЕЧКА]" : ""}`);
+                  });
+                  lines.push("");
+                  lines.push("--- ВЕНТИЛЯТОРЫ ---");
+                  branches.filter(b => b.hasFan).forEach(b => {
+                    const mode = b.fanStopped ? "СТОП" : b.fanReverse ? "РЕВЕРС" : "ПРЯМОЙ";
+                    const eta  = (b.fanEfficiency * 100).toFixed(0);
+                    const warn = b.fanReverse && b.fanEfficiency <= 0.05 ? "  ⚠ КПД<5% риск помпажа" : "";
+                    lines.push(`${b.fanName || b.id}  Режим=${mode}  Q=${Math.abs(b.flow).toFixed(2)} м³/с  H=${Math.abs(b.fanPressure).toFixed(0)} Па  КПД=${eta}%  N=${(b.fanShaftPower/1000).toFixed(1)} кВт${warn}`);
+                  });
+                  lines.push("");
+                  lines.push("--- ДИАГНОСТИКА ---");
+                  (solveResult?.diagnostics ?? []).forEach(d => {
+                    const icon = d.level === "error" ? "✕" : d.level === "warning" ? "⚠" : "ℹ";
+                    lines.push(`${icon} ${d.message}`);
+                  });
+                  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+                  const url  = URL.createObjectURL(blob);
+                  const a    = document.createElement("a");
+                  a.href = url; a.download = "ventilation_report.txt"; a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="text-[11px] px-3 py-1 rounded"
+                style={{ background: "#e8eef8", border: "1px solid #c8d4e8", cursor: "pointer", color: "#1e40af" }}>
+                ↓ Экспорт отчёта
+              </button>
+              <button onClick={() => setShowDiagnostics(false)}
+                className="text-[11px] px-3 py-1 rounded"
+                style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer" }}>Закрыть</button>
+            </div>
           </div>
         </div>
       </div>
