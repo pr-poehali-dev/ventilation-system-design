@@ -348,44 +348,11 @@ def solve(nodes_in, branches_in, options):
         return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
                            1, True, 0.0, log, diag)
 
-    # Начальное распределение: бисекция по суммарному пути вентилятор→атмосфера
+    # Начальное распределение для сети с контурами
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
-
-    # Инициализируем через BFS от вентилятора — соблюдаем Кирхгоф-1
-    fan_e = fans[0]
-    adj_init = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj_init[e["a"]].append((i, e["b"], +1))
-        adj_init[e["b"]].append((i, e["a"], -1))
-
-    for i in range(len(edges)):
-        Q[i] = 0.0
-
-    # Вентилятор получает Q0
-    fan_idx = next(i for i, e in enumerate(edges) if e["hasFan"])
-    Q[fan_idx] = q0
-
-    # BFS от выхода вентилятора, распределяем Q по ветвям
-    fan_start = edges[fan_idx]["b"] if edges[fan_idx]["b"] != GND else edges[fan_idx]["a"]
-    visited_init = {GND, fan_start}
-    bfs_init = collections.deque([fan_start])
-    node_q = {fan_start: q0, GND: -q0}  # сколько Q входит в узел
-
-    while bfs_init:
-        node = bfs_init.popleft()
-        incoming = node_q.get(node, 0.0)
-        # Подсчитываем непосещённых соседей
-        unvisited = [(i, nb, sg) for i, nb, sg in adj_init[node] if nb not in visited_init]
-        if not unvisited:
-            continue
-        q_each = incoming / max(len(unvisited), 1)
-        for i, nb, sg in unvisited:
-            visited_init.add(nb)
-            # sg: +1 если ребро i идёт node→nb (a→b), -1 если nb→node
-            Q[i] = q_each * sg
-            node_q[nb] = q_each
-            bfs_init.append(nb)
+        Q[i] = q0
 
     # Основной цикл Кросса с адаптивным демпфированием
     max_dq   = float("inf")
