@@ -149,6 +149,7 @@ def build_graph(nodes_in, branches_in):
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
             "fanStopped":  bool(b.get("fanStopped", False)),
             "isLeakage":   bool(b.get("isLeakage", False)),
+            "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
         })
     return edges, atm
 
@@ -511,11 +512,33 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
-    # Суммарная утечка через ветви-перемычки
-    leakage_total = sum(abs(Q_map.get(e["id"], 0)) for e in edges if e.get("isLeakage"))
+    # Суммарная утечка через ветви-перемычки + проверка коэффициентов
+    leakage_edges = [e for e in edges if e.get("isLeakage")]
+    leakage_total = sum(abs(Q_map.get(e["id"], 0)) for e in leakage_edges)
+    q_fan_total = sum(abs(Q_map.get(e["id"], 0)) for e in edges if e.get("hasFan") and not e.get("fanStopped"))
+
     if leakage_total > 0.1:
+        k_ut = leakage_total / q_fan_total if q_fan_total > 0 else 0
         diag.append({"level": "info", "category": "branch_flow",
-                     "message": f"Суммарная утечка через перемычки: {leakage_total:.1f} м³/с"})
+                     "message": f"Суммарная утечка через перемычки: {leakage_total:.1f} м³/с "
+                                f"(k_ут = {k_ut:.2f} = {k_ut*100:.0f}% от Q вентилятора)"})
+        # Проверка по заданным коэффициентам утечки
+        for e in leakage_edges:
+            coeff = float(e.get("leakageCoeff", 0) or 0)
+            if coeff <= 0:
+                continue
+            q_actual = abs(Q_map.get(e["id"], 0))
+            q_expected = coeff * q_fan_total
+            if q_fan_total > 0 and abs(q_actual - q_expected) / max(q_expected, 0.1) > 0.3:
+                diag.append({
+                    "level": "warning",
+                    "category": "branch_flow",
+                    "message": f"Утечка «{e['id']}»: расчётная {q_actual:.1f} м³/с, "
+                               f"ожидалось {q_expected:.1f} м³/с (k={coeff:.2f}). "
+                               f"Проверьте сопротивление перемычки.",
+                    "objectId": e["id"],
+                    "value": q_actual,
+                })
 
     # Проверка тупиков — аналог mark_dead_end():
     # тупиковые ветви должны иметь хоть какой-то расход (диффузия, ВМП)

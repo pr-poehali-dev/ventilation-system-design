@@ -508,6 +508,26 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </label>
             </InlineLabel>
 
+            {branch.isLeakage && (
+              <InlineLabel label="Коэф. утечки">
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <input
+                    type="number"
+                    min={0} max={1} step={0.01}
+                    value={branch.leakageCoeff ?? 0}
+                    onChange={(e) => onUpdate({ leakageCoeff: Math.min(1, Math.max(0, parseFloat(e.target.value) || 0)) })}
+                    style={{ width: 52, height: 18, fontSize: 11, border: "1px solid #fca5a5",
+                      background: "white", outline: "none", textAlign: "right", paddingRight: 2 }}
+                  />
+                  <span style={{ fontSize: 10, color: "#9ca3af" }}>
+                    {branch.leakageCoeff > 0
+                      ? `${(branch.leakageCoeff * 100).toFixed(0)}% от Q`
+                      : "не задан"}
+                  </span>
+                </div>
+              </InlineLabel>
+            )}
+
             <InlineLabel label="Тупик">
               <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", height: 18 }}>
                 <input
