@@ -48,6 +48,7 @@ interface Edge {
   fanBladeAngle?: number;
   fanRhoFactor:   number;
   fanReverse:     boolean;
+  fanParallel:    number;   // кол-во вентиляторов в параллель (≥1)
 }
 
 interface ContourEdge {
@@ -103,6 +104,8 @@ function fanH(e: Edge, Q: number): number {
   if (!e.hasFan) return 0;
 
   const sign = e.fanReverse ? -1 : 1;
+  // N параллельных вентиляторов: каждый пропускает Q/N, напор суммарный тот же.
+  const N  = Math.max(1, e.fanParallel ?? 1);
 
   if (e.fanMode === "constant") {
     return sign * Math.max(0, e.fanH0 * e.fanRhoFactor);
@@ -112,7 +115,8 @@ function fanH(e: Edge, Q: number): number {
     const c  = e.fanCurve;
     const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
     const af = angleFactor(c, e.fanBladeAngle);
-    const Qn = Math.abs(Q) / Math.max(0.001, k);
+    // Каждый из N вентиляторов получает Q/N → характеристика сдвигается вправо в N раз
+    const Qn = Math.abs(Q) / N / Math.max(0.001, k);
     if (Qn > c.qMax) return 0;
     return sign * Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
@@ -123,10 +127,12 @@ function fanH(e: Edge, Q: number): number {
 /** |dH/dQ| для уточнения знаменателя δQ. */
 function fanDH(e: Edge, Q: number): number {
   if (!e.hasFan || e.fanMode !== "curve" || !e.fanCurve) return 0;
+  const N  = Math.max(1, e.fanParallel ?? 1);
   const c  = e.fanCurve;
   const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
-  const Qn = Math.abs(Q) / Math.max(0.001, k);
-  return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor);
+  const Qn = Math.abs(Q) / N / Math.max(0.001, k);
+  // dH/dQ_total = dH/dQ_one * (1/N) — цепное правило
+  return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor) / N;
 }
 
 /** Оценка рабочей точки вентилятора методом бисекции H_вент(Q) = R_сети·Q². */
@@ -330,6 +336,7 @@ export function solveNetwork(
       fanBladeAngle: b.fanBladeAngle,
       fanRhoFactor:  rho,
       fanReverse:    b.fanReverse ?? false,
+      fanParallel:   Math.max(1, b.fanParallel ?? 1),
     };
   });
 

@@ -52,30 +52,37 @@ def get_R(b):
 
 
 def fan_H(e, Q):
-    """Напор вентилятора H при расходе Q (м³/с → Па).
+    """Напор вентилятора H при суммарном расходе Q (м³/с → Па).
     При fanReverse ребро уже развёрнуто в build_graph, поэтому H всегда >= 0.
+    N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
     """
     if not e.get("hasFan"):
         return 0.0
+    N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
     if mode == "curve":
-        if Q <= 0:
+        q_one = Q / N   # расход через один вентилятор
+        if q_one <= 0:
             return 0.0
-        if Q > float(e.get("qMax", 1e9)):
+        if q_one > float(e.get("qMax", 1e9)):
             return 0.0
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
-        return max(0.0, h0 + h1 * Q + h2 * Q * Q)
+        return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
     return float(e.get("fanPressure", 0))
 
 
 def fan_dH(e, Q):
-    """dH/dQ для curve-вентилятора."""
+    """dH/dQ_total для curve-вентилятора (с учётом параллели)."""
     if not e.get("hasFan") or Q < 0:
         return 0.0
     if e.get("fanMode", "constant") == "curve":
-        return float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * Q
+        N = max(1, int(e.get("fanParallel", 1) or 1))
+        q_one = Q / N
+        # dH/dQ_total = dH/dQ_one * (1/N)
+        dh_one = float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one
+        return dh_one / N
     return 0.0
 
 
@@ -113,10 +120,11 @@ def build_graph(nodes_in, branches_in):
             "h0": float(b.get("h0", 0)),
             "h1": float(b.get("h1", 0)),
             "h2": float(b.get("h2", 0)),
-            "qMin":       float(b.get("qMin", 1.0)),
-            "qMax":       float(b.get("qMax", 1e9)),
-            "area":       float(b.get("area", 0)),
-            "fanReverse": reverse,
+            "qMin":        float(b.get("qMin", 1.0)),
+            "qMax":        float(b.get("qMax", 1e9)),
+            "area":        float(b.get("area", 0)),
+            "fanReverse":  reverse,
+            "fanParallel": max(1, int(b.get("fanParallel", 1) or 1)),
         })
     return edges, atm
 
