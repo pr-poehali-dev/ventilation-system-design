@@ -362,7 +362,7 @@ def solve(nodes_in, branches_in, options):
                 e  = edges[ei]
                 qi = Q[ei] * sign  # расход в направлении обхода
                 R  = e["R"]
-                H  = fan_H(e, abs(qi)) * sign  # напор в направлении обхода
+                H  = fan_H(e, abs(Q[ei])) * sign  # напор вентилятора по ориентации ребра a→b
 
                 sum_h   += R * qi * abs(qi) - H
                 sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(qi)))
