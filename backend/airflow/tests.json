@@ -108,6 +108,28 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Реверс вентилятора — Q меняет знак",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "U1", "isAtm": true},
+          {"id": "N1"},
+          {"id": "U2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
+          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanReverse": true}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 1000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Кольцевая сеть — 2 параллельных ветви, Кросс",
       "method": "POST",
       "path": "/",

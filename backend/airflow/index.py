@@ -52,7 +52,9 @@ def get_R(b):
 
 
 def fan_H(e, Q):
-    """Напор вентилятора H при расходе Q (м³/с → Па)."""
+    """Напор вентилятора H при расходе Q (м³/с → Па).
+    При fanReverse ребро уже развёрнуто в build_graph, поэтому H всегда >= 0.
+    """
     if not e.get("hasFan"):
         return 0.0
     mode = e.get("fanMode", "constant")
@@ -94,10 +96,16 @@ def build_graph(nodes_in, branches_in):
 
     edges = []
     for b in branches_in:
+        reverse = bool(b.get("fanReverse", False))
+        # При реверсе меняем направление ребра: вентилятор нагнетает b→a вместо a→b.
+        # Алгоритм Кросса работает только с H≥0, поэтому разворачиваем ребро,
+        # а знак Q в результате корректируем обратно через поле "reversed".
+        node_a = to_gnd(b["toId"]  if reverse else b["fromId"])
+        node_b = to_gnd(b["fromId"] if reverse else b["toId"])
         edges.append({
             "id":          b["id"],
-            "a":           to_gnd(b["fromId"]),
-            "b":           to_gnd(b["toId"]),
+            "a":           node_a,
+            "b":           node_b,
             "R":           get_R(b),
             "hasFan":      bool(b.get("hasFan")),
             "fanMode":     b.get("fanMode", "constant"),
@@ -105,9 +113,10 @@ def build_graph(nodes_in, branches_in):
             "h0": float(b.get("h0", 0)),
             "h1": float(b.get("h1", 0)),
             "h2": float(b.get("h2", 0)),
-            "qMin": float(b.get("qMin", 1.0)),
-            "qMax": float(b.get("qMax", 1e9)),
-            "area": float(b.get("area", 0)),
+            "qMin":       float(b.get("qMin", 1.0)),
+            "qMax":       float(b.get("qMax", 1e9)),
+            "area":       float(b.get("area", 0)),
+            "fanReverse": reverse,
         })
     return edges, atm
 
@@ -480,6 +489,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False):
                     q = q_lo
                 else:
                     q = q_hi
+
+        # При fanReverse ребро было развёрнуто: Q внутри солвера положительный,
+        # но физически поток идёт в обратном направлении → возвращаем со знаком минус.
+        if e.get("fanReverse") and not is_dead and not force_zero:
+            q = -abs(q)
 
         H    = e["R"] * q * abs(q)
         Hv   = fan_H(e, abs(q))
