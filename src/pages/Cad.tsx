@@ -152,6 +152,9 @@ export default function CadPage() {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
   };
 
+  // Ref для вызова расчёта из updateBranch (handleSolveLocal объявлен позже)
+  const handleSolveRef = useRef<(() => void) | null>(null);
+
   const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
     // Синхронизируем airDirection на символе вентилятора при изменении fanReverse
@@ -161,6 +164,11 @@ export default function CadPage() {
           ? { ...s, airDirection: patch.fanReverse ? "reverse" : "forward" }
           : s
       ));
+      // При переключении на реверс: если нет прямого расчёта — запускаем автоматически
+      // (аналог reverse_fan() из эталона — сначала получаем q_norm, потом q_rev)
+      if (patch.fanReverse === true && Object.keys(normalFlows).length === 0) {
+        setTimeout(() => handleSolveRef.current?.(), 100);
+      }
     }
   };
 
@@ -949,6 +957,8 @@ export default function CadPage() {
   };
 
   const handleSolve = () => { void handleSolveLocal(); };
+  // Подключаем ref чтобы updateBranch мог вызвать расчёт (нужен прямой режим перед реверсом)
+  handleSolveRef.current = handleSolve;
 
   // Подавляем предупреждения unused (используются в UI других вкладок)
   void calcFire; void calcMethane; void calcThermal;
@@ -1893,6 +1903,7 @@ export default function CadPage() {
                   const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);
                   if (sym) removeSymbol(sym.id);
                 } : undefined}
+                normalFlows={normalFlows}
               />
             )}
 

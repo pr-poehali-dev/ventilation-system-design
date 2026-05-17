@@ -15,6 +15,8 @@ interface BranchPropsPanelProps {
   onFanSymbolScale?: (scale: number) => void;
   /** Удалить только символ УО (без удаления вентилятора из ветви) */
   onFanSymbolDelete?: () => void;
+  /** Расходы прямого режима (для проверки нормы ПБ при реверсе) */
+  normalFlows?: Record<string, number>;
 }
 
 const SH = "#e8eef8";
@@ -188,7 +190,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -703,6 +705,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 {branch.fanReverse ? "⟵ Реверс (обратный)" : "⟶ Прямой (нормальный)"}
               </button>
             </InlineLabel>
+            {branch.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
+              <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
+                style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }}>
+                ⚠ Сначала выполните расчёт в прямом режиме — для проверки норматива ПБ (Q_рев ≥ 60%)
+              </div>
+            )}
 
             <InlineLabel label="Состояние">
               <button
