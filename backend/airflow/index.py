@@ -116,48 +116,42 @@ def build_graph(nodes_in, branches_in):
 # НАЧАЛЬНОЕ РАСПРЕДЕЛЕНИЕ РАСХОДОВ (первый закон Кирхгофа)
 # ══════════════════════════════════════════════════════════════════════
 
-def init_flows(edges, q0=1.0):
+def init_flows(edges):
     """
-    Начальное приближение методом BFS от GND.
-    Расставляет знаки Q так, чтобы воздух «вытекал» из GND
-    (т.е. двигался от атмосферы к выработкам), соблюдая
-    1-й закон Кирхгофа в начальной точке.
-
-    Знак Q[i]:
-      +q0  если ребро ориентировано по направлению BFS (node → nb = a→b)
-      -q0  если ребро ориентировано против BFS (nb → node = b→a, т.е. a=nb, b=node)
+    Начальное приближение методом обхода дерева (BFS от GND).
+    Даёт Q, удовлетворяющий 1-му закону Кирхгофа во всех узлах.
     """
+    # Строим граф смежности
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"]))
-        adj[e["b"]].append((i, e["a"]))
+        adj[e["a"]].append((i, e["b"], +1))
+        adj[e["b"]].append((i, e["a"], -1))
 
-    Q = [0.0] * len(edges)
-    assigned = set()
+    # Начальный Q = 1.0 для всех ветвей (направление a→b)
+    Q = [1.0] * len(edges)
+
+    # BFS-обход: пускаем Q от вентилятора
+    fans = [i for i, e in enumerate(edges) if e["hasFan"]]
+    if fans:
+        fi = fans[0]
+        fe = edges[fi]
+        Q[fi] = 10.0  # начальный расход через вентилятор
+        start = fe["b"] if fe["b"] != GND else fe["a"]
+    else:
+        start = GND
+
+    # Балансируем 1-й закон через BFS
     visited_nodes = {GND}
+    tree_edges = set()
     queue = collections.deque([GND])
 
     while queue:
         node = queue.popleft()
-        for ei, nb in adj[node]:
-            if ei in assigned:
-                continue
-            e = edges[ei]
-            assigned.add(ei)
-            # Если BFS идёт node→nb и ребро ориентировано a→b (a==node) → знак +
-            # Если ребро ориентировано b→a (b==node, т.е. a==nb) → знак -
-            if e["a"] == node:
-                Q[ei] = +q0
-            else:
-                Q[ei] = -q0
+        for ei, nb, sign in adj[node]:
             if nb not in visited_nodes:
                 visited_nodes.add(nb)
+                tree_edges.add(ei)
                 queue.append(nb)
-
-    # Хорды (не вошли в дерево BFS) — ставим +q0
-    for i in range(len(edges)):
-        if i not in assigned:
-            Q[i] = +q0
 
     return Q
 
@@ -348,10 +342,31 @@ def solve(nodes_in, branches_in, options):
                            1, True, 0.0, log, diag)
 
     # Начальное распределение для сети с контурами:
-    # BFS от GND расставляет знаки правильно (воздух из атмосферы в сеть),
-    # масштаб берём из бисекции (рабочая точка вентилятора).
+    # BFS от GND — расставляем знаки Q так чтобы поток шёл "от корня наружу".
+    # Это гарантирует соблюдение 1-го закона Кирхгофа в стартовой точке
+    # и обеспечивает сходимость метода Кросса при любой ориентации рёбер (реверс вентилятора).
     q0 = bisect_q0()
-    Q = init_flows(edges, q0)
+    adj_init = collections.defaultdict(list)
+    for i, e in enumerate(edges):
+        adj_init[e["a"]].append((i, e["b"], +1))   # ребро a→b, обход a→b: sign=+1
+        adj_init[e["b"]].append((i, e["a"], -1))   # ребро a→b, обход b→a: sign=-1
+
+    start = GND if GND in adj_init else (edges[0]["a"] if edges else None)
+    visited_bfs = {start} if start else set()
+    queue_bfs = collections.deque([start]) if start else collections.deque()
+
+    for i in range(len(edges)):
+        Q[i] = q0  # по умолчанию
+
+    while queue_bfs:
+        node = queue_bfs.popleft()
+        for ei, nb, direction in adj_init[node]:
+            if nb not in visited_bfs:
+                visited_bfs.add(nb)
+                # direction=+1: ребро идёт node→nb (совпадает a→b), Q>0 = ток a→b = node→nb
+                # direction=-1: ребро идёт nb→node (обратно a→b), Q<0 = ток b→a = node→nb
+                Q[ei] = q0 * direction
+                queue_bfs.append(nb)
 
     # Основной цикл Кросса
     max_dq = float("inf")
