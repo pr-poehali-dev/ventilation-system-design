@@ -277,10 +277,15 @@ def solve(nodes_in, branches_in, options):
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
 
     log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)}")
+    for e in edges:
+        log.append(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
 
     # Независимые контуры
     loops = find_spanning_tree_and_loops(edges)
     log.append(f"Контуров={len(loops)}")
+    for li, loop in enumerate(loops):
+        parts = [f"{edges[ei]['id']}({'+'if s>0 else'-'})" for ei, s in loop]
+        log.append(f"[loop-{li}] " + " ".join(parts))
 
     # Если нет ни одного замкнутого контура — сеть разомкнута, циркуляция невозможна.
     # Например: после «разорвать связь» один ствол стал тупиком.
@@ -343,6 +348,7 @@ def solve(nodes_in, branches_in, options):
 
     # Начальное распределение для сети с контурами
     q0 = bisect_q0()
+    log.append(f"Q0={q0:.3f} м³/с")
     for i, e in enumerate(edges):
         Q[i] = q0
 
@@ -387,6 +393,8 @@ def solve(nodes_in, branches_in, options):
                      "message": f"Не сошлось за {max_iter} итераций. ΔQ={max_dq:.4f} м³/с"})
 
     log.append(f"Итераций={it} ΔQ={max_dq:.4f} м³/с")
+    for i, e in enumerate(edges):
+        log.append(f"[Q] {e['id']}: Q={Q[i]:.3f}")
 
     return make_result(edges, {e["id"]: Q[i] for i, e in enumerate(edges)},
                        it, converged, max_dq, log, diag)
