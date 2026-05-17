@@ -492,8 +492,10 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                      "message": f"Не сошлось за {max_iter} итераций. ΔQ={max_dq:.4f} м³/с"})
 
     log.append(f"Итераций={it} ΔQ={max_dq:.4f} м³/с")
+    print(f"Итераций={it} ΔQ={max_dq:.4f} converged={converged}")
     for i, e in enumerate(edges):
         log.append(f"[Q] {e['id']}: Q={Q[i]:.3f}")
+        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f}{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
