@@ -52,13 +52,7 @@ def get_R(b):
 
 
 def fan_H(e, Q):
-    """
-    Напор вентилятора H(Q) в Па — всегда в направлении a→b ребра.
-    Q передаётся со знаком (положительный = ток a→b).
-    Для constant: напор = +fanPressure при Q>=0, 0 при Q<0
-    (вентилятор не создаёт тягу против потока — если Q<0, значит
-    реверс уже учтён направлением ребра).
-    """
+    """Напор вентилятора H при расходе Q (м³/с → Па)."""
     if not e.get("hasFan"):
         return 0.0
     mode = e.get("fanMode", "constant")
@@ -71,7 +65,6 @@ def fan_H(e, Q):
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
         return max(0.0, h0 + h1 * Q + h2 * Q * Q)
-    # constant: напор всегда в направлении a→b независимо от знака Q
     return float(e.get("fanPressure", 0))
 
 
@@ -123,42 +116,48 @@ def build_graph(nodes_in, branches_in):
 # НАЧАЛЬНОЕ РАСПРЕДЕЛЕНИЕ РАСХОДОВ (первый закон Кирхгофа)
 # ══════════════════════════════════════════════════════════════════════
 
-def init_flows(edges):
+def init_flows(edges, q0=1.0):
     """
-    Начальное приближение методом обхода дерева (BFS от GND).
-    Даёт Q, удовлетворяющий 1-му закону Кирхгофа во всех узлах.
+    Начальное приближение методом BFS от GND.
+    Расставляет знаки Q так, чтобы воздух «вытекал» из GND
+    (т.е. двигался от атмосферы к выработкам), соблюдая
+    1-й закон Кирхгофа в начальной точке.
+
+    Знак Q[i]:
+      +q0  если ребро ориентировано по направлению BFS (node → nb = a→b)
+      -q0  если ребро ориентировано против BFS (nb → node = b→a, т.е. a=nb, b=node)
     """
-    # Строим граф смежности
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"], +1))
-        adj[e["b"]].append((i, e["a"], -1))
+        adj[e["a"]].append((i, e["b"]))
+        adj[e["b"]].append((i, e["a"]))
 
-    # Начальный Q = 1.0 для всех ветвей (направление a→b)
-    Q = [1.0] * len(edges)
-
-    # BFS-обход: пускаем Q от вентилятора
-    fans = [i for i, e in enumerate(edges) if e["hasFan"]]
-    if fans:
-        fi = fans[0]
-        fe = edges[fi]
-        Q[fi] = 10.0  # начальный расход через вентилятор
-        start = fe["b"] if fe["b"] != GND else fe["a"]
-    else:
-        start = GND
-
-    # Балансируем 1-й закон через BFS
+    Q = [0.0] * len(edges)
+    assigned = set()
     visited_nodes = {GND}
-    tree_edges = set()
     queue = collections.deque([GND])
 
     while queue:
         node = queue.popleft()
-        for ei, nb, sign in adj[node]:
+        for ei, nb in adj[node]:
+            if ei in assigned:
+                continue
+            e = edges[ei]
+            assigned.add(ei)
+            # Если BFS идёт node→nb и ребро ориентировано a→b (a==node) → знак +
+            # Если ребро ориентировано b→a (b==node, т.е. a==nb) → знак -
+            if e["a"] == node:
+                Q[ei] = +q0
+            else:
+                Q[ei] = -q0
             if nb not in visited_nodes:
                 visited_nodes.add(nb)
-                tree_edges.add(ei)
                 queue.append(nb)
+
+    # Хорды (не вошли в дерево BFS) — ставим +q0
+    for i in range(len(edges)):
+        if i not in assigned:
+            Q[i] = +q0
 
     return Q
 
@@ -349,33 +348,10 @@ def solve(nodes_in, branches_in, options):
                            1, True, 0.0, log, diag)
 
     # Начальное распределение для сети с контурами:
-    # BFS от вентилятора, расставляем знаки так чтобы соблюдался 1-й закон Кирхгофа
+    # BFS от GND расставляет знаки правильно (воздух из атмосферы в сеть),
+    # масштаб берём из бисекции (рабочая точка вентилятора).
     q0 = bisect_q0()
-    # Строим граф смежности
-    adj_init = collections.defaultdict(list)
-    for i, e in enumerate(edges):
-        adj_init[e["a"]].append((i, e["b"], +1))
-        adj_init[e["b"]].append((i, e["a"], -1))
-
-    # Начинаем BFS от GND (или от узла вентилятора)
-    fan_idx = next((i for i, e in enumerate(edges) if e["hasFan"]), None)
-    start_node = GND if GND in adj_init else (edges[fan_idx]["a"] if fan_idx is not None else edges[0]["a"])
-
-    visited_init = {start_node}
-    queue_init = collections.deque([start_node])
-    for i in range(len(edges)):
-        Q[i] = q0  # по умолчанию
-
-    while queue_init:
-        node = queue_init.popleft()
-        for ei, nb, sign in adj_init[node]:
-            if nb not in visited_init:
-                visited_init.add(nb)
-                # sign=+1: ребро идёт node→nb (a→b), Q>0 означает ток node→nb
-                # sign=-1: ребро идёт nb→node (b→a), Q>0 означает ток nb→node
-                # Мы хотим ток FROM node TO nb → если sign=+1, Q=+q0; если sign=-1, Q=-q0
-                Q[ei] = q0 * sign
-                queue_init.append(nb)
+    Q = init_flows(edges, q0)
 
     # Основной цикл Кросса
     max_dq = float("inf")
@@ -391,15 +367,12 @@ def solve(nodes_in, branches_in, options):
 
             for ei, sign in loop:
                 e  = edges[ei]
-                qi = Q[ei] * sign  # расход в направлении обхода контура
+                qi = Q[ei] * sign  # расход в направлении обхода
                 R  = e["R"]
-                # fan_H вычисляется для фактического тока в ребре Q[ei] (не qi!)
-                # Вентилятор нагнетает в направлении a→b ребра.
-                # Его вклад в невязку контура: -H * sign (помогает/мешает обходу)
-                H  = fan_H(e, Q[ei]) * sign
+                H  = fan_H(e, abs(qi)) * sign  # напор в направлении обхода
 
                 sum_h   += R * qi * abs(qi) - H
-                sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(Q[ei])))
+                sum_2rq += 2.0 * R * abs(qi) + abs(fan_dH(e, abs(qi)))
 
             if sum_2rq < 1e-12:
                 continue
