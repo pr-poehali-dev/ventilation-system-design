@@ -437,14 +437,16 @@ export function solveNetwork(
   log.push(`Q₀ = ${Q0.toFixed(2)} м³/с`);
 
   edges.forEach((e, i) => {
-    if (!treeSet.has(i)) {
+    if (e.hasFan) {
+      // Вентилятор всегда нагнетает в направлении a→b по соглашению
+      e.Q = Q0;
+    } else if (!treeSet.has(i)) {
       // Хорда — Q0 в направлении a→b
       e.Q = Q0;
     } else {
       // Ветвь дерева — Q0 в направлении от корня (меньший bfsPos) к листу (больший)
       const posA = bfsPos.get(e.a) ?? 1e9;
       const posB = bfsPos.get(e.b) ?? 1e9;
-      // posB > posA → b дальше от корня → e.Q > 0 (ток от a к b)
       e.Q = posB > posA ? Q0 : -Q0;
     }
   });
