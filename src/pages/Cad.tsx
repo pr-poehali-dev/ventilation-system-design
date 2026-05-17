@@ -447,7 +447,9 @@ export default function CadPage() {
 
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
-  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
+  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([
+    { id: "SYM_FAN_7", typeId: "fan", x: 0, y: 0, branchId: "7", t: 0.5, airDirection: "forward" },
+  ]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
 
@@ -1718,7 +1720,14 @@ export default function CadPage() {
             </div>
 
             {/* Сброс демо */}
-            <button onClick={() => { setBranches(DEMO_BRANCHES); setNodes(DEMO_NODES); setSolveResult(null); }}
+            <button onClick={() => {
+              setBranches(DEMO_BRANCHES);
+              setNodes(DEMO_NODES);
+              setSolveResult(null);
+              setSchemaSymbols([{ id: "SYM_FAN_7", typeId: "fan", x: 0, y: 0, branchId: "7", t: 0.5, airDirection: "forward" }]);
+              setSelectedBranchId(null);
+              setSelectedNodeId(null);
+            }}
               className="flex flex-col items-center justify-center px-2 py-1 hover:bg-gray-100 hover:border-gray-300 border border-transparent rounded min-w-[48px]"
               title="Сбросить демо-сеть">
               <Icon name="RotateCcw" size={18} className="text-gray-500" />
