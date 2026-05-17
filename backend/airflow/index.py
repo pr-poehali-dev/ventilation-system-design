@@ -167,12 +167,10 @@ def init_flows(edges, q0=10.0):
     Гарантирует 1-й закон Кирхгофа (ΣQ_вх = ΣQ_вых) в каждом узле.
 
     Алгоритм:
-    1. BFS от GND → строим остовное дерево (хорды = независимые контуры).
-    2. Хордам Q=0, ребрам дерева Q распределяется от источника (вентилятора).
-    3. Источник: принудительно задаём Q=q0 через вентилятор.
-       Если вентилятор — хорда, то Q[хорда]=q0, а дерево балансируется.
-       Если вентилятор — ребро дерева, распределяем q0 через supply от его узлов.
-    4. Нормировка: масштабируем чтобы Q[вент] = q0 (страховка от численных ошибок).
+    1. BFS от GND — строим остовное дерево, запоминаем parent каждого узла.
+    2. Задаём Q[вентилятор] = q0 как источник потока.
+    3. Снизу вверх (от листьев к GND): Q_ребра_дерева = баланс узла.
+    4. Хордовым рёбрам Q=0 (их добавит метод Кросса в итерациях).
     """
     n = len(edges)
     Q = [0.0] * n
@@ -182,12 +180,11 @@ def init_flows(edges, q0=10.0):
         adj[e["a"]].append((i, e["b"], +1))
         adj[e["b"]].append((i, e["a"], -1))
 
-    # BFS от GND → остовное дерево
+    # BFS от GND — строим остовное дерево
     visited     = {GND}
-    parent_edge = {}   # узел → (edge_idx, sign_parent→node)
+    parent_edge = {}   # узел → (edge_idx, sign): sign=+1 если a=parent,b=node
     parent_of   = {}
     bfs_order   = []
-    tree_set    = set()
     queue = collections.deque([GND])
     while queue:
         node = queue.popleft()
@@ -197,46 +194,32 @@ def init_flows(edges, q0=10.0):
                 parent_edge[nb] = (ei, sign)
                 parent_of[nb]   = node
                 bfs_order.append(nb)
-                tree_set.add(ei)
                 queue.append(nb)
 
+    # Задаём начальный Q первого работающего вентилятора = q0
     fan_edges = [i for i, e in enumerate(edges) if e.get("hasFan") and not e.get("fanStopped")]
-
     supply = collections.defaultdict(float)
     if fan_edges:
-        fi = fan_edges[0]
-        fe = edges[fi]
-        if fi in tree_set:
-            # Вентилятор — ребро дерева: вносим q0 как supply из его узлов
-            # Ток q0 течёт a→b (направление ребра), поэтому:
-            supply[fe["a"]] += q0   # вытекает из a
-            supply[fe["b"]] -= q0   # втекает в b
-        else:
-            # Вентилятор — хорда: задаём Q напрямую, supply от его концов
-            Q[fi] = q0
-            supply[fe["a"]] += q0
-            supply[fe["b"]] -= q0
+        Q[fan_edges[0]] = q0
+        fe = edges[fan_edges[0]]
+        supply[fe["b"]] -= q0
+        supply[fe["a"]] += q0
 
     # Снизу вверх: проталкиваем supply через дерево к GND
     for node in reversed(bfs_order):
         if node not in parent_edge:
             continue
         ei, sign = parent_edge[node]
-        # sign: +1 если ребро ei идёт parent→node (a=parent,b=node)
-        # Нужно протолкнуть -supply[node] в сторону parent
         q_tree = -supply[node]
         Q[ei]  = q_tree * sign
         supply[parent_of[node]] += q_tree
 
-    # Нормировка: Q[вент] должен быть равен q0
+    # Нормировка: масштабируем чтобы Q[вент] = q0
     if fan_edges:
         q_actual = abs(Q[fan_edges[0]])
         if q_actual > 1e-9:
             scale = q0 / q_actual
             Q = [q * scale for q in Q]
-        else:
-            # Вентилятор получил Q=0 (что-то пошло не так) — ставим q0 вручную
-            Q = [q0] * n
 
     return Q
 
@@ -482,17 +465,10 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         а не сумму R — для разветвлённых сетей это даёт верную рабочую точку.
         1/R_эфф = Σ(1/R_i), т.е. R_эфф = N² / Σ(1/R_i).
         """
-        # R_total: среднегармоническое сопротивление активных ветвей без вентиляторов.
-        # Используем медиану R (сортируем и берём средние), чтобы исключить влияние
-        # экстремальных значений (R=0 у стволов, очень большие R у длинных выработок).
-        non_fan_Rs = sorted(
-            e["R"] for e in active_edges if not e["hasFan"] and e["R"] > 1e-6
-        )
+        non_fan_Rs = [e["R"] for e in active_edges if not e["hasFan"] and e["R"] > 1e-9]
         if non_fan_Rs:
-            # Отбрасываем верхние 25% (слишком большие R) и нижние 0% для устойчивости
-            cutoff = max(1, len(non_fan_Rs) * 3 // 4)
-            trimmed = non_fan_Rs[:cutoff]
-            R_total = sum(trimmed) / len(trimmed)  # среднее по «нормальным» ветвям
+            inv_sum = sum(1.0 / r for r in non_fan_Rs)
+            R_total = len(non_fan_Rs) ** 2 / inv_sum
         else:
             R_total = 1e-3
 
