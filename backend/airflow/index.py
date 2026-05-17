@@ -92,7 +92,11 @@ def fan_dH(e, Q):
     if e.get("fanMode", "constant") == "curve":
         N = max(1, int(e.get("fanParallel", 1) or 1))
         q_one = abs(Q) / N
-        dh_one = float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one
+        # При реверсе с отдельной кривой — используем её коэффициенты
+        if e.get("fanReverse") and e.get("reverseH0") is not None:
+            dh_one = float(e.get("reverseH1", 0)) + 2.0 * float(e.get("reverseH2", 0)) * q_one
+        else:
+            dh_one = float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one
         return abs(dh_one) / N
     return 0.0
 
@@ -395,8 +399,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         # Для curve-вентилятора — бисекция на нисходящей ветви характеристики
         for fan_e in fans:
             if fan_e.get("fanMode", "constant") == "curve":
-                q_lo = float(fan_e.get("qMin", 1.0))
-                q_hi = float(fan_e.get("qMax", 90.0))
+                # При реверсе с отдельной характеристикой — используем её диапазон
+                if fan_e.get("fanReverse") and fan_e.get("reverseH0") is not None:
+                    q_lo = float(fan_e.get("qMin", 1.0))
+                    q_hi = float(fan_e.get("reverseQMax", fan_e.get("qMax", 90.0)))
+                else:
+                    q_lo = float(fan_e.get("qMin", 1.0))
+                    q_hi = float(fan_e.get("qMax", 90.0))
                 # Проверяем что H(q_lo) > R·q_lo² и H(q_hi) < R·q_hi²
                 # (рабочая точка лежит между ними)
                 def f(q):

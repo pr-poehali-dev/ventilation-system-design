@@ -144,6 +144,10 @@ function fanDH(e: Edge, Q: number): number {
   const c  = e.fanCurve;
   const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
   const Qn = Math.abs(Q) / N / Math.max(0.001, k);
+  // При реверсе с отдельной кривой — используем её коэффициенты
+  if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+    return Math.abs((e.reverseH1 + 2 * e.reverseH2 * Qn) * k * e.fanRhoFactor) / N;
+  }
   // dH/dQ_total = dH/dQ_one * (1/N) — цепное правило
   return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor) / N;
 }
@@ -163,8 +167,10 @@ function estimateQ0(edges: Edge[], Rtotal: number): number {
   if (fan.fanMode === "curve" && fan.fanCurve) {
     const c   = fan.fanCurve;
     const k   = (fan.fanRpm && c.rpmNominal > 0) ? fan.fanRpm / c.rpmNominal : 1;
-    const qHi = c.qMax * k;
-    if (Rtotal <= 0) return (c.qMin + c.qMax) / 2 * k;
+    // При реверсе с отдельной кривой — используем её диапазон расходов
+    const qMaxSrc = (fan.fanReverse && fan.reverseQMax !== undefined) ? fan.reverseQMax : c.qMax;
+    const qHi = qMaxSrc * k;
+    if (Rtotal <= 0) return (c.qMin + qMaxSrc) / 2 * k;
 
     let lo = 0, hi = qHi;
     for (let i = 0; i < 80; i++) {
