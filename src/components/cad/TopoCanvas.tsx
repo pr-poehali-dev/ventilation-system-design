@@ -1188,6 +1188,10 @@ export default function TopoCanvas(props: Props) {
           const HX = px - SZ / 2;
           const HY = py - SZ / 2 - 4;
 
+          // Вентилятор остановлен — серый фильтр на символ
+          const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+          const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
+
           return (
             <g key={sym.id}
               style={{ cursor: tool === "select" ? "move" : undefined }}
@@ -1281,9 +1285,20 @@ export default function TopoCanvas(props: Props) {
               {/* SVG-символ */}
               <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"
+                opacity={isFanStopped ? 0.35 : 1}
+                style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
                 dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+              {/* Крестик на остановленном вентиляторе */}
+              {isFanStopped && (
+                <g opacity={0.7}>
+                  <line x1={HX + SZ * 0.2} y1={HY + SZ * 0.2} x2={HX + SZ * 0.8} y2={HY + SZ * 0.8}
+                    stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
+                  <line x1={HX + SZ * 0.8} y1={HY + SZ * 0.2} x2={HX + SZ * 0.2} y2={HY + SZ * 0.8}
+                    stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
+                </g>
+              )}
               {/* Стрелка направления воздуха на символе вентилятора */}
-              {sym.typeId === "fan" && sym.branchId && hasBranchPts && (() => {
+              {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts && (() => {
                 const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
                 const arrowAngle = sym.airDirection === "reverse"
