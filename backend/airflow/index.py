@@ -354,11 +354,9 @@ def solve(nodes_in, branches_in, options):
     for i, e in enumerate(edges):
         Q[i] = q0
 
-    # Основной цикл Кросса с адаптивным демпфированием
-    max_dq   = float("inf")
-    prev_dq  = float("inf")
-    it       = 0
-    cur_alpha = min(alpha, 0.5)   # начинаем осторожно
+    # Основной цикл Кросса
+    max_dq = float("inf")
+    it     = 0
 
     for it in range(1, max_iter + 1):
         max_dq = 0.0
@@ -386,26 +384,12 @@ def solve(nodes_in, branches_in, options):
             if sum_2rq < 1e-12:
                 continue
 
-            dq_raw = sum_h / sum_2rq
-
-            # Ограничение шага: не более 80% от минимального |Q| в контуре
-            # чтобы предотвратить смену знака и осцилляцию
-            q_min_loop = max(min(abs(Q[ei]) for ei, _ in loop), 0.01)
-            dq_raw = max(-0.8 * q_min_loop, min(0.8 * q_min_loop, dq_raw))
-
-            dq = cur_alpha * dq_raw
+            dq = alpha * sum_h / sum_2rq
             max_dq = max(max_dq, abs(dq))
 
             # Обновляем расходы
             for ei, sign in loop:
                 Q[ei] -= dq * sign
-
-        # Адаптируем alpha: если невязка уменьшается — ускоряем, иначе замедляем
-        if max_dq < prev_dq * 0.99:
-            cur_alpha = min(alpha, cur_alpha * 1.05)
-        else:
-            cur_alpha = max(0.1, cur_alpha * 0.7)
-        prev_dq = max_dq
 
         if max_dq < tol:
             it += 1
