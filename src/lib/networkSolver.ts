@@ -571,19 +571,23 @@ export function solveNetwork(
       const pNode = p.node;
       const bal   = balance.get(v) ?? 0;
 
+      // Вентиляторная ветвь в дереве: её Q уже верен из итераций Кросса.
+      // Не перезаписываем — только учитываем в балансе родителя.
+      if (e.hasFan) {
+        if (e.b === v) balance.set(pNode, (balance.get(pNode) ?? 0) - e.Q);
+        else           balance.set(pNode, (balance.get(pNode) ?? 0) + e.Q);
+        continue;
+      }
+
       // Нам нужно balance[v] = 0, т.е. Q_ребра_к_v = −bal
       // Ребро e ориентировано a→b:
       //   Если e.b === v: Q > 0 означает приток в v. Нужен приток = −bal → e.Q = −bal
       //   Если e.a === v: Q > 0 означает отток из v. Нужен отток = bal → e.Q = bal
-      //   (чтобы баланс стал 0: balance[v] + Q_вход - Q_выход = 0)
       if (e.b === v) {
         e.Q = -bal;
-        // Обновляем баланс родителя (pNode): ребро e.Q > 0 означает отток из e.a = pNode
         balance.set(pNode, (balance.get(pNode) ?? 0) - e.Q);
       } else {
-        // e.a === v, pNode === e.b
         e.Q = bal;
-        // ток e.Q > 0 означает отток из e.a = v, т.е. приток в e.b = pNode
         balance.set(pNode, (balance.get(pNode) ?? 0) + e.Q);
       }
     }
