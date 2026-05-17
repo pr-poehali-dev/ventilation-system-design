@@ -401,6 +401,12 @@ export function solveNetwork(
   const bfsPos = new Map(bfsOrder.map((n, i) => [n, i]));
 
   log.push(`Узлов: ${nodeList.length}, ветвей: ${edges.length}, контуров: ${chords.length}`);
+  // === DEBUG: состав контуров ===
+  chords.forEach((cIdx, ci) => {
+    const e = edges[cIdx];
+    log.push(`[contour-${ci}] хорда: ${e.id}(${e.a}→${e.b})${e.hasFan?" ВЕН":""}`);
+  });
+  edges.forEach((e, i) => log.push(`[edge-${i}] ${e.id} ${e.a}→${e.b} R=${e.R.toFixed(4)}${e.hasFan?" ВЕН":""}${treeSet.has(i)?" TREE":" CHORD"}`));
 
   // Если нет ни одного замкнутого контура — сеть разомкнута, Q = 0 везде.
   if (chords.length === 0) {
@@ -528,6 +534,11 @@ export function solveNetwork(
   }
 
   log.push(`Итерации: ${iter}, max|ΔH|=${maxDeltaH.toFixed(3)} Па, max|δQ|=${maxDeltaQ.toFixed(4)} м³/с`);
+  // === DEBUG: Q после итераций Кросса (до пересчёта дерева) ===
+  edges.forEach((e, i) => {
+    const inTree = treeSet.has(i) ? "дерево" : "хорда";
+    log.push(`[post-Cross] ${e.id} (${inTree}${e.hasFan?" ВЕН":""}): Q=${e.Q.toFixed(3)}`);
+  });
 
   // ──────────────────────────────────────────────────────────────────────────
   // ПЕРЕСЧЁТ Q ВЕТВЕЙ ДЕРЕВА по 1-му закону Кирхгофа (bottom-up)
@@ -555,6 +566,9 @@ export function solveNetwork(
       balance.set(e.b, (balance.get(e.b) ?? 0) + e.Q);
     }
 
+    // === DEBUG: балансы от хорд ===
+    balance.forEach((v, k) => { if (Math.abs(v) > 1e-6) log.push(`[balance-chord] узел ${k}: ${v.toFixed(3)}`); });
+
     // Обход снизу вверх (от листьев к корню)
     for (let idx = bfsOrder.length - 1; idx >= 1; idx--) {
       const v   = bfsOrder[idx];
@@ -568,6 +582,7 @@ export function solveNetwork(
       // Вентиляторная ветвь в дереве: её Q уже верен из итераций Кросса.
       // Не перезаписываем — только учитываем в балансе родителя.
       if (e.hasFan) {
+        log.push(`[tree-skip-fan] ${e.id}: Q=${e.Q.toFixed(3)} bal[v=${v}]=${bal.toFixed(3)}`);
         if (e.b === v) balance.set(pNode, (balance.get(pNode) ?? 0) - e.Q);
         else           balance.set(pNode, (balance.get(pNode) ?? 0) + e.Q);
         continue;
