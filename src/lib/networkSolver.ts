@@ -442,20 +442,51 @@ export function solveNetwork(
   const Q0    = Math.max(0.1, estimateQ0(edges, Rtree));
   log.push(`Q₀ = ${Q0.toFixed(2)} м³/с`);
 
+  // Инициализация: хордам Q0, дерево пересчитываем из Кирхгофа-1
+  // Шаг 1: ставим хордам Q0 (направление a→b)
   edges.forEach((e, i) => {
-    if (e.hasFan) {
-      // Вентилятор всегда нагнетает в направлении a→b по соглашению
-      e.Q = Q0;
-    } else if (!treeSet.has(i)) {
-      // Хорда — Q0 в направлении a→b
-      e.Q = Q0;
+    if (!treeSet.has(i)) {
+      e.Q = Q0;   // хорда (включая вентилятор-хорду)
     } else {
-      // Ветвь дерева — Q0 в направлении от корня (меньший bfsPos) к листу (больший)
-      const posA = bfsPos.get(e.a) ?? 1e9;
-      const posB = bfsPos.get(e.b) ?? 1e9;
-      e.Q = posB > posA ? Q0 : -Q0;
+      e.Q = 0;    // ветви дерева сначала в 0
     }
   });
+
+  // Шаг 2: если вентилятор в дереве — задаём ему Q0
+  edges.forEach(e => {
+    if (e.hasFan) e.Q = Q0;
+  });
+
+  // Шаг 3: bottom-up пересчёт ветвей дерева из хорд (Кирхгоф-1)
+  // Это даёт физически согласованную начальную точку
+  {
+    const initBal = new Map<string, number>();
+    for (const n of nodeList) initBal.set(n, 0);
+
+    // Вклад хорд (и вентилятора-хорды) в балансы
+    for (let i = 0; i < edges.length; i++) {
+      if (treeSet.has(i) && !edges[i].hasFan) continue;
+      const e = edges[i];
+      initBal.set(e.a, (initBal.get(e.a) ?? 0) - e.Q);
+      initBal.set(e.b, (initBal.get(e.b) ?? 0) + e.Q);
+    }
+
+    for (let idx = bfsOrder.length - 1; idx >= 1; idx--) {
+      const v  = bfsOrder[idx];
+      const p  = parent.get(v);
+      if (!p) continue;
+      const e  = edges[p.edgeIdx];
+      if (e.hasFan) continue;   // вентилятор в дереве уже имеет Q0
+      const bal = initBal.get(v) ?? 0;
+      if (e.b === v) {
+        e.Q = -bal;
+        initBal.set(p.node, (initBal.get(p.node) ?? 0) + bal);
+      } else {
+        e.Q = bal;
+        initBal.set(p.node, (initBal.get(p.node) ?? 0) + bal);
+      }
+    }
+  }
 
   // ──────────────────────────────────────────────────────────────────────────
   // ШАГ 5. ИТЕРАЦИОННЫЙ ПРОЦЕСС МКР
@@ -481,6 +512,9 @@ export function solveNetwork(
   let maxDeltaQ = Infinity;
   let maxDeltaH = Infinity;
   let iter      = 0;
+
+  // Адаптивное демпфирование: начинаем с малого шага, увеличиваем при сходимости
+  let relaxation = 0.5;
 
   for (; iter < maxIter; iter++) {
     maxDeltaQ = 0;
@@ -513,7 +547,12 @@ export function solveNetwork(
 
       if (den < 1e-12) continue;
 
-      const dQ = -num / den;
+      // Демпфирование: ограничиваем поправку долей от текущего Q в контуре
+      // чтобы не допустить смены знака за один шаг
+      const dQraw  = -num / den;
+      const Qscale = contour.reduce((mx, { edgeIdx }) => Math.max(mx, Math.abs(edges[edgeIdx].Q)), 0.1);
+      const dQmax  = Qscale * 0.8;   // не более 80% от текущего расхода за шаг
+      const dQ     = relaxation * Math.max(-dQmax, Math.min(dQmax, dQraw));
 
       if (Math.abs(num) > maxDeltaH) maxDeltaH = Math.abs(num);
       if (Math.abs(dQ)  > maxDeltaQ) maxDeltaQ = Math.abs(dQ);
@@ -524,10 +563,13 @@ export function solveNetwork(
       }
     }
 
-    // Защита от NaN
+    // Защита от NaN / нулей
     for (const e of edges) {
       if (!isFinite(e.Q)) e.Q = 0;
     }
+
+    // Адаптивно повышаем relaxation по мере сходимости
+    if (iter > 50 && maxDeltaH < 50) relaxation = Math.min(1.0, relaxation + 0.01);
 
     // ШАГ 6. Критерий остановки
     if (maxDeltaH < eps1 || maxDeltaQ < eps2) { iter++; break; }
@@ -583,21 +625,30 @@ export function solveNetwork(
       // Не перезаписываем — только учитываем в балансе родителя.
       if (e.hasFan) {
         log.push(`[tree-skip-fan] ${e.id}: Q=${e.Q.toFixed(3)} bal[v=${v}]=${bal.toFixed(3)}`);
+        // e.Q > 0: ток течёт a→b.
+        // Если e.b === v: ток входит в v, значит ток УХОДИТ из pNode → balance[pNode] -= e.Q
+        // Если e.a === v: ребро v→pNode, ток ВХОДИТ в pNode (e.Q > 0 означает v→pNode) → balance[pNode] += e.Q
         if (e.b === v) balance.set(pNode, (balance.get(pNode) ?? 0) - e.Q);
         else           balance.set(pNode, (balance.get(pNode) ?? 0) + e.Q);
+        // Но нам также нужно учесть bal[v] (от поддерева под v через другие ветви)
+        // без вентилятора баланс v = 0 задаётся пересчётом, тут v уже сбалансирован итерациями
         continue;
       }
 
       // Нам нужно balance[v] = 0, т.е. Q_ребра_к_v = −bal
       // Ребро e ориентировано a→b:
       //   Если e.b === v: Q > 0 означает приток в v. Нужен приток = −bal → e.Q = −bal
-      //   Если e.a === v: Q > 0 означает отток из v. Нужен отток = bal → e.Q = bal
+      //     В pNode: ток уходит из pNode → balance[pNode] -= (−bal) = balance[pNode] + bal
+      //   Если e.a === v: Q > 0 означает отток из v (v→pNode). Нужен отток = bal → e.Q = bal
+      //     В pNode: ток входит в pNode → balance[pNode] += bal
       if (e.b === v) {
-        e.Q = -bal;
-        balance.set(pNode, (balance.get(pNode) ?? 0) - e.Q);
+        const newQ = -bal;
+        e.Q = newQ;
+        balance.set(pNode, (balance.get(pNode) ?? 0) + bal);  // pNode получает bal = −(−bal)
       } else {
-        e.Q = bal;
-        balance.set(pNode, (balance.get(pNode) ?? 0) + e.Q);
+        const newQ = bal;
+        e.Q = newQ;
+        balance.set(pNode, (balance.get(pNode) ?? 0) + bal);  // ток bal входит в pNode
       }
     }
   }
