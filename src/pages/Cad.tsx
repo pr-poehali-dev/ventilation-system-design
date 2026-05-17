@@ -1677,6 +1677,64 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
+        {/* ── Группа: Команды вентилятора (main_loop: calc/reverse/off/report) ── */}
+        {selectedBranch?.hasFan && (
+          <RibbonGroup label="Вентилятор">
+            <div className="flex items-stretch gap-1">
+              {/* calc — пересчитать сеть */}
+              <button onClick={handleSolve} disabled={vcSolving}
+                className="flex flex-col items-center justify-center px-2 py-1 hover:bg-green-50 border border-transparent hover:border-green-400 rounded min-w-[52px] disabled:opacity-50"
+                title="Пересчитать (F9)">
+                <Icon name="RefreshCw" size={18} className="text-green-600" />
+                <div className="text-[10px] mt-0.5">Расчёт</div>
+              </button>
+              {/* reverse — переключить реверс */}
+              <button
+                disabled={selectedBranch.fanStopped}
+                onClick={() => updateBranch(selectedBranch.id, { fanReverse: !selectedBranch.fanReverse })}
+                className="flex flex-col items-center justify-center px-2 py-1 border rounded min-w-[52px]"
+                style={{
+                  background: selectedBranch.fanReverse ? "#fee2e2" : "#f0fdf4",
+                  borderColor: selectedBranch.fanReverse ? "#fca5a5" : "#86efac",
+                  opacity: selectedBranch.fanStopped ? 0.4 : 1,
+                  cursor: selectedBranch.fanStopped ? "not-allowed" : "pointer",
+                }}
+                title="Ctrl+R — переключить реверс">
+                <Icon name={selectedBranch.fanReverse ? "ArrowLeft" : "ArrowRight"} size={18}
+                  className={selectedBranch.fanReverse ? "text-red-600" : "text-green-600"} />
+                <div className="text-[10px] mt-0.5" style={{ color: selectedBranch.fanReverse ? "#b91c1c" : "#15803d" }}>
+                  {selectedBranch.fanReverse ? "Реверс" : "Прямой"}
+                </div>
+              </button>
+              {/* off — остановить/запустить */}
+              <button
+                onClick={() => updateBranch(selectedBranch.id, { fanStopped: !selectedBranch.fanStopped })}
+                className="flex flex-col items-center justify-center px-2 py-1 border rounded min-w-[52px]"
+                style={{
+                  background: selectedBranch.fanStopped ? "#fef3c7" : "#f9fafb",
+                  borderColor: selectedBranch.fanStopped ? "#fcd34d" : "#d1d5db",
+                  cursor: "pointer",
+                }}
+                title={selectedBranch.fanStopped ? "Запустить вентилятор" : "Остановить вентилятор"}>
+                <Icon name={selectedBranch.fanStopped ? "Play" : "Square"} size={18}
+                  className={selectedBranch.fanStopped ? "text-amber-600" : "text-gray-500"} />
+                <div className="text-[10px] mt-0.5" style={{ color: selectedBranch.fanStopped ? "#92400e" : "#6b7280" }}>
+                  {selectedBranch.fanStopped ? "Запуск" : "Стоп"}
+                </div>
+              </button>
+              {/* report — диагностика */}
+              <button
+                onClick={() => setShowDiagnostics(true)}
+                disabled={!solveResult}
+                className="flex flex-col items-center justify-center px-2 py-1 border border-transparent hover:border-blue-300 hover:bg-blue-50 rounded min-w-[52px] disabled:opacity-40"
+                title="Отчёт и диагностика">
+                <Icon name="FileText" size={18} className="text-blue-600" />
+                <div className="text-[10px] mt-0.5 text-blue-700">Отчёт</div>
+              </button>
+            </div>
+          </RibbonGroup>
+        )}
+
         {/* ── Группа: Расчёт сети ── */}
         <RibbonGroup label="Расчёт сети">
           <div className="flex items-stretch gap-1">
