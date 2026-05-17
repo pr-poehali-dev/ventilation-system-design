@@ -728,21 +728,22 @@ export function solveNetwork(
     let fanShaft    = 0;
 
     if (b.hasFan) {
-      const H = fanH(e, e.Q);   // отрицательный при реверсе
+      const H = fanH(e, e.Q);   // знаковый: <0 при реверсе
       fanPressure = H;
       if (b.fanMode === "curve" && e.fanCurve) {
-        const etaBase = fanEfficiency(e.fanCurve, Math.abs(Q));
+        // КПД считаем по расходу через вентилятор (e.Q), а не по Q ветви
+        const Qfan = Math.abs(e.Q);
+        const etaBase = fanEfficiency(e.fanCurve, Qfan);
         if (b.fanReverse) {
-          // Используем реверсный множитель КПД из каталога, иначе −10% (умолчание)
-          const effFactor = e.reverseEffFactor ?? 0.90;
+          const effFactor = e.reverseEffFactor ?? 0.82;
           fanEff = Math.max(0.05, etaBase * effFactor);
         } else {
           fanEff = etaBase;
         }
-        fanShaft = fanShaftPower(Math.abs(H), Math.abs(Q), fanEff);
+        fanShaft = fanShaftPower(Math.abs(H), Qfan, fanEff);
       }
       // Q показываем с отрицательным знаком при реверсе (поток идёт против направления ветви)
-      const Qdisplay = b.fanReverse ? -Math.abs(Q) : Math.abs(Q);
+      const Qdisplay = b.fanReverse ? -Math.abs(e.Q) : Math.abs(e.Q);
       const revStr = b.fanReverse ? " [РЕВЕРС]" : "";
       log.push(`Вент. ${b.id}${revStr}: Q=${Qdisplay.toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
     }

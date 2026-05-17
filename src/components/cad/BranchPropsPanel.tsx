@@ -950,7 +950,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             {branch.fanReverse && (
               <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
                 style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c" }}>
-                ⟵ Реверс: Q отрицательный, КПД −10%
+                {(() => {
+                  const curve = getFanById(branch.fanCurveId);
+                  const eff = curve?.reverseEfficiencyFactor ?? 0.82;
+                  const pct = Math.round((1 - eff) * 100);
+                  return `⟵ Реверс (обратный): напор ~${Math.round(eff * 100)}% от прямого, КПД −${pct}%`;
+                })()}
               </div>
             )}
 
@@ -966,7 +971,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <ComputedInput value={numFmt(branch.fanShaftPower / 1000, 1)} />
             </InlineLabel>
             <InlineLabel label="КПД, %">
-              <ComputedInput value={`${numFmt(branch.fanEfficiency * 100, 1)}${branch.fanReverse ? " (−10%)" : ""}`} />
+              <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
             </InlineLabel>
             {(() => {
               const curve = getFanById(branch.fanCurveId);
