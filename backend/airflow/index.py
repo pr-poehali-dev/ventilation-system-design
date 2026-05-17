@@ -121,10 +121,13 @@ def build_graph(nodes_in, branches_in):
     edges = []
     for b in branches_in:
         reverse = bool(b.get("fanReverse", False))
-        # При реверсе разворачиваем только ребро с вентилятором.
-        # Метод Кросса требует H >= 0. После расчёта Q этой ветви инвертируем знак.
-        node_a = to_gnd(b["toId"]  if reverse else b["fromId"])
-        node_b = to_gnd(b["fromId"] if reverse else b["toId"])
+        is_fan  = bool(b.get("hasFan", False))
+        # Разворачиваем ТОЛЬКО ребро вентилятора при реверсе.
+        # Остальные ветви остаются в исходной ориентации — иначе вся сеть переворачивается
+        # и нарушается 1-й закон Кирхгофа (Q вентилятора ≠ Q сети).
+        should_flip = reverse and is_fan
+        node_a = to_gnd(b["toId"]  if should_flip else b["fromId"])
+        node_b = to_gnd(b["fromId"] if should_flip else b["toId"])
         edges.append({
             "id":          b["id"],
             "a":           node_a,
@@ -636,10 +639,10 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False):
                 else:
                     q = q_hi
 
-        # При fanReverse ребро было развёрнуто внутри солвера (a↔b).
+        # Только ребро вентилятора было развёрнуто (a↔b) при реверсе.
         # Q солвера положительный (поток a→b развёрнутого ребра),
         # но физически это поток toId→fromId → возвращаем отрицательным.
-        if e.get("fanReverse") and not is_dead and not force_zero:
+        if e.get("fanReverse") and e.get("hasFan") and not is_dead and not force_zero:
             q = -abs(q)
 
         H    = e["R"] * q * abs(q)
