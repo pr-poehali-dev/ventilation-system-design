@@ -13,7 +13,7 @@ export interface FanCurve {
   name: string;
   type: "centrifugal" | "axial";
   diameter: number;        // м — диаметр рабочего колеса
-  // H(Q) = h0 + h1·Q + h2·Q²
+  // H(Q) = h0 + h1·Q + h2·Q²  — прямой режим
   h0: number;
   h1: number;
   h2: number;
@@ -33,6 +33,17 @@ export interface FanCurve {
   rpmNominal: number;
   // Углы лопаток (доступные значения °)
   bladeAngles: number[];
+  // Реверсная P–Q характеристика (опционально).
+  // У осевых вентиляторов (ВОД) в реверсе напор ~55–65% от прямого.
+  // У центробежных (ВЦ) реверс через клапаны — кривая совпадает с прямой.
+  // Если не задана — используется прямая характеристика (консервативная оценка).
+  reverseH0?: number;
+  reverseH1?: number;
+  reverseH2?: number;
+  reverseQMin?: number;
+  reverseQMax?: number;
+  // КПД в реверсном режиме (обычно 0.80–0.85 от прямого)
+  reverseEfficiencyFactor?: number;
 }
 
 // Справочник типовых вентиляторов
@@ -81,6 +92,10 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 10, qMax: 60, qNominal: 35, hNominal: 1300,
     rpmMin: 600, rpmMax: 1500, rpmNominal: 1000,
     bladeAngles: [20, 25, 30, 35, 40, 45],
+    // Реверс: ~60% напора, диапазон Q сужается на 15%
+    reverseH0: 720, reverseH1: 6, reverseH2: -0.18,
+    reverseQMin: 8, reverseQMax: 50,
+    reverseEfficiencyFactor: 0.82,
   },
   {
     id: "VOD-18",
@@ -90,6 +105,9 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 15, qMax: 90, qNominal: 50, hNominal: 1900,
     rpmMin: 600, rpmMax: 1500, rpmNominal: 1300,
     bladeAngles: [20, 25, 30, 35, 40, 45, 50],
+    reverseH0: 1080, reverseH1: 4.8, reverseH2: -0.15,
+    reverseQMin: 12, reverseQMax: 76,
+    reverseEfficiencyFactor: 0.82,
   },
   {
     id: "VOD-21",
@@ -99,6 +117,9 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 20, qMax: 110, qNominal: 65, hNominal: 2100,
     rpmMin: 500, rpmMax: 1500, rpmNominal: 980,
     bladeAngles: [20, 25, 30, 35, 40, 45, 50],
+    reverseH0: 1200, reverseH1: 4.2, reverseH2: -0.11,
+    reverseQMin: 16, reverseQMax: 93,
+    reverseEfficiencyFactor: 0.82,
   },
   {
     id: "VOD-30",
@@ -108,6 +129,9 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 40, qMax: 200, qNominal: 120, hNominal: 2700,
     rpmMin: 300, rpmMax: 980, rpmNominal: 740,
     bladeAngles: [25, 30, 35, 40, 45, 50, 55],
+    reverseH0: 1440, reverseH1: 3.6, reverseH2: -0.037,
+    reverseQMin: 34, reverseQMax: 170,
+    reverseEfficiencyFactor: 0.82,
   },
   {
     id: "VOD-40",
@@ -117,6 +141,9 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 80, qMax: 320, qNominal: 200, hNominal: 3200,
     rpmMin: 200, rpmMax: 740, rpmNominal: 500,
     bladeAngles: [25, 30, 35, 40, 45, 50, 55, 60],
+    reverseH0: 1800, reverseH1: 3.0, reverseH2: -0.016,
+    reverseQMin: 68, reverseQMax: 272,
+    reverseEfficiencyFactor: 0.82,
   },
 ];
 

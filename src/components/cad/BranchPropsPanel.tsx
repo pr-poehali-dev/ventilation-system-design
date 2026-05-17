@@ -811,7 +811,33 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         <text x={tx(q)} y={padT + gH + 10} textAnchor="middle" fontSize={8} fill="#6b7280">{q}</text>
                       </g>
                     ))}
-                    {paths}
+                    {/* Прямые кривые (прозрачнее при реверсе) */}
+                    <g opacity={branch.fanReverse ? 0.35 : 1}>{paths}</g>
+
+                    {/* Реверсная P–Q кривая */}
+                    {curve.reverseH0 !== undefined && curve.reverseH1 !== undefined && curve.reverseH2 !== undefined && (() => {
+                      const revQMax = (curve.reverseQMax ?? curve.qMax) * k;
+                      const revPts: string[] = [];
+                      for (let i = 0; i <= 30; i++) {
+                        const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
+                        const q  = qn * k;
+                        const hr = Math.max(0, curve.reverseH0! + curve.reverseH1! * qn + curve.reverseH2! * qn * qn) * k * k;
+                        if (q > revQMax) break;
+                        revPts.push(`${tx(q).toFixed(1)},${ty(hr).toFixed(1)}`);
+                      }
+                      return (
+                        <g opacity={branch.fanReverse ? 1 : 0.4}>
+                          <polyline points={revPts.join(" ")} fill="none"
+                            stroke="#dc2626" strokeWidth={branch.fanReverse ? 2 : 1.2}
+                            strokeDasharray={branch.fanReverse ? undefined : "5,3"} />
+                          <text x={padL + gW * 0.6} y={ty(curve.reverseH0! * k * k) - 3}
+                            fontSize={7.5} fill="#dc2626">
+                            {branch.fanReverse ? "⟵ Реверс" : "Реверс (инфо)"}
+                          </text>
+                        </g>
+                      );
+                    })()}
+
                     {workDot}
                     <text x={padL + gW / 2} y={H_svg - 2} textAnchor="middle" fontSize={8} fill="#6b7280">Q, м³/с</text>
                     <text x={6} y={padT + gH / 2} textAnchor="middle" fontSize={8} fill="#6b7280"
@@ -822,7 +848,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       </text>
                     )}
                     {qWork > 0.01 && (
-                      <text x={tx(qWork) + 6} y={ty(branch.fanPressure) - 4} fontSize={7.5} fill="#ef4444">
+                      <text x={tx(qWork) + 6} y={ty(Math.abs(branch.fanPressure)) - 4} fontSize={7.5} fill="#ef4444">
                         Q={qWork.toFixed(1)}
                       </text>
                     )}

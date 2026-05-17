@@ -10,19 +10,24 @@ interface Props {
   netResistance: number;   // R сети (без вентилятора), Н·с²/м⁸
   workingQ: number;        // фактический расход (рабочая точка), м³/с
   workingH: number;        // фактическая депрессия, Па
+  fanReverse?: boolean;    // показывать реверсную кривую
   width?: number;
   height?: number;
 }
 
-export default function FanCurveChart({ curve, netResistance, workingQ, workingH, width = 280, height = 180 }: Props) {
+export default function FanCurveChart({ curve, netResistance, workingQ, workingH, fanReverse = false, width = 280, height = 180 }: Props) {
   const padL = 40, padR = 8, padT = 10, padB = 28;
   const W = width - padL - padR;
   const H = height - padT - padB;
 
+  const hasReverseCurve = !!(curve.reverseH0 !== undefined && curve.reverseH1 !== undefined && curve.reverseH2 !== undefined);
+
   // Дискретизируем кривые
   const N = 60;
-  const qStep = (curve.qMax - curve.qMin) / N;
+  const qMax = fanReverse && curve.reverseQMax ? Math.max(curve.qMax, curve.reverseQMax) : curve.qMax;
+  const qStep = (qMax - curve.qMin) / N;
   const fanPts: { Q: number; H: number }[] = [];
+  const revPts: { Q: number; H: number }[] = [];
   const netPts: { Q: number; H: number }[] = [];
   const effPts: { Q: number; eta: number }[] = [];
   let hMax = 0;
@@ -37,6 +42,13 @@ export default function FanCurveChart({ curve, netResistance, workingQ, workingH
     effPts.push({ Q, eta });
     if (Hf > hMax) hMax = Hf;
     if (Hn > hMax && Hn < hMax * 3) hMax = Hn;
+    // Реверсная кривая
+    if (hasReverseCurve) {
+      const Qr = curve.qMin + i * ((curve.reverseQMax ?? curve.qMax) - curve.qMin) / N;
+      const Hr = Math.max(0, curve.reverseH0! + curve.reverseH1! * Qr + curve.reverseH2! * Qr);
+      revPts.push({ Q: Qr, H: Hr });
+      if (Hr > hMax) hMax = Hr;
+    }
   }
   hMax = Math.max(hMax, workingH * 1.1) * 1.05;
 
@@ -46,6 +58,7 @@ export default function FanCurveChart({ curve, netResistance, workingQ, workingH
   const yEta = (eta: number) => padT + H - (eta / 1.0) * H;
 
   const fanPath = fanPts.map((p, i) => `${i ? "L" : "M"} ${sx(p.Q)} ${yH(p.H)}`).join(" ");
+  const revPath = revPts.length > 0 ? revPts.map((p, i) => `${i ? "L" : "M"} ${sx(p.Q)} ${yH(p.H)}`).join(" ") : null;
   const netPath = netPts.map((p, i) => `${i ? "L" : "M"} ${sx(p.Q)} ${yH(p.H)}`).join(" ");
   const etaPath = effPts.map((p, i) => `${i ? "L" : "M"} ${sx(p.Q)} ${yEta(p.eta)}`).join(" ");
 
@@ -95,10 +108,26 @@ export default function FanCurveChart({ curve, netResistance, workingQ, workingH
       <text x={padL + W - 4} y={padT + 10} textAnchor="end" fontSize="9"
         fontFamily="Segoe UI" fill="#16a34a">η (КПД)</text>
 
-      {/* Q-H вентилятора */}
-      <path d={fanPath} fill="none" stroke="#7c3aed" strokeWidth="2" />
+      {/* Q-H вентилятора (прямой режим) */}
+      <path d={fanPath} fill="none" stroke="#7c3aed" strokeWidth={fanReverse ? 1 : 2}
+        opacity={fanReverse ? 0.35 : 1} strokeDasharray={fanReverse ? "4 2" : undefined} />
       <text x={padL + W * 0.15} y={yH(fanPts[Math.floor(N * 0.15)].H) - 4}
-        fontSize="9" fontFamily="Segoe UI" fill="#7c3aed">H_вент</text>
+        fontSize="9" fontFamily="Segoe UI" fill="#7c3aed" opacity={fanReverse ? 0.5 : 1}>
+        {fanReverse ? "H_прям" : "H_вент"}
+      </text>
+
+      {/* Реверсная Q-H кривая */}
+      {revPath && (
+        <>
+          <path d={revPath} fill="none" stroke="#dc2626" strokeWidth="2"
+            opacity={fanReverse ? 1 : 0.4} strokeDasharray={fanReverse ? undefined : "6 3"} />
+          <text x={padL + W * 0.15} y={yH(revPts[Math.floor(revPts.length * 0.15)]?.H ?? 0) - 4}
+            fontSize="9" fontFamily="Segoe UI" fill="#dc2626"
+            opacity={fanReverse ? 1 : 0.6}>
+            {fanReverse ? "H_реверс" : "H_реверс (инфо)"}
+          </text>
+        </>
+      )}
 
       {/* Характеристика сети */}
       <path d={netPath} fill="none" stroke="#dc2626" strokeWidth="1.5" strokeDasharray="4 2" />

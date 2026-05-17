@@ -46,9 +46,15 @@ interface Edge {
   fanCurve?:      FanCurve;
   fanRpm?:        number;
   fanBladeAngle?: number;
-  fanRhoFactor:   number;
-  fanReverse:     boolean;
-  fanParallel:    number;   // кол-во вентиляторов в параллель (≥1)
+  fanRhoFactor:       number;
+  fanReverse:         boolean;
+  fanParallel:        number;     // кол-во вентиляторов в параллель (≥1)
+  // Реверсная P–Q характеристика (если задана в каталоге)
+  reverseH0?:         number;
+  reverseH1?:         number;
+  reverseH2?:         number;
+  reverseQMax?:       number;
+  reverseEffFactor?:  number;     // множитель КПД в реверсе
 }
 
 interface ContourEdge {
@@ -104,8 +110,7 @@ function fanH(e: Edge, Q: number): number {
   if (!e.hasFan) return 0;
 
   const sign = e.fanReverse ? -1 : 1;
-  // N параллельных вентиляторов: каждый пропускает Q/N, напор суммарный тот же.
-  const N  = Math.max(1, e.fanParallel ?? 1);
+  const N    = Math.max(1, e.fanParallel ?? 1);
 
   if (e.fanMode === "constant") {
     return sign * Math.max(0, e.fanH0 * e.fanRhoFactor);
@@ -114,9 +119,17 @@ function fanH(e: Edge, Q: number): number {
   if (e.fanMode === "curve" && e.fanCurve) {
     const c  = e.fanCurve;
     const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
-    const af = angleFactor(c, e.fanBladeAngle);
-    // Каждый из N вентиляторов получает Q/N → характеристика сдвигается вправо в N раз
     const Qn = Math.abs(Q) / N / Math.max(0.001, k);
+
+    // При реверсе — используем реверсную P–Q характеристику если она есть в каталоге
+    if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+      const qMax = (e.reverseQMax ?? c.qMax) * k;
+      if (Qn > qMax) return 0;
+      return sign * Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    }
+
+    // Прямая характеристика (или реверс без отдельной кривой)
+    const af = angleFactor(c, e.fanBladeAngle);
     if (Qn > c.qMax) return 0;
     return sign * Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
@@ -337,6 +350,18 @@ export function solveNetwork(
       fanRhoFactor:  rho,
       fanReverse:    b.fanReverse ?? false,
       fanParallel:   Math.max(1, b.fanParallel ?? 1),
+      // Реверсная кривая из каталога (только для curve-вентиляторов)
+      ...(() => {
+        const c = b.fanMode === "curve" ? (getFanById(b.fanCurveId) ?? undefined) : undefined;
+        if (!c) return {};
+        return {
+          reverseH0:        c.reverseH0,
+          reverseH1:        c.reverseH1,
+          reverseH2:        c.reverseH2,
+          reverseQMax:      c.reverseQMax,
+          reverseEffFactor: c.reverseEfficiencyFactor,
+        };
+      })(),
     };
   });
 
@@ -700,9 +725,14 @@ export function solveNetwork(
       const H = fanH(e, e.Q);   // отрицательный при реверсе
       fanPressure = H;
       if (b.fanMode === "curve" && e.fanCurve) {
-        // При реверсе КПД снижается на 10% (середина диапазона 5–15% по рекомендации)
         const etaBase = fanEfficiency(e.fanCurve, Math.abs(Q));
-        fanEff   = b.fanReverse ? Math.max(0.05, etaBase * 0.90) : etaBase;
+        if (b.fanReverse) {
+          // Используем реверсный множитель КПД из каталога, иначе −10% (умолчание)
+          const effFactor = e.reverseEffFactor ?? 0.90;
+          fanEff = Math.max(0.05, etaBase * effFactor);
+        } else {
+          fanEff = etaBase;
+        }
         fanShaft = fanShaftPower(Math.abs(H), Math.abs(Q), fanEff);
       }
       // Q показываем с отрицательным знаком при реверсе (поток идёт против направления ветви)

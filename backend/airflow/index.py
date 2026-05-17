@@ -54,6 +54,7 @@ def get_R(b):
 def fan_H(e, Q):
     """Напор вентилятора H при суммарном расходе Q (м³/с → Па).
     При fanReverse ребро в графе развёрнуто (a↔b), поэтому H >= 0 всегда.
+    При реверсе используется отдельная P–Q характеристика если задана (reverseH0/H1/H2).
     N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
     """
     if not e.get("hasFan"):
@@ -64,6 +65,16 @@ def fan_H(e, Q):
         q_one = abs(Q) / N
         if q_one <= 0:
             return 0.0
+        # При реверсе — используем отдельную характеристику если передана
+        if e.get("fanReverse") and e.get("reverseH0") is not None:
+            q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+            if q_one > q_max_rev:
+                return 0.0
+            rh0 = float(e.get("reverseH0", 0))
+            rh1 = float(e.get("reverseH1", 0))
+            rh2 = float(e.get("reverseH2", 0))
+            return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
+        # Прямая характеристика
         if q_one > float(e.get("qMax", 1e9)):
             return 0.0
         h0 = float(e.get("h0", 0))
@@ -123,6 +134,12 @@ def build_graph(nodes_in, branches_in):
             "area":        float(b.get("area", 0)),
             "fanReverse":  reverse,
             "fanParallel": max(1, int(b.get("fanParallel", 1) or 1)),
+            # Реверсная P–Q характеристика из каталога (если передана фронтендом)
+            "reverseH0":   b.get("reverseH0"),
+            "reverseH1":   b.get("reverseH1"),
+            "reverseH2":   b.get("reverseH2"),
+            "reverseQMax": b.get("reverseQMax"),
+            "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
         })
     return edges, atm
 
