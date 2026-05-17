@@ -486,6 +486,26 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               />
             </InlineLabel>
 
+            <SectionHeader title="Признаки ветви" />
+
+            <InlineLabel label="Утечка">
+              <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", height: 18 }}>
+                <input
+                  type="checkbox"
+                  checked={branch.isLeakage ?? false}
+                  onChange={(e) => onUpdate({ isLeakage: e.target.checked })}
+                  style={{ accentColor: "#f97316", width: 13, height: 13 }}
+                />
+                <span style={{
+                  fontSize: 11,
+                  color: branch.isLeakage ? "#c2410c" : "#6b7280",
+                  fontWeight: branch.isLeakage ? 600 : 400,
+                }}>
+                  {branch.isLeakage ? "Утечка (перемычка/целик)" : "Не утечка"}
+                </span>
+              </label>
+            </InlineLabel>
+
             <SectionHeader title="Название и группы" />
 
             <InlineLabel label="Тип выработки">

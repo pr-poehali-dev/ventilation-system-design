@@ -945,8 +945,10 @@ export default function TopoCanvas(props: Props) {
             return `rgb(${r},${g},${bl})`;
           };
           const isDead = b.isDead ?? false;
+          const isLeakage = b.isLeakage ?? false;
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
+            : isLeakage ? "#f97316"
             : isDead ? "#9ca3af"
             : overV ? "#dc2626"
             : (colorByHorizon && horizonColor) ? horizonColor
@@ -990,7 +992,8 @@ export default function TopoCanvas(props: Props) {
               )}
               {/* Подложка — статичная линия (всегда от fromId к toId, цвет = тип) */}
               <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1} />
+                stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1}
+                strokeDasharray={isLeakage ? "6 4" : undefined} />
 
               {/* Бегущий пунктир в направлении потока (как в Вентиляция 2.0) */}
               {showDashes && (

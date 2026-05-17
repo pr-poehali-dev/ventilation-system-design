@@ -147,6 +147,7 @@ def build_graph(nodes_in, branches_in):
             "reverseQMax": b.get("reverseQMax"),
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
             "fanStopped":  bool(b.get("fanStopped", False)),
+            "isLeakage":   bool(b.get("isLeakage", False)),
         })
     return edges, atm
 
@@ -505,6 +506,12 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f}{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
+
+    # Суммарная утечка через ветви-перемычки
+    leakage_total = sum(abs(Q_map.get(e["id"], 0)) for e in edges if e.get("isLeakage"))
+    if leakage_total > 0.1:
+        diag.append({"level": "info", "category": "branch_flow",
+                     "message": f"Суммарная утечка через перемычки: {leakage_total:.1f} м³/с"})
 
     # Проверка норматива реверса k_rev >= 0.6 (ПБ для шахтных вентиляционных сетей)
     check_reverse(edges, Q_map, normal_flows or {}, diag)
