@@ -568,6 +568,38 @@ export function solveNetwork(
       if (!isFinite(e.Q)) e.Q = 0;
     }
 
+    // Синхронизация Q ветвей дерева (Кирхгоф-1) после каждой итерации.
+    // Это критично: хорды обновились, Q дерева должно отражать новые балансы.
+    {
+      const syncBal = new Map<string, number>();
+      for (const n of nodeList) syncBal.set(n, 0);
+
+      // Вклад всех хорд в балансы
+      for (let i = 0; i < edges.length; i++) {
+        if (treeSet.has(i)) continue;
+        const e = edges[i];
+        syncBal.set(e.a, (syncBal.get(e.a) ?? 0) - e.Q);
+        syncBal.set(e.b, (syncBal.get(e.b) ?? 0) + e.Q);
+      }
+
+      // bottom-up: пересчёт Q ветвей дерева
+      for (let idx = bfsOrder.length - 1; idx >= 1; idx--) {
+        const v  = bfsOrder[idx];
+        const p  = parent.get(v);
+        if (!p) continue;
+        const e  = edges[p.edgeIdx];
+        const pN = p.node;
+        const b  = syncBal.get(v) ?? 0;
+        if (e.b === v) {
+          e.Q = -b;
+          syncBal.set(pN, (syncBal.get(pN) ?? 0) + b);
+        } else {
+          e.Q = b;
+          syncBal.set(pN, (syncBal.get(pN) ?? 0) + b);
+        }
+      }
+    }
+
     // Адаптивно повышаем relaxation по мере сходимости
     if (iter > 50 && maxDeltaH < 50) relaxation = Math.min(1.0, relaxation + 0.01);
 
@@ -601,14 +633,16 @@ export function solveNetwork(
     for (const n of nodeList) balance.set(n, 0);
 
     for (let i = 0; i < edges.length; i++) {
-      if (treeSet.has(i)) continue;       // пропускаем ветви дерева (они будут пересчитаны)
+      // Учитываем все ребра, кроме ветвей дерева БЕЗ вентилятора
+      // Вентиляторы дерева — тоже "фиксированные источники", учитываем их Q
+      if (treeSet.has(i) && !edges[i].hasFan) continue;
       const e = edges[i];
       // e.Q > 0: ток из a в b → отток из a, приток в b
       balance.set(e.a, (balance.get(e.a) ?? 0) - e.Q);
       balance.set(e.b, (balance.get(e.b) ?? 0) + e.Q);
     }
 
-    // === DEBUG: балансы от хорд ===
+    // === DEBUG: балансы от хорд + вентиляторов дерева ===
     balance.forEach((v, k) => { if (Math.abs(v) > 1e-6) log.push(`[balance-chord] узел ${k}: ${v.toFixed(3)}`); });
 
     // Обход снизу вверх (от листьев к корню)
@@ -621,34 +655,19 @@ export function solveNetwork(
       const pNode = p.node;
       const bal   = balance.get(v) ?? 0;
 
-      // Вентиляторная ветвь в дереве: её Q уже верен из итераций Кросса.
-      // Не перезаписываем — только учитываем в балансе родителя.
-      if (e.hasFan) {
-        log.push(`[tree-skip-fan] ${e.id}: Q=${e.Q.toFixed(3)} bal[v=${v}]=${bal.toFixed(3)}`);
-        // e.Q > 0: ток течёт a→b.
-        // Если e.b === v: ток входит в v, значит ток УХОДИТ из pNode → balance[pNode] -= e.Q
-        // Если e.a === v: ребро v→pNode, ток ВХОДИТ в pNode (e.Q > 0 означает v→pNode) → balance[pNode] += e.Q
-        if (e.b === v) balance.set(pNode, (balance.get(pNode) ?? 0) - e.Q);
-        else           balance.set(pNode, (balance.get(pNode) ?? 0) + e.Q);
-        // Но нам также нужно учесть bal[v] (от поддерева под v через другие ветви)
-        // без вентилятора баланс v = 0 задаётся пересчётом, тут v уже сбалансирован итерациями
-        continue;
-      }
-
+      // Вентилятор в дереве: его Q уже учтён в начальном балансе выше.
+      // Пересчитываем его Q из баланса точно так же как обычную ветвь —
+      // это гарантирует Кирхгоф-1 (баланс расходов в каждом узле).
       // Нам нужно balance[v] = 0, т.е. Q_ребра_к_v = −bal
       // Ребро e ориентировано a→b:
-      //   Если e.b === v: Q > 0 означает приток в v. Нужен приток = −bal → e.Q = −bal
-      //     В pNode: ток уходит из pNode → balance[pNode] -= (−bal) = balance[pNode] + bal
-      //   Если e.a === v: Q > 0 означает отток из v (v→pNode). Нужен отток = bal → e.Q = bal
-      //     В pNode: ток входит в pNode → balance[pNode] += bal
+      //   Если e.b === v: приток в v = e.Q → e.Q = −bal
+      //   Если e.a === v: отток из v = e.Q (ток v→pNode) → e.Q = bal
       if (e.b === v) {
-        const newQ = -bal;
-        e.Q = newQ;
-        balance.set(pNode, (balance.get(pNode) ?? 0) + bal);  // pNode получает bal = −(−bal)
+        e.Q = -bal;
+        balance.set(pNode, (balance.get(pNode) ?? 0) + bal);
       } else {
-        const newQ = bal;
-        e.Q = newQ;
-        balance.set(pNode, (balance.get(pNode) ?? 0) + bal);  // ток bal входит в pNode
+        e.Q = bal;
+        balance.set(pNode, (balance.get(pNode) ?? 0) + bal);
       }
     }
   }
