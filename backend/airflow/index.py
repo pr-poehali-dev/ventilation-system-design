@@ -53,7 +53,7 @@ def get_R(b):
 
 def fan_H(e, Q):
     """Напор вентилятора H при суммарном расходе Q (м³/с → Па).
-    При fanReverse ребро уже развёрнуто в build_graph, поэтому H всегда >= 0.
+    При fanReverse ребро в графе развёрнуто (a↔b), поэтому H >= 0 всегда.
     N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
     """
     if not e.get("hasFan"):
@@ -61,7 +61,7 @@ def fan_H(e, Q):
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
     if mode == "curve":
-        q_one = Q / N   # расход через один вентилятор
+        q_one = abs(Q) / N
         if q_one <= 0:
             return 0.0
         if q_one > float(e.get("qMax", 1e9)):
@@ -74,15 +74,14 @@ def fan_H(e, Q):
 
 
 def fan_dH(e, Q):
-    """dH/dQ_total для curve-вентилятора (с учётом параллели)."""
-    if not e.get("hasFan") or Q < 0:
+    """|dH/dQ_total| для curve-вентилятора (с учётом параллели)."""
+    if not e.get("hasFan"):
         return 0.0
     if e.get("fanMode", "constant") == "curve":
         N = max(1, int(e.get("fanParallel", 1) or 1))
-        q_one = Q / N
-        # dH/dQ_total = dH/dQ_one * (1/N)
+        q_one = abs(Q) / N
         dh_one = float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one
-        return dh_one / N
+        return abs(dh_one) / N
     return 0.0
 
 
@@ -104,9 +103,8 @@ def build_graph(nodes_in, branches_in):
     edges = []
     for b in branches_in:
         reverse = bool(b.get("fanReverse", False))
-        # При реверсе меняем направление ребра: вентилятор нагнетает b→a вместо a→b.
-        # Алгоритм Кросса работает только с H≥0, поэтому разворачиваем ребро,
-        # а знак Q в результате корректируем обратно через поле "reversed".
+        # При реверсе разворачиваем только ребро с вентилятором.
+        # Метод Кросса требует H >= 0. После расчёта Q этой ветви инвертируем знак.
         node_a = to_gnd(b["toId"]  if reverse else b["fromId"])
         node_b = to_gnd(b["fromId"] if reverse else b["toId"])
         edges.append({
@@ -353,8 +351,8 @@ def solve(nodes_in, branches_in, options):
                         break
                 return 0.5 * (q_lo + q_hi)
 
-        # constant-вентилятор
-        H_fan = sum(fan_H(e, 1.0) for e in edges)
+        # constant-вентилятор: H >= 0 (ребро уже развёрнуто при реверсе)
+        H_fan = sum(fan_H(e, 1.0) for e in fans)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
     # Для линейной сети (нет контуров) — рабочая точка = результат бисекции
@@ -369,7 +367,7 @@ def solve(nodes_in, branches_in, options):
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
     for i, e in enumerate(edges):
-        Q[i] = q0
+        Q[i] = q0  # знак q0 уже учитывает реверс (отрицательный при fanReverse)
 
     # Основной цикл Кросса
     max_dq = float("inf")
@@ -392,11 +390,12 @@ def solve(nodes_in, branches_in, options):
                 sum_2rq += 2.0 * R * abs(qi)
 
                 if e["hasFan"]:
-                    # Вентилятор нагнетает в направлении a→b (физический ток).
-                    # Правильный вклад: H · sign(qi) вычитается из невязки.
+                    # H знаковый: >0 прямой, <0 реверс.
+                    # Вентилятор создаёт напор в направлении a→b при H>0, b→a при H<0.
+                    # Вклад в невязку: -H·sign(qi) — стандартная формула Кросса.
                     H = fan_H(e, abs(Q[ei]))
                     sum_h   -= H * (1.0 if qi >= 0 else -1.0)
-                    sum_2rq += abs(fan_dH(e, abs(Q[ei])))
+                    sum_2rq += fan_dH(e, abs(Q[ei]))
 
             if sum_2rq < 1e-12:
                 continue
@@ -498,8 +497,9 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False):
                 else:
                     q = q_hi
 
-        # При fanReverse ребро было развёрнуто: Q внутри солвера положительный,
-        # но физически поток идёт в обратном направлении → возвращаем со знаком минус.
+        # При fanReverse ребро было развёрнуто внутри солвера (a↔b).
+        # Q солвера положительный (поток a→b развёрнутого ребра),
+        # но физически это поток toId→fromId → возвращаем отрицательным.
         if e.get("fanReverse") and not is_dead and not force_zero:
             q = -abs(q)
 
