@@ -166,6 +166,7 @@ export default function TopoCanvas(props: Props) {
 
   const [panStart, setPanStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const [rotStart, setRotStart] = useState<{ x: number; y: number; az: number; el: number } | null>(null);
+  const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
@@ -626,6 +627,56 @@ export default function TopoCanvas(props: Props) {
     });
   };
 
+  // ─── Touch: pan (1 палец) + pinch-zoom (2 пальца) ───────────────────────
+  const onTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      touchRef.current = { x: t.clientX - rect.left, y: t.clientY - rect.top, ox: view.offsetX, oy: view.offsetY };
+    } else if (e.touches.length === 2) {
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const cx = ((t1.clientX + t2.clientX) / 2) - rect.left;
+      const cy = ((t1.clientY + t2.clientY) / 2) - rect.top;
+      touchRef.current = { x: cx, y: cy, ox: view.offsetX, oy: view.offsetY, dist, scale: view.scale };
+    }
+  };
+
+  const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    if (!touchRef.current) return;
+    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    if (e.touches.length === 1 && touchRef.current.dist === undefined) {
+      const t = e.touches[0];
+      const dx = (t.clientX - rect.left) - touchRef.current.x;
+      const dy = (t.clientY - rect.top)  - touchRef.current.y;
+      setView(v => ({ ...v, offsetX: touchRef.current!.ox + dx, offsetY: touchRef.current!.oy + dy }));
+    } else if (e.touches.length === 2 && touchRef.current.dist !== undefined) {
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const factor = newDist / touchRef.current.dist;
+      const cx = touchRef.current.x;
+      const cy = touchRef.current.y;
+      const baseScale = touchRef.current.scale!;
+      const baseOx    = touchRef.current.ox;
+      const baseOy    = touchRef.current.oy;
+      setView(v => {
+        const newScale = Math.max(0.002, Math.min(500, baseScale * factor));
+        const wx = (cx - baseOx) / baseScale;
+        const wy = (cy - baseOy) / baseScale;
+        prevScaleOverride.current = newScale;
+        if (onScaleChange) onScaleChange(newScale);
+        return { ...v, scale: newScale, offsetX: cx - wx * newScale, offsetY: cy - wy * newScale };
+      });
+    }
+  };
+
+  const onTouchEnd = (e: React.TouchEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    if (e.touches.length === 0) touchRef.current = null;
+  };
+
   // ─── Вспомогательные ────────────────────────────────────────────────────
   const zColor = (z: number) => {
     const minZ = -300, maxZ = 0;
@@ -724,12 +775,16 @@ export default function TopoCanvas(props: Props) {
       }}>
 
       <svg width={size.w} height={size.h}
+        style={{ touchAction: "none" }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
         onWheel={onWheel}
-        onContextMenu={onContextMenuSVG}>
+        onContextMenu={onContextMenuSVG}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}>
 
         <defs>
           {/* 2D-сетка — рисуем только если ячейка достаточно крупная */}
