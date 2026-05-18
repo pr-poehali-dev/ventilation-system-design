@@ -94,6 +94,8 @@ interface Props {
   onSymbolMoveAlongBranch?: (id: string, t: number) => void;
   /** Смещение символа от ветви (px offset) */
   onSymbolOffset?: (id: string, ox: number, oy: number) => void;
+  /** Смещение бейджа индикаторов (px offset) */
+  onSymbolIndOffset?: (id: string, ox: number, oy: number) => void;
   /** Клик на символ (для открытия свойств) */
   onSymbolClick?: (id: string) => void;
   /** Масштаб символа (delta: +0.2 или -0.2) */
@@ -134,7 +136,7 @@ export default function TopoCanvas(props: Props) {
     selectedNodeIds, onNodeMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
-    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolClick,
+    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
     restoreView, onViewStateChange,
@@ -1308,24 +1310,129 @@ export default function TopoCanvas(props: Props) {
               {(() => {
                 const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
                 if (isBulkhead && sym.branchId && hasBranchPts) {
-                  // Перемычка на ветви — рисуем поперёк ветви
-                  // SVG viewBox="0 0 48 40": символ горизонтальный (столбы по Y, ось по X)
-                  // Поворачиваем на угол ветви — символ встаёт поперёк ветви
+                  // ── Перемычка на ветви: рисуем напрямую примитивами ──
+                  // Координатная система после rotate: X вдоль ветви, Y поперёк
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-                  // Размер: ширина = SZ (вдоль ветви), высота = SZ (поперёк)
-                  // Центр SVG (24,20) → совмещаем с px,py
-                  const sw = SZ, sh = SZ;
+                  const tid = sym.typeId;
+
+                  // Цвет заливки и обводки по материалу
+                  const fill  = tid.includes("concrete") ? "#4caf50"
+                    : tid.includes("wood")     ? "#ffd600"
+                    : tid.includes("brick")    ? "#ff9800"
+                    : tid.includes("metal")    ? "#9c27b0"
+                    : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
+                    : (tid === "barrier")      ? "#555"
+                    : "white";
+                  const stroke = tid.includes("concrete") ? "#1b5e20"
+                    : tid.includes("wood")     ? "#e65100"
+                    : tid.includes("brick")    ? "#bf360c"
+                    : tid.includes("metal")    ? "#4a148c"
+                    : (tid === "fire_door" || tid === "fire_door_pp") ? "#800"
+                    : "#1a1a1a";  // всегда чёрный контур
+
+                  // Размеры (px): высота поперёк ветви, ширина вдоль
+                  const ph = Math.max(14, Math.min(36, w * 5 + 14)); // поперёк
+                  const pw = Math.max(4, Math.round(ph * 0.35));      // вдоль (один столб)
+                  const sw2 = pw * 0.5;                               // зазор двери
+
+                  // Флаги типа
+                  const isDoor   = tid.includes("door_closed") || tid.includes("door_conc") ||
+                                   tid.includes("door_wood")   || tid.includes("door_brick") ||
+                                   tid.includes("door_metal")  || tid === "door_base";
+                  const isAuto   = tid.includes("door_auto") || tid.includes("auto_");
+                  const isOpen   = tid.includes("regulator_open") || tid.includes("open_");
+                  const isWindow = tid === "regulator_window" || tid.includes("win_") || tid === "bulkhead_window";
+                  const isLattice= tid === "regulator_lattice" || tid.includes("lat_");
+                  const isWater  = tid.includes("water_dam");
+                  const isSail   = tid === "sail";
+                  const isBarrier= tid === "barrier" || tid === "bulkhead_barrier";
+                  const isFirePP = tid === "fire_door_pp";
+                  const isProem  = tid.includes("proem_");
+
                   return (
-                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}
-                      opacity={isFanStopped ? 0.35 : 1}
-                      style={isFanStopped ? { filter: "grayscale(1)" } : undefined}>
-                      {/* Белая подложка — перекрываем линию ветви за перемычкой */}
-                      <rect x={-sw * 0.2} y={-sh * 0.55} width={sw * 0.4} height={sh * 1.1}
-                        fill="white" />
-                      <svg x={-sw / 2} y={-sh / 2} width={sw} height={sh}
-                        viewBox="0 0 48 40" overflow="visible"
-                        dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
+                      {isSail ? (
+                        // Парус: вертикальная линия + полукруг
+                        <>
+                          <line x1={0} y1={-ph/2} x2={0} y2={ph/2}
+                            stroke={stroke} strokeWidth={Math.max(1.5, pw * 0.5)} strokeLinecap="round" />
+                          <path d={`M0,${-ph*0.4} Q${ph*0.7},0 0,${ph*0.4}`}
+                            fill="none" stroke={stroke} strokeWidth={Math.max(1.5, pw * 0.5)} strokeLinecap="round" />
+                        </>
+                      ) : isBarrier ? (
+                        // Барьерная: два вертикальных столба разного цвета
+                        <>
+                          <rect x={-pw} y={-ph/2} width={pw} height={ph}
+                            fill="#555" stroke="#222" strokeWidth={1.2} />
+                          <rect x={0}   y={-ph/2} width={pw} height={ph}
+                            fill="#c00" stroke="#800" strokeWidth={1.2} />
+                        </>
+                      ) : isFirePP ? (
+                        // Противопожарная: две красные вертикальные полосы
+                        <>
+                          <rect x={-pw - sw2/2} y={-ph/2} width={pw} height={ph}
+                            fill="#dc2626" stroke="#8b0000" strokeWidth={1.2} />
+                          <rect x={sw2/2}       y={-ph/2} width={pw} height={ph}
+                            fill="#dc2626" stroke="#8b0000" strokeWidth={1.2} />
+                        </>
+                      ) : (isDoor || isAuto || isOpen) ? (
+                        // Дверь (закрытая/авто/открытая): два блока с зазором по центру
+                        <>
+                          {/* Верхний блок */}
+                          <rect x={-pw/2} y={-ph/2} width={pw} height={ph*0.42 - sw2/2}
+                            fill={fill} stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.15)} />
+                          {/* Нижний блок */}
+                          <rect x={-pw/2} y={ph*0.42 - ph/2 + sw2} width={pw} height={ph*0.42 - sw2/2}
+                            fill={fill} stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.15)} />
+                          {/* Створка (открытая дверь — треугольник сбоку) */}
+                          {isOpen && (
+                            <path d={`M${-pw/2},${-(sw2*1.5)} L${-pw/2 - ph*0.35},0 L${-pw/2},${sw2*1.5}Z`}
+                              fill="none" stroke={stroke} strokeWidth={1} />
+                          )}
+                          {/* Кружок «А» — автоматическая */}
+                          {isAuto && (
+                            <g transform={`translate(${pw/2 + ph*0.3}, 0)`}>
+                              <circle r={ph*0.22} fill="white" stroke={stroke} strokeWidth={1.2} />
+                              <text textAnchor="middle" dominantBaseline="central"
+                                fontSize={ph * 0.22} fontWeight="bold" fill={stroke}>А</text>
+                            </g>
+                          )}
+                        </>
+                      ) : (
+                        // Глухая / с окном / решётка / водоподпорная / прочие — один блок
+                        <>
+                          <rect x={-pw/2} y={-ph/2} width={pw} height={ph}
+                            fill={fill} stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.15)} />
+                          {/* Окно */}
+                          {(isWindow || isProem) && (
+                            <rect x={-pw*0.3} y={-ph*0.2} width={pw*0.6} height={ph*0.4}
+                              fill="white" stroke={stroke} strokeWidth={1} />
+                          )}
+                          {/* Решётка */}
+                          {isLattice && (() => {
+                            const lines = [];
+                            for (let i = -2; i <= 2; i++) {
+                              lines.push(<line key={`v${i}`} x1={pw*0.1*i} y1={-ph/2} x2={pw*0.1*i} y2={ph/2} stroke={stroke} strokeWidth={0.7} />);
+                            }
+                            for (let i = -2; i <= 2; i++) {
+                              lines.push(<line key={`h${i}`} x1={-pw/2} y1={ph*0.2*i} x2={pw/2} y2={ph*0.2*i} stroke={stroke} strokeWidth={0.7} />);
+                            }
+                            return lines;
+                          })()}
+                          {/* Буква D — водоподпорная */}
+                          {isWater && (
+                            <text textAnchor="middle" dominantBaseline="central"
+                              fontSize={ph * 0.3} fontWeight="bold"
+                              fill={fill === "white" ? "#1565c0" : "white"}>D</text>
+                          )}
+                          {/* ПП — противопожарная */}
+                          {(tid === "fire_door") && (
+                            <text textAnchor="middle" dominantBaseline="central"
+                              fontSize={ph * 0.22} fontWeight="bold" fill="white">ПП</text>
+                          )}
+                        </>
+                      )}
                     </g>
                   );
                 }
@@ -1388,48 +1495,60 @@ export default function TopoCanvas(props: Props) {
 
                 const fSize = Math.max(8, Math.round(9 * sc));
                 const lineH = fSize + 3;
-                const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 8;
+                const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
                 const boxH = lines.length * lineH + 6;
-                // Позиция блока — справа от символа (смещение поперёк ветви)
+
+                // Базовая позиция — поперёк ветви, плюс пользовательское смещение
                 const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brLen = Math.hypot(brDx, brDy);
                 const perpX = brLen > 0 ? -brDy / brLen : 0;
                 const perpY = brLen > 0 ?  brDx / brLen : 0;
-                const offDir = 1; // правая сторона
-                const bx = px + perpX * offDir * (SZ * 0.6 + boxW / 2 + 4);
-                const by = py + perpY * offDir * (SZ * 0.6 + boxH / 2 + 4);
+                const baseOffX = perpX * (16 + boxW / 2);
+                const baseOffY = perpY * (16 + boxH / 2);
+                const bx = px + baseOffX + (sym.indOffsetX ?? 0);
+                const by = py + baseOffY + (sym.indOffsetY ?? 0);
                 const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+
+                // Ближайшая точка рамки бейджа для выноски
+                const leaderX = bx - (bx > px ? boxW / 2 : -boxW / 2) * 0.8;
+                const leaderY = by - (by > py ? boxH / 2 : -boxH / 2) * 0.8;
 
                 return (
                   <g opacity={opacity}>
-                    {/* Фон-бейдж */}
-                    <rect
-                      x={bx - boxW / 2} y={by - boxH / 2}
-                      width={boxW} height={boxH}
-                      rx={2} ry={2}
-                      fill="white" stroke="#8899bb" strokeWidth={0.8}
-                      style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.15))" }}
-                    />
-                    {/* Строки текста */}
-                    {lines.map((line, i) => (
-                      <text key={i}
-                        x={bx} y={by - boxH / 2 + 5 + (i + 0.75) * lineH}
-                        textAnchor="middle"
-                        fontSize={fSize}
-                        fill="#1e3a5f"
-                        fontFamily="Segoe UI, sans-serif"
-                        fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}>
-                        {line}
-                      </text>
-                    ))}
                     {/* Выноска к символу */}
-                    <line
-                      x1={px + perpX * offDir * SZ * 0.5}
-                      y1={py + perpY * offDir * SZ * 0.5}
-                      x2={bx - perpX * offDir * boxW / 2}
-                      y2={by - perpY * offDir * boxH / 2}
-                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2"
-                    />
+                    <line x1={px} y1={py} x2={leaderX} y2={leaderY}
+                      stroke="#8899bb" strokeWidth={0.8} strokeDasharray="3 2" />
+                    {/* Бейдж — перетаскиваемый */}
+                    <g style={{ cursor: "move" }}
+                      onMouseDown={(e) => {
+                        if (tool !== "select") return;
+                        e.stopPropagation();
+                        const startX = e.clientX, startY = e.clientY;
+                        const origOx = sym.indOffsetX ?? 0;
+                        const origOy = sym.indOffsetY ?? 0;
+                        const onMove = (me: MouseEvent) => {
+                          onSymbolIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                        };
+                        const onUp = () => {
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      }}>
+                      <rect x={bx - boxW / 2} y={by - boxH / 2} width={boxW} height={boxH}
+                        rx={2} fill="white" stroke="#7a8fbb" strokeWidth={0.9}
+                        style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,40,0.18))" }} />
+                      {lines.map((line, i) => (
+                        <text key={i}
+                          x={bx} y={by - boxH / 2 + 4 + (i + 0.8) * lineH}
+                          textAnchor="middle" fontSize={fSize}
+                          fill="#1e3a5f" fontFamily="Segoe UI, sans-serif"
+                          fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}>
+                          {line}
+                        </text>
+                      ))}
+                    </g>
                   </g>
                 );
               })()}

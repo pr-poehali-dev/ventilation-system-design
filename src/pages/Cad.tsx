@@ -59,6 +59,8 @@ export interface SchemaSymbol {
   indResistance?: boolean;   // показывать аэродинамическое сопротивление
   indDeltaP?: boolean;       // показывать модельное падение давления
   indLeakage?: boolean;      // показывать утечки на перемычке
+  indOffsetX?: number;       // смещение бейджа индикаторов (px экрана) по X
+  indOffsetY?: number;       // смещение бейджа индикаторов (px экрана) по Y
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
@@ -3051,6 +3053,7 @@ export default function CadPage() {
               onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
               onSymbolMoveAlongBranch={(id, t) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, t } : s))}
               onSymbolOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, offsetX: ox, offsetY: oy } : s))}
+              onSymbolIndOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, indOffsetX: ox, indOffsetY: oy } : s))}
               onSymbolScale={(id, delta) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, scale: Math.max(0.4, Math.min(4, (s.scale ?? 1) + delta)) } : s))}
               onSymbolDelete={(id) => {
                 const sym = schemaSymbols.find(s => s.id === id);
