@@ -131,12 +131,12 @@ export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {
   };
 }
 
-// Дефолтный набор горизонтов для шахты (поверхность + 3 рабочих горизонта)
+// Дефолтный набор горизонтов для вентиляции зданий (этажи)
 export const DEFAULT_HORIZONS: Horizon[] = [
-  { id: "H_SURFACE", name: "Поверхность",  z:    0, color: "#22c55e", visible: true },
-  { id: "H_-75",     name: "Гор. −75 м",   z:  -75, color: "#3b82f6", visible: true },
-  { id: "H_-240",    name: "Гор. −240 м",  z: -240, color: "#a855f7", visible: true },
-  { id: "H_-480",    name: "Гор. −480 м",  z: -480, color: "#f97316", visible: true },
+  { id: "H_1",  name: "1-й этаж",  z:  0,  color: "#22c55e", visible: true },
+  { id: "H_2",  name: "2-й этаж",  z:  3,  color: "#3b82f6", visible: true },
+  { id: "H_3",  name: "3-й этаж",  z:  6,  color: "#a855f7", visible: true },
+  { id: "H_AT", name: "Кровля",    z: 10,  color: "#f97316", visible: true },
 ];
 
 export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
@@ -419,43 +419,81 @@ export function autoWorkPlane(
     : { axis: "x", value: defaults.x };
 }
 
-// ─── Демо-сеть (как в АэроСеть/Вентиляция 2.0) ────────────────────────────
+// ─── Демо-сеть вентиляции здания (воздуховоды + вентилятор) ────────────────
+//
+// Топология (план, вид сверху):
+//
+//  N1 ──[В1: горизонт подключения]──► N2 (Вентилятор)──► N3
+//                                                         │
+//                                                        N4
+//                                                         │
+//  N9 ◄──[магистраль]── N8 ◄── N7 ◄── N6 ◄── N5 ◄── N4
+//
+// Расходы: Q ≈ 75.3 м³/с на всех ветвях (после вентилятора поток распределяется)
 
 export const DEMO_NODES: TopoNode[] = [
-  makeNode("1", { name: "Устье ЮВС",           number: "1", x: 0,    y: 0,     z: 0,    atmosphereLink: true,  reducedPressure: 0 }),
-  makeNode("2", { name: "Сопряжение -75",      number: "2", x: 200,  y: -200,  z: -75,  computedPressure: 910 }),
-  makeNode("3", { name: "Сопряжение -150",     number: "3", x: 421,  y: -1518, z: -75 }),
-  makeNode("4", { name: "Сопряжение -240",     number: "4", x: 600,  y: -2400, z: -240 }),
-  makeNode("5", { name: "Околоствольный двор", number: "5", x: 1200, y: -2400, z: -240 }),
-  makeNode("6", { name: "Очистной забой",      number: "6", x: 2000, y: -1800, z: -240 }),
-  makeNode("7", { name: "Сопряжение СВС",      number: "7", x: 2400, y: -800,  z: -75 }),
-  makeNode("8", { name: "Устье СВС",           number: "8", x: 2400, y: 0,     z: 0,    atmosphereLink: true }),
+  makeNode("N1",  { name: "Атмосфера (вход)",      number: "1",  x:    0, y:    0, z: 0,  atmosphereLink: true }),
+  makeNode("N2",  { name: "Вентилятор",             number: "2",  x:  100, y:    0, z: 0  }),
+  makeNode("N3",  { name: "Узел после вент.",        number: "3",  x:  200, y:    0, z: 0  }),
+  makeNode("N4",  { name: "Узел разветвления",       number: "4",  x:  200, y: -200, z: 0  }),
+  makeNode("N5",  { name: "Узел 5",                 number: "5",  x:  300, y: -400, z: 0  }),
+  makeNode("N6",  { name: "Узел 6",                 number: "6",  x:  600, y: -400, z: 0  }),
+  makeNode("N7",  { name: "Узел 7",                 number: "7",  x:  900, y: -400, z: 0  }),
+  makeNode("N8",  { name: "Узел 8",                 number: "8",  x: 1400, y: -400, z: 0  }),
+  makeNode("N9",  { name: "Атмосфера (выход)",      number: "9",  x: 2000, y: -400, z: 0,  atmosphereLink: true }),
 ];
 
 export const DEMO_BRANCHES: TopoBranch[] = [
-  makeBranch("1", "1", "2", { type: "Ствол ЮВС",   layer: "Стволы",    horizonId: "H_-75",  shape: "round", diameter: 7,
-                               surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью", alphaCoef: 15, roughness: 5,
-                               flow: 100, vMax: 15 }),
-  makeBranch("2", "2", "3", { type: "Квершлаг",    layer: "Квершлаги", horizonId: "H_-75",  shape: "arch",  rectWidth: 5, rectHeight: 3.5, archHeight: 1.5,
-                               surfaceId: "concrete", surface: "Бетонная крепь гладкая", alphaCoef: 12, roughness: 3,
-                               flow: 100 }),
-  makeBranch("3", "3", "4", { type: "Уклон",       layer: "Уклоны",    horizonId: "H_-240", shape: "rect",  rectWidth: 5, rectHeight: 3.5,
-                               surfaceId: "anchor", surface: "Анкерная крепь", alphaCoef: 30, roughness: 50,
-                               flow: 100 }),
-  makeBranch("4", "4", "5", { type: "Штрек откат.",layer: "Штреки",    horizonId: "H_-240", shape: "arch",  rectWidth: 5, rectHeight: 2.5, archHeight: 1.5,
-                               surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 40, roughness: 60,
-                               flow: 100 }),
-  makeBranch("5", "5", "6", { type: "Очистной",    layer: "Лавы",      horizonId: "H_-240", shape: "rect",  rectWidth: 5, rectHeight: 2,
-                               surfaceId: "lava", surface: "Очистной забой (лава)", alphaCoef: 80, roughness: 120,
-                               flow: 100, localXi: 3 }),
-  makeBranch("6", "6", "7", { type: "Штрек вент.", layer: "Штреки",    horizonId: "H_-75",  shape: "arch",  rectWidth: 5, rectHeight: 2.5, archHeight: 1.5,
-                               surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 40, roughness: 60,
-                               flow: 100 }),
-  makeBranch("7", "7", "8", { type: "Ствол СВС",   layer: "Стволы",    horizonId: "H_-75",  shape: "round", diameter: 7,
-                               surfaceId: "shaft_skip", surface: "Ствол со скиповым подъёмом", alphaCoef: 45, roughness: 50,
-                               flow: 100, vMax: 15,
-                               hasFan: true, fanMode: "curve", fanCurveId: "VOD-30",
-                               fanPressure: 2700, fanName: "ВОД-30 (главный)" }),
+  makeBranch("1", "N1", "N2", {
+    type: "Воздухозабор", layer: "Приток", horizonId: "H_AT",
+    shape: "round", diameter: 1.4, area: 1.54, perimeter: 4.4, dh: 1.4,
+    surfaceId: "smooth", surface: "Стальной воздуховод круглый", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 20,
+  }),
+  makeBranch("2", "N2", "N3", {
+    type: "Нагнетание", layer: "Приток", horizonId: "H_AT",
+    shape: "round", diameter: 1.4, area: 1.54, perimeter: 4.4, dh: 1.4,
+    surfaceId: "smooth", surface: "Стальной воздуховод круглый", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 20,
+    hasFan: true, fanMode: "curve", fanCurveId: "VO-25",
+    fanPressure: 1200, fanName: "Вентилятор (главный)",
+  }),
+  makeBranch("3", "N3", "N4", {
+    type: "Магистраль", layer: "Приток", horizonId: "H_1",
+    shape: "rect", rectWidth: 0.8, rectHeight: 0.6, area: 0.48, perimeter: 2.8, dh: 0.686,
+    surfaceId: "smooth", surface: "Прямоугольный воздуховод", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 15,
+  }),
+  makeBranch("4", "N4", "N5", {
+    type: "Магистраль", layer: "Приток", horizonId: "H_1",
+    shape: "rect", rectWidth: 0.8, rectHeight: 0.6, area: 0.48, perimeter: 2.8, dh: 0.686,
+    surfaceId: "smooth", surface: "Прямоугольный воздуховод", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 15, localXi: 1.5,
+  }),
+  makeBranch("5", "N5", "N6", {
+    type: "Магистраль", layer: "Вытяжка", horizonId: "H_1",
+    shape: "rect", rectWidth: 0.8, rectHeight: 0.5, area: 0.4, perimeter: 2.6, dh: 0.615,
+    surfaceId: "smooth", surface: "Прямоугольный воздуховод", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 15,
+  }),
+  makeBranch("6", "N6", "N7", {
+    type: "Магистраль", layer: "Вытяжка", horizonId: "H_1",
+    shape: "rect", rectWidth: 0.8, rectHeight: 0.5, area: 0.4, perimeter: 2.6, dh: 0.615,
+    surfaceId: "smooth", surface: "Прямоугольный воздуховод", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 15,
+  }),
+  makeBranch("7", "N7", "N8", {
+    type: "Магистраль", layer: "Вытяжка", horizonId: "H_1",
+    shape: "rect", rectWidth: 0.6, rectHeight: 0.5, area: 0.3, perimeter: 2.2, dh: 0.545,
+    surfaceId: "smooth", surface: "Прямоугольный воздуховод", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 12,
+  }),
+  makeBranch("8", "N8", "N9", {
+    type: "Выброс", layer: "Вытяжка", horizonId: "H_AT",
+    shape: "round", diameter: 1.2, area: 1.13, perimeter: 3.77, dh: 1.2,
+    surfaceId: "smooth", surface: "Стальной воздуховод круглый", roughness: 0.1, alphaCoef: 2,
+    flow: 75.3, vMax: 20,
+  }),
 ];
 
 // Авто-расчёт длин и угла наклона на основе координат узлов
