@@ -2076,7 +2076,6 @@ export default function CadPage() {
             : ([
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
-                { id: "horizons", label: "Горизонты" },
                 { id: "thermo", label: "Теплофизика" },
                 { id: "accidents", label: "Аварии" },
                 { id: "areas", label: "Участки" },
@@ -2120,11 +2119,16 @@ export default function CadPage() {
               <button className="w-4 h-4 hover:bg-black/10 flex items-center justify-center">
                 <svg width="8" height="8" viewBox="0 0 8 8"><path d="M5 1 L1 4 L5 7" stroke="#444" fill="none" strokeWidth="1.2" /></svg>
               </button>
-              <select className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white">
-                <option>Свойства</option>
-                <option>Стиль отображения</option>
-                <option>Слои</option>
-                <option>Проверка</option>
+              <select
+                className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
+                value={activeSide === "horizons" ? "horizons" : "props"}
+                onChange={(e) => {
+                  if (e.target.value === "horizons") setActiveSide("horizons");
+                  else setActiveSide("general");
+                }}>
+                <option value="props">Свойства</option>
+                <option value="horizons">Горизонты</option>
+                <option value="check">Проверка</option>
               </select>
             </div>
           </div>
