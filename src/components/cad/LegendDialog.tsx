@@ -14,26 +14,41 @@ interface LegendItem {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+// Один вертикальный блок по центру viewBox (x=19..29, y=4..36)
+// Ветвь проходит горизонтально через y=20
 function BulkheadSVG({ fill = "white", stroke = "#222", door = false, auto = false, water = false, window_ = false, lattice = false }: {
   fill?: string; stroke?: string; door?: boolean; auto?: boolean; water?: boolean; window_?: boolean; lattice?: boolean;
 }) {
   return (
     <svg width={48} height={40} viewBox="0 0 48 40">
-      <rect x={1} y={8} width={6} height={24} fill={fill} stroke={stroke} strokeWidth={1.2} />
-      <line x1={7} y1={20} x2={41} y2={20} stroke="#333" strokeWidth={1.2} />
-      <rect x={41} y={8} width={6} height={24} fill={fill} stroke={stroke} strokeWidth={1.2} />
-      {door && <><line x1={7} y1={14} x2={7} y2={26} stroke="#fff" strokeWidth={2} /><line x1={7} y1={20} x2={14} y2={20} stroke="#fff" strokeWidth={1.5} /></>}
-      {auto && <><circle cx={27} cy={20} r={8} fill="white" stroke="#333" strokeWidth={1.2} /><text x={27} y={24} textAnchor="middle" fontSize={8} fontWeight="bold" fill="#333">А</text></>}
-      {water && <text x={24} y={24} textAnchor="middle" fontSize={9} fontWeight="bold" fill={fill === "white" ? "#1565c0" : "#fff"}>D</text>}
-      {window_ && <rect x={10} y={14} width={8} height={12} fill="none" stroke="#333" strokeWidth={1.2} />}
+      {door ? (
+        // Дверь: два блока с зазором посередине (щель на уровне оси ветви)
+        <>
+          <rect x={19} y={4} width={10} height={13} fill={fill} stroke={stroke} strokeWidth={1.5} />
+          <rect x={19} y={23} width={10} height={13} fill={fill} stroke={stroke} strokeWidth={1.5} />
+        </>
+      ) : (
+        // Глухая: один сплошной блок
+        <rect x={19} y={4} width={10} height={32} fill={fill} stroke={stroke} strokeWidth={1.5} />
+      )}
+      {auto && <>
+        <circle cx={37} cy={20} r={8} fill="white" stroke={stroke} strokeWidth={1.2} />
+        <text x={37} y={24} textAnchor="middle" fontSize={9} fontWeight="bold" fill={stroke}>А</text>
+      </>}
+      {water && (
+        <text x={24} y={23} textAnchor="middle" fontSize={9} fontWeight="bold"
+          fill={fill === "white" ? "#1565c0" : "#fff"}>D</text>
+      )}
+      {window_ && (
+        <rect x={20} y={15} width={8} height={10} fill="white" stroke={stroke} strokeWidth={1} />
+      )}
       {lattice && <>
-        <line x1={12} y1={12} x2={12} y2={28} stroke="#333" strokeWidth={0.8} />
-        <line x1={17} y1={12} x2={17} y2={28} stroke="#333" strokeWidth={0.8} />
-        <line x1={22} y1={12} x2={22} y2={28} stroke="#333" strokeWidth={0.8} />
-        <line x1={27} y1={12} x2={27} y2={28} stroke="#333" strokeWidth={0.8} />
-        <line x1={9} y1={15} x2={30} y2={15} stroke="#333" strokeWidth={0.8} />
-        <line x1={9} y1={20} x2={30} y2={20} stroke="#333" strokeWidth={0.8} />
-        <line x1={9} y1={25} x2={30} y2={25} stroke="#333" strokeWidth={0.8} />
+        <line x1={21} y1={6} x2={21} y2={34} stroke={stroke} strokeWidth={0.9} />
+        <line x1={24} y1={6} x2={24} y2={34} stroke={stroke} strokeWidth={0.9} />
+        <line x1={27} y1={6} x2={27} y2={34} stroke={stroke} strokeWidth={0.9} />
+        <line x1={19} y1={13} x2={29} y2={13} stroke={stroke} strokeWidth={0.9} />
+        <line x1={19} y1={20} x2={29} y2={20} stroke={stroke} strokeWidth={0.9} />
+        <line x1={19} y1={27} x2={29} y2={27} stroke={stroke} strokeWidth={0.9} />
       </>}
     </svg>
   );
@@ -132,8 +147,8 @@ const ITEMS: LegendItem[] = [
   {
     id: "sail", group: "Глухие перемычки", name: "Парус вентиляционный",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <line x1={4} y1={20} x2={44} y2={20} stroke="#333" strokeWidth={1.2} />
-      <path d="M4,8 Q4,20 4,32 Q18,28 18,20 Q18,12 4,8Z" fill="white" stroke="#333" strokeWidth={1.2} />
+      <path d="M28,4 Q22,4 22,12 Q22,18 24,20 Q22,22 22,28 Q22,36 28,36"
+        fill="none" stroke="#333" strokeWidth={2} strokeLinecap="round" />
     </svg>,
   },
   { id: "water_base",    group: "Глухие перемычки", name: "Перемычка водоподпорная",           svg: <BulkheadSVG water /> },

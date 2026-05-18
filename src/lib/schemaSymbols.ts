@@ -19,23 +19,24 @@ export interface LegendType {
 }
 
 // ─── Helpers для SVG перемычек ────────────────────────────────────────────
-// Глухая перемычка: две вертикальные стойки + горизонтальная ось + заливка тела
+// viewBox="0 0 48 40", центр по оси ветви — y=20, x=24
+// Перемычка — один вертикальный блок по центру (x=20..28, y=4..36)
+// Ветвь проходит горизонтально через y=20
+
+// Глухая перемычка: один вертикальный прямоугольный блок по центру
 function solidBulkhead(fill: string, stroke: string): string {
-  return `<rect x="1" y="8" width="6" height="24" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/>` +
-    `<line x1="7" y1="20" x2="41" y2="20" stroke="#333" stroke-width="1.2"/>` +
-    `<rect x="41" y="8" width="6" height="24" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/>`;
+  return `<rect x="19" y="4" width="10" height="32" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
 }
-// Дверь закрытая: глухая + прорезь двери
+// Дверь закрытая: два блока с зазором (верхний + нижний), щель на уровне оси ветви
 function closedDoor(fill: string, stroke: string): string {
-  return solidBulkhead(fill, stroke) +
-    `<line x1="7" y1="14" x2="7" y2="26" stroke="#fff" stroke-width="2"/>` +
-    `<line x1="7" y1="20" x2="14" y2="20" stroke="#fff" stroke-width="1.5"/>`;
+  return `<rect x="19" y="4" width="10" height="13" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>` +
+    `<rect x="19" y="23" width="10" height="13" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
 }
-// Дверь автоматическая: дверь + кружок с "А"
+// Дверь автоматическая: дверь + кружок с "А" справа
 function autoDoor(fill: string, stroke: string): string {
   return closedDoor(fill, stroke) +
-    `<circle cx="27" cy="20" r="8" fill="white" stroke="#333" stroke-width="1.2"/>` +
-    `<text x="27" y="24" text-anchor="middle" font-size="8" font-weight="bold" fill="#333">А</text>`;
+    `<circle cx="37" cy="20" r="8" fill="white" stroke="${stroke}" stroke-width="1.2"/>` +
+    `<text x="37" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="${stroke}">А</text>`;
 }
 
 export const LEGEND_TYPES: LegendType[] = [
@@ -116,79 +117,82 @@ export const LEGEND_TYPES: LegendType[] = [
   },
 
   // ─── ПАРУС ВЕНТИЛЯЦИОННЫЙ ────────────────────────────────────────────
+  // По скриншоту АэроСети: фигурная скобка "}" по центру
   {
     id: "sail", name: "Парус вентиляционный", group: "Вентиляция", subgroup: "Глухие перемычки",
-    svgContent: `<line x1="4" y1="20" x2="44" y2="20" stroke="#333" stroke-width="1.2"/>` +
-      `<path d="M4,8 Q4,20 4,32 Q18,28 18,20 Q18,12 4,8Z" fill="white" stroke="#333" stroke-width="1.2"/>`,
+    svgContent: `<path d="M28,4 Q22,4 22,12 Q22,18 24,20 Q22,22 22,28 Q22,36 28,36" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/>`,
   },
 
   // ─── ПЕРЕМЫЧКИ ВОДОПОДПОРНЫЕ ─────────────────────────────────────────
+  // Глухая + буква D по центру блока (x=24, y=23)
   {
     id: "water_dam", name: "Перемычка водоподпорная", group: "Вентиляция", subgroup: "Водоподпорные",
     svgContent: solidBulkhead("white", "#333") +
-      `<text x="24" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#1565c0">D</text>`,
+      `<text x="24" y="23" text-anchor="middle" font-size="9" font-weight="bold" fill="#1565c0">D</text>`,
   },
   {
     id: "water_dam_concrete", name: "Перемычка водоподпорная (бетонная)", group: "Вентиляция", subgroup: "Водоподпорные",
     svgContent: solidBulkhead("#4caf50", "#2e7d32") +
-      `<text x="24" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">D</text>`,
+      `<text x="24" y="23" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">D</text>`,
   },
   {
     id: "water_dam_wood", name: "Перемычка водоподпорная (деревянная)", group: "Вентиляция", subgroup: "Водоподпорные",
     svgContent: solidBulkhead("#ffd600", "#f57f17") +
-      `<text x="24" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#333">D</text>`,
+      `<text x="24" y="23" text-anchor="middle" font-size="9" font-weight="bold" fill="#333">D</text>`,
   },
   {
     id: "water_dam_brick", name: "Перемычка водоподпорная (кирпичная)", group: "Вентиляция", subgroup: "Водоподпорные",
     svgContent: solidBulkhead("#ff9800", "#e65100") +
-      `<text x="24" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">D</text>`,
+      `<text x="24" y="23" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">D</text>`,
   },
   {
     id: "water_dam_metal", name: "Перемычка водоподпорная (металлическая)", group: "Вентиляция", subgroup: "Водоподпорные",
     svgContent: solidBulkhead("#9c27b0", "#6a1b9a") +
-      `<text x="24" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">D</text>`,
+      `<text x="24" y="23" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">D</text>`,
   },
 
   // ─── РЕГУЛЯТОРЫ / ШИБЕРЫ ─────────────────────────────────────────────
+  // Дверь открытая: два блока (верх+низ) + треугольная створка
   {
     id: "regulator_open", name: "Дверь вентиляционная открытая", group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<line x1="4" y1="20" x2="44" y2="20" stroke="#333" stroke-width="1.2"/>` +
-      `<rect x="1" y="8" width="6" height="24" fill="white" stroke="#333" stroke-width="1.2"/>` +
-      `<rect x="41" y="8" width="6" height="24" fill="white" stroke="#333" stroke-width="1.2"/>` +
-      `<path d="M7,10 L18,18 L7,26Z" fill="none" stroke="#333" stroke-width="1.2"/>`,
+    svgContent: `<rect x="19" y="4" width="10" height="13" fill="white" stroke="#333" stroke-width="1.5"/>` +
+      `<rect x="19" y="23" width="10" height="13" fill="white" stroke="#333" stroke-width="1.5"/>` +
+      `<path d="M19,17 L10,20 L19,23Z" fill="none" stroke="#333" stroke-width="1.2"/>`,
   },
+  // Дверь с регулируемым окном: глухой блок + прямоугольное окно
   {
     id: "regulator_window", name: "Дверь с регулируемым окном", group: "Вентиляция", subgroup: "С вент. окном",
     svgContent: solidBulkhead("white", "#333") +
-      `<rect x="10" y="14" width="8" height="12" fill="none" stroke="#333" stroke-width="1.2"/>` +
-      `<line x1="7" y1="20" x2="41" y2="20" stroke="#333" stroke-width="1"/>`,
+      `<rect x="20" y="14" width="8" height="12" fill="white" stroke="#333" stroke-width="1"/>`,
   },
+  // Дверь решётчатая: глухой блок + вертикальные решётки
   {
     id: "regulator_lattice", name: "Дверь вентиляционная решётчатая", group: "Вентиляция", subgroup: "С вент. окном",
     svgContent: solidBulkhead("white", "#333") +
-      `<line x1="12" y1="12" x2="12" y2="28" stroke="#333" stroke-width="0.8"/>` +
-      `<line x1="17" y1="12" x2="17" y2="28" stroke="#333" stroke-width="0.8"/>` +
-      `<line x1="22" y1="12" x2="22" y2="28" stroke="#333" stroke-width="0.8"/>` +
-      `<line x1="8" y1="17" x2="26" y2="17" stroke="#333" stroke-width="0.8"/>` +
-      `<line x1="8" y1="23" x2="26" y2="23" stroke="#333" stroke-width="0.8"/>`,
+      `<line x1="21" y1="6" x2="21" y2="34" stroke="#333" stroke-width="0.9"/>` +
+      `<line x1="24" y1="6" x2="24" y2="34" stroke="#333" stroke-width="0.9"/>` +
+      `<line x1="27" y1="6" x2="27" y2="34" stroke="#333" stroke-width="0.9"/>` +
+      `<line x1="19" y1="13" x2="29" y2="13" stroke="#333" stroke-width="0.9"/>` +
+      `<line x1="19" y1="20" x2="29" y2="20" stroke="#333" stroke-width="0.9"/>` +
+      `<line x1="19" y1="27" x2="29" y2="27" stroke="#333" stroke-width="0.9"/>`,
   },
+  // Перемычка с проёмом: глухой блок + окно по центру
   {
     id: "bulkhead_window", name: "Перемычка с проёмом", group: "Вентиляция", subgroup: "С вент. окном",
     svgContent: solidBulkhead("white", "#333") +
-      `<rect x="10" y="15" width="10" height="10" fill="none" stroke="#333" stroke-width="1.2"/>`,
+      `<rect x="20" y="15" width="8" height="10" fill="white" stroke="#333" stroke-width="1"/>`,
   },
 
   // ─── ПРОЧИЕ ВЕНТ. ОБЪЕКТЫ ────────────────────────────────────────────
   {
     id: "bulkhead_barrier", name: "Перемычка барьерная", group: "Вентиляция", subgroup: "Прочие",
-    svgContent: `<line x1="4" y1="20" x2="44" y2="20" stroke="#333" stroke-width="1.2"/>` +
-      `<line x1="20" y1="8" x2="20" y2="32" stroke="#333" stroke-width="3"/>` +
-      `<line x1="22" y1="8" x2="22" y2="32" stroke="#c00" stroke-width="3"/>`,
+    svgContent: `<rect x="19" y="4" width="5" height="32" fill="#555" stroke="#333" stroke-width="1.2"/>` +
+      `<rect x="24" y="4" width="5" height="32" fill="#c00" stroke="#800" stroke-width="1.2"/>`,
   },
   {
     id: "fire_door", name: "Противопожарная дверь", group: "Вентиляция", subgroup: "Прочие",
     svgContent: solidBulkhead("#c00", "#800") +
-      `<text x="24" y="24" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">ПП</text>`,
+      `<text x="24" y="23" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">ПП</text>`,
   },
 
   // ─── ОБЩИЕ ОБЪЕКТЫ ────────────────────────────────────────────────────
