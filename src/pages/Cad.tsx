@@ -2087,13 +2087,13 @@ export default function CadPage() {
             : ([
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
+                { id: "topology", label: "Топология" },
                 { id: "thermo", label: "Теплофизика" },
                 { id: "accidents", label: "Аварии" },
                 { id: "areas", label: "Участки" },
-                { id: "coords", label: "Координаты" },
-                { id: "topology", label: "Топология" },
                 { id: "waterpipes", label: "Трубы: вода" },
                 { id: "conveyor", label: "Конвейер" },
+                { id: "coords", label: "Координаты" },
               ] as { id: SideTab; label: string }[])
           ).map((t) => (
             <button key={t.id}
