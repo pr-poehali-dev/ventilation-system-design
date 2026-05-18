@@ -421,7 +421,7 @@ export default function CadPage() {
   };
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
-  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("chevrons");
+  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
 
   // Активная рабочая плоскость для построения в 3D
   // null = автоматически по ракурсу; иначе фиксированная пользователем
