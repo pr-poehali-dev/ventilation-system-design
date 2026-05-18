@@ -3014,7 +3014,7 @@ export default function CadPage() {
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
               onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("general"); } }}
-              onSelectBranch={(id) => { setSelectedBranchId(id); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); } }}
+              onSelectBranch={(id) => { setSelectedBranchId(id); setSelectedBranchIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); } }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
@@ -3400,10 +3400,11 @@ export default function CadPage() {
         branches={branches}
         symbols={schemaSymbols}
         onConfirm={(branchIds, symbolIds) => {
+          console.log("[SelectSimilar] branchIds:", branchIds.size, [...branchIds], "symbolIds:", symbolIds.size);
           if (branchIds.size > 0) {
             const first = Array.from(branchIds)[0];
             setSelectedBranchId(first);
-            setSelectedBranchIds(branchIds);
+            setSelectedBranchIds(new Set(branchIds));
             setSelectedNodeId(null);
           }
           if (symbolIds.size > 0) {
