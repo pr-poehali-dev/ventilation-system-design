@@ -2089,6 +2089,7 @@ export default function CadPage() {
                 { id: "vent", label: "Вентиляция" },
                 { id: "topology", label: "Топология" },
                 { id: "thermo", label: "Теплофизика" },
+                { id: "accidents", label: "Аварии" },
                 { id: "areas", label: "Участки" },
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
