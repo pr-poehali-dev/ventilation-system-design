@@ -1484,14 +1484,22 @@ export default function TopoCanvas(props: Props) {
                   </g>
                 );
               })()}
-              {/* Подпись: описание или label или название */}
-              {view.scale > 0.06 && (
-                <text x={px} y={py + SZ / 2 + 12} textAnchor="middle"
-                  fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif"
-                  opacity={Math.min(1, (view.scale - 0.06) / 0.06)}>
-                  {sym.description || sym.label || lt.name}
-                </text>
-              )}
+              {/* Подпись: только label (если задан), для перемычек — только если нет активных индикаторов */}
+              {view.scale > 0.06 && (() => {
+                const isBk = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+                // Для перемычек на ветви — подпись не показываем (индикаторы отвечают за текст)
+                if (isBk && sym.branchId) return null;
+                // Для остальных — только явно заданный label
+                const text = sym.label ?? "";
+                if (!text) return null;
+                return (
+                  <text x={px} y={py + SZ / 2 + 12} textAnchor="middle"
+                    fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif"
+                    opacity={Math.min(1, (view.scale - 0.06) / 0.06)}>
+                    {text}
+                  </text>
+                );
+              })()}
 
               {/* ── Индикаторы перемычки на схеме ────────────────────── */}
               {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && (() => {
@@ -1530,9 +1538,9 @@ export default function TopoCanvas(props: Props) {
                 return (
                   <g opacity={opacity}>
                     {/* Выноска к символу */}
-                    <line x1={px} y1={py} x2={leaderX} y2={leaderY}
-                      stroke="#8899bb" strokeWidth={0.8} strokeDasharray="3 2" />
-                    {/* Бейдж — перетаскиваемый */}
+                    <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
+                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                    {/* Текст индикаторов — без рамки, перетаскиваемый */}
                     <g style={{ cursor: "move" }}
                       onMouseDown={(e) => {
                         if (tool !== "select") return;
@@ -1550,15 +1558,13 @@ export default function TopoCanvas(props: Props) {
                         window.addEventListener("mousemove", onMove);
                         window.addEventListener("mouseup", onUp);
                       }}>
-                      <rect x={bx - boxW / 2} y={by - boxH / 2} width={boxW} height={boxH}
-                        rx={2} fill="white" stroke="#7a8fbb" strokeWidth={0.9}
-                        style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,40,0.18))" }} />
                       {lines.map((line, i) => (
                         <text key={i}
-                          x={bx} y={by - boxH / 2 + 4 + (i + 0.8) * lineH}
+                          x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                           textAnchor="middle" fontSize={fSize}
-                          fill="#1e3a5f" fontFamily="Segoe UI, sans-serif"
-                          fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}>
+                          fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                          fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                           {line}
                         </text>
                       ))}
