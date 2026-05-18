@@ -152,11 +152,12 @@ export const LEGEND_TYPES: LegendType[] = [
   },
 
   // ─── РЕГУЛЯТОРЫ / ШИБЕРЫ ─────────────────────────────────────────────
-  // Дверь открытая: блок + треугольная створка слева (без боковой линии)
+  // Дверь открытая: два блока (верх+низ) + диагональная створка
   {
     id: "regulator_open", name: "Дверь вентиляционная открытая", group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<rect x="20" y="4" width="8" height="32" fill="white" stroke="#333" stroke-width="1.5"/>` +
-      `<path d="M20,13 L10,20 L20,27Z" fill="none" stroke="#333" stroke-width="1.5"/>`,
+    svgContent: `<rect x="20" y="4" width="8" height="12" fill="white" stroke="#333" stroke-width="1.5"/>` +
+      `<rect x="20" y="24" width="8" height="12" fill="white" stroke="#333" stroke-width="1.5"/>` +
+      `<line x1="20" y1="24" x2="8" y2="36" stroke="#333" stroke-width="2" stroke-linecap="round"/>`,
   },
   // Дверь с регулируемым окном: блок + белое окошко по центру
   {
@@ -284,16 +285,16 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "auto_metal", name: "Дверь вентиляционная автоматическая металлическая",  group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: autoDoor("#9c27b0", "#6a1b9a") },
 
   // ─── ПЕРЕМЫЧКИ С ВЕНТ. ОКНОМ (все материалы) ─────────────────────────
-  { id: "open_base",  name: "Дверь вентиляционная открытая",                group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<rect x="20" y="4" width="8" height="32" fill="white" stroke="#222" stroke-width="1.5"/><path d="M20,13 L10,20 L20,27Z" fill="none" stroke="#222" stroke-width="1.5"/>` },
-  { id: "open_conc",  name: "Дверь вентиляционная открытая бетонная",       group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<rect x="20" y="4" width="8" height="32" fill="#4caf50" stroke="#2e7d32" stroke-width="1.5"/><path d="M20,13 L10,20 L20,27Z" fill="none" stroke="#2e7d32" stroke-width="1.5"/>` },
-  { id: "open_wood",  name: "Дверь вентиляционная открытая деревянная",     group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<rect x="20" y="4" width="8" height="32" fill="#ffd600" stroke="#f57f17" stroke-width="1.5"/><path d="M20,13 L10,20 L20,27Z" fill="none" stroke="#f57f17" stroke-width="1.5"/>` },
-  { id: "open_brick", name: "Дверь вентиляционная открытая кирпичная",      group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<rect x="20" y="4" width="8" height="32" fill="#ff9800" stroke="#e65100" stroke-width="1.5"/><path d="M20,13 L10,20 L20,27Z" fill="none" stroke="#e65100" stroke-width="1.5"/>` },
-  { id: "open_metal", name: "Дверь вентиляционная открытая металлическая",  group: "Вентиляция", subgroup: "С вент. окном",
-    svgContent: `<rect x="20" y="4" width="8" height="32" fill="#9c27b0" stroke="#6a1b9a" stroke-width="1.5"/><path d="M20,13 L10,20 L20,27Z" fill="none" stroke="#6a1b9a" stroke-width="1.5"/>` },
+  { id: "open_base",  name: "Дверь вентиляционная открытая",               group: "Вентиляция", subgroup: "С вент. окном",
+    svgContent: `<rect x="20" y="4" width="8" height="12" fill="white" stroke="#222" stroke-width="1.5"/><rect x="20" y="24" width="8" height="12" fill="white" stroke="#222" stroke-width="1.5"/><line x1="20" y1="24" x2="8" y2="36" stroke="#222" stroke-width="2" stroke-linecap="round"/>` },
+  { id: "open_conc",  name: "Дверь вентиляционная открытая бетонная",      group: "Вентиляция", subgroup: "С вент. окном",
+    svgContent: `<rect x="20" y="4" width="8" height="12" fill="#4caf50" stroke="#2e7d32" stroke-width="1.5"/><rect x="20" y="24" width="8" height="12" fill="#4caf50" stroke="#2e7d32" stroke-width="1.5"/><line x1="20" y1="24" x2="8" y2="36" stroke="#2e7d32" stroke-width="2" stroke-linecap="round"/>` },
+  { id: "open_wood",  name: "Дверь вентиляционная открытая деревянная",    group: "Вентиляция", subgroup: "С вент. окном",
+    svgContent: `<rect x="20" y="4" width="8" height="12" fill="#ffd600" stroke="#f57f17" stroke-width="1.5"/><rect x="20" y="24" width="8" height="12" fill="#ffd600" stroke="#f57f17" stroke-width="1.5"/><line x1="20" y1="24" x2="8" y2="36" stroke="#f57f17" stroke-width="2" stroke-linecap="round"/>` },
+  { id: "open_brick", name: "Дверь вентиляционная открытая кирпичная",     group: "Вентиляция", subgroup: "С вент. окном",
+    svgContent: `<rect x="20" y="4" width="8" height="12" fill="#ff9800" stroke="#e65100" stroke-width="1.5"/><rect x="20" y="24" width="8" height="12" fill="#ff9800" stroke="#e65100" stroke-width="1.5"/><line x1="20" y1="24" x2="8" y2="36" stroke="#e65100" stroke-width="2" stroke-linecap="round"/>` },
+  { id: "open_metal", name: "Дверь вентиляционная открытая металлическая", group: "Вентиляция", subgroup: "С вент. окном",
+    svgContent: `<rect x="20" y="4" width="8" height="12" fill="#9c27b0" stroke="#6a1b9a" stroke-width="1.5"/><rect x="20" y="24" width="8" height="12" fill="#9c27b0" stroke="#6a1b9a" stroke-width="1.5"/><line x1="20" y1="24" x2="8" y2="36" stroke="#6a1b9a" stroke-width="2" stroke-linecap="round"/>` },
   { id: "win_base",   name: "Дверь с регулируемым окном",                group: "Вентиляция", subgroup: "С вент. окном", svgContent: solidBulkhead("white",   "#222")    + `<rect x="21" y="14" width="6" height="12" fill="white" stroke="#222" stroke-width="1"/>` },
   { id: "win_conc",   name: "Дверь с регулируемым окном бетонная",       group: "Вентиляция", subgroup: "С вент. окном", svgContent: solidBulkhead("#4caf50", "#2e7d32") + `<rect x="21" y="14" width="6" height="12" fill="white" stroke="#2e7d32" stroke-width="1"/>` },
   { id: "win_wood",   name: "Дверь с регулируемым окном деревянная",     group: "Вентиляция", subgroup: "С вент. окном", svgContent: solidBulkhead("#ffd600", "#f57f17") + `<rect x="21" y="14" width="6" height="12" fill="white" stroke="#f57f17" stroke-width="1"/>` },

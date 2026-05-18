@@ -1380,22 +1380,32 @@ export default function TopoCanvas(props: Props) {
                           <rect x={gap/2}       y={-ph/2} width={pw} height={ph}
                             fill="#dc2626" stroke="#8b0000" strokeWidth={1.3} />
                         </>
-                      ) : (isDoor || isAuto || isOpen) ? (
-                        // ── Дверь: прямоугольник поперёк ветви + сплошная линия сбоку ──
-                        // Прямоугольник (pw по X, ph по Y) — основное тело двери
+                      ) : isOpen ? (
+                        // ── Дверь открытая: два блока + диагональная створка ──
+                        // В системе координат rotate(brAngle): X вдоль ветви, Y поперёк
+                        // Верхний блок — верхняя половина по Y
+                        // Нижний блок — нижняя половина по Y
+                        // Створка — диагональ от нижнего-левого угла нижнего блока
+                        <>
+                          {/* Верхний блок */}
+                          <rect x={-pw/2} y={-ph/2} width={pw} height={ph*0.38}
+                            fill={fill} stroke={stroke} strokeWidth={sw2} />
+                          {/* Нижний блок */}
+                          <rect x={-pw/2} y={ph*0.12} width={pw} height={ph*0.38}
+                            fill={fill} stroke={stroke} strokeWidth={sw2} />
+                          {/* Диагональная створка из угла нижнего блока */}
+                          <line x1={-pw/2} y1={ph*0.12}
+                                x2={-pw/2 - ph*0.45} y2={ph/2}
+                            stroke={stroke} strokeWidth={Math.max(1.8, pw * 0.3)} strokeLinecap="round" />
+                        </>
+                      ) : (isDoor || isAuto) ? (
+                        // ── Дверь закрытая / автоматическая: блок + жирная линия ──
                         <>
                           <rect x={-pw/2} y={-ph/2} width={pw} height={ph}
                             fill={fill} stroke={stroke} strokeWidth={sw2} />
-                          {/* Сплошная линия вдоль одного края — знак закрытой двери */}
-                          {!isOpen && (
-                            <line x1={-pw/2} y1={-ph/2} x2={-pw/2} y2={ph/2}
-                              stroke={stroke} strokeWidth={Math.max(2, pw * 0.35)} strokeLinecap="round" />
-                          )}
-                          {/* Створка — треугольник для открытой */}
-                          {isOpen && (
-                            <path d={`M${-pw/2 - gap},${-ph*0.3} L${-pw/2 - ph*0.4},0 L${-pw/2 - gap},${ph*0.3}Z`}
-                              fill="none" stroke={stroke} strokeWidth={1.2} />
-                          )}
+                          {/* Жирная линия вдоль левого края — знак закрытой двери */}
+                          <line x1={-pw/2} y1={-ph/2} x2={-pw/2} y2={ph/2}
+                            stroke={stroke} strokeWidth={Math.max(2, pw * 0.35)} strokeLinecap="round" />
                           {/* Кружок «А» для автоматической */}
                           {isAuto && (
                             <g transform={`translate(${pw/2 + ph*0.28}, 0)`}>

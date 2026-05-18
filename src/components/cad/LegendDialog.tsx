@@ -13,17 +13,21 @@ function Bk({ fill = "white", stroke = "#222", door = false, auto = false, water
 }) {
   return (
     <svg width={48} height={40} viewBox="0 0 48 40">
-      {/* Основной прямоугольник (вертикальный, поперёк ветви) */}
-      <rect x={20} y={4} width={8} height={32} fill={fill} stroke={stroke} strokeWidth={1.5} />
+      {open_ ? (
+        // Открытая дверь: два блока (верх + низ) + диагональная створка
+        <>
+          <rect x={20} y={4}  width={8} height={12} fill={fill} stroke={stroke} strokeWidth={1.5} />
+          <rect x={20} y={24} width={8} height={12} fill={fill} stroke={stroke} strokeWidth={1.5} />
+          <line x1={20} y1={24} x2={8} y2={36} stroke={stroke} strokeWidth={2} strokeLinecap="round" />
+        </>
+      ) : (
+        // Глухая / закрытая / авто: один сплошной блок
+        <rect x={20} y={4} width={8} height={32} fill={fill} stroke={stroke} strokeWidth={1.5} />
+      )}
 
       {/* Закрытая дверь: жирная линия вдоль левого края */}
       {(door || auto) && !open_ && (
         <line x1={20} y1={4} x2={20} y2={36} stroke={stroke} strokeWidth={3} strokeLinecap="round" />
-      )}
-
-      {/* Открытая дверь: треугольная створка слева */}
-      {open_ && (
-        <path d="M20,13 L10,20 L20,27Z" fill="none" stroke={stroke} strokeWidth={1.5} />
       )}
 
       {/* Кружок «А» — автоматическая */}
