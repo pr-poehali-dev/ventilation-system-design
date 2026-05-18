@@ -131,12 +131,10 @@ export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {
   };
 }
 
-// Дефолтный набор горизонтов для шахты (поверхность + 3 рабочих горизонта)
+// Дефолтный набор горизонтов для шахты (поверхность + рабочий горизонт)
 export const DEFAULT_HORIZONS: Horizon[] = [
   { id: "H_SURFACE", name: "Поверхность",  z:    0, color: "#22c55e", visible: true },
-  { id: "H_-75",     name: "Гор. −75 м",   z:  -75, color: "#3b82f6", visible: true },
-  { id: "H_-240",    name: "Гор. −240 м",  z: -240, color: "#a855f7", visible: true },
-  { id: "H_-480",    name: "Гор. −480 м",  z: -480, color: "#f97316", visible: true },
+  { id: "H_-20",     name: "Гор. −20 м",   z:  -20, color: "#3b82f6", visible: true },
 ];
 
 export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
@@ -419,43 +417,80 @@ export function autoWorkPlane(
     : { axis: "x", value: defaults.x };
 }
 
-// ─── Демо-сеть (как в АэроСеть/Вентиляция 2.0) ────────────────────────────
+// ─── Демо-сеть: два вертикальных ствола + горизонт + вент. канал с ВО-18 ────
+//
+// Схема (вид спереди/фронт):
+//
+//  [Атм]   [Вент.канал]
+//   N1          N6
+//   |    \     /
+//   N2 (надшахтное здание ЮВС, z=0)
+//   |
+//   N3 (сопряжение ЮВС дно, z=-20) ─── [горизонт] ─── N4 (сопряжение СВС дно, z=-20)
+//                                                       |
+//                                                       N5 (устье СВС, z=100, атм.)
+//
+// Стволы: круглое сечение S=38 м² → d ≈ 6.96 м
+// Горизонт: арочное сечение S=21 м²
+// Вент.канал: круглое S=10 м², вентилятор ВО-18
 
 export const DEMO_NODES: TopoNode[] = [
-  makeNode("1", { name: "Устье ЮВС",           number: "1", x: 0,    y: 0,     z: 0,    atmosphereLink: true,  reducedPressure: 0 }),
-  makeNode("2", { name: "Сопряжение -75",      number: "2", x: 200,  y: -200,  z: -75,  computedPressure: 910 }),
-  makeNode("3", { name: "Сопряжение -150",     number: "3", x: 421,  y: -1518, z: -75 }),
-  makeNode("4", { name: "Сопряжение -240",     number: "4", x: 600,  y: -2400, z: -240 }),
-  makeNode("5", { name: "Околоствольный двор", number: "5", x: 1200, y: -2400, z: -240 }),
-  makeNode("6", { name: "Очистной забой",      number: "6", x: 2000, y: -1800, z: -240 }),
-  makeNode("7", { name: "Сопряжение СВС",      number: "7", x: 2400, y: -800,  z: -75 }),
-  makeNode("8", { name: "Устье СВС",           number: "8", x: 2400, y: 0,     z: 0,    atmosphereLink: true }),
+  makeNode("1", { name: "Устье ЮВС (атмосфера)",      number: "1", x:   0, y: 0, z: 100,  atmosphereLink: true }),
+  makeNode("2", { name: "Надшахтное здание ЮВС",       number: "2", x:   0, y: 0, z:   0 }),
+  makeNode("3", { name: "Сопряжение ЮВС гор. −20 м",  number: "3", x:   0, y: 0, z: -20 }),
+  makeNode("4", { name: "Сопряжение СВС гор. −20 м",  number: "4", x: 500, y: 0, z: -20 }),
+  makeNode("5", { name: "Устье СВС (атмосфера)",       number: "5", x: 500, y: 0, z: 100,  atmosphereLink: true }),
+  makeNode("6", { name: "Вент. канал ЮВС (выброс)",   number: "6", x: -80, y: 0, z:  20 }),
 ];
 
+// S=38 м² → круг → d = 2·√(38/π) ≈ 6.96 м; P ≈ 21.86 м; Dh = d = 6.96 м
+// S=21 м² → арка: ширина 5 м, прямая часть 2 м, свод 1.2 м → P ≈ 14.77 м
+// S=10 м² → круг → d = 2·√(10/π) ≈ 3.57 м; P ≈ 11.21 м
+
 export const DEMO_BRANCHES: TopoBranch[] = [
-  makeBranch("1", "1", "2", { type: "Ствол ЮВС",   layer: "Стволы",    horizonId: "H_-75",  shape: "round", diameter: 7,
-                               surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью", alphaCoef: 15, roughness: 5,
-                               flow: 100, vMax: 15 }),
-  makeBranch("2", "2", "3", { type: "Квершлаг",    layer: "Квершлаги", horizonId: "H_-75",  shape: "arch",  rectWidth: 5, rectHeight: 3.5, archHeight: 1.5,
-                               surfaceId: "concrete", surface: "Бетонная крепь гладкая", alphaCoef: 12, roughness: 3,
-                               flow: 100 }),
-  makeBranch("3", "3", "4", { type: "Уклон",       layer: "Уклоны",    horizonId: "H_-240", shape: "rect",  rectWidth: 5, rectHeight: 3.5,
-                               surfaceId: "anchor", surface: "Анкерная крепь", alphaCoef: 30, roughness: 50,
-                               flow: 100 }),
-  makeBranch("4", "4", "5", { type: "Штрек откат.",layer: "Штреки",    horizonId: "H_-240", shape: "arch",  rectWidth: 5, rectHeight: 2.5, archHeight: 1.5,
-                               surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 40, roughness: 60,
-                               flow: 100 }),
-  makeBranch("5", "5", "6", { type: "Очистной",    layer: "Лавы",      horizonId: "H_-240", shape: "rect",  rectWidth: 5, rectHeight: 2,
-                               surfaceId: "lava", surface: "Очистной забой (лава)", alphaCoef: 80, roughness: 120,
-                               flow: 100, localXi: 3 }),
-  makeBranch("6", "6", "7", { type: "Штрек вент.", layer: "Штреки",    horizonId: "H_-75",  shape: "arch",  rectWidth: 5, rectHeight: 2.5, archHeight: 1.5,
-                               surfaceId: "metal_arch", surface: "Металлическая арочная крепь", alphaCoef: 40, roughness: 60,
-                               flow: 100 }),
-  makeBranch("7", "7", "8", { type: "Ствол СВС",   layer: "Стволы",    horizonId: "H_-75",  shape: "round", diameter: 7,
-                               surfaceId: "shaft_skip", surface: "Ствол со скиповым подъёмом", alphaCoef: 45, roughness: 50,
-                               flow: 100, vMax: 15,
-                               hasFan: true, fanMode: "curve", fanCurveId: "VOD-30",
-                               fanPressure: 2700, fanName: "ВОД-30 (главный)" }),
+  // Ствол ЮВС: устье → надшахтное здание (z=100 → z=0), воздух входит сверху
+  makeBranch("1", "1", "2", {
+    type: "Ствол ЮВС", layer: "Стволы", horizonId: "H_SURFACE",
+    shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
+    surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
+    alphaCoef: 15, roughness: 5,
+    flow: 36, vMax: 15,
+  }),
+  // Ствол ЮВС: надшахтное → дно горизонта (z=0 → z=-20)
+  makeBranch("2", "2", "3", {
+    type: "Ствол ЮВС", layer: "Стволы", horizonId: "H_-20",
+    shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
+    surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
+    alphaCoef: 15, roughness: 5,
+    flow: 36, vMax: 15,
+  }),
+  // Горизонт −20 м: арочный 21 м²
+  makeBranch("3", "3", "4", {
+    type: "Квершлаг", layer: "Квершлаги", horizonId: "H_-20",
+    shape: "arch", rectWidth: 5, rectHeight: 2, archHeight: 1.2,
+    area: 21, perimeter: 14.77, dh: 5.69, manualSection: true,
+    surfaceId: "concrete", surface: "Бетонная крепь гладкая",
+    alphaCoef: 12, roughness: 3,
+    flow: 36, vMax: 8,
+  }),
+  // Ствол СВС: дно горизонта → устье (z=-20 → z=100), воздух выходит наверх
+  makeBranch("4", "4", "5", {
+    type: "Ствол СВС", layer: "Стволы", horizonId: "H_SURFACE",
+    shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
+    surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
+    alphaCoef: 15, roughness: 5,
+    flow: 36, vMax: 15,
+  }),
+  // Вентиляционный канал ЮВС: надшахтное здание → выброс (ответвление вверх-влево)
+  makeBranch("5", "2", "6", {
+    type: "Вент. канал", layer: "Стволы", horizonId: "H_SURFACE",
+    shape: "round", diameter: 3.57, area: 10, perimeter: 11.21, dh: 3.57, manualSection: true,
+    surfaceId: "shaft_smooth", surface: "Металлический вент. канал",
+    alphaCoef: 10, roughness: 2,
+    flow: 36, vMax: 10,
+    hasFan: true, fanMode: "curve", fanCurveId: "VOD-18",
+    fanPressure: 1900, fanName: "ВО-18/12АВР (главный)",
+  }),
 ];
 
 // Авто-расчёт длин и угла наклона на основе координат узлов

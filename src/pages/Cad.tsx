@@ -138,7 +138,7 @@ export default function CadPage() {
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
   const [branchesRaw, setBranches] = useState<TopoBranch[]>(DEMO_BRANCHES);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("N2");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("2");
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [tool, setTool] = useState<CadTool>("select");
   const [zLevel, setZLevel] = useState(0);
@@ -188,7 +188,7 @@ export default function CadPage() {
   const [horizons, setHorizons] = useState<Horizon[]>(() => {
     if (typeof window === "undefined") return DEFAULT_HORIZONS;
     try {
-      const raw = window.localStorage.getItem("vent-cad/horizons");
+      const raw = window.localStorage.getItem("vent-cad/horizons-v3");
       if (!raw) return DEFAULT_HORIZONS;
       const parsed = JSON.parse(raw) as Horizon[];
       if (Array.isArray(parsed) && parsed.length) return parsed;
@@ -198,7 +198,7 @@ export default function CadPage() {
   // Сохраняем горизонты при каждом изменении.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try { window.localStorage.setItem("vent-cad/horizons", JSON.stringify(horizons)); }
+    try { window.localStorage.setItem("vent-cad/horizons-v3", JSON.stringify(horizons)); }
     catch { /* квота переполнена — пропускаем */ }
   }, [horizons]);
   const [activeHorizonId, setActiveHorizonId] = useState<string>("");
@@ -414,14 +414,14 @@ export default function CadPage() {
 
   // ─── Ракурс / 3D ────────────────────────────────────────────────────
   const [viewPreset, setViewPreset] = useState<{ name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE"; nonce: number } | null>(null);
-  const [viewInfo, setViewInfo] = useState<{ is3D: boolean; azimuth: number; elevation: number }>({ is3D: false, azimuth: 0, elevation: 90 });
+  const [viewInfo, setViewInfo] = useState<{ is3D: boolean; azimuth: number; elevation: number }>({ is3D: true, azimuth: 0, elevation: 0 });
   const setPreset = (name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE") => {
     // Вписывание в экран теперь происходит внутри TopoCanvas через fitAfterPresetRef
     setViewPreset({ name, nonce: Date.now() });
   };
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
-  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
+  const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("chevrons");
 
   // Активная рабочая плоскость для построения в 3D
   // null = автоматически по ракурсу; иначе фиксированная пользователем
@@ -430,8 +430,9 @@ export default function CadPage() {
   // ─── МАСШТАБ И ВПИСЫВАНИЕ ───────────────────────────────────────────
   const [viewScale, setViewScale] = useState<number>(0.4);
   const [fitToScreenNonce, setFitToScreenNonce] = useState<number>(0);
-  // При первом рендере один раз вписываем сеть в экран
+  // При первом рендере переключаем на вид Фронт и вписываем сеть
   useEffect(() => {
+    setViewPreset({ name: "front", nonce: Date.now() });
     const t = window.setTimeout(() => setFitToScreenNonce(Date.now()), 200);
     return () => window.clearTimeout(t);
   }, []);
@@ -465,7 +466,8 @@ export default function CadPage() {
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([
-    { id: "SYM_FAN_7", typeId: "fan", x: 0, y: 0, branchId: "7", t: 0.5, airDirection: "forward" },
+    { id: "SYM_FAN_5",   typeId: "fan",        x: 0, y: 0, branchId: "5", t: 0.5, airDirection: "forward" },
+    { id: "SYM_COPRA_1", typeId: "copra_tower", x: 0, y: 0, branchId: "1", t: 0.2, label: "Надшахтное здание ЮВС" },
   ]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
