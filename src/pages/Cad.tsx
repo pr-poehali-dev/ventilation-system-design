@@ -489,6 +489,8 @@ export default function CadPage() {
 
   const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
   const [showUOPanel, setShowUOPanel] = useState(false);
+  const [uoPanelPos, setUOPanelPos] = useState({ left: 0, top: 0 });
+  const uoBtnRef = useRef<HTMLButtonElement>(null);
   // ID ветви, для которой открыли панель через клик на fan-символ
   const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
   // Диалог ввода числа людей при размещении отделения
@@ -1625,7 +1627,12 @@ export default function CadPage() {
               <div className="flex flex-col h-full">
                 <div className="flex-1 flex items-center gap-1 px-1.5 pt-1">
                   <button
-                    onClick={() => setShowUOPanel(v => !v)}
+                    ref={uoBtnRef}
+                    onClick={() => {
+                      const rect = uoBtnRef.current?.getBoundingClientRect();
+                      if (rect) setUOPanelPos({ left: rect.left, top: rect.bottom + 2 });
+                      setShowUOPanel(v => !v);
+                    }}
                     title="Условные обозначения — выбрать символ для размещения на схеме"
                     style={{
                       width: 50, height: 50,
@@ -1674,8 +1681,11 @@ export default function CadPage() {
               {showUOPanel && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowUOPanel(false)} />
-                  <div className="absolute left-0 top-full z-50"
-                    style={{
+                  <div style={{
+                      position: "fixed",
+                      left: uoPanelPos.left,
+                      top: uoPanelPos.top,
+                      zIndex: 9999,
                       background: "white",
                       border: "1px solid #b8c8d8",
                       boxShadow: "0 8px 32px rgba(0,0,0,0.20)",
