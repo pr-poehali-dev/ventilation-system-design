@@ -345,7 +345,7 @@ export function solveNetwork(
       id:            b.id,
       a:             toGnd(b.fromId),
       b:             toGnd(b.toId),
-      R:             Math.max(MIN_R, b.resistance),
+      R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (b.bulkheadR ?? 0) : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanMode:       b.fanMode,

@@ -22,7 +22,7 @@ import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
-import EquipmentRefDialog, { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
+import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
 import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
@@ -135,6 +135,7 @@ export default function CadPage() {
   const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
   const [mineFans, setMineFans] = useState<MineFanExport[]>([]);
+  const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>([]);
 
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
@@ -158,6 +159,19 @@ export default function CadPage() {
 
   const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
+
+    // Синхронизируем УО перемычки при изменении hasBulkhead
+    if ("hasBulkhead" in patch) {
+      if (patch.hasBulkhead) {
+        setSchemaSymbols(prev => {
+          const hasSym = prev.some(s => s.typeId === "bulkhead" && s.branchId === id);
+          if (hasSym) return prev;
+          return [...prev, { id: `SYM_BH_${id}_${Date.now()}`, typeId: "bulkhead", x: 0, y: 0, branchId: id, t: 0.5 }];
+        });
+      } else {
+        setSchemaSymbols(prev => prev.filter(s => !(s.typeId === "bulkhead" && s.branchId === id)));
+      }
+    }
 
     // Синхронизируем airDirection на символе вентилятора при изменении fanReverse
     if ("fanReverse" in patch) {
@@ -1974,6 +1988,7 @@ export default function CadPage() {
                 } : undefined}
                 normalFlows={normalFlows}
                 mineFans={mineFans}
+                mineBulkheads={mineBulkheads}
               />
             )}
 
@@ -3090,6 +3105,7 @@ export default function CadPage() {
         onTabChange={setEquipRefTab}
         onClose={() => setShowEquipRef(false)}
         onMineFansChange={setMineFans}
+        onMineBulkheadsChange={setMineBulkheads}
       />
     )}
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
-import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
+import { type MineFanExport, type MineBulkheadExport } from "@/components/cad/EquipmentRefDialog";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -20,6 +20,8 @@ interface BranchPropsPanelProps {
   normalFlows?: Record<string, number>;
   /** Вентиляторы, добавленные в справочник рудника */
   mineFans?: MineFanExport[];
+  /** Перемычки, добавленные в справочник рудника */
+  mineBulkheads?: MineBulkheadExport[];
 }
 
 const SH = "#e8eef8";
@@ -37,7 +39,7 @@ const PLA_OPTIONS = ["— нет —", "ПЛА-1", "ПЛА-2", "ПЛА-3"];
 const POLE_OPTIONS = ["— нет —", "Северное", "Южное", "Западное"];
 
 const INNER_TABS = [
-  "Топология", "Вентилятор", "Люди",
+  "Топология", "Вентилятор", "Перемычка", "Люди",
   "Усл.обозначения", "Датчики",
   "Трубы: вода", "Конвейер",
 ] as const;
@@ -193,7 +195,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -1091,6 +1093,64 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
         {innerTab === "Переменные" && (
           <div className="px-2 py-2 text-[11px] text-gray-400 text-center">
             Нет переменных параметров
+          </div>
+        )}
+
+        {innerTab === "Перемычка" && (
+          <div>
+            <SectionHeader title="Перемычка в выработке" />
+            <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+              <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>Установлена</span>
+              <input type="checkbox" checked={branch.hasBulkhead ?? false}
+                onChange={e => onUpdate({
+                  hasBulkhead: e.target.checked,
+                  ...(e.target.checked ? {} : { bulkheadId: "", bulkheadName: "", bulkheadR: 0, bulkheadAirPerm: 0 })
+                })}
+                style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }} />
+            </div>
+            {(branch.hasBulkhead) && (
+              <>
+                <InlineLabel label="Тип перемычки">
+                  <select
+                    value={branch.bulkheadId ?? ""}
+                    onChange={e => {
+                      const sel = mineBulkheads?.find(b => b.id === e.target.value);
+                      onUpdate({
+                        bulkheadId: e.target.value,
+                        bulkheadName: sel?.name ?? "",
+                        bulkheadR: sel?.rMkyurg ?? 0,
+                        bulkheadAirPerm: sel?.airPermeability ?? 0,
+                      });
+                    }}
+                    className="w-full text-[11px] px-1"
+                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                    <option value="">— выберите из справочника —</option>
+                    {(mineBulkheads ?? []).map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </InlineLabel>
+                {!mineBulkheads?.length && (
+                  <div className="mx-1 my-1 px-2 py-1 text-[10px] rounded"
+                    style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}>
+                    Справочник перемычек пуст. Откройте Справочники → Перемычки и добавьте перемычки.
+                  </div>
+                )}
+                {branch.bulkheadId && (
+                  <>
+                    <InlineLabel label="R перемычки, Мюрг">
+                      <ComputedInput value={branch.bulkheadR ? branch.bulkheadR.toExponential(2) : "—"} />
+                    </InlineLabel>
+                    <InlineLabel label="Воздухопрон., м²/(с·√Па)">
+                      <ComputedInput value={branch.bulkheadAirPerm ? branch.bulkheadAirPerm.toFixed(6) : "—"} />
+                    </InlineLabel>
+                    <InlineLabel label="R_итого, Мюрг">
+                      <ComputedInput value={((branch.resistance || 0) + (branch.bulkheadR || 0)).toExponential(2)} />
+                    </InlineLabel>
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
 

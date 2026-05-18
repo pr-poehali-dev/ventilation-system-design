@@ -2,6 +2,10 @@
 import { useState, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { FAN_CATALOG, type FanCurve } from "@/lib/fanCurves";
+import {
+  BULKHEAD_CATALOG, BULKHEAD_TYPE_LABELS, BULKHEAD_TYPE_COLORS,
+  type BulkheadCatalogItem, type BulkheadType, airPermToR,
+} from "@/lib/bulkheads";
 
 type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport";
 
@@ -13,11 +17,24 @@ export interface MineFanExport {
   rpmMax: number;
 }
 
+export interface MineBulkheadExport {
+  id: string;
+  name: string;
+  type: BulkheadType;
+  airPermeability: number;
+  rMkyurg: number;     // сопротивление в Мюрг
+  failurePressure: number;
+  note: string;
+  color: string;
+  isCustom?: boolean;
+}
+
 interface Props {
   activeTab: TabId;
   onTabChange: (t: TabId) => void;
   onClose: () => void;
   onMineFansChange?: (fans: MineFanExport[]) => void;
+  onMineBulkheadsChange?: (bulkheads: MineBulkheadExport[]) => void;
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
@@ -1001,13 +1018,366 @@ function ViewRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 
-const DEMO_BULKHEADS = [
-  { name: "Бетонная перемычка", type: "Глухая", r: ">10000", note: "ГОСТ 12.3.022" },
-  { name: "Шлакобетонная", type: "Глухая", r: ">5000", note: "" },
-  { name: "Кирпичная", type: "Глухая", r: ">3000", note: "" },
-  { name: "Деревянная с обшивкой", type: "Временная", r: "100–500", note: "" },
-  { name: "Металлическая дверь", type: "С шибером", r: "50–200", note: "Регулируемое R" },
-];
+// ─── Справочник перемычек ─────────────────────────────────────────────────────
+function rFmt(r: number): string {
+  if (r >= 1_000_000) return `${(r / 1_000_000).toFixed(1)} ММюрг`;
+  if (r >= 1_000) return `${Math.round(r / 1_000)} кМюрг`;
+  return `${Math.round(r)} Мюрг`;
+}
+
+function BulkheadsSection({ onMineBulkheadsChange }: { onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void }) {
+  const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogFilter, setCatalogFilter] = useState<BulkheadType | "all">("all");
+  const [editForm, setEditForm] = useState<Partial<MineBulkheadExport>>({});
+
+  const selected = mineBulkheads.find(b => b.id === selectedId) ?? null;
+
+  const notify = (list: MineBulkheadExport[]) => {
+    setMineBulkheads(list);
+    onMineBulkheadsChange?.(list);
+  };
+
+  const importFromCatalog = (item: BulkheadCatalogItem) => {
+    const ex: MineBulkheadExport = {
+      id: `mb_${item.id}_${Date.now()}`,
+      name: item.name,
+      type: item.type,
+      airPermeability: item.airPermeability,
+      rMkyurg: airPermToR(item.airPermeability),
+      failurePressure: item.failurePressure,
+      note: item.note,
+      color: item.color,
+    };
+    const next = [...mineBulkheads, ex];
+    notify(next);
+    setSelectedId(ex.id);
+    setShowCatalog(false);
+  };
+
+  const startEdit = (b: MineBulkheadExport) => {
+    setEditForm({ ...b });
+    setIsEditing(true);
+  };
+
+  const saveEdit = () => {
+    const next = mineBulkheads.map(b => b.id === selectedId ? { ...b, ...editForm } as MineBulkheadExport : b);
+    notify(next);
+    setIsEditing(false);
+  };
+
+  const deleteBulkhead = (id: string) => {
+    const next = mineBulkheads.filter(b => b.id !== id);
+    notify(next);
+    if (selectedId === id) { setSelectedId(null); setIsEditing(false); }
+  };
+
+  const addCustom = () => {
+    const ex: MineBulkheadExport = {
+      id: `mb_custom_${Date.now()}`,
+      name: "Новая перемычка",
+      type: "custom",
+      airPermeability: 0.001,
+      rMkyurg: 1_000_000,
+      failurePressure: 0,
+      note: "",
+      color: "#546e7a",
+      isCustom: true,
+    };
+    const next = [...mineBulkheads, ex];
+    notify(next);
+    setSelectedId(ex.id);
+    setEditForm({ ...ex });
+    setIsEditing(true);
+  };
+
+  // Каталог с фильтрацией
+  const catalogList = BULKHEAD_CATALOG.filter(c =>
+    (catalogFilter === "all" || c.type === catalogFilter) &&
+    c.name.toLowerCase().includes(catalogSearch.toLowerCase())
+  );
+
+  return (
+    <div className="flex h-full overflow-hidden">
+      {/* Левая панель — список рудника */}
+      <div className="flex flex-col border-r border-gray-200" style={{ width: 260, flexShrink: 0 }}>
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#e8eef8" }}>
+          <span className="text-[11px] font-semibold text-gray-700">Перемычки рудника</span>
+          <div className="flex gap-1">
+            <button onClick={() => setShowCatalog(true)}
+              className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+              <Icon name="Library" size={11} /> Каталог
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {mineBulkheads.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full px-3 gap-2 py-8">
+              <Icon name="Square" size={28} className="text-gray-300" />
+              <span className="text-[12px] text-gray-500 text-center">Справочник пуст</span>
+              <span className="text-[10px] text-gray-400 text-center">Добавьте из каталога АэроСети</span>
+              <button onClick={() => setShowCatalog(true)}
+                className="mt-1 px-3 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+                <Icon name="Library" size={11} /> Открыть каталог
+              </button>
+            </div>
+          ) : mineBulkheads.map(b => (
+            <div key={b.id}
+              onClick={() => { setSelectedId(b.id); setIsEditing(false); }}
+              className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
+              style={{ background: selectedId === b.id ? "#dbeafe" : undefined }}>
+              <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-0.5" style={{ background: b.color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-medium text-gray-900 truncate">{b.name}</div>
+                  <div className="text-[10px] text-gray-500">{BULKHEAD_TYPE_LABELS[b.type]}</div>
+                  <div className="text-[10px] text-gray-400">R = {rFmt(b.rMkyurg)}</div>
+                </div>
+              </div>
+              <button onClick={e => { e.stopPropagation(); deleteBulkhead(b.id); }}
+                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 ml-1 mt-0.5 flex-shrink-0">
+                <Icon name="Trash2" size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-1 px-2 py-1.5 border-t border-gray-200 flex-shrink-0" style={{ background: "#f0f0f0" }}>
+          <button onClick={() => setShowCatalog(true)}
+            className="flex-1 flex items-center justify-center gap-1 py-1 text-[11px] text-blue-600 hover:bg-blue-50 rounded border border-blue-300">
+            <Icon name="Plus" size={11} /> Из каталога
+          </button>
+          <button onClick={addCustom}
+            className="flex items-center justify-center gap-1 py-1 px-2 text-[11px] text-gray-600 hover:bg-gray-100 rounded border border-gray-300">
+            <Icon name="Edit3" size={11} /> Своя
+          </button>
+        </div>
+      </div>
+
+      {/* Правая панель */}
+      {selected ? (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Шапка */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+            <div className="w-5 h-5 rounded-sm border border-gray-300 flex-shrink-0" style={{ background: selected.color }} />
+            <span className="text-[13px] font-bold text-gray-900 truncate flex-1">
+              {isEditing ? (editForm.name || "Перемычка") : selected.name}
+            </span>
+            {!isEditing ? (
+              <>
+                <button onClick={() => startEdit(selected)}
+                  className="ml-auto h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-blue-50 text-gray-700 flex items-center gap-1">
+                  <Icon name="Edit2" size={11} /> Изменить
+                </button>
+                <button onClick={() => deleteBulkhead(selected.id)}
+                  className="h-6 px-2 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center gap-1">
+                  <Icon name="Trash2" size={11} /> Удалить
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={saveEdit}
+                  className="ml-auto h-6 px-3 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
+                  Сохранить
+                </button>
+                <button onClick={() => setIsEditing(false)}
+                  className="h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+                  Отмена
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {isEditing ? (
+              <>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Название</label>
+                  <input value={editForm.name ?? ""}
+                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Тип</label>
+                  <select value={editForm.type ?? "solid"}
+                    onChange={e => setEditForm(f => ({ ...f, type: e.target.value as BulkheadType }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white">
+                    {(Object.entries(BULKHEAD_TYPE_LABELS) as [BulkheadType, string][]).map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Воздухопроницаемость A, м²/(с·√Па)</label>
+                    <input type="number" min={0} step={0.0001} value={editForm.airPermeability ?? 0}
+                      onChange={e => {
+                        const A = parseFloat(e.target.value) || 0;
+                        setEditForm(f => ({ ...f, airPermeability: A, rMkyurg: airPermToR(A) }));
+                      }}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">R, Мюрг (авто)</label>
+                    <div className="px-2 py-1.5 bg-gray-50 rounded border border-gray-200 text-[13px] text-gray-700 font-medium">
+                      {rFmt(editForm.rMkyurg ?? 0)}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Давление разрушения, МПа</label>
+                    <input type="number" min={0} step={0.01} value={editForm.failurePressure ?? 0}
+                      onChange={e => setEditForm(f => ({ ...f, failurePressure: parseFloat(e.target.value) || 0 }))}
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Цвет</label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={editForm.color ?? "#546e7a"}
+                        onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))}
+                        className="w-10 h-8 border border-gray-300 rounded cursor-pointer" />
+                      <span className="text-[12px] text-gray-500">{editForm.color}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Примечание</label>
+                  <input value={editForm.note ?? ""}
+                    onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-0.5 rounded text-[11px] font-medium text-white"
+                    style={{ background: BULKHEAD_TYPE_COLORS[selected.type] }}>
+                    {BULKHEAD_TYPE_LABELS[selected.type]}
+                  </span>
+                  {selected.isCustom && (
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-gray-100 text-gray-600">Пользовательская</span>
+                  )}
+                </div>
+                {[
+                  ["Воздухопроницаемость", `${selected.airPermeability.toFixed(6)} м²/(с·√Па)`],
+                  ["Сопротивление R", rFmt(selected.rMkyurg)],
+                  ["Давление разрушения", selected.failurePressure > 0 ? `${selected.failurePressure} МПа` : "Не нормируется"],
+                  ["Примечание", selected.note || "—"],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-start gap-3 py-1.5 border-b border-gray-100">
+                    <span className="text-[12px] text-gray-500 w-44 flex-shrink-0">{label}</span>
+                    <span className="text-[13px] text-gray-900 font-medium">{value}</span>
+                  </div>
+                ))}
+                <div className="mt-3 p-3 rounded-lg text-[11px] text-blue-800" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+                  Чтобы применить перемычку к выработке — выберите ветвь на схеме и укажите перемычку в панели свойств ветви.
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
+          <Icon name="Square" size={32} className="text-gray-300" />
+          <span className="text-[13px]">Выберите перемычку из списка</span>
+          <span className="text-[11px]">или добавьте из каталога АэроСети</span>
+        </div>
+      )}
+
+      {/* Диалог каталога */}
+      {showCatalog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
+          <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 720, height: 540 }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
+              <Icon name="Library" size={14} className="text-blue-600" />
+              <span className="text-[13px] font-semibold text-gray-800">Каталог перемычек (АэроСеть)</span>
+              <button onClick={() => setShowCatalog(false)} className="ml-auto text-gray-400 hover:text-gray-700">
+                <Icon name="X" size={16} />
+              </button>
+            </div>
+            <div className="flex flex-1 overflow-hidden">
+              {/* Фильтры */}
+              <div className="flex flex-col border-r border-gray-200 flex-shrink-0 p-2 gap-1.5" style={{ width: 170 }}>
+                <span className="text-[10px] font-semibold text-gray-500 uppercase">Тип</span>
+                {([["all", "Все"], ...Object.entries(BULKHEAD_TYPE_LABELS)] as [string, string][]).map(([v, l]) => (
+                  <button key={v} onClick={() => setCatalogFilter(v as BulkheadType | "all")}
+                    className="text-left px-2 py-1 text-[11px] rounded"
+                    style={{
+                      background: catalogFilter === v ? "#2563eb" : "white",
+                      color: catalogFilter === v ? "white" : "#374151",
+                      border: `1px solid ${catalogFilter === v ? "#2563eb" : "#e5e7eb"}`,
+                    }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              {/* Список */}
+              <div className="flex flex-col flex-1 overflow-hidden">
+                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 flex-shrink-0">
+                  <Icon name="Search" size={12} className="text-gray-400" />
+                  <input value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)}
+                    placeholder="Поиск..." className="flex-1 text-[12px] py-0.5 outline-none text-gray-900 bg-transparent" />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {/* Шапка */}
+                  <div className="grid text-[10px] font-semibold text-gray-600 px-2 py-1 border-b border-gray-200 sticky top-0"
+                    style={{ background: "#e8eef8", gridTemplateColumns: "14px 1fr 110px 90px 80px" }}>
+                    <div />
+                    <div>Название</div>
+                    <div className="text-right">A, м²/(с·√Па)</div>
+                    <div className="text-right">R</div>
+                    <div className="text-right">P разр.</div>
+                  </div>
+                  {catalogList.map(item => {
+                    const already = mineBulkheads.some(b => b.id.includes(item.id));
+                    return (
+                      <div key={item.id}
+                        className="grid items-center gap-1 px-2 py-1.5 border-b border-gray-50 hover:bg-blue-50 cursor-pointer select-none"
+                        style={{ gridTemplateColumns: "14px 1fr 110px 90px 80px" }}
+                        onClick={() => !already && importFromCatalog(item)}>
+                        <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: item.color }} />
+                        <div>
+                          <div className="text-[11px] text-gray-900">{item.name}</div>
+                          <div className="text-[9px] text-gray-400">{BULKHEAD_TYPE_LABELS[item.type]}</div>
+                        </div>
+                        <div className="text-[10px] text-gray-600 text-right">{item.airPermeability.toFixed(6)}</div>
+                        <div className="text-[10px] text-gray-700 text-right font-medium">{rFmt(airPermToR(item.airPermeability))}</div>
+                        <div className="text-right">
+                          {already ? (
+                            <span className="text-[9px] text-green-600 font-medium">✓ добавлена</span>
+                          ) : item.failurePressure > 0 ? (
+                            <span className="text-[10px] text-gray-500">{item.failurePressure} МПа</span>
+                          ) : (
+                            <span className="text-[10px] text-gray-300">—</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {catalogList.length === 0 && (
+                    <div className="flex items-center justify-center h-24 text-[12px] text-gray-400">Не найдено</div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+              <span className="text-[11px] text-gray-500 flex-1">Нажмите на строку для добавления в справочник рудника</span>
+              <button onClick={() => setShowCatalog(false)}
+                className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 const DEMO_SENSORS = [
   { name: "МС-1М", measure: "CH₄", range: "0–4%", cls: "1A", note: "" },
   { name: "МТ-5", measure: "CO", range: "0–100 ppm", cls: "1A", note: "" },
@@ -1055,12 +1425,14 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
-function TabContent({ tab, onMineFansChange }: { tab: TabId; onMineFansChange?: (fans: MineFanExport[]) => void }) {
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange }: {
+  tab: TabId;
+  onMineFansChange?: (fans: MineFanExport[]) => void;
+  onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
+}) {
   if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} />;
   if (tab === "types") return <TypesSection />;
-  if (tab === "bulkheads") return <SimpleTable
-    headers={["Название", "Тип", "R, кМюрг", "Примечание"]}
-    rows={DEMO_BULKHEADS.map(r => [r.name, r.type, r.r, r.note])} />;
+  if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} />;
   if (tab === "sensors") return <SimpleTable
     headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]}
     rows={DEMO_SENSORS.map(r => [r.name, r.measure, r.range, r.cls, r.note])} />;
@@ -1079,7 +1451,7 @@ function TabContent({ tab, onMineFansChange }: { tab: TabId; onMineFansChange?: 
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1140,7 +1512,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик

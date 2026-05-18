@@ -83,7 +83,13 @@ export interface TopoBranch {
   isDead: boolean;          // тупиковая ветвь (Q=0, проветривание диффузией)
   isLeakage: boolean;       // утечка: ветвь моделирует перетечку через перемычку/целик
   leakageCoeff: number;     // коэффициент утечки 0..1 (доля от Q вентилятора), 0 = не задан
-  power: number;            // Вт
+  // ─── Перемычка ──────────────────────────────────────
+  hasBulkhead: boolean;         // ветвь содержит перемычку
+  bulkheadId: string;           // ID из справочника рудника (MineBulkheadExport.id)
+  bulkheadName: string;         // название перемычки (для отображения)
+  bulkheadR: number;            // сопротивление перемычки, Мюрг (добавляется к resistance ветви)
+  bulkheadAirPerm: number;      // воздухопроницаемость, м²/(с·√Па)
+  power: number;                // Вт
   reynolds: number;         // Re
   // ─── Отображение ────────────────────────────────────
   lineWidth: number;        // px — толщина линии на схеме (по умолчанию 2)
@@ -215,6 +221,11 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     isDead: false,
     isLeakage: false,
     leakageCoeff: 0,
+    hasBulkhead: false,
+    bulkheadId: "",
+    bulkheadName: "",
+    bulkheadR: 0,
+    bulkheadAirPerm: 0,
     lineWidth: 3,
     lineBorder: 0.6,
     capital: false,
