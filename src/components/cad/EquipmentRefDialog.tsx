@@ -347,24 +347,8 @@ const SURFACE_OPTIONS = [
   "Ствол со скиповым подъёмом",
 ];
 
-const DEFAULT_BRANCH_TYPES: BranchType[] = [
-  { id: "t1",  name: "Вент. канал",                color: "#00bcd4", shape: "round", surface: "ГИ, Жесткий металлический",   area:  1.32, vMax: 15, alphaCoef: 9  },
-  { id: "t2",  name: "Вентиляционная выработка",   color: "#1565c0", shape: "arch",  surface: "БШПУ, Буровзрывная проходка", area: 15.2,  vMax: 15, alphaCoef: 30 },
-  { id: "t3",  name: "Вентиляционный трубопровод", color: "#1976d2", shape: "round", surface: "ГИ, Жесткий металлический",   area:  0.5,  vMax: 15, alphaCoef: 8  },
-  { id: "t4",  name: "ВХВ",                        color: "#0288d1", shape: "rect",  surface: "ГИ, Буровзрывная проходка",   area:  4.0,  vMax: 15, alphaCoef: 25 },
-  { id: "t5",  name: "Выработка насосной",          color: "#388e3c", shape: "arch",  surface: "ГИ, Буровзрывная проходка",   area: 15.2,  vMax:  6, alphaCoef: 28 },
-  { id: "t6",  name: "Горно-капитальная выработка", color: "#f9a825", shape: "arch",  surface: "БШПУ, Буровзрывная проходка", area: 18.2,  vMax: 10, alphaCoef: 35 },
-  { id: "t7",  name: "Наклонный съезд",             color: "#c62828", shape: "arch",  surface: "БШПУ, Буровзрывная проходка", area: 21.5,  vMax:  8, alphaCoef: 40 },
-  { id: "t8",  name: "Нарезная выработка",          color: "#43a047", shape: "arch",  surface: "БШПУ, Буровзрывная проходка", area: 15.2,  vMax:  8, alphaCoef: 40 },
-  { id: "t9",  name: "Основной восстающий",         color: "#1565c0", shape: "rect",  surface: "ГИ, Буровзрывная проходка",   area:  8.0,  vMax: 15, alphaCoef: 30 },
-  { id: "t10", name: "Подготовительная выработка",  color: "#616161", shape: "arch",  surface: "БШПУ, Буровзрывная проходка", area: 17.2,  vMax:  4, alphaCoef: 35 },
-  { id: "t11", name: "Рудоспуск",                   color: "#1565c0", shape: "rect",  surface: "ГИ, Буровзрывная проходка",   area:  5.0,  vMax: 15, alphaCoef: 20 },
-  { id: "t12", name: "Склад ВМ",                    color: "#c62828", shape: "arch",  surface: "ГИ, Буровзрывная проходка",   area: 10.3,  vMax:  6, alphaCoef: 28 },
-  { id: "t13", name: "Ствол ЮВС",                   color: "#22c55e", shape: "round", surface: "Ствол с тюбинговой крепью",   area: 38.5,  vMax: 15, alphaCoef: 15 },
-  { id: "t14", name: "Ствол СВС",                   color: "#3b82f6", shape: "round", surface: "Ствол со скиповым подъёмом",  area: 38.5,  vMax: 15, alphaCoef: 45 },
-  { id: "t15", name: "Квершлаг",                    color: "#a855f7", shape: "arch",  surface: "Бетонная крепь гладкая",      area: 12.0,  vMax:  8, alphaCoef: 12 },
-  { id: "t16", name: "Штрек",                       color: "#f97316", shape: "arch",  surface: "Металлическая арочная крепь", area: 10.5,  vMax:  6, alphaCoef: 50 },
-];
+// Справочник пустой — пользователь заполняет сам для своего рудника
+const DEFAULT_BRANCH_TYPES: BranchType[] = [];
 
 const EMPTY_TYPE: Omit<BranchType, "id"> = {
   name: "", color: "#3b82f6", shape: "arch", surface: SURFACE_OPTIONS[0], area: 10, vMax: 8, alphaCoef: 30,
@@ -422,6 +406,13 @@ function TypesSection() {
 
         {/* Строки */}
         <div className="flex-1 overflow-y-auto">
+          {types.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400 py-12">
+              <Icon name="Layers" size={32} className="text-gray-300" />
+              <span className="text-[13px] font-medium">Справочник пуст</span>
+              <span className="text-[11px] text-center px-4">Добавьте типы выработок вашего рудника ниже — задайте название, сечение, площадь и параметры.</span>
+            </div>
+          )}
           {types.map((t, i) => {
             const isSelected = t.id === selectedId;
             const isEditing = t.id === editingId;
@@ -448,7 +439,7 @@ function TypesSection() {
                     value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
                     onBlur={saveEdit} onKeyDown={e => e.key === "Enter" && saveEdit()} />
                 ) : (
-                  <span className="px-2 text-[11px] truncate">{t.name}</span>
+                  <span className="px-2 text-[11px] text-gray-900 truncate font-medium">{t.name}</span>
                 )}
 
                 {/* Цвет */}
@@ -471,7 +462,7 @@ function TypesSection() {
                     {Object.entries(SHAPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
                 ) : (
-                  <span className="px-1 text-[11px] text-gray-600">{SHAPE_LABELS[t.shape]}</span>
+                  <span className="px-1 text-[11px] text-gray-900">{SHAPE_LABELS[t.shape]}</span>
                 )}
 
                 {/* S м² */}
@@ -480,7 +471,7 @@ function TypesSection() {
                     className="text-[11px] px-1 border border-blue-400 rounded w-full text-right"
                     value={editForm.area} onChange={e => setEditForm(f => ({ ...f, area: parseFloat(e.target.value) || 0 }))} />
                 ) : (
-                  <span className="px-1 text-[11px] text-right">{t.area}</span>
+                  <span className="px-1 text-[11px] text-gray-900 text-right">{t.area}</span>
                 )}
 
                 {/* Vmax */}
@@ -489,7 +480,7 @@ function TypesSection() {
                     className="text-[11px] px-1 border border-blue-400 rounded w-full text-right"
                     value={editForm.vMax} onChange={e => setEditForm(f => ({ ...f, vMax: parseFloat(e.target.value) || 0 }))} />
                 ) : (
-                  <span className="px-1 text-[11px] text-right">{t.vMax}</span>
+                  <span className="px-1 text-[11px] text-gray-900 text-right">{t.vMax}</span>
                 )}
 
                 {/* alpha */}
@@ -498,7 +489,7 @@ function TypesSection() {
                     className="text-[11px] px-1 border border-blue-400 rounded w-full text-right"
                     value={editForm.alphaCoef} onChange={e => setEditForm(f => ({ ...f, alphaCoef: parseFloat(e.target.value) || 0 }))} />
                 ) : (
-                  <span className="px-1 text-[11px] text-right">{t.alphaCoef}</span>
+                  <span className="px-1 text-[11px] text-gray-900 text-right">{t.alphaCoef}</span>
                 )}
               </div>
             );
