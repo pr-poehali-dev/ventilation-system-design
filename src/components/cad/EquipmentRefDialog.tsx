@@ -1079,7 +1079,7 @@ function TabContent({ tab, onMineFansChange }: { tab: TabId; onMineFansChange?: 
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
