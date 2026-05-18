@@ -5,39 +5,54 @@ import Icon from "@/components/ui/icon";
 interface Props { onClose: () => void; }
 interface LegendItem { id: string; name: string; svg: React.ReactNode; group: string; }
 
-// ─── Helper: один вертикальный блок поперёк ветви ─────────────────────────
+// ─── Helper: перемычка в справочнике УО ───────────────────────────────────
+// viewBox 0 0 48 40, ось ветви — горизонтальная y=20, перемычка поперёк по x≈24
+// Прямоугольник: вертикальный (x=20..28, y=4..36)
 function Bk({ fill = "white", stroke = "#222", door = false, auto = false, water = false, window_ = false, lattice = false, open_ = false }: {
   fill?: string; stroke?: string; door?: boolean; auto?: boolean; water?: boolean; window_?: boolean; lattice?: boolean; open_?: boolean;
 }) {
   return (
     <svg width={48} height={40} viewBox="0 0 48 40">
-      {open_ ? (
-        <>
-          <rect x={19} y={4} width={10} height={13} fill={fill} stroke={stroke} strokeWidth={1.5} />
-          <rect x={19} y={23} width={10} height={13} fill={fill} stroke={stroke} strokeWidth={1.5} />
-          <path d="M19,17 L10,20 L19,23Z" fill="none" stroke={stroke} strokeWidth={1.2} />
-        </>
-      ) : door ? (
-        <>
-          <rect x={19} y={4} width={10} height={13} fill={fill} stroke={stroke} strokeWidth={1.5} />
-          <rect x={19} y={23} width={10} height={13} fill={fill} stroke={stroke} strokeWidth={1.5} />
-        </>
-      ) : (
-        <rect x={19} y={4} width={10} height={32} fill={fill} stroke={stroke} strokeWidth={1.5} />
+      {/* Основной прямоугольник (вертикальный, поперёк ветви) */}
+      <rect x={20} y={4} width={8} height={32} fill={fill} stroke={stroke} strokeWidth={1.5} />
+
+      {/* Закрытая дверь: жирная линия вдоль левого края */}
+      {(door || auto) && !open_ && (
+        <line x1={20} y1={4} x2={20} y2={36} stroke={stroke} strokeWidth={3} strokeLinecap="round" />
       )}
-      {auto && <>
-        <circle cx={37} cy={20} r={8} fill="white" stroke={stroke} strokeWidth={1.2} />
-        <text x={37} y={24} textAnchor="middle" fontSize={9} fontWeight="bold" fill={stroke}>А</text>
-      </>}
-      {water && <text x={24} y={23} textAnchor="middle" fontSize={9} fontWeight="bold" fill={fill === "white" ? "#1565c0" : "#fff"}>D</text>}
-      {window_ && <rect x={20} y={15} width={8} height={10} fill="white" stroke={stroke} strokeWidth={1} />}
+
+      {/* Открытая дверь: треугольная створка слева */}
+      {open_ && (
+        <path d="M20,13 L10,20 L20,27Z" fill="none" stroke={stroke} strokeWidth={1.5} />
+      )}
+
+      {/* Кружок «А» — автоматическая */}
+      {auto && (
+        <>
+          <circle cx={37} cy={20} r={7} fill="white" stroke={stroke} strokeWidth={1.2} />
+          <text x={37} y={24} textAnchor="middle" fontSize={9} fontWeight="bold" fill={stroke}>А</text>
+        </>
+      )}
+
+      {/* Буква D — водоподпорная */}
+      {water && (
+        <text x={24} y={24} textAnchor="middle" fontSize={10} fontWeight="bold"
+          fill={fill === "white" ? "#1565c0" : "#fff"}>D</text>
+      )}
+
+      {/* Окно / проём */}
+      {window_ && (
+        <rect x={21} y={14} width={6} height={12} fill="white" stroke={stroke} strokeWidth={1} />
+      )}
+
+      {/* Решётка */}
       {lattice && <>
-        <line x1={21} y1={6} x2={21} y2={34} stroke={stroke} strokeWidth={0.9} />
-        <line x1={24} y1={6} x2={24} y2={34} stroke={stroke} strokeWidth={0.9} />
-        <line x1={27} y1={6} x2={27} y2={34} stroke={stroke} strokeWidth={0.9} />
-        <line x1={19} y1={13} x2={29} y2={13} stroke={stroke} strokeWidth={0.9} />
-        <line x1={19} y1={20} x2={29} y2={20} stroke={stroke} strokeWidth={0.9} />
-        <line x1={19} y1={27} x2={29} y2={27} stroke={stroke} strokeWidth={0.9} />
+        <line x1={22} y1={6} x2={22} y2={34} stroke={stroke} strokeWidth={0.9} />
+        <line x1={25} y1={6} x2={25} y2={34} stroke={stroke} strokeWidth={0.9} />
+        <line x1={28} y1={6} x2={28} y2={34} stroke={stroke} strokeWidth={0.9} />
+        <line x1={20} y1={13} x2={28} y2={13} stroke={stroke} strokeWidth={0.9} />
+        <line x1={20} y1={20} x2={28} y2={20} stroke={stroke} strokeWidth={0.9} />
+        <line x1={20} y1={27} x2={28} y2={27} stroke={stroke} strokeWidth={0.9} />
       </>}
     </svg>
   );
@@ -175,11 +190,11 @@ const ITEMS: LegendItem[] = [
   { id: "lat_wood",    group: "Перемычки с вент. окном", name: "Дверь вентиляционная решётчатая деревянная",svg: <Bk fill="#ffd600" stroke="#f57f17" lattice /> },
   { id: "lat_brick",   group: "Перемычки с вент. окном", name: "Дверь вентиляционная решётчатая кирпичная", svg: <Bk fill="#ff9800" stroke="#e65100" lattice /> },
   { id: "lat_metal",   group: "Перемычки с вент. окном", name: "Дверь вентиляционная решётчатая металлическая", svg: <Bk fill="#9c27b0" stroke="#6a1b9a" lattice /> },
-  { id: "proem_base",  group: "Перемычки с вент. окном", name: "Перемычка с проёмом",           svg: <Bk /> },
-  { id: "proem_conc",  group: "Перемычки с вент. окном", name: "Перемычка с проёмом бетонная",  svg: <Bk fill="#4caf50" stroke="#2e7d32" /> },
-  { id: "proem_wood",  group: "Перемычки с вент. окном", name: "Перемычка с проёмом деревянная",svg: <Bk fill="#ffd600" stroke="#f57f17" /> },
-  { id: "proem_brick", group: "Перемычки с вент. окном", name: "Перемычка с проёмом кирпичная", svg: <Bk fill="#ff9800" stroke="#e65100" /> },
-  { id: "proem_metal", group: "Перемычки с вент. окном", name: "Перемычка с проёмом металлическая", svg: <Bk fill="#9c27b0" stroke="#6a1b9a" /> },
+  { id: "proem_base",  group: "Перемычки с вент. окном", name: "Перемычка с проёмом",           svg: <Bk window_ /> },
+  { id: "proem_conc",  group: "Перемычки с вент. окном", name: "Перемычка с проёмом бетонная",  svg: <Bk fill="#4caf50" stroke="#2e7d32" window_ /> },
+  { id: "proem_wood",  group: "Перемычки с вент. окном", name: "Перемычка с проёмом деревянная",svg: <Bk fill="#ffd600" stroke="#f57f17" window_ /> },
+  { id: "proem_brick", group: "Перемычки с вент. окном", name: "Перемычка с проёмом кирпичная", svg: <Bk fill="#ff9800" stroke="#e65100" window_ /> },
+  { id: "proem_metal", group: "Перемычки с вент. окном", name: "Перемычка с проёмом металлическая", svg: <Bk fill="#9c27b0" stroke="#6a1b9a" window_ /> },
   {
     id: "barrier", group: "Перемычки с вент. окном", name: "Перемычка барьерная",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
