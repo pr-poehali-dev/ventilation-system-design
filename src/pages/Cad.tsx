@@ -488,6 +488,7 @@ export default function CadPage() {
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
 
   const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
+  const [showUOPanel, setShowUOPanel] = useState(false);
   // ID ветви, для которой открыли панель через клик на fan-символ
   const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
   // Диалог ввода числа людей при размещении отделения
@@ -1603,9 +1604,9 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
-        {/* ── Условные обозначения: группы символов в стиле АэроСети ── */}
+        {/* ── УО: компактная кнопка + выпадающая панель ── */}
         {(() => {
-          // Группируем все символы по subgroup (или group для тех, у кого нет subgroup)
+          // Группируем символы по subgroup/group
           const symGroups: { label: string; items: typeof LEGEND_TYPES }[] = [];
           const seen = new Map<string, typeof LEGEND_TYPES[0][]>();
           LEGEND_TYPES.forEach(lt => {
@@ -1616,60 +1617,119 @@ export default function CadPage() {
           seen.forEach((items, label) => symGroups.push({ label, items }));
 
           const activeLt = LEGEND_TYPES.find(l => l.id === activeSymbolTypeId);
+          const hasActive = tool === "symbol" && !!activeLt;
 
           return (
-            <>
-              {symGroups.map(({ label, items }) => {
-                // Вычисляем ширину секции: 2 строки → ceil(n/2) колонок × 28px
-                const cols = Math.ceil(items.length / 2);
-                const sectionW = cols * 28 + 8;
-                return (
-                <div key={label} className="flex flex-col h-full flex-shrink-0"
-                  style={{ width: sectionW, borderRight: "1px solid #d0d0d0" }}>
-                  {/* Символы — сетка 2 ряда × N колонок */}
-                  <div className="flex-1 px-1 pt-1"
-                    style={{ display: "grid", gridTemplateRows: "repeat(2, 26px)", gridAutoFlow: "column", gridAutoColumns: 26, gap: 2, alignContent: "start" }}>
-                    {items.map(lt => {
-                      const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
-                      return (
-                        <button key={lt.id}
-                          title={lt.name}
-                          onClick={() => handlePickSymbol(lt.id)}
-                          style={{
-                            width: 26, height: 26,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            borderRadius: 3,
-                            border: isActive ? "1.5px solid #2563eb" : "1px solid #c8c8c8",
-                            background: isActive ? "#dbeafe" : "white",
-                            padding: 0,
-                            cursor: "pointer",
-                            flexShrink: 0,
-                          }}>
-                          <svg width={20} height={17} viewBox="0 0 48 40">
-                            <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                          </svg>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Заголовок группы снизу */}
-                  <div className="text-[8px] text-center text-gray-500 px-0.5 pb-0.5 pt-0.5 leading-tight truncate"
-                    style={{ borderTop: "1px solid #d4d4d4" }}>
-                    {label}
-                  </div>
+            <div className="relative flex-shrink-0 h-full" style={{ borderRight: "1px solid #d0d0d0" }}>
+              {/* ── Кнопка-триггер ── */}
+              <div className="flex flex-col h-full">
+                <div className="flex-1 flex items-center gap-1 px-1.5 pt-1">
+                  <button
+                    onClick={() => setShowUOPanel(v => !v)}
+                    title="Условные обозначения — выбрать символ для размещения на схеме"
+                    style={{
+                      width: 50, height: 50,
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                      borderRadius: 4,
+                      border: showUOPanel ? "1.5px solid #2563eb" : hasActive ? "1.5px solid #3b82f6" : "1px solid #c8c8c8",
+                      background: showUOPanel ? "#dbeafe" : hasActive ? "#eff6ff" : "white",
+                      cursor: "pointer", padding: 0, flexShrink: 0,
+                    }}>
+                    {hasActive ? (
+                      <svg width={32} height={26} viewBox="0 0 48 40">
+                        <g dangerouslySetInnerHTML={{ __html: activeLt!.svgContent }} />
+                      </svg>
+                    ) : (
+                      <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5" strokeLinecap="round">
+                        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                      </svg>
+                    )}
+                    <svg width={8} height={5} viewBox="0 0 8 5">
+                      <path d={showUOPanel ? "M0,4 L4,0 L8,4" : "M0,0 L4,4 L8,0"} fill="none" stroke="#888" strokeWidth="1.3"/>
+                    </svg>
+                  </button>
+
+                  {/* Подсказка активного символа */}
+                  {hasActive && (
+                    <div className="flex flex-col justify-center" style={{ maxWidth: 90 }}>
+                      <div className="text-[8px] text-blue-700 font-semibold leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {activeLt!.name}
+                      </div>
+                      <div className="text-[7px] text-blue-400 mt-0.5">↓ кликни на ветвь</div>
+                      <button className="text-[8px] text-gray-400 hover:text-red-500 text-left mt-0.5 leading-none"
+                        onClick={(e) => { e.stopPropagation(); setTool("select"); setActiveSymbolTypeId(null); setShowUOPanel(false); }}>
+                        ✕ отмена
+                      </button>
+                    </div>
+                  )}
                 </div>
-                );
-              })}
-              {/* Статус активного символа — плавающая подсказка */}
-              {tool === "symbol" && activeLt && (
-                <div className="flex flex-col justify-center px-1.5 flex-shrink-0">
-                  <div className="text-[9px] text-blue-700 font-semibold leading-tight max-w-[90px]">▶ {activeLt.name}</div>
-                  <div className="text-[8px] text-blue-500 leading-tight">Кликни на ветвь</div>
-                  <button className="mt-1 text-[8px] text-gray-400 hover:text-red-500 text-left"
-                    onClick={() => { setTool("select"); setActiveSymbolTypeId(null); }}>✕ отмена</button>
+                <div className="text-[8px] text-center text-gray-500 px-1 pb-0.5 pt-0.5 leading-tight"
+                  style={{ borderTop: "1px solid #d4d4d4" }}>
+                  Усл. обозначения
                 </div>
+              </div>
+
+              {/* ── Выпадающая панель ── */}
+              {showUOPanel && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowUOPanel(false)} />
+                  <div className="absolute left-0 top-full z-50"
+                    style={{
+                      background: "white",
+                      border: "1px solid #b8c8d8",
+                      boxShadow: "0 8px 32px rgba(0,0,0,0.20)",
+                      borderRadius: 6,
+                      width: 560,
+                      maxHeight: "72vh",
+                      overflowY: "auto",
+                    }}>
+                    {/* Шапка */}
+                    <div className="flex items-center justify-between px-3 py-1.5 sticky top-0 z-10"
+                      style={{ background: "linear-gradient(180deg,#e8eef8,#dde7f4)", borderBottom: "1px solid #c8d4e8" }}>
+                      <span className="text-[11px] font-semibold text-gray-700">Условные обозначения</span>
+                      <button onClick={() => setShowUOPanel(false)}
+                        className="text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center text-[14px] leading-none rounded hover:bg-gray-200">×</button>
+                    </div>
+                    {/* Контент — группы */}
+                    <div className="p-2 flex flex-col gap-2">
+                      {symGroups.map(({ label, items }) => (
+                        <div key={label}>
+                          <div className="text-[8.5px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-0.5 mb-1"
+                            style={{ borderBottom: "1px solid #eaeaea", color: "#6b7280" }}>
+                            {label}
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 3, paddingLeft: 2 }}>
+                            {items.map(lt => {
+                              const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
+                              return (
+                                <button key={lt.id} title={lt.name}
+                                  onClick={() => { handlePickSymbol(lt.id); setShowUOPanel(false); }}
+                                  style={{
+                                    width: 32, height: 32,
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    borderRadius: 4,
+                                    border: isActive ? "2px solid #2563eb" : "1px solid #d8e0ec",
+                                    background: isActive ? "#dbeafe" : "#f8faff",
+                                    cursor: "pointer", padding: 0, flexShrink: 0,
+                                    transition: "border-color .12s, background .12s",
+                                  }}
+                                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "#e8f0fe"; }}
+                                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "#f8faff"; }}>
+                                  <svg width={24} height={20} viewBox="0 0 48 40">
+                                    <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                                  </svg>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
-            </>
+            </div>
           );
         })()}
 
