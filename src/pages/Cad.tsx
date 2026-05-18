@@ -2091,7 +2091,7 @@ export default function CadPage() {
                 { id: "thermo", label: "Теплофизика" },
                 { id: "accidents", label: "Аварии" },
                 { id: "areas", label: "Участки" },
-                { id: "waterpipes", label: "Трубы: вода" },
+                { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "coords", label: "Координаты" },
               ] as { id: SideTab; label: string }[])
