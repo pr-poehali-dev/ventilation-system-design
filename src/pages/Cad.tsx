@@ -3106,18 +3106,18 @@ export default function CadPage() {
               }}
             />
 
-            {/* ── Кнопка-ручка для открытия/закрытия правой панели ── */}
-            <button onClick={() => setRightPanelOpen((v) => !v)}
-              className="absolute top-2 right-2 z-10 h-7 px-2 flex items-center gap-1 rounded text-[11px] shadow-sm"
-              style={{ background: rightPanelOpen ? "#2563eb" : "#ffffff", color: rightPanelOpen ? "white" : "#1f1f1f", border: "1px solid #b8b8b8" }}
-              title={rightPanelOpen ? "Скрыть панель свойств" : "Показать панель свойств"}>
-              <Icon name={rightPanelOpen ? "PanelRightClose" : "PanelRightOpen"} size={13} />
-              <span>{rightPanelOpen ? "Свернуть" : "Свойства"}</span>
-            </button>
           </div>
         </div>
 
         {/* ── ПРАВАЯ ПАНЕЛЬ — «Панель информации» ─────────────── */}
+        {!rightPanelOpen && (
+          <button onClick={() => setRightPanelOpen(true)}
+            className="flex-shrink-0 flex items-center justify-center w-6 h-full border-l"
+            style={{ background: "#f5f5f5", borderColor: "#b8b8b8", color: "#374151", cursor: "pointer" }}
+            title="Показать панель свойств">
+            <Icon name="PanelRightOpen" size={14} />
+          </button>
+        )}
         {rightPanelOpen && (
           <div className="w-[280px] flex-shrink-0 flex flex-col"
             style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
@@ -3125,7 +3125,14 @@ export default function CadPage() {
             <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
               style={{ background: "#f5f5f5", fontSize: 11, fontWeight: 600 }}>
               <Icon name="LayoutList" size={12} />
-              Панель информации
+              <span className="flex-1">Панель информации</span>
+              <button onClick={() => setRightPanelOpen(false)}
+                className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
+                style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                title="Скрыть панель свойств">
+                <Icon name="PanelRightClose" size={12} />
+                Свернуть
+              </button>
             </div>
 
             <div className="flex-1 flex flex-col overflow-hidden">
