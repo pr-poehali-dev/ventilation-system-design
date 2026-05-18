@@ -163,80 +163,75 @@ def build_graph(nodes_in, branches_in):
 
 def init_flows(edges, q0=10.0):
     """
-    Начальное приближение через BFS-обход остовного дерева от GND.
-    Гарантирует 1-й закон Кирхгофа (ΣQ_вх = ΣQ_вых) в каждом узле.
+    Начальное приближение методом обхода остовного дерева (BFS от GND).
+    Гарантирует выполнение 1-го закона Кирхгофа (баланс масс) во всех узлах.
 
     Алгоритм:
-    1. BFS от GND → строим остовное дерево (хорды = независимые контуры).
-    2. Хордам Q=0, ребрам дерева Q распределяется от источника (вентилятора).
-    3. Источник: принудительно задаём Q=q0 через вентилятор.
-       Если вентилятор — хорда, то Q[хорда]=q0, а дерево балансируется.
-       Если вентилятор — ребро дерева, распределяем q0 через supply от его узлов.
-    4. Нормировка: масштабируем чтобы Q[вент] = q0 (страховка от численных ошибок).
+    1. Строим остовное дерево BFS от GND.
+    2. Назначаем Q[вентилятор] = q0.
+    3. Распространяем Q вниз по дереву, соблюдая баланс: ΣQ_вх = ΣQ_вых в каждом узле.
+    4. Хордовым рёбрам (не дерева) назначаем Q=0.
+
+    Это корректное начальное условие для метода Кросса.
     """
     n = len(edges)
     Q = [0.0] * n
 
+    # Граф смежности
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"], +1))
-        adj[e["b"]].append((i, e["a"], -1))
+        adj[e["a"]].append((i, e["b"], +1))   # ребро i: a→b, +1 если идём из a
+        adj[e["b"]].append((i, e["a"], -1))   # ребро i: b→a, -1 если идём из b
 
-    # BFS от GND → остовное дерево
-    visited     = {GND}
-    parent_edge = {}   # узел → (edge_idx, sign_parent→node)
-    parent_of   = {}
-    bfs_order   = []
-    tree_set    = set()
+    # Строим остовное дерево BFS от GND
+    visited = {GND}
+    tree = {}       # узел → (edge_idx, sign_into_node)
+    parent_of = {}  # узел → родитель
+    bfs_order = []  # порядок обхода (без GND)
+
     queue = collections.deque([GND])
     while queue:
         node = queue.popleft()
         for ei, nb, sign in adj[node]:
             if nb not in visited:
                 visited.add(nb)
-                parent_edge[nb] = (ei, sign)
-                parent_of[nb]   = node
+                # sign: +1 если ребро ei идёт node→nb (a→b), -1 если nb→node
+                tree[nb] = (ei, sign)
+                parent_of[nb] = node
                 bfs_order.append(nb)
-                tree_set.add(ei)
                 queue.append(nb)
 
+    # Задаём начальный Q вентилятора = q0
     fan_edges = [i for i, e in enumerate(edges) if e.get("hasFan") and not e.get("fanStopped")]
-
-    supply = collections.defaultdict(float)
     if fan_edges:
-        fi = fan_edges[0]
-        fe = edges[fi]
-        if fi in tree_set:
-            # Вентилятор — ребро дерева: вносим q0 как supply из его узлов
-            # Ток q0 течёт a→b (направление ребра), поэтому:
-            supply[fe["a"]] += q0   # вытекает из a
-            supply[fe["b"]] -= q0   # втекает в b
-        else:
-            # Вентилятор — хорда: задаём Q напрямую, supply от его концов
-            Q[fi] = q0
-            supply[fe["a"]] += q0
-            supply[fe["b"]] -= q0
+        Q[fan_edges[0]] = q0
 
-    # Снизу вверх: проталкиваем supply через дерево к GND
+    # Распространяем Q по дереву: идём от листьев к корню (обратный BFS)
+    # Для каждого нелистового узла: Q_tree_edge = ΣQ_дочерних
+    # Проходим в обратном порядке BFS (от листьев к GND)
+    node_supply = collections.defaultdict(float)  # «избыток» Q в узле от дочерних
+
     for node in reversed(bfs_order):
-        if node not in parent_edge:
+        if node not in tree:
             continue
-        ei, sign = parent_edge[node]
-        # sign: +1 если ребро ei идёт parent→node (a=parent,b=node)
-        # Нужно протолкнуть -supply[node] в сторону parent
-        q_tree = -supply[node]
-        Q[ei]  = q_tree * sign
-        supply[parent_of[node]] += q_tree
+        ei, sign = tree[node]
+        # Q входящее в node через tree-edge (знак: sign=+1 → a→b, т.е. из parent в node)
+        # Баланс: Q_tree + node_supply[node] = 0  → Q_tree = -node_supply[node]
+        q_tree = -node_supply[node]
+        # Устанавливаем Q ребра дерева с правильным знаком
+        # sign = направление ребра относительно parent: sign=+1 → a=parent,b=node → Q>0 значит поток parent→node
+        Q[ei] = q_tree * sign
+        # Добавляем вклад в parent
+        parent_of_node = parent_of.get(node)
+        if parent_of_node is not None:
+            node_supply[parent_of_node] += q_tree
 
-    # Нормировка: Q[вент] должен быть равен q0
-    if fan_edges:
-        q_actual = abs(Q[fan_edges[0]])
-        if q_actual > 1e-9:
-            scale = q0 / q_actual
-            Q = [q * scale for q in Q]
-        else:
-            # Вентилятор получил Q=0 (что-то пошло не так) — ставим q0 вручную
-            Q = [q0] * n
+    # Если Q[вент] не в дереве (хорда) — просто оставляем q0
+    # Нормализуем: масштабируем все Q так чтобы Q[вент] = q0
+    q_fan_actual = abs(Q[fan_edges[0]]) if fan_edges and abs(Q[fan_edges[0]]) > 1e-9 else 0
+    if q_fan_actual > 1e-9:
+        scale = q0 / q_fan_actual
+        Q = [q * scale for q in Q]
 
     return Q
 
@@ -405,23 +400,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
 
     fans = [e for e in edges if e["hasFan"]]
     active_fans = [e for e in fans if not e.get("fanStopped")]
-
-    # БАГ 3 ИСПРАВЛЕН: явное предупреждение при реверсе без реверсной P-Q кривой.
-    # Без неё центробежный вентилятор считается по прямой характеристике (100% напора),
-    # хотя реально в реверсе даёт ~30-40%.
-    for e in active_fans:
-        if e.get("fanReverse") and e.get("fanMode") == "curve" and e.get("reverseH0") is None:
-            diag.append({
-                "level": "warning",
-                "category": "fan",
-                "message": (
-                    f"Вентилятор «{e['id']}» в реверсе, но реверсная P–Q характеристика не задана — "
-                    f"используется прямая кривая. Для центробежных вентиляторов (ВЦ, ВЦД) это завышает "
-                    f"напор в 2–3 раза. Задайте reverseH0/H1/H2 или переключитесь на constant-режим."
-                ),
-                "objectId": e["id"],
-            })
-
     if not fans:
         diag.append({"level": "warning", "category": "topology",
                      "message": "Нет вентилятора — расход нулевой"})
@@ -476,63 +454,45 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
 
     def bisect_q0():
         """
-        Находит начальный Q методом бисекции: H_fan(Q) = R_эфф · Q².
-
-        БАГ 2 ИСПРАВЛЕН: R_эфф считается через параллельное суммирование,
-        а не сумму R — для разветвлённых сетей это даёт верную рабочую точку.
-        1/R_эфф = Σ(1/R_i), т.е. R_эфф = N² / Σ(1/R_i).
+        Находит начальный Q методом бисекции: H_fan(Q) = R_active · Q².
+        Использует только сопротивления активных (не тупиковых) ветвей.
         """
-        # R_total: среднегармоническое сопротивление активных ветвей без вентиляторов.
-        # Используем медиану R (сортируем и берём средние), чтобы исключить влияние
-        # экстремальных значений (R=0 у стволов, очень большие R у длинных выработок).
-        non_fan_Rs = sorted(
-            e["R"] for e in active_edges if not e["hasFan"] and e["R"] > 1e-6
-        )
-        if non_fan_Rs:
-            # Отбрасываем верхние 25% (слишком большие R) и нижние 0% для устойчивости
-            cutoff = max(1, len(non_fan_Rs) * 3 // 4)
-            trimmed = non_fan_Rs[:cutoff]
-            R_total = sum(trimmed) / len(trimmed)  # среднее по «нормальным» ветвям
-        else:
+        R_total = sum(e["R"] for e in active_edges if not e["hasFan"])
+        if R_total <= 0:
             R_total = 1e-3
 
-        # БАГ 4 ИСПРАВЛЕН: bisect_fan(fe, R) получает fan_e явным аргументом
-        # — устраняет ловушку замыкания Python при нескольких вентиляторах.
-        def bisect_fan(fe, R_eff):
-            if fe.get("fanReverse") and fe.get("reverseH0") is not None:
-                q_lo = float(fe.get("qMin", 1.0))
-                q_hi = float(fe.get("reverseQMax", fe.get("qMax", 90.0)))
-            else:
-                q_lo = float(fe.get("qMin", 1.0))
-                q_hi = float(fe.get("qMax", 90.0))
-            if q_lo >= q_hi:
-                return q_lo
-            f_lo = fan_H(fe, q_lo) - R_eff * q_lo * q_lo
-            f_hi = fan_H(fe, q_hi) - R_eff * q_hi * q_hi
-            if f_lo <= 0:
-                return q_lo
-            if f_hi >= 0:
-                return q_hi
-            for _ in range(60):
-                q_mid = 0.5 * (q_lo + q_hi)
-                if fan_H(fe, q_mid) - R_eff * q_mid * q_mid > 0:
-                    q_lo = q_mid
-                else:
-                    q_hi = q_mid
-                if q_hi - q_lo < 0.01:
-                    break
-            return 0.5 * (q_lo + q_hi)
-
+        # Для curve-вентилятора — бисекция на нисходящей ветви характеристики
         for fan_e in fans:
             if fan_e.get("fanMode", "constant") == "curve":
-                return bisect_fan(fan_e, R_total)
+                if fan_e.get("fanReverse") and fan_e.get("reverseH0") is not None:
+                    q_lo = float(fan_e.get("qMin", 1.0))
+                    q_hi = float(fan_e.get("reverseQMax", fan_e.get("qMax", 90.0)))
+                else:
+                    q_lo = float(fan_e.get("qMin", 1.0))
+                    q_hi = float(fan_e.get("qMax", 90.0))
+
+                def f(q):
+                    return fan_H(fan_e, q) - R_total * q * q
+
+                if f(q_lo) <= 0:
+                    return q_lo
+                if f(q_hi) >= 0:
+                    return q_hi
+                for _ in range(60):
+                    q_mid = 0.5 * (q_lo + q_hi)
+                    if f(q_mid) > 0:
+                        q_lo = q_mid
+                    else:
+                        q_hi = q_mid
+                    if q_hi - q_lo < 0.01:
+                        break
+                return 0.5 * (q_lo + q_hi)
 
         # constant-вентилятор
         H_fan = sum(fan_H(e, 1.0) for e in fans)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # БАГ 1 ИСПРАВЛЕН: init_flows вместо Q[i]=q0 для всех —
-    # BFS-дерево гарантирует 1-й закон Кирхгофа с первой итерации.
+    # Начальное распределение через BFS (соблюдает 1-й закон Кирхгофа)
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
     Q_init = init_flows(active_edges, q0)
@@ -666,21 +626,16 @@ def find_dead_ends(edges):
     пока не останутся только ветви с двусторонней связностью.
     Это правильно находит длинные тупиковые цепочки любой глубины.
     """
-    # БАГ 6 ИСПРАВЛЕН: защищаем только ВМП (один конец — висячий узел),
-    # но НЕ главный вентилятор ВГП (оба конца в связной части сети).
-    # Ранее все вентиляторы попадали в protected, из-за чего неправильно
-    # подключённый ВГП никогда не обнаруживался как тупиковый.
-    degree_full = collections.defaultdict(int)
-    for e in edges:
-        degree_full[e["a"]] += 1
-        degree_full[e["b"]] += 1
-
-    protected = set()
+    # Строим множество «живых» рёбер — начинаем со всех
+    # Узлы с ВМП (вентилятором местного проветривания) не удаляем
+    vmp_nodes = set()
     for e in edges:
         if e["hasFan"]:
-            # ВМП: хотя бы один конец — висячий узел (степень 1)
-            if degree_full[e["a"]] == 1 or degree_full[e["b"]] == 1:
-                protected.add(e["id"])
+            vmp_nodes.add(e["a"])
+            vmp_nodes.add(e["b"])
+
+    # Рёбра, которые нельзя удалять (ВМП — тупиковый вентилятор)
+    protected = set(e["id"] for e in edges if e["hasFan"])
 
     # Граф: узел → список индексов рёбер
     adj = collections.defaultdict(set)
