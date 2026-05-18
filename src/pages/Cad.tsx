@@ -2868,21 +2868,20 @@ export default function CadPage() {
               <button onClick={handleSolve} disabled={vcSolving}
                 className="h-6 px-2 flex items-center gap-1 text-[11px]"
                 style={{ background: vcSolving ? "#6b7280" : "#16a34a", color: "white" }}
-                title={`Расчёт (F9) — режим: ${calcMode === "server" ? "Python VentCore" : "браузер"}`}>
+                title={`Расчёт (F9) — метод: ${calcMode === "cross" ? "Кросс" : "МКР"}`}>
                 {vcSolving
                   ? <><Icon name="Loader" size={11} className="animate-spin" /> Считаю...</>
                   : <><Icon name="Play" size={11} /> Расчёт <span className="opacity-80 text-[10px]">F9</span></>}
               </button>
-              <button onClick={() => setCalcMode(calcMode === "server" ? "local" : "server")}
-                className="h-6 px-2 text-[11px] border-l border-gray-400"
+              <button
+                onClick={() => setCalcMode(calcMode === "cross" ? "mkr" : "cross")}
+                className="h-6 px-2 text-[11px] border-l border-gray-400 font-medium"
                 style={{
-                  background: calcMode === "server" ? "#1d4ed8" : "#f3f4f6",
-                  color: calcMode === "server" ? "white" : "#374151",
+                  background: calcMode === "mkr" ? "#1d4ed8" : "#f3f4f6",
+                  color: calcMode === "mkr" ? "white" : "#374151",
                 }}
-                title={calcMode === "server"
-                  ? "Режим: Python VentCore (сервер) — нажмите для переключения на браузер"
-                  : "Режим: браузер (JS) — нажмите для переключения на VentCore"}>
-                {calcMode === "server" ? "⚡ VentCore" : "⚙ JS"}
+                title={calcMode === "cross" ? "Метод Кросса — нажмите для переключения на МКР" : "МКР — нажмите для переключения на Кросс"}>
+                {calcMode === "cross" ? "Кросс" : "МКР"}
               </button>
             </div>
             {vcError && (
