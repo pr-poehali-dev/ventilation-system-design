@@ -2203,29 +2203,7 @@ export default function CadPage() {
                     </div>
                   )}
 
-                  {/* Дата появления */}
-                  <div className="flex items-center gap-1 mb-2">
-                    <span className="text-gray-500 w-20 flex-shrink-0">Появление</span>
-                    <div className="flex gap-1 flex-1">
-                      <input type="number" placeholder="Год" value={sym.appearYear ?? ""}
-                        onChange={(e) => updSym({ appearYear: e.target.value ? Number(e.target.value) : undefined })}
-                        className="text-[11px] px-1 w-14"
-                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
-                      <select value={sym.appearMonth ?? ""}
-                        onChange={(e) => updSym({ appearMonth: e.target.value || undefined })}
-                        className="text-[11px] px-0.5 flex-1"
-                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
-                        <option value="">Месяц</option>
-                        {["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"].map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <input type="number" placeholder="День" min={1} max={31} value={sym.appearDay ?? ""}
-                        onChange={(e) => updSym({ appearDay: e.target.value ? Number(e.target.value) : undefined })}
-                        className="text-[11px] px-1 w-10"
-                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
-                    </div>
-                  </div>
+
 
                   {/* ── Индикаторы (только для перемычек) ── */}
                   {isBulkheadSym && (
