@@ -1,13 +1,23 @@
 // Справочник оборудования — аналог справочников в АэроСети
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+import { FAN_CATALOG, type FanCurve } from "@/lib/fanCurves";
 
 type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport";
+
+export interface MineFanExport {
+  catalogId: string;
+  name: string;
+  diameter: number;
+  rpmMin: number;
+  rpmMax: number;
+}
 
 interface Props {
   activeTab: TabId;
   onTabChange: (t: TabId) => void;
   onClose: () => void;
+  onMineFansChange?: (fans: MineFanExport[]) => void;
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
@@ -21,36 +31,394 @@ const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
   { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее" },
 ];
 
-// ─── Типы для Q-H характеристик ───────────────────────────────────────────
-interface FanCurvePoint { q: number; h: number; p: number }
-interface FanAngle {
-  angle: number;       // угол лопаток, °
+// ─── Типы для справочника вентиляторов рудника ────────────────────────────
+const CURVE_COLORS = ["#e91e63", "#ff5722", "#ff9800", "#4caf50", "#2196f3", "#9c27b0", "#00bcd4"];
+
+interface MineAngle {
+  id: string;
+  angle: number;
   reverse: boolean;
   rpm: number;
   color: string;
-  points: FanCurvePoint[];  // Q[м³/с], H[Па], P[кВт]
+  operatingQ?: number;
+  operatingH?: number;
 }
-interface FanModel {
+interface MineFan {
   id: string;
+  catalogId: string;
   name: string;
   type: string;
-  d: number;           // диаметр, м
-  angles: FanAngle[];
+  diameter: number;
+  rpmMin: number;
+  rpmMax: number;
+  bladeAngles: MineAngle[];
+  note?: string;
 }
 
-const CURVE_COLORS = ["#e91e63", "#ff5722", "#ff9800", "#4caf50", "#2196f3"];
-
-// Генератор точек кривой по параболической модели (Hmax, Qmax, Pmax)
-function genCurve(Hmax: number, Qmax: number, Pmax: number, n = 10): FanCurvePoint[] {
-  const pts: FanCurvePoint[] = [];
+function fanCurvePoints(c: FanCurve, angleFactor = 1.0, n = 40): { q: number; h: number; p: number }[] {
+  const pts = [];
   for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const q = t * Qmax;
-    const h = Hmax * (1 - (q / Qmax) ** 1.8);
-    const p = Pmax * (0.3 + 1.4 * t - 0.7 * t * t);
-    pts.push({ q: +q.toFixed(2), h: +Math.max(0, h).toFixed(0), p: +Math.max(0, p).toFixed(1) });
+    const q = (c.qMin + (c.qMax - c.qMin) * (i / n));
+    const h = Math.max(0, (c.h0 + c.h1 * q + c.h2 * q * q) * angleFactor);
+    const eta = Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * q + c.e2 * q * q));
+    const p = eta > 0 ? (h * q) / eta / 1000 : 0;
+    pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
   }
   return pts;
+}
+
+function reverseCurvePoints(c: FanCurve, n = 40): { q: number; h: number; p: number }[] {
+  if (c.reverseH0 === undefined) return [];
+  const pts = [];
+  const qMin = c.reverseQMin ?? c.qMin;
+  const qMax = c.reverseQMax ?? c.qMax;
+  for (let i = 0; i <= n; i++) {
+    const q = qMin + (qMax - qMin) * (i / n);
+    const h = Math.max(0, c.reverseH0! + (c.reverseH1 ?? 0) * q + (c.reverseH2 ?? 0) * q * q);
+    const eta = Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * q + c.e2 * q * q)) * (c.reverseEfficiencyFactor ?? 0.82);
+    const p = eta > 0 ? (h * q) / eta / 1000 : 0;
+    pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
+  }
+  return pts;
+}
+
+function angleFactor(c: FanCurve, angle: number): number {
+  if (!c.bladeAngles || c.bladeAngles.length < 2) return 1;
+  const min = Math.min(...c.bladeAngles);
+  const max = Math.max(...c.bladeAngles);
+  if (max === min) return 1;
+  const t = (angle - min) / (max - min);
+  return 0.6 + 0.4 * t;
+}
+
+// ─── График Q-H / Q-P ─────────────────────────────────────────────────────
+function FanChart({ curves, type, operatingPoints }: {
+  curves: { pts: { q: number; h: number; p: number }[]; color: string; dash?: boolean }[];
+  type: "qh" | "qp";
+  operatingPoints?: { q: number; h: number; color: string }[];
+}) {
+  const W = 340, H = 190, PL = 46, PR = 12, PT = 10, PB = 30;
+  const cw = W - PL - PR, ch = H - PT - PB;
+
+  const allPts = curves.flatMap(c => c.pts);
+  if (allPts.length === 0) return <svg width={W} height={H}><text x={W/2} y={H/2} textAnchor="middle" fontSize="11" fill="#999">Нет данных</text></svg>;
+
+  const maxQ = Math.max(...allPts.map(p => p.q)) * 1.05 || 100;
+  const maxV = type === "qh"
+    ? Math.max(...allPts.map(p => p.h)) * 1.15 || 1000
+    : Math.max(...allPts.map(p => p.p)) * 1.15 || 100;
+
+  const toX = (q: number) => PL + (q / maxQ) * cw;
+  const toY = (v: number) => PT + ch - (v / maxV) * ch;
+
+  const yTicks = 4, xTicks = 5;
+  return (
+    <svg width={W} height={H} style={{ fontFamily: "Arial, sans-serif", display: "block" }}>
+      {Array.from({ length: yTicks + 1 }).map((_, i) => {
+        const y = PT + (i / yTicks) * ch;
+        const val = maxV * (1 - i / yTicks);
+        return <g key={i}>
+          <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="#e5e7eb" strokeWidth="0.7" />
+          <text x={PL - 4} y={y + 3} fontSize="8" textAnchor="end" fill="#888">
+            {val >= 1000 ? `${(val / 1000).toFixed(1)}k` : Math.round(val)}
+          </text>
+        </g>;
+      })}
+      {Array.from({ length: xTicks + 1 }).map((_, i) => {
+        const x = PL + (i / xTicks) * cw;
+        const val = maxQ * (i / xTicks);
+        return <g key={i}>
+          <line x1={x} y1={PT} x2={x} y2={PT + ch} stroke="#e5e7eb" strokeWidth="0.7" />
+          <text x={x} y={H - 8} fontSize="8" textAnchor="middle" fill="#888">{val.toFixed(0)}</text>
+        </g>;
+      })}
+      <rect x={PL} y={PT} width={cw} height={ch} fill="none" stroke="#ccc" strokeWidth="0.8" />
+      {curves.map((c, ci) => {
+        if (c.pts.length === 0) return null;
+        const d = c.pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.q).toFixed(1)},${toY(type === "qh" ? p.h : p.p).toFixed(1)}`).join(" ");
+        return <path key={ci} d={d} fill="none" stroke={c.color} strokeWidth={c.dash ? 1.2 : 2}
+          strokeDasharray={c.dash ? "4,3" : undefined} strokeLinejoin="round" />;
+      })}
+      {operatingPoints?.map((op, i) => (
+        <g key={i}>
+          <circle cx={toX(op.q)} cy={toY(op.h)} r={4} fill={op.color} stroke="white" strokeWidth={1.5} />
+        </g>
+      ))}
+      <text x={PL + cw / 2} y={H - 1} fontSize="8" textAnchor="middle" fill="#666">Расход, м³/с</text>
+      <text transform={`translate(9,${PT + ch / 2}) rotate(-90)`} fontSize="8" textAnchor="middle" fill="#666">
+        {type === "qh" ? "Напор, Па" : "Мощность, кВт"}
+      </text>
+    </svg>
+  );
+}
+
+// ─── Диалог выбора из библиотеки ──────────────────────────────────────────
+function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void; onClose: () => void }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "axial" | "centrifugal">("all");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+
+  const list = FAN_CATALOG.filter(c =>
+    (filter === "all" || c.type === filter) &&
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const preview = previewId ? FAN_CATALOG.find(c => c.id === previewId) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
+      <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 760, height: 520 }}>
+        {/* Шапка */}
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
+          <Icon name="BookOpen" size={14} className="text-blue-600" />
+          <span className="text-[13px] font-semibold text-gray-800">Библиотека вентиляторов</span>
+          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><Icon name="X" size={16} /></button>
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          {/* Левая панель — список */}
+          <div className="flex flex-col border-r border-gray-200" style={{ width: 280 }}>
+            {/* Поиск + фильтр */}
+            <div className="p-2 border-b border-gray-100 space-y-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1 border border-gray-300 rounded px-2 bg-white">
+                <Icon name="Search" size={12} className="text-gray-400" />
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Поиск..." className="flex-1 text-[12px] py-1 outline-none bg-transparent text-gray-900" />
+              </div>
+              <div className="flex gap-1">
+                {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центробежные"]] as const).map(([v, l]) => (
+                  <button key={v} onClick={() => setFilter(v)}
+                    className="flex-1 py-0.5 text-[10px] rounded border"
+                    style={{ background: filter === v ? "#2563eb" : "white", color: filter === v ? "white" : "#555", borderColor: filter === v ? "#2563eb" : "#d1d5db" }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Список */}
+            <div className="flex-1 overflow-y-auto">
+              {list.map(c => (
+                <div key={c.id}
+                  onClick={() => setPreviewId(c.id)}
+                  className="flex items-center justify-between px-3 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
+                  style={{ background: previewId === c.id ? "#dbeafe" : undefined }}>
+                  <div>
+                    <div className="text-[12px] font-semibold text-blue-800">{c.name}</div>
+                    <div className="text-[10px] text-gray-500">{c.type === "axial" ? "Осевой" : "Центробежный"}</div>
+                  </div>
+                  <span className="text-[10px] text-gray-400">Ø{c.diameter} м</span>
+                </div>
+              ))}
+              {list.length === 0 && (
+                <div className="flex items-center justify-center h-24 text-[12px] text-gray-400">Не найдено</div>
+              )}
+            </div>
+          </div>
+
+          {/* Правая панель — предпросмотр */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {preview ? (
+              <>
+                <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
+                  <div className="text-[14px] font-bold text-gray-900">{preview.name}</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    {preview.type === "axial" ? "Осевой" : "Центробежный"} · Ø{preview.diameter} м · {preview.rpmMin}–{preview.rpmMax} об/мин
+                  </div>
+                  <div className="flex gap-3 mt-1.5 text-[11px] text-gray-600">
+                    <span>Q: {preview.qMin}–{preview.qMax} м³/с</span>
+                    <span>H: {Math.round(preview.h0)} Па (max)</span>
+                    {preview.bladeAngles.length > 0 && <span>Углы: {preview.bladeAngles.join(", ")}°</span>}
+                    {preview.reverseH0 !== undefined && <span className="text-green-700 font-medium">✓ Реверс</span>}
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {/* Q-H кривые для всех углов */}
+                  {(() => {
+                    const angles = preview.bladeAngles.length > 0 ? preview.bladeAngles : [0];
+                    const curves = angles.map((a, i) => ({
+                      pts: fanCurvePoints(preview, angleFactor(preview, a)),
+                      color: CURVE_COLORS[i % CURVE_COLORS.length],
+                    }));
+                    const reverseCurves = preview.reverseH0 !== undefined ? [{
+                      pts: reverseCurvePoints(preview),
+                      color: "#9c27b0",
+                      dash: true,
+                    }] : [];
+                    return (
+                      <div className="space-y-2">
+                        <div>
+                          <div className="text-[10px] text-gray-500 font-medium mb-1">Напор — Расход</div>
+                          <div style={{ border: "1px solid #e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                            <FanChart curves={[...curves, ...reverseCurves]} type="qh" />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {angles.map((a, i) => (
+                            <div key={i} className="flex items-center gap-1">
+                              <div className="w-5 h-1.5 rounded" style={{ background: CURVE_COLORS[i % CURVE_COLORS.length] }} />
+                              <span className="text-[10px] text-gray-600">{a > 0 ? "+" : ""}{a}°</span>
+                            </div>
+                          ))}
+                          {preview.reverseH0 !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <div className="w-5 h-0.5 rounded" style={{ borderTop: "2px dashed #9c27b0" }} />
+                              <span className="text-[10px] text-purple-700">Реверс</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-[12px] text-gray-400 flex-col gap-2">
+                <Icon name="MousePointer2" size={24} className="text-gray-300" />
+                Выберите вентилятор из списка
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Кнопки */}
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+          <span className="text-[11px] text-gray-500 flex-1">
+            {preview ? `Выбран: ${preview.name}` : "Выберите вентилятор из списка для импорта"}
+          </span>
+          <button onClick={onClose} className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+            Отмена
+          </button>
+          <button onClick={() => preview && onSelect(preview)} disabled={!preview}
+            className="h-7 px-4 text-[12px] bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40">
+            Импортировать
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Диалог добавления характеристики ─────────────────────────────────────
+function AddAngleDialog({ fan, onAdd, onClose }: {
+  fan: MineFan;
+  onAdd: (a: MineAngle) => void;
+  onClose: () => void;
+}) {
+  const catalog = FAN_CATALOG.find(c => c.id === fan.catalogId);
+  const availAngles = catalog?.bladeAngles ?? [];
+  const [angle, setAngle] = useState(availAngles[0] ?? 0);
+  const [reverse, setReverse] = useState(false);
+  const [rpm, setRpm] = useState(fan.rpmMax);
+  const [opQ, setOpQ] = useState(catalog?.qNominal ?? 0);
+  const [opH, setOpH] = useState(catalog?.hNominal ?? 0);
+
+  const preview = catalog ? fanCurvePoints(catalog, angleFactor(catalog, angle)) : [];
+  const revPts = (reverse && catalog?.reverseH0 !== undefined) ? reverseCurvePoints(catalog) : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
+      <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 520, maxHeight: 520 }}>
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
+          <Icon name="Plus" size={14} className="text-blue-600" />
+          <span className="text-[13px] font-semibold">Новая рабочая характеристика — {fan.name}</span>
+          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><Icon name="X" size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Угол лопаток, °</label>
+              {availAngles.length > 0 ? (
+                <select value={angle} onChange={e => setAngle(+e.target.value)}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white">
+                  {availAngles.map(a => <option key={a} value={a}>{a > 0 ? "+" : ""}{a}°</option>)}
+                </select>
+              ) : (
+                <input type="number" value={angle} onChange={e => setAngle(+e.target.value)}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Скорость, об/мин</label>
+              <input type="number" min={fan.rpmMin} max={fan.rpmMax} value={rpm}
+                onChange={e => setRpm(+e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="rev-check" checked={reverse}
+              onChange={e => setReverse(e.target.checked)}
+              className="w-4 h-4" style={{ accentColor: "#9333ea" }} />
+            <label htmlFor="rev-check" className="text-[12px] text-gray-700">
+              Реверсивная характеристика
+              {!catalog?.reverseH0 && " (данные по реверсу отсутствуют в каталоге)"}
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Рабочая точка Q, м³/с</label>
+              <input type="number" min={0} step={1} value={opQ} onChange={e => setOpQ(+e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Рабочая точка H, Па</label>
+              <input type="number" min={0} step={10} value={opH} onChange={e => setOpH(+e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+            </div>
+          </div>
+          {/* Предпросмотр */}
+          {catalog && (
+            <div>
+              <div className="text-[10px] text-gray-500 font-medium mb-1">Предпросмотр Q–H</div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                <FanChart
+                  curves={[
+                    { pts: preview, color: "#2196f3" },
+                    ...(revPts.length ? [{ pts: revPts, color: "#9c27b0", dash: true }] : []),
+                  ]}
+                  type="qh"
+                  operatingPoints={opQ > 0 ? [{ q: opQ, h: opH, color: "#e91e63" }] : []}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+          <button onClick={onClose} className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">Отмена</button>
+          <button onClick={() => {
+            onAdd({
+              id: `a${Date.now()}`,
+              angle, reverse, rpm,
+              color: CURVE_COLORS[0],
+              operatingQ: opQ || undefined,
+              operatingH: opH || undefined,
+            });
+            onClose();
+          }} className="ml-auto h-7 px-4 text-[12px] bg-blue-600 text-white rounded hover:bg-blue-700">
+            Добавить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Секция вентиляторов ──────────────────────────────────────────────────
+function catalogToMineFan(c: FanCurve): MineFan {
+  const defaultAngles = c.bladeAngles.length > 0 ? c.bladeAngles : [0];
+  return {
+    id: `mf_${c.id}_${Date.now()}`,
+    catalogId: c.id,
+    name: c.name,
+    type: c.type === "axial" ? "Осевой" : "Центробежный",
+    diameter: c.diameter,
+    rpmMin: c.rpmMin,
+    rpmMax: c.rpmMax,
+    bladeAngles: defaultAngles.map((a, i) => ({
+      id: `a${i}`,
+      angle: a,
+      reverse: false,
+      rpm: c.rpmNominal,
+      color: CURVE_COLORS[i % CURVE_COLORS.length],
+    })),
+    note: "",
+  };
 }
 
 // ─── Данные вентиляторов ──────────────────────────────────────────────────
@@ -165,154 +533,298 @@ function QHChart({ model, type }: { model: FanModel; type: "qh" | "qp" }) {
 }
 
 // ─── Секция вентиляторов ──────────────────────────────────────────────────
-function FansSection() {
-  const [selectedId, setSelectedId] = useState(FAN_MODELS[0].id);
-  const [editAngles, setEditAngles] = useState<FanAngle[] | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState("Осевой");
-  const [newD, setNewD] = useState("0.6");
+function FansSection({ onMineFansChange }: { onMineFansChange?: (fans: MineFanExport[]) => void }) {
+  const [fans, setFans] = useState<MineFan[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [addAngleFor, setAddAngleFor] = useState<MineFan | null>(null);
+  const [editNote, setEditNote] = useState(false);
 
-  const model = FAN_MODELS.find(m => m.id === selectedId) ?? FAN_MODELS[0];
-  const angles = editAngles ?? model.angles;
+  const selected = fans.find(f => f.id === selectedId) ?? null;
+  const catalog = selected ? FAN_CATALOG.find(c => c.id === selected.catalogId) : null;
+
+  const updateFans = (next: MineFan[]) => {
+    setFans(next);
+    onMineFansChange?.(next.map(f => ({ catalogId: f.catalogId, name: f.name, diameter: f.diameter, rpmMin: f.rpmMin, rpmMax: f.rpmMax })));
+  };
+
+  const importFromLibrary = (c: FanCurve) => {
+    const mf = catalogToMineFan(c);
+    updateFans([...fans, mf]);
+    setSelectedId(mf.id);
+    setShowLibrary(false);
+  };
+
+  const removeFan = (id: string) => {
+    const next = fans.filter(f => f.id !== id);
+    updateFans(next);
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  const updateAngle = (fanId: string, angleId: string, patch: Partial<MineAngle>) => {
+    updateFans(fans.map(f => f.id === fanId
+      ? { ...f, bladeAngles: f.bladeAngles.map(a => a.id === angleId ? { ...a, ...patch } : a) }
+      : f
+    ));
+  };
+
+  const removeAngle = (fanId: string, angleId: string) => {
+    updateFans(fans.map(f => f.id === fanId
+      ? { ...f, bladeAngles: f.bladeAngles.filter(a => a.id !== angleId) }
+      : f
+    ));
+  };
+
+  const addAngle = (fanId: string, angle: MineAngle) => {
+    updateFans(fans.map(f => f.id === fanId
+      ? { ...f, bladeAngles: [...f.bladeAngles, { ...angle, color: CURVE_COLORS[f.bladeAngles.length % CURVE_COLORS.length] }] }
+      : f
+    ));
+  };
+
+  // Кривые для текущего вентилятора
+  const buildCurves = (fan: MineFan) => {
+    const c = FAN_CATALOG.find(x => x.id === fan.catalogId);
+    if (!c) return [];
+    return fan.bladeAngles.map(a => ({
+      pts: a.reverse && c.reverseH0 !== undefined
+        ? reverseCurvePoints(c)
+        : fanCurvePoints(c, angleFactor(c, a.angle)),
+      color: a.color,
+      dash: a.reverse,
+    }));
+  };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Список моделей */}
-      <div className="flex-shrink-0 border-b border-gray-200 overflow-y-auto" style={{ maxHeight: 120 }}>
-        {FAN_MODELS.map(m => (
-          <div key={m.id}
-            onClick={() => { setSelectedId(m.id); setEditAngles(null); }}
-            className="flex items-center justify-between px-3 py-1.5 cursor-pointer hover:bg-blue-50 select-none"
-            style={{ background: selectedId === m.id ? "#dbeafe" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
-            <div>
-              <span className="text-[12px] font-semibold text-blue-800">{m.name}</span>
-              <span className="text-[10px] text-gray-500 ml-2">{m.type}</span>
+    <div className="flex h-full overflow-hidden">
+      {/* Левая панель — список вентиляторов рудника */}
+      <div className="flex flex-col border-r border-gray-200" style={{ width: 220, flexShrink: 0 }}>
+        {/* Шапка */}
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#e8eef8" }}>
+          <span className="text-[11px] font-semibold text-gray-700">Вентиляторы рудника</span>
+          <button onClick={() => setShowLibrary(true)}
+            className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+            <Icon name="Library" size={11} /> Из библиотеки
+          </button>
+        </div>
+
+        {/* Список */}
+        <div className="flex-1 overflow-y-auto">
+          {fans.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full px-3 gap-2 py-8">
+              <Icon name="Wind" size={28} className="text-gray-300" />
+              <span className="text-[12px] text-gray-500 text-center">Справочник пуст</span>
+              <span className="text-[10px] text-gray-400 text-center">Импортируйте вентиляторы из библиотеки</span>
+              <button onClick={() => setShowLibrary(true)}
+                className="mt-1 px-3 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+                <Icon name="Library" size={11} /> Открыть библиотеку
+              </button>
             </div>
-            <span className="text-[10px] text-gray-400">Ø{m.d} м</span>
-          </div>
-        ))}
-        <button onClick={() => setShowAdd(true)}
-          className="w-full py-1 text-[11px] text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1">
-          <Icon name="Plus" size={11} /> Добавить вентилятор
-        </button>
+          ) : fans.map(f => (
+            <div key={f.id}
+              onClick={() => setSelectedId(f.id)}
+              className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
+              style={{ background: selectedId === f.id ? "#dbeafe" : undefined }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] font-semibold text-blue-800 truncate">{f.name}</div>
+                <div className="text-[10px] text-gray-500">{f.type} · Ø{f.diameter} м</div>
+                <div className="text-[10px] text-gray-400">{f.bladeAngles.length} хар-ик</div>
+              </div>
+              <button onClick={e => { e.stopPropagation(); removeFan(f.id); }}
+                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 ml-1 mt-0.5">
+                <Icon name="Trash2" size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Кнопка добавить */}
+        {fans.length > 0 && (
+          <button onClick={() => setShowLibrary(true)}
+            className="flex-shrink-0 flex items-center justify-center gap-1 py-2 text-[11px] text-blue-600 hover:bg-blue-50 border-t border-gray-200">
+            <Icon name="Plus" size={11} /> Добавить из библиотеки
+          </button>
+        )}
       </div>
 
-      {/* Диалог добавления */}
-      {showAdd && (
-        <div className="flex-shrink-0 border-b border-gray-200 p-2 bg-blue-50">
-          <div className="text-[11px] font-semibold mb-1">Новая модель</div>
-          <div className="flex gap-2 mb-1">
-            <input value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder="Название (напр. ВМ-10)" className="flex-1 text-[11px] px-1.5 py-0.5 border border-gray-300 rounded" />
-            <input value={newD} onChange={e => setNewD(e.target.value)}
-              placeholder="Ø м" className="w-16 text-[11px] px-1.5 py-0.5 border border-gray-300 rounded" />
-          </div>
-          <select value={newType} onChange={e => setNewType(e.target.value)}
-            className="w-full text-[11px] px-1 py-0.5 border border-gray-300 rounded mb-1">
-            <option>Осевой</option>
-            <option>Центробежный</option>
-            <option>Осевой местного проветривания</option>
-            <option>Центробежный главного проветривания</option>
-          </select>
-          <div className="flex gap-1">
-            <button onClick={() => setShowAdd(false)}
-              className="flex-1 py-0.5 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
-              Добавить (демо)
-            </button>
-            <button onClick={() => setShowAdd(false)}
-              className="px-2 py-0.5 text-[11px] border border-gray-300 rounded hover:bg-gray-100">
-              Отмена
+      {/* Правая панель */}
+      {selected && catalog ? (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Шапка */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+            <span className="text-[13px] font-bold text-gray-900">{selected.name}</span>
+            <span className="text-[11px] text-gray-500">Ø{selected.diameter} м</span>
+            <span className="text-[10px] text-gray-400">·</span>
+            <span className="text-[11px] text-gray-500">{selected.type}</span>
+            <span className="text-[10px] text-gray-400 ml-1">{selected.rpmMin}–{selected.rpmMax} об/мин</span>
+            {catalog.reverseH0 !== undefined && (
+              <span className="ml-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded font-medium">✓ Реверс</span>
+            )}
+            <button onClick={() => selected && setAddAngleFor(selected)}
+              className="ml-auto flex items-center gap-1 h-6 px-2 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
+              <Icon name="Plus" size={11} /> Характеристика
             </button>
           </div>
+
+          <div className="flex flex-1 overflow-hidden">
+            {/* Таблица характеристик */}
+            <div className="flex flex-col border-r border-gray-200 flex-shrink-0" style={{ width: 240 }}>
+              <div className="grid text-[10px] font-semibold text-gray-600 border-b border-gray-200 px-1 py-1.5 select-none"
+                style={{ background: "#f0f4f8", gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
+                <div />
+                <div>Угол</div>
+                <div className="text-center">Реверс</div>
+                <div>Об/мин</div>
+                <div />
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {selected.bladeAngles.length === 0 ? (
+                  <div className="flex items-center justify-center h-20 text-[11px] text-gray-400">
+                    Нет характеристик
+                  </div>
+                ) : selected.bladeAngles.map(a => (
+                  <div key={a.id}
+                    className="grid items-center gap-0.5 px-1 py-1.5 border-b border-gray-100 hover:bg-gray-50"
+                    style={{ gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: a.color }} />
+                    {/* Угол */}
+                    {catalog.bladeAngles.length > 0 ? (
+                      <select value={a.angle}
+                        onChange={e => updateAngle(selected.id, a.id, { angle: +e.target.value })}
+                        className="text-[10px] border border-gray-300 rounded px-0.5 py-0.5 w-full text-gray-900 bg-white">
+                        {catalog.bladeAngles.map(ba => <option key={ba} value={ba}>{ba > 0 ? "+" : ""}{ba}°</option>)}
+                      </select>
+                    ) : (
+                      <input type="number" value={a.angle}
+                        onChange={e => updateAngle(selected.id, a.id, { angle: +e.target.value })}
+                        className="text-[10px] border border-gray-300 rounded px-1 py-0.5 w-full text-gray-900 text-right" />
+                    )}
+                    {/* Реверс */}
+                    <div className="flex justify-center">
+                      <input type="checkbox" checked={a.reverse}
+                        onChange={e => updateAngle(selected.id, a.id, { reverse: e.target.checked })}
+                        className="w-3.5 h-3.5" style={{ accentColor: "#9333ea" }} />
+                    </div>
+                    {/* Об/мин */}
+                    <input type="number" value={a.rpm} min={selected.rpmMin} max={selected.rpmMax} step={10}
+                      onChange={e => updateAngle(selected.id, a.id, { rpm: +e.target.value })}
+                      className="text-[10px] border border-gray-300 rounded px-1 py-0.5 w-full text-gray-900 text-right" />
+                    {/* Удалить */}
+                    <button onClick={() => removeAngle(selected.id, a.id)}
+                      className="text-gray-300 hover:text-red-500 flex justify-center">
+                      <Icon name="X" size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {/* Рабочие точки */}
+              {selected.bladeAngles.some(a => a.operatingQ) && (
+                <div className="border-t border-gray-200 px-2 py-1.5 flex-shrink-0" style={{ background: "#fefce8" }}>
+                  <div className="text-[10px] font-semibold text-yellow-800 mb-1">Рабочие точки</div>
+                  {selected.bladeAngles.filter(a => a.operatingQ).map(a => (
+                    <div key={a.id} className="flex items-center gap-1.5 mb-0.5">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: a.color }} />
+                      <span className="text-[10px] text-gray-700">
+                        {a.angle > 0 ? "+" : ""}{a.angle}°: Q={a.operatingQ} м³/с, H={a.operatingH} Па
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Заметка */}
+              <div className="border-t border-gray-200 px-2 py-1.5 flex-shrink-0">
+                {editNote ? (
+                  <textarea
+                    autoFocus
+                    value={selected.note ?? ""}
+                    onChange={e => updateFans(fans.map(f => f.id === selected.id ? { ...f, note: e.target.value } : f))}
+                    onBlur={() => setEditNote(false)}
+                    className="w-full text-[10px] border border-blue-300 rounded px-1 py-0.5 text-gray-800 resize-none"
+                    rows={2} placeholder="Заметка..." />
+                ) : (
+                  <div onClick={() => setEditNote(true)}
+                    className="text-[10px] text-gray-400 cursor-text hover:text-gray-600 min-h-[24px]">
+                    {selected.note || "Добавить заметку..."}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Графики */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+              {(() => {
+                const curves = buildCurves(selected);
+                const opPoints = selected.bladeAngles.filter(a => a.operatingQ).map(a => ({
+                  q: a.operatingQ!, h: a.operatingH ?? 0, color: a.color,
+                }));
+                return (
+                  <>
+                    <div>
+                      <div className="text-[11px] font-semibold text-gray-700 mb-1">Напор — Расход</div>
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, overflow: "hidden" }}>
+                        <FanChart curves={curves} type="qh" operatingPoints={opPoints} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-semibold text-gray-700 mb-1">Мощность — Расход</div>
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, overflow: "hidden" }}>
+                        <FanChart curves={curves} type="qp" />
+                      </div>
+                    </div>
+                    {/* Легенда */}
+                    <div className="flex flex-wrap gap-2">
+                      {selected.bladeAngles.map(a => (
+                        <div key={a.id} className="flex items-center gap-1">
+                          <div className="w-5 rounded" style={{
+                            height: 2,
+                            background: a.reverse ? undefined : a.color,
+                            borderTop: a.reverse ? `2px dashed ${a.color}` : undefined,
+                          }} />
+                          <span className="text-[10px] text-gray-600">
+                            {a.angle > 0 ? "+" : ""}{a.angle}°{a.reverse ? " (рев.)" : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Инфо из каталога */}
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100 text-[11px]">
+                      <div className="text-gray-500">Q раб.: <span className="text-gray-800">{catalog.qMin}–{catalog.qMax} м³/с</span></div>
+                      <div className="text-gray-500">H max: <span className="text-gray-800">{Math.round(catalog.h0)} Па</span></div>
+                      <div className="text-gray-500">Об/мин: <span className="text-gray-800">{catalog.rpmMin}–{catalog.rpmMax}</span></div>
+                      {catalog.reverseH0 !== undefined && (
+                        <div className="text-purple-700">Реверс: ~{Math.round((catalog.reverseEfficiencyFactor ?? 0.82) * 100)}% напора</div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
+          <Icon name="Wind" size={32} className="text-gray-300" />
+          <span className="text-[13px]">Выберите вентилятор из списка</span>
+          <span className="text-[11px]">или импортируйте из библиотеки</span>
         </div>
       )}
 
-      {/* Таблица углов + графики */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="flex gap-0 min-h-0">
-          {/* Таблица углов лопаток */}
-          <div className="flex-shrink-0" style={{ width: 220, borderRight: "1px solid #e5e7eb" }}>
-            <div className="flex items-center px-2 py-1 border-b border-gray-200" style={{ background: "#f0f4f8" }}>
-              <span className="text-[10px] font-semibold text-gray-600 flex-1">Угол лопаток</span>
-              <span className="text-[10px] text-gray-500 w-10 text-center">Реверс</span>
-              <span className="text-[10px] text-gray-500 flex-1 text-right">Скорость</span>
-            </div>
-            {angles.map((a, i) => (
-              <div key={i} className="flex items-center px-2 py-1 border-b border-gray-100 hover:bg-gray-50">
-                {/* Цветной маркер */}
-                <div className="w-3 h-3 rounded-sm flex-shrink-0 mr-1.5"
-                  style={{ background: a.color, border: `1.5px solid ${a.color}` }} />
-                <input
-                  type="number"
-                  value={a.angle}
-                  onChange={e => {
-                    const next = angles.map((x, j) => j === i ? { ...x, angle: +e.target.value } : x);
-                    setEditAngles(next);
-                  }}
-                  className="w-14 text-[11px] px-1 border border-gray-300 rounded text-right"
-                  style={{ fontFamily: "inherit" }}
-                />
-                <span className="text-[10px] text-gray-500 ml-0.5">°</span>
-                <div className="flex-1 flex justify-center">
-                  <input type="checkbox" checked={a.reverse}
-                    onChange={e => {
-                      const next = angles.map((x, j) => j === i ? { ...x, reverse: e.target.checked } : x);
-                      setEditAngles(next);
-                    }}
-                    style={{ accentColor: "#2563eb" }} />
-                </div>
-                <span className="text-[11px] text-gray-700 text-right">{a.rpm} об/мин</span>
-              </div>
-            ))}
-            <button
-              onClick={() => {
-                const next = [...angles, {
-                  angle: 0, reverse: false, rpm: 2980,
-                  color: CURVE_COLORS[angles.length % CURVE_COLORS.length],
-                  points: genCurve(2000, 6, 15),
-                }];
-                setEditAngles(next);
-              }}
-              className="w-full py-1 text-[11px] text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-1 border-t border-gray-100">
-              <Icon name="Plus" size={10} /> Новая характеристика
-            </button>
-          </div>
+      {/* Диалог библиотеки */}
+      {showLibrary && (
+        <LibraryDialog
+          onSelect={importFromLibrary}
+          onClose={() => setShowLibrary(false)}
+        />
+      )}
 
-          {/* Графики */}
-          <div className="flex-1 flex flex-col p-2 gap-2">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-semibold text-gray-700">{model.name}</span>
-              <span className="text-[10px] text-gray-400">Ø{model.d} м</span>
-              <span className="text-[10px] text-gray-400">·</span>
-              <span className="text-[10px] text-gray-500">{model.type}</span>
-            </div>
-            <div className="flex gap-3 flex-wrap">
-              <div>
-                <div className="text-[10px] text-gray-500 mb-0.5 font-medium">Напор — Расход</div>
-                <div style={{ border: "1px solid #e5e7eb", borderRadius: 4, overflow: "hidden" }}>
-                  <QHChart model={{ ...model, angles }} type="qh" />
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-gray-500 mb-0.5 font-medium">Мощность — Расход</div>
-                <div style={{ border: "1px solid #e5e7eb", borderRadius: 4, overflow: "hidden" }}>
-                  <QHChart model={{ ...model, angles }} type="qp" />
-                </div>
-              </div>
-            </div>
-            {/* Легенда */}
-            <div className="flex flex-wrap gap-2 mt-1">
-              {angles.map((a, i) => (
-                <div key={i} className="flex items-center gap-1">
-                  <div className="w-4 h-1.5 rounded-sm" style={{ background: a.color }} />
-                  <span className="text-[10px] text-gray-600">{a.angle > 0 ? "+" : ""}{a.angle}°</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Диалог добавления характеристики */}
+      {addAngleFor && (
+        <AddAngleDialog
+          fan={addAngleFor}
+          onAdd={angle => addAngle(addAngleFor.id, angle)}
+          onClose={() => setAddAngleFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -650,8 +1162,8 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
-function TabContent({ tab }: { tab: TabId }) {
-  if (tab === "fans") return <FansSection />;
+function TabContent({ tab, onMineFansChange }: { tab: TabId; onMineFansChange?: (fans: MineFanExport[]) => void }) {
+  if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} />;
   if (tab === "types") return <TypesSection />;
   if (tab === "bulkheads") return <SimpleTable
     headers={["Название", "Тип", "R, кМюрг", "Примечание"]}
@@ -735,7 +1247,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose }: 
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик

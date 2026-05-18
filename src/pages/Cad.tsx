@@ -22,7 +22,7 @@ import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
-import EquipmentRefDialog from "@/components/cad/EquipmentRefDialog";
+import EquipmentRefDialog, { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
 import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
@@ -134,6 +134,7 @@ export default function CadPage() {
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
   const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
+  const [mineFans, setMineFans] = useState<MineFanExport[]>([]);
 
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
@@ -1972,6 +1973,7 @@ export default function CadPage() {
                   if (sym) removeSymbol(sym.id);
                 } : undefined}
                 normalFlows={normalFlows}
+                mineFans={mineFans}
               />
             )}
 
@@ -3087,6 +3089,7 @@ export default function CadPage() {
         activeTab={equipRefTab}
         onTabChange={setEquipRefTab}
         onClose={() => setShowEquipRef(false)}
+        onMineFansChange={setMineFans}
       />
     )}
 

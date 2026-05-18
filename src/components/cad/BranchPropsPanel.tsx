@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
+import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -17,6 +18,8 @@ interface BranchPropsPanelProps {
   onFanSymbolDelete?: () => void;
   /** Расходы прямого режима (для проверки нормы ПБ при реверсе) */
   normalFlows?: Record<string, number>;
+  /** Вентиляторы, добавленные в справочник рудника */
+  mineFans?: MineFanExport[];
 }
 
 const SH = "#e8eef8";
@@ -190,7 +193,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -962,7 +965,10 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       className="w-full text-[11px] px-1"
                       style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
                       <option value="">— выберите модель —</option>
-                      {FAN_CATALOG.map((f) => (
+                      {(mineFans && mineFans.length > 0
+                        ? FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id))
+                        : FAN_CATALOG
+                      ).map((f) => (
                         <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
                       ))}
                     </select>
