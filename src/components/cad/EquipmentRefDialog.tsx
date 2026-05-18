@@ -357,7 +357,7 @@ const EMPTY_TYPE: Omit<BranchType, "id"> = {
 function TypesSection() {
   const [types, setTypes] = useState<BranchType[]>(DEFAULT_BRANCH_TYPES);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Omit<BranchType, "id">>(EMPTY_TYPE);
   const [newName, setNewName] = useState("");
   const nextId = useCallback(() => `t${Date.now()}`, []);
@@ -365,14 +365,21 @@ function TypesSection() {
   const selected = types.find(t => t.id === selectedId) ?? null;
 
   const startEdit = (t: BranchType) => {
-    setEditingId(t.id);
     setEditForm({ name: t.name, color: t.color, shape: t.shape, surface: t.surface, area: t.area, vMax: t.vMax, alphaCoef: t.alphaCoef });
+    setIsEditing(true);
   };
   const saveEdit = () => {
-    if (!editingId) return;
-    setTypes(p => p.map(t => t.id === editingId ? { ...t, ...editForm } : t));
-    setEditingId(null);
+    if (!selectedId) return;
+    setTypes(p => p.map(t => t.id === selectedId ? { ...t, ...editForm } : t));
+    setIsEditing(false);
   };
+  const cancelEdit = () => setIsEditing(false);
+
+  const selectRow = (t: BranchType) => {
+    if (isEditing) cancelEdit();
+    setSelectedId(t.id);
+  };
+
   const addType = () => {
     const name = newName.trim();
     if (!name) return;
@@ -380,207 +387,215 @@ function TypesSection() {
     setTypes(p => [...p, t]);
     setNewName("");
     setSelectedId(t.id);
-    startEdit(t);
+    setEditForm({ ...EMPTY_TYPE, name });
+    setIsEditing(true);
   };
   const deleteSelected = () => {
     if (!selectedId) return;
     setTypes(p => p.filter(t => t.id !== selectedId));
     setSelectedId(null);
+    setIsEditing(false);
   };
 
   return (
     <div className="flex h-full overflow-hidden">
       {/* Список типов */}
-      <div className="flex flex-col border-r border-gray-200" style={{ width: 420 }}>
-        {/* Шапка таблицы */}
+      <div className="flex flex-col border-r border-gray-200" style={{ width: 380 }}>
+        {/* Шапка */}
         <div className="grid text-[11px] font-semibold text-gray-700 border-b border-gray-300 flex-shrink-0 select-none"
-          style={{ background: "#e8eef8", gridTemplateColumns: "24px 1fr 60px 80px 48px 48px 52px" }}>
-          <div className="px-1 py-1" />
-          <div className="px-2 py-1">Название</div>
-          <div className="px-1 py-1 text-center">Цвет</div>
-          <div className="px-1 py-1">Сечение</div>
-          <div className="px-1 py-1 text-right">S, м²</div>
-          <div className="px-1 py-1 text-right">V, м/с</div>
-          <div className="px-1 py-1 text-right">α×10⁻⁴</div>
+          style={{ background: "#e8eef8", gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px" }}>
+          <div className="px-1 py-1.5" />
+          <div className="px-2 py-1.5">Название</div>
+          <div className="px-1 py-1.5 text-center">Цвет</div>
+          <div className="px-1 py-1.5">Сечение</div>
+          <div className="px-1 py-1.5 text-right">S, м²</div>
+          <div className="px-1 py-1.5 text-right">V, м/с</div>
+          <div className="px-1 py-1.5 text-right">α×10⁻⁴</div>
         </div>
 
         {/* Строки */}
         <div className="flex-1 overflow-y-auto">
           {types.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full gap-2 text-gray-400 py-12">
+            <div className="flex flex-col items-center justify-center h-full gap-2 py-12">
               <Icon name="Layers" size={32} className="text-gray-300" />
-              <span className="text-[13px] font-medium">Справочник пуст</span>
-              <span className="text-[11px] text-center px-4">Добавьте типы выработок вашего рудника ниже — задайте название, сечение, площадь и параметры.</span>
+              <span className="text-[13px] font-medium text-gray-500">Справочник пуст</span>
+              <span className="text-[11px] text-gray-400 text-center px-6">
+                Добавьте типы выработок вашего рудника — введите название ниже и нажмите «Добавить»
+              </span>
             </div>
           )}
           {types.map((t, i) => {
-            const isSelected = t.id === selectedId;
-            const isEditing = t.id === editingId;
+            const isSel = t.id === selectedId;
             return (
               <div key={t.id}
-                className="grid items-center border-b border-gray-100 cursor-pointer"
+                className="grid items-center border-b border-gray-100 cursor-pointer select-none"
                 style={{
-                  gridTemplateColumns: "24px 1fr 60px 80px 48px 48px 52px",
-                  background: isSelected ? "#dbeafe" : i % 2 === 0 ? "#fafafa" : "#fff",
-                  outline: isSelected ? "1px solid #3b82f6" : "none",
+                  gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px",
+                  minHeight: 28,
+                  background: isSel ? "#dbeafe" : i % 2 === 0 ? "#fafafa" : "#fff",
+                  outline: isSel ? "1px solid #3b82f6" : "none",
                 }}
-                onClick={() => { setSelectedId(t.id); if (editingId && editingId !== t.id) saveEdit(); }}
-                onDoubleClick={() => startEdit(t)}>
-
-                {/* Корзина */}
-                <button className="flex items-center justify-center h-full hover:text-red-500 text-gray-300"
-                  onClick={e => { e.stopPropagation(); setTypes(p => p.filter(x => x.id !== t.id)); if (selectedId === t.id) setSelectedId(null); }}>
+                onClick={() => selectRow(t)}>
+                <button className="flex items-center justify-center w-full h-full hover:text-red-500 text-gray-300"
+                  onClick={e => { e.stopPropagation(); setTypes(p => p.filter(x => x.id !== t.id)); if (selectedId === t.id) { setSelectedId(null); setIsEditing(false); } }}>
                   <Icon name="Trash2" size={11} />
                 </button>
-
-                {/* Название */}
-                {isEditing ? (
-                  <input autoFocus className="text-[11px] px-1 border border-blue-400 rounded w-full"
-                    value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                    onBlur={saveEdit} onKeyDown={e => e.key === "Enter" && saveEdit()} />
-                ) : (
-                  <span className="px-2 text-[11px] text-gray-900 truncate font-medium">{t.name}</span>
-                )}
-
-                {/* Цвет */}
-                {isEditing ? (
-                  <div className="flex items-center justify-center px-1">
-                    <input type="color" value={editForm.color}
-                      onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))}
-                      className="w-8 h-5 border-0 cursor-pointer rounded" />
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center px-1">
-                    <div className="w-8 h-4 rounded border border-gray-300" style={{ background: t.color }} />
-                  </div>
-                )}
-
-                {/* Сечение */}
-                {isEditing ? (
-                  <select className="text-[10px] px-0.5 border border-blue-400 rounded w-full"
-                    value={editForm.shape} onChange={e => setEditForm(f => ({ ...f, shape: e.target.value as BranchType["shape"] }))}>
-                    {Object.entries(SHAPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                ) : (
-                  <span className="px-1 text-[11px] text-gray-900">{SHAPE_LABELS[t.shape]}</span>
-                )}
-
-                {/* S м² */}
-                {isEditing ? (
-                  <input type="number" min={0} step={0.1}
-                    className="text-[11px] px-1 border border-blue-400 rounded w-full text-right"
-                    value={editForm.area} onChange={e => setEditForm(f => ({ ...f, area: parseFloat(e.target.value) || 0 }))} />
-                ) : (
-                  <span className="px-1 text-[11px] text-gray-900 text-right">{t.area}</span>
-                )}
-
-                {/* Vmax */}
-                {isEditing ? (
-                  <input type="number" min={0} step={1}
-                    className="text-[11px] px-1 border border-blue-400 rounded w-full text-right"
-                    value={editForm.vMax} onChange={e => setEditForm(f => ({ ...f, vMax: parseFloat(e.target.value) || 0 }))} />
-                ) : (
-                  <span className="px-1 text-[11px] text-gray-900 text-right">{t.vMax}</span>
-                )}
-
-                {/* alpha */}
-                {isEditing ? (
-                  <input type="number" min={0} step={1}
-                    className="text-[11px] px-1 border border-blue-400 rounded w-full text-right"
-                    value={editForm.alphaCoef} onChange={e => setEditForm(f => ({ ...f, alphaCoef: parseFloat(e.target.value) || 0 }))} />
-                ) : (
-                  <span className="px-1 text-[11px] text-gray-900 text-right">{t.alphaCoef}</span>
-                )}
+                <span className="px-2 text-[12px] text-gray-900 font-medium truncate">{t.name}</span>
+                <div className="flex items-center justify-center px-1">
+                  <div className="w-7 h-4 rounded border border-gray-300" style={{ background: t.color }} />
+                </div>
+                <span className="px-1 text-[11px] text-gray-800">{SHAPE_LABELS[t.shape]}</span>
+                <span className="px-1 text-[11px] text-gray-800 text-right">{t.area}</span>
+                <span className="px-1 text-[11px] text-gray-800 text-right">{t.vMax}</span>
+                <span className="px-1 text-[11px] text-gray-800 text-right">{t.alphaCoef}</span>
               </div>
             );
           })}
         </div>
 
-        {/* Строка добавления нового типа */}
-        <div className="flex items-center gap-1 px-2 py-1 border-t border-gray-300 flex-shrink-0" style={{ background: "#f0f0f0" }}>
-          <input className="flex-1 text-[11px] border border-gray-300 rounded px-2 py-0.5 bg-white"
+        {/* Добавление */}
+        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-gray-300 flex-shrink-0" style={{ background: "#f0f0f0" }}>
+          <input className="flex-1 text-[12px] border border-gray-300 rounded px-2 py-1 bg-white text-gray-900"
             placeholder="Укажите название нового типа"
             value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addType()} />
           <button onClick={addType}
-            className="h-5 px-2 text-[10px] border border-blue-400 text-blue-700 rounded hover:bg-blue-50 flex items-center gap-1">
-            <Icon name="Plus" size={10} /> Добавить
+            className="h-7 px-3 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+            <Icon name="Plus" size={11} /> Добавить
           </button>
         </div>
       </div>
 
-      {/* Правая панель: детали выбранного типа */}
-      <div className="flex-1 flex flex-col overflow-hidden p-3 gap-3">
+      {/* Правая панель: просмотр / редактирование */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {selected ? (
           <>
-            <div className="flex items-center gap-2 pb-2 border-b border-gray-200">
-              <div className="w-5 h-5 rounded border border-gray-300" style={{ background: selected.color }} />
-              <span className="text-[13px] font-semibold text-gray-800">{selected.name}</span>
-              <button onClick={() => startEdit(selected)}
-                className="ml-auto h-5 px-2 text-[10px] border border-gray-300 rounded hover:bg-blue-50 flex items-center gap-1">
-                <Icon name="Edit2" size={10} /> Изменить
-              </button>
-              <button onClick={deleteSelected}
-                className="h-5 px-2 text-[10px] border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center gap-1">
-                <Icon name="Trash2" size={10} /> Удалить
-              </button>
-            </div>
-            {editingId === selected.id ? (
-              <div className="space-y-2 text-[12px]">
-                <DetailRow label="Поверхность:">
-                  <select className="flex-1 border border-gray-300 rounded px-1 py-0.5 text-[11px]"
-                    value={editForm.surface} onChange={e => setEditForm(f => ({ ...f, surface: e.target.value }))}>
-                    {SURFACE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </DetailRow>
-                <div className="flex gap-2 pt-2">
+            {/* Заголовок панели */}
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+              <div className="w-6 h-6 rounded border border-gray-300 flex-shrink-0" style={{ background: isEditing ? editForm.color : selected.color }} />
+              <span className="text-[13px] font-semibold text-gray-900 truncate">
+                {isEditing ? (editForm.name || "Новый тип") : selected.name}
+              </span>
+              {!isEditing ? (
+                <>
+                  <button onClick={() => startEdit(selected)}
+                    className="ml-auto h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-blue-50 text-gray-700 flex items-center gap-1">
+                    <Icon name="Edit2" size={11} /> Изменить
+                  </button>
+                  <button onClick={deleteSelected}
+                    className="h-6 px-2 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center gap-1">
+                    <Icon name="Trash2" size={11} /> Удалить
+                  </button>
+                </>
+              ) : (
+                <>
                   <button onClick={saveEdit}
-                    className="px-3 py-1 bg-blue-600 text-white text-[11px] rounded hover:bg-blue-700">
+                    className="ml-auto h-6 px-3 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
                     Сохранить
                   </button>
-                  <button onClick={() => setEditingId(null)}
-                    className="px-3 py-1 border border-gray-300 text-[11px] rounded hover:bg-gray-50">
+                  <button onClick={cancelEdit}
+                    className="h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
                     Отмена
                   </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1 text-[12px]">
-                <DetailRow label="Форма сечения:">{SHAPE_LABELS[selected.shape]}</DetailRow>
-                <DetailRow label="Типовая площадь:">{selected.area} м²</DetailRow>
-                <DetailRow label="Vmax:">{selected.vMax} м/с</DetailRow>
-                <DetailRow label="Коэф. α:">{selected.alphaCoef} ×10⁻⁴</DetailRow>
-                <DetailRow label="Поверхность:">{selected.surface}</DetailRow>
-                <DetailRow label="Цвет:">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="w-6 h-4 rounded border border-gray-300 inline-block" style={{ background: selected.color }} />
-                    {selected.color}
-                  </span>
-                </DetailRow>
-              </div>
-            )}
+                </>
+              )}
+            </div>
+
+            {/* Поля */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {isEditing ? (
+                <>
+                  <EditField label="Название">
+                    <input autoFocus className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                      value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                      onKeyDown={e => e.key === "Enter" && saveEdit()} />
+                  </EditField>
+                  <EditField label="Цвет линии на схеме">
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={editForm.color}
+                        onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))}
+                        className="w-10 h-8 border border-gray-300 rounded cursor-pointer" />
+                      <span className="text-[12px] text-gray-600">{editForm.color}</span>
+                    </div>
+                  </EditField>
+                  <EditField label="Форма сечения">
+                    <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                      value={editForm.shape} onChange={e => setEditForm(f => ({ ...f, shape: e.target.value as BranchType["shape"] }))}>
+                      {Object.entries(SHAPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </EditField>
+                  <EditField label="Поверхность / крепь">
+                    <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                      value={editForm.surface} onChange={e => setEditForm(f => ({ ...f, surface: e.target.value }))}>
+                      {SURFACE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </EditField>
+                  <div className="grid grid-cols-3 gap-3">
+                    <EditField label="S, м²">
+                      <input type="number" min={0} step={0.1}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                        value={editForm.area} onChange={e => setEditForm(f => ({ ...f, area: parseFloat(e.target.value) || 0 }))} />
+                    </EditField>
+                    <EditField label="Vmax, м/с">
+                      <input type="number" min={0} step={1}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                        value={editForm.vMax} onChange={e => setEditForm(f => ({ ...f, vMax: parseFloat(e.target.value) || 0 }))} />
+                    </EditField>
+                    <EditField label="α ×10⁻⁴">
+                      <input type="number" min={0} step={1}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                        value={editForm.alphaCoef} onChange={e => setEditForm(f => ({ ...f, alphaCoef: parseFloat(e.target.value) || 0 }))} />
+                    </EditField>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <ViewRow label="Форма сечения">{SHAPE_LABELS[selected.shape]}</ViewRow>
+                  <ViewRow label="Поверхность / крепь">{selected.surface}</ViewRow>
+                  <ViewRow label="Типовая площадь">{selected.area} м²</ViewRow>
+                  <ViewRow label="Vmax">{selected.vMax} м/с</ViewRow>
+                  <ViewRow label="Коэф. α">{selected.alphaCoef} ×10⁻⁴</ViewRow>
+                  <ViewRow label="Цвет">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="w-6 h-4 rounded border border-gray-300 inline-block" style={{ background: selected.color }} />
+                      <span className="text-gray-600 text-[12px]">{selected.color}</span>
+                    </span>
+                  </ViewRow>
+                </>
+              )}
+            </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-[12px] text-gray-400">
-            Выберите тип выработки для просмотра свойств
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
+            <Icon name="MousePointer2" size={28} className="text-gray-300" />
+            <span className="text-[13px]">Выберите тип выработки</span>
+            <span className="text-[11px]">Нажмите строку, затем «Изменить» для редактирования</span>
           </div>
         )}
-        <div className="mt-auto pt-2 border-t border-gray-100 text-[10px] text-gray-400">
-          Двойной клик по строке — редактирование. Нажмите Enter или Сохранить для подтверждения.
-        </div>
       </div>
     </div>
   );
 }
 
-function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+function EditField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 py-0.5 border-b border-gray-50">
-      <span className="text-gray-500 w-36 flex-shrink-0">{label}</span>
-      <span className="text-gray-800">{children}</span>
+    <div className="space-y-1">
+      <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">{label}</label>
+      {children}
     </div>
   );
 }
+
+function ViewRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 py-1.5 border-b border-gray-100">
+      <span className="text-[12px] text-gray-500 w-40 flex-shrink-0">{label}</span>
+      <span className="text-[13px] text-gray-900 font-medium">{children}</span>
+    </div>
+  );
+}
+
+
 const DEMO_BULKHEADS = [
   { name: "Бетонная перемычка", type: "Глухая", r: ">10000", note: "ГОСТ 12.3.022" },
   { name: "Шлакобетонная", type: "Глухая", r: ">5000", note: "" },
