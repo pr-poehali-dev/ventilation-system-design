@@ -26,6 +26,8 @@ interface BranchPropsPanelProps {
   onOpenFanLibrary?: () => void;
   /** Типы выработок из справочника рудника */
   mineTypes?: BranchType[];
+  /** Открыть справочник оборудования на вкладке типов выработок */
+  onOpenTypesLibrary?: () => void;
 }
 
 const SH = "#e8eef8";
@@ -199,7 +201,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -570,6 +572,19 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 onChange={(v) => onUpdate({ type: v })}
               />
             </InlineLabel>
+            {(!mineTypes || mineTypes.length === 0) && (
+              <div className="px-2 py-1.5 mx-1 mb-1 rounded text-[10px] text-amber-700 leading-tight"
+                style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                Используется список по умолчанию.
+                {onOpenTypesLibrary && (
+                  <button onClick={onOpenTypesLibrary}
+                    className="block mt-0.5 underline text-blue-600 cursor-pointer"
+                    style={{ background: "none", border: "none", padding: 0, fontSize: 10 }}>
+                    Добавить типы выработок рудника →
+                  </button>
+                )}
+              </div>
+            )}
 
             <InlineLabel label="Горизонт">
               <div className="flex items-center gap-1">

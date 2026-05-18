@@ -2174,6 +2174,7 @@ export default function CadPage() {
                 mineBulkheads={mineBulkheads}
                 onOpenFanLibrary={() => { setShowEquipRef(true); setEquipRefTab("fans"); }}
                 mineTypes={mineTypes}
+                onOpenTypesLibrary={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
               />
             )}
 
