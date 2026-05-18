@@ -440,8 +440,8 @@ export default function CadPage() {
   const [showSolverParams, setShowSolverParams] = useState(false);
   // Параметры теплового режима (оставляем для совместимости UI)
   const [calcFire, setCalcFire] = useState(false);
-  const [calcMethane] = useState(false);
-  const [calcThermal] = useState(false);
+  const [calcMethane, setCalcMethane] = useState(false);
+  const [calcThermal, setCalcThermal] = useState(false);
   const [fireNodeId] = useState<string>("");
   const [fireHeat] = useState(5000);
   const [fireSmoke] = useState(0.3);
