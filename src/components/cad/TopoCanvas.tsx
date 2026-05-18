@@ -4,7 +4,7 @@ import {
   type Horizon,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
-import { LEGEND_TYPES } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -1152,50 +1152,7 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Символ перемычки на ветви (hasBulkhead=true) ────────── */}
-              {b.hasBulkhead && !thinLines && segLen > 12 && (() => {
-                const cx = (from.sx + to.sx) / 2;
-                const cy = (from.sy + to.sy) / 2;
-                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-                // Высота столбов (поперёк ветви), ширина столбов (вдоль ветви)
-                const ph = Math.max(10, Math.min(32, w * 5 + 10));  // высота (перпендикуляр)
-                const pw = Math.max(3, ph * 0.28);                   // ширина столба
-                const gap = Math.max(8, ph * 0.7);                   // расстояние между столбами
-                const bkColor = (() => {
-                  const bid = b.bulkheadId ?? "";
-                  if (bid.includes("concrete")) return "#4caf50";
-                  if (bid.includes("wood")) return "#ffd600";
-                  if (bid.includes("brick")) return "#ff9800";
-                  if (bid.includes("metal")) return "#9c27b0";
-                  return "white";
-                })();
-                const bkStroke = (() => {
-                  const bid = b.bulkheadId ?? "";
-                  if (bid.includes("concrete")) return "#2e7d32";
-                  if (bid.includes("wood")) return "#f57f17";
-                  if (bid.includes("brick")) return "#e65100";
-                  if (bid.includes("metal")) return "#6a1b9a";
-                  return "#1f2937";
-                })();
-                // Координатная система: X — вдоль ветви, Y — поперёк
-                // Рисуем в локальных координатах, потом rotate
-                return (
-                  <g transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                    {/* Белый прямоугольник — "просвет" сечения за перемычкой */}
-                    <rect x={-gap / 2 - pw} y={-ph / 2} width={gap + pw * 2} height={ph}
-                      fill="white" opacity={0.55} />
-                    {/* Левый столб */}
-                    <rect x={-gap / 2 - pw} y={-ph / 2} width={pw} height={ph}
-                      fill={bkColor} stroke={bkStroke} strokeWidth={1.2} />
-                    {/* Правый столб */}
-                    <rect x={gap / 2} y={-ph / 2} width={pw} height={ph}
-                      fill={bkColor} stroke={bkStroke} strokeWidth={1.2} />
-                    {/* Горизонтальная ось (линия ветви сквозь символ) */}
-                    <line x1={-gap / 2 - pw} y1={0} x2={gap / 2 + pw} y2={0}
-                      stroke={bkStroke} strokeWidth={1.2} />
-                  </g>
-                );
-              })()}
+
             </g>
           );
         })}
@@ -1344,15 +1301,42 @@ export default function TopoCanvas(props: Props) {
               }}>
               {/* Рамка выделения (без кнопок — управление в панели свойств) */}
               {isSel && (
-                <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
-                  fill="none" stroke="#2563eb" strokeWidth="1.5" rx="3" />
+                <circle cx={px} cy={py} r={SZ / 2 + 4}
+                  fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />
               )}
               {/* SVG-символ */}
-              <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
-                overflow="visible"
-                opacity={isFanStopped ? 0.35 : 1}
-                style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
-                dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+              {(() => {
+                const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+                if (isBulkhead && sym.branchId && hasBranchPts) {
+                  // Перемычка на ветви — рисуем поперёк ветви
+                  // SVG viewBox="0 0 48 40": символ горизонтальный (столбы по Y, ось по X)
+                  // Поворачиваем на угол ветви — символ встаёт поперёк ветви
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                  // Размер: ширина = SZ (вдоль ветви), высота = SZ (поперёк)
+                  // Центр SVG (24,20) → совмещаем с px,py
+                  const sw = SZ, sh = SZ;
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}
+                      opacity={isFanStopped ? 0.35 : 1}
+                      style={isFanStopped ? { filter: "grayscale(1)" } : undefined}>
+                      {/* Белая подложка — перекрываем линию ветви за перемычкой */}
+                      <rect x={-sw * 0.2} y={-sh * 0.55} width={sw * 0.4} height={sh * 1.1}
+                        fill="white" />
+                      <svg x={-sw / 2} y={-sh / 2} width={sw} height={sh}
+                        viewBox="0 0 48 40" overflow="visible"
+                        dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                    </g>
+                  );
+                }
+                return (
+                  <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
+                    overflow="visible"
+                    opacity={isFanStopped ? 0.35 : 1}
+                    style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
+                    dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                );
+              })()}
               {/* Крестик на остановленном вентиляторе */}
               {isFanStopped && (
                 <g opacity={0.7}>
@@ -1381,7 +1365,7 @@ export default function TopoCanvas(props: Props) {
               })()}
               {/* Подпись: описание или label или название */}
               {view.scale > 0.06 && (
-                <text x={px} y={HY + SZ + 11} textAnchor="middle"
+                <text x={px} y={py + SZ / 2 + 12} textAnchor="middle"
                   fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="Segoe UI, sans-serif"
                   opacity={Math.min(1, (view.scale - 0.06) / 0.06)}>
                   {sym.description || sym.label || lt.name}
