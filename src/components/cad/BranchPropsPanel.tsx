@@ -220,8 +220,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set([
       "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_unit_r",
-      "v_velocity", "v_adddep", "v_qcalc", "v_flow", "v_height",
-      "v_people", "v_dep", "v_natural", "v_time", "v_ch4",
+      "v_velocity", "v_adddep", "v_flow", "v_dep",
       "v_r_friction", "v_r_local", "v_reynolds", "v_power",
     ])
   );
@@ -577,36 +576,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <ComputedInput value={branch.hasFan ? numFmt(branch.fanPressure, 1) : "0"} />
             </ParamRow>
 
-            <ParamRow id="v_qcalc" label="Расход расч. Q(расч), м³/с" visible={visible.has("v_qcalc")} onToggle={toggle}>
-              <ComputedInput value={numFmt(branch.flow, 2)} />
-            </ParamRow>
-
             <ParamRow id="v_flow" label="Расход Q, м³/с" visible={visible.has("v_flow")} onToggle={toggle}>
               <ComputedInput value={numFmt(branch.flow, 2)} />
             </ParamRow>
 
-            <ParamRow id="v_height" label="Высота ветви, м" visible={visible.has("v_height")} onToggle={toggle}>
-              <ComputedInput value={numFmt(branch.rectHeight, 2)} />
-            </ParamRow>
-
-            <ParamRow id="v_people" label="Кол-во людей" visible={visible.has("v_people")} onToggle={toggle}>
-              <ComputedInput value="0" />
-            </ParamRow>
-
             <ParamRow id="v_dep" label="Депрессия H, Па" visible={visible.has("v_dep")} onToggle={toggle}>
               <ComputedInput value={numFmt(branch.dP, 1)} />
-            </ParamRow>
-
-            <ParamRow id="v_natural" label="Естеств. тяга H(ест), Па" visible={visible.has("v_natural")} onToggle={toggle}>
-              <ComputedInput value="—" />
-            </ParamRow>
-
-            <ParamRow id="v_time" label="Время распр. газов T, мин" visible={visible.has("v_time")} onToggle={toggle}>
-              <ComputedInput value="—" />
-            </ParamRow>
-
-            <ParamRow id="v_ch4" label="Расход метана CH4, м³/мин" visible={visible.has("v_ch4")} onToggle={toggle}>
-              <ComputedInput value="—" />
             </ParamRow>
 
             <ParamRow id="v_r_friction" label="R трение, ×10⁻³ кμ" visible={visible.has("v_r_friction")} onToggle={toggle}>
