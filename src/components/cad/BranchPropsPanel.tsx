@@ -543,66 +543,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </div>
             )}
 
-            <SectionHeader title="Название и группы" />
-
-            <InlineLabel label="Тип выработки">
-              {mineTypes && mineTypes.length > 0 ? (
-                <select
-                  value={mineTypes.some(t => t.name === branch.type) ? branch.type : ""}
-                  onChange={(e) => onUpdate({ type: e.target.value })}
-                  className="w-full text-[11px] px-1"
-                  style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none", fontFamily: "inherit" }}>
-                  {!mineTypes.some(t => t.name === branch.type) && (
-                    <option value="" disabled>— выберите тип —</option>
-                  )}
-                  {mineTypes.map(t => (
-                    <option key={t.id} value={t.name}>{t.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <SelectField
-                  value={branch.type}
-                  options={BRANCH_TYPES}
-                  onChange={(v) => onUpdate({ type: v })}
-                />
-              )}
-            </InlineLabel>
-            {(!mineTypes || mineTypes.length === 0) && (
-              <div className="px-2 py-1.5 mx-1 mb-1 rounded text-[10px] text-amber-700 leading-tight"
-                style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
-                Используется список по умолчанию.
-                {onOpenTypesLibrary && (
-                  <button onClick={onOpenTypesLibrary}
-                    className="block mt-0.5 underline text-blue-600 cursor-pointer"
-                    style={{ background: "none", border: "none", padding: 0, fontSize: 10 }}>
-                    Добавить типы выработок рудника →
-                  </button>
-                )}
-              </div>
-            )}
-
-            <InlineLabel label="Горизонт">
-              <div className="flex items-center gap-1">
-                <select
-                  value={branch.horizonId}
-                  onChange={(e) => onUpdate({ horizonId: e.target.value })}
-                  className="flex-1 text-[11px] px-1"
-                  style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                  <option value="">— без привязки —</option>
-                  {horizons.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
-                  ))}
-                </select>
-                {branch.horizonId && horizonColor && (
-                  <span style={{ width: 12, height: 12, background: horizonColor, border: "1px solid #888", flexShrink: 0, display: "inline-block" }} />
-                )}
-              </div>
-            </InlineLabel>
-
-            <InlineLabel label="Позиция">
-              <SelectField value={pla} options={PLA_OPTIONS} onChange={setPla} />
-            </InlineLabel>
-
             <SectionHeader title="Вычисленные параметры" />
 
             <ParamRow id="v_name" label="Название ветви" visible={visible.has("v_name")} onToggle={toggle}>
