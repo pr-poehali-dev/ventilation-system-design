@@ -1151,6 +1151,51 @@ export default function TopoCanvas(props: Props) {
                   </g>
                 );
               })()}
+
+              {/* ── Символ перемычки на ветви (hasBulkhead=true) ────────── */}
+              {b.hasBulkhead && !thinLines && segLen > 12 && (() => {
+                const cx = (from.sx + to.sx) / 2;
+                const cy = (from.sy + to.sy) / 2;
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                // Высота столбов (поперёк ветви), ширина столбов (вдоль ветви)
+                const ph = Math.max(10, Math.min(32, w * 5 + 10));  // высота (перпендикуляр)
+                const pw = Math.max(3, ph * 0.28);                   // ширина столба
+                const gap = Math.max(8, ph * 0.7);                   // расстояние между столбами
+                const bkColor = (() => {
+                  const bid = b.bulkheadId ?? "";
+                  if (bid.includes("concrete")) return "#4caf50";
+                  if (bid.includes("wood")) return "#ffd600";
+                  if (bid.includes("brick")) return "#ff9800";
+                  if (bid.includes("metal")) return "#9c27b0";
+                  return "white";
+                })();
+                const bkStroke = (() => {
+                  const bid = b.bulkheadId ?? "";
+                  if (bid.includes("concrete")) return "#2e7d32";
+                  if (bid.includes("wood")) return "#f57f17";
+                  if (bid.includes("brick")) return "#e65100";
+                  if (bid.includes("metal")) return "#6a1b9a";
+                  return "#1f2937";
+                })();
+                // Координатная система: X — вдоль ветви, Y — поперёк
+                // Рисуем в локальных координатах, потом rotate
+                return (
+                  <g transform={`translate(${cx},${cy}) rotate(${angle})`}>
+                    {/* Белый прямоугольник — "просвет" сечения за перемычкой */}
+                    <rect x={-gap / 2 - pw} y={-ph / 2} width={gap + pw * 2} height={ph}
+                      fill="white" opacity={0.55} />
+                    {/* Левый столб */}
+                    <rect x={-gap / 2 - pw} y={-ph / 2} width={pw} height={ph}
+                      fill={bkColor} stroke={bkStroke} strokeWidth={1.2} />
+                    {/* Правый столб */}
+                    <rect x={gap / 2} y={-ph / 2} width={pw} height={ph}
+                      fill={bkColor} stroke={bkStroke} strokeWidth={1.2} />
+                    {/* Горизонтальная ось (линия ветви сквозь символ) */}
+                    <line x1={-gap / 2 - pw} y1={0} x2={gap / 2 + pw} y2={0}
+                      stroke={bkStroke} strokeWidth={1.2} />
+                  </g>
+                );
+              })()}
             </g>
           );
         })}
