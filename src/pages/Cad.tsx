@@ -683,6 +683,8 @@ export default function CadPage() {
     branches: branchesRaw,
     horizons,
     schemaSymbols,
+    mineFans,
+    mineBulkheads,
     view: savedViewState ?? undefined,
   });
 
@@ -815,6 +817,8 @@ export default function CadPage() {
     // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)
     const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
+    if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
+    if (data.mineBulkheads) setMineBulkheads(data.mineBulkheads as MineBulkheadExport[]);
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
@@ -2143,6 +2147,7 @@ export default function CadPage() {
                 normalFlows={normalFlows}
                 mineFans={mineFans}
                 mineBulkheads={mineBulkheads}
+                onOpenFanLibrary={() => { setShowEquipRef(true); setEquipRefTab("fans"); }}
               />
             )}
 

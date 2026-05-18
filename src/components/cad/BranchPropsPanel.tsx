@@ -22,6 +22,8 @@ interface BranchPropsPanelProps {
   mineFans?: MineFanExport[];
   /** Перемычки, добавленные в справочник рудника */
   mineBulkheads?: MineBulkheadExport[];
+  /** Открыть справочник оборудования на вкладке вентиляторов */
+  onOpenFanLibrary?: () => void;
 }
 
 const SH = "#e8eef8";
@@ -195,7 +197,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -952,29 +954,40 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               return (
                 <>
-                  <InlineLabel label="Шаблон">
-                    <select
-                      value={branch.fanCurveId}
-                      onChange={(e) => {
-                        const f = getFanById(e.target.value);
-                        onUpdate({
-                          fanCurveId: e.target.value,
-                          fanName: f?.name ?? "",
-                          fanRpm: f ? (f.rpmNominal ?? 0) : 0,
-                          fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
-                        });
-                      }}
-                      className="w-full text-[11px] px-1"
-                      style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                      <option value="">— выберите модель —</option>
-                      {(mineFans && mineFans.length > 0
-                        ? FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id))
-                        : FAN_CATALOG
-                      ).map((f) => (
-                        <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
-                      ))}
-                    </select>
-                  </InlineLabel>
+                  {(!mineFans || mineFans.length === 0) ? (
+                    <div className="px-2 py-2 mx-1 my-1 rounded text-[10px] text-amber-700 leading-tight"
+                      style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                      Вентиляторы не добавлены в библиотеку рудника.
+                      {onOpenFanLibrary && (
+                        <button onClick={onOpenFanLibrary}
+                          className="block mt-1 underline text-blue-600 cursor-pointer"
+                          style={{ background: "none", border: "none", padding: 0, fontSize: 10 }}>
+                          Открыть справочник оборудования →
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <InlineLabel label="Модель">
+                      <select
+                        value={branch.fanCurveId}
+                        onChange={(e) => {
+                          const f = getFanById(e.target.value);
+                          onUpdate({
+                            fanCurveId: e.target.value,
+                            fanName: f?.name ?? "",
+                            fanRpm: f ? (f.rpmNominal ?? 0) : 0,
+                            fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
+                          });
+                        }}
+                        className="w-full text-[11px] px-1"
+                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                        <option value="">— выберите модель —</option>
+                        {FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id)).map((f) => (
+                          <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
+                        ))}
+                      </select>
+                    </InlineLabel>
+                  )}
 
                   {curve && curve.bladeAngles.length > 0 && (
                     <InlineLabel label="Лопатки">
