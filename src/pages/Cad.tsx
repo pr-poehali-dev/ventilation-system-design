@@ -1042,20 +1042,18 @@ export default function CadPage() {
         return;
       }
 
-      // S+S / С+С (двойное нажатие за 500мс) — диалог выделения подобных объектов
-      // Работает как в латинской (s/S), так и в русской (с/С) раскладке
-      if (e.key === "s" || e.key === "S" || e.key === "с" || e.key === "С") {
-        if (!isEditing) {
-          const now = Date.now();
-          if (now - lastSPressRef.current < 500) {
-            e.preventDefault();
-            setShowSelectSimilar(true);
-            lastSPressRef.current = 0;
-          } else {
-            lastSPressRef.current = now;
-          }
-          return;
+      // S+S (англ.) / Ы+Ы (рус.) — диалог выделения подобных объектов
+      const isSKey = e.key === "s" || e.key === "S" || e.key === "ы" || e.key === "Ы";
+      if (isSKey && !isEditing) {
+        const now = Date.now();
+        if (now - lastSPressRef.current < 600) {
+          e.preventDefault();
+          setShowSelectSimilar(true);
+          lastSPressRef.current = 0;
+        } else {
+          lastSPressRef.current = now;
         }
+        return;
       }
 
       // Del/Backspace — блокируем только если input активен И имеет текстовое содержимое
