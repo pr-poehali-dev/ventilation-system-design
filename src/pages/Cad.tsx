@@ -1042,8 +1042,9 @@ export default function CadPage() {
         return;
       }
 
-      // S+S (двойное S за 500мс) — диалог выделения подобных объектов
-      if (e.key === "s" || e.key === "S") {
+      // S+S / С+С (двойное нажатие за 500мс) — диалог выделения подобных объектов
+      // Работает как в латинской (s/S), так и в русской (с/С) раскладке
+      if (e.key === "s" || e.key === "S" || e.key === "с" || e.key === "С") {
         if (!isEditing) {
           const now = Date.now();
           if (now - lastSPressRef.current < 500) {
