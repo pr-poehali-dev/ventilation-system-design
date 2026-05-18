@@ -2598,60 +2598,56 @@ export default function CadPage() {
             {/* ═══ ВКЛАДКА: ВЕНТИЛЯЦИЯ ═════════════════════════════════ */}
             {activeSide === "vent" && (
               <>
-                <PropGroup title="Тип выработки">
-                  {mineTypes.length > 0 ? (
-                    <select
-                      value={mineTypes.some(t => t.name === excavation.type) ? excavation.type : ""}
-                      onChange={(e) => setExcavation({ ...excavation, type: e.target.value })}
-                      className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
-                      {!mineTypes.some(t => t.name === excavation.type) && (
-                        <option value="" disabled>— выберите тип —</option>
+                {selectedBranch ? (
+                  <>
+                    <PropGroup title="Тип выработки">
+                      {mineTypes.length > 0 ? (
+                        <select
+                          value={mineTypes.some(t => t.name === selectedBranch.type) ? selectedBranch.type : ""}
+                          onChange={(e) => updateBranch(selectedBranch.id, { type: e.target.value })}
+                          className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
+                          {!mineTypes.some(t => t.name === selectedBranch.type) && (
+                            <option value="" disabled>— выберите тип —</option>
+                          )}
+                          {mineTypes.map(t => (
+                            <option key={t.id} value={t.name}>{t.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <SelectRow
+                          value={selectedBranch.type}
+                          options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.", "Уклон", "Очистной", "Сбойка", "Камера", "Конвейер", "Вент. канал"]}
+                          onChange={(v) => updateBranch(selectedBranch.id, { type: v })} />
                       )}
-                      {mineTypes.map(t => (
-                        <option key={t.id} value={t.name}>{t.name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <SelectRow value={excavation.type} options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек", "Уклон", "Камера"]}
-                      onChange={(v) => setExcavation({ ...excavation, type: v })} />
-                  )}
-                </PropGroup>
+                    </PropGroup>
 
-                <PropGroup title="Поперечное сечение">
-                  <SelectRow value="Круглое" options={["Круглое", "Прямоугольное", "Трапециевидное", "Арочное"]}
-                    onChange={() => {}} />
-                  <FieldRow label="Площадь:" value={`${excavation.area} м²`} />
-                  <CheckRow label="Тип:" caption="Задается вручную" />
-                  <FieldRow label="Периметр:" value={`${excavation.perimeter} м`} />
-                </PropGroup>
+                    <PropGroup title="Поперечное сечение">
+                      <FieldRow label="Площадь:" value={`${selectedBranch.area.toFixed(2)} м²`} />
+                      <FieldRow label="Периметр:" value={`${selectedBranch.perimeter.toFixed(2)} м`} />
+                    </PropGroup>
 
-                <PropGroup title="Длина выработки">
-                  <CheckRow label="Тип:" caption="Задается вручную" />
-                  <FieldRow label="Длина:" value={`${excavation.length} м`} />
-                </PropGroup>
+                    <PropGroup title="Длина выработки">
+                      <FieldRow label="Длина:" value={`${selectedBranch.length.toFixed(1)} м`} />
+                    </PropGroup>
 
-                <PropGroup title="Аэродинамическое сопротивление">
-                  <SelectRowLabeled label="Задается:" value="Проектными данными"
-                    options={["Проектными данными", "По коэффициенту α", "По таблице ВНИИ", "Измеренное"]}
-                    onChange={() => {}} />
-                  <SelectRowLabeled label="Поверхность:" value={excavation.surface}
-                    options={["Воздухоподающая выработка, без неровностей", "Бетонная крепь", "Деревянная крепь", "Анкерная крепь", "Незакреплённая"]}
-                    onChange={(v) => setExcavation({ ...excavation, surface: v })} />
-                  <FieldRow label="Коэф-т α:" value={`${excavation.alphaCoef.toFixed(3)} кг/м³`} />
-                </PropGroup>
+                    <PropGroup title="Аэродинамическое сопротивление">
+                      <FieldRow label="Коэф-т α:" value={`${selectedBranch.alphaCoef.toFixed(3)} ×10⁻⁴`} />
+                      <FieldRow label="V max:" value={`${selectedBranch.vMax} м/с`} />
+                    </PropGroup>
 
-                <PropGroup title="Скорость воздуха">
-                  <CheckRow label="Тип:" caption="Задается вручную" />
-                  <FieldRow label="V max:" value={`${excavation.vMax} м/с`} />
-                </PropGroup>
-
-                <PropGroup title="Вычисленные параметры">
-                  <FieldRow label="Сопротив-ие:" value={`${excavation.resistance.toFixed(6)} кМюрг`} computed />
-                  <FieldRow label="Расход:" value={`${excavation.flow} м³/с`} computed />
-                  <FieldRow label="V воздуха:" value={`${excavation.velocity} м/с`} computed />
-                  <FieldRow label="ΔP:" value={`${excavation.dP} Па`} computed />
-                  <FieldRow label="Энергозат-ы:" value={`${excavation.power} Вт`} computed />
-                </PropGroup>
+                    <PropGroup title="Вычисленные параметры">
+                      <FieldRow label="Сопротив-ие:" value={`${selectedBranch.resistance.toFixed(6)} кМюрг`} computed />
+                      <FieldRow label="Расход:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} computed />
+                      <FieldRow label="V воздуха:" value={`${selectedBranch.velocity.toFixed(2)} м/с`} computed />
+                      <FieldRow label="ΔP:" value={`${selectedBranch.dP.toFixed(0)} Па`} computed />
+                      <FieldRow label="Энергозат-ы:" value={`${selectedBranch.power?.toFixed(0) ?? "—"} Вт`} computed />
+                    </PropGroup>
+                  </>
+                ) : (
+                  <div className="p-4 text-xs text-gray-400 text-center">
+                    Выберите ветвь на схеме
+                  </div>
+                )}
               </>
             )}
 
