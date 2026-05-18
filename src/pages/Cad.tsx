@@ -158,10 +158,11 @@ export default function CadPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
-  // Если активная вкладка — только для узла, но узел снят — переключить на "general"
-  const NODE_ONLY_TABS: SideTab[] = ["params", "measure", "pipes", "indicators"];
+  // Переключаем вкладку при смене выбранного узла
   useEffect(() => {
-    if (!selectedNodeId && NODE_ONLY_TABS.includes(activeSide)) {
+    if (selectedNodeId) {
+      setActiveSide("params");
+    } else {
       setActiveSide("general");
     }
   }, [selectedNodeId]);
@@ -2065,21 +2066,23 @@ export default function CadPage() {
         {/* ── ВЕРТИКАЛЬНЫЕ ВКЛАДКИ СЛЕВА ────────────────────────────── */}
         <div className="w-6 flex flex-col"
           style={{ background: "#e8e8e8", borderRight: "1px solid #b8b8b8" }}>
-          {([
-            { id: "general", label: "Общие" },
-            { id: "vent", label: "Вентиляция" },
-            { id: "params", label: "Параметры", nodeOnly: true },
-            { id: "horizons", label: "Горизонты" },
-            { id: "measure", label: "Замеры", nodeOnly: true },
-            { id: "pipes", label: "Трубы", nodeOnly: true },
-            { id: "indicators", label: "Индикаторы", nodeOnly: true },
-            { id: "thermo", label: "Теплофизика" },
-            { id: "accidents", label: "Аварии" },
-            { id: "areas", label: "Участки" },
-            { id: "coords", label: "Координаты" },
-          ] as { id: SideTab; label: string; nodeOnly?: boolean }[])
-          .filter(t => !t.nodeOnly || !!selectedNodeId)
-          .map((t) => (
+          {(selectedNodeId
+            ? ([
+                { id: "params", label: "Параметры" },
+                { id: "measure", label: "Замеры" },
+                { id: "pipes", label: "Трубы" },
+                { id: "indicators", label: "Индикаторы" },
+              ] as { id: SideTab; label: string }[])
+            : ([
+                { id: "general", label: "Общие" },
+                { id: "vent", label: "Вентиляция" },
+                { id: "horizons", label: "Горизонты" },
+                { id: "thermo", label: "Теплофизика" },
+                { id: "accidents", label: "Аварии" },
+                { id: "areas", label: "Участки" },
+                { id: "coords", label: "Координаты" },
+              ] as { id: SideTab; label: string }[])
+          ).map((t) => (
             <button key={t.id}
               onClick={() => setActiveSide(t.id)}
               className="h-20 flex items-center justify-center transition-colors flex-shrink-0"
