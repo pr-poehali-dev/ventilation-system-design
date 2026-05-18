@@ -1332,7 +1332,8 @@ export default function TopoCanvas(props: Props) {
                     : "#1a1a1a";  // всегда чёрный контур
 
                   // Размеры (px): высота поперёк ветви, ширина вдоль
-                  const ph = Math.max(14, Math.min(36, w * 5 + 14)); // поперёк
+                  // SZ — размер символа в px (зависит от масштаба sc)
+                  const ph = Math.max(14, Math.min(36, SZ * 0.7));   // поперёк
                   const pw = Math.max(4, Math.round(ph * 0.35));      // вдоль (один столб)
                   const sw2 = pw * 0.5;                               // зазор двери
 
