@@ -89,6 +89,13 @@ export interface TopoBranch {
   bulkheadName: string;         // название перемычки (для отображения)
   bulkheadR: number;            // сопротивление перемычки, Мюрг (добавляется к resistance ветви)
   bulkheadAirPerm: number;      // воздухопроницаемость, м²/(с·√Па)
+  // Аэродинамическое сопротивление перемычки (отдельно от ветви)
+  bulkheadResMode: "project" | "survey" | "manual"; // способ задания R перемычки
+  bulkheadManualAirPerm: boolean;  // воздухопроницаемость задана вручную (режим project)
+  bulkheadCustomAirPerm: number;   // вручную заданная воздухопроницаемость, м²/(с·√Па)
+  bulkheadSurveyQ: number;         // расход (воздушная съемка), м³/с
+  bulkheadSurveyDP: number;        // падение давления (воздушная съемка), Па
+  bulkheadManualR: number;         // вручную заданное R, кМюрг
   power: number;                // Вт
   reynolds: number;         // Re
   // ─── Отображение ────────────────────────────────────
@@ -226,6 +233,12 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     bulkheadName: "",
     bulkheadR: 0,
     bulkheadAirPerm: 0,
+    bulkheadResMode: "project",
+    bulkheadManualAirPerm: false,
+    bulkheadCustomAirPerm: 0,
+    bulkheadSurveyQ: 0,
+    bulkheadSurveyDP: 0,
+    bulkheadManualR: 0,
     lineWidth: 3,
     lineBorder: 0.6,
     capital: false,

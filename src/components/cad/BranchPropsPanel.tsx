@@ -1104,12 +1104,17 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <input type="checkbox" checked={branch.hasBulkhead ?? false}
                 onChange={e => onUpdate({
                   hasBulkhead: e.target.checked,
-                  ...(e.target.checked ? {} : { bulkheadId: "", bulkheadName: "", bulkheadR: 0, bulkheadAirPerm: 0 })
+                  ...(e.target.checked ? {} : {
+                    bulkheadId: "", bulkheadName: "", bulkheadR: 0, bulkheadAirPerm: 0,
+                    bulkheadResMode: "project", bulkheadManualAirPerm: false, bulkheadCustomAirPerm: 0,
+                    bulkheadSurveyQ: 0, bulkheadSurveyDP: 0, bulkheadManualR: 0,
+                  })
                 })}
                 style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }} />
             </div>
-            {(branch.hasBulkhead) && (
+            {branch.hasBulkhead && (
               <>
+                {/* ── Тип перемычки из справочника ── */}
                 <InlineLabel label="Тип перемычки">
                   <select
                     value={branch.bulkheadId ?? ""}
@@ -1136,16 +1141,115 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     Справочник перемычек пуст. Откройте Справочники → Перемычки и добавьте перемычки.
                   </div>
                 )}
-                {branch.bulkheadId && (
+
+                {/* ── Аэродинамическое сопротивление перемычки ── */}
+                <SectionHeader title="Аэродинамическое сопротивление" />
+
+                {/* R = ... кМюрг (вычисленное/итоговое) */}
+                <div className="flex items-center justify-center py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                  <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
+                    R = {(() => {
+                      const mode = branch.bulkheadResMode ?? "project";
+                      if (mode === "manual") return `${(branch.bulkheadManualR ?? 0).toFixed(4)} кМюрг`;
+                      if (mode === "survey") {
+                        const q = branch.bulkheadSurveyQ ?? 0;
+                        const dp = branch.bulkheadSurveyDP ?? 0;
+                        const r = q > 0 ? dp / (q * q) : 0;
+                        return `${(r / 1000).toFixed(4)} кМюрг`;
+                      }
+                      return branch.bulkheadR ? `${branch.bulkheadR.toFixed(4)} кМюрг` : "— кМюрг";
+                    })()}
+                  </span>
+                </div>
+
+                {/* Задается: */}
+                <InlineLabel label="Задается:">
+                  <select
+                    value={branch.bulkheadResMode ?? "project"}
+                    onChange={e => onUpdate({ bulkheadResMode: e.target.value as "project" | "survey" | "manual" })}
+                    className="w-full text-[11px] px-1"
+                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                    <option value="project">Проектными данными</option>
+                    <option value="survey">Воздушной съемкой</option>
+                    <option value="manual">Вручную</option>
+                  </select>
+                </InlineLabel>
+
+                {/* Режим: Проектными данными */}
+                {(branch.bulkheadResMode ?? "project") === "project" && (
                   <>
-                    <InlineLabel label="R перемычки, Мюрг">
-                      <ComputedInput value={branch.bulkheadR ? branch.bulkheadR.toExponential(2) : "—"} />
+                    <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Воздухопроницаемость</span>
+                    </div>
+                    <div className="flex items-center px-1 py-0.5 gap-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>Тип:</span>
+                      <input type="checkbox"
+                        checked={branch.bulkheadManualAirPerm ?? false}
+                        onChange={e => onUpdate({ bulkheadManualAirPerm: e.target.checked })}
+                        style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
+                      <span className="text-[11px] text-gray-600">Задается вручную</span>
+                    </div>
+                    <InlineLabel label="Значение:">
+                      {branch.bulkheadManualAirPerm ? (
+                        <EditInput
+                          type="number" step="0.0001"
+                          value={branch.bulkheadCustomAirPerm ?? 0}
+                          onChange={v => onUpdate({ bulkheadCustomAirPerm: parseFloat(v) || 0 })}
+                        />
+                      ) : (
+                        <ComputedInput value={branch.bulkheadAirPerm ? `${branch.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"} />
+                      )}
                     </InlineLabel>
-                    <InlineLabel label="Воздухопрон., м²/(с·√Па)">
-                      <ComputedInput value={branch.bulkheadAirPerm ? branch.bulkheadAirPerm.toFixed(6) : "—"} />
+                    <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
+                    </div>
+                    <InlineLabel label="ΔP:">
+                      <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
                     </InlineLabel>
-                    <InlineLabel label="R_итого, Мюрг">
-                      <ComputedInput value={((branch.resistance || 0) + (branch.bulkheadR || 0)).toExponential(2)} />
+                  </>
+                )}
+
+                {/* Режим: Воздушной съемкой */}
+                {(branch.bulkheadResMode ?? "project") === "survey" && (
+                  <>
+                    <InlineLabel label="Расход:">
+                      <EditInput
+                        type="number" step="0.1"
+                        value={branch.bulkheadSurveyQ ?? 0}
+                        onChange={v => onUpdate({ bulkheadSurveyQ: parseFloat(v) || 0 })}
+                      />
+                    </InlineLabel>
+                    <InlineLabel label="Падение Р:">
+                      <EditInput
+                        type="number" step="1"
+                        value={branch.bulkheadSurveyDP ?? 0}
+                        onChange={v => onUpdate({ bulkheadSurveyDP: parseFloat(v) || 0 })}
+                      />
+                    </InlineLabel>
+                    <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
+                    </div>
+                    <InlineLabel label="ΔP:">
+                      <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
+                    </InlineLabel>
+                  </>
+                )}
+
+                {/* Режим: Вручную */}
+                {(branch.bulkheadResMode ?? "project") === "manual" && (
+                  <>
+                    <InlineLabel label="R:">
+                      <EditInput
+                        type="number" step="0.0001"
+                        value={branch.bulkheadManualR ?? 0}
+                        onChange={v => onUpdate({ bulkheadManualR: parseFloat(v) || 0 })}
+                      />
+                    </InlineLabel>
+                    <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
+                    </div>
+                    <InlineLabel label="ΔP:">
+                      <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
                     </InlineLabel>
                   </>
                 )}
