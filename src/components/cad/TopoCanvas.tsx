@@ -1331,104 +1331,107 @@ export default function TopoCanvas(props: Props) {
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800"
                     : "#1a1a1a";  // всегда чёрный контур
 
-                  // Размеры (px): высота поперёк ветви, ширина вдоль
-                  // SZ — размер символа в px (зависит от масштаба sc)
-                  const ph = Math.max(14, Math.min(36, SZ * 0.7));   // поперёк
-                  const pw = Math.max(4, Math.round(ph * 0.35));      // вдоль (один столб)
-                  const sw2 = pw * 0.5;                               // зазор двери
+                  // ── Размеры символа ──────────────────────────────────
+                  // После rotate(brAngle): X — вдоль ветви, Y — поперёк
+                  // ph — высота прямоугольника ПОПЕРЁК ветви (по Y)
+                  // pw — ширина прямоугольника ВДОЛЬ ветви (по X)
+                  const ph = Math.max(16, Math.min(40, SZ * 0.85));  // поперёк (Y)
+                  const pw = Math.max(5, Math.round(ph * 0.38));      // вдоль (X)
+                  const gap = Math.max(3, pw * 0.5);                  // зазор двери
 
                   // Флаги типа
-                  const isDoor   = tid.includes("door_closed") || tid.includes("door_conc") ||
-                                   tid.includes("door_wood")   || tid.includes("door_brick") ||
-                                   tid.includes("door_metal")  || tid === "door_base";
-                  const isAuto   = tid.includes("door_auto") || tid.includes("auto_");
-                  const isOpen   = tid.includes("regulator_open") || tid.includes("open_");
-                  const isWindow = tid === "regulator_window" || tid.includes("win_") || tid === "bulkhead_window";
-                  const isLattice= tid === "regulator_lattice" || tid.includes("lat_");
-                  const isWater  = tid.includes("water_dam");
-                  const isSail   = tid === "sail";
-                  const isBarrier= tid === "barrier" || tid === "bulkhead_barrier";
-                  const isFirePP = tid === "fire_door_pp";
-                  const isProem  = tid.includes("proem_");
+                  const isDoor    = tid.includes("door_closed") || tid.includes("door_conc") ||
+                                    tid.includes("door_wood")   || tid.includes("door_brick") ||
+                                    tid.includes("door_metal")  || tid === "door_base";
+                  const isAuto    = tid.includes("door_auto") || tid.includes("auto_");
+                  const isOpen    = tid.includes("regulator_open") || tid.includes("open_");
+                  const isWindow  = tid === "regulator_window" || tid.includes("win_") || tid === "bulkhead_window";
+                  const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
+                  const isWater   = tid.includes("water_dam");
+                  const isSail    = tid === "sail";
+                  const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
+                  const isFirePP  = tid === "fire_door_pp";
+                  const isProem   = tid.includes("proem_");
+                  const sw2       = Math.max(1.5, pw * 0.12);  // толщина обводки
 
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
                       {isSail ? (
-                        // Парус: вертикальная линия + полукруг
+                        // Парус: вертикальная линия поперёк (по Y) + полукруг
                         <>
                           <line x1={0} y1={-ph/2} x2={0} y2={ph/2}
-                            stroke={stroke} strokeWidth={Math.max(1.5, pw * 0.5)} strokeLinecap="round" />
-                          <path d={`M0,${-ph*0.4} Q${ph*0.7},0 0,${ph*0.4}`}
-                            fill="none" stroke={stroke} strokeWidth={Math.max(1.5, pw * 0.5)} strokeLinecap="round" />
+                            stroke={stroke} strokeWidth={Math.max(1.8, pw * 0.4)} strokeLinecap="round" />
+                          <path d={`M0,${-ph*0.38} Q${ph*0.6},0 0,${ph*0.38}`}
+                            fill="none" stroke={stroke} strokeWidth={Math.max(1.8, pw * 0.4)} strokeLinecap="round" />
                         </>
                       ) : isBarrier ? (
-                        // Барьерная: два вертикальных столба разного цвета
+                        // Барьерная: два столба вдоль (по X) рядом, поперёк ветви
                         <>
                           <rect x={-pw} y={-ph/2} width={pw} height={ph}
-                            fill="#555" stroke="#222" strokeWidth={1.2} />
+                            fill="#555" stroke="#222" strokeWidth={1.3} />
                           <rect x={0}   y={-ph/2} width={pw} height={ph}
-                            fill="#c00" stroke="#800" strokeWidth={1.2} />
+                            fill="#c00" stroke="#800" strokeWidth={1.3} />
                         </>
                       ) : isFirePP ? (
-                        // Противопожарная: две красные вертикальные полосы
+                        // Противопожарная: две красные вертикальные полосы с зазором
                         <>
-                          <rect x={-pw - sw2/2} y={-ph/2} width={pw} height={ph}
-                            fill="#dc2626" stroke="#8b0000" strokeWidth={1.2} />
-                          <rect x={sw2/2}       y={-ph/2} width={pw} height={ph}
-                            fill="#dc2626" stroke="#8b0000" strokeWidth={1.2} />
+                          <rect x={-pw - gap/2} y={-ph/2} width={pw} height={ph}
+                            fill="#dc2626" stroke="#8b0000" strokeWidth={1.3} />
+                          <rect x={gap/2}       y={-ph/2} width={pw} height={ph}
+                            fill="#dc2626" stroke="#8b0000" strokeWidth={1.3} />
                         </>
                       ) : (isDoor || isAuto || isOpen) ? (
-                        // Дверь (закрытая/авто/открытая): два блока с зазором по центру
+                        // ── Дверь: прямоугольник поперёк ветви + сплошная линия сбоку ──
+                        // Прямоугольник (pw по X, ph по Y) — основное тело двери
                         <>
-                          {/* Верхний блок */}
-                          <rect x={-pw/2} y={-ph/2} width={pw} height={ph*0.42 - sw2/2}
-                            fill={fill} stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.15)} />
-                          {/* Нижний блок */}
-                          <rect x={-pw/2} y={ph*0.42 - ph/2 + sw2} width={pw} height={ph*0.42 - sw2/2}
-                            fill={fill} stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.15)} />
-                          {/* Створка (открытая дверь — треугольник сбоку) */}
-                          {isOpen && (
-                            <path d={`M${-pw/2},${-(sw2*1.5)} L${-pw/2 - ph*0.35},0 L${-pw/2},${sw2*1.5}Z`}
-                              fill="none" stroke={stroke} strokeWidth={1} />
+                          <rect x={-pw/2} y={-ph/2} width={pw} height={ph}
+                            fill={fill} stroke={stroke} strokeWidth={sw2} />
+                          {/* Сплошная линия вдоль одного края — знак закрытой двери */}
+                          {!isOpen && (
+                            <line x1={-pw/2} y1={-ph/2} x2={-pw/2} y2={ph/2}
+                              stroke={stroke} strokeWidth={Math.max(2, pw * 0.35)} strokeLinecap="round" />
                           )}
-                          {/* Кружок «А» — автоматическая */}
+                          {/* Створка — треугольник для открытой */}
+                          {isOpen && (
+                            <path d={`M${-pw/2 - gap},${-ph*0.3} L${-pw/2 - ph*0.4},0 L${-pw/2 - gap},${ph*0.3}Z`}
+                              fill="none" stroke={stroke} strokeWidth={1.2} />
+                          )}
+                          {/* Кружок «А» для автоматической */}
                           {isAuto && (
-                            <g transform={`translate(${pw/2 + ph*0.3}, 0)`}>
-                              <circle r={ph*0.22} fill="white" stroke={stroke} strokeWidth={1.2} />
+                            <g transform={`translate(${pw/2 + ph*0.28}, 0)`}>
+                              <circle r={ph*0.2} fill="white" stroke={stroke} strokeWidth={1.2} />
                               <text textAnchor="middle" dominantBaseline="central"
-                                fontSize={ph * 0.22} fontWeight="bold" fill={stroke}>А</text>
+                                fontSize={ph * 0.2} fontWeight="bold" fill={stroke}>А</text>
                             </g>
                           )}
                         </>
                       ) : (
-                        // Глухая / с окном / решётка / водоподпорная / прочие — один блок
+                        // ── Глухая / с окном / решётка / водоподпорная ──
                         <>
                           <rect x={-pw/2} y={-ph/2} width={pw} height={ph}
-                            fill={fill} stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.15)} />
-                          {/* Окно */}
+                            fill={fill} stroke={stroke} strokeWidth={sw2} />
+                          {/* Окно в центре */}
                           {(isWindow || isProem) && (
-                            <rect x={-pw*0.3} y={-ph*0.2} width={pw*0.6} height={ph*0.4}
+                            <rect x={-pw*0.25} y={-ph*0.2} width={pw*0.5} height={ph*0.4}
                               fill="white" stroke={stroke} strokeWidth={1} />
                           )}
-                          {/* Решётка */}
+                          {/* Решётка внутри блока */}
                           {isLattice && (() => {
-                            const lines = [];
-                            for (let i = -2; i <= 2; i++) {
-                              lines.push(<line key={`v${i}`} x1={pw*0.1*i} y1={-ph/2} x2={pw*0.1*i} y2={ph/2} stroke={stroke} strokeWidth={0.7} />);
+                            const rs = [];
+                            for (let i = -1; i <= 1; i++) {
+                              rs.push(<line key={`v${i}`} x1={pw*0.2*i} y1={-ph*0.45} x2={pw*0.2*i} y2={ph*0.45} stroke={stroke} strokeWidth={0.8} />);
                             }
-                            for (let i = -2; i <= 2; i++) {
-                              lines.push(<line key={`h${i}`} x1={-pw/2} y1={ph*0.2*i} x2={pw/2} y2={ph*0.2*i} stroke={stroke} strokeWidth={0.7} />);
-                            }
-                            return lines;
+                            rs.push(<line key="h0" x1={-pw*0.4} y1={0} x2={pw*0.4} y2={0} stroke={stroke} strokeWidth={0.8} />);
+                            return rs;
                           })()}
-                          {/* Буква D — водоподпорная */}
+                          {/* D — водоподпорная */}
                           {isWater && (
                             <text textAnchor="middle" dominantBaseline="central"
                               fontSize={ph * 0.3} fontWeight="bold"
                               fill={fill === "white" ? "#1565c0" : "white"}>D</text>
                           )}
                           {/* ПП — противопожарная */}
-                          {(tid === "fire_door") && (
+                          {tid === "fire_door" && (
                             <text textAnchor="middle" dominantBaseline="central"
                               fontSize={ph * 0.22} fontWeight="bold" fill="white">ПП</text>
                           )}
