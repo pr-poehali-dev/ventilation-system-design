@@ -161,7 +161,7 @@ export default function CadPage() {
   // Если активная вкладка — только для узла, но узел снят — переключить на "general"
   const NODE_ONLY_TABS: SideTab[] = ["params", "measure", "pipes", "indicators"];
   useEffect(() => {
-    if (!selectedNode && NODE_ONLY_TABS.includes(activeSide)) {
+    if (!selectedNodeId && NODE_ONLY_TABS.includes(activeSide)) {
       setActiveSide("general");
     }
   }, [selectedNodeId]);
@@ -2078,7 +2078,7 @@ export default function CadPage() {
             { id: "areas", label: "Участки" },
             { id: "coords", label: "Координаты" },
           ] as { id: SideTab; label: string; nodeOnly?: boolean }[])
-          .filter(t => !t.nodeOnly || !!selectedNode)
+          .filter(t => !t.nodeOnly || !!selectedNodeId)
           .map((t) => (
             <button key={t.id}
               onClick={() => setActiveSide(t.id)}
