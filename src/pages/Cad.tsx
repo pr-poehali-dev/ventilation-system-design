@@ -24,7 +24,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
-import { LEGEND_TYPES } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
@@ -1605,32 +1605,122 @@ export default function CadPage() {
 
         {/* ── Группа: Объекты на выработках ── */}
         <RibbonGroup label="Объекты на выработках">
-          <div className="flex flex-col gap-0.5 justify-center h-full">
-            {/* Статус активного символа */}
-            {tool === "symbol" && activeSymbolTypeId && (
-              <div className="text-[9px] text-blue-700 font-semibold px-1 bg-blue-50 rounded border border-blue-200 mb-0.5 truncate max-w-[200px]">
-                ▶ {LEGEND_TYPES.find(l => l.id === activeSymbolTypeId)?.name ?? activeSymbolTypeId}
-                <button className="ml-1 text-gray-400 hover:text-red-500"
-                  onClick={() => { setTool("select"); setActiveSymbolTypeId(null); }}>✕</button>
+          {(() => {
+            // Разделяем символы: перемычки (выпадающий список) и прочие (кнопки)
+            const bulkheadTypes = LEGEND_TYPES.filter(lt => BULKHEAD_SYMBOL_IDS.has(lt.id));
+            const otherTypes = LEGEND_TYPES.filter(lt => !BULKHEAD_SYMBOL_IDS.has(lt.id));
+            // Группируем перемычки по subgroup
+            const subgroups = Array.from(new Set(bulkheadTypes.map(lt => lt.subgroup ?? "Прочие")));
+            const activeLt = LEGEND_TYPES.find(l => l.id === activeSymbolTypeId);
+            const isBulkheadActive = activeSymbolTypeId ? BULKHEAD_SYMBOL_IDS.has(activeSymbolTypeId) : false;
+
+            return (
+              <div className="flex items-center gap-1 h-full px-0.5">
+                {/* Выпадающий список перемычек */}
+                <div className="flex flex-col gap-0.5 justify-center">
+                  <div className="text-[9px] text-gray-500 font-semibold px-0.5">Перемычка</div>
+                  <div className="relative group">
+                    {/* Кнопка-превью активной перемычки */}
+                    <button
+                      title="Выбрать тип перемычки"
+                      className="flex items-center gap-1 px-1 py-0.5 rounded border transition-colors"
+                      style={{
+                        borderColor: isBulkheadActive && tool === "symbol" ? "#2563eb" : "#d1d5db",
+                        background: isBulkheadActive && tool === "symbol" ? "#dbeafe" : "white",
+                        minWidth: 80, height: 28,
+                      }}>
+                      {activeLt && isBulkheadActive ? (
+                        <>
+                          <svg width={22} height={18} viewBox="0 0 48 40" style={{ flexShrink: 0 }}>
+                            <g dangerouslySetInnerHTML={{ __html: activeLt.svgContent }} />
+                          </svg>
+                          <span className="text-[9px] text-gray-700 truncate" style={{ maxWidth: 52 }}>{activeLt.name}</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg width={22} height={18} viewBox="0 0 48 40" style={{ flexShrink: 0 }}>
+                            <g dangerouslySetInnerHTML={{ __html: LEGEND_TYPES.find(l => l.id === "bulkhead")?.svgContent ?? "" }} />
+                          </svg>
+                          <span className="text-[9px] text-gray-400">Выбрать...</span>
+                        </>
+                      )}
+                      <svg width={10} height={10} viewBox="0 0 10 10" style={{ flexShrink: 0, marginLeft: "auto" }}>
+                        <path d="M2,3 L5,7 L8,3" fill="none" stroke="#666" strokeWidth="1.5"/>
+                      </svg>
+                    </button>
+                    {/* Выпадающая панель с группами */}
+                    <div className="absolute left-0 top-full z-50 hidden group-hover:block"
+                      style={{ background: "white", border: "1px solid #c8d4e8", boxShadow: "0 4px 16px rgba(0,0,0,0.18)", minWidth: 260, maxHeight: 400, overflowY: "auto" }}>
+                      {subgroups.map(sg => (
+                        <div key={sg}>
+                          <div className="px-2 py-0.5 text-[9px] font-semibold text-gray-500 uppercase tracking-wide sticky top-0"
+                            style={{ background: "#e8eef8", borderBottom: "1px solid #d1dae8" }}>
+                            {sg}
+                          </div>
+                          {bulkheadTypes.filter(lt => (lt.subgroup ?? "Прочие") === sg).map(lt => (
+                            <button key={lt.id}
+                              onClick={() => handlePickSymbol(lt.id)}
+                              className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-blue-50 transition-colors"
+                              style={{
+                                background: activeSymbolTypeId === lt.id && tool === "symbol" ? "#dbeafe" : undefined,
+                                borderBottom: "1px solid #f0f0f0",
+                              }}>
+                              <svg width={28} height={22} viewBox="0 0 48 40" style={{ flexShrink: 0 }}>
+                                <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                              </svg>
+                              <span className="text-[11px] text-gray-800">{lt.name}</span>
+                              {activeSymbolTypeId === lt.id && tool === "symbol" && (
+                                <span className="ml-auto text-[9px] text-blue-600 font-semibold">▶</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Статус активной перемычки */}
+                  {isBulkheadActive && tool === "symbol" && (
+                    <div className="text-[9px] text-blue-700 px-0.5 flex items-center gap-0.5">
+                      <span>▶ Кликни на ветвь</span>
+                      <button className="text-gray-400 hover:text-red-500 ml-0.5"
+                        onClick={() => { setTool("select"); setActiveSymbolTypeId(null); }}>✕</button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="w-px self-stretch mx-0.5" style={{ background: "#d1d5db" }} />
+
+                {/* Кнопки прочих символов */}
+                <div className="flex flex-col gap-0.5 justify-center">
+                  <div className="text-[9px] text-gray-500 font-semibold px-0.5">Прочие УО</div>
+                  <div className="grid grid-rows-2 grid-flow-col gap-0.5">
+                    {otherTypes.map(lt => (
+                      <button key={lt.id}
+                        title={`${lt.name} — кликни на выработку`}
+                        onClick={() => handlePickSymbol(lt.id)}
+                        className="w-7 h-7 flex items-center justify-center rounded border transition-colors"
+                        style={{
+                          borderColor: activeSymbolTypeId === lt.id && tool === "symbol" ? "#2563eb" : "#d1d5db",
+                          background: activeSymbolTypeId === lt.id && tool === "symbol" ? "#dbeafe" : "white",
+                        }}>
+                        <svg width={22} height={18} viewBox="0 0 48 40">
+                          <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                  {/* Статус активного прочего символа */}
+                  {!isBulkheadActive && tool === "symbol" && activeSymbolTypeId && (
+                    <div className="text-[9px] text-blue-700 px-0.5 flex items-center gap-0.5">
+                      <span className="truncate max-w-[80px]">▶ {activeLt?.name}</span>
+                      <button className="text-gray-400 hover:text-red-500 ml-0.5"
+                        onClick={() => { setTool("select"); setActiveSymbolTypeId(null); }}>✕</button>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-            <div className="grid grid-rows-2 grid-flow-col gap-0.5">
-              {LEGEND_TYPES.map(lt => (
-                <button key={lt.id}
-                  title={`${lt.name} — кликни на выработку`}
-                  onClick={() => handlePickSymbol(lt.id)}
-                  className="w-7 h-7 flex items-center justify-center rounded border transition-colors"
-                  style={{
-                    borderColor: activeSymbolTypeId === lt.id && tool === "symbol" ? "#2563eb" : "#d1d5db",
-                    background: activeSymbolTypeId === lt.id && tool === "symbol" ? "#dbeafe" : "white",
-                  }}>
-                  <svg width={22} height={18} viewBox="0 0 48 40">
-                    <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                  </svg>
-                </button>
-              ))}
-            </div>
-          </div>
+            );
+          })()}
         </RibbonGroup>
 
         {/* ── Группа: Действия с объектами ── */}
