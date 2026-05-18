@@ -2599,8 +2599,22 @@ export default function CadPage() {
             {activeSide === "vent" && (
               <>
                 <PropGroup title="Тип выработки">
-                  <SelectRow value={excavation.type} options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек", "Уклон", "Камера"]}
-                    onChange={(v) => setExcavation({ ...excavation, type: v })} />
+                  {mineTypes.length > 0 ? (
+                    <select
+                      value={mineTypes.some(t => t.name === excavation.type) ? excavation.type : ""}
+                      onChange={(e) => setExcavation({ ...excavation, type: e.target.value })}
+                      className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
+                      {!mineTypes.some(t => t.name === excavation.type) && (
+                        <option value="" disabled>— выберите тип —</option>
+                      )}
+                      {mineTypes.map(t => (
+                        <option key={t.id} value={t.name}>{t.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <SelectRow value={excavation.type} options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек", "Уклон", "Камера"]}
+                      onChange={(v) => setExcavation({ ...excavation, type: v })} />
+                  )}
                 </PropGroup>
 
                 <PropGroup title="Поперечное сечение">
