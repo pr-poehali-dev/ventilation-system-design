@@ -62,7 +62,7 @@ export interface SchemaSymbol {
   indOffsetX?: number;       // смещение бейджа индикаторов (px экрана) по X
   indOffsetY?: number;       // смещение бейджа индикаторов (px экрана) по Y
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons" | "topology";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
 interface Excavation {
   id: string;
@@ -158,7 +158,7 @@ export default function CadPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
-  // Переключаем вкладку при смене выбранного объекта
+  // Переключаем вкладку при смене выбранного узла
   useEffect(() => {
     if (selectedNodeId) {
       setActiveSide("params");
@@ -166,14 +166,6 @@ export default function CadPage() {
       setActiveSide("general");
     }
   }, [selectedNodeId]);
-
-  useEffect(() => {
-    if (selectedBranchId) {
-      setActiveSide("topology");
-    } else if (!selectedNodeId) {
-      setActiveSide("general");
-    }
-  }, [selectedBranchId]);
 
   const updateNode = (id: string, patch: Partial<TopoNode>) => {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
@@ -2081,11 +2073,6 @@ export default function CadPage() {
                 { id: "pipes", label: "Трубы" },
                 { id: "indicators", label: "Индикаторы" },
               ] as { id: SideTab; label: string }[])
-            : selectedBranchId
-            ? ([
-                { id: "topology", label: "Топология" },
-                { id: "vent", label: "Вентиляция" },
-              ] as { id: SideTab; label: string }[])
             : ([
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
@@ -2169,8 +2156,8 @@ export default function CadPage() {
               />
             )}
 
-            {/* ═══ ВКЛАДКА: ТОПОЛОГИЯ (ветвь) ═══════════════════════════ */}
-            {(activeSide === "topology" || activeSide === "params") && !selectedNode && selectedBranch && (
+            {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (ветвь) — НОВАЯ ПАНЕЛЬ ═══════════ */}
+            {activeSide === "params" && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}
