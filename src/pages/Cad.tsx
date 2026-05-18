@@ -148,7 +148,7 @@ export default function CadPage() {
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
   const [branchesRaw, setBranches] = useState<TopoBranch[]>(DEMO_BRANCHES);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>("2");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [tool, setTool] = useState<CadTool>("select");
   const [zLevel, setZLevel] = useState(0);
