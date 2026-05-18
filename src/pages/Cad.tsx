@@ -167,6 +167,13 @@ export default function CadPage() {
     }
   }, [selectedNodeId]);
 
+  // Если активна вкладка "fan", но у ветви нет вентилятора — сбросить на "topology"
+  useEffect(() => {
+    if (activeSide === "fan" && selectedBranch && !selectedBranch.hasFan) {
+      setActiveSide("topology");
+    }
+  }, [selectedBranchId, selectedBranch?.hasFan]);
+
   const updateNode = (id: string, patch: Partial<TopoNode>) => {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
   };
@@ -2081,7 +2088,7 @@ export default function CadPage() {
                 { id: "areas", label: "Участки" },
                 { id: "coords", label: "Координаты" },
                 { id: "topology", label: "Топология" },
-                { id: "fan", label: "Вентилятор" },
+                ...(selectedBranch?.hasFan ? [{ id: "fan" as SideTab, label: "Вентилятор" }] : []),
                 { id: "waterpipes", label: "Трубы: вода" },
                 { id: "conveyor", label: "Конвейер" },
               ] as { id: SideTab; label: string }[])
@@ -3110,11 +3117,11 @@ export default function CadPage() {
               }}
               onSymbolClick={(symId) => {
                 const sym = schemaSymbols.find(s => s.id === symId);
-                setActiveSide("params");
                 if (sym?.typeId === "fan" && sym.branchId) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(sym.branchId);
+                  setActiveSide("fan");
                 } else {
                   // Для не-вентиляторных символов — снять выбор ветви/узла, показать панель символа
                   setSelectedBranchId(null);
@@ -3135,7 +3142,7 @@ export default function CadPage() {
                       updateBranch(branchId, { hasFan: true, fanMode: "curve" });
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
-                      setActiveSide("params");
+                      setActiveSide("fan");
                       setFanSymbolBranchId(branchId);
                     }
                   } else {
