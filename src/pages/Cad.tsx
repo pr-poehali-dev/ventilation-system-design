@@ -2080,6 +2080,10 @@ export default function CadPage() {
                 { id: "pipes", label: "Трубы" },
                 { id: "indicators", label: "Индикаторы" },
               ] as { id: SideTab; label: string }[])
+            : fanSymbolBranchId
+            ? ([
+                { id: "fan", label: "Вентилятор" },
+              ] as { id: SideTab; label: string }[])
             : ([
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
@@ -2088,7 +2092,6 @@ export default function CadPage() {
                 { id: "areas", label: "Участки" },
                 { id: "coords", label: "Координаты" },
                 { id: "topology", label: "Топология" },
-                ...(selectedBranch?.hasFan ? [{ id: "fan" as SideTab, label: "Вентилятор" }] : []),
                 { id: "waterpipes", label: "Трубы: вода" },
                 { id: "conveyor", label: "Конвейер" },
               ] as { id: SideTab; label: string }[])
