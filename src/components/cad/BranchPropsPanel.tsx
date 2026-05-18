@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
-import { type MineFanExport, type MineBulkheadExport } from "@/components/cad/EquipmentRefDialog";
+import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -24,6 +24,8 @@ interface BranchPropsPanelProps {
   mineBulkheads?: MineBulkheadExport[];
   /** Открыть справочник оборудования на вкладке вентиляторов */
   onOpenFanLibrary?: () => void;
+  /** Типы выработок из справочника рудника */
+  mineTypes?: BranchType[];
 }
 
 const SH = "#e8eef8";
@@ -197,7 +199,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes }: BranchPropsPanelProps) {
   const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
 
   useEffect(() => {
@@ -564,7 +566,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <InlineLabel label="Тип выработки">
               <SelectField
                 value={branch.type}
-                options={BRANCH_TYPES}
+                options={mineTypes && mineTypes.length > 0 ? mineTypes.map(t => t.name) : BRANCH_TYPES}
                 onChange={(v) => onUpdate({ type: v })}
               />
             </InlineLabel>

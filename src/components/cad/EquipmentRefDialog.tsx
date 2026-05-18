@@ -35,6 +35,8 @@ interface Props {
   onClose: () => void;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (bulkheads: MineBulkheadExport[]) => void;
+  onBranchTypesChange?: (types: BranchType[]) => void;
+  initialBranchTypes?: BranchType[];
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
@@ -776,13 +778,21 @@ const EMPTY_TYPE: Omit<BranchType, "id"> = {
   name: "", color: "#3b82f6", shape: "arch", surface: SURFACE_OPTIONS[0], area: 10, vMax: 8, alphaCoef: 30,
 };
 
-function TypesSection() {
-  const [types, setTypes] = useState<BranchType[]>(DEFAULT_BRANCH_TYPES);
+function TypesSection({ initialTypes = [], onBranchTypesChange }: {
+  initialTypes?: BranchType[];
+  onBranchTypesChange?: (types: BranchType[]) => void;
+}) {
+  const [types, setTypes] = useState<BranchType[]>(initialTypes);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Omit<BranchType, "id">>(EMPTY_TYPE);
   const [newName, setNewName] = useState("");
   const nextId = useCallback(() => `t${Date.now()}`, []);
+
+  const updateTypes = (next: BranchType[]) => {
+    setTypes(next);
+    onBranchTypesChange?.(next);
+  };
 
   const selected = types.find(t => t.id === selectedId) ?? null;
 
@@ -792,7 +802,7 @@ function TypesSection() {
   };
   const saveEdit = () => {
     if (!selectedId) return;
-    setTypes(p => p.map(t => t.id === selectedId ? { ...t, ...editForm } : t));
+    updateTypes(types.map(t => t.id === selectedId ? { ...t, ...editForm } : t));
     setIsEditing(false);
   };
   const cancelEdit = () => setIsEditing(false);
@@ -806,7 +816,7 @@ function TypesSection() {
     const name = newName.trim();
     if (!name) return;
     const t: BranchType = { id: nextId(), ...EMPTY_TYPE, name };
-    setTypes(p => [...p, t]);
+    updateTypes([...types, t]);
     setNewName("");
     setSelectedId(t.id);
     setEditForm({ ...EMPTY_TYPE, name });
@@ -814,7 +824,7 @@ function TypesSection() {
   };
   const deleteSelected = () => {
     if (!selectedId) return;
-    setTypes(p => p.filter(t => t.id !== selectedId));
+    updateTypes(types.filter(t => t.id !== selectedId));
     setSelectedId(null);
     setIsEditing(false);
   };
@@ -859,7 +869,7 @@ function TypesSection() {
                 }}
                 onClick={() => selectRow(t)}>
                 <button className="flex items-center justify-center w-full h-full hover:text-red-500 text-gray-300"
-                  onClick={e => { e.stopPropagation(); setTypes(p => p.filter(x => x.id !== t.id)); if (selectedId === t.id) { setSelectedId(null); setIsEditing(false); } }}>
+                  onClick={e => { e.stopPropagation(); const next = types.filter(x => x.id !== t.id); updateTypes(next); if (selectedId === t.id) { setSelectedId(null); setIsEditing(false); } }}>
                   <Icon name="Trash2" size={11} />
                 </button>
                 <span className="px-2 text-[12px] text-gray-900 font-medium truncate">{t.name}</span>
@@ -1425,13 +1435,15 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange }: {
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
+  onBranchTypesChange?: (types: BranchType[]) => void;
+  initialBranchTypes?: BranchType[];
 }) {
   if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} />;
-  if (tab === "types") return <TypesSection />;
+  if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
   if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} />;
   if (tab === "sensors") return <SimpleTable
     headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]}
@@ -1451,7 +1463,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange }: {
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1512,7 +1524,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialBranchTypes={initialBranchTypes} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик

@@ -22,7 +22,7 @@ import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
-import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport } from "@/components/cad/EquipmentRefDialog";
+import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
@@ -143,6 +143,7 @@ export default function CadPage() {
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
   const [mineFans, setMineFans] = useState<MineFanExport[]>([]);
   const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>([]);
+  const [mineTypes, setMineTypes] = useState<BranchType[]>([]);
 
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
@@ -685,6 +686,7 @@ export default function CadPage() {
     schemaSymbols,
     mineFans,
     mineBulkheads,
+    mineTypes,
     calcMode,
     solverTolerance,
     solverMaxIter,
@@ -830,6 +832,7 @@ export default function CadPage() {
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
     if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
     if (data.mineBulkheads) setMineBulkheads(data.mineBulkheads as MineBulkheadExport[]);
+    if (data.mineTypes) setMineTypes(data.mineTypes as BranchType[]);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
     if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
@@ -2170,6 +2173,7 @@ export default function CadPage() {
                 mineFans={mineFans}
                 mineBulkheads={mineBulkheads}
                 onOpenFanLibrary={() => { setShowEquipRef(true); setEquipRefTab("fans"); }}
+                mineTypes={mineTypes}
               />
             )}
 
@@ -3321,6 +3325,8 @@ export default function CadPage() {
         onClose={() => setShowEquipRef(false)}
         onMineFansChange={setMineFans}
         onMineBulkheadsChange={setMineBulkheads}
+        onBranchTypesChange={setMineTypes}
+        initialBranchTypes={mineTypes}
       />
     )}
 
