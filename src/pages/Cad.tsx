@@ -62,7 +62,7 @@ export interface SchemaSymbol {
   indOffsetX?: number;       // смещение бейджа индикаторов (px экрана) по X
   indOffsetY?: number;       // смещение бейджа индикаторов (px экрана) по Y
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor";
 
 interface Excavation {
   id: string;
@@ -2081,6 +2081,10 @@ export default function CadPage() {
                 { id: "accidents", label: "Аварии" },
                 { id: "areas", label: "Участки" },
                 { id: "coords", label: "Координаты" },
+                { id: "topology", label: "Топология" },
+                { id: "fan", label: "Вентилятор" },
+                { id: "waterpipes", label: "Трубы: вода" },
+                { id: "conveyor", label: "Конвейер" },
               ] as { id: SideTab; label: string }[])
           ).map((t) => (
             <button key={t.id}
@@ -2156,12 +2160,13 @@ export default function CadPage() {
               />
             )}
 
-            {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (ветвь) — НОВАЯ ПАНЕЛЬ ═══════════ */}
-            {activeSide === "params" && !selectedNode && selectedBranch && (
+            {/* ═══ ВКЛАДКИ ВЕТВИ (Топология / Вентилятор / Трубы: вода / Конвейер) ══ */}
+            {(["topology","fan","waterpipes","conveyor","params"].includes(activeSide)) && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}
                 onUpdate={(patch) => updateBranch(selectedBranch.id, patch)}
+                activeTab={activeSide}
                 defaultInnerTab={fanSymbolBranchId === selectedBranch.id ? "Вентилятор" : undefined}
                 onRemoveFan={selectedBranch.hasFan ? () => {
                   const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);

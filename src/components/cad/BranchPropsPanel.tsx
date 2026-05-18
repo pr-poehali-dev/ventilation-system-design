@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
@@ -9,6 +9,8 @@ interface BranchPropsPanelProps {
   horizons: Horizon[];
   onUpdate: (patch: Partial<TopoBranch>) => void;
   defaultInnerTab?: InnerTab;
+  /** Активная вкладка из вертикального меню (topology/fan/waterpipes/conveyor) */
+  activeTab?: string;
   onRemoveFan?: () => void;
   /** Текущий масштаб символа УО вентилятора на схеме */
   fanSymbolScale?: number;
@@ -199,12 +201,15 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary }: BranchPropsPanelProps) {
-  const [innerTab, setInnerTab] = useState<InnerTab>(defaultInnerTab ?? "Топология");
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary }: BranchPropsPanelProps) {
+  const tabMap: Record<string, InnerTab> = {
+    topology: "Топология",
+    fan: "Вентилятор",
+    waterpipes: "Трубы: вода",
+    conveyor: "Конвейер",
+  };
+  const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
-  useEffect(() => {
-    if (defaultInnerTab) setInnerTab(defaultInnerTab);
-  }, [branch.id, defaultInnerTab]);
   const [name, setName] = useState(branch.id);
   const [isCapital, setIsCapital] = useState(false);
   const [isProjected, setIsProjected] = useState(false);
@@ -238,29 +243,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
-
-      <div className="flex flex-wrap gap-0 px-0 pt-0"
-        style={{ borderBottom: "1px solid #c0c0c0", background: "#f0f0f0" }}>
-        {INNER_TABS.filter(t => t !== "Вентилятор" || branch.hasFan).map((t) => (
-          <button
-            key={t}
-            onClick={() => setInnerTab(t)}
-            className="text-[10px] px-2 py-0.5 flex-shrink-0"
-            style={{
-              background: innerTab === t ? "#ffffff" : "transparent",
-              borderTop: innerTab === t ? "1px solid #b8b8b8" : "1px solid transparent",
-              borderLeft: innerTab === t ? "1px solid #b8b8b8" : "1px solid transparent",
-              borderRight: innerTab === t ? "1px solid #b8b8b8" : "1px solid transparent",
-              borderBottom: innerTab === t ? "1px solid #ffffff" : "1px solid transparent",
-              marginBottom: innerTab === t ? "-1px" : "0",
-              fontWeight: innerTab === t ? 600 : 400,
-              color: innerTab === t ? "#1a3a6b" : "#555",
-              cursor: "pointer",
-            }}>
-            {t}
-          </button>
-        ))}
-      </div>
 
       <div className="flex-1 overflow-y-auto">
 
