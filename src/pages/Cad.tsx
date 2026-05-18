@@ -54,6 +54,11 @@ export interface SchemaSymbol {
   appearYear?: number;  // дата появления — год
   appearMonth?: string; // дата появления — месяц
   appearDay?: number;   // дата появления — день
+  // ─── Индикаторы для перемычек ────────────────────────
+  indDescription?: boolean;  // показывать описание объекта на схеме
+  indResistance?: boolean;   // показывать аэродинамическое сопротивление
+  indDeltaP?: boolean;       // показывать модельное падение давления
+  indLeakage?: boolean;      // показывать утечки на перемычке
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "accidents" | "areas" | "coords" | "horizons";
 
@@ -2146,40 +2151,48 @@ export default function CadPage() {
             {activeSide === "params" && !selectedNode && !selectedBranch && selectedSymbolId && (() => {
               const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
               if (!sym) return null;
+              const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+              const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+              const updSym = (patch: Partial<SchemaSymbol>) =>
+                setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
+
               return (
-                <div className="p-2 space-y-1 text-[11px]">
-                  <div className="font-semibold text-[12px] text-gray-700 pb-1 border-b border-gray-200 mb-2">
+                <div className="p-2 text-[11px]">
+                  {/* ── Общие свойства ── */}
+                  <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 uppercase tracking-wide">
                     Общие свойства
                   </div>
-                  <div className="flex items-center gap-1 mb-1">
+
+                  {/* Масштаб */}
+                  <div className="flex items-center gap-1 mb-1.5">
                     <span className="text-gray-500 w-20 flex-shrink-0">Масштаб</span>
-                    <div className="flex items-center gap-1 flex-1">
-                      <input type="range" min={40} max={400} step={10}
-                        value={Math.round((sym.scale ?? 1) * 100)}
-                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
-                          ? { ...s, scale: Number(e.target.value) / 100 } : s))}
-                        className="flex-1" style={{ accentColor: "#2563eb" }} />
-                      <span className="w-10 text-right text-gray-700 flex-shrink-0">
-                        {Math.round((sym.scale ?? 1) * 100)} %
-                      </span>
-                    </div>
+                    <input type="range" min={40} max={400} step={10}
+                      value={Math.round((sym.scale ?? 1) * 100)}
+                      onChange={(e) => updSym({ scale: Number(e.target.value) / 100 })}
+                      className="flex-1" style={{ accentColor: "#2563eb" }} />
+                    <span className="w-10 text-right text-gray-700 flex-shrink-0">
+                      {Math.round((sym.scale ?? 1) * 100)} %
+                    </span>
                   </div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <span className="text-gray-500 w-20 flex-shrink-0">Описание</span>
-                    <input type="text"
+
+                  {/* Описание */}
+                  <div className="flex items-start gap-1 mb-1.5">
+                    <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Описание</span>
+                    <textarea
                       value={sym.description ?? ""}
-                      onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
-                        ? { ...s, description: e.target.value } : s))}
-                      className="flex-1 px-1 text-[11px]"
-                      style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                      onChange={(e) => updSym({ description: e.target.value })}
+                      rows={2}
+                      className="flex-1 px-1 py-0.5 text-[11px] resize-none"
+                      placeholder="Введите описание объекта..."
+                      style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
                   </div>
+
+                  {/* Направление (вентилятор) */}
                   {sym.typeId === "fan" && (
-                    <div className="flex items-center gap-1 mb-1">
+                    <div className="flex items-center gap-1 mb-1.5">
                       <span className="text-gray-500 w-20 flex-shrink-0">Направление</span>
-                      <select
-                        value={sym.airDirection ?? "forward"}
-                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
-                          ? { ...s, airDirection: e.target.value as "forward" | "reverse" } : s))}
+                      <select value={sym.airDirection ?? "forward"}
+                        onChange={(e) => updSym({ airDirection: e.target.value as "forward" | "reverse" })}
                         className="flex-1 text-[11px] px-1"
                         style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
                         <option value="forward">По ветви (→)</option>
@@ -2187,20 +2200,17 @@ export default function CadPage() {
                       </select>
                     </div>
                   )}
+
                   {/* Дата появления */}
-                  <div className="flex items-center gap-1 mb-1">
+                  <div className="flex items-center gap-1 mb-2">
                     <span className="text-gray-500 w-20 flex-shrink-0">Появление</span>
                     <div className="flex gap-1 flex-1">
-                      <input type="number" placeholder="Год"
-                        value={sym.appearYear ?? ""}
-                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
-                          ? { ...s, appearYear: e.target.value ? Number(e.target.value) : undefined } : s))}
+                      <input type="number" placeholder="Год" value={sym.appearYear ?? ""}
+                        onChange={(e) => updSym({ appearYear: e.target.value ? Number(e.target.value) : undefined })}
                         className="text-[11px] px-1 w-14"
                         style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
-                      <select
-                        value={sym.appearMonth ?? ""}
-                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
-                          ? { ...s, appearMonth: e.target.value || undefined } : s))}
+                      <select value={sym.appearMonth ?? ""}
+                        onChange={(e) => updSym({ appearMonth: e.target.value || undefined })}
                         className="text-[11px] px-0.5 flex-1"
                         style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
                         <option value="">Месяц</option>
@@ -2208,18 +2218,61 @@ export default function CadPage() {
                           <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
-                      <input type="number" placeholder="День" min={1} max={31}
-                        value={sym.appearDay ?? ""}
-                        onChange={(e) => setSchemaSymbols(prev => prev.map(s => s.id === sym.id
-                          ? { ...s, appearDay: e.target.value ? Number(e.target.value) : undefined } : s))}
+                      <input type="number" placeholder="День" min={1} max={31} value={sym.appearDay ?? ""}
+                        onChange={(e) => updSym({ appearDay: e.target.value ? Number(e.target.value) : undefined })}
                         className="text-[11px] px-1 w-10"
                         style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                     </div>
                   </div>
-                  {sym.description && (
-                    <div className="mt-2 p-1 bg-gray-50 rounded text-gray-600 text-[10px] border border-gray-100">
-                      {sym.description}
-                    </div>
+
+                  {/* ── Индикаторы (только для перемычек) ── */}
+                  {isBulkheadSym && (
+                    <>
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 uppercase tracking-wide">
+                        Отображаемые индикаторы
+                      </div>
+                      {[
+                        { key: "indDescription" as const, label: "Описание объекта" },
+                        { key: "indResistance"  as const, label: "Аэродинамическое сопротивление" },
+                        { key: "indDeltaP"      as const, label: "Модельное падение давления" },
+                        { key: "indLeakage"     as const, label: "Утечки на перемычке" },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2 mb-1.5 cursor-pointer select-none">
+                          <input type="checkbox"
+                            checked={!!sym[key]}
+                            onChange={(e) => updSym({ [key]: e.target.checked })}
+                            style={{ width: 13, height: 13, accentColor: "#2563eb" }} />
+                          <span className="text-gray-700">{label}</span>
+                        </label>
+                      ))}
+
+                      {/* Значения для справки */}
+                      {brForSym && (sym.indResistance || sym.indDeltaP || sym.indLeakage) && (
+                        <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
+                          style={{ background: "#f0f4ff", border: "1px solid #c8d8f0" }}>
+                          {sym.indResistance && (
+                            <div className="text-gray-600">
+                              <span className="text-gray-400">R перемычки: </span>
+                              {brForSym.bulkheadR > 0
+                                ? `${brForSym.bulkheadR.toFixed(2)} Мюрг`
+                                : `${(brForSym.resistance / 1e6).toFixed(3)} Мюрг`}
+                            </div>
+                          )}
+                          {sym.indDeltaP && (
+                            <div className="text-gray-600">
+                              <span className="text-gray-400">ΔP: </span>
+                              {brForSym.dP > 0 ? `${Math.abs(brForSym.dP).toFixed(1)} Па` : "—"}
+                            </div>
+                          )}
+                          {sym.indLeakage && (
+                            <div className="text-gray-600">
+                              <span className="text-gray-400">Q через перемычку: </span>
+                              {brForSym.flow !== 0 ? `${Math.abs(brForSym.flow).toFixed(2)} м³/с` : "—"}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );

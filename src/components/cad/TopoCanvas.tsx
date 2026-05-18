@@ -1371,6 +1371,68 @@ export default function TopoCanvas(props: Props) {
                   {sym.description || sym.label || lt.name}
                 </text>
               )}
+
+              {/* ── Индикаторы перемычки на схеме ────────────────────── */}
+              {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && (() => {
+                const br = branches.find(b => b.id === sym.branchId);
+                if (!br) return null;
+                const lines: string[] = [];
+                if (sym.indDescription && sym.description) lines.push(sym.description);
+                if (sym.indResistance) {
+                  const rVal = br.bulkheadR > 0 ? br.bulkheadR : br.resistance / 1e6;
+                  lines.push(`R=${rVal.toFixed(2)} Мюрг`);
+                }
+                if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${Math.abs(br.dP).toFixed(1)} Па`);
+                if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${Math.abs(br.flow).toFixed(2)} м³/с`);
+                if (!lines.length) return null;
+
+                const fSize = Math.max(8, Math.round(9 * sc));
+                const lineH = fSize + 3;
+                const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 8;
+                const boxH = lines.length * lineH + 6;
+                // Позиция блока — справа от символа (смещение поперёк ветви)
+                const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                const brLen = Math.hypot(brDx, brDy);
+                const perpX = brLen > 0 ? -brDy / brLen : 0;
+                const perpY = brLen > 0 ?  brDx / brLen : 0;
+                const offDir = 1; // правая сторона
+                const bx = px + perpX * offDir * (SZ * 0.6 + boxW / 2 + 4);
+                const by = py + perpY * offDir * (SZ * 0.6 + boxH / 2 + 4);
+                const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+
+                return (
+                  <g opacity={opacity}>
+                    {/* Фон-бейдж */}
+                    <rect
+                      x={bx - boxW / 2} y={by - boxH / 2}
+                      width={boxW} height={boxH}
+                      rx={2} ry={2}
+                      fill="white" stroke="#8899bb" strokeWidth={0.8}
+                      style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.15))" }}
+                    />
+                    {/* Строки текста */}
+                    {lines.map((line, i) => (
+                      <text key={i}
+                        x={bx} y={by - boxH / 2 + 5 + (i + 0.75) * lineH}
+                        textAnchor="middle"
+                        fontSize={fSize}
+                        fill="#1e3a5f"
+                        fontFamily="Segoe UI, sans-serif"
+                        fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}>
+                        {line}
+                      </text>
+                    ))}
+                    {/* Выноска к символу */}
+                    <line
+                      x1={px + perpX * offDir * SZ * 0.5}
+                      y1={py + perpY * offDir * SZ * 0.5}
+                      x2={bx - perpX * offDir * boxW / 2}
+                      y2={by - perpY * offDir * boxH / 2}
+                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2"
+                    />
+                  </g>
+                );
+              })()}
             </g>
           );
         })}
