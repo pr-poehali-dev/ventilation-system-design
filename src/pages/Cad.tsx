@@ -158,6 +158,14 @@ export default function CadPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
+  // Если активная вкладка — только для узла, но узел снят — переключить на "general"
+  const NODE_ONLY_TABS: SideTab[] = ["params", "measure", "pipes", "indicators"];
+  useEffect(() => {
+    if (!selectedNode && NODE_ONLY_TABS.includes(activeSide)) {
+      setActiveSide("general");
+    }
+  }, [selectedNodeId]);
+
   const updateNode = (id: string, patch: Partial<TopoNode>) => {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
   };
@@ -2060,16 +2068,18 @@ export default function CadPage() {
           {([
             { id: "general", label: "Общие" },
             { id: "vent", label: "Вентиляция" },
-            { id: "params", label: "Параметры" },
+            { id: "params", label: "Параметры", nodeOnly: true },
             { id: "horizons", label: "Горизонты" },
-            { id: "measure", label: "Замеры" },
-            { id: "pipes", label: "Трубы" },
-            { id: "indicators", label: "Индикаторы" },
+            { id: "measure", label: "Замеры", nodeOnly: true },
+            { id: "pipes", label: "Трубы", nodeOnly: true },
+            { id: "indicators", label: "Индикаторы", nodeOnly: true },
             { id: "thermo", label: "Теплофизика" },
             { id: "accidents", label: "Аварии" },
             { id: "areas", label: "Участки" },
             { id: "coords", label: "Координаты" },
-          ] as { id: SideTab; label: string }[]).map((t) => (
+          ] as { id: SideTab; label: string; nodeOnly?: boolean }[])
+          .filter(t => !t.nodeOnly || !!selectedNode)
+          .map((t) => (
             <button key={t.id}
               onClick={() => setActiveSide(t.id)}
               className="h-20 flex items-center justify-center transition-colors flex-shrink-0"
@@ -3059,7 +3069,7 @@ export default function CadPage() {
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
-              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("general"); } }}
+              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); } }}
               onSelectBranch={(id) => { setSelectedBranchId(id); setSelectedBranchIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); } }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
