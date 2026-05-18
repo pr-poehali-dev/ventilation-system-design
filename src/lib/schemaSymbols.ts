@@ -120,7 +120,7 @@ export const LEGEND_TYPES: LegendType[] = [
   // По скриншоту АэроСети: фигурная скобка "}" по центру
   {
     id: "sail", name: "Парус вентиляционный", group: "Вентиляция", subgroup: "Глухие перемычки",
-    svgContent: `<path d="M28,4 Q22,4 22,12 Q22,18 24,20 Q22,22 22,28 Q22,36 28,36" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/>`,
+    svgContent: `<line x1="22" y1="4" x2="22" y2="36" stroke="#333" stroke-width="2" stroke-linecap="round"/><path d="M22,10 Q38,14 38,20 Q38,26 22,30" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round"/>`,
   },
 
   // ─── ПЕРЕМЫЧКИ ВОДОПОДПОРНЫЕ ─────────────────────────────────────────

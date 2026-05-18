@@ -152,8 +152,8 @@ const ITEMS: LegendItem[] = [
   {
     id: "sail", group: "Глухие перемычки", name: "Парусная перемычка",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <path d="M28,4 Q22,4 22,12 Q22,18 24,20 Q22,22 22,28 Q22,36 28,36"
-        fill="none" stroke={S} strokeWidth={2} strokeLinecap="round" />
+      <line x1={22} y1={4} x2={22} y2={36} stroke={S} strokeWidth={2} strokeLinecap="round" />
+      <path d="M22,10 Q38,14 38,20 Q38,26 22,30" fill="none" stroke={S} strokeWidth={2} strokeLinecap="round" />
     </svg>,
   },
 
