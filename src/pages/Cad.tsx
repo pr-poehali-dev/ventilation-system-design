@@ -491,6 +491,7 @@ export default function CadPage() {
   const [showUOPanel, setShowUOPanel] = useState(false);
   const [uoPanelPos, setUOPanelPos] = useState({ left: 0, top: 0 });
   const uoBtnRef = useRef<HTMLButtonElement>(null);
+  const [uoTooltip, setUoTooltip] = useState<{ name: string; x: number; y: number } | null>(null);
   // ID ветви, для которой открыли панель через клик на fan-символ
   const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
   // Диалог ввода числа людей при размещении отделения
@@ -1630,7 +1631,11 @@ export default function CadPage() {
                     ref={uoBtnRef}
                     onClick={() => {
                       const rect = uoBtnRef.current?.getBoundingClientRect();
-                      if (rect) setUOPanelPos({ left: rect.left, top: rect.bottom + 2 });
+                      if (rect) {
+                        const panelW = 560;
+                        const left = Math.min(rect.left, window.innerWidth - panelW - 8);
+                        setUOPanelPos({ left: Math.max(4, left), top: rect.bottom + 2 });
+                      }
                       setShowUOPanel(v => !v);
                     }}
                     title="Условные обозначения — выбрать символ для размещения на схеме"
@@ -1693,28 +1698,62 @@ export default function CadPage() {
                       width: 560,
                       maxHeight: "72vh",
                       overflowY: "auto",
-                    }}>
+                    }}
+                    onMouseLeave={() => setUoTooltip(null)}>
+
+                    {/* Tooltip */}
+                    {uoTooltip && (
+                      <div style={{
+                        position: "fixed",
+                        left: Math.min(uoTooltip.x + 8, window.innerWidth - 220),
+                        top: uoTooltip.y - 36,
+                        zIndex: 10000,
+                        background: "#1e293b",
+                        color: "white",
+                        fontSize: 10,
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        pointerEvents: "none",
+                        maxWidth: 210,
+                        lineHeight: 1.3,
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                        whiteSpace: "pre-wrap",
+                      }}>
+                        {uoTooltip.name}
+                      </div>
+                    )}
+
                     {/* Шапка */}
                     <div className="flex items-center justify-between px-3 py-1.5 sticky top-0 z-10"
                       style={{ background: "linear-gradient(180deg,#e8eef8,#dde7f4)", borderBottom: "1px solid #c8d4e8" }}>
                       <span className="text-[11px] font-semibold text-gray-700">Условные обозначения</span>
-                      <button onClick={() => setShowUOPanel(false)}
+                      <button onClick={() => { setShowUOPanel(false); setUoTooltip(null); }}
                         className="text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center text-[14px] leading-none rounded hover:bg-gray-200">×</button>
                     </div>
+
                     {/* Контент — группы */}
                     <div className="p-2 flex flex-col gap-2">
                       {symGroups.map(({ label, items }) => (
                         <div key={label}>
-                          <div className="text-[8.5px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-0.5 mb-1"
-                            style={{ borderBottom: "1px solid #eaeaea", color: "#6b7280" }}>
+                          <div className="text-[8.5px] font-semibold uppercase tracking-wide px-1 py-0.5 mb-1"
+                            style={{ borderBottom: "1px solid #eaeaea", color: "#9ca3af" }}>
                             {label}
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 3, paddingLeft: 2 }}>
                             {items.map(lt => {
                               const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
                               return (
-                                <button key={lt.id} title={lt.name}
-                                  onClick={() => { handlePickSymbol(lt.id); setShowUOPanel(false); }}
+                                <button key={lt.id}
+                                  onClick={() => { handlePickSymbol(lt.id); setShowUOPanel(false); setUoTooltip(null); }}
+                                  onMouseEnter={e => {
+                                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    setUoTooltip({ name: lt.name, x: r.left, y: r.top });
+                                    if (!isActive) (e.currentTarget as HTMLElement).style.background = "#e8f0fe";
+                                  }}
+                                  onMouseLeave={e => {
+                                    setUoTooltip(null);
+                                    if (!isActive) (e.currentTarget as HTMLElement).style.background = "#f8faff";
+                                  }}
                                   style={{
                                     width: 32, height: 32,
                                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -1723,9 +1762,8 @@ export default function CadPage() {
                                     background: isActive ? "#dbeafe" : "#f8faff",
                                     cursor: "pointer", padding: 0, flexShrink: 0,
                                     transition: "border-color .12s, background .12s",
-                                  }}
-                                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "#e8f0fe"; }}
-                                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "#f8faff"; }}>
+                                    outline: "none",
+                                  }}>
                                   <svg width={24} height={20} viewBox="0 0 48 40">
                                     <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                                   </svg>
