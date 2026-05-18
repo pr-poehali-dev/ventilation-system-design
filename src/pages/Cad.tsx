@@ -2614,10 +2614,15 @@ export default function CadPage() {
                           ))}
                         </select>
                       ) : (
-                        <SelectRow
-                          value={selectedBranch.type}
-                          options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.", "Уклон", "Очистной", "Сбойка", "Камера", "Конвейер", "Вент. канал"]}
-                          onChange={(v) => updateBranch(selectedBranch.id, { type: v })} />
+                        <div className="text-[10px] text-amber-700 px-1 py-1 rounded"
+                          style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                          Добавьте типы выработок в{" "}
+                          <button onClick={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
+                            className="underline text-blue-600"
+                            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "inherit" }}>
+                            Справочники → Типы выработок
+                          </button>
+                        </div>
                       )}
                     </PropGroup>
 
