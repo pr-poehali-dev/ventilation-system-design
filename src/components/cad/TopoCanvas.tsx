@@ -1308,123 +1308,24 @@ export default function TopoCanvas(props: Props) {
               {(() => {
                 const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
                 if (isBulkhead && sym.branchId && hasBranchPts) {
-                  // ── Перемычка на ветви: рисуем напрямую примитивами поперёк ветви ──
-                  // Координатная система: X вдоль ветви, Y поперёк
-                  // Угол ветви в градусах
+                  // Перемычка на ветви — рисуем поперёк ветви
+                  // SVG viewBox="0 0 48 40": символ горизонтальный (столбы по Y, ось по X)
+                  // Поворачиваем на угол ветви — символ встаёт поперёк ветви
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-
-                  // Цвет из typeId
-                  const tid = sym.typeId;
-                  const fill = tid.includes("concrete") ? "#4caf50"
-                    : tid.includes("wood")     ? "#ffd600"
-                    : tid.includes("brick")    ? "#ff9800"
-                    : tid.includes("metal")    ? "#9c27b0"
-                    : "white";
-                  const stroke = tid.includes("concrete") ? "#2e7d32"
-                    : tid.includes("wood")     ? "#f57f17"
-                    : tid.includes("brick")    ? "#e65100"
-                    : tid.includes("metal")    ? "#6a1b9a"
-                    : tid === "fire_door"       ? "#8b0000"
-                    : "#333";
-                  const fillFire = tid === "fire_door" ? "#c00" : fill;
-
-                  // Размеры (в px экрана): высота поперёк ветви, ширина столбов вдоль ветви
-                  const ph = Math.max(12, Math.min(30, w * 4 + 14)); // высота поперёк
-                  const pw = Math.max(3, Math.round(ph * 0.32));     // ширина одного столба
-                  const gap = pw * 0.5;                               // зазор между столбами (для двери)
-
-                  // Флаги типа
-                  const isDoor   = tid.includes("door_closed") || tid === "fire_door";
-                  const isAuto   = tid.includes("door_auto");
-                  const isWater  = tid.includes("water_dam");
-                  const isOpen   = tid === "regulator_open";
-                  const isWindow = tid === "regulator_window" || tid === "bulkhead_window";
-                  const isLattice= tid === "regulator_lattice";
-                  const isSail   = tid === "sail";
-                  const isBarrier= tid === "bulkhead_barrier";
-
+                  // Размер: ширина = SZ (вдоль ветви), высота = SZ (поперёк)
+                  // Центр SVG (24,20) → совмещаем с px,py
+                  const sw = SZ, sh = SZ;
                   return (
-                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-                      {/* Белая подложка — стирает линию ветви под символом */}
-                      <rect x={-(pw * 2 + gap)} y={-ph / 2 - 1} width={pw * 4 + gap * 2} height={ph + 2}
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}
+                      opacity={isFanStopped ? 0.35 : 1}
+                      style={isFanStopped ? { filter: "grayscale(1)" } : undefined}>
+                      {/* Белая подложка — перекрываем линию ветви за перемычкой */}
+                      <rect x={-sw * 0.2} y={-sh * 0.55} width={sw * 0.4} height={sh * 1.1}
                         fill="white" />
-
-                      {isSail ? (
-                        // Парус: треугольный флаг
-                        <path d={`M0,${-ph/2} L0,${ph/2} L${pw*2.5},0 Z`}
-                          fill={fill} stroke={stroke} strokeWidth={1.2} />
-                      ) : isBarrier ? (
-                        // Барьерная: две разноцветных полосы
-                        <>
-                          <rect x={-pw} y={-ph/2} width={pw} height={ph} fill="#555" stroke="#333" strokeWidth={1} />
-                          <rect x={0}   y={-ph/2} width={pw} height={ph} fill="#c00" stroke="#800" strokeWidth={1} />
-                        </>
-                      ) : (
-                        // Основной тип: один или два столба
-                        <>
-                          {/* Левый столб */}
-                          <rect x={-(pw * 2 + gap)} y={-ph / 2} width={pw} height={ph}
-                            fill={fillFire} stroke={stroke} strokeWidth={1.2} />
-                          {/* Правый столб */}
-                          <rect x={pw + gap} y={-ph / 2} width={pw} height={ph}
-                            fill={fillFire} stroke={stroke} strokeWidth={1.2} />
-
-                          {/* Зазор между столбами — белый (дверь/регулятор) или залитый (глухая) */}
-                          {(isDoor || isAuto || isOpen || isWindow || isLattice) ? (
-                            <rect x={-pw - gap} y={-ph / 2} width={pw * 2 + gap} height={ph}
-                              fill="white" stroke="none" />
-                          ) : (
-                            <rect x={-pw - gap} y={-ph / 2} width={pw * 2 + gap} height={ph}
-                              fill={fillFire} stroke={stroke} strokeWidth={1.2} />
-                          )}
-
-                          {/* Дверная щель */}
-                          {(isDoor || isAuto) && (
-                            <>
-                              <line x1={-(pw + gap)} y1={-ph * 0.3} x2={-(pw + gap)} y2={ph * 0.3}
-                                stroke="white" strokeWidth={Math.max(1.5, pw * 0.4)} />
-                              <line x1={-(pw + gap)} y1={0} x2={-gap * 0.5} y2={0}
-                                stroke="white" strokeWidth={Math.max(1, pw * 0.25)} />
-                            </>
-                          )}
-
-                          {/* Буква «А» — автоматическая дверь */}
-                          {isAuto && (
-                            <text x={pw * 1.2} y={pw * 0.35} textAnchor="middle"
-                              fontSize={Math.max(5, pw * 1.2)} fontWeight="bold" fill={stroke}>А</text>
-                          )}
-
-                          {/* Буква «D» — водоподпорная */}
-                          {isWater && (
-                            <text x={0} y={pw * 0.4} textAnchor="middle"
-                              fontSize={Math.max(6, pw * 1.4)} fontWeight="bold"
-                              fill={fill === "white" ? "#1565c0" : "white"}>D</text>
-                          )}
-
-                          {/* Окно в перемычке */}
-                          {isWindow && (
-                            <rect x={-(pw * 0.6)} y={-ph * 0.25} width={pw * 1.2} height={ph * 0.5}
-                              fill="none" stroke={stroke} strokeWidth={1} />
-                          )}
-
-                          {/* Решётка */}
-                          {isLattice && (() => {
-                            const lines = [];
-                            for (let i = -ph * 0.4; i <= ph * 0.4; i += ph * 0.2) {
-                              lines.push(<line key={i} x1={-pw * 0.8} y1={i} x2={pw * 0.8} y2={i}
-                                stroke={stroke} strokeWidth={0.7} />);
-                            }
-                            return lines;
-                          })()}
-
-                          {/* «ПП» — противопожарная */}
-                          {tid === "fire_door" && (
-                            <text x={0} y={pw * 0.4} textAnchor="middle"
-                              fontSize={Math.max(4, pw * 0.9)} fontWeight="bold" fill="white">ПП</text>
-                          )}
-                        </>
-                      )}
+                      <svg x={-sw / 2} y={-sh / 2} width={sw} height={sh}
+                        viewBox="0 0 48 40" overflow="visible"
+                        dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                     </g>
                   );
                 }

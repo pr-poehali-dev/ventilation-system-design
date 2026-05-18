@@ -1616,126 +1616,51 @@ export default function CadPage() {
           seen.forEach((items, label) => symGroups.push({ label, items }));
 
           const activeLt = LEGEND_TYPES.find(l => l.id === activeSymbolTypeId);
-          // Порог: группы с > 4 символами → выпадающий список (компактный)
-          const DROPDOWN_THRESHOLD = 4;
 
           return (
             <>
               {symGroups.map(({ label, items }) => {
-                const hasActiveInGroup = items.some(lt => lt.id === activeSymbolTypeId && tool === "symbol");
-                const activeInGroup = items.find(lt => lt.id === activeSymbolTypeId && tool === "symbol");
-                const useDropdown = items.length > DROPDOWN_THRESHOLD;
-
-                if (useDropdown) {
-                  // ── Выпадающий список для больших групп ──
-                  const previewLt = activeInGroup ?? items[0];
-                  return (
-                    <div key={label} className="flex flex-col h-full flex-shrink-0 relative group"
-                      style={{ width: 62, borderRight: "1px solid #d0d0d0" }}>
-                      {/* Кнопка-превью */}
-                      <div className="flex-1 flex flex-col items-center justify-center px-1 pt-1 gap-0.5 cursor-pointer">
-                        <div style={{
-                          width: 48, height: 38,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          borderRadius: 3,
-                          border: hasActiveInGroup ? "1.5px solid #2563eb" : "1px solid #c8c8c8",
-                          background: hasActiveInGroup ? "#dbeafe" : "white",
-                          position: "relative",
-                        }}>
-                          <svg width={38} height={30} viewBox="0 0 48 40">
-                            <g dangerouslySetInnerHTML={{ __html: previewLt.svgContent }} />
-                          </svg>
-                          {/* Стрелка вниз */}
-                          <svg width={8} height={6} viewBox="0 0 8 6"
-                            style={{ position: "absolute", bottom: 2, right: 2 }}>
-                            <path d="M0,0 L4,5 L8,0" fill="none" stroke="#888" strokeWidth="1.2" />
-                          </svg>
-                        </div>
-                      </div>
-                      {/* Заголовок группы снизу */}
-                      <div className="text-[8px] text-center text-gray-500 px-0.5 pb-0.5 pt-0.5 leading-tight truncate"
-                        style={{ borderTop: "1px solid #d4d4d4" }}>
-                        {label}
-                      </div>
-                      {/* Выпадающее меню */}
-                      <div className="absolute left-0 top-0 z-50 hidden group-hover:block"
-                        style={{
-                          bottom: "auto",
-                          transform: "translateY(-100%)",
-                          background: "white",
-                          border: "1px solid #b8c8d8",
-                          boxShadow: "0 -4px 16px rgba(0,0,0,0.18)",
-                          minWidth: 220,
-                          maxHeight: 320,
-                          overflowY: "auto",
-                          borderRadius: 4,
-                        }}>
-                        <div className="px-2 py-1 text-[9px] font-semibold text-gray-500 uppercase sticky top-0"
-                          style={{ background: "#e8eef8", borderBottom: "1px solid #d1dae8" }}>
-                          {label}
-                        </div>
-                        {items.map(lt => {
-                          const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
-                          return (
-                            <button key={lt.id}
-                              onClick={() => handlePickSymbol(lt.id)}
-                              className="w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-blue-50 transition-colors"
-                              style={{
-                                background: isActive ? "#dbeafe" : undefined,
-                                borderBottom: "1px solid #f0f0f0",
-                              }}>
-                              <svg width={32} height={24} viewBox="0 0 48 40" style={{ flexShrink: 0 }}>
-                                <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                              </svg>
-                              <span className="text-[10px] text-gray-800 leading-tight">{lt.name}</span>
-                              {isActive && <span className="ml-auto text-[9px] text-blue-600">▶</span>}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                }
-
-                // ── Сетка 2 ряда для малых групп ──
+                // Вычисляем ширину секции: 2 строки → ceil(n/2) колонок × 28px
                 const cols = Math.ceil(items.length / 2);
                 const sectionW = cols * 28 + 8;
                 return (
-                  <div key={label} className="flex flex-col h-full flex-shrink-0"
-                    style={{ width: sectionW, borderRight: "1px solid #d0d0d0" }}>
-                    <div className="flex-1 px-1 pt-1"
-                      style={{ display: "grid", gridTemplateRows: "repeat(2, 26px)", gridAutoFlow: "column", gridAutoColumns: 26, gap: 2, alignContent: "start" }}>
-                      {items.map(lt => {
-                        const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
-                        return (
-                          <button key={lt.id}
-                            title={lt.name}
-                            onClick={() => handlePickSymbol(lt.id)}
-                            style={{
-                              width: 26, height: 26,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              borderRadius: 3,
-                              border: isActive ? "1.5px solid #2563eb" : "1px solid #c8c8c8",
-                              background: isActive ? "#dbeafe" : "white",
-                              padding: 0,
-                              cursor: "pointer",
-                              flexShrink: 0,
-                            }}>
-                            <svg width={20} height={17} viewBox="0 0 48 40">
-                              <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                            </svg>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="text-[8px] text-center text-gray-500 px-0.5 pb-0.5 pt-0.5 leading-tight truncate"
-                      style={{ borderTop: "1px solid #d4d4d4" }}>
-                      {label}
-                    </div>
+                <div key={label} className="flex flex-col h-full flex-shrink-0"
+                  style={{ width: sectionW, borderRight: "1px solid #d0d0d0" }}>
+                  {/* Символы — сетка 2 ряда × N колонок */}
+                  <div className="flex-1 px-1 pt-1"
+                    style={{ display: "grid", gridTemplateRows: "repeat(2, 26px)", gridAutoFlow: "column", gridAutoColumns: 26, gap: 2, alignContent: "start" }}>
+                    {items.map(lt => {
+                      const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
+                      return (
+                        <button key={lt.id}
+                          title={lt.name}
+                          onClick={() => handlePickSymbol(lt.id)}
+                          style={{
+                            width: 26, height: 26,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            borderRadius: 3,
+                            border: isActive ? "1.5px solid #2563eb" : "1px solid #c8c8c8",
+                            background: isActive ? "#dbeafe" : "white",
+                            padding: 0,
+                            cursor: "pointer",
+                            flexShrink: 0,
+                          }}>
+                          <svg width={20} height={17} viewBox="0 0 48 40">
+                            <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                          </svg>
+                        </button>
+                      );
+                    })}
                   </div>
+                  {/* Заголовок группы снизу */}
+                  <div className="text-[8px] text-center text-gray-500 px-0.5 pb-0.5 pt-0.5 leading-tight truncate"
+                    style={{ borderTop: "1px solid #d4d4d4" }}>
+                    {label}
+                  </div>
+                </div>
                 );
               })}
-              {/* Статус активного символа */}
+              {/* Статус активного символа — плавающая подсказка */}
               {tool === "symbol" && activeLt && (
                 <div className="flex flex-col justify-center px-1.5 flex-shrink-0">
                   <div className="text-[9px] text-blue-700 font-semibold leading-tight max-w-[90px]">▶ {activeLt.name}</div>
