@@ -566,6 +566,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <SectionHeader title="Название и группы" />
 
             <InlineLabel label="Тип выработки">
+              {console.log("[BranchPropsPanel] mineTypes:", mineTypes?.length, mineTypes?.map(t=>t.name))}
               <SelectField
                 value={branch.type}
                 options={mineTypes && mineTypes.length > 0 ? mineTypes.map(t => t.name) : BRANCH_TYPES}
