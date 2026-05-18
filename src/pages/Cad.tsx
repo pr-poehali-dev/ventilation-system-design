@@ -685,6 +685,17 @@ export default function CadPage() {
     schemaSymbols,
     mineFans,
     mineBulkheads,
+    calcMode,
+    solverTolerance,
+    solverMaxIter,
+    solverAlpha,
+    infoConfig,
+    branchWidth,
+    branchBorder,
+    colorByHorizon,
+    showFlowArrows,
+    flowDisplay,
+    zScale,
     view: savedViewState ?? undefined,
   });
 
@@ -819,6 +830,17 @@ export default function CadPage() {
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
     if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
     if (data.mineBulkheads) setMineBulkheads(data.mineBulkheads as MineBulkheadExport[]);
+    if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
+    if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
+    if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
+    if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
+    if (data.infoConfig) setInfoConfig(data.infoConfig as InfoDisplayConfig);
+    if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
+    if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
+    if (data.colorByHorizon !== undefined) setColorByHorizon(data.colorByHorizon as boolean);
+    if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
+    if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
+    if (data.zScale !== undefined) setZScale(data.zScale as number);
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
