@@ -95,24 +95,24 @@ interface Excavation {
 
 const DEFAULT_EXC: Excavation = {
   id: "EXC-001",
-  type: "Воздуховод прямоугольный",
-  section: "rect",
-  area: 0.48,
-  perimeter: 2.8,
-  length: 50,
-  alphaCoef: 0.002,
+  type: "Ствол ЮВС",
+  section: "round",
+  area: 38.5,
+  perimeter: 22,
+  length: 276,
+  alphaCoef: 0.009,
   vMax: 15,
-  resistance: 0.00012,
-  flow: 75.3,
-  velocity: 8.4,
-  dP: 120,
-  power: 9036,
-  surface: "Стальной воздуховод, гладкий",
-  name: "Магистральный воздуховод",
-  number: "1",
+  resistance: 0.000098,
+  flow: 211,
+  velocity: 5.5,
+  dP: 43,
+  power: 9002,
+  surface: "Воздухоподающая выработка, без неровностей",
+  name: 'Ствол "Южный - Вентиляционный"',
+  number: "713",
   width: 3,
   border: 0.2,
-  layer: "Приток",
+  layer: "Стволы",
   appearYear: "2025",
   appearMonth: "Ноябрь",
   appearDay: "1",
@@ -128,7 +128,7 @@ const DEFAULT_EXC: Excavation = {
   cable6: false,
 };
 
-const LAYERS = ["Приток", "Вытяжка", "Рециркуляция", "Воздухозабор", "Выброс", "Дымоудаление"];
+const LAYERS = ["Стволы", "Квершлаги", "Штреки", "Уклоны", "Камеры", "Сбойки", "Скважины"];
 
 export default function CadPage() {
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
@@ -188,7 +188,7 @@ export default function CadPage() {
   const [horizons, setHorizons] = useState<Horizon[]>(() => {
     if (typeof window === "undefined") return DEFAULT_HORIZONS;
     try {
-      const raw = window.localStorage.getItem("vent-cad/horizons-v2");
+      const raw = window.localStorage.getItem("vent-cad/horizons");
       if (!raw) return DEFAULT_HORIZONS;
       const parsed = JSON.parse(raw) as Horizon[];
       if (Array.isArray(parsed) && parsed.length) return parsed;
@@ -465,7 +465,7 @@ export default function CadPage() {
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([
-    { id: "SYM_FAN_2", typeId: "fan", x: 0, y: 0, branchId: "2", t: 0.5, airDirection: "forward" },
+    { id: "SYM_FAN_7", typeId: "fan", x: 0, y: 0, branchId: "7", t: 0.5, airDirection: "forward" },
   ]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
@@ -1518,7 +1518,7 @@ export default function CadPage() {
         <RibbonGroup label="Вентиляция">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="Wind" label="Вентиляторы" sublabel="" onClick={() => { setEquipRefTab("fans"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Layers" label="Типы воздуховодов" sublabel="" onClick={() => { setEquipRefTab("types"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Layers" label="Типы выработок" sublabel="" onClick={() => { setEquipRefTab("types"); setShowEquipRef(true); }} />
             <RibbonBigBtn icon="Square" label="Перемычки" sublabel="" onClick={() => { setEquipRefTab("bulkheads"); setShowEquipRef(true); }} />
           </div>
         </RibbonGroup>
@@ -1553,9 +1553,9 @@ export default function CadPage() {
         {/* ── Группа: Объекты ── */}
         <RibbonGroup label="Объекты">
           <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Plus" label="Добавить" sublabel="воздуховод"
+            <RibbonBigBtn icon="Plus" label="Добавить" sublabel="выработку"
               onClick={() => setTool("branch")} />
-            <RibbonBigBtn icon="Scissors" label="Разделить" sublabel="воздуховод"
+            <RibbonBigBtn icon="Scissors" label="Разделить" sublabel="выработку"
               disabled={!selectedBranchId}
               onClick={() => {
                 if (!selectedBranchId) return;
@@ -2084,7 +2084,7 @@ export default function CadPage() {
                       onChange={(e) => setExcavation({ ...excavation, number: e.target.value })}
                       className="cad-input flex-1" />
                   </LabeledRow>
-                  <LabeledRow label="Этаж:" labelWidth={88}>
+                  <LabeledRow label="Горизонт:" labelWidth={88}>
                     {selectedBranch ? (
                       <select
                         value={selectedBranch.horizonId}
@@ -2112,7 +2112,7 @@ export default function CadPage() {
                     <CadCheckbox
                       checked={excavation.isVertical}
                       onChange={(v) => setExcavation({ ...excavation, isVertical: v })}
-                      label="Вертикальный воздуховод (шахта)" />
+                      label="Вертикальная выработка (ходок)" />
                     <CadCheckbox
                       checked={excavation.dashedBorder}
                       onChange={(v) => setExcavation({ ...excavation, dashedBorder: v })}
@@ -2204,9 +2204,9 @@ export default function CadPage() {
             {activeSide === "horizons" && (
               <div className="p-2 space-y-2">
                 {/* ── Активный горизонт: задаёт Z для всех новых узлов ── */}
-                <FrameGroup title="Активный этаж (для построения)">
+                <FrameGroup title="Активный горизонт (для построения)">
                   <div className="text-[10px] text-gray-600 leading-tight pb-1">
-                    Если выбран — все НОВЫЕ узлы создаются с Z = отметке этажа
+                    Если выбран — все НОВЫЕ узлы создаются с Z = отметке горизонта
                     и автоматически получают его привязку.
                     Существующие объекты не меняются.
                   </div>
@@ -2222,7 +2222,7 @@ export default function CadPage() {
                     {activeHorizon && (
                       <span className="w-4 h-4 rounded-sm border border-gray-400 flex-shrink-0"
                         style={{ background: activeHorizon.color }}
-                        title="Цвет активного этажа" />
+                        title="Цвет активного горизонта" />
                     )}
                   </div>
                   {activeHorizon && (
@@ -2233,11 +2233,11 @@ export default function CadPage() {
                   )}
                 </FrameGroup>
 
-                <FrameGroup title="Список этажей / уровней">
+                <FrameGroup title="Список горизонтов">
                   <div className="text-[10px] text-gray-600 leading-tight pb-1">
-                    Группировка воздуховодов по высотным отметкам (этажи здания).
-                    Скрытие уровня прячет все его ветви на схеме.
-                    Радио — выбор активного уровня.
+                    Группировка ветвей по высотным отметкам.
+                    Скрытие горизонта прячет все его ветви на схеме.
+                    Радио — выбор активного горизонта.
                   </div>
                   <div className="space-y-1">
                     {horizons.map((h) => {
@@ -2289,7 +2289,7 @@ export default function CadPage() {
                                   <img src={h.image.dataUrl} alt=""
                                     className="w-10 h-10 object-cover border border-gray-300 rounded flex-shrink-0" />
                                   <div className="flex-1 text-[10px] text-gray-600 leading-tight">
-                                    <div className="font-medium text-gray-700 mb-0.5">План этажа</div>
+                                    <div className="font-medium text-gray-700 mb-0.5">План горизонта</div>
                                     <code className="text-[9px]">
                                       {Math.round(h.image.bounds.x1)}…{Math.round(h.image.bounds.x2)}
                                       {" × "}
@@ -2343,7 +2343,7 @@ export default function CadPage() {
                   </div>
                   <button onClick={addHorizon}
                     className="mt-2 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center gap-1">
-                    <Icon name="Plus" size={11} /> Добавить этаж / уровень
+                    <Icon name="Plus" size={11} /> Добавить горизонт
                   </button>
                 </FrameGroup>
 
@@ -2367,30 +2367,30 @@ export default function CadPage() {
             {/* ═══ ВКЛАДКА: ВЕНТИЛЯЦИЯ ═════════════════════════════════ */}
             {activeSide === "vent" && (
               <>
-                <PropGroup title="Тип воздуховода">
-                  <SelectRow value={excavation.type} options={["Воздуховод прямоугольный", "Воздуховод круглый", "Воздуховод овальный", "Гибкий рукав", "Шахта вытяжная", "Шахта приточная"]}
+                <PropGroup title="Тип выработки">
+                  <SelectRow value={excavation.type} options={["Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек", "Уклон", "Камера"]}
                     onChange={(v) => setExcavation({ ...excavation, type: v })} />
                 </PropGroup>
 
                 <PropGroup title="Поперечное сечение">
-                  <SelectRow value="Прямоугольное" options={["Прямоугольное", "Круглое", "Овальное"]}
+                  <SelectRow value="Круглое" options={["Круглое", "Прямоугольное", "Трапециевидное", "Арочное"]}
                     onChange={() => {}} />
                   <FieldRow label="Площадь:" value={`${excavation.area} м²`} />
                   <CheckRow label="Тип:" caption="Задается вручную" />
                   <FieldRow label="Периметр:" value={`${excavation.perimeter} м`} />
                 </PropGroup>
 
-                <PropGroup title="Длина воздуховода">
+                <PropGroup title="Длина выработки">
                   <CheckRow label="Тип:" caption="Задается вручную" />
                   <FieldRow label="Длина:" value={`${excavation.length} м`} />
                 </PropGroup>
 
                 <PropGroup title="Аэродинамическое сопротивление">
                   <SelectRowLabeled label="Задается:" value="Проектными данными"
-                    options={["Проектными данными", "По коэффициенту α", "По шероховатости", "Измеренное"]}
+                    options={["Проектными данными", "По коэффициенту α", "По таблице ВНИИ", "Измеренное"]}
                     onChange={() => {}} />
                   <SelectRowLabeled label="Поверхность:" value={excavation.surface}
-                    options={["Стальной воздуховод, гладкий", "Стальной воздуховод, спиральный", "Гибкий рукав", "Бетонный канал", "Кирпичный канал"]}
+                    options={["Воздухоподающая выработка, без неровностей", "Бетонная крепь", "Деревянная крепь", "Анкерная крепь", "Незакреплённая"]}
                     onChange={(v) => setExcavation({ ...excavation, surface: v })} />
                   <FieldRow label="Коэф-т α:" value={`${excavation.alphaCoef.toFixed(3)} кг/м³`} />
                 </PropGroup>
@@ -2728,7 +2728,7 @@ export default function CadPage() {
 
             {/* ── Активный горизонт (Z для новых узлов) ── */}
             <span className="text-[11px] text-gray-700"
-              title="Все новые узлы будут создаваться на отметке выбранного этажа">Этаж:</span>
+              title="Все новые узлы будут создаваться на отметке выбранного горизонта">Горизонт:</span>
             <select value={activeHorizonId}
               onChange={(e) => {
                 const id = e.target.value;
