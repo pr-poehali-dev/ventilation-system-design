@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { type TopoNode } from "@/lib/topology";
 
 interface NodePropsPanelProps {
@@ -20,31 +19,11 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-function ParamRow({
-  id,
-  label,
-  visible,
-  onToggle,
-  children,
-}: {
-  id: string;
-  label: string;
-  visible: boolean;
-  onToggle: (id: string) => void;
-  children: React.ReactNode;
-}) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center" style={{ minHeight: 20, borderBottom: "1px solid #ebebeb" }}>
-      <div className="flex items-center justify-center flex-shrink-0" style={{ width: 18 }}>
-        <input
-          type="checkbox"
-          checked={visible}
-          onChange={() => onToggle(id)}
-          style={{ width: 11, height: 11, cursor: "pointer" }}
-        />
-      </div>
       <div className="flex-shrink-0 text-[11px] text-gray-700 px-1 leading-tight"
-        style={{ width: 130, whiteSpace: "normal", lineHeight: "1.2" }}>
+        style={{ width: 148, whiteSpace: "normal", lineHeight: "1.2" }}>
         {label}
       </div>
       <div className="flex-1 min-w-0">{children}</div>
@@ -118,18 +97,6 @@ function CheckField({
 }
 
 export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) {
-  const [visible, setVisible] = useState<Set<string>>(
-    () => new Set(["num", "x", "y", "z", "zsurf", "exit", "pressure", "temp", "conc", "humidity", "co",
-      "c_gasconc", "c_airtemp", "c_walltemp", "c_pressure", "c_exppressure"])
-  );
-
-  const toggle = (id: string) =>
-    setVisible((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-
   const numVal = (v: number, d = 2) => isNaN(v) ? "—" : v.toFixed(d);
 
   return (
@@ -137,109 +104,109 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
 
       <SectionHeader title="Геометрия" />
 
-      <ParamRow id="num" label="Номер узла" visible={visible.has("num")} onToggle={toggle}>
+      <Row label="Номер узла">
         <EditInput
           value={node.number}
           onChange={(v) => onUpdate({ number: v })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="x" label="X, м" visible={visible.has("x")} onToggle={toggle}>
+      <Row label="X, м">
         <EditInput
           type="number"
           step="0.1"
           value={node.x}
           onChange={(v) => onUpdate({ x: parseFloat(v) || 0 })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="y" label="Y, м" visible={visible.has("y")} onToggle={toggle}>
+      <Row label="Y, м">
         <EditInput
           type="number"
           step="0.1"
           value={node.y}
           onChange={(v) => onUpdate({ y: parseFloat(v) || 0 })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="z" label="Z, м (высотная отм.)" visible={visible.has("z")} onToggle={toggle}>
+      <Row label="Z, м (высотная отм.)">
         <EditInput
           type="number"
           step="1"
           value={node.z}
           onChange={(v) => onUpdate({ z: parseFloat(v) || 0 })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="zsurf" label="Z поверхности, м" visible={visible.has("zsurf")} onToggle={toggle}>
+      <Row label="Z поверхности, м">
         <ComputedInput value="0" />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="exit" label="Выход (атмосфера)" visible={visible.has("exit")} onToggle={toggle}>
+      <Row label="Выход (атмосфера)">
         <CheckField
           checked={node.atmosphereLink}
           onChange={(v) => onUpdate({ atmosphereLink: v })}
         />
-      </ParamRow>
+      </Row>
 
       <SectionHeader title="Физика" />
 
-      <ParamRow id="pressure" label="Давление приведённое, Па" visible={visible.has("pressure")} onToggle={toggle}>
+      <Row label="Давление приведённое, Па">
         <EditInput
           type="number"
           step="1"
           value={node.reducedPressure}
           onChange={(v) => onUpdate({ reducedPressure: parseFloat(v) || 0 })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="temp" label="Температура воздуха, °C" visible={visible.has("temp")} onToggle={toggle}>
+      <Row label="Температура воздуха, °C">
         <EditInput
           type="number"
           step="0.1"
           value={node.airTemp}
           onChange={(v) => onUpdate({ airTemp: parseFloat(v) || 0 })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="conc" label="Концентрация газа, %" visible={visible.has("conc")} onToggle={toggle}>
+      <Row label="Концентрация газа, %">
         <EditInput
           type="number"
           step="0.01"
           value={node.computedGasConc}
           onChange={(v) => onUpdate({ computedGasConc: parseFloat(v) || 0 })}
         />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="humidity" label="Влажность, %" visible={visible.has("humidity")} onToggle={toggle}>
+      <Row label="Влажность, %">
         <ComputedInput value="—" />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="co" label="CO в узле, мг/м³" visible={visible.has("co")} onToggle={toggle}>
+      <Row label="CO в узле, мг/м³">
         <ComputedInput value="—" />
-      </ParamRow>
+      </Row>
 
       <SectionHeader title="Вычисленные параметры" />
 
-      <ParamRow id="c_gasconc" label="Концентрация газа (расч.), %" visible={visible.has("c_gasconc")} onToggle={toggle}>
+      <Row label="Концентрация газа (расч.), %">
         <ComputedInput value={numVal(node.computedGasConc, 3)} />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="c_airtemp" label="Температура воздуха (расч.), °C" visible={visible.has("c_airtemp")} onToggle={toggle}>
+      <Row label="Температура воздуха (расч.), °C">
         <ComputedInput value={numVal(node.computedAirTemp, 2)} />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="c_walltemp" label="Температура стенок (расч.), °C" visible={visible.has("c_walltemp")} onToggle={toggle}>
+      <Row label="Температура стенок (расч.), °C">
         <ComputedInput value={numVal(node.computedWallTemp, 2)} />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="c_pressure" label="Давление абс. (расч.), Па" visible={visible.has("c_pressure")} onToggle={toggle}>
+      <Row label="Давление абс. (расч.), Па">
         <ComputedInput value={numVal(node.computedPressure, 0)} />
-      </ParamRow>
+      </Row>
 
-      <ParamRow id="c_exppressure" label="Давление взрыва (расч.), кПа" visible={visible.has("c_exppressure")} onToggle={toggle}>
+      <Row label="Давление взрыва (расч.), кПа">
         <ComputedInput value={numVal(node.computedExplosivePressure, 2)} />
-      </ParamRow>
+      </Row>
 
     </div>
   );
