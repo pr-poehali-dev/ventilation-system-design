@@ -2485,7 +2485,7 @@ export default function CadPage() {
             )}
 
             {/* ═══ ВКЛАДКА: ОБЩИЕ ════════════════════════════════════════ */}
-            {activeSide === "general" && (
+            {activeSide === "general" && (selectedBranchId || selectedNodeId) && (
               <div className="p-2 space-y-2">
                 <FrameGroup title="Общие свойства">
                   <LabeledRow label="Название:" labelWidth={88}>
