@@ -2196,6 +2196,8 @@ export default function CadPage() {
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
+              const updBr = (patch: Partial<typeof branches[0]>) =>
+                sym.branchId && updateBranch(sym.branchId, patch);
 
               return (
                 <div className="p-2 text-[11px]">
@@ -2227,6 +2229,128 @@ export default function CadPage() {
                       placeholder="Введите описание объекта..."
                       style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
                   </div>
+
+                  {/* ── Аэродинамическое сопротивление (только для перемычек с привязкой к ветви) ── */}
+                  {isBulkheadSym && brForSym && (
+                    <>
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
+                        Аэродинамическое сопротивление
+                      </div>
+
+                      {/* R = ... кМюрг */}
+                      <div className="flex items-center justify-center py-1 mb-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
+                          R = {(() => {
+                            const mode = brForSym.bulkheadResMode ?? "project";
+                            if (mode === "manual") return `${(brForSym.bulkheadManualR ?? 0).toFixed(4)} кМюрг`;
+                            if (mode === "survey") {
+                              const q = brForSym.bulkheadSurveyQ ?? 0;
+                              const dp = brForSym.bulkheadSurveyDP ?? 0;
+                              const r = q > 0 ? dp / (q * q) : 0;
+                              return `${(r / 1000).toFixed(4)} кМюрг`;
+                            }
+                            return brForSym.bulkheadR ? `${brForSym.bulkheadR.toFixed(4)} кМюрг` : "0 кМюрг";
+                          })()}
+                        </span>
+                      </div>
+
+                      {/* Задается */}
+                      <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                        <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Задается:</span>
+                        <select
+                          value={brForSym.bulkheadResMode ?? "project"}
+                          onChange={e => updBr({ bulkheadResMode: e.target.value as "project" | "survey" | "manual" })}
+                          className="flex-1 text-[11px] px-1"
+                          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                          <option value="project">Проектными данными</option>
+                          <option value="survey">Воздушной съемкой</option>
+                          <option value="manual">Вручную</option>
+                        </select>
+                      </div>
+
+                      {/* Режим: Проектными данными */}
+                      {(brForSym.bulkheadResMode ?? "project") === "project" && (
+                        <>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип пр-ти:</span>
+                            <input type="checkbox"
+                              checked={brForSym.bulkheadManualAirPerm ?? false}
+                              onChange={e => updBr({ bulkheadManualAirPerm: e.target.checked })}
+                              style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
+                            <span className="text-[11px] text-gray-600">Задается вручную</span>
+                          </div>
+                          <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Значение:</span>
+                            {brForSym.bulkheadManualAirPerm ? (
+                              <input type="number" step="0.0001"
+                                value={brForSym.bulkheadCustomAirPerm ?? 0}
+                                onChange={e => updBr({ bulkheadCustomAirPerm: parseFloat(e.target.value) || 0 })}
+                                className="flex-1 text-[11px] px-1 text-right"
+                                style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                            ) : (
+                              <span className="flex-1 text-right text-gray-700 text-[11px]">
+                                {brForSym.bulkheadAirPerm ? `${brForSym.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1" style={{ paddingBottom: 2 }}>
+                            <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
+                            <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
+                              {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Режим: Воздушной съемкой */}
+                      {(brForSym.bulkheadResMode ?? "project") === "survey" && (
+                        <>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Расход:</span>
+                            <input type="number" step="0.1"
+                              value={brForSym.bulkheadSurveyQ ?? 0}
+                              onChange={e => updBr({ bulkheadSurveyQ: parseFloat(e.target.value) || 0 })}
+                              className="flex-1 text-[11px] px-1 text-right"
+                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          </div>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Падение Р:</span>
+                            <input type="number" step="1"
+                              value={brForSym.bulkheadSurveyDP ?? 0}
+                              onChange={e => updBr({ bulkheadSurveyDP: parseFloat(e.target.value) || 0 })}
+                              className="flex-1 text-[11px] px-1 text-right"
+                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
+                            <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
+                              {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Режим: Вручную */}
+                      {(brForSym.bulkheadResMode ?? "project") === "manual" && (
+                        <>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>R (кМюрг):</span>
+                            <input type="number" step="0.0001"
+                              value={brForSym.bulkheadManualR ?? 0}
+                              onChange={e => updBr({ bulkheadManualR: parseFloat(e.target.value) || 0 })}
+                              className="flex-1 text-[11px] px-1 text-right"
+                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
+                            <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
+                              {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
 
                   {/* Направление (вентилятор) */}
                   {sym.typeId === "fan" && (
