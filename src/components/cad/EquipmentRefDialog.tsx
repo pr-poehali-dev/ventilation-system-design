@@ -1479,15 +1479,6 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
             <span className="text-[12px] font-semibold text-gray-800">Справочники — {currentTab.label}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button className="h-6 px-2 text-[11px] border border-gray-400 rounded hover:bg-blue-50 flex items-center gap-1">
-              <Icon name="Plus" size={11} /> Добавить
-            </button>
-            <button className="h-6 px-2 text-[11px] border border-gray-400 rounded hover:bg-blue-50 flex items-center gap-1">
-              <Icon name="Edit2" size={11} /> Изменить
-            </button>
-            <button className="h-6 px-2 text-[11px] border border-red-300 rounded hover:bg-red-50 text-red-600 flex items-center gap-1">
-              <Icon name="Trash2" size={11} /> Удалить
-            </button>
             <div className="w-px h-5 bg-gray-300 mx-1" />
             <button onClick={onClose} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
               <Icon name="X" size={12} />
