@@ -986,7 +986,7 @@ export default function CadPage() {
               const mode = s.bkResMode ?? "project";
               let r = 0;
               if (mode === "manual") {
-                r = (s.bkManualR ?? 0) * 1e-3;
+                r = (s.bkManualR ?? 0) * 1e3;
               } else if (mode === "survey") {
                 const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
                 r = q > 0 ? dp / (q * q) : 0;
@@ -2340,7 +2340,7 @@ export default function CadPage() {
                             const rho = 1.2;
                             let rNsm8 = 0;
                             if (mode === "manual") {
-                              rNsm8 = (sym.bkManualR ?? 0) * 1e-3;
+                              rNsm8 = (sym.bkManualR ?? 0) * 1e3;
                             } else if (mode === "survey") {
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
