@@ -436,39 +436,47 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
 
     def bisect_q0():
         """
-        Находит начальный Q методом бисекции: H_fan(Q) = R_active · Q².
-        Использует только сопротивления активных (не тупиковых) ветвей.
+        Находит начальный Q методом бисекции: ΣH_fan(Q) = R_active · Q².
+        При нескольких вентиляторах суммируем напоры (последовательная работа).
+        Q ограничен min(qMax) всех вентиляторов — за этим пределом H_fan=0.
         """
         R_total = sum(e["R"] for e in active_edges if not e["hasFan"])
         if R_total <= 0:
             R_total = 1e-3
 
-        # Для curve-вентилятора — бисекция на нисходящей ветви характеристики
-        for fan_e in fans:
-            if fan_e.get("fanMode", "constant") == "curve":
+        curve_fans = [e for e in fans if e.get("fanMode", "constant") == "curve"]
+        if curve_fans:
+            # Диапазон Q: от qMin до min(qMax) по всем вентиляторам
+            # (за min(qMax) суммарный напор обнуляется)
+            q_lo = max(float(e.get("qMin", 1.0)) for e in curve_fans)
+            q_hi_vals = []
+            for fan_e in curve_fans:
                 if fan_e.get("fanReverse") and fan_e.get("reverseH0") is not None:
-                    q_lo = float(fan_e.get("qMin", 1.0))
-                    q_hi = float(fan_e.get("reverseQMax", fan_e.get("qMax", 90.0)))
+                    q_hi_vals.append(float(fan_e.get("reverseQMax", fan_e.get("qMax", 90.0))))
                 else:
-                    q_lo = float(fan_e.get("qMin", 1.0))
-                    q_hi = float(fan_e.get("qMax", 90.0))
+                    q_hi_vals.append(float(fan_e.get("qMax", 90.0)))
+            q_hi = min(q_hi_vals)  # ограничиваем самым узким вентилятором
+            if q_lo >= q_hi:
+                q_lo = q_hi * 0.1
 
-                def f(q):
-                    return fan_H(fan_e, q) - R_total * q * q
+            def f_total(q):
+                h_sum = sum(fan_H(fe, q) for fe in curve_fans)
+                return h_sum - R_total * q * q
 
-                if f(q_lo) <= 0:
-                    return q_lo
-                if f(q_hi) >= 0:
-                    return q_hi
-                for _ in range(60):
-                    q_mid = 0.5 * (q_lo + q_hi)
-                    if f(q_mid) > 0:
-                        q_lo = q_mid
-                    else:
-                        q_hi = q_mid
-                    if q_hi - q_lo < 0.01:
-                        break
-                return 0.5 * (q_lo + q_hi)
+            if f_total(q_lo) <= 0:
+                return q_lo
+            if f_total(q_hi) >= 0:
+                # Весь диапазон H > R·Q² — возвращаем q_hi (максимальный расход)
+                return q_hi
+            for _ in range(60):
+                q_mid = 0.5 * (q_lo + q_hi)
+                if f_total(q_mid) > 0:
+                    q_lo = q_mid
+                else:
+                    q_hi = q_mid
+                if q_hi - q_lo < 0.01:
+                    break
+            return 0.5 * (q_lo + q_hi)
 
         # constant-вентилятор
         H_fan = sum(fan_H(e, 1.0) for e in fans)
@@ -587,6 +595,11 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                 continue
 
             dq = alpha * sum_h / sum_2rq
+            # Ограничиваем поправку: не более 50% от текущего среднего Q в контуре,
+            # чтобы не улетать за рабочий диапазон вентилятора при плохом начальном приближении
+            q_avg = sum(abs(Q[gi]) for gi, _ in loop) / max(1, len(loop))
+            if q_avg > 0:
+                dq = max(-q_avg * 0.5, min(q_avg * 0.5, dq))
             max_dq = max(max_dq, abs(dq))
 
             for gi, sign in loop:
