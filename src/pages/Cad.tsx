@@ -143,7 +143,9 @@ export default function CadPage() {
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
   const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
-  const [mineFans, setMineFans] = useState<MineFanExport[]>([]);
+  const [mineFans, setMineFans] = useState<MineFanExport[]>([
+    { catalogId: "VOD-18", name: "ВО-18/12АВР", diameter: 1.8, rpmMin: 600, rpmMax: 1500 },
+  ]);
   const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>([]);
   const [mineTypes, setMineTypes] = useState<BranchType[]>([]);
 
@@ -517,7 +519,7 @@ export default function CadPage() {
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([
-    { id: "SYM_FAN_5",   typeId: "fan",        x: 0, y: 0, branchId: "5", t: 0.5, airDirection: "forward" },
+    { id: "SYM_FAN_4",   typeId: "fan",        x: 0, y: 0, branchId: "4", t: 0.5, airDirection: "forward" },
     { id: "SYM_COPRA_1", typeId: "copra_tower", x: 0, y: 0, branchId: "1", t: 0.2, label: "Надшахтное здание ЮВС" },
   ]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
