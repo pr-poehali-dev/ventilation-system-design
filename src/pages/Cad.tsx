@@ -190,15 +190,11 @@ export default function CadPage() {
 
     // Синхронизируем УО перемычки при изменении hasBulkhead
     if ("hasBulkhead" in patch) {
-      if (patch.hasBulkhead) {
-        setSchemaSymbols(prev => {
-          const hasSym = prev.some(s => s.typeId === "bulkhead" && s.branchId === id);
-          if (hasSym) return prev;
-          return [...prev, { id: `SYM_BH_${id}_${Date.now()}`, typeId: "bulkhead", x: 0, y: 0, branchId: id, t: 0.5 }];
-        });
-      } else {
-        setSchemaSymbols(prev => prev.filter(s => !(s.typeId === "bulkhead" && s.branchId === id)));
+      if (!patch.hasBulkhead) {
+        // При снятии флага — удаляем ВСЕ символы перемычки с этой ветви
+        setSchemaSymbols(prev => prev.filter(s => !(BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === id)));
       }
+      // При установке hasBulkhead=true символ уже добавляется через onSymbolPlace — не дублируем
     }
 
     // Синхронизируем airDirection на символе вентилятора при изменении fanReverse
@@ -3183,24 +3179,42 @@ export default function CadPage() {
                       setFanSymbolBranchId(branchId);
                     }
                   } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
-                    // При установке перемычки: активируем hasBulkhead и инициализируем параметры
-                    const br = branches.find(b => b.id === branchId);
-                    if (br) {
-                      const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
-                      // Сбрасываем только индивидуальные параметры (bulkheadId/R берём из справочника позже)
-                      // bulkheadWindowArea = площадь выработки по умолчанию (пользователь меняет вручную)
-                      updateBranch(branchId, {
-                        hasBulkhead: true,
-                        bulkheadResMode: "project",
-                        bulkheadWindowArea: isWindow ? br.area : 0,
-                        bulkheadManualAirPerm: false,
-                        bulkheadCustomAirPerm: 0,
-                        bulkheadSurveyQ: 0,
-                        bulkheadSurveyDP: 0,
-                        bulkheadManualR: 0,
-                      });
+                    // Перемычка физически одна на выработку — заменяем если уже есть
+                    const existingSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === branchId);
+                    if (existingSym) {
+                      // Заменяем тип существующего символа (перетип перемычки)
+                      setSchemaSymbols(prev => prev.map(s =>
+                        s.id === existingSym.id ? { ...s, typeId, x, y } : s
+                      ));
+                    } else {
+                      // Новая перемычка: инициализируем параметры ветви
+                      const br = branches.find(b => b.id === branchId);
+                      if (br) {
+                        const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
+                        updateBranch(branchId, {
+                          hasBulkhead: true,
+                          bulkheadResMode: "project",
+                          bulkheadWindowArea: isWindow ? br.area : 0,
+                          bulkheadManualAirPerm: false,
+                          bulkheadCustomAirPerm: 0,
+                          bulkheadSurveyQ: 0,
+                          bulkheadSurveyDP: 0,
+                          bulkheadManualR: 0,
+                        });
+                      }
+                      addSymbol(typeId, x, y, branchId);
                     }
-                    addSymbol(typeId, x, y, branchId);
+                    // При смене типа (глухая→с окном) — обновляем windowArea
+                    const br = branches.find(b => b.id === branchId);
+                    if (br && existingSym) {
+                      const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
+                      const wasWindow = WINDOW_BULKHEAD_IDS.has(existingSym.typeId);
+                      if (isWindow !== wasWindow) {
+                        updateBranch(branchId, {
+                          bulkheadWindowArea: isWindow ? br.area : 0,
+                        });
+                      }
+                    }
                     setSelectedBranchId(branchId);
                     setSelectedNodeId(null);
                     setActiveSide("params");
