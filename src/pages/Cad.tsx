@@ -14,6 +14,7 @@ import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
@@ -502,6 +503,9 @@ export default function CadPage() {
     setInfoConfig((prev) => ({ ...prev, ...patch }));
   const [zScale, setZScale] = useState<number>(1);
 
+  // ─── ЕДИНИЦЫ ИЗМЕРЕНИЯ ───────────────────────────────────────────
+  const [unitsConfig, setUnitsConfig] = useState<UnitsConfig>(DEFAULT_UNITS_CONFIG);
+
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([
@@ -708,6 +712,7 @@ export default function CadPage() {
     solverMaxIter,
     solverAlpha,
     infoConfig,
+    unitsConfig,
     branchWidth,
     branchBorder,
     colorByHorizon,
@@ -854,6 +859,7 @@ export default function CadPage() {
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
     if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
     if (data.infoConfig) setInfoConfig(data.infoConfig as InfoDisplayConfig);
+    if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
     if (data.colorByHorizon !== undefined) setColorByHorizon(data.colorByHorizon as boolean);
@@ -1605,6 +1611,7 @@ export default function CadPage() {
         <RibbonGroup label="Общее">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="Truck" label="Транспорт" sublabel="" onClick={() => { setEquipRefTab("transport"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Ruler" label="Единицы" sublabel="измерения" onClick={() => { setEquipRefTab("units"); setShowEquipRef(true); }} />
             <RibbonBigBtn icon="BookMarked" label="Условные" sublabel="обозначения" onClick={() => setShowLegend(true)} />
           </div>
         </RibbonGroup>
@@ -3085,6 +3092,7 @@ export default function CadPage() {
               selectedNodeIds={selectedNodeIds}
               onNodeMultiSelect={handleNodeMultiSelect}
               infoConfig={infoConfig}
+              unitsConfig={unitsConfig}
               zScale={zScale}
               schemaSymbols={schemaSymbols}
               selectedSymbolId={selectedSymbolId}
@@ -3361,6 +3369,8 @@ export default function CadPage() {
         onBranchTypesChange={setMineTypes}
         initialBranchTypes={mineTypes}
         initialMineBulkheads={mineBulkheads}
+        unitsConfig={unitsConfig}
+        onUnitsConfigChange={setUnitsConfig}
       />
     )}
 

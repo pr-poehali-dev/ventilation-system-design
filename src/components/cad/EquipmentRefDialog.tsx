@@ -6,8 +6,10 @@ import {
   BULKHEAD_CATALOG, BULKHEAD_TYPE_LABELS, BULKHEAD_TYPE_COLORS,
   type BulkheadCatalogItem, type BulkheadType, airPermToR,
 } from "@/lib/bulkheads";
+import UnitsConfigPanel from "@/components/cad/UnitsConfigPanel";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 
-type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport";
+type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport" | "units";
 
 export interface MineFanExport {
   catalogId: string;
@@ -38,6 +40,8 @@ interface Props {
   onBranchTypesChange?: (types: BranchType[]) => void;
   initialBranchTypes?: BranchType[];
   initialMineBulkheads?: MineBulkheadExport[];
+  unitsConfig?: UnitsConfig;
+  onUnitsConfigChange?: (cfg: UnitsConfig) => void;
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
@@ -49,6 +53,7 @@ const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
   { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод" },
   { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод" },
   { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее" },
+  { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее" },
 ];
 
 // ─── Типы для справочника вентиляторов рудника ────────────────────────────
@@ -1456,17 +1461,20 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads }: {
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
   onBranchTypesChange?: (types: BranchType[]) => void;
   initialBranchTypes?: BranchType[];
   initialMineBulkheads?: MineBulkheadExport[];
+  unitsConfig?: UnitsConfig;
+  onUnitsConfigChange?: (cfg: UnitsConfig) => void;
 }) {
   if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} />;
   if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
   if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads} />;
+  if (tab === "units") return <UnitsConfigPanel unitsConfig={unitsConfig ?? DEFAULT_UNITS_CONFIG} onChange={onUnitsConfigChange ?? (() => {})} />;
   if (tab === "sensors") return <SimpleTable
     headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]}
     rows={DEMO_SENSORS.map(r => [r.name, r.measure, r.range, r.cls, r.note])} />;
@@ -1485,7 +1493,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1537,7 +1545,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик

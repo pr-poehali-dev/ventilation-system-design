@@ -5,6 +5,7 @@ import {
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -106,6 +107,8 @@ interface Props {
   activeSymbolTypeId?: string | null;
   /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь) */
   onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null) => void;
+  /** Конфигурация единиц измерения для отображения меток на схеме */
+  unitsConfig?: UnitsConfig;
 }
 
 export type FlowDisplayMode =
@@ -140,6 +143,7 @@ export default function TopoCanvas(props: Props) {
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
     restoreView, onViewStateChange,
+    unitsConfig = DEFAULT_UNITS_CONFIG,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -1085,14 +1089,19 @@ export default function TopoCanvas(props: Props) {
                 if (isDead) {
                   // тупиковая ветвь — ничего не показываем
                 } else if (ic) {
+                  const uFlow = getUnit(unitsConfig, "flow");
+                  const uVel  = getUnit(unitsConfig, "velocity");
+                  const uPres = getUnit(unitsConfig, "pressure");
+                  const uLen  = getUnit(unitsConfig, "length");
+                  const uArea = getUnit(unitsConfig, "area");
                   if (ic.branchName && b.type) dataLines.push(b.type);
-                  if (ic.branchLength) dataLines.push(`L=${len}м`);
+                  if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
                   if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
-                  if (ic.branchSection) dataLines.push(`S=${b.area.toFixed(1)}м²`);
+                  if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
                   if (ic.branchResistance) dataLines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
-                  if (ic.branchVelocity && hasCalc) dataLines.push(`V=${b.velocity.toFixed(1)}м/с${overV ? "⚠" : ""}`);
-                  if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${Q.toFixed(1)}м³/с`);
-                  if (ic.branchDepression && hasCalc) dataLines.push(`Н=${(b.dP / 10).toFixed(1)}даПа`);
+                  if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
+                  if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
+                  if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
                 } else if (hasCalc) {
                   // Без infoConfig: только результаты расчёта компактно
                   dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
@@ -1506,13 +1515,16 @@ export default function TopoCanvas(props: Props) {
                 const br = branches.find(b => b.id === sym.branchId);
                 if (!br) return null;
                 const lines: string[] = [];
+                const uResInd  = getUnit(unitsConfig, "resistance");
+                const uPresInd = getUnit(unitsConfig, "pressure");
+                const uFlowInd = getUnit(unitsConfig, "flow");
                 if (sym.indDescription && sym.description) lines.push(sym.description);
                 if (sym.indResistance) {
                   const rVal = br.bulkheadR > 0 ? br.bulkheadR : br.resistance / 1e6;
-                  lines.push(`R=${rVal.toFixed(2)} Мюрг`);
+                  lines.push(`R=${uResInd.fromBase(rVal).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
                 }
-                if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${Math.abs(br.dP).toFixed(1)} Па`);
-                if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${Math.abs(br.flow).toFixed(2)} м³/с`);
+                if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);
+                if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
                 const fSize = Math.max(8, Math.round(9 * sc));
@@ -1604,14 +1616,18 @@ export default function TopoCanvas(props: Props) {
                   if (!ic) {
                     if (node.name) nlines.push(node.name);
                   } else {
+                    const uLenN  = getUnit(unitsConfig, "length");
+                    const uPresN = getUnit(unitsConfig, "pressure");
+                    const uTemp  = getUnit(unitsConfig, "temperature");
+                    const uGas   = getUnit(unitsConfig, "gasConc");
                     if (ic.nodeNumber) nlines.push(`${node.number}`);
-                    if (ic.nodeX) nlines.push(`X=${node.x}м`);
-                    if (ic.nodeY) nlines.push(`Y=${node.y}м`);
-                    if (ic.nodeZ) nlines.push(`Z=${node.z}м`);
+                    if (ic.nodeX) nlines.push(`X=${uLenN.fromBase(node.x).toFixed(uLenN.decimals)}${uLenN.symbol}`);
+                    if (ic.nodeY) nlines.push(`Y=${uLenN.fromBase(node.y).toFixed(uLenN.decimals)}${uLenN.symbol}`);
+                    if (ic.nodeZ) nlines.push(`Z=${uLenN.fromBase(node.z).toFixed(uLenN.decimals)}${uLenN.symbol}`);
                     if (ic.nodePressure && node.computedPressure > 0)
-                      nlines.push(`P=${(node.computedPressure / 10).toFixed(1)}даПа`);
-                    if (ic.nodeTemp && node.airTemp !== 0) nlines.push(`T=${node.airTemp}°C`);
-                    if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${node.computedGasConc.toFixed(2)}%`);
+                      nlines.push(`P=${uPresN.fromBase(node.computedPressure).toFixed(uPresN.decimals)}${uPresN.symbol}`);
+                    if (ic.nodeTemp && node.airTemp !== 0) nlines.push(`T=${uTemp.fromBase(node.airTemp).toFixed(uTemp.decimals)}${uTemp.symbol}`);
+                    if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${uGas.fromBase(node.computedGasConc).toFixed(uGas.decimals)}${uGas.symbol}`);
                   }
                   if (nlines.length === 0) return null;
                   return nlines.map((ln, li) => (
