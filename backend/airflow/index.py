@@ -378,7 +378,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                                 f"сеть не проветривается. Критическая ситуация!"})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
 
-    log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)}")
+    log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)} атм_узлов={len(atm)}")
+    # Степень GND — важна для диагностики потерь
+    gnd_edges = [e for e in edges if e["a"] == GND or e["b"] == GND]
+    log.append(f"GND степень={len(gnd_edges)}: {[e['id'] for e in gnd_edges]}")
+    print(f"[TOPO] GND степень={len(gnd_edges)}, атм={sorted(atm)}")
+    for e in gnd_edges:
+        print(f"[GND-edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
     for e in edges:
         log.append(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
         print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")

@@ -940,6 +940,10 @@ export default function CadPage() {
     setVcSolving(true);
     setVcError(null);
     addLog("info", `Запуск расчёта: метод ${calcMode === "cross" ? "Кросс" : "МКР"}, узлов ${nodes.length}, ветвей ${branches.length}`);
+    const zeroR = branches.filter(b => b.resistance <= 0);
+    if (zeroR.length > 0) addLog("warn", `R=0 у ${zeroR.length} ветвей: ${zeroR.slice(0, 5).map(b => `${b.id}(L=${b.length.toFixed(0)},S=${b.area.toFixed(1)},P=${b.perimeter.toFixed(1)})`).join(", ")}${zeroR.length > 5 ? "..." : ""}`);
+    const atmNodes = nodes.filter(n => n.atmosphereLink);
+    addLog("info", `Атм. узлов=${atmNodes.length}: ${atmNodes.map(n => n.id).join(", ")}`);
     try {
       const curve_map = new Map(branches.map(b => {
         const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
