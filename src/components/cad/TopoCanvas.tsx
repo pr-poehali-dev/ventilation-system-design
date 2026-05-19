@@ -1148,7 +1148,8 @@ export default function TopoCanvas(props: Props) {
               })()}
 
               {/* Заглушка тупика — перпендикулярная черта в конце ветви */}
-              {isDead && !thinLines && view.scale > 0.03 && segLen > 10 && (() => {
+              {/* Не рисуем для вертикальных выработок (угол ≥ 75°) */}
+              {isDead && !thinLines && view.scale > 0.03 && segLen > 10 && Math.abs(b.angle ?? 0) < 75 && (() => {
                 // Конец ветви (узел "to" по направлению потока)
                 const ex = sxB, ey = syB;
                 const perpX = -uy, perpY = ux;  // перпендикуляр к ветви

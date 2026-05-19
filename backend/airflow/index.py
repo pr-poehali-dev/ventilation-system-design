@@ -153,6 +153,7 @@ def build_graph(nodes_in, branches_in):
             "fanStopped":  bool(b.get("fanStopped", False)),
             "isLeakage":   bool(b.get("isLeakage", False)),
             "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
+            "angle":       abs(float(b.get("angle", 0) or 0)),
         })
     return edges, atm
 
@@ -599,8 +600,14 @@ def find_dead_ends(edges):
             vmp_nodes.add(e["a"])
             vmp_nodes.add(e["b"])
 
-    # Рёбра, которые нельзя удалять (ВМП — тупиковый вентилятор)
-    protected = set(e["id"] for e in edges if e["hasFan"])
+    # Рёбра, которые нельзя удалять:
+    # - ВМП (вентилятор местного проветривания)
+    # - вертикальные выработки (угол ≥ 75°): стволы, скважины — не тупики по физике
+    VERTICAL_ANGLE_THRESHOLD = 75.0
+    protected = set(
+        e["id"] for e in edges
+        if e["hasFan"] or e.get("angle", 0) >= VERTICAL_ANGLE_THRESHOLD
+    )
 
     # Граф: узел → список индексов рёбер
     adj = collections.defaultdict(set)

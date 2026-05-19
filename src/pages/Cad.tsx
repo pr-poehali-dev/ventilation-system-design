@@ -970,6 +970,7 @@ export default function CadPage() {
               toId: b.toId,
               R: b.resistance,
               area: b.area,
+              angle: b.angle ?? 0,
               hasFan: b.hasFan,
               fanMode: b.fanMode,
               fanPressure: b.fanPressure,
