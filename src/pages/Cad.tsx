@@ -3182,6 +3182,28 @@ export default function CadPage() {
                       setActiveSide("fan");
                       setFanSymbolBranchId(branchId);
                     }
+                  } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
+                    // При установке перемычки: активируем hasBulkhead и инициализируем параметры
+                    const br = branches.find(b => b.id === branchId);
+                    if (br) {
+                      const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
+                      // Сбрасываем только индивидуальные параметры (bulkheadId/R берём из справочника позже)
+                      // bulkheadWindowArea = площадь выработки по умолчанию (пользователь меняет вручную)
+                      updateBranch(branchId, {
+                        hasBulkhead: true,
+                        bulkheadResMode: "project",
+                        bulkheadWindowArea: isWindow ? br.area : 0,
+                        bulkheadManualAirPerm: false,
+                        bulkheadCustomAirPerm: 0,
+                        bulkheadSurveyQ: 0,
+                        bulkheadSurveyDP: 0,
+                        bulkheadManualR: 0,
+                      });
+                    }
+                    addSymbol(typeId, x, y, branchId);
+                    setSelectedBranchId(branchId);
+                    setSelectedNodeId(null);
+                    setActiveSide("params");
                   } else {
                     addSymbol(typeId, x, y, branchId);
                   }
