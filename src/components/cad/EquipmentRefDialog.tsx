@@ -1,5 +1,5 @@
 // Справочник оборудования — аналог справочников в АэроСети
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { FAN_CATALOG, type FanCurve } from "@/lib/fanCurves";
 import {
