@@ -458,91 +458,81 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         H_fan = sum(fan_H(e, 1.0) for e in fans)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # Начальное распределение: BFS по дереву охвата, удовлетворяет 1-му закону Кирхгофа
-    # Нельзя просто Q[i]=q0 для всех — нарушает баланс в узлах с параллельными ветвями
+    # Начальное распределение через остовное дерево + BFS.
+    # Все активные ветви получают Q удовлетворяющий 1-му закону Кирхгофа.
+    # Хорды (замыкающие контуры) стартуют с Q=0 — метод Кросса их выравняет.
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
 
-    # Строим дерево охвата активных рёбер и распространяем q0 по дереву
-    # Хордовые рёбра (замыкающие контуры) начинают с Q=0 — метод Кросса их настроит
-    active_ids = set(e["id"] for e in active_edges)
-
-    # Union-Find для остовного дерева
-    all_nodes = set()
+    # ── Шаг 1: строим остовное дерево (Union-Find) ─────────────────────
+    all_nodes_set = set()
     for e in active_edges:
-        all_nodes.add(e["a"])
-        all_nodes.add(e["b"])
-    uf_parent = {n: n for n in all_nodes}
+        all_nodes_set.add(e["a"])
+        all_nodes_set.add(e["b"])
+    uf = {n: n for n in all_nodes_set}
 
     def uf_find(x):
-        while uf_parent[x] != x:
-            uf_parent[x] = uf_parent[uf_parent[x]]
-            x = uf_parent[x]
+        while uf[x] != x:
+            uf[x] = uf[uf[x]]
+            x = uf[x]
         return x
 
     def uf_union(x, y):
         px, py = uf_find(x), uf_find(y)
         if px == py:
             return False
-        uf_parent[px] = py
+        uf[px] = py
         return True
 
-    # Разделяем на дерево и хорды
-    tree_edge_ids = set()
-    chord_edge_ids = set()
-    # Вентиляторы добавляем первыми — они должны войти в дерево
-    sorted_active = sorted(active_edges, key=lambda e: (0 if e["hasFan"] else 1))
-    for e in sorted_active:
+    # Вентиляторы — в дерево первыми (чтобы гарантировать их попадание в дерево)
+    tree_ids = set()
+    for e in sorted(active_edges, key=lambda e: 0 if e["hasFan"] else 1):
         if uf_union(e["a"], e["b"]):
-            tree_edge_ids.add(e["id"])
-        else:
-            chord_edge_ids.add(e["id"])
+            tree_ids.add(e["id"])
+        # хорды оставляем Q=0
 
-    # Распространяем q0 по дереву через BFS, соблюдая 1-й закон Кирхгофа
-    # adj дерева: узел → [(edge_idx_в_edges, сосед, знак_a→b)]
+    # ── Шаг 2: BFS по дереву от вентилятора, пропагируем q0 ────────────
+    # adj_tree: узел → [(global_edge_idx, сосед)]
     adj_tree = collections.defaultdict(list)
-    for i, e in enumerate(edges):
-        if e["id"] in tree_edge_ids:
-            adj_tree[e["a"]].append((i, e["b"], +1))
-            adj_tree[e["b"]].append((i, e["a"], -1))
+    for gi, e in enumerate(edges):
+        if e["id"] in tree_ids:
+            adj_tree[e["a"]].append((gi, e["b"]))
+            adj_tree[e["b"]].append((gi, e["a"]))
 
-    # BFS от GND: пускаем q0 через вентилятор, балансируем
-    node_flow = collections.defaultdict(float)  # приток в узел
-    visited_bfs = set()
-    bfs_q = collections.deque()
+    # Стартуем от узла «b» вентилятора — туда входит q0
+    fan_tree = next((e for e in active_edges if e["hasFan"] and e["id"] in tree_ids), None)
+    if fan_tree:
+        gfi = next(gi for gi, e in enumerate(edges) if e["id"] == fan_tree["id"])
+        Q[gfi] = q0
 
-    # Находим вентилятор в дереве и задаём ему q0
-    fan_in_tree = next((e for e in active_edges if e["hasFan"] and e["id"] in tree_edge_ids), None)
-    if fan_in_tree:
-        fan_global_idx = next(i for i, e in enumerate(edges) if e["id"] == fan_in_tree["id"])
-        Q[fan_global_idx] = q0
-        # Вентилятор идёт a→b (или развёрнут при реверсе, уже учтено в build_graph)
-        node_flow[fan_in_tree["b"]] += q0
-        node_flow[fan_in_tree["a"]] -= q0
-        visited_bfs.add(fan_in_tree["a"])
-        visited_bfs.add(fan_in_tree["b"])
-        bfs_q.append(fan_in_tree["b"])
+        # node_q[v] = расход, «входящий» в узел v со стороны уже обработанных рёбер
+        node_q = {fan_tree["b"]: q0, fan_tree["a"]: -q0}
+        visited = {fan_tree["a"], fan_tree["b"]}
+        queue = collections.deque([fan_tree["b"]])
 
-    while bfs_q:
-        node = bfs_q.popleft()
-        inflow = node_flow[node]
-        neighbors = adj_tree[node]
-        # Считаем незаполненные дерево-рёбра из этого узла
-        unvisited = [(i, nb, sgn) for i, nb, sgn in neighbors if nb not in visited_bfs]
-        if not unvisited:
-            continue
-        # Равномерно делим расход между всеми незаполненными выходами
-        q_share = inflow / len(unvisited)
-        for i, nb, sgn in unvisited:
-            # sgn=+1: ребро a→b, node=a → расход +q_share в направлении a→b
-            # sgn=-1: ребро a→b, node=b → расход -q_share в направлении a→b (т.е. b←a)
-            Q[i] = q_share * sgn
-            node_flow[nb] += q_share
-            visited_bfs.add(nb)
-            bfs_q.append(nb)
-
-    # Хорды (замыкающие контуры) — Q=0, метод Кросса их настроит
-    # (уже 0 по умолчанию)
+        while queue:
+            node = queue.popleft()
+            incoming = node_q.get(node, 0.0)
+            # Незаполненные соседние рёбра дерева
+            nxt = [(gi, nb) for gi, nb in adj_tree[node] if nb not in visited]
+            if not nxt:
+                continue
+            # Делим входящий расход ПОРОВНУ между выходящими рёбрами
+            q_each = incoming / len(nxt)
+            for gi, nb in nxt:
+                e = edges[gi]
+                # Знак: ребро a→b; если node==a — ток a→b (положительный),
+                # если node==b — ток b→a (отрицательный в глобальном соглашении)
+                sign = +1 if e["a"] == node else -1
+                Q[gi] = q_each * sign
+                node_q[nb] = node_q.get(nb, 0.0) + q_each
+                visited.add(nb)
+                queue.append(nb)
+    else:
+        # нет вентилятора в дереве — просто q0 для всех активных (fallback)
+        for i, e in enumerate(edges):
+            if e["id"] not in dead_end_ids:
+                Q[i] = q0
 
     # Пересчитываем индексы контуров из active_edges → edges
     # loops_active[i] = [(ai, sign), ...] где ai — индекс в active_edges
