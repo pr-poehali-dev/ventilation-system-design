@@ -965,7 +965,6 @@ export default function TopoCanvas(props: Props) {
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
             : isLeakage ? "#f97316"
-            : isDead ? "#9ca3af"
             : overV ? "#dc2626"
             : (colorByHorizon && horizonColor) ? horizonColor
             : Q > 0 ? velocityColor(V)
@@ -978,7 +977,7 @@ export default function TopoCanvas(props: Props) {
           const w = thinLines ? 1 : baseW;
           // Обводка (контур вокруг линии): ширина = w + 2*border
           const borderW = thinLines ? 0 : Math.max(0, bb);
-          const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off" && !isDead;
+          const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
 
