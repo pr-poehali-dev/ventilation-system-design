@@ -2290,8 +2290,11 @@ export default function CadPage() {
                           ) : (
                             /* Для глухих перемычек — воздухопроницаемость */
                             <>
+                              <div className="font-semibold text-[10px] text-gray-500 mb-1 mt-0.5" style={{ letterSpacing: "0.03em" }}>
+                                Воздухопроницаемость
+                              </div>
                               <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
-                                <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип пр-ти:</span>
+                                <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип:</span>
                                 <input type="checkbox"
                                   checked={brForSym.bulkheadManualAirPerm ?? false}
                                   onChange={e => updBr({ bulkheadManualAirPerm: e.target.checked })}
