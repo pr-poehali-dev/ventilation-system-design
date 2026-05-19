@@ -536,6 +536,15 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<circle cx="24" cy="20" r="13" fill="#e0f7fa" stroke="#00838f" stroke-width="1.5" stroke-dasharray="4 2"/><circle cx="24" cy="20" r="5" fill="#00bcd4" stroke="#00838f" stroke-width="1"/>` },
 ];
 
+// ID перемычек с окном/проёмом/открытой дверью (требуется поле S вентокна)
+export const WINDOW_BULKHEAD_IDS = new Set([
+  "regulator_open", "regulator_window", "regulator_lattice", "bulkhead_window",
+  "open_base", "open_conc", "open_wood", "open_brick", "open_metal",
+  "win_base", "win_conc", "win_wood", "win_brick", "win_metal",
+  "lat_base", "lat_conc", "lat_wood", "lat_brick", "lat_metal",
+  "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
+]);
+
 // ID всех перемычек для группировки в выпадающем списке
 export const BULKHEAD_SYMBOL_IDS = new Set([
   "bulkhead", "bulkhead_concrete", "bulkhead_wood", "bulkhead_brick", "bulkhead_metal",

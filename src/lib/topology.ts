@@ -96,6 +96,7 @@ export interface TopoBranch {
   bulkheadSurveyQ: number;         // расход (воздушная съемка), м³/с
   bulkheadSurveyDP: number;        // падение давления (воздушная съемка), Па
   bulkheadManualR: number;         // вручную заданное R, кМюрг
+  bulkheadWindowArea: number;      // площадь окна/проёма, м² (для перемычек с окном/проёмом)
   power: number;                // Вт
   reynolds: number;         // Re
   // ─── Отображение ────────────────────────────────────

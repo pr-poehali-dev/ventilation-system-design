@@ -24,7 +24,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
@@ -2183,6 +2183,10 @@ export default function CadPage() {
                 onOpenFanLibrary={() => { setShowEquipRef(true); setEquipRefTab("fans"); }}
                 mineTypes={mineTypes}
                 onOpenTypesLibrary={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
+                bulkheadSymTypeId={(() => {
+                  const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
+                  return bkSym?.typeId;
+                })()}
               />
             )}
 
@@ -2193,6 +2197,7 @@ export default function CadPage() {
               const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
               if (!sym) return null;
               const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+              const isWindowBulkhead = WINDOW_BULKHEAD_IDS.has(sym.typeId);
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
@@ -2271,28 +2276,44 @@ export default function CadPage() {
                       {/* Режим: Проектными данными */}
                       {(brForSym.bulkheadResMode ?? "project") === "project" && (
                         <>
-                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
-                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип пр-ти:</span>
-                            <input type="checkbox"
-                              checked={brForSym.bulkheadManualAirPerm ?? false}
-                              onChange={e => updBr({ bulkheadManualAirPerm: e.target.checked })}
-                              style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
-                            <span className="text-[11px] text-gray-600">Задается вручную</span>
-                          </div>
-                          <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
-                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Значение:</span>
-                            {brForSym.bulkheadManualAirPerm ? (
-                              <input type="number" step="0.0001"
-                                value={brForSym.bulkheadCustomAirPerm ?? 0}
-                                onChange={e => updBr({ bulkheadCustomAirPerm: parseFloat(e.target.value) || 0 })}
+                          {isWindowBulkhead ? (
+                            /* Для перемычек с окном/проёмом — поле S вентокна */
+                            <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                              <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>S вентокна:</span>
+                              <input type="number" step="0.1" min="0"
+                                value={brForSym.bulkheadWindowArea ?? 0}
+                                onChange={e => updBr({ bulkheadWindowArea: parseFloat(e.target.value) || 0 })}
                                 className="flex-1 text-[11px] px-1 text-right"
                                 style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
-                            ) : (
-                              <span className="flex-1 text-right text-gray-700 text-[11px]">
-                                {brForSym.bulkheadAirPerm ? `${brForSym.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"}
-                              </span>
-                            )}
-                          </div>
+                              <span className="text-[11px] text-gray-400 flex-shrink-0">м²</span>
+                            </div>
+                          ) : (
+                            /* Для глухих перемычек — воздухопроницаемость */
+                            <>
+                              <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                                <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип пр-ти:</span>
+                                <input type="checkbox"
+                                  checked={brForSym.bulkheadManualAirPerm ?? false}
+                                  onChange={e => updBr({ bulkheadManualAirPerm: e.target.checked })}
+                                  style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
+                                <span className="text-[11px] text-gray-600">Задается вручную</span>
+                              </div>
+                              <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                                <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Значение:</span>
+                                {brForSym.bulkheadManualAirPerm ? (
+                                  <input type="number" step="0.0001"
+                                    value={brForSym.bulkheadCustomAirPerm ?? 0}
+                                    onChange={e => updBr({ bulkheadCustomAirPerm: parseFloat(e.target.value) || 0 })}
+                                    className="flex-1 text-[11px] px-1 text-right"
+                                    style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                                ) : (
+                                  <span className="flex-1 text-right text-gray-700 text-[11px]">
+                                    {brForSym.bulkheadAirPerm ? `${brForSym.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
                           <div className="flex items-center gap-1" style={{ paddingBottom: 2 }}>
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>

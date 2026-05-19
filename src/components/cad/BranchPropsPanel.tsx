@@ -3,6 +3,7 @@ import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
+import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -30,6 +31,8 @@ interface BranchPropsPanelProps {
   mineTypes?: BranchType[];
   /** Открыть справочник оборудования на вкладке типов выработок */
   onOpenTypesLibrary?: () => void;
+  /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
+  bulkheadSymTypeId?: string;
 }
 
 const SH = "#e8eef8";
@@ -201,7 +204,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId }: BranchPropsPanelProps) {
   const tabMap: Record<string, InnerTab> = {
     topology: "Топология",
     fan: "Вентилятор",
@@ -1118,28 +1121,45 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 {/* Режим: Проектными данными */}
                 {(branch.bulkheadResMode ?? "project") === "project" && (
                   <>
-                    <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Воздухопроницаемость</span>
-                    </div>
-                    <div className="flex items-center px-1 py-0.5 gap-1" style={{ borderBottom: "1px solid #ebebeb" }}>
-                      <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>Тип:</span>
-                      <input type="checkbox"
-                        checked={branch.bulkheadManualAirPerm ?? false}
-                        onChange={e => onUpdate({ bulkheadManualAirPerm: e.target.checked })}
-                        style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
-                      <span className="text-[11px] text-gray-600">Задается вручную</span>
-                    </div>
-                    <InlineLabel label="Значение:">
-                      {branch.bulkheadManualAirPerm ? (
-                        <EditInput
-                          type="number" step="0.0001"
-                          value={branch.bulkheadCustomAirPerm ?? 0}
-                          onChange={v => onUpdate({ bulkheadCustomAirPerm: parseFloat(v) || 0 })}
-                        />
-                      ) : (
-                        <ComputedInput value={branch.bulkheadAirPerm ? `${branch.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"} />
-                      )}
-                    </InlineLabel>
+                    {(bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId)) ? (
+                      /* Перемычка с окном/проёмом — показываем S вентокна */
+                      <InlineLabel label="S вентокна:">
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <EditInput
+                            type="number" step="0.1"
+                            value={branch.bulkheadWindowArea ?? 0}
+                            onChange={v => onUpdate({ bulkheadWindowArea: parseFloat(v) || 0 })}
+                          />
+                          <span style={{ fontSize: 10, color: "#9ca3af", flexShrink: 0 }}>м²</span>
+                        </div>
+                      </InlineLabel>
+                    ) : (
+                      /* Глухая перемычка — воздухопроницаемость */
+                      <>
+                        <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                          <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Воздухопроницаемость</span>
+                        </div>
+                        <div className="flex items-center px-1 py-0.5 gap-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                          <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>Тип:</span>
+                          <input type="checkbox"
+                            checked={branch.bulkheadManualAirPerm ?? false}
+                            onChange={e => onUpdate({ bulkheadManualAirPerm: e.target.checked })}
+                            style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
+                          <span className="text-[11px] text-gray-600">Задается вручную</span>
+                        </div>
+                        <InlineLabel label="Значение:">
+                          {branch.bulkheadManualAirPerm ? (
+                            <EditInput
+                              type="number" step="0.0001"
+                              value={branch.bulkheadCustomAirPerm ?? 0}
+                              onChange={v => onUpdate({ bulkheadCustomAirPerm: parseFloat(v) || 0 })}
+                            />
+                          ) : (
+                            <ComputedInput value={branch.bulkheadAirPerm ? `${branch.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"} />
+                          )}
+                        </InlineLabel>
+                      </>
+                    )}
                     <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
