@@ -2942,6 +2942,8 @@ export default function CadPage() {
                   setSelectedBranchId(null);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
+                  setSelectedSymbolId(symId);
+                  setActiveSide("params");
                 }
               }}
               activeSymbolTypeId={activeSymbolTypeId}
