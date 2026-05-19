@@ -63,6 +63,19 @@ export interface SchemaSymbol {
   indLeakage?: boolean;      // показывать утечки на перемычке
   indOffsetX?: number;       // смещение бейджа индикаторов (px экрана) по X
   indOffsetY?: number;       // смещение бейджа индикаторов (px экрана) по Y
+  // ─── Индивидуальные параметры перемычки (хранятся в символе, не в ветви) ──
+  bkResMode?: "project" | "survey" | "manual";
+  bkWindowArea?: number;     // S окна/проёма, м²
+  bkManualR?: number;        // вручную, кМюрг
+  bkAirPerm?: number;        // воздухопроницаемость из справочника
+  bkManualAirPerm?: boolean;
+  bkCustomAirPerm?: number;
+  bkSurveyQ?: number;
+  bkSurveyDP?: number;
+  bkBulkheadId?: string;     // ID из справочника перемычек
+  bkBulkheadName?: string;
+  bkBulkheadR?: number;      // R из справочника (Мюрг)
+  bkFailurePressure?: number;
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor";
 
@@ -966,11 +979,29 @@ export default function CadPage() {
           })),
           branches: branches.map(b => {
             const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
+            // Суммируем R всех символов перемычек на этой ветви (каждый хранит свои параметры)
+            const rho = 1.2;
+            const bkSyms = schemaSymbols.filter(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+            const rBulkheads = bkSyms.reduce((sum, s) => {
+              const mode = s.bkResMode ?? "project";
+              let r = 0;
+              if (mode === "manual") {
+                r = (s.bkManualR ?? 0) * 1e-3;
+              } else if (mode === "survey") {
+                const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
+                r = q > 0 ? dp / (q * q) : 0;
+              } else {
+                const sw = s.bkWindowArea ?? 0;
+                if (sw > 0.001) { const mu = 0.65; r = rho / (2 * mu * mu * sw * sw); }
+                else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : 0; }
+              }
+              return sum + r;
+            }, 0);
             return {
               id: b.id,
               fromId: b.fromId,
               toId: b.toId,
-              R: b.resistance,
+              R: b.resistance + rBulkheads,
               area: b.area,
               angle: b.angle ?? 0,
               hasFan: b.hasFan,
@@ -2301,19 +2332,36 @@ export default function CadPage() {
                         Аэродинамическое сопротивление
                       </div>
 
-                      {/* R = ... кМюрг */}
+                      {/* R = ... кМюрг — вычисленное сопротивление этой перемычки */}
                       <div className="flex items-center justify-center py-1 mb-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                         <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
                           R = {(() => {
-                            const mode = brForSym.bulkheadResMode ?? "project";
-                            if (mode === "manual") return `${(brForSym.bulkheadManualR ?? 0).toFixed(4)} кМюрг`;
-                            if (mode === "survey") {
-                              const q = brForSym.bulkheadSurveyQ ?? 0;
-                              const dp = brForSym.bulkheadSurveyDP ?? 0;
-                              const r = q > 0 ? dp / (q * q) : 0;
-                              return `${(r / 1000).toFixed(4)} кМюрг`;
+                            const mode = sym.bkResMode ?? "project";
+                            const rho = 1.2;
+                            let rNsm8 = 0;
+                            if (mode === "manual") {
+                              rNsm8 = (sym.bkManualR ?? 0) * 1e-3;
+                            } else if (mode === "survey") {
+                              const q = sym.bkSurveyQ ?? 0;
+                              const dp = sym.bkSurveyDP ?? 0;
+                              rNsm8 = q > 0 ? dp / (q * q) : 0;
+                            } else {
+                              const sw = sym.bkWindowArea ?? 0;
+                              if (sw > 0.001) {
+                                const mu = 0.65;
+                                rNsm8 = rho / (2 * mu * mu * sw * sw);
+                              } else {
+                                const kAir = sym.bkManualAirPerm
+                                  ? (sym.bkCustomAirPerm ?? 0)
+                                  : (sym.bkAirPerm ?? brForSym?.bulkheadAirPerm ?? 0);
+                                rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? brForSym?.bulkheadR ?? 0) * 1e-6;
+                              }
                             }
-                            return brForSym.bulkheadR ? `${brForSym.bulkheadR.toFixed(4)} кМюрг` : "0 кМюрг";
+                            const rKmu = rNsm8 * 1e3;
+                            if (rKmu === 0) return "0 кМюрг";
+                            const mag = Math.floor(Math.log10(Math.abs(rKmu)));
+                            const d = Math.max(4, -mag + 2);
+                            return `${rKmu.toFixed(d)} кМюрг`;
                           })()}
                         </span>
                       </div>
@@ -2322,8 +2370,8 @@ export default function CadPage() {
                       <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                         <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Задается:</span>
                         <select
-                          value={brForSym.bulkheadResMode ?? "project"}
-                          onChange={e => updBr({ bulkheadResMode: e.target.value as "project" | "survey" | "manual" })}
+                          value={sym.bkResMode ?? "project"}
+                          onChange={e => updSym({ bkResMode: e.target.value as "project" | "survey" | "manual" })}
                           className="flex-1 text-[11px] px-1"
                           style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
                           <option value="project">Проектными данными</option>
@@ -2333,21 +2381,19 @@ export default function CadPage() {
                       </div>
 
                       {/* Режим: Проектными данными */}
-                      {(brForSym.bulkheadResMode ?? "project") === "project" && (
+                      {(sym.bkResMode ?? "project") === "project" && (
                         <>
                           {isWindowBulkhead ? (
-                            /* Для перемычек с окном/проёмом — поле S вентокна */
                             <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                               <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>S вентокна:</span>
                               <input type="number" step="0.1" min="0"
-                                value={brForSym.bulkheadWindowArea ?? 0}
-                                onChange={e => updBr({ bulkheadWindowArea: parseFloat(e.target.value) || 0 })}
+                                value={sym.bkWindowArea ?? 0}
+                                onChange={e => updSym({ bkWindowArea: parseFloat(e.target.value) || 0 })}
                                 className="flex-1 text-[11px] px-1 text-right"
                                 style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                               <span className="text-[11px] text-gray-400 flex-shrink-0">м²</span>
                             </div>
                           ) : (
-                            /* Для глухих перемычек — воздухопроницаемость */
                             <>
                               <div className="font-semibold text-[10px] text-gray-500 mb-1 mt-0.5" style={{ letterSpacing: "0.03em" }}>
                                 Воздухопроницаемость
@@ -2355,22 +2401,24 @@ export default function CadPage() {
                               <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                                 <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип:</span>
                                 <input type="checkbox"
-                                  checked={brForSym.bulkheadManualAirPerm ?? false}
-                                  onChange={e => updBr({ bulkheadManualAirPerm: e.target.checked })}
+                                  checked={sym.bkManualAirPerm ?? false}
+                                  onChange={e => updSym({ bkManualAirPerm: e.target.checked })}
                                   style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
                                 <span className="text-[11px] text-gray-600">Задается вручную</span>
                               </div>
                               <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                                 <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Значение:</span>
-                                {brForSym.bulkheadManualAirPerm ? (
+                                {sym.bkManualAirPerm ? (
                                   <input type="number" step="0.0001"
-                                    value={brForSym.bulkheadCustomAirPerm ?? 0}
-                                    onChange={e => updBr({ bulkheadCustomAirPerm: parseFloat(e.target.value) || 0 })}
+                                    value={sym.bkCustomAirPerm ?? 0}
+                                    onChange={e => updSym({ bkCustomAirPerm: parseFloat(e.target.value) || 0 })}
                                     className="flex-1 text-[11px] px-1 text-right"
                                     style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                                 ) : (
                                   <span className="flex-1 text-right text-gray-700 text-[11px]">
-                                    {brForSym.bulkheadAirPerm ? `${brForSym.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"}
+                                    {(sym.bkAirPerm ?? brForSym?.bulkheadAirPerm)
+                                      ? `${(sym.bkAirPerm ?? brForSym?.bulkheadAirPerm ?? 0).toFixed(4)} м²/(с·√Па)`
+                                      : "—"}
                                   </span>
                                 )}
                               </div>
@@ -2379,63 +2427,55 @@ export default function CadPage() {
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
-                              {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                              {brForSym?.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
                             </span>
                           </div>
-                          {(brForSym.bulkheadFailurePressure ?? 0) > 0 && (
-                            <div className="flex items-center gap-1" style={{ paddingBottom: 2 }}>
-                              <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>P разр.:</span>
-                              <span className="flex-1 text-right text-gray-700 text-[11px]">
-                                {brForSym.bulkheadFailurePressure} МПа
-                              </span>
-                            </div>
-                          )}
                         </>
                       )}
 
                       {/* Режим: Воздушной съемкой */}
-                      {(brForSym.bulkheadResMode ?? "project") === "survey" && (
+                      {(sym.bkResMode ?? "project") === "survey" && (
                         <>
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Расход:</span>
                             <input type="number" step="0.1"
-                              value={brForSym.bulkheadSurveyQ ?? 0}
-                              onChange={e => updBr({ bulkheadSurveyQ: parseFloat(e.target.value) || 0 })}
+                              value={sym.bkSurveyQ ?? 0}
+                              onChange={e => updSym({ bkSurveyQ: parseFloat(e.target.value) || 0 })}
                               className="flex-1 text-[11px] px-1 text-right"
                               style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                           </div>
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Падение Р:</span>
                             <input type="number" step="1"
-                              value={brForSym.bulkheadSurveyDP ?? 0}
-                              onChange={e => updBr({ bulkheadSurveyDP: parseFloat(e.target.value) || 0 })}
+                              value={sym.bkSurveyDP ?? 0}
+                              onChange={e => updSym({ bkSurveyDP: parseFloat(e.target.value) || 0 })}
                               className="flex-1 text-[11px] px-1 text-right"
                               style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
-                              {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                              {brForSym?.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
                             </span>
                           </div>
                         </>
                       )}
 
                       {/* Режим: Вручную */}
-                      {(brForSym.bulkheadResMode ?? "project") === "manual" && (
+                      {(sym.bkResMode ?? "project") === "manual" && (
                         <>
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>R (кМюрг):</span>
                             <input type="number" step="0.0001"
-                              value={brForSym.bulkheadManualR ?? 0}
-                              onChange={e => updBr({ bulkheadManualR: parseFloat(e.target.value) || 0 })}
+                              value={sym.bkManualR ?? 0}
+                              onChange={e => updSym({ bkManualR: parseFloat(e.target.value) || 0 })}
                               className="flex-1 text-[11px] px-1 text-right"
                               style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
-                              {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                              {brForSym?.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
                             </span>
                           </div>
                         </>
@@ -3179,43 +3219,27 @@ export default function CadPage() {
                       setFanSymbolBranchId(branchId);
                     }
                   } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
-                    // Перемычка физически одна на выработку — заменяем если уже есть
-                    const existingSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === branchId);
-                    if (existingSym) {
-                      // Заменяем тип существующего символа (перетип перемычки)
-                      setSchemaSymbols(prev => prev.map(s =>
-                        s.id === existingSym.id ? { ...s, typeId, x, y } : s
-                      ));
-                    } else {
-                      // Новая перемычка: инициализируем параметры ветви
-                      const br = branches.find(b => b.id === branchId);
-                      if (br) {
-                        const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
-                        updateBranch(branchId, {
-                          hasBulkhead: true,
-                          bulkheadResMode: "project",
-                          bulkheadWindowArea: isWindow ? br.area : 0,
-                          bulkheadManualAirPerm: false,
-                          bulkheadCustomAirPerm: 0,
-                          bulkheadSurveyQ: 0,
-                          bulkheadSurveyDP: 0,
-                          bulkheadManualR: 0,
-                        });
-                      }
-                      addSymbol(typeId, x, y, branchId);
-                    }
-                    // При смене типа (глухая→с окном) — обновляем windowArea
+                    // Каждый символ перемычки хранит свои параметры независимо (bk* поля)
                     const br = branches.find(b => b.id === branchId);
-                    if (br && existingSym) {
-                      const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
-                      const wasWindow = WINDOW_BULKHEAD_IDS.has(existingSym.typeId);
-                      if (isWindow !== wasWindow) {
-                        updateBranch(branchId, {
-                          bulkheadWindowArea: isWindow ? br.area : 0,
-                        });
-                      }
+                    const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
+                    const newSym: SchemaSymbol = {
+                      id: `SYM_BK_${Date.now()}`,
+                      typeId, x, y, branchId, t: 0.5,
+                      bkResMode: "project",
+                      bkWindowArea: isWindow ? (br?.area ?? 0) : 0,
+                      bkManualR: 0,
+                      bkManualAirPerm: false,
+                      bkCustomAirPerm: 0,
+                      bkSurveyQ: 0,
+                      bkSurveyDP: 0,
+                    };
+                    setSchemaSymbols(prev => [...prev, newSym]);
+                    // Ветвь помечаем hasBulkhead=true (для расчёта), но не перезаписываем параметры
+                    if (br && !br.hasBulkhead) {
+                      updateBranch(branchId, { hasBulkhead: true });
                     }
-                    setSelectedBranchId(branchId);
+                    setSelectedSymbolId(newSym.id);
+                    setSelectedBranchId(null);
                     setSelectedNodeId(null);
                     setActiveSide("params");
                   } else {

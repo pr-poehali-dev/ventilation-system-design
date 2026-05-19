@@ -567,39 +567,9 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
     rho,
   });
 
-  // 2b) Сопротивление перемычки (добавляется к сопротивлению выработки)
-  // Формулы согласно методике ВостНИИ/ВНИМИ:
-  //   Проём / окно:  R_bulk = ρ / (2·μ²·S²),  μ=0.65 (коэф. расхода)
-  //   Глухая:        R_bulk = 1 / k_air²,      где k_air — воздухопроницаемость м²/(с·√Па)
-  //   Вручную:       R_bulk = bulkheadManualR (кМюрг → Н·с²/м⁸)
-  //   Съёмка:        R_bulk = ΔP / Q²
-  let rBulkhead = 0;
-  if (b.hasBulkhead) {
-    const bMode = b.bulkheadResMode ?? "project";
-    if (bMode === "manual") {
-      rBulkhead = (b.bulkheadManualR ?? 0) * 1e-3; // кМюрг → Н·с²/м⁸
-    } else if (bMode === "survey") {
-      const q = b.bulkheadSurveyQ ?? 0;
-      const dp = b.bulkheadSurveyDP ?? 0;
-      rBulkhead = q > 0 ? dp / (q * q) : 0;
-    } else {
-      // "project" — определяем тип: окно/проём или глухая
-      const sw = b.bulkheadWindowArea ?? 0; // S окна/проёма, м²
-      if (sw > 0.001) {
-        // Проём/окно: R = ρ / (2·μ²·S²), μ=0.65
-        const mu = 0.65;
-        rBulkhead = rho / (2 * mu * mu * sw * sw);
-      } else {
-        // Глухая: R = 1 / k_air²
-        const kAir = b.bulkheadManualAirPerm
-          ? (b.bulkheadCustomAirPerm ?? 0)
-          : (b.bulkheadAirPerm ?? 0);
-        rBulkhead = kAir > 0 ? 1 / (kAir * kAir) : (b.bulkheadR ?? 0) * 1e-6; // Мюрг→Нс²/м⁸
-      }
-    }
-  }
-
-  const totalR = r.R + rBulkhead;
+  // Примечание: сопротивление перемычек считается отдельно в Cad.tsx
+  // (параметры хранятся в SchemaSymbol.bk* для каждого символа независимо)
+  const totalR = r.R;
 
   // 3) Поток
   const V = calcVel(b.flow, area);
