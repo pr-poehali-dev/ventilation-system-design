@@ -1591,8 +1591,7 @@ export default function CadPage() {
         </RibbonGroup>
         <RibbonGroup label="Аварии">
           <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Phone" label="Телефонная книга" sublabel="" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Users" label="Ответственные" sublabel="и исполнители" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
+
             <RibbonBigBtn icon="Radio" label="Датчики" sublabel="" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
             <RibbonBigBtn icon="FileText" label="Типовые мероприятия" sublabel="" onClick={() => { setEquipRefTab("typical"); setShowEquipRef(true); }} />
           </div>
