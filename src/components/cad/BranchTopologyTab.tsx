@@ -357,11 +357,11 @@ export default function BranchTopologyTab({
       </ParamRow>
 
       <ParamRow id="v_resistance" label="Аэродин. сопр. R, кμ" visible={visible.has("v_resistance")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.resistance * 1000, 4)} />
+        <ComputedInput value={numFmt(branch.resistance / 10, 6)} />
       </ParamRow>
 
       <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
-        <ComputedInput value={numFmt(unitR * 1000, 5)} />
+        <ComputedInput value={numFmt(unitR / 10, 7)} />
       </ParamRow>
 
       <ParamRow id="v_velocity" label="Скорость V, м/с" visible={visible.has("v_velocity")} onToggle={toggle}>
@@ -380,12 +380,12 @@ export default function BranchTopologyTab({
         <ComputedInput value={numFmt(branch.dP, 1)} />
       </ParamRow>
 
-      <ParamRow id="v_r_friction" label="R трение, ×10⁻³ кμ" visible={visible.has("v_r_friction")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.rFriction * 1000, 4)} />
+      <ParamRow id="v_r_friction" label="R трение, кμ" visible={visible.has("v_r_friction")} onToggle={toggle}>
+        <ComputedInput value={numFmt(branch.rFriction / 10, 6)} />
       </ParamRow>
 
-      <ParamRow id="v_r_local" label="R местные, ×10⁻³ кμ" visible={visible.has("v_r_local")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.rLocal * 1000, 4)} />
+      <ParamRow id="v_r_local" label="R местные, кμ" visible={visible.has("v_r_local")} onToggle={toggle}>
+        <ComputedInput value={numFmt(branch.rLocal / 10, 6)} />
       </ParamRow>
 
       <ParamRow id="v_reynolds" label="Re (Рейнольдс), тыс." visible={visible.has("v_reynolds")} onToggle={toggle}>
