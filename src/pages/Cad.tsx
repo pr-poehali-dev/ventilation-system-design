@@ -472,6 +472,23 @@ export default function CadPage() {
     return () => window.clearTimeout(t);
   }, [importNonce]);
 
+  // ─── Синхронизация данных перемычек при изменении справочника ────────
+  useEffect(() => {
+    if (!mineBulkheads.length) return;
+    setBranches(prev => prev.map(br => {
+      if (!br.hasBulkhead || !br.bulkheadId) return br;
+      const ref = mineBulkheads.find(b => b.id === br.bulkheadId);
+      if (!ref) return br;
+      return {
+        ...br,
+        bulkheadName: ref.name,
+        bulkheadR: ref.rMkyurg,
+        bulkheadAirPerm: ref.airPermeability,
+        bulkheadFailurePressure: ref.failurePressure,
+      };
+    }));
+  }, [mineBulkheads]);  
+
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
   const [branchWidth, setBranchWidth] = useState<number>(3);    // px
   const [branchBorder, setBranchBorder] = useState<number>(0.6); // px
@@ -2317,12 +2334,20 @@ export default function CadPage() {
                               </div>
                             </>
                           )}
-                          <div className="flex items-center gap-1" style={{ paddingBottom: 2 }}>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
                               {brForSym.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
                             </span>
                           </div>
+                          {(brForSym.bulkheadFailurePressure ?? 0) > 0 && (
+                            <div className="flex items-center gap-1" style={{ paddingBottom: 2 }}>
+                              <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>P разр.:</span>
+                              <span className="flex-1 text-right text-gray-700 text-[11px]">
+                                {brForSym.bulkheadFailurePressure} МПа
+                              </span>
+                            </div>
+                          )}
                         </>
                       )}
 

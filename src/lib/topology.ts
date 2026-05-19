@@ -97,6 +97,7 @@ export interface TopoBranch {
   bulkheadSurveyDP: number;        // падение давления (воздушная съемка), Па
   bulkheadManualR: number;         // вручную заданное R, кМюрг
   bulkheadWindowArea: number;      // площадь окна/проёма, м² (для перемычек с окном/проёмом)
+  bulkheadFailurePressure: number; // давление разрушения, МПа (из справочника)
   power: number;                // Вт
   reynolds: number;         // Re
   // ─── Отображение ────────────────────────────────────
@@ -240,6 +241,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     bulkheadSurveyQ: 0,
     bulkheadSurveyDP: 0,
     bulkheadManualR: 0,
+    bulkheadWindowArea: 0,
+    bulkheadFailurePressure: 0,
     lineWidth: 3,
     lineBorder: 0.6,
     capital: false,

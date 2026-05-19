@@ -1051,6 +1051,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     bulkheadId: "", bulkheadName: "", bulkheadR: 0, bulkheadAirPerm: 0,
                     bulkheadResMode: "project", bulkheadManualAirPerm: false, bulkheadCustomAirPerm: 0,
                     bulkheadSurveyQ: 0, bulkheadSurveyDP: 0, bulkheadManualR: 0,
+                    bulkheadWindowArea: 0, bulkheadFailurePressure: 0,
                   })
                 })}
                 style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }} />
@@ -1068,6 +1069,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         bulkheadName: sel?.name ?? "",
                         bulkheadR: sel?.rMkyurg ?? 0,
                         bulkheadAirPerm: sel?.airPermeability ?? 0,
+                        bulkheadFailurePressure: sel?.failurePressure ?? 0,
                       });
                     }}
                     className="w-full text-[11px] px-1"
@@ -1166,6 +1168,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
                     </InlineLabel>
+                    {(branch.bulkheadFailurePressure ?? 0) > 0 && (
+                      <InlineLabel label="P разр.:">
+                        <ComputedInput value={`${branch.bulkheadFailurePressure} МПа`} />
+                      </InlineLabel>
+                    )}
                   </>
                 )}
 
