@@ -458,13 +458,91 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         H_fan = sum(fan_H(e, 1.0) for e in fans)
         return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
 
-    # Начальное распределение: только активные ветви
+    # Начальное распределение: BFS по дереву охвата, удовлетворяет 1-му закону Кирхгофа
+    # Нельзя просто Q[i]=q0 для всех — нарушает баланс в узлах с параллельными ветвями
     q0 = bisect_q0()
     log.append(f"Q0={q0:.3f} м³/с")
+
+    # Строим дерево охвата активных рёбер и распространяем q0 по дереву
+    # Хордовые рёбра (замыкающие контуры) начинают с Q=0 — метод Кросса их настроит
+    active_ids = set(e["id"] for e in active_edges)
+
+    # Union-Find для остовного дерева
+    all_nodes = set()
+    for e in active_edges:
+        all_nodes.add(e["a"])
+        all_nodes.add(e["b"])
+    uf_parent = {n: n for n in all_nodes}
+
+    def uf_find(x):
+        while uf_parent[x] != x:
+            uf_parent[x] = uf_parent[uf_parent[x]]
+            x = uf_parent[x]
+        return x
+
+    def uf_union(x, y):
+        px, py = uf_find(x), uf_find(y)
+        if px == py:
+            return False
+        uf_parent[px] = py
+        return True
+
+    # Разделяем на дерево и хорды
+    tree_edge_ids = set()
+    chord_edge_ids = set()
+    # Вентиляторы добавляем первыми — они должны войти в дерево
+    sorted_active = sorted(active_edges, key=lambda e: (0 if e["hasFan"] else 1))
+    for e in sorted_active:
+        if uf_union(e["a"], e["b"]):
+            tree_edge_ids.add(e["id"])
+        else:
+            chord_edge_ids.add(e["id"])
+
+    # Распространяем q0 по дереву через BFS, соблюдая 1-й закон Кирхгофа
+    # adj дерева: узел → [(edge_idx_в_edges, сосед, знак_a→b)]
+    adj_tree = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        if e["id"] not in dead_end_ids:
-            Q[i] = q0
-        # тупики остаются Q=0
+        if e["id"] in tree_edge_ids:
+            adj_tree[e["a"]].append((i, e["b"], +1))
+            adj_tree[e["b"]].append((i, e["a"], -1))
+
+    # BFS от GND: пускаем q0 через вентилятор, балансируем
+    node_flow = collections.defaultdict(float)  # приток в узел
+    visited_bfs = set()
+    bfs_q = collections.deque()
+
+    # Находим вентилятор в дереве и задаём ему q0
+    fan_in_tree = next((e for e in active_edges if e["hasFan"] and e["id"] in tree_edge_ids), None)
+    if fan_in_tree:
+        fan_global_idx = next(i for i, e in enumerate(edges) if e["id"] == fan_in_tree["id"])
+        Q[fan_global_idx] = q0
+        # Вентилятор идёт a→b (или развёрнут при реверсе, уже учтено в build_graph)
+        node_flow[fan_in_tree["b"]] += q0
+        node_flow[fan_in_tree["a"]] -= q0
+        visited_bfs.add(fan_in_tree["a"])
+        visited_bfs.add(fan_in_tree["b"])
+        bfs_q.append(fan_in_tree["b"])
+
+    while bfs_q:
+        node = bfs_q.popleft()
+        inflow = node_flow[node]
+        neighbors = adj_tree[node]
+        # Считаем незаполненные дерево-рёбра из этого узла
+        unvisited = [(i, nb, sgn) for i, nb, sgn in neighbors if nb not in visited_bfs]
+        if not unvisited:
+            continue
+        # Равномерно делим расход между всеми незаполненными выходами
+        q_share = inflow / len(unvisited)
+        for i, nb, sgn in unvisited:
+            # sgn=+1: ребро a→b, node=a → расход +q_share в направлении a→b
+            # sgn=-1: ребро a→b, node=b → расход -q_share в направлении a→b (т.е. b←a)
+            Q[i] = q_share * sgn
+            node_flow[nb] += q_share
+            visited_bfs.add(nb)
+            bfs_q.append(nb)
+
+    # Хорды (замыкающие контуры) — Q=0, метод Кросса их настроит
+    # (уже 0 по умолчанию)
 
     # Пересчитываем индексы контуров из active_edges → edges
     # loops_active[i] = [(ai, sign), ...] где ai — индекс в active_edges
