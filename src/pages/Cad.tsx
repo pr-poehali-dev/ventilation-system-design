@@ -2397,15 +2397,17 @@ export default function CadPage() {
                           R = {(() => {
                             const mode = sym.bkResMode ?? "project";
                             const rho = 1.2;
-                            let rNsm8 = 0;
+                            let rKmu = 0;
                             if (mode === "manual") {
-                              rNsm8 = (sym.bkManualR ?? 0) * 1e3;
+                              rKmu = sym.bkManualR ?? 0;
                             } else if (mode === "survey") {
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              rNsm8 = q > 0 ? dp / (q * q) : 0;
+                              const rNsm8 = q > 0 ? dp / (q * q) : 0;
+                              rKmu = rNsm8 / 10;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
+                              let rNsm8 = 0;
                               if (sw > 0.001) {
                                 const mu = 0.65;
                                 rNsm8 = rho / (2 * mu * mu * sw * sw);
@@ -2415,8 +2417,8 @@ export default function CadPage() {
                                   : (sym.bkAirPerm ?? brForSym?.bulkheadAirPerm ?? 0);
                                 rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? brForSym?.bulkheadR ?? 0) * 1e-6;
                               }
+                              rKmu = rNsm8 / 10;
                             }
-                            const rKmu = rNsm8 * 1e3;
                             if (rKmu === 0) return "0 кМюрг";
                             const mag = Math.floor(Math.log10(Math.abs(rKmu)));
                             const d = Math.max(4, -mag + 2);
