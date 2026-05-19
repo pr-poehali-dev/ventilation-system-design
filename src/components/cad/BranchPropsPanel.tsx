@@ -207,6 +207,14 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
+// Умный форматтер для сопротивления: показывает значащие цифры при очень малых значениях
+function fmtR(rKmu: number, minDecimals = 4): string {
+  if (isNaN(rKmu) || rKmu === 0) return "0.0000";
+  const mag = Math.floor(Math.log10(Math.abs(rKmu)));
+  const d = Math.max(minDecimals, -mag + 2);
+  return rKmu.toFixed(d);
+}
+
 export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG }: BranchPropsPanelProps) {
   const tabMap: Record<string, InnerTab> = {
     topology: "Топология",
@@ -567,11 +575,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </ParamRow>
 
             <ParamRow id="v_resistance" label="Аэродин. сопр. R, кμ" visible={visible.has("v_resistance")} onToggle={toggle}>
-              <ComputedInput value={numFmt(branch.resistance * 1000, 4)} />
+              <ComputedInput value={fmtR(branch.resistance * 1000, 4)} />
             </ParamRow>
 
             <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
-              <ComputedInput value={numFmt(unitR * 1000, 5)} />
+              <ComputedInput value={fmtR(unitR * 1000, 5)} />
             </ParamRow>
 
             <ParamRow id="v_velocity" label="Скорость V, м/с" visible={visible.has("v_velocity")} onToggle={toggle}>

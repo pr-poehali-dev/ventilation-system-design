@@ -463,59 +463,49 @@ export function autoWorkPlane(
 // Вент.канал: круглое S=10 м², вентилятор ВО-18
 
 export const DEMO_NODES: TopoNode[] = [
-  makeNode("1", { name: "Устье ЮВС (атмосфера)",      number: "1", x:   0, y: 0, z: 100,  atmosphereLink: true }),
-  makeNode("2", { name: "Надшахтное здание ЮВС",       number: "2", x:   0, y: 0, z:   0 }),
-  makeNode("3", { name: "Сопряжение ЮВС гор. −20 м",  number: "3", x:   0, y: 0, z: -20 }),
-  makeNode("4", { name: "Сопряжение СВС гор. −20 м",  number: "4", x: 500, y: 0, z: -20 }),
-  makeNode("5", { name: "Устье СВС (атмосфера)",       number: "5", x: 500, y: 0, z: 100,  atmosphereLink: true }),
-  makeNode("6", { name: "Вент. канал ЮВС (выброс)",   number: "6", x: -80, y: 0, z:  20 }),
+  makeNode("1", { name: "Устье ЮВС (атмосфера)",        number: "1", x:   0, y: 0, z: 100, atmosphereLink: true }),
+  makeNode("2", { name: "Сопряжение ЮВС гор. −100 м",   number: "2", x:   0, y: 0, z: -100 }),
+  makeNode("3", { name: "Сопряжение СВС гор. −100 м",   number: "3", x: 500, y: 0, z: -100 }),
+  makeNode("4", { name: "Надшахтное здание СВС",         number: "4", x: 500, y: 0, z:  60 }),
+  makeNode("5", { name: "Устье СВС (атмосфера)",         number: "5", x: 500, y: 0, z: 100, atmosphereLink: true }),
 ];
 
-// S=38 м² → круг → d = 2·√(38/π) ≈ 6.96 м; P ≈ 21.86 м; Dh = d = 6.96 м
-// S=21 м² → арка: ширина 5 м, прямая часть 2 м, свод 1.2 м → P ≈ 14.77 м
-// S=10 м² → круг → d = 2·√(10/π) ≈ 3.57 м; P ≈ 11.21 м
+// S=38 м² → круг → d=6.96 м; P=21.86 м
+// S=21 м² → арка 5×2 + свод 1.2 м → P=14.77 м
 
 export const DEMO_BRANCHES: TopoBranch[] = [
-  // Ствол ЮВС: устье → надшахтное здание (z=100 → z=0), воздух входит сверху
+  // Ствол ЮВС: поверхность → горизонт −100 м (подающий), L=200 м
   makeBranch("1", "1", "2", {
-    type: "Ствол ЮВС", layer: "Стволы", horizonId: "H_SURFACE",
+    type: "Ствол ЮВС", layer: "Стволы",
     shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
     surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
     alphaCoef: 15, roughness: 5,
-    flow: 36, vMax: 15,
+    flow: 0, vMax: 15,
   }),
-  // Ствол ЮВС: надшахтное → дно горизонта (z=0 → z=-20)
+  // Горизонт −100 м (квершлаг): ЮВС → СВС, L=500 м
   makeBranch("2", "2", "3", {
-    type: "Ствол ЮВС", layer: "Стволы", horizonId: "H_-20",
-    shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
-    surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
-    alphaCoef: 15, roughness: 5,
-    flow: 36, vMax: 15,
-  }),
-  // Горизонт −20 м: арочный 21 м²
-  makeBranch("3", "3", "4", {
-    type: "Квершлаг", layer: "Квершлаги", horizonId: "H_-20",
+    type: "Квершлаг", layer: "Квершлаги",
     shape: "arch", rectWidth: 5, rectHeight: 2, archHeight: 1.2,
     area: 21, perimeter: 14.77, dh: 5.69, manualSection: true,
     surfaceId: "concrete", surface: "Бетонная крепь гладкая",
     alphaCoef: 12, roughness: 3,
-    flow: 36, vMax: 8,
+    flow: 0, vMax: 8,
   }),
-  // Ствол СВС: дно горизонта → устье (z=-20 → z=100), воздух выходит наверх
-  makeBranch("4", "4", "5", {
-    type: "Ствол СВС", layer: "Стволы", horizonId: "H_SURFACE",
+  // Ствол СВС нижний: горизонт → надшахтное здание СВС (выдающий), L=160 м
+  makeBranch("3", "3", "4", {
+    type: "Ствол СВС", layer: "Стволы",
     shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
     surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
     alphaCoef: 15, roughness: 5,
-    flow: 36, vMax: 15,
+    flow: 0, vMax: 15,
   }),
-  // Вентиляционный канал ЮВС: надшахтное здание → выброс (ответвление вверх-влево)
-  makeBranch("5", "2", "6", {
-    type: "Вент. канал", layer: "Стволы", horizonId: "H_SURFACE",
-    shape: "round", diameter: 3.57, area: 10, perimeter: 11.21, dh: 3.57, manualSection: true,
-    surfaceId: "shaft_smooth", surface: "Металлический вент. канал",
-    alphaCoef: 10, roughness: 2,
-    flow: 36, vMax: 10,
+  // Вентилятор ВГП в надшахтном здании СВС: надшахтное → устье (поверхность), L=40 м
+  makeBranch("4", "4", "5", {
+    type: "Ствол СВС", layer: "Стволы",
+    shape: "round", diameter: 6.96, area: 38, perimeter: 21.86, dh: 6.96, manualSection: true,
+    surfaceId: "shaft_smooth", surface: "Ствол с тюбинговой крепью",
+    alphaCoef: 15, roughness: 5,
+    flow: 0, vMax: 15,
     hasFan: true, fanMode: "curve", fanCurveId: "VOD-18",
     fanPressure: 1900, fanName: "ВО-18/12АВР (главный)",
   }),

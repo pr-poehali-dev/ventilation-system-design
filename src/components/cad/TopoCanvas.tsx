@@ -12,6 +12,16 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConf
 // 2D (план) + 3D с произвольным ракурсом
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Форматирует сопротивление с авто-выбором значащих цифр (не показывает 0.0000)
+function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
+  const v = unit.fromBase(rMkyurg);
+  if (v === 0) return `0 ${unit.symbol}`;
+  // Определяем количество знаков чтобы показать хотя бы 2 значащих цифры
+  const mag = Math.floor(Math.log10(Math.abs(v)));
+  const decimals = Math.max(unit.decimals, -mag + 1);
+  return `${v.toFixed(decimals)}${unit.symbol}`;
+}
+
 export type CadTool = "select" | "node" | "branch" | "pan" | "rotate" | "symbol";
 
 interface Props {
@@ -1099,7 +1109,7 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
                   if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
                   if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
-                  if (ic.branchResistance) dataLines.push(`R=${uRes.fromBase(b.resistance * 1e3).toFixed(uRes.decimals)}${uRes.symbol}`);
+                  if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1e3, uRes)}`);
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
                   if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
