@@ -582,6 +582,13 @@ export default function CadPage() {
   // ─── ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ─────────────────────────────────────
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
+  // ─── ДИАЛОГ ОБЪЕДИНЕНИЯ ВЕТВЕЙ ПРИ УДАЛЕНИИ УЗЛА ────────────────────
+  const [mergeNodeDialog, setMergeNodeDialog] = useState<{
+    nodeId: string;
+    branchA: string; // id первой ветви
+    branchB: string; // id второй ветви
+  } | null>(null);
+
   // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
   const handleBranchMultiSelect = (id: string) => {
@@ -1196,6 +1203,62 @@ export default function CadPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard]);
 
+  // Проверяет, является ли узел промежуточным (ровно 2 смежных ветви)
+  const getNodeAdjacentBranches = (nodeId: string) => {
+    return branchesRaw.filter(b => b.fromId === nodeId || b.toId === nodeId);
+  };
+
+  // Объединяет две ветви, смежные с промежуточным узлом, в одну
+  const mergeAdjacentBranches = (nodeId: string, branchAId: string, branchBId: string) => {
+    const brA = branchesRaw.find(b => b.id === branchAId);
+    const brB = branchesRaw.find(b => b.id === branchBId);
+    if (!brA || !brB) return;
+
+    // Определяем конечные узлы объединённой ветви (исключая промежуточный)
+    const fromId = brA.fromId === nodeId ? brA.toId : brA.fromId;
+    const toId   = brB.fromId === nodeId ? brB.toId : brB.fromId;
+
+    // Новая ветвь: длина = сумма длин, остальные параметры от первой ветви
+    const mergedBranch: typeof brA = {
+      ...brA,
+      id: brA.id,
+      fromId,
+      toId,
+      length: (brA.length ?? 0) + (brB.length ?? 0),
+      name: brA.name || brB.name,
+    };
+
+    // Перепривязываем символы со второй ветви на объединённую
+    setSchemaSymbols(prev => prev.map(s =>
+      s.branchId === branchBId ? { ...s, branchId: brA.id } : s
+    ));
+
+    setBranches(prev => [
+      ...prev.filter(b => b.id !== branchAId && b.id !== branchBId),
+      mergedBranch,
+    ]);
+    setNodes(prev => prev.filter(n => n.id !== nodeId));
+    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+    if (selectedBranchId === branchBId) setSelectedBranchId(brA.id);
+  };
+
+  // Удаляет узел без объединения
+  const doDeleteNode = (nodeId: string) => {
+    setBranches(p => p.filter(b => b.fromId !== nodeId && b.toId !== nodeId));
+    setNodes(p => p.filter(n => n.id !== nodeId));
+    if (selectedNodeId === nodeId) setSelectedNodeId(null);
+  };
+
+  // Запрашивает удаление узла: если промежуточный — предлагает объединить ветви
+  const requestDeleteNode = (nodeId: string) => {
+    const adj = getNodeAdjacentBranches(nodeId);
+    if (adj.length === 2) {
+      setMergeNodeDialog({ nodeId, branchA: adj[0].id, branchB: adj[1].id });
+    } else {
+      doDeleteNode(nodeId);
+    }
+  };
+
   const handleDeleteSelected = () => {
     if (selectedSymbolId) {
       const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
@@ -1208,16 +1271,12 @@ export default function CadPage() {
       setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
       setSelectedBranchId(null);
     } else if (selectedNodeId) {
-      setBranches((p) => p.filter((b) => b.fromId !== selectedNodeId && b.toId !== selectedNodeId));
-      setNodes((p) => p.filter((n) => n.id !== selectedNodeId));
-      setSelectedNodeId(null);
+      requestDeleteNode(selectedNodeId);
     }
   };
 
   const handleDeleteNode = (id: string) => {
-    setBranches((p) => p.filter((b) => b.fromId !== id && b.toId !== id));
-    setNodes((p) => p.filter((n) => n.id !== id));
-    if (selectedNodeId === id) setSelectedNodeId(null);
+    requestDeleteNode(id);
   };
 
   const handleDeleteBranch = (id: string) => {
@@ -3621,6 +3680,61 @@ export default function CadPage() {
         onClose={() => setShowSelectSimilar(false)}
       />
     )}
+
+    {/* ═══ ДИАЛОГ: ОБЪЕДИНИТЬ ВЕТВИ ПРИ УДАЛЕНИИ ПРОМЕЖУТОЧНОГО УЗЛА ══════ */}
+    {mergeNodeDialog && (() => {
+      const brA = branchesRaw.find(b => b.id === mergeNodeDialog.branchA);
+      const brB = branchesRaw.find(b => b.id === mergeNodeDialog.branchB);
+      const nameA = brA?.name || mergeNodeDialog.branchA.substring(0, 12);
+      const nameB = brB?.name || mergeNodeDialog.branchB.substring(0, 12);
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
+          <div className="flex flex-col shadow-2xl border border-gray-400"
+            style={{ width: 360, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+            {/* Заголовок */}
+            <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
+              style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+              <span className="text-[12px] font-semibold text-gray-800">Удаление узла</span>
+              <button onClick={() => setMergeNodeDialog(null)}
+                className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
+                <Icon name="X" size={12} />
+              </button>
+            </div>
+            {/* Тело */}
+            <div className="p-4 flex flex-col gap-3">
+              <p className="text-[12px] text-gray-700">
+                Узел соединяет две выработки. Объединить их в одну?
+              </p>
+              <div className="rounded text-[11px] text-gray-600 px-3 py-2" style={{ background: "#f0f4ff", border: "1px solid #c8d4e8" }}>
+                <div className="font-semibold text-gray-700 mb-1">Будут объединены:</div>
+                <div>· {nameA || "Выработка 1"}</div>
+                <div>· {nameB || "Выработка 2"}</div>
+                <div className="mt-1 text-[10px] text-gray-500">Длина = сумма длин. Параметры берутся от первой выработки.</div>
+              </div>
+            </div>
+            {/* Кнопки */}
+            <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
+              style={{ background: "#f8f8f8" }}>
+              <button
+                onClick={() => { doDeleteNode(mergeNodeDialog.nodeId); setMergeNodeDialog(null); }}
+                className="text-[11px] px-3 py-1 rounded"
+                style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", cursor: "pointer" }}>
+                Удалить без объединения
+              </button>
+              <button
+                onClick={() => {
+                  mergeAdjacentBranches(mergeNodeDialog.nodeId, mergeNodeDialog.branchA, mergeNodeDialog.branchB);
+                  setMergeNodeDialog(null);
+                }}
+                className="text-[11px] px-3 py-1 rounded font-semibold"
+                style={{ background: "#1d4ed8", border: "1px solid #1d4ed8", color: "white", cursor: "pointer" }}>
+                Объединить выработки
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
 
     {/* ═══ ДИАЛОГ: ЧИСЛО ЛЮДЕЙ В ОТДЕЛЕНИИ ════════════════════════════════ */}
     {squadDialog && (
