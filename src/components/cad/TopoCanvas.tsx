@@ -1094,11 +1094,12 @@ export default function TopoCanvas(props: Props) {
                   const uPres = getUnit(unitsConfig, "pressure");
                   const uLen  = getUnit(unitsConfig, "length");
                   const uArea = getUnit(unitsConfig, "area");
+                  const uRes  = getUnit(unitsConfig, "resistance");
                   if (ic.branchName && b.type) dataLines.push(b.type);
                   if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
                   if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
                   if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
-                  if (ic.branchResistance) dataLines.push(`R=${(b.resistance * 1e3).toFixed(2)}·10⁻³`);
+                  if (ic.branchResistance) dataLines.push(`R=${uRes.fromBase(b.resistance * 1e6).toFixed(uRes.decimals)}${uRes.symbol}`);
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
                   if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
