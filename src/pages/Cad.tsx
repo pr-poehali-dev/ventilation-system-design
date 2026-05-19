@@ -2072,8 +2072,8 @@ export default function CadPage() {
       <div className="flex-1 flex overflow-hidden">
 
         {/* ── ВЕРТИКАЛЬНЫЕ ВКЛАДКИ СЛЕВА ────────────────────────────── */}
-        <div className="w-6 flex flex-col"
-          style={{ background: "#e8e8e8", borderRight: "1px solid #b8b8b8" }}>
+        <div className="flex flex-col flex-shrink-0"
+          style={{ width: (selectedNodeId || selectedBranchId || fanSymbolBranchId) ? 24 : 0, background: "#e8e8e8", borderRight: (selectedNodeId || selectedBranchId || fanSymbolBranchId) ? "1px solid #b8b8b8" : "none", overflow: "hidden", transition: "width 0.15s" }}>
           {(selectedNodeId
             ? ([
                 { id: "params", label: "Параметры" },
