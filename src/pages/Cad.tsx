@@ -27,6 +27,7 @@ import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type B
 import LegendDialog from "@/components/cad/LegendDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
+import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL = (FUNC2URL as Record<string, string>)["airflow"];
@@ -435,6 +436,13 @@ export default function CadPage() {
   const [solverMaxIter, setSolverMaxIter] = useState(2000);
   const [solverAlpha, setSolverAlpha] = useState(0.8);
   const [showSolverParams, setShowSolverParams] = useState(false);
+  const [showLogPanel, setShowLogPanel] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const logIdRef = useRef(0);
+  const addLog = (level: LogEntry["level"], text: string) => {
+    const ts = new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setLogEntries(prev => [...prev, { id: ++logIdRef.current, ts, level, text }]);
+  };
   // ─── Ракурс / 3D ────────────────────────────────────────────────────
   const [viewPreset, setViewPreset] = useState<{ name: "plan" | "front" | "back" | "left" | "right" | "isoSW" | "isoSE" | "isoNW" | "isoNE"; nonce: number } | null>(null);
   const [viewInfo, setViewInfo] = useState<{ is3D: boolean; azimuth: number; elevation: number }>({ is3D: true, azimuth: 0, elevation: 0 });
@@ -931,6 +939,7 @@ export default function CadPage() {
   const handleSolveLocal = async () => {
     setVcSolving(true);
     setVcError(null);
+    addLog("info", `Запуск расчёта: метод ${calcMode === "cross" ? "Кросс" : "МКР"}, узлов ${nodes.length}, ветвей ${branches.length}`);
     try {
       const curve_map = new Map(branches.map(b => {
         const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
@@ -999,8 +1008,15 @@ export default function CadPage() {
       const data = await resp.json();
 
       if (!resp.ok || data.error) {
-        setVcError(data.error || "Ошибка расчёта");
+        const msg = data.error || "Ошибка расчёта";
+        setVcError(msg);
+        addLog("error", msg);
         return;
+      }
+
+      // Пишем лог из бэкенда
+      if (data.log?.length) {
+        (data.log as string[]).forEach(line => addLog("info", line));
       }
 
       // Применяем результат
@@ -1030,6 +1046,20 @@ export default function CadPage() {
         diagnostics: data.diagnostics ?? [],
       });
 
+      // Итоговая строка результата
+      if (data.converged) {
+        addLog("ok", `Сошлось за ${data.iterations} итераций, невязка ${(data.maxResidual as number)?.toFixed(4) ?? "—"}`);
+      } else {
+        addLog("warn", `Не сошлось за ${data.iterations} итераций, невязка ${(data.maxResidual as number)?.toFixed(4) ?? "—"}`);
+      }
+
+      // Диагностика в лог
+      if (data.diagnostics?.length) {
+        (data.diagnostics as { level: string; message: string }[]).forEach(d => {
+          addLog(d.level === "error" ? "error" : d.level === "warning" ? "warn" : "info", d.message);
+        });
+      }
+
       if (data.branches?.some((b: { Q: number }) => Math.abs(b.Q) > 0.1)) {
         setShowFlowArrows(true);
       }
@@ -1037,7 +1067,9 @@ export default function CadPage() {
         setShowDiagnostics(true);
       }
     } catch (e) {
-      setVcError(`Ошибка соединения: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = `Ошибка соединения: ${e instanceof Error ? e.message : String(e)}`;
+      setVcError(msg);
+      addLog("error", msg);
     } finally {
       setVcSolving(false);
     }
@@ -3300,10 +3332,32 @@ export default function CadPage() {
             );
           })()}
           <span className="text-gray-400">|</span>
+          <button
+            onClick={() => setShowLogPanel(v => !v)}
+            className="px-2 py-0.5 rounded text-[11px]"
+            style={{
+              background: showLogPanel ? "#1e293b" : "#e2e8f0",
+              color: showLogPanel ? "#e2e8f0" : "#475569",
+              border: "1px solid #cbd5e1",
+              cursor: "pointer",
+            }}
+          >
+            Лог{logEntries.length > 0 ? ` (${logEntries.length})` : ""}
+          </button>
+          <span className="text-gray-400">|</span>
           <span style={{ color: "#6b7280" }}>S+S — выделить подобное</span>
         </div>
       </div>
     </div>
+
+    {/* ═══ ПАНЕЛЬ ЛОГА РАСЧЁТА ════════════════════════════════════════ */}
+    {showLogPanel && (
+      <LogPanel
+        entries={logEntries}
+        onClose={() => setShowLogPanel(false)}
+        onClear={() => setLogEntries([])}
+      />
+    )}
 
     {/* ─── КОНТЕКСТНОЕ МЕНЮ ──────────────────────────────────────────── */}
     {ctxMenu && (
