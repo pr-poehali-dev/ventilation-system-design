@@ -650,19 +650,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                     "value": q_actual,
                 })
 
-    # Диагностика тупиковых ветвей (уже определены выше как dead_end_ids)
-    for e in edges:
-        if e["id"] not in dead_end_ids:
-            continue
-        q_dead = abs(Q_map.get(e["id"], 0))
-        diag.append({
-            "level": "warning",
-            "category": "branch_flow",
-            "message": f"Тупик «{e['id']}»: Q=0 (нет замкнутого контура). "
-                       f"Для проветривания установите ВМП с трубопроводом.",
-            "objectId": e["id"],
-            "value": 0.0,
-        })
+
 
     # Проверка норматива реверса k_rev >= 0.6 (ПБ для шахтных вентиляционных сетей)
     check_reverse(edges, Q_map, normal_flows or {}, diag)
