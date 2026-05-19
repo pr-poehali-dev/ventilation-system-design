@@ -2210,6 +2210,7 @@ export default function CadPage() {
                   const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   return bkSym?.typeId;
                 })()}
+                unitsConfig={unitsConfig}
               />
             )}
 

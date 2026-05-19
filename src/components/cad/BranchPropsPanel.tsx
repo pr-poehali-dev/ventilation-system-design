@@ -4,6 +4,7 @@ import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -33,6 +34,8 @@ interface BranchPropsPanelProps {
   onOpenTypesLibrary?: () => void;
   /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
   bulkheadSymTypeId?: string;
+  /** Конфигурация единиц измерения */
+  unitsConfig?: UnitsConfig;
 }
 
 const SH = "#e8eef8";
@@ -204,7 +207,7 @@ function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG }: BranchPropsPanelProps) {
   const tabMap: Record<string, InnerTab> = {
     topology: "Топология",
     fan: "Вентилятор",
@@ -1090,19 +1093,24 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 {/* ── Аэродинамическое сопротивление перемычки ── */}
                 <SectionHeader title="Аэродинамическое сопротивление" />
 
-                {/* R = ... кМюрг (вычисленное/итоговое) */}
+                {/* R = ... (вычисленное/итоговое) */}
                 <div className="flex items-center justify-center py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                   <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
                     R = {(() => {
+                      const uRes = getUnit(unitsConfig, "resistance");
                       const mode = branch.bulkheadResMode ?? "project";
-                      if (mode === "manual") return `${(branch.bulkheadManualR ?? 0).toFixed(4)} кМюрг`;
-                      if (mode === "survey") {
+                      let rMkyurg = 0;
+                      if (mode === "manual") {
+                        rMkyurg = (branch.bulkheadManualR ?? 0) * 1e3;
+                      } else if (mode === "survey") {
                         const q = branch.bulkheadSurveyQ ?? 0;
                         const dp = branch.bulkheadSurveyDP ?? 0;
-                        const r = q > 0 ? dp / (q * q) : 0;
-                        return `${(r / 1000).toFixed(4)} кМюрг`;
+                        rMkyurg = q > 0 ? dp / (q * q) : 0;
+                      } else {
+                        rMkyurg = (branch.bulkheadR ?? 0) * 1e6;
                       }
-                      return branch.bulkheadR ? `${branch.bulkheadR.toFixed(4)} кМюрг` : "— кМюрг";
+                      if (rMkyurg === 0) return `— ${uRes.symbol}`;
+                      return `${uRes.fromBase(rMkyurg).toFixed(uRes.decimals)} ${uRes.symbol}`;
                     })()}
                   </span>
                 </div>
@@ -1166,11 +1174,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
                     <InlineLabel label="ΔP:">
-                      <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
+                      <ComputedInput value={branch.dP != null ? (() => { const u = getUnit(unitsConfig, "pressure"); return `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}`; })() : "—"} />
                     </InlineLabel>
                     {(branch.bulkheadFailurePressure ?? 0) > 0 && (
                       <InlineLabel label="P разр.:">
-                        <ComputedInput value={`${branch.bulkheadFailurePressure} МПа`} />
+                        <ComputedInput value={(() => { const u = getUnit(unitsConfig, "failurePressure"); return `${u.fromBase(branch.bulkheadFailurePressure ?? 0).toFixed(u.decimals)} ${u.symbol}`; })()} />
                       </InlineLabel>
                     )}
                   </>
@@ -1197,7 +1205,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
                     <InlineLabel label="ΔP:">
-                      <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
+                      <ComputedInput value={branch.dP != null ? (() => { const u = getUnit(unitsConfig, "pressure"); return `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}`; })() : "—"} />
                     </InlineLabel>
                   </>
                 )}
@@ -1216,7 +1224,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
                     <InlineLabel label="ΔP:">
-                      <ComputedInput value={branch.dP != null ? `${Math.round(branch.dP)} Па` : "— Па"} />
+                      <ComputedInput value={branch.dP != null ? (() => { const u = getUnit(unitsConfig, "pressure"); return `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}`; })() : "—"} />
                     </InlineLabel>
                   </>
                 )}

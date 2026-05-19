@@ -65,11 +65,12 @@ export const PHYSICAL_QUANTITIES: PhysicalQuantity[] = [
     id: "resistance",
     label: "Аэродинамическое сопротивление",
     baseUnit: "Мюрг",
-    defaultUnitId: "mkyurg",
+    defaultUnitId: "kmkyurg",
     units: [
-      { id: "mkyurg",  label: "Мюрг (Н·с²/м⁸·10⁻⁶)", symbol: "Мюрг",  fromBase: v => v,        toBase: v => v,        decimals: 3 },
-      { id: "kmkyurg", label: "кМюрг (×10³ Мюрг)",    symbol: "кМюрг", fromBase: v => v / 1e3,  toBase: v => v * 1e3,  decimals: 4 },
-      { id: "mmkyurg", label: "ММюрг (×10⁶ Мюрг)",    symbol: "ММюрг", fromBase: v => v / 1e6,  toBase: v => v * 1e6,  decimals: 6 },
+      { id: "mkyurg",  label: "Мюрг (Н·с²/м⁸·10⁻⁶)",    symbol: "Мюрг",       fromBase: v => v,       toBase: v => v,       decimals: 3 },
+      { id: "kmkyurg", label: "кМюрг (×10³ Мюрг)",        symbol: "кМюрг",      fromBase: v => v / 1e3, toBase: v => v * 1e3, decimals: 4 },
+      { id: "mmkyurg", label: "ММюрг (×10⁶ Мюрг)",        symbol: "ММюрг",      fromBase: v => v / 1e6, toBase: v => v * 1e6, decimals: 6 },
+      { id: "nsm8",    label: "Ньютон-секунда² на метр⁸",  symbol: "Н·с²/м⁸",   fromBase: v => v / 1e6, toBase: v => v * 1e6, decimals: 6 },
     ],
   },
   // ─── Воздухопроницаемость перемычки ────────────────────────────
