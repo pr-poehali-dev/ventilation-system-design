@@ -3361,6 +3361,7 @@ export default function CadPage() {
         onMineBulkheadsChange={setMineBulkheads}
         onBranchTypesChange={setMineTypes}
         initialBranchTypes={mineTypes}
+        initialMineBulkheads={mineBulkheads}
       />
     )}
 

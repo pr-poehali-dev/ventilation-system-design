@@ -37,6 +37,7 @@ interface Props {
   onMineBulkheadsChange?: (bulkheads: MineBulkheadExport[]) => void;
   onBranchTypesChange?: (types: BranchType[]) => void;
   initialBranchTypes?: BranchType[];
+  initialMineBulkheads?: MineBulkheadExport[];
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
@@ -1035,8 +1036,21 @@ function rFmt(r: number): string {
   return `${Math.round(r)} Мюрг`;
 }
 
-function BulkheadsSection({ onMineBulkheadsChange }: { onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void }) {
-  const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>([]);
+function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void; initialMineBulkheads?: MineBulkheadExport[] }) {
+  const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>(() => {
+    if (initialMineBulkheads && initialMineBulkheads.length > 0) return initialMineBulkheads;
+    // Автоматически загружаем весь каталог при первом открытии
+    return BULKHEAD_CATALOG.map(item => ({
+      id: `mb_${item.id}`,
+      name: item.name,
+      type: item.type,
+      airPermeability: item.airPermeability,
+      rMkyurg: airPermToR(item.airPermeability),
+      failurePressure: item.failurePressure,
+      note: item.note,
+      color: item.color,
+    }));
+  });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showCatalog, setShowCatalog] = useState(false);
@@ -1045,6 +1059,13 @@ function BulkheadsSection({ onMineBulkheadsChange }: { onMineBulkheadsChange?: (
   const [editForm, setEditForm] = useState<Partial<MineBulkheadExport>>({});
 
   const selected = mineBulkheads.find(b => b.id === selectedId) ?? null;
+
+  // Уведомляем родителя об начальном состоянии при монтировании
+  useEffect(() => {
+    if (!initialMineBulkheads || initialMineBulkheads.length === 0) {
+      onMineBulkheadsChange?.(mineBulkheads);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const notify = (list: MineBulkheadExport[]) => {
     setMineBulkheads(list);
@@ -1129,7 +1150,7 @@ function BulkheadsSection({ onMineBulkheadsChange }: { onMineBulkheadsChange?: (
             <div className="flex flex-col items-center justify-center h-full px-3 gap-2 py-8">
               <Icon name="Square" size={28} className="text-gray-300" />
               <span className="text-[12px] text-gray-500 text-center">Справочник пуст</span>
-              <span className="text-[10px] text-gray-400 text-center">Добавьте из каталога АэроСети</span>
+              <span className="text-[10px] text-gray-400 text-center">Добавьте перемычки из каталога</span>
               <button onClick={() => setShowCatalog(true)}
                 className="mt-1 px-3 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
                 <Icon name="Library" size={11} /> Открыть каталог
@@ -1295,7 +1316,7 @@ function BulkheadsSection({ onMineBulkheadsChange }: { onMineBulkheadsChange?: (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
           <Icon name="Square" size={32} className="text-gray-300" />
           <span className="text-[13px]">Выберите перемычку из списка</span>
-          <span className="text-[11px]">или добавьте из каталога АэроСети</span>
+          <span className="text-[11px]">или добавьте из каталога</span>
         </div>
       )}
 
@@ -1305,7 +1326,7 @@ function BulkheadsSection({ onMineBulkheadsChange }: { onMineBulkheadsChange?: (
           <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 720, height: 540 }}>
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
               <Icon name="Library" size={14} className="text-blue-600" />
-              <span className="text-[13px] font-semibold text-gray-800">Каталог перемычек (АэроСеть)</span>
+              <span className="text-[13px] font-semibold text-gray-800">Каталог перемычек</span>
               <button onClick={() => setShowCatalog(false)} className="ml-auto text-gray-400 hover:text-gray-700">
                 <Icon name="X" size={16} />
               </button>
@@ -1435,16 +1456,17 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes }: {
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
   onBranchTypesChange?: (types: BranchType[]) => void;
   initialBranchTypes?: BranchType[];
+  initialMineBulkheads?: MineBulkheadExport[];
 }) {
   if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} />;
   if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
-  if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} />;
+  if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads} />;
   if (tab === "sensors") return <SimpleTable
     headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]}
     rows={DEMO_SENSORS.map(r => [r.name, r.measure, r.range, r.cls, r.note])} />;
@@ -1463,7 +1485,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1515,7 +1537,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialBranchTypes={initialBranchTypes} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик
