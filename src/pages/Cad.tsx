@@ -2125,7 +2125,7 @@ export default function CadPage() {
               {activeSide === "params" && (selectedNode ? `Узел: ${selectedNode.number || selectedNode.id}` : selectedBranch ? `Ветвь: ${selectedBranch.id}` : "Параметры")}
               {activeSide === "general" && "Свойства объекта"}
               {activeSide === "horizons" && "Горизонты"}
-              {activeSide === "vent" && "Аэродинамическое сопротивление"}
+              {activeSide === "vent" && "Аэродинамика"}
               {activeSide === "thermo" && "Теплофизические параметры"}
               {activeSide === "accidents" && "Аварийные режимы"}
               {activeSide === "areas" && "Учёт по участкам"}
@@ -2643,7 +2643,7 @@ export default function CadPage() {
                       <FieldRow label="Длина:" value={`${selectedBranch.length.toFixed(1)} м`} />
                     </PropGroup>
 
-                    <PropGroup title="Аэродинамическое сопротивление">
+                    <PropGroup title="Аэродинамика">
                       <FieldRow label="Коэф-т α:" value={`${selectedBranch.alphaCoef.toFixed(3)} ×10⁻⁴`} />
                       <FieldRow label="V max:" value={`${selectedBranch.vMax} м/с`} />
                     </PropGroup>
