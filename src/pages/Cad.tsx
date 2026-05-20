@@ -2124,7 +2124,7 @@ export default function CadPage() {
                 <div className="text-[9px] mt-0.5 text-gray-500">Параметры</div>
               </button>
               {showSolverParams && (
-                <div className="absolute top-full left-0 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 min-w-[220px] mt-1">
+                <div className="absolute bottom-full left-0 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 min-w-[220px] mb-1">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-semibold text-gray-700">Параметры расчёта</span>
                     <button onClick={() => setShowSolverParams(false)} className="text-gray-400 hover:text-gray-600">
