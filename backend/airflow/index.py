@@ -396,7 +396,7 @@ def check_reverse(edges, Q_result, normal_flows, diag):
 
 def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     tol      = float(options.get("tolerance", 0.01))
-    max_iter = int(options.get("maxIter", 2000))
+    max_iter = int(options.get("maxIter", 5000))
     alpha    = float(options.get("alpha", 1.0))  # релаксация
 
     log  = []
@@ -619,15 +619,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             nxt = [(gi, nb) for gi, nb in adj_tree[node] if nb not in visited]
             if not nxt:
                 continue
-            # Делим входящий расход ПОРОВНУ между выходящими рёбрами
-            q_each = incoming / len(nxt)
-            for gi, nb in nxt:
+            # Делим входящий расход пропорционально проводимости 1/R (лучшее начальное приближение)
+            conductances = [1.0 / max(edges[gi]["R"], 1e-9) for gi, nb in nxt]
+            total_cond = sum(conductances)
+            for (gi, nb), cond in zip(nxt, conductances):
+                q_each = incoming * cond / total_cond
                 e = edges[gi]
-                # Знак: ребро a→b; если node==a — ток a→b (положительный),
-                # если node==b — ток b→a (отрицательный в глобальном соглашении)
                 sign = +1 if e["a"] == node else -1
                 Q[gi] = q_each * sign
-                node_q[nb] = node_q.get(nb, 0.0) + q_each
+                node_q[nb] = node_q.get(nb, 0.0) + abs(q_each)
                 visited.add(nb)
                 queue.append(nb)
     else:
@@ -1053,7 +1053,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     """
     tol_q    = float(options.get("tolerance", 0.01))
     tol_h    = float(options.get("tolPressure", 0.1))
-    max_iter = int(options.get("maxIter", 2000))
+    max_iter = int(options.get("maxIter", 5000))
 
     log  = []
     diag = []
