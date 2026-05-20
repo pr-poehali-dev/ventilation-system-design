@@ -114,12 +114,10 @@ export type ResistanceMode =
 //   S — площадь, м²
 //
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
-  // Защита от деления на крайне малое сечение (ошибка ввода → R = ∞)
   if (S <= 0.05 || L <= 0 || P <= 0) return 0;
-  // alpha в [×10⁻⁴ Н·с²/м⁴], переводим в Н·с²/м⁴
   const a = alpha * 1e-4;
   const r = (a * P * L) / Math.pow(S, 3);
-  // Ограничение разумным пределом (типичные R шахтных выработок < 10000 кмюрг = 10 Нс²/м⁸)
+  console.log(`[resistanceFromAlpha] alpha=${alpha} P=${P} L=${L} S=${S} → a=${a} r=${r}`);
   return isFinite(r) ? Math.min(r, 1000) : 0;
 }
 
