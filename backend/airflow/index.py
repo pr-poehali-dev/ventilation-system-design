@@ -644,71 +644,50 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         global_loop = [(active_idx[ai], sign) for ai, sign in loop]
         loops_global.append(global_loop)
 
-    # ── Предварительно строим матрицу контуров C (numpy) ────────────────
-    # C[k, i] = sign (+1/-1/0) — участие ветви i в контуре k
-    # R_arr[i], H_nat_arr[i] — массивы сопротивлений и естественной тяги
-    n_loops  = len(loops_global)
-    n_edges  = len(edges)
-    C        = np.zeros((n_loops, n_edges), dtype=np.float64)
-    for k, loop in enumerate(loops_global):
-        for gi, sign in loop:
-            C[k, gi] = sign
-
-    R_arr     = np.array([e["R"] for e in edges], dtype=np.float64)
-    H_nat_arr = np.array([e.get("naturalDraft", 0.0) for e in edges], dtype=np.float64)
-
-    # Маска вентиляторов (curve/constant)
-    fan_mask  = np.array([e["hasFan"] and not e.get("fanStopped", False) for e in edges], dtype=bool)
-
-    # Основной цикл Кросса (numpy-векторизованный)
+    # Основной цикл Кросса — последовательное обновление по контурам (Зейдель)
     max_dq = float("inf")
     it     = 0
-    Q_np   = np.array(Q, dtype=np.float64)
 
     for it in range(1, max_iter + 1):
-        # Расходы в направлении обхода каждого контура: Qd[k,i] = Q[i] * C[k,i]
-        Qd = Q_np * C                      # (n_loops, n_edges)
-        absQd = np.abs(Qd)
+        max_dq = 0.0
 
-        # Потери давления: R·Qd·|Qd|
-        RQQ = R_arr * Qd * absQd           # (n_loops, n_edges)
-        sum_h_arr   = RQQ.sum(axis=1)      # (n_loops,)
-        sum_2rq_arr = (2.0 * R_arr * absQd).sum(axis=1)  # знаменатель
+        for loop in loops_global:
+            # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan - H_nat) по контуру
+            sum_h   = 0.0
+            sum_2rq = 0.0
 
-        # Поправка от вентиляторов и естественной тяги (пока Python — их мало)
-        for k, loop in enumerate(loops_global):
             for gi, sign in loop:
-                e = edges[gi]
-                qi = Q_np[gi] * sign
-                s  = 1.0 if qi >= 0 else -1.0
-                if e["hasFan"] and not e.get("fanStopped"):
-                    H = fan_H(e, abs(Q_np[gi]))
-                    sum_h_arr[k]   -= H * s
-                    sum_2rq_arr[k] += fan_dH(e, abs(Q_np[gi]))
-                if H_nat_arr[gi] != 0.0:
-                    sum_h_arr[k] -= H_nat_arr[gi] * s
+                e  = edges[gi]
+                qi = Q[gi] * sign
+                R  = e["R"]
 
-        # δQ для каждого контура
-        valid = sum_2rq_arr > 1e-12
-        dq_arr = np.where(valid, alpha * sum_h_arr / np.where(valid, sum_2rq_arr, 1.0), 0.0)
+                sum_h   += R * qi * abs(qi)
+                sum_2rq += 2.0 * R * abs(qi)
 
-        # Ограничение: не более 50% max|Q| контура
-        q_max_per_loop = (np.abs(Q_np) * np.abs(C)).max(axis=1)  # (n_loops,)
-        q_max_per_loop = np.maximum(q_max_per_loop, 0.1)
-        limit = 0.5 * q_max_per_loop
-        dq_arr = np.clip(dq_arr, -limit, limit)
+                if e["hasFan"]:
+                    H = fan_H(e, abs(Q[gi]))
+                    sum_h   -= H * (1.0 if qi >= 0 else -1.0)
+                    sum_2rq += fan_dH(e, abs(Q[gi]))
 
-        max_dq = float(np.max(np.abs(dq_arr)))
+                h_nat = e.get("naturalDraft", 0.0)
+                if h_nat != 0.0:
+                    sum_h -= h_nat * (1.0 if qi >= 0 else -1.0)
 
-        # Обновляем Q: Q[i] -= Σ_k dq_k * C[k,i]
-        Q_np -= dq_arr @ C                 # (n_edges,)
-        np.nan_to_num(Q_np, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
+            if sum_2rq < 1e-12:
+                continue
+
+            dq = alpha * sum_h / sum_2rq
+            q_avg = sum(abs(Q[gi]) for gi, _ in loop) / max(1, len(loop))
+            if q_avg > 0:
+                dq = max(-q_avg * 0.5, min(q_avg * 0.5, dq))
+            max_dq = max(max_dq, abs(dq))
+
+            for gi, sign in loop:
+                Q[gi] -= dq * sign
 
         if max_dq < tol:
             it += 1
             break
-
-    Q = Q_np.tolist()
 
     converged = max_dq < tol
     if not converged:
