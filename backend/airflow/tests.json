@@ -245,5 +245,73 @@
       "expectedBody": {"converged": true},
       "bodyMatcher": "partial"
     }
+    ,
+    {
+      "name": "МКР — линейная цепь, сходимость",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "U1", "isAtm": true, "z": 0, "airTemp": 20},
+          {"id": "N1", "z": -100, "airTemp": 15},
+          {"id": "U2", "isAtm": true, "z": 0, "airTemp": 20}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
+          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.05, "hasFan": true, "fanMode": "constant", "fanPressure": 1000}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 2000},
+        "surfaceTemp": 20
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "МКР — кольцевая сеть 2 параллельных ветви",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "A", "isAtm": true, "z": 0, "airTemp": 20},
+          {"id": "B", "z": -50, "airTemp": 18},
+          {"id": "C", "isAtm": true, "z": 0, "airTemp": 20}
+        ],
+        "branches": [
+          {"id": "fan", "fromId": "A", "toId": "B", "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 500},
+          {"id": "e1",  "fromId": "B", "toId": "C", "R": 0.1},
+          {"id": "e2",  "fromId": "B", "toId": "C", "R": 0.2}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 2000},
+        "surfaceTemp": 20
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "МКР — естественная тяга без вентилятора",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "U1", "isAtm": true, "z": 100, "airTemp": 5},
+          {"id": "N1", "z": -200, "airTemp": 25},
+          {"id": "U2", "isAtm": true, "z": 80, "airTemp": 5}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
+          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.05}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 2000},
+        "surfaceTemp": 5
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    }
   ]
 }
