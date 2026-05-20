@@ -1190,43 +1190,35 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
     sync_tree_q(Q)
 
-    # ── Предварительно строим вспомогательные структуры для МКР ────────────────
-    # Для каждого контура: список (gi, sign, edge)
-    contours_gi = []
-    for contour in contours_local:
-        contours_gi.append([(local_to_global[li], sign, active_edges_list[li])
-                             for li, sign in contour])
-
-    R_arr_mkr     = np.array([e["R"] for e in edges], dtype=np.float64)
-    H_nat_arr_mkr = np.array([e.get("naturalDraft", 0.0) for e in edges], dtype=np.float64)
-
-    # ── Итерации МКР — метод Гаусса-Зейделя по контурам (быстрее сходится) ───
+    # ── Итерации МКР ────────────────────────────────────────────────────────
     max_dh = float("inf")
     max_dq = float("inf")
-    relaxation = 0.9       # стартуем с высокой релаксацией
-    prev_max_dh = float("inf")
+    relaxation = 0.5
     it = 0
-    Q_arr = np.array(Q, dtype=np.float64)
 
     for it in range(1, max_iter + 1):
         max_dh = 0.0
         max_dq = 0.0
 
-        # Зейдель: обновляем Q после каждого контура → быстрая сходимость
-        for contour_gi in contours_gi:
+        for contour in contours_local:
             num = 0.0
             den = 0.0
-            for gi, sign, e in contour_gi:
-                qd  = float(Q_arr[gi]) * sign
-                R   = e["R"]
+
+            for li, sign in contour:
+                e  = active_edges_list[li]
+                gi = local_to_global[li]
+                qd = Q[gi] * sign
+                R  = e["R"]
+
                 num += R * qd * abs(qd)
                 den += 2.0 * R * abs(qd)
-                if e.get("hasFan") and not e.get("fanStopped"):
-                    s   = 1.0 if qd >= 0 else -1.0
-                    H   = _mkr_fan_H(e, float(Q_arr[gi]))
-                    num -= H * s
-                    den += _mkr_fan_dH(e, float(Q_arr[gi]))
-                h_nat = H_nat_arr_mkr[gi]
+
+                if e.get("hasFan"):
+                    H = _mkr_fan_H(e, Q[gi])
+                    num -= H * (1.0 if qd >= 0 else -1.0)
+                    den += _mkr_fan_dH(e, Q[gi])
+
+                h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
                     num -= h_nat * (1.0 if qd >= 0 else -1.0)
 
@@ -1234,38 +1226,34 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
 
             dq_raw = -num / den
-            q_scale = max(max(abs(float(Q_arr[gi])) for gi, _, _ in contour_gi), q0 * 0.1, 0.01)
-            dq = relaxation * max(-q_scale * 0.9, min(q_scale * 0.9, dq_raw))
+            # Ограничение: не более 80% от max|Q| в контуре
+            q_scale = max(abs(Q[local_to_global[li]]) for li, _ in contour) or 0.1
+            dq_max  = q_scale * 0.8
+            dq = relaxation * max(-dq_max, min(dq_max, dq_raw))
 
             if abs(num) > max_dh:
                 max_dh = abs(num)
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
 
-            for gi, sign, _ in contour_gi:
-                Q_arr[gi] += dq * sign
-
-        np.nan_to_num(Q_arr, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
+            for li, sign in contour:
+                gi = local_to_global[li]
+                Q[gi] += dq * sign
+                if not math.isfinite(Q[gi]):
+                    Q[gi] = 0.0
 
         # Синхронизация ветвей дерева по Кирхгофу-1
-        Q_list = Q_arr.tolist()
-        sync_tree_q(Q_list)
-        Q_arr = np.array(Q_list, dtype=np.float64)
+        sync_tree_q(Q)
 
-        # Адаптивная релаксация: снижаем если расходимся
-        if it > 10:
-            if max_dh > prev_max_dh * 1.05:
-                relaxation = max(0.3, relaxation * 0.85)
-            elif max_dh < prev_max_dh * 0.95 and it > 50:
-                relaxation = min(1.0, relaxation + 0.005)
-        prev_max_dh = max_dh
+        # Адаптивное демпфирование
+        if it > 50 and max_dh < 50:
+            relaxation = min(1.0, relaxation + 0.01)
 
-        # Критерий остановки
+        # Критерий остановки: двойной (по ΔH И по δQ)
         if max_dh < tol_h or max_dq < tol_q:
             it += 1
             break
 
-    Q = Q_arr.tolist()
     converged = max_dh < tol_h or max_dq < tol_q
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
