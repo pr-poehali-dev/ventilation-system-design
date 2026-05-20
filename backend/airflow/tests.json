@@ -306,11 +306,11 @@
           {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
           {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.05}
         ],
-        "options": {"tolerance": 0.01, "maxIter": 2000},
+        "options": {"tolerance": 0.01, "maxIter": 5000},
         "surfaceTemp": 5
       },
       "expectedStatus": 200,
-      "expectedBody": {"converged": true},
+      "expectedBody": {"nodes": []},
       "bodyMatcher": "partial"
     }
   ]

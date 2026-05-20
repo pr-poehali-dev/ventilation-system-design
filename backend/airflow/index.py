@@ -116,14 +116,15 @@ def fan_dH(e, Q):
 def natural_draft_h(from_z, to_z, from_temp, to_temp):
     """
     Естественная тяга ветви (Па).
-    H_nat = ρ_avg * g * (z_from - z_to)
-    ρ_avg = 353 / (273 + T_avg)  — плотность воздуха по идеальному газу (кг/м³)
-    Положительное значение — тяга направлена от from к to (вверх по выработке).
+    H_nat = g * (z_from - z_to) * (ρ_to - ρ_from)
+    ρ = 353 / (273 + T)  — плотность воздуха по идеальному газу (кг/м³)
+    Тяга возникает только при разности температур (разности плотностей).
+    Если температуры одинаковые — тяга = 0.
     """
     g = 9.81
-    t_avg = 0.5 * (from_temp + to_temp)
-    rho = 353.0 / (273.0 + max(-30.0, min(100.0, t_avg)))
-    return rho * g * (from_z - to_z)
+    rho_from = 353.0 / (273.0 + max(-30.0, min(100.0, from_temp)))
+    rho_to   = 353.0 / (273.0 + max(-30.0, min(100.0, to_temp)))
+    return g * (from_z - to_z) * (rho_to - rho_from)
 
 
 def build_graph(nodes_in, branches_in, surface_temp=20.0):
@@ -1174,7 +1175,9 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # ── Итерации МКР ────────────────────────────────────────────────────────
     max_dh = float("inf")
     max_dq = float("inf")
-    relaxation = 0.5
+    # При наличии вентилятора можно стартовать с 0.5; без вентилятора (только тяга)
+    # нужна более осторожная релаксация чтобы не осциллировать
+    relaxation = 0.5 if active_fans else 0.15
     prev_dh = float("inf")
     it = 0
 
