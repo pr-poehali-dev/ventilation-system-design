@@ -180,7 +180,7 @@ function FanChart({ curves, type, operatingPoints }: {
 // ─── Диалог выбора из библиотеки ──────────────────────────────────────────
 function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void; onClose: () => void }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "axial" | "centrifugal">("all");
+  const [filter, setFilter] = useState<"all" | "axial" | "centrifugal" | "vmp">("all");
   const [previewId, setPreviewId] = useState<string | null>(null);
 
   const list = FAN_CATALOG.filter(c =>
@@ -209,7 +209,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                   placeholder="Поиск..." className="flex-1 text-[12px] py-1 outline-none bg-transparent text-gray-900" />
               </div>
               <div className="flex gap-1">
-                {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центробежные"]] as const).map(([v, l]) => (
+                {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центробежные"], ["vmp", "ВМП"]] as const).map(([v, l]) => (
                   <button key={v} onClick={() => setFilter(v)}
                     className="flex-1 py-0.5 text-[10px] rounded border"
                     style={{ background: filter === v ? "#2563eb" : "white", color: filter === v ? "white" : "#555", borderColor: filter === v ? "#2563eb" : "#d1d5db" }}>
@@ -227,7 +227,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                   style={{ background: previewId === c.id ? "#dbeafe" : undefined }}>
                   <div>
                     <div className="text-[12px] font-semibold text-blue-800">{c.name}</div>
-                    <div className="text-[10px] text-gray-500">{c.type === "axial" ? "Осевой" : "Центробежный"}</div>
+                    <div className="text-[10px] text-gray-500">{c.type === "axial" ? "Осевой" : c.type === "vmp" ? "ВМП" : "Центробежный"}</div>
                   </div>
                   <span className="text-[10px] text-gray-400">Ø{c.diameter} м</span>
                 </div>
@@ -245,7 +245,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                 <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
                   <div className="text-[14px] font-bold text-gray-900">{preview.name}</div>
                   <div className="text-[11px] text-gray-500 mt-0.5">
-                    {preview.type === "axial" ? "Осевой" : "Центробежный"} · Ø{preview.diameter} м · {preview.rpmMin}–{preview.rpmMax} об/мин
+                    {preview.type === "axial" ? "Осевой" : preview.type === "vmp" ? "ВМП" : "Центробежный"} · Ø{preview.diameter} м · {preview.rpmMin}–{preview.rpmMax} об/мин
                   </div>
                   <div className="flex gap-3 mt-1.5 text-[11px] text-gray-600">
                     <span>Q: {preview.qMin}–{preview.qMax} м³/с</span>

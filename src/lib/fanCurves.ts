@@ -11,7 +11,7 @@
 export interface FanCurve {
   id: string;
   name: string;
-  type: "centrifugal" | "axial";
+  type: "centrifugal" | "axial" | "vmp";
   diameter: number;        // м — диаметр рабочего колеса
   // H(Q) = h0 + h1·Q + h2·Q²  — прямой режим
   h0: number;
@@ -144,6 +144,56 @@ export const FAN_CATALOG: FanCurve[] = [
     reverseH0: 1800, reverseH1: 3.0, reverseH2: -0.016,
     reverseQMin: 68, reverseQMax: 272,
     reverseEfficiencyFactor: 0.82,
+  },
+
+  // ─── ВМП (вентиляторы местного проветривания) ───────────────────────────────
+  {
+    id: "VME-2-10A",
+    name: "ВМЭ 2-10А", type: "vmp", diameter: 1.0,
+    h0: 5200, h1: -8, h2: -6.5,
+    e0: 0.28, e1: 0.020, e2: -0.00080,
+    qMin: 3.5, qMax: 18, qNominal: 10, hNominal: 3800,
+    rpmMin: 0, rpmMax: 1480, rpmNominal: 1480,
+    bladeAngles: [-40, -20, 0, 20, 60],
+    reverseH0: 2200, reverseH1: -4, reverseH2: -4.0,
+    reverseQMin: 2.5, reverseQMax: 14,
+    reverseEfficiencyFactor: 0.78,
+  },
+  {
+    id: "VM-6M",
+    name: "ВМ-6М", type: "vmp", diameter: 0.6,
+    h0: 2700, h1: -30, h2: -18,
+    e0: 0.22, e1: 0.035, e2: -0.0045,
+    qMin: 1.5, qMax: 7.5, qNominal: 4.0, hNominal: 1900,
+    rpmMin: 0, rpmMax: 2980, rpmNominal: 2980,
+    bladeAngles: [-45, -20, 0, 20, 45],
+    reverseH0: 1100, reverseH1: -15, reverseH2: -12,
+    reverseQMin: 1.2, reverseQMax: 6.0,
+    reverseEfficiencyFactor: 0.76,
+  },
+  {
+    id: "VM-8M",
+    name: "ВМ-8М", type: "vmp", diameter: 0.8,
+    h0: 3600, h1: -20, h2: -10,
+    e0: 0.25, e1: 0.028, e2: -0.0025,
+    qMin: 3.5, qMax: 12, qNominal: 7.0, hNominal: 2800,
+    rpmMin: 0, rpmMax: 2980, rpmNominal: 2980,
+    bladeAngles: [-50, -20, 0, 20, 45],
+    reverseH0: 1700, reverseH1: -12, reverseH2: -7,
+    reverseQMin: 2.8, reverseQMax: 9.5,
+    reverseEfficiencyFactor: 0.78,
+  },
+  {
+    id: "VME-12A",
+    name: "ВМЭ-12А", type: "vmp", diameter: 1.2,
+    h0: 2650, h1: -2, h2: -2.8,
+    e0: 0.30, e1: 0.018, e2: -0.00055,
+    qMin: 8, qMax: 32, qNominal: 18, hNominal: 2200,
+    rpmMin: 0, rpmMax: 1480, rpmNominal: 1480,
+    bladeAngles: [15, 25, 35],
+    reverseH0: 1300, reverseH1: -1.5, reverseH2: -2.0,
+    reverseQMin: 6, reverseQMax: 26,
+    reverseEfficiencyFactor: 0.80,
   },
 ];
 
