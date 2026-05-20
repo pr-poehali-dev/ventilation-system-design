@@ -677,9 +677,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 continue
 
             dq = alpha * sum_h / sum_2rq
-            q_avg = sum(abs(Q[gi]) for gi, _ in loop) / max(1, len(loop))
-            if q_avg > 0:
-                dq = max(-q_avg * 0.5, min(q_avg * 0.5, dq))
             max_dq = max(max_dq, abs(dq))
 
             for gi, sign in loop:
@@ -1173,6 +1170,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     max_dh = float("inf")
     max_dq = float("inf")
     relaxation = 0.5
+    prev_dh = float("inf")
     it = 0
 
     for it in range(1, max_iter + 1):
@@ -1205,10 +1203,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
 
             dq_raw = -num / den
-            # Ограничение: не более 80% от max|Q| в контуре
-            q_scale = max(abs(Q[local_to_global[li]]) for li, _ in contour) or 0.1
-            dq_max  = q_scale * 0.8
-            dq = relaxation * max(-dq_max, min(dq_max, dq_raw))
+            dq = relaxation * dq_raw
 
             if abs(num) > max_dh:
                 max_dh = abs(num)
@@ -1224,9 +1219,13 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         # Синхронизация ветвей дерева по Кирхгофу-1
         sync_tree_q(Q)
 
-        # Адаптивное демпфирование
-        if it > 50 and max_dh < 50:
-            relaxation = min(1.0, relaxation + 0.01)
+        # Адаптивное демпфирование: увеличиваем если сходится, снижаем если растёт
+        if it > 5:
+            if max_dh > prev_dh * 1.1:
+                relaxation = max(0.1, relaxation * 0.8)
+            elif it > 20 and max_dh < prev_dh:
+                relaxation = min(1.0, relaxation + 0.01)
+        prev_dh = max_dh
 
         # Критерий остановки: двойной (по ΔH И по δQ)
         if max_dh < tol_h or max_dq < tol_q:
