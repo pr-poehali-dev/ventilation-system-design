@@ -675,8 +675,11 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 continue
 
             dq = alpha * sum_h / sum_2rq
-            # Ограничение поправки: не более q0 за шаг, чтобы не улететь в взрыв
-            dq = max(-q0, min(q0, dq))
+            # Защита от взрыва: не более 2×max|Q| в контуре (или q0 если Q≈0)
+            q_ref = max((abs(Q[gi]) for gi, _ in loop), default=0.0)
+            q_ref = max(q_ref, q0)
+            if abs(dq) > 2.0 * q_ref:
+                dq = math.copysign(2.0 * q_ref, dq)
             max_dq = max(max_dq, abs(dq))
 
             for gi, sign in loop:
@@ -1205,8 +1208,11 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
 
             dq_raw = -num / den
-            # Ограничение поправки: не более q0 за шаг
-            dq_raw = max(-q0, min(q0, dq_raw))
+            # Защита от взрыва: не более 2×max|Q| в контуре (или q0 если Q≈0)
+            q_ref_mkr = max((abs(Q[local_to_global[li]]) for li, _ in contour), default=0.0)
+            q_ref_mkr = max(q_ref_mkr, q0)
+            if abs(dq_raw) > 2.0 * q_ref_mkr:
+                dq_raw = math.copysign(2.0 * q_ref_mkr, dq_raw)
             dq = relaxation * dq_raw
 
             if abs(num) > max_dh:
