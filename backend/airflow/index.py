@@ -4,7 +4,16 @@
 Классический итерационный метод для горных вентиляционных сетей.
 Алгоритм идентичен АэроСети и Вентиляции-CAD.
 
-POST: {nodes, branches, options:{tolerance, maxIter, alpha}}
+POST: {nodes, branches, options:{tolerance, maxIter, alpha}, surfaceTemp}
+
+Естественная тяга учитывается в итерационном процессе Кросса.
+Формула: H_nat_i = ρ_i * g * (z_from_i - z_to_i)
+где ρ_i = 353 / (273 + T_avg_i) — плотность воздуха в ветви (кг/м³),
+T_avg_i — средняя температура воздуха в ветви (°C),
+z_from_i, z_to_i — высотные отметки начала и конца ветви (м).
+
+Алгоритм АэроСети: вклад в невязку контура:
+  sum_h -= H_nat_i * sign_i  (аналогично вентилятору)
 """
 import json, math, collections
 
@@ -31,12 +40,13 @@ def handler(event: dict, context) -> dict:
     branches_in  = body.get("branches", [])
     options      = body.get("options", {})
     normal_flows = body.get("normalFlows", {})  # расходы прямого режима для проверки k_rev
+    surface_temp = float(body.get("surfaceTemp", 20.0))  # температура на поверхности, °C
 
     if not branches_in:
         return ok(empty_result("Нет ветвей"))
 
     try:
-        result = solve(nodes_in, branches_in, options, normal_flows)
+        result = solve(nodes_in, branches_in, options, normal_flows, surface_temp)
     except Exception as ex:
         import traceback
         return err(500, f"Ошибка: {ex}\n{traceback.format_exc()}")
@@ -103,7 +113,20 @@ def fan_dH(e, Q):
     return 0.0
 
 
-def build_graph(nodes_in, branches_in):
+def natural_draft_h(from_z, to_z, from_temp, to_temp):
+    """
+    Естественная тяга ветви (Па).
+    H_nat = ρ_avg * g * (z_from - z_to)
+    ρ_avg = 353 / (273 + T_avg)  — плотность воздуха по идеальному газу (кг/м³)
+    Положительное значение — тяга направлена от from к to (вверх по выработке).
+    """
+    g = 9.81
+    t_avg = 0.5 * (from_temp + to_temp)
+    rho = 353.0 / (273.0 + max(-30.0, min(100.0, t_avg)))
+    return rho * g * (from_z - to_z)
+
+
+def build_graph(nodes_in, branches_in, surface_temp=20.0):
     """Строит список рёбер, заменяя атмосферные узлы на GND."""
     atm = set()
     for n in nodes_in:
@@ -114,6 +137,17 @@ def build_graph(nodes_in, branches_in):
             nid = str(n.get("id", "")).lower()
             if any(x in nid for x in ("атм", "atm", "gnd", "surface")):
                 atm.add(n["id"])
+
+    # Карта высотных отметок и температур узлов
+    node_z    = {}
+    node_temp = {}
+    for n in nodes_in:
+        nid = n["id"]
+        node_z[nid]    = float(n.get("z", 0.0) or 0.0)
+        node_temp[nid] = float(n.get("airTemp", surface_temp) or surface_temp)
+        # Атмосферные узлы: температура = температура поверхности
+        if n.get("isAtm") or n.get("atmosphereLink"):
+            node_temp[nid] = surface_temp
 
     def to_gnd(nid):
         return GND if nid in atm else nid
@@ -126,8 +160,19 @@ def build_graph(nodes_in, branches_in):
         # Остальные ветви остаются в исходной ориентации — иначе вся сеть переворачивается
         # и нарушается 1-й закон Кирхгофа (Q вентилятора ≠ Q сети).
         should_flip = reverse and is_fan
-        node_a = to_gnd(b["toId"]  if should_flip else b["fromId"])
-        node_b = to_gnd(b["fromId"] if should_flip else b["toId"])
+        orig_from = b["fromId"]
+        orig_to   = b["toId"]
+        node_a = to_gnd(orig_to   if should_flip else orig_from)
+        node_b = to_gnd(orig_from if should_flip else orig_to)
+
+        # Высотные отметки и температуры узлов ветви
+        fz  = node_z.get(orig_from, float(b.get("fromZ", 0.0) or 0.0))
+        tz  = node_z.get(orig_to,   float(b.get("toZ",   0.0) or 0.0))
+        ft  = node_temp.get(orig_from, surface_temp)
+        tt  = node_temp.get(orig_to,   surface_temp)
+        # При реверсе ребро развёрнуто — меняем и направление естественной тяги
+        h_nat = natural_draft_h(fz, tz, ft, tt) if not should_flip else natural_draft_h(tz, fz, tt, ft)
+
         edges.append({
             "id":          b["id"],
             "a":           node_a,
@@ -154,6 +199,8 @@ def build_graph(nodes_in, branches_in):
             "isLeakage":   bool(b.get("isLeakage", False)),
             "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
             "angle":       abs(float(b.get("angle", 0) or 0)),
+            # Естественная тяга (Па): H_nat = ρ·g·Δz
+            "naturalDraft": h_nat,
         })
     return edges, atm
 
@@ -347,7 +394,7 @@ def check_reverse(edges, Q_result, normal_flows, diag):
         })
 
 
-def solve(nodes_in, branches_in, options, normal_flows=None):
+def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     tol      = float(options.get("tolerance", 0.01))
     max_iter = int(options.get("maxIter", 2000))
     alpha    = float(options.get("alpha", 1.0))  # релаксация
@@ -355,7 +402,19 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
     log  = []
     diag = []
 
-    edges, atm = build_graph(nodes_in, branches_in)
+    edges, atm = build_graph(nodes_in, branches_in, surface_temp)
+
+    # Диагностика: суммарная естественная тяга в сети
+    nat_total = sum(abs(e.get("naturalDraft", 0.0)) for e in edges)
+    if nat_total > 1.0:
+        nat_max = max(edges, key=lambda e: abs(e.get("naturalDraft", 0.0)))
+        log.append(
+            f"Естественная тяга: T_пов={surface_temp:.1f}°C, "
+            f"суммарная |H_nat|={nat_total:.1f} Па, "
+            f"макс. ветвь «{nat_max['id']}» {nat_max.get('naturalDraft', 0.0):.1f} Па"
+        )
+    else:
+        log.append("Естественная тяга: не учитывается (все Δz=0 или нет данных о высотах)")
 
     # Проверяем связность с атмосферой: GND должен иметь степень >= 2
     # (подключён минимум к 2 рёбрам, т.е. есть реальный вход и выход на поверхность).
@@ -574,8 +633,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
         max_dq = 0.0
 
         for loop in loops_global:
-            # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan) по контуру
-            sum_h   = 0.0  # Σ R·Q·|Q| - H_fan
+            # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan - H_nat) по контуру
+            sum_h   = 0.0  # Σ R·Q·|Q| - H_fan - H_nat
             sum_2rq = 0.0  # Σ 2·R·|Q| + |dH/dQ|  (знаменатель)
 
             for gi, sign in loop:
@@ -590,6 +649,11 @@ def solve(nodes_in, branches_in, options, normal_flows=None):
                     H = fan_H(e, abs(Q[gi]))
                     sum_h   -= H * (1.0 if qi >= 0 else -1.0)
                     sum_2rq += fan_dH(e, abs(Q[gi]))
+
+                # Естественная тяга: вычитаем из невязки (знак соответствует знаку qi)
+                h_nat = e.get("naturalDraft", 0.0)
+                if h_nat != 0.0:
+                    sum_h -= h_nat * (1.0 if qi >= 0 else -1.0)
 
             if sum_2rq < 1e-12:
                 continue

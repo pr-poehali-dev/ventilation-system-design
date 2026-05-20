@@ -446,6 +446,8 @@ export default function CadPage() {
   const [solverTolerance, setSolverTolerance] = useState(0.01);
   const [solverMaxIter, setSolverMaxIter] = useState(2000);
   const [solverAlpha, setSolverAlpha] = useState(0.8);
+  // Температура воздуха на поверхности (для расчёта естественной тяги)
+  const [surfaceTemp, setSurfaceTemp] = useState(20);
   const [showSolverParams, setShowSolverParams] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -737,6 +739,7 @@ export default function CadPage() {
     solverTolerance,
     solverMaxIter,
     solverAlpha,
+    surfaceTemp,
     infoConfig,
     unitsConfig,
     branchWidth,
@@ -884,6 +887,7 @@ export default function CadPage() {
     if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
     if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
+    if (data.surfaceTemp !== undefined) setSurfaceTemp(data.surfaceTemp as number);
     if (data.infoConfig) setInfoConfig(data.infoConfig as InfoDisplayConfig);
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
@@ -983,7 +987,10 @@ export default function CadPage() {
           nodes: nodes.map(n => ({
             id: n.id,
             isAtm: n.atmosphereLink,
+            z: n.z ?? 0,
+            airTemp: n.atmosphereLink ? surfaceTemp : (n.airTemp ?? surfaceTemp),
           })),
+          surfaceTemp,
           branches: branches.map(b => {
             const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
             // Суммируем R всех символов перемычек на этой ветви (каждый хранит свои параметры)
@@ -2153,6 +2160,17 @@ export default function CadPage() {
                         className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
                     </div>
                   )}
+                  <div className="border-t border-gray-200 pt-2 mt-1 mb-2">
+                    <div className="text-[10px] font-semibold text-gray-600 mb-1.5">Естественная тяга</div>
+                    <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности (°C)</label>
+                    <input type="number" value={surfaceTemp} step="1" min="-40" max="50"
+                      onChange={e => setSurfaceTemp(Number(e.target.value))}
+                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                    <div className="text-[9px] text-gray-400 mt-1">
+                      Влияет на ρ·g·Δz для каждой ветви.<br/>
+                      Температура узлов задаётся в свойствах узла.
+                    </div>
+                  </div>
                   <button onClick={() => setShowSolverParams(false)}
                     className="w-full mt-1 py-1 bg-blue-600 text-white text-[11px] rounded hover:bg-blue-700">
                     Сохранить
