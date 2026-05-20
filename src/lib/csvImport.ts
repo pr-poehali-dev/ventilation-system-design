@@ -313,11 +313,11 @@ function buildResult(
 
     const newBranchId = `B${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = newBranchId;
-    // Перевод R из единиц CSV в Н·с²/м⁸:
-    // "kmu" (кмю, АэроСеть): 1 кмю = 10⁻³ Н·с²/м⁸ → делим на 1000
-    // "si": уже в Н·с²/м⁸ → не трогаем
+    // Перевод R из единиц CSV в кМюрг (для manualR):
+    // "kmu" (кмю, АэроСеть): уже в кМюрг → берём как есть
+    // "si": в Н·с²/м⁸ → делим на 9.81 чтобы перевести в кМюрг
     const importedR = rb.resistance > 0
-      ? rb.resistance * (resistanceUnit === "kmu" ? 1e-3 : 1)
+      ? rb.resistance * (resistanceUnit === "kmu" ? 1 : 1 / 9.81)
       : 0;
 
     // Определяем тип выработки из CSV
@@ -391,7 +391,7 @@ export function detectResistanceUnit(resistances: number[]): "kmu" | "si" {
   if (nonZero.length === 0) return "kmu"; // нет данных — предполагаем кмю
   const sorted = [...nonZero].sort((a, b) => a - b);
   const median = sorted[Math.floor(sorted.length / 2)];
-  const unit = median < 0.5 ? "si" : "kmu";
+  const unit = median < 0.05 ? "si" : "kmu";
   return unit;
 }
 
