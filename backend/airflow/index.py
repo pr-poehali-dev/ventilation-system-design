@@ -11,7 +11,7 @@ method = "mkr"   — МКР (метод контурных расходов), т
   H_nat_i = ρ_i * g * (z_from_i - z_to_i), ρ = 353/(273+T)
 """
 import json, math, collections
-import numpy as np
+import numpy as np  # noqa
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -702,6 +702,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
         # Обновляем Q: Q[i] -= Σ_k dq_k * C[k,i]
         Q_np -= dq_arr @ C                 # (n_edges,)
+        np.nan_to_num(Q_np, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
 
         if max_dq < tol:
             it += 1
@@ -1189,85 +1190,82 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
     sync_tree_q(Q)
 
-    # ── Предварительно строим матрицу контуров C_mkr (numpy) ────────────────
-    # Индексы в global-пространстве edges
-    n_loops_mkr = len(contours_local)
-    n_edges_mkr = len(edges)
-    C_mkr       = np.zeros((n_loops_mkr, n_edges_mkr), dtype=np.float64)
-    for k, contour in enumerate(contours_local):
-        for li, sign in contour:
-            gi = local_to_global[li]
-            C_mkr[k, gi] = sign
+    # ── Предварительно строим вспомогательные структуры для МКР ────────────────
+    # Для каждого контура: список (gi, sign, edge)
+    contours_gi = []
+    for contour in contours_local:
+        contours_gi.append([(local_to_global[li], sign, active_edges_list[li])
+                             for li, sign in contour])
 
-    R_mkr     = np.array([e["R"] for e in edges], dtype=np.float64)
-    H_nat_mkr = np.array([e.get("naturalDraft", 0.0) for e in edges], dtype=np.float64)
+    R_arr_mkr     = np.array([e["R"] for e in edges], dtype=np.float64)
+    H_nat_arr_mkr = np.array([e.get("naturalDraft", 0.0) for e in edges], dtype=np.float64)
 
-    # ── Итерации МКР (numpy-векторизованные) ─────────────────────────────────
+    # ── Итерации МКР — метод Гаусса-Зейделя по контурам (быстрее сходится) ───
     max_dh = float("inf")
     max_dq = float("inf")
-    relaxation = 0.5
+    relaxation = 0.9       # стартуем с высокой релаксацией
+    prev_max_dh = float("inf")
     it = 0
-    Q_np_mkr = np.array(Q, dtype=np.float64)
+    Q_arr = np.array(Q, dtype=np.float64)
 
     for it in range(1, max_iter + 1):
-        # Qd[k,i] = Q[i] * C_mkr[k,i] — расход в направлении обхода контура
-        Qd_mkr   = Q_np_mkr * C_mkr              # (n_loops, n_edges)
-        absQd_mkr = np.abs(Qd_mkr)
-        signs_mkr = np.sign(Qd_mkr)
-        signs_mkr[signs_mkr == 0] = 1.0
+        max_dh = 0.0
+        max_dq = 0.0
 
-        # Базовая невязка: Σ R·Qd·|Qd|
-        sum_h_mkr   = (R_mkr * Qd_mkr * absQd_mkr).sum(axis=1)
-        sum_den_mkr = (2.0 * R_mkr * absQd_mkr).sum(axis=1)
-
-        # Вклад естественной тяги (матрично)
-        if H_nat_mkr.any():
-            sum_h_mkr -= (H_nat_mkr * signs_mkr).sum(axis=1)
-
-        # Вклад вентиляторов (Python — их единицы)
-        for k, contour in enumerate(contours_local):
-            for li, sign in contour:
-                e = active_edges_list[li]
+        # Зейдель: обновляем Q после каждого контура → быстрая сходимость
+        for contour_gi in contours_gi:
+            num = 0.0
+            den = 0.0
+            for gi, sign, e in contour_gi:
+                qd  = float(Q_arr[gi]) * sign
+                R   = e["R"]
+                num += R * qd * abs(qd)
+                den += 2.0 * R * abs(qd)
                 if e.get("hasFan") and not e.get("fanStopped"):
-                    gi  = local_to_global[li]
-                    qi  = float(Q_np_mkr[gi])
-                    s   = 1.0 if qi * sign >= 0 else -1.0
-                    H   = _mkr_fan_H(e, qi)
-                    sum_h_mkr[k]   -= H * s
-                    sum_den_mkr[k] += _mkr_fan_dH(e, qi)
+                    s   = 1.0 if qd >= 0 else -1.0
+                    H   = _mkr_fan_H(e, float(Q_arr[gi]))
+                    num -= H * s
+                    den += _mkr_fan_dH(e, float(Q_arr[gi]))
+                h_nat = H_nat_arr_mkr[gi]
+                if h_nat != 0.0:
+                    num -= h_nat * (1.0 if qd >= 0 else -1.0)
 
-        # δQ
-        valid_mkr = sum_den_mkr > 1e-12
-        dq_raw_mkr = np.where(valid_mkr, -sum_h_mkr / np.where(valid_mkr, sum_den_mkr, 1.0), 0.0)
+            if den < 1e-12:
+                continue
 
-        # Ограничение 80% от max|Q| в контуре (минимум q0/2 чтобы не блокировать первые итерации)
-        q_max_mkr = (np.abs(Q_np_mkr) * np.abs(C_mkr)).max(axis=1)
-        q_max_mkr = np.maximum(q_max_mkr, q0 * 0.5)
-        limit_mkr = 0.8 * q_max_mkr
-        dq_mkr    = relaxation * np.clip(dq_raw_mkr, -limit_mkr, limit_mkr)
+            dq_raw = -num / den
+            q_scale = max(max(abs(float(Q_arr[gi])) for gi, _, _ in contour_gi), q0 * 0.1, 0.01)
+            dq = relaxation * max(-q_scale * 0.9, min(q_scale * 0.9, dq_raw))
 
-        max_dh = float(np.max(np.abs(sum_h_mkr)))
-        max_dq = float(np.max(np.abs(dq_mkr)))
+            if abs(num) > max_dh:
+                max_dh = abs(num)
+            if abs(dq) > max_dq:
+                max_dq = abs(dq)
 
-        # Обновляем хорды: Q[i] += Σ_k dq_k * C_mkr[k,i]
-        Q_np_mkr += dq_mkr @ C_mkr
-        np.nan_to_num(Q_np_mkr, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
+            for gi, sign, _ in contour_gi:
+                Q_arr[gi] += dq * sign
+
+        np.nan_to_num(Q_arr, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
 
         # Синхронизация ветвей дерева по Кирхгофу-1
-        Q_list = Q_np_mkr.tolist()
+        Q_list = Q_arr.tolist()
         sync_tree_q(Q_list)
-        Q_np_mkr = np.array(Q_list, dtype=np.float64)
+        Q_arr = np.array(Q_list, dtype=np.float64)
 
-        # Адаптивное демпфирование
-        if it > 50 and max_dh < 50:
-            relaxation = min(1.0, relaxation + 0.01)
+        # Адаптивная релаксация: снижаем если расходимся
+        if it > 10:
+            if max_dh > prev_max_dh * 1.05:
+                relaxation = max(0.3, relaxation * 0.85)
+            elif max_dh < prev_max_dh * 0.95 and it > 50:
+                relaxation = min(1.0, relaxation + 0.005)
+        prev_max_dh = max_dh
 
-        # Критерий остановки: двойной (по ΔH И по δQ)
+        # Критерий остановки
         if max_dh < tol_h or max_dq < tol_q:
             it += 1
             break
 
-    Q = Q_np_mkr.tolist()
+    Q = Q_arr.tolist()
     converged = max_dh < tol_h or max_dq < tol_q
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
@@ -1289,10 +1287,26 @@ def empty_result(msg):
             "diagnostics": [{"level": "warning", "category": "topology", "message": msg}]}
 
 
+def _sanitize(obj):
+    """Рекурсивно заменяет NaN/Inf→0, numpy-скаляры→Python-типы."""
+    if isinstance(obj, bool) or isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        v = float(obj)
+        return 0.0 if not math.isfinite(v) else v
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 def ok(data):
     return {"statusCode": 200,
             "headers": {**CORS, "Content-Type": "application/json"},
-            "body": json.dumps(data, ensure_ascii=False)}
+            "body": json.dumps(_sanitize(data), ensure_ascii=False)}
 
 
 def err(code, msg):
