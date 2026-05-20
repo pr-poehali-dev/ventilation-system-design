@@ -3263,6 +3263,7 @@ export default function CadPage() {
                   setActiveSide("params");
                 }
               }}
+              onBranchLabelOffset={(id, ox, oy) => setBranches(prev => prev.map(b => b.id === id ? { ...b, labelOffsetX: ox, labelOffsetY: oy } : b))}
               activeSymbolTypeId={activeSymbolTypeId}
               onSymbolPlace={(typeId, x, y, branchId) => {
                 if (SQUAD_TYPES.includes(typeId)) {

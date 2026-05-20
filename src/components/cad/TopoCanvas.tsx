@@ -119,6 +119,8 @@ interface Props {
   onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null) => void;
   /** Конфигурация единиц измерения для отображения меток на схеме */
   unitsConfig?: UnitsConfig;
+  /** Смещение блока индикаторов ветви (перетаскивание пользователем) */
+  onBranchLabelOffset?: (id: string, ox: number, oy: number) => void;
 }
 
 export type FlowDisplayMode =
@@ -154,6 +156,7 @@ export default function TopoCanvas(props: Props) {
     activeSymbolTypeId, onSymbolPlace,
     restoreView, onViewStateChange,
     unitsConfig = DEFAULT_UNITS_CONFIG,
+    onBranchLabelOffset,
   } = props;
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -1085,15 +1088,11 @@ export default function TopoCanvas(props: Props) {
               {view.scale > 0.04 && (() => {
                 const ic = infoConfig;
                 const labelOpacity = Math.min(1, (view.scale - 0.04) / 0.08);
-                // Порядковый номер ветви (1, 2, 3...) из ID вида "B1"
                 const branchNum = b.id.replace(/^B/, "");
                 const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
-
-                // Кружок с номером ветви — всегда (если branchNumber включён или нет infoConfig)
                 const showCircle = !ic || ic.branchNumber;
                 const circleR = 10;
 
-                // Метки параметров после расчёта (Q и V) — рядом с ветвью, не при клике
                 const dataLines: string[] = [];
                 if (isDead) {
                   // тупиковая ветвь — ничего не показываем
@@ -1113,21 +1112,28 @@ export default function TopoCanvas(props: Props) {
                   if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
                 } else if (hasCalc) {
-                  // Без infoConfig: только результаты расчёта компактно
                   dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
                   if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
                 }
 
-                const lh = 10;
+                const lh = 11;
                 const bh = dataLines.length * lh + 4;
-                const bwBox = Math.max(44, dataLines.reduce((mx, s) => Math.max(mx, s.length * 5.2), 0) + 8);
-                // Смещение: кружок влево от середины, данные справа
-                const offsetY = -16;
+                // Пользовательское смещение метки (перетаскивание)
+                const lox = b.labelOffsetX ?? 0;
+                const loy = b.labelOffsetY ?? (-16);
+                // Позиция блока данных с учётом смещения
+                const dataX = midX + lox + (showCircle ? circleR + 4 : 0);
+                const dataY = midY + loy;
+                const hasData = dataLines.length > 0;
+                // Выноска от середины ветви к блоку данных
+                const leaderEndX = dataX;
+                const leaderEndY = dataY;
 
                 return (
-                  <g transform={`translate(${midX},${midY})`} opacity={labelOpacity}>
+                  <g opacity={labelOpacity}>
+                    {/* Кружок с номером */}
                     {showCircle && (
-                      <g transform={`translate(0,${offsetY})`}>
+                      <g transform={`translate(${midX + lox},${midY + loy})`}>
                         <circle r={circleR} fill="white" stroke={isSel ? "#2563eb" : "#374151"} strokeWidth={isSel ? 1.5 : 1} />
                         <text textAnchor="middle" dominantBaseline="middle"
                           fontSize={branchNum.length > 2 ? "7" : "9"}
@@ -1137,16 +1143,49 @@ export default function TopoCanvas(props: Props) {
                         </text>
                       </g>
                     )}
-                    {dataLines.length > 0 && (
-                      <g transform={`translate(${circleR + 4 + bwBox / 2},${offsetY})`}>
-                        <rect x={-bwBox / 2} y={-bh / 2} width={bwBox} height={bh} rx="2"
-                          fill="white" stroke="#d1d5db" strokeWidth="0.7" opacity="0.93" />
+                    {/* Выноска если метка сдвинута */}
+                    {hasData && (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) && (
+                      <line
+                        x1={midX} y1={midY}
+                        x2={leaderEndX} y2={leaderEndY}
+                        stroke="#94a3b8" strokeWidth="0.8" strokeDasharray="3 2"
+                        pointerEvents="none"
+                      />
+                    )}
+                    {/* Блок текста — без фона, с белой обводкой для читаемости */}
+                    {hasData && (
+                      <g
+                        transform={`translate(${dataX},${dataY})`}
+                        style={{ cursor: onBranchLabelOffset ? "grab" : "default" }}
+                        onMouseDown={onBranchLabelOffset ? (e) => {
+                          if (e.button !== 0) return;
+                          e.stopPropagation();
+                          const startX = e.clientX;
+                          const startY = e.clientY;
+                          const origOx = b.labelOffsetX ?? 0;
+                          const origOy = b.labelOffsetY ?? -16;
+                          const onMove = (me: MouseEvent) => {
+                            onBranchLabelOffset(b.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                          };
+                          const onUp = () => {
+                            window.removeEventListener("mousemove", onMove);
+                            window.removeEventListener("mouseup", onUp);
+                          };
+                          window.addEventListener("mousemove", onMove);
+                          window.addEventListener("mouseup", onUp);
+                        } : undefined}
+                        onDoubleClick={onBranchLabelOffset ? (e) => {
+                          e.stopPropagation();
+                          onBranchLabelOffset(b.id, 0, -16);
+                        } : undefined}
+                      >
                         {dataLines.map((ln, li) => (
                           <text key={li} textAnchor="middle" dominantBaseline="middle"
                             y={-bh / 2 + lh * (li + 0.6)}
                             fontSize="8.5"
-                            fontWeight="500"
-                            fill={overV ? "#dc2626" : "#1f2937"}>
+                            fontWeight="600"
+                            fill={overV ? "#dc2626" : "#1e3a5f"}
+                            style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3, strokeLinejoin: "round" }}>
                             {ln}
                           </text>
                         ))}
@@ -1212,7 +1251,11 @@ export default function TopoCanvas(props: Props) {
 
           const isSel = selectedSymbolId === sym.id;
           const sc = sym.scale ?? 1;
-          const SZ = Math.round(32 * sc);
+          // Контр-масштаб: при зуме схемы символы сохраняют читаемый размер.
+          // При view.scale < 0.4 символы уменьшаются вместе со схемой (не торчат огромными),
+          // при view.scale > 0.4 — остаются нормального размера (не растут бесконечно).
+          const symScale = Math.min(1, view.scale / 0.4);
+          const SZ = Math.round(32 * sc * symScale);
           const HX = px - SZ / 2;
           const HY = py - SZ / 2 - 4;
 
@@ -1522,7 +1565,7 @@ export default function TopoCanvas(props: Props) {
                 if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
-                const fSize = Math.max(8, Math.round(9 * sc));
+                const fSize = Math.max(6, Math.round(9 * sc * symScale));
                 const lineH = fSize + 3;
                 const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
                 const boxH = lines.length * lineH + 6;
