@@ -435,17 +435,30 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
     fans = [e for e in edges if e["hasFan"]]
     active_fans = [e for e in fans if not e.get("fanStopped")]
+
+    # Проверяем наличие естественной тяги — если есть Δz, расчёт без вентилятора возможен
+    has_natural_draft = any(abs(e.get("naturalDraft", 0.0)) > 0.5 for e in edges)
+
     if not fans:
-        diag.append({"level": "warning", "category": "topology",
-                     "message": "Нет вентилятора — расход нулевой"})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
-    if not active_fans:
-        # Аналог disable_fan() → "Критическая ошибка: сеть не проветривается"
-        stopped_names = [e["id"] for e in fans if e.get("fanStopped")]
-        diag.append({"level": "error", "category": "fan",
-                     "message": f"Аварийное отключение: все вентиляторы остановлены ({', '.join(stopped_names)}) — "
-                                f"сеть не проветривается. Критическая ситуация!"})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
+        if has_natural_draft:
+            diag.append({"level": "info", "category": "fan",
+                         "message": "Вентиляторов нет — расчёт ведётся только по естественной тяге (разность высот)"})
+        else:
+            diag.append({"level": "warning", "category": "topology",
+                         "message": "Нет вентилятора и нет разности высот — расход нулевой"})
+            return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
+    elif not active_fans:
+        if has_natural_draft:
+            stopped_names = [e["id"] for e in fans if e.get("fanStopped")]
+            diag.append({"level": "warning", "category": "fan",
+                         "message": f"Вентиляторы остановлены ({', '.join(stopped_names)}) — "
+                                    f"расчёт ведётся только по естественной тяге"})
+        else:
+            stopped_names = [e["id"] for e in fans if e.get("fanStopped")]
+            diag.append({"level": "error", "category": "fan",
+                         "message": f"Аварийное отключение: все вентиляторы остановлены ({', '.join(stopped_names)}) — "
+                                    f"сеть не проветривается. Критическая ситуация!"})
+            return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
 
     log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)} атм_узлов={len(atm)}")
     # Степень GND — важна для диагностики потерь
@@ -539,7 +552,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
         # constant-вентилятор
         H_fan = sum(fan_H(e, 1.0) for e in fans)
-        return math.sqrt(H_fan / R_total) if H_fan > 0 else 1.0
+        if H_fan > 0:
+            return math.sqrt(H_fan / R_total)
+        # Нет вентиляторов (или все остановлены) — начальный Q из естественной тяги
+        H_nat_total = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
+        if H_nat_total > 0 and R_total > 0:
+            return math.sqrt(H_nat_total / R_total)
+        return 1.0
 
     # Начальное распределение через остовное дерево + BFS.
     # Все активные ветви получают Q удовлетворяющий 1-му закону Кирхгофа.
