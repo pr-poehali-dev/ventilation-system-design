@@ -619,15 +619,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             nxt = [(gi, nb) for gi, nb in adj_tree[node] if nb not in visited]
             if not nxt:
                 continue
-            # Делим входящий расход пропорционально проводимости 1/R (лучшее начальное приближение)
-            conductances = [1.0 / max(edges[gi]["R"], 1e-9) for gi, nb in nxt]
-            total_cond = sum(conductances)
-            for (gi, nb), cond in zip(nxt, conductances):
-                q_each = incoming * cond / total_cond
+            # Делим входящий расход поровну
+            q_each = incoming / len(nxt)
+            for gi, nb in nxt:
                 e = edges[gi]
                 sign = +1 if e["a"] == node else -1
                 Q[gi] = q_each * sign
-                node_q[nb] = node_q.get(nb, 0.0) + abs(q_each)
+                node_q[nb] = node_q.get(nb, 0.0) + q_each
                 visited.add(nb)
                 queue.append(nb)
     else:
@@ -677,10 +675,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 continue
 
             dq = alpha * sum_h / sum_2rq
+            # Ограничение поправки: не более q0 за шаг, чтобы не улететь в взрыв
+            dq = max(-q0, min(q0, dq))
             max_dq = max(max_dq, abs(dq))
 
             for gi, sign in loop:
                 Q[gi] -= dq * sign
+                if not math.isfinite(Q[gi]):
+                    Q[gi] = 0.0
 
         if max_dq < tol:
             it += 1
@@ -1203,6 +1205,8 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
 
             dq_raw = -num / den
+            # Ограничение поправки: не более q0 за шаг
+            dq_raw = max(-q0, min(q0, dq_raw))
             dq = relaxation * dq_raw
 
             if abs(num) > max_dh:
