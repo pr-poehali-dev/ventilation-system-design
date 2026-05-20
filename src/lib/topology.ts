@@ -556,11 +556,12 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
   }
 
   // 2) Сопротивление с учётом плотности воздуха
+  // manualR хранится в кМюрг (ввод пользователя), переводим в Н·с²/м⁸: × g = × 9.81
   const r = calcResistance({
     mode: b.resistanceMode,
     alpha: b.alphaCoef,
     roughness: b.roughness,
-    manualR: b.manualR,
+    manualR: b.manualR * 9.81,
     localXi: b.localXi,
     S: area,
     P: perimeter,

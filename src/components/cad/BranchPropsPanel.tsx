@@ -467,7 +467,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             )}
 
             {branch.resistanceMode === "manual" && (
-              <InlineLabel label="Сопротивление R, кμ">
+              <InlineLabel label="Сопротивление R, кМюрг">
                 <EditInput
                   type="number" step="0.001"
                   value={branch.manualR}
@@ -574,12 +574,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <ComputedInput value={numFmt(branch.area, 2)} />
             </ParamRow>
 
-            <ParamRow id="v_resistance" label="Аэродин. сопр. R, кμ" visible={visible.has("v_resistance")} onToggle={toggle}>
-              <ComputedInput value={fmtR(branch.resistance / 10, 4)} />
+            <ParamRow id="v_resistance" label="Аэродин. сопр. R, кМюрг" visible={visible.has("v_resistance")} onToggle={toggle}>
+              <ComputedInput value={fmtR(branch.resistance / 9.81, 4)} />
             </ParamRow>
 
-            <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
-              <ComputedInput value={fmtR(unitR / 10, 5)} />
+            <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кМюрг/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
+              <ComputedInput value={fmtR(unitR / 9.81, 5)} />
             </ParamRow>
 
             <ParamRow id="v_velocity" label="Скорость V, м/с" visible={visible.has("v_velocity")} onToggle={toggle}>
@@ -598,12 +598,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <ComputedInput value={numFmt(branch.dP, 1)} />
             </ParamRow>
 
-            <ParamRow id="v_r_friction" label="R трение, кμ" visible={visible.has("v_r_friction")} onToggle={toggle}>
-              <ComputedInput value={fmtR(branch.rFriction / 10, 4)} />
+            <ParamRow id="v_r_friction" label="R трение, кМюрг" visible={visible.has("v_r_friction")} onToggle={toggle}>
+              <ComputedInput value={fmtR(branch.rFriction / 9.81, 4)} />
             </ParamRow>
 
-            <ParamRow id="v_r_local" label="R местные, кμ" visible={visible.has("v_r_local")} onToggle={toggle}>
-              <ComputedInput value={fmtR(branch.rLocal / 10, 4)} />
+            <ParamRow id="v_r_local" label="R местные, кМюрг" visible={visible.has("v_r_local")} onToggle={toggle}>
+              <ComputedInput value={fmtR(branch.rLocal / 9.81, 4)} />
             </ParamRow>
 
             <ParamRow id="v_reynolds" label="Re (Рейнольдс), тыс." visible={visible.has("v_reynolds")} onToggle={toggle}>
