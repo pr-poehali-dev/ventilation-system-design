@@ -11,6 +11,7 @@ method = "mkr"   — МКР (метод контурных расходов), т
   H_nat_i = ρ_i * g * (z_from_i - z_to_i), ρ = 353/(273+T)
 """
 import json, math, collections
+import numpy as np
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -643,53 +644,70 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         global_loop = [(active_idx[ai], sign) for ai, sign in loop]
         loops_global.append(global_loop)
 
-    # Основной цикл Кросса (только по активным контурам)
+    # ── Предварительно строим матрицу контуров C (numpy) ────────────────
+    # C[k, i] = sign (+1/-1/0) — участие ветви i в контуре k
+    # R_arr[i], H_nat_arr[i] — массивы сопротивлений и естественной тяги
+    n_loops  = len(loops_global)
+    n_edges  = len(edges)
+    C        = np.zeros((n_loops, n_edges), dtype=np.float64)
+    for k, loop in enumerate(loops_global):
+        for gi, sign in loop:
+            C[k, gi] = sign
+
+    R_arr     = np.array([e["R"] for e in edges], dtype=np.float64)
+    H_nat_arr = np.array([e.get("naturalDraft", 0.0) for e in edges], dtype=np.float64)
+
+    # Маска вентиляторов (curve/constant)
+    fan_mask  = np.array([e["hasFan"] and not e.get("fanStopped", False) for e in edges], dtype=bool)
+
+    # Основной цикл Кросса (numpy-векторизованный)
     max_dq = float("inf")
     it     = 0
+    Q_np   = np.array(Q, dtype=np.float64)
 
     for it in range(1, max_iter + 1):
-        max_dq = 0.0
+        # Расходы в направлении обхода каждого контура: Qd[k,i] = Q[i] * C[k,i]
+        Qd = Q_np * C                      # (n_loops, n_edges)
+        absQd = np.abs(Qd)
 
-        for loop in loops_global:
-            # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan - H_nat) по контуру
-            sum_h   = 0.0  # Σ R·Q·|Q| - H_fan - H_nat
-            sum_2rq = 0.0  # Σ 2·R·|Q| + |dH/dQ|  (знаменатель)
+        # Потери давления: R·Qd·|Qd|
+        RQQ = R_arr * Qd * absQd           # (n_loops, n_edges)
+        sum_h_arr   = RQQ.sum(axis=1)      # (n_loops,)
+        sum_2rq_arr = (2.0 * R_arr * absQd).sum(axis=1)  # знаменатель
 
+        # Поправка от вентиляторов и естественной тяги (пока Python — их мало)
+        for k, loop in enumerate(loops_global):
             for gi, sign in loop:
-                e  = edges[gi]
-                qi = Q[gi] * sign  # расход в направлении обхода контура
-                R  = e["R"]
+                e = edges[gi]
+                qi = Q_np[gi] * sign
+                s  = 1.0 if qi >= 0 else -1.0
+                if e["hasFan"] and not e.get("fanStopped"):
+                    H = fan_H(e, abs(Q_np[gi]))
+                    sum_h_arr[k]   -= H * s
+                    sum_2rq_arr[k] += fan_dH(e, abs(Q_np[gi]))
+                if H_nat_arr[gi] != 0.0:
+                    sum_h_arr[k] -= H_nat_arr[gi] * s
 
-                sum_h   += R * qi * abs(qi)
-                sum_2rq += 2.0 * R * abs(qi)
+        # δQ для каждого контура
+        valid = sum_2rq_arr > 1e-12
+        dq_arr = np.where(valid, alpha * sum_h_arr / np.where(valid, sum_2rq_arr, 1.0), 0.0)
 
-                if e["hasFan"]:
-                    H = fan_H(e, abs(Q[gi]))
-                    sum_h   -= H * (1.0 if qi >= 0 else -1.0)
-                    sum_2rq += fan_dH(e, abs(Q[gi]))
+        # Ограничение: не более 50% max|Q| контура
+        q_max_per_loop = (np.abs(Q_np) * np.abs(C)).max(axis=1)  # (n_loops,)
+        q_max_per_loop = np.maximum(q_max_per_loop, 0.1)
+        limit = 0.5 * q_max_per_loop
+        dq_arr = np.clip(dq_arr, -limit, limit)
 
-                # Естественная тяга: вычитаем из невязки (знак соответствует знаку qi)
-                h_nat = e.get("naturalDraft", 0.0)
-                if h_nat != 0.0:
-                    sum_h -= h_nat * (1.0 if qi >= 0 else -1.0)
+        max_dq = float(np.max(np.abs(dq_arr)))
 
-            if sum_2rq < 1e-12:
-                continue
-
-            dq = alpha * sum_h / sum_2rq
-            # Ограничиваем поправку: не более 50% от текущего среднего Q в контуре,
-            # чтобы не улетать за рабочий диапазон вентилятора при плохом начальном приближении
-            q_avg = sum(abs(Q[gi]) for gi, _ in loop) / max(1, len(loop))
-            if q_avg > 0:
-                dq = max(-q_avg * 0.5, min(q_avg * 0.5, dq))
-            max_dq = max(max_dq, abs(dq))
-
-            for gi, sign in loop:
-                Q[gi] -= dq * sign
+        # Обновляем Q: Q[i] -= Σ_k dq_k * C[k,i]
+        Q_np -= dq_arr @ C                 # (n_edges,)
 
         if max_dq < tol:
             it += 1
             break
+
+    Q = Q_np.tolist()
 
     converged = max_dq < tol
     if not converged:
@@ -1171,62 +1189,74 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
     sync_tree_q(Q)
 
-    # ── Итерации МКР ────────────────────────────────────────────────────────
+    # ── Предварительно строим матрицу контуров C_mkr (numpy) ────────────────
+    # Индексы в global-пространстве edges
+    n_loops_mkr = len(contours_local)
+    n_edges_mkr = len(edges)
+    C_mkr       = np.zeros((n_loops_mkr, n_edges_mkr), dtype=np.float64)
+    for k, contour in enumerate(contours_local):
+        for li, sign in contour:
+            gi = local_to_global[li]
+            C_mkr[k, gi] = sign
+
+    R_mkr     = np.array([e["R"] for e in edges], dtype=np.float64)
+    H_nat_mkr = np.array([e.get("naturalDraft", 0.0) for e in edges], dtype=np.float64)
+
+    # ── Итерации МКР (numpy-векторизованные) ─────────────────────────────────
     max_dh = float("inf")
     max_dq = float("inf")
     relaxation = 0.5
     it = 0
+    Q_np_mkr = np.array(Q, dtype=np.float64)
 
     for it in range(1, max_iter + 1):
-        max_dh = 0.0
-        max_dq = 0.0
+        # Qd[k,i] = Q[i] * C_mkr[k,i] — расход в направлении обхода контура
+        Qd_mkr   = Q_np_mkr * C_mkr              # (n_loops, n_edges)
+        absQd_mkr = np.abs(Qd_mkr)
+        signs_mkr = np.sign(Qd_mkr)
+        signs_mkr[signs_mkr == 0] = 1.0
 
-        for contour in contours_local:
-            num = 0.0   # невязка ΔH
-            den = 0.0   # знаменатель
+        # Базовая невязка: Σ R·Qd·|Qd|
+        sum_h_mkr   = (R_mkr * Qd_mkr * absQd_mkr).sum(axis=1)
+        sum_den_mkr = (2.0 * R_mkr * absQd_mkr).sum(axis=1)
 
+        # Вклад естественной тяги (матрично)
+        if H_nat_mkr.any():
+            sum_h_mkr -= (H_nat_mkr * signs_mkr).sum(axis=1)
+
+        # Вклад вентиляторов (Python — их единицы)
+        for k, contour in enumerate(contours_local):
             for li, sign in contour:
-                e  = active_edges_list[li]
-                gi = local_to_global[li]
-                qd = Q[gi] * sign      # расход в направлении обхода контура
-                R  = e["R"]
+                e = active_edges_list[li]
+                if e.get("hasFan") and not e.get("fanStopped"):
+                    gi  = local_to_global[li]
+                    qi  = float(Q_np_mkr[gi])
+                    s   = 1.0 if qi * sign >= 0 else -1.0
+                    H   = _mkr_fan_H(e, qi)
+                    sum_h_mkr[k]   -= H * s
+                    sum_den_mkr[k] += _mkr_fan_dH(e, qi)
 
-                num += R * qd * abs(qd)
-                den += 2.0 * R * abs(qd)
+        # δQ
+        valid_mkr = sum_den_mkr > 1e-12
+        dq_raw_mkr = np.where(valid_mkr, -sum_h_mkr / np.where(valid_mkr, sum_den_mkr, 1.0), 0.0)
 
-                # Вентилятор
-                if e.get("hasFan"):
-                    H = _mkr_fan_H(e, Q[gi])
-                    num -= H * (1.0 if qd >= 0 else -1.0)
-                    den += _mkr_fan_dH(e, Q[gi])
+        # Ограничение 80% от max|Q| в контуре (минимум q0/2 чтобы не блокировать первые итерации)
+        q_max_mkr = (np.abs(Q_np_mkr) * np.abs(C_mkr)).max(axis=1)
+        q_max_mkr = np.maximum(q_max_mkr, q0 * 0.5)
+        limit_mkr = 0.8 * q_max_mkr
+        dq_mkr    = relaxation * np.clip(dq_raw_mkr, -limit_mkr, limit_mkr)
 
-                # Естественная тяга
-                h_nat = e.get("naturalDraft", 0.0)
-                if h_nat != 0.0:
-                    num -= h_nat * (1.0 if qd >= 0 else -1.0)
+        max_dh = float(np.max(np.abs(sum_h_mkr)))
+        max_dq = float(np.max(np.abs(dq_mkr)))
 
-            if den < 1e-12:
-                continue
-
-            dq_raw = -num / den
-            # Ограничение: не более 80% от max|Q| в контуре
-            q_scale = max(abs(Q[local_to_global[li]]) for li, _ in contour) or 0.1
-            dq_max  = q_scale * 0.8
-            dq = relaxation * max(-dq_max, min(dq_max, dq_raw))
-
-            if abs(num) > max_dh:
-                max_dh = abs(num)
-            if abs(dq) > max_dq:
-                max_dq = abs(dq)
-
-            for li, sign in contour:
-                gi = local_to_global[li]
-                Q[gi] += dq * sign
-                if not math.isfinite(Q[gi]):
-                    Q[gi] = 0.0
+        # Обновляем хорды: Q[i] += Σ_k dq_k * C_mkr[k,i]
+        Q_np_mkr += dq_mkr @ C_mkr
+        np.nan_to_num(Q_np_mkr, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
 
         # Синхронизация ветвей дерева по Кирхгофу-1
-        sync_tree_q(Q)
+        Q_list = Q_np_mkr.tolist()
+        sync_tree_q(Q_list)
+        Q_np_mkr = np.array(Q_list, dtype=np.float64)
 
         # Адаптивное демпфирование
         if it > 50 and max_dh < 50:
@@ -1237,6 +1267,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             it += 1
             break
 
+    Q = Q_np_mkr.tolist()
     converged = max_dh < tol_h or max_dq < tol_q
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
