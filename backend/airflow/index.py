@@ -88,10 +88,10 @@ def fan_H(e, Q):
             rh1 = float(e.get("reverseH1", 0))
             rh2 = float(e.get("reverseH2", 0))
             q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-            # За границей qMax фиксируем H при qMax (не обнуляем)
+            # За границей qMax — фиксируем H при qMax (не обнуляем)
             q_calc = min(q_one, q_max_rev)
             return max(0.0, rh0 + rh1 * q_calc + rh2 * q_calc * q_calc)
-        # Прямая характеристика: за границей qMax фиксируем H при qMax (не обнуляем)
+        # Прямая характеристика: за границей qMax фиксируем H при qMax
         q_max = float(e.get("qMax", 1e9))
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
