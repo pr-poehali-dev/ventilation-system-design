@@ -84,20 +84,20 @@ def fan_H(e, Q):
             return 0.0
         # При реверсе — используем отдельную характеристику если передана
         if e.get("fanReverse") and e.get("reverseH0") is not None:
-            q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-            if q_one > q_max_rev:
-                return 0.0
             rh0 = float(e.get("reverseH0", 0))
             rh1 = float(e.get("reverseH1", 0))
             rh2 = float(e.get("reverseH2", 0))
-            return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
-        # Прямая характеристика
-        if q_one > float(e.get("qMax", 1e9)):
-            return 0.0
+            q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+            # За границей qMax фиксируем H при qMax (не обнуляем)
+            q_calc = min(q_one, q_max_rev)
+            return max(0.0, rh0 + rh1 * q_calc + rh2 * q_calc * q_calc)
+        # Прямая характеристика: за границей qMax фиксируем H при qMax (не обнуляем)
+        q_max = float(e.get("qMax", 1e9))
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
-        return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
+        q_calc = min(q_one, q_max)
+        return max(0.0, h0 + h1 * q_calc + h2 * q_calc * q_calc)
     return float(e.get("fanPressure", 0))
 
 
