@@ -1031,13 +1031,19 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               const curve = getFanById(branch.fanCurveId);
               if (!curve) return null;
               const Q = Math.abs(branch.flow);
-              const qMaxScaled = curve.qMax * (branch.fanRpm > 0 && curve.rpmNominal > 0
-                ? branch.fanRpm / curve.rpmNominal : 1);
+              const k = (branch.fanRpm > 0 && curve.rpmNominal > 0) ? branch.fanRpm / curve.rpmNominal : 1;
+              let af = 1.0;
+              if (curve.bladeAngles.length >= 2) {
+                const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
+                const a = Math.min(hi, Math.max(lo, branch.fanBladeAngle ?? (lo + hi) / 2));
+                af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
+              }
+              const qMaxScaled = curve.qMax * af * k;
               if (Q <= qMaxScaled * 1.02) return null;
               return (
                 <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
                   style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
-                  ⚠ Q={Q.toFixed(2)} м³/с превышает max {qMaxScaled.toFixed(1)} м³/с для {curve.name}. Вентилятор работает вне паспортной зоны.
+                  ⚠ Q={Q.toFixed(2)} м³/с превышает max {qMaxScaled.toFixed(1)} м³/с для {curve.name} (угол {branch.fanBladeAngle ?? "-"}°). Вентилятор вне паспортной зоны.
                 </div>
               );
             })()}

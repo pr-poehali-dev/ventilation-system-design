@@ -1110,8 +1110,8 @@ export default function CadPage() {
                 h0: curve.h0 * af * k * k,
                 h1: curve.h1 * k,
                 h2: curve.h2,
-                qMax: curve.qMax * k,
-                qMin: curve.qMin * k,
+                qMax: curve.qMax * af * k,
+                qMin: curve.qMin * af * k,
                 // Реверсная P–Q характеристика (масштабируется так же по оборотам)
                 ...(curve.reverseH0 !== undefined ? {
                   reverseH0:  curve.reverseH0 * k * k,
