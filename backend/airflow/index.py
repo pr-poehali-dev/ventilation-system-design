@@ -101,6 +101,35 @@ def fan_H(e, Q):
     return float(e.get("fanPressure", 0))
 
 
+def fan_H_display(e, Q):
+    """Напор вентилятора для отображения в результате.
+    В отличие от fan_H(), не обнуляет H при Q > qMax —
+    фиксирует значение на границе qMax (клипование).
+    Итерационный расчёт эта функция не затрагивает.
+    """
+    if not e.get("hasFan") or e.get("fanStopped"):
+        return 0.0
+    N = max(1, int(e.get("fanParallel", 1) or 1))
+    if e.get("fanMode", "constant") != "curve":
+        return float(e.get("fanPressure", 0))
+    q_one = abs(Q) / N
+    if q_one <= 0:
+        return 0.0
+    if e.get("fanReverse") and e.get("reverseH0") is not None:
+        rh0 = float(e.get("reverseH0", 0))
+        rh1 = float(e.get("reverseH1", 0))
+        rh2 = float(e.get("reverseH2", 0))
+        q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+        qc = min(q_one, q_max_rev)
+        return max(0.0, rh0 + rh1 * qc + rh2 * qc * qc)
+    q_max = float(e.get("qMax", 1e9))
+    h0 = float(e.get("h0", 0))
+    h1 = float(e.get("h1", 0))
+    h2 = float(e.get("h2", 0))
+    qc = min(q_one, q_max)
+    return max(0.0, h0 + h1 * qc + h2 * qc * qc)
+
+
 def fan_dH(e, Q):
     """|dH/dQ_total| для curve-вентилятора (с учётом параллели)."""
     if not e.get("hasFan"):
@@ -809,7 +838,7 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                     q = q_hi
 
         H    = e["R"] * q * abs(q)
-        Hv   = fan_H(e, abs(q))
+        Hv   = fan_H_display(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
 

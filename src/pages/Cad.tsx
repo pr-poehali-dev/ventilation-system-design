@@ -1172,18 +1172,22 @@ export default function CadPage() {
           if (b.fanMode === "curve") {
             const curve = getFanById(b.fanCurveId);
             if (curve) {
-              const Qfan = Math.abs(rb.Q);
-              const etaBase = fanEfficiency(curve, Qfan);
+              const N = Math.max(1, b.fanParallel ?? 1);
+              // k — масштаб оборотов (Q-ось кривой η линейна по n)
+              const k = (b.fanRpm > 0 && curve.rpmNominal > 0) ? b.fanRpm / curve.rpmNominal : 1;
+              // Q через один вентилятор, в координатах номинальных оборотов
+              const Q_one_nominal = Math.abs(rb.Q) / N / k;
+              const etaBase = fanEfficiency(curve, Q_one_nominal);
               const effFactor = b.fanReverse ? (curve.reverseEfficiencyFactor ?? 0.82) : 1;
               newFanEfficiency = Math.max(0.05, etaBase * effFactor);
-              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Qfan * Math.max(1, b.fanParallel ?? 1), newFanEfficiency);
+              // Мощность: H * Q_total / η  (H уже суммарный с параллелью)
+              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Math.abs(rb.Q), newFanEfficiency);
               newPower = newFanShaftPower;
             }
           } else {
-            // constant mode: КПД задаётся вручную, мощность = H*Q/η
+            // constant mode: КПД задаётся вручную, мощность = H * Q_total / η
             const eta = b.fanEfficiency > 0 ? b.fanEfficiency : 0.65;
-            const Qfan = Math.abs(rb.Q) * Math.max(1, b.fanParallel ?? 1);
-            newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Qfan, eta);
+            newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Math.abs(rb.Q), eta);
             newPower = newFanShaftPower;
           }
         }
