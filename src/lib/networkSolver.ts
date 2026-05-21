@@ -27,6 +27,7 @@
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
+import { airPermToR } from "./bulkheads";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -345,7 +346,25 @@ export function solveNetwork(
       id:            b.id,
       a:             toGnd(b.fromId),
       b:             toGnd(b.toId),
-      R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (b.bulkheadR ?? 0) : 0)),
+      R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => {
+        const mode = b.bulkheadResMode ?? "project";
+        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1000; // кМюрг → Мюрг
+        if (mode === "survey") {
+          const q = b.bulkheadSurveyQ ?? 0;
+          const dp = b.bulkheadSurveyDP ?? 0;
+          return q > 0 ? dp / (q * q) : 1e9;
+        }
+        // project: если задана воздухопроницаемость вручную — пересчитываем R = 1/A²
+        if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
+          return airPermToR(b.bulkheadCustomAirPerm!);
+        }
+        // project: воздухопроницаемость из справочника — пересчитываем R = 1/A²
+        if ((b.bulkheadAirPerm ?? 0) > 0) {
+          return airPermToR(b.bulkheadAirPerm!);
+        }
+        // fallback: R уже вычислен при выборе из справочника
+        return b.bulkheadR ?? 0;
+      })() : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanMode:       b.fanMode,
