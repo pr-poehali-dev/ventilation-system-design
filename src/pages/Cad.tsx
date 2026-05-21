@@ -497,28 +497,31 @@ export default function CadPage() {
   // ─── Синхронизация данных перемычек при изменении справочника ────────
   useEffect(() => {
     if (!mineBulkheads.length) return;
-    setBranches(prev => prev.map(br => {
-      if (!br.hasBulkhead || !br.bulkheadId) return br;
-      const ref = mineBulkheads.find(b => b.id === br.bulkheadId);
-      if (!ref) return br;
-      return {
-        ...br,
-        bulkheadName: ref.name,
-        bulkheadR: ref.rMkyurg,
-        bulkheadAirPerm: ref.airPermeability,
-        bulkheadFailurePressure: ref.failurePressure,
-      };
-    }));
-    // Синхронизируем bkAirPerm в символах перемычек из данных ветви
-    setSchemaSymbols(prev => prev.map(s => {
-      if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
-      const ref = mineBulkheads.find(b => {
-        const br = branches.find(br => br.id === s.branchId);
-        return br?.bulkheadId && b.id === br.bulkheadId;
+    // Обновляем ветви из справочника и сразу синхронизируем символы
+    setBranches(prev => {
+      const updated = prev.map(br => {
+        if (!br.hasBulkhead || !br.bulkheadId) return br;
+        const ref = mineBulkheads.find(b => b.id === br.bulkheadId);
+        if (!ref) return br;
+        return {
+          ...br,
+          bulkheadName: ref.name,
+          bulkheadR: ref.rMkyurg,
+          bulkheadAirPerm: ref.airPermeability,
+          bulkheadFailurePressure: ref.failurePressure,
+        };
       });
-      if (!ref) return s;
-      return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0 };
-    }));
+      // Синхронизируем символы сразу по актуальным (updated) ветвям
+      setSchemaSymbols(prev2 => prev2.map(s => {
+        if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
+        const br = updated.find(b => b.id === s.branchId);
+        if (!br || !br.bulkheadId) return s;
+        const ref = mineBulkheads.find(b => b.id === br.bulkheadId);
+        if (!ref) return s;
+        return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0 };
+      }));
+      return updated;
+    });
   }, [mineBulkheads]);
 
   // Синхронизация bkAirPerm в символах при изменении данных ветвей (выбор перемычки из справочника)
@@ -526,11 +529,10 @@ export default function CadPage() {
     setSchemaSymbols(prev => prev.map(s => {
       if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
       const br = branches.find(b => b.id === s.branchId);
-      if (!br || !(br.bulkheadAirPerm ?? 0)) return s;
+      if (!br || !br.bulkheadId) return s;
       if (s.bkAirPerm === br.bulkheadAirPerm && s.bkBulkheadR === br.bulkheadR) return s;
       return { ...s, bkAirPerm: br.bulkheadAirPerm ?? 0, bkBulkheadR: br.bulkheadR ?? 0 };
     }));
-   
   }, [branches]);
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
