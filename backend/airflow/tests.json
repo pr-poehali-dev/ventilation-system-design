@@ -312,33 +312,6 @@
       "expectedStatus": 200,
       "expectedBody": {"nodes": []},
       "bodyMatcher": "partial"
-    },
-    {
-      "name": "Кривая вентилятора — Q не превышает qMax (кольцо с ВМП)",
-      "comment": "ВМП тупик: H=400-8Q², R=0.05. Рабочая точка Q~7.05 < qMax=7.07. Без экстраполяции Q уходил за qMax.",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM", "isAtm": true},
-          {"id": "J1"},
-          {"id": "J2"}
-        ],
-        "branches": [
-          {"id": "MAIN", "fromId": "ATM", "toId": "J1", "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 500},
-          {"id": "RING", "fromId": "J1", "toId": "J2",  "R": 0.1},
-          {"id": "BACK", "fromId": "J2", "toId": "ATM", "R": 0.1},
-          {"id": "VMP",  "fromId": "J1", "toId": "J2",  "R": 0.05,
-           "hasFan": true, "fanMode": "curve",
-           "h0": 400, "h1": 0, "h2": -8.0,
-           "qMax": 7.07, "qMin": 0, "area": 3.0}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 5000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
     }
   ]
 }

@@ -69,10 +69,6 @@ def fan_H(e, Q):
     При реверсе используется отдельная P–Q характеристика если задана (reverseH0/H1/H2).
     N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
-
-    При Q > qMax парабола экстраполируется в отрицательную зону (не клипируется в 0),
-    чтобы солвер «чувствовал» срыв и находил правильную рабочую точку.
-    Ограничиваем снизу значением -h0 (не даём уходить в бесконечный минус).
     """
     if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
@@ -84,17 +80,20 @@ def fan_H(e, Q):
             return 0.0
         # При реверсе — используем отдельную характеристику если передана
         if e.get("fanReverse") and e.get("reverseH0") is not None:
+            q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+            if q_one > q_max_rev:
+                return 0.0
             rh0 = float(e.get("reverseH0", 0))
             rh1 = float(e.get("reverseH1", 0))
             rh2 = float(e.get("reverseH2", 0))
-            h = rh0 + rh1 * q_one + rh2 * q_one * q_one
-            return max(-abs(rh0), h)   # не уходим ниже -h0
-        # Прямая характеристика — экстраполируем параболу за qMax
+            return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
+        # Прямая характеристика
+        if q_one > float(e.get("qMax", 1e9)):
+            return 0.0
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
-        h = h0 + h1 * q_one + h2 * q_one * q_one
-        return max(-abs(h0), h)        # не уходим ниже -h0
+        return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
     return float(e.get("fanPressure", 0))
 
 
