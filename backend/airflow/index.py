@@ -396,295 +396,258 @@ def check_reverse(edges, Q_result, normal_flows, diag):
 
 
 def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
+    """
+    Метод Кросса (Андрияшев, «Расчёт вентиляционных сетей шахт», классический алгоритм).
+
+    Алгоритм:
+    1. Строим граф: атм. узлы → GND, ребро = ветвь с R, H_вент, H_нат.
+    2. Находим тупиковые ветви (итеративное удаление листьев) — Q=0.
+    3. По активным рёбрам строим остовное дерево (Union-Find).
+    4. Начальное Q: бисекция рабочей точки вентилятора → BFS-распространение
+       по дереву с соблюдением 1-го закона Кирхгофа.
+    5. Независимые контуры = хорда + путь в дереве между её узлами.
+    6. Итерации Кросса (Зейдель по контурам):
+       - невязка контура:  ΔH = Σ [ R·Qi·|Qi| - H_вент·sign - H_нат·sign ]
+       - поправка:         δQ = -ΔH / Σ(2·R·|Qi| + dH_вент/dQ)
+       - обновление:       Qi ← Qi + δQ·sign  (все ветви контура)
+    7. Сходимость: max|δQ| < ε.
+    """
     tol      = float(options.get("tolerance", 0.01))
     max_iter = int(options.get("maxIter", 5000))
-    alpha    = float(options.get("alpha", 1.0))  # релаксация
 
     log  = []
     diag = []
 
     edges, atm = build_graph(nodes_in, branches_in, surface_temp)
 
-    # Диагностика: суммарная естественная тяга в сети
-    nat_total = sum(abs(e.get("naturalDraft", 0.0)) for e in edges)
-    if nat_total > 1.0:
-        nat_max = max(edges, key=lambda e: abs(e.get("naturalDraft", 0.0)))
-        log.append(
-            f"Естественная тяга: T_пов={surface_temp:.1f}°C, "
-            f"суммарная |H_nat|={nat_total:.1f} Па, "
-            f"макс. ветвь «{nat_max['id']}» {nat_max.get('naturalDraft', 0.0):.1f} Па"
-        )
-    else:
-        log.append("Естественная тяга: не учитывается (все Δz=0 или нет данных о высотах)")
-
-    # Проверяем связность с атмосферой: GND должен иметь степень >= 2
-    # (подключён минимум к 2 рёбрам, т.е. есть реальный вход и выход на поверхность).
-    # Если степень GND == 1 — только один выход, циркуляция невозможна.
+    # ── Диагностика топологии ────────────────────────────────────────────
+    atm_count  = sum(1 for n in nodes_in if n.get("isAtm") or n.get("atmosphereLink"))
     gnd_degree = sum(1 for e in edges if e["a"] == GND or e["b"] == GND)
-    atm_count = sum(1 for n in nodes_in if n.get("isAtm") or n.get("atmosphereLink"))
-    if atm_count > 0 and gnd_degree < 2:
-        msg = (
-            "Только один узел связан с атмосферой. Для циркуляции воздуха нужно "
-            "минимум 2 выхода на поверхность (например, два ствола)."
-        )
-        diag.append({"level": "error", "category": "topology", "message": msg})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
     if atm_count == 0:
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет узлов, связанных с атмосферой. Добавьте минимум 2 поверхностных узла."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
-    fans = [e for e in edges if e["hasFan"]]
-    active_fans = [e for e in fans if not e.get("fanStopped")]
+    if gnd_degree < 2:
+        diag.append({"level": "error", "category": "topology",
+                     "message": "Только один узел связан с атмосферой. Для циркуляции воздуха нужно "
+                                "минимум 2 выхода на поверхность (например, два ствола)."})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
-    # Проверяем наличие естественной тяги — если есть Δz, расчёт без вентилятора возможен
-    has_natural_draft = any(abs(e.get("naturalDraft", 0.0)) > 0.5 for e in edges)
+    # ── Диагностика вентиляторов ─────────────────────────────────────────
+    fans        = [e for e in edges if e["hasFan"]]
+    active_fans = [e for e in fans if not e.get("fanStopped")]
+    has_nat     = any(abs(e.get("naturalDraft", 0.0)) > 0.5 for e in edges)
 
     if not fans:
-        if has_natural_draft:
-            diag.append({"level": "info", "category": "fan",
-                         "message": "Вентиляторов нет — расчёт ведётся только по естественной тяге (разность высот)"})
-        else:
+        if not has_nat:
             diag.append({"level": "warning", "category": "topology",
                          "message": "Нет вентилятора и нет разности высот — расход нулевой"})
             return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
+        diag.append({"level": "info", "category": "fan",
+                     "message": "Вентиляторов нет — расчёт ведётся только по естественной тяге"})
     elif not active_fans:
-        if has_natural_draft:
-            stopped_names = [e["id"] for e in fans if e.get("fanStopped")]
-            diag.append({"level": "warning", "category": "fan",
-                         "message": f"Вентиляторы остановлены ({', '.join(stopped_names)}) — "
-                                    f"расчёт ведётся только по естественной тяге"})
-        else:
-            stopped_names = [e["id"] for e in fans if e.get("fanStopped")]
+        if not has_nat:
+            stopped = [e["id"] for e in fans if e.get("fanStopped")]
             diag.append({"level": "error", "category": "fan",
-                         "message": f"Аварийное отключение: все вентиляторы остановлены ({', '.join(stopped_names)}) — "
+                         "message": f"Аварийное отключение: все вентиляторы остановлены ({', '.join(stopped)}) — "
                                     f"сеть не проветривается. Критическая ситуация!"})
             return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, True, 0.0, log, diag, force_zero=True)
+        stopped = [e["id"] for e in fans if e.get("fanStopped")]
+        diag.append({"level": "warning", "category": "fan",
+                     "message": f"Вентиляторы остановлены ({', '.join(stopped)}) — расчёт по естественной тяге"})
 
-    log.append(f"Метод Кросса: ветвей={len(edges)} вент={len(fans)} атм_узлов={len(atm)}")
-    # Степень GND — важна для диагностики потерь
-    gnd_edges = [e for e in edges if e["a"] == GND or e["b"] == GND]
-    log.append(f"GND степень={len(gnd_edges)}: {[e['id'] for e in gnd_edges]}")
-    print(f"[TOPO] GND степень={len(gnd_edges)}, атм={sorted(atm)}")
-    for e in gnd_edges:
-        print(f"[GND-edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
+    # Диагностика естественной тяги
+    nat_total = sum(abs(e.get("naturalDraft", 0.0)) for e in edges)
+    if nat_total > 1.0:
+        nat_max = max(edges, key=lambda e: abs(e.get("naturalDraft", 0.0)))
+        log.append(f"Естественная тяга: T_пов={surface_temp:.1f}°C, "
+                   f"суммарная |H_нат|={nat_total:.1f} Па, "
+                   f"макс. ветвь «{nat_max['id']}» {nat_max['naturalDraft']:.1f} Па")
+    else:
+        log.append("Естественная тяга: не учитывается (Δz=0 или одинаковые температуры)")
+
+    log.append(f"Метод Кросса: ветвей={len(edges)}, вент={len(fans)}, атм_узлов={len(atm)}")
     for e in edges:
-        log.append(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
-        print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f}{'  ВЕН' if e['hasFan'] else ''}")
+        print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f} Hнат={e.get('naturalDraft',0):.1f}"
+              f"{'  ВЕН' if e['hasFan'] else ''}")
 
-    log.append(f"Метод Кросса: всего ветвей={len(edges)}, вентиляторов={len(fans)}")
-
-    # ── Определяем тупиковые ветви ДО расчёта ──────────────────────────
-    # Тупиковые ветви ИСКЛЮЧАЮТСЯ из итераций Кросса (Q=0 принудительно).
-    # Причина: они не образуют замкнутых контуров → в них нет циркуляции.
-    # ВМП (вентилятор в тупике) — исключение, их расход вычисляется отдельно.
+    # ══ ШАГ 1: Тупиковые ветви — Q=0 ════════════════════════════════════
     dead_end_ids = find_dead_ends(edges)
     if dead_end_ids:
         log.append(f"Тупиков={len(dead_end_ids)}: {', '.join(sorted(dead_end_ids))}")
-        for eid in dead_end_ids:
-            log.append(f"  [тупик] {eid} → Q=0 (нет замкнутого пути)")
 
-    # Активные рёбра для расчёта Кросса (без тупиков)
     active_edges = [e for e in edges if e["id"] not in dead_end_ids]
-    active_idx   = [i for i, e in enumerate(edges) if e["id"] not in dead_end_ids]
+    active_idx   = {i: gi for gi, e in enumerate(edges)
+                    for i, ae in enumerate(active_edges) if ae["id"] == e["id"]}
+    # Перестроим: active_idx[ai] = global_idx
+    id_to_gi = {e["id"]: gi for gi, e in enumerate(edges)}
+    active_idx = [id_to_gi[e["id"]] for e in active_edges]
 
-    # Если все рёбра тупиковые — нет контуров
     if not active_edges:
         diag.append({"level": "error", "category": "topology",
                      "message": "Все ветви тупиковые — нет замкнутого контура вентиляции."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
-    # Перестраиваем контуры только по активным рёбрам
-    loops_active = find_spanning_tree_and_loops(active_edges)
-    log.append(f"Контуров по активным={len(loops_active)}")
-
-    if not loops_active:
-        diag.append({"level": "error", "category": "topology",
-                     "message": "Сеть не имеет замкнутых контуров — циркуляция воздуха невозможна. "
-                                "Проверьте топологию: нужно минимум 2 выхода на поверхность."})
-        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
-
-    # Начальный расход
-    Q = [0.0] * len(edges)
-
-    def bisect_q0():
-        """
-        Находит начальный Q методом бисекции: ΣH_fan(Q) = R_active · Q².
-        При нескольких вентиляторах суммируем напоры (последовательная работа).
-        Q ограничен min(qMax) всех вентиляторов — за этим пределом H_fan=0.
-        """
-        R_total = sum(e["R"] for e in active_edges if not e["hasFan"])
-        if R_total <= 0:
-            R_total = 1e-3
-
-        curve_fans = [e for e in fans if e.get("fanMode", "constant") == "curve"]
-        if curve_fans:
-            # Диапазон Q: от qMin до min(qMax) по всем вентиляторам
-            # (за min(qMax) суммарный напор обнуляется)
-            q_lo = max(float(e.get("qMin", 1.0)) for e in curve_fans)
-            q_hi_vals = []
-            for fan_e in curve_fans:
-                if fan_e.get("fanReverse") and fan_e.get("reverseH0") is not None:
-                    q_hi_vals.append(float(fan_e.get("reverseQMax", fan_e.get("qMax", 90.0))))
-                else:
-                    q_hi_vals.append(float(fan_e.get("qMax", 90.0)))
-            q_hi = min(q_hi_vals)  # ограничиваем самым узким вентилятором
-            if q_lo >= q_hi:
-                q_lo = q_hi * 0.1
-
-            def f_total(q):
-                h_sum = sum(fan_H(fe, q) for fe in curve_fans)
-                return h_sum - R_total * q * q
-
-            if f_total(q_lo) <= 0:
-                return q_lo
-            if f_total(q_hi) >= 0:
-                # Весь диапазон H > R·Q² — возвращаем q_hi (максимальный расход)
-                return q_hi
-            for _ in range(60):
-                q_mid = 0.5 * (q_lo + q_hi)
-                if f_total(q_mid) > 0:
-                    q_lo = q_mid
-                else:
-                    q_hi = q_mid
-                if q_hi - q_lo < 0.01:
-                    break
-            return 0.5 * (q_lo + q_hi)
-
-        # constant-вентилятор
-        H_fan = sum(fan_H(e, 1.0) for e in fans)
-        if H_fan > 0:
-            return math.sqrt(H_fan / R_total)
-        # Нет вентиляторов (или все остановлены) — начальный Q из естественной тяги
-        H_nat_total = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
-        if H_nat_total > 0 and R_total > 0:
-            return math.sqrt(H_nat_total / R_total)
-        return 1.0
-
-    # Начальное распределение через остовное дерево + BFS.
-    # Все активные ветви получают Q удовлетворяющий 1-му закону Кирхгофа.
-    # Хорды (замыкающие контуры) стартуют с Q=0 — метод Кросса их выравняет.
-    q0 = bisect_q0()
-    log.append(f"Q0={q0:.3f} м³/с")
-
-    # ── Шаг 1: строим остовное дерево (Union-Find) ─────────────────────
-    all_nodes_set = set()
+    # ══ ШАГ 2: Остовное дерево по активным рёбрам (Union-Find) ══════════
+    # Вентиляторы — в дерево в первую очередь
+    all_nodes = set()
     for e in active_edges:
-        all_nodes_set.add(e["a"])
-        all_nodes_set.add(e["b"])
-    uf = {n: n for n in all_nodes_set}
+        all_nodes.add(e["a"]); all_nodes.add(e["b"])
+    uf = {n: n for n in all_nodes}
 
     def uf_find(x):
         while uf[x] != x:
-            uf[x] = uf[uf[x]]
-            x = uf[x]
+            uf[x] = uf[uf[x]]; x = uf[x]
         return x
 
     def uf_union(x, y):
         px, py = uf_find(x), uf_find(y)
-        if px == py:
-            return False
-        uf[px] = py
-        return True
+        if px == py: return False
+        uf[px] = py; return True
 
-    # Вентиляторы — в дерево первыми (чтобы гарантировать их попадание в дерево)
-    tree_ids = set()
+    tree_ids  = set()
+    chord_ids = []
     for e in sorted(active_edges, key=lambda e: 0 if e["hasFan"] else 1):
         if uf_union(e["a"], e["b"]):
             tree_ids.add(e["id"])
-        # хорды оставляем Q=0
+        else:
+            chord_ids.append(e["id"])
 
-    # ── Шаг 2: BFS по дереву от вентилятора, пропагируем q0 ────────────
-    # adj_tree: узел → [(global_edge_idx, сосед)]
+    log.append(f"Дерево={len(tree_ids)}, хорд={len(chord_ids)}")
+
+    # ══ ШАГ 3: Независимые контуры = хорда + путь в дереве ══════════════
+    loops_active = find_spanning_tree_and_loops(active_edges)
+    if not loops_active:
+        diag.append({"level": "error", "category": "topology",
+                     "message": "Нет замкнутых контуров — проверьте топологию: нужно минимум 2 выхода на поверхность."})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
+    # Конвертируем индексы: active_edges[ai] → edges[gi]
+    loops_global = [[(active_idx[ai], sign) for ai, sign in loop] for loop in loops_active]
+    log.append(f"Контуров={len(loops_global)}")
+
+    # ══ ШАГ 4: Начальный расход q0 (рабочая точка вентилятора) ══════════
+    R_net = sum(e["R"] for e in active_edges if not e["hasFan"])
+    if R_net <= 0: R_net = 1e-3
+
+    def bisect_q0():
+        af = [e for e in active_fans if e.get("fanMode","constant") == "curve"]
+        if af:
+            q_lo = 0.1
+            q_hi_list = [float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
+                                     else "qMax", 90.0)) for e in af]
+            q_hi = min(q_hi_list) if q_hi_list else 90.0
+            def f(q):
+                return sum(fan_H(e, q) for e in af) - R_net * q * q
+            if f(q_lo) <= 0: return q_lo
+            if f(q_hi) >= 0: return q_hi
+            for _ in range(64):
+                qm = 0.5 * (q_lo + q_hi)
+                if f(qm) > 0: q_lo = qm
+                else:         q_hi = qm
+                if q_hi - q_lo < 0.01: break
+            return 0.5 * (q_lo + q_hi)
+        # constant или остановлен
+        H0 = sum(fan_H(e, 1.0) for e in active_fans)
+        if H0 > 0: return math.sqrt(H0 / R_net)
+        # только естественная тяга
+        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
+        return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
+
+    q0 = bisect_q0()
+    log.append(f"Q₀={q0:.3f} м³/с")
+
+    # ══ ШАГ 5: Начальное Q по дереву BFS (1-й закон Кирхгофа) ═══════════
+    # Q[global_idx] — расход по каждой ветви (положительный = направление a→b)
+    Q = [0.0] * len(edges)
+
     adj_tree = collections.defaultdict(list)
     for gi, e in enumerate(edges):
         if e["id"] in tree_ids:
             adj_tree[e["a"]].append((gi, e["b"]))
             adj_tree[e["b"]].append((gi, e["a"]))
 
-    # Стартуем от узла «b» вентилятора — туда входит q0
     fan_tree = next((e for e in active_edges if e["hasFan"] and e["id"] in tree_ids), None)
     if fan_tree:
-        gfi = next(gi for gi, e in enumerate(edges) if e["id"] == fan_tree["id"])
+        gfi = id_to_gi[fan_tree["id"]]
         Q[gfi] = q0
-
-        # node_q[v] = расход, «входящий» в узел v со стороны уже обработанных рёбер
-        node_q = {fan_tree["b"]: q0, fan_tree["a"]: -q0}
+        node_q  = {fan_tree["b"]: q0, fan_tree["a"]: -q0}
         visited = {fan_tree["a"], fan_tree["b"]}
-        queue = collections.deque([fan_tree["b"]])
-
+        queue   = collections.deque([fan_tree["b"]])
         while queue:
             node = queue.popleft()
             incoming = node_q.get(node, 0.0)
-            # Незаполненные соседние рёбра дерева
             nxt = [(gi, nb) for gi, nb in adj_tree[node] if nb not in visited]
-            if not nxt:
-                continue
-            # Делим входящий расход поровну
+            if not nxt: continue
             q_each = incoming / len(nxt)
             for gi, nb in nxt:
                 e = edges[gi]
-                sign = +1 if e["a"] == node else -1
-                Q[gi] = q_each * sign
+                Q[gi] = q_each if e["a"] == node else -q_each
                 node_q[nb] = node_q.get(nb, 0.0) + q_each
                 visited.add(nb)
                 queue.append(nb)
     else:
-        # нет вентилятора в дереве — просто q0 для всех активных (fallback)
+        # нет вентилятора в дереве — q0 для всех активных
         for i, e in enumerate(edges):
             if e["id"] not in dead_end_ids:
                 Q[i] = q0
 
-    # Пересчитываем индексы контуров из active_edges → edges
-    # loops_active[i] = [(ai, sign), ...] где ai — индекс в active_edges
-    # нужно преобразовать в [(gi, sign), ...] где gi — индекс в edges
-    loops_global = []
-    for loop in loops_active:
-        global_loop = [(active_idx[ai], sign) for ai, sign in loop]
-        loops_global.append(global_loop)
-
-    # Основной цикл Кросса — последовательное обновление по контурам (Зейдель)
+    # ══ ШАГ 6: Итерации Кросса ═══════════════════════════════════════════
+    # По Андрияшеву: поправка δQ = -ΔH / Σ(2·R·|Q|)
+    # ΔH = Σ [ R·Qi·|Qi| - H_вент(|Qi|)·sign_i - H_нат·sign_i ]
+    # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура
+    # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
     max_dq = float("inf")
-    it     = 0
+    it = 0
 
     for it in range(1, max_iter + 1):
         max_dq = 0.0
 
         for loop in loops_global:
-            # Невязка контура: ΔH = Σ(R·Q·|Q| - H_fan - H_nat) по контуру
-            sum_h   = 0.0
-            sum_2rq = 0.0
+            # Невязка давлений по контуру (Па)
+            sum_H   = 0.0   # ΣH = Σ(R·Q·|Q|) - ΣH_вент - ΣH_нат
+            sum_2RQ = 0.0   # Σ(2·R·|Q|) + Σ(dH_вент/dQ)
 
             for gi, sign in loop:
                 e  = edges[gi]
-                qi = Q[gi] * sign
+                qi = Q[gi] * sign      # расход в направлении обхода контура
                 R  = e["R"]
 
-                sum_h   += R * qi * abs(qi)
-                sum_2rq += 2.0 * R * abs(qi)
+                # Потери давления: R·Q·|Q|
+                sum_H   += R * qi * abs(qi)
+                sum_2RQ += 2.0 * R * abs(qi)
 
+                # Вентилятор: вычитаем его напор из невязки
                 if e["hasFan"]:
-                    H = fan_H(e, abs(Q[gi]))
-                    sum_h   -= H * (1.0 if qi >= 0 else -1.0)
-                    sum_2rq += fan_dH(e, abs(Q[gi]))
+                    Hv = fan_H(e, abs(Q[gi]))
+                    sum_H   -= Hv * (1.0 if qi >= 0 else -1.0)
+                    sum_2RQ += fan_dH(e, abs(Q[gi]))
 
+                # Естественная тяга: вычитаем как дополнительный напор
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
-                    sum_h -= h_nat * (1.0 if qi >= 0 else -1.0)
+                    sum_H -= h_nat * (1.0 if qi >= 0 else -1.0)
 
-            if sum_2rq < 1e-12:
+            if sum_2RQ < 1e-12:
                 continue
 
-            dq = alpha * sum_h / sum_2rq
-            # Защита от взрыва: не более 2×max|Q| в контуре (или q0 если Q≈0)
-            q_ref = max((abs(Q[gi]) for gi, _ in loop), default=0.0)
-            q_ref = max(q_ref, q0)
-            if abs(dq) > 2.0 * q_ref:
-                dq = math.copysign(2.0 * q_ref, dq)
-            max_dq = max(max_dq, abs(dq))
+            # Поправка расхода по Кроссу: δQ = -ΔH / Σ(2·R·|Q|)
+            dq = -sum_H / sum_2RQ
 
+            # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0)
+            q_max_loop = max((abs(Q[gi]) for gi, _ in loop), default=q0)
+            q_lim = max(q_max_loop, q0)
+            if abs(dq) > 2.0 * q_lim:
+                dq = math.copysign(2.0 * q_lim, dq)
+
+            if abs(dq) > max_dq:
+                max_dq = abs(dq)
+
+            # Распределяем поправку по всем ветвям контура
             for gi, sign in loop:
-                Q[gi] -= dq * sign
+                Q[gi] += dq * sign
                 if not math.isfinite(Q[gi]):
                     Q[gi] = 0.0
 
@@ -695,47 +658,26 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     converged = max_dq < tol
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
-                     "message": f"Не сошлось за {max_iter} итераций. ΔQ={max_dq:.4f} м³/с"})
+                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с"})
 
-    log.append(f"Итераций={it} ΔQ={max_dq:.4f} м³/с")
-    print(f"Итераций={it} ΔQ={max_dq:.4f} converged={converged}")
+    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, сошлось={converged}")
     for i, e in enumerate(edges):
-        log.append(f"[Q] {e['id']}: Q={Q[i]:.3f}")
-        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f}{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
+        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f}"
+              f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
-    # Суммарная утечка через ветви-перемычки + проверка коэффициентов
+    # ── Диагностика утечек через перемычки ──────────────────────────────
     leakage_edges = [e for e in edges if e.get("isLeakage")]
     leakage_total = sum(abs(Q_map.get(e["id"], 0)) for e in leakage_edges)
-    q_fan_total = sum(abs(Q_map.get(e["id"], 0)) for e in edges if e.get("hasFan") and not e.get("fanStopped"))
-
+    q_fan_total   = sum(abs(Q_map.get(e["id"], 0)) for e in edges if e.get("hasFan") and not e.get("fanStopped"))
     if leakage_total > 0.1:
         k_ut = leakage_total / q_fan_total if q_fan_total > 0 else 0
         diag.append({"level": "info", "category": "branch_flow",
-                     "message": f"Суммарная утечка через перемычки: {leakage_total:.1f} м³/с "
-                                f"(k_ут = {k_ut:.2f} = {k_ut*100:.0f}% от Q вентилятора)"})
-        # Проверка по заданным коэффициентам утечки
-        for e in leakage_edges:
-            coeff = float(e.get("leakageCoeff", 0) or 0)
-            if coeff <= 0:
-                continue
-            q_actual = abs(Q_map.get(e["id"], 0))
-            q_expected = coeff * q_fan_total
-            if q_fan_total > 0 and abs(q_actual - q_expected) / max(q_expected, 0.1) > 0.3:
-                diag.append({
-                    "level": "warning",
-                    "category": "branch_flow",
-                    "message": f"Утечка «{e['id']}»: расчётная {q_actual:.1f} м³/с, "
-                               f"ожидалось {q_expected:.1f} м³/с (k={coeff:.2f}). "
-                               f"Проверьте сопротивление перемычки.",
-                    "objectId": e["id"],
-                    "value": q_actual,
-                })
+                     "message": f"Суммарная утечка: {leakage_total:.1f} м³/с "
+                                f"(k_ут={k_ut:.2f} = {k_ut*100:.0f}% от Q вент.)"})
 
-
-
-    # Проверка норматива реверса k_rev >= 0.6 (ПБ для шахтных вентиляционных сетей)
+    # ── Проверка норматива реверса ───────────────────────────────────────
     check_reverse(edges, Q_map, normal_flows or {}, diag)
 
     return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids)
