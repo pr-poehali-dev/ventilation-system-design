@@ -1055,13 +1055,18 @@ export default function CadPage() {
                 const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
                 r = q > 0 ? dp / (q * q) : 0;
               } else {
-                // Полностью открытая дверь на всё сечение — R = 0 всегда
-                if (OPEN_DOOR_IDS.has(s.typeId)) {
+                const sw = s.bkWindowArea ?? 0;
+                if (sw > 0.001) {
+                  // Задано сечение окна/проёма — считаем по формуле местного сопротивления
+                  const mu = 0.65;
+                  r = rho / (2 * mu * mu * sw * sw);
+                } else if (OPEN_DOOR_IDS.has(s.typeId)) {
+                  // Открытая дверь без заданного сечения = полностью открыта → R = 0
                   r = 0;
                 } else {
-                  const sw = s.bkWindowArea ?? 0;
-                  if (sw > 0.001) { const mu = 0.65; r = rho / (2 * mu * mu * sw * sw); }
-                  else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3); }
+                  // Глухая перемычка — по воздухопроницаемости или справочному R
+                  const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0);
+                  r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3);
                 }
               }
               return sum + r;
@@ -2501,15 +2506,15 @@ export default function CadPage() {
                               const dp = sym.bkSurveyDP ?? 0;
                               const rNsm8 = q > 0 ? dp / (q * q) : 0;
                               rKmu = rNsm8 / 10;
-                            } else if (OPEN_DOOR_IDS.has(sym.typeId)) {
-                              // Полностью открытая дверь на всё сечение — R = 0
-                              rKmu = 0;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               let rNsm8 = 0;
                               if (sw > 0.001) {
                                 const mu = 0.65;
                                 rNsm8 = rho / (2 * mu * mu * sw * sw);
+                              } else if (OPEN_DOOR_IDS.has(sym.typeId)) {
+                                // Открытая дверь без сечения = полностью открыта → R = 0
+                                rNsm8 = 0;
                               } else {
                                 const kAir = sym.bkManualAirPerm
                                   ? (sym.bkCustomAirPerm ?? 0)
