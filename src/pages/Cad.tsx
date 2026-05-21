@@ -1044,7 +1044,13 @@ export default function CadPage() {
           branches: branches.map(b => {
             const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
             // Суммируем R всех символов перемычек на этой ветви (каждый хранит свои параметры)
-            const rho = 1.2;
+            // Плотность воздуха по средней температуре узлов ветви (как в бэкенде: ρ = 353/(273+T))
+            const fromNode = nodes.find(n => n.id === b.fromId);
+            const toNode = nodes.find(n => n.id === b.toId);
+            const tFrom = fromNode ? (fromNode.atmosphereLink ? surfaceTemp : (fromNode.airTemp ?? surfaceTemp)) : surfaceTemp;
+            const tTo   = toNode   ? (toNode.atmosphereLink   ? surfaceTemp : (toNode.airTemp   ?? surfaceTemp)) : surfaceTemp;
+            const tAvg  = (tFrom + tTo) / 2;
+            const rho   = 353.0 / (273.0 + Math.max(-30, Math.min(100, tAvg)));
             const bkSyms = schemaSymbols.filter(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
             const rBulkheads = bkSyms.reduce((sum, s) => {
               const mode = s.bkResMode ?? "project";
@@ -2500,7 +2506,11 @@ export default function CadPage() {
                         <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
                           R = {(() => {
                             const mode = sym.bkResMode ?? "project";
-                            const rho = 1.2;
+                            const fnFrom = nodes.find(n => n.id === brForSym.fromId);
+                            const fnTo   = nodes.find(n => n.id === brForSym.toId);
+                            const tF = fnFrom ? (fnFrom.atmosphereLink ? surfaceTemp : (fnFrom.airTemp ?? surfaceTemp)) : surfaceTemp;
+                            const tT = fnTo   ? (fnTo.atmosphereLink   ? surfaceTemp : (fnTo.airTemp   ?? surfaceTemp)) : surfaceTemp;
+                            const rho = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF + tT) / 2)));
                             let rKmu = 0;
                             if (mode === "manual") {
                               rKmu = sym.bkManualR ?? 0;
