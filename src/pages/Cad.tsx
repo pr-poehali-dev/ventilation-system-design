@@ -509,7 +509,29 @@ export default function CadPage() {
         bulkheadFailurePressure: ref.failurePressure,
       };
     }));
-  }, [mineBulkheads]);  
+    // Синхронизируем bkAirPerm в символах перемычек из данных ветви
+    setSchemaSymbols(prev => prev.map(s => {
+      if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
+      const ref = mineBulkheads.find(b => {
+        const br = branches.find(br => br.id === s.branchId);
+        return br?.bulkheadId && b.id === br.bulkheadId;
+      });
+      if (!ref) return s;
+      return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0 };
+    }));
+  }, [mineBulkheads]);
+
+  // Синхронизация bkAirPerm в символах при изменении данных ветвей (выбор перемычки из справочника)
+  useEffect(() => {
+    setSchemaSymbols(prev => prev.map(s => {
+      if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
+      const br = branches.find(b => b.id === s.branchId);
+      if (!br || !(br.bulkheadAirPerm ?? 0)) return s;
+      if (s.bkAirPerm === br.bulkheadAirPerm && s.bkBulkheadR === br.bulkheadR) return s;
+      return { ...s, bkAirPerm: br.bulkheadAirPerm ?? 0, bkBulkheadR: br.bulkheadR ?? 0 };
+    }));
+   
+  }, [branches]);
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
   const [branchWidth, setBranchWidth] = useState<number>(3);    // px
@@ -1004,7 +1026,7 @@ export default function CadPage() {
               } else {
                 const sw = s.bkWindowArea ?? 0;
                 if (sw > 0.001) { const mu = 0.65; r = rho / (2 * mu * mu * sw * sw); }
-                else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : 0; }
+                else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3); }
               }
               return sum + r;
             }, 0);
@@ -1141,13 +1163,13 @@ export default function CadPage() {
       const isEditing = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
         && active !== document.body;
 
-      if (e.ctrlKey && e.key === "s") {
+      if (e.ctrlKey && (e.key === "s" || e.key === "ы" || e.key === "Ы")) {
         e.preventDefault();
         handleSave();
         return;
       }
-      // Ctrl+V — вставить условное обозначение из буфера
-      if (e.ctrlKey && e.key === "v" && !isEditing) {
+      // Ctrl+V / Ctrl+М — вставить условное обозначение из буфера
+      if (e.ctrlKey && (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") && !isEditing) {
         if (symbolClipboard) {
           e.preventDefault();
           const newId = `SYM_${Date.now()}`;
@@ -1163,10 +1185,28 @@ export default function CadPage() {
         }
         return;
       }
-      // Ctrl+C — скопировать выбранное обозначение
-      if (e.ctrlKey && e.key === "c" && !isEditing && selectedSymbolId) {
+      // Ctrl+C / Ctrl+С — скопировать выбранное обозначение
+      if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && !isEditing && selectedSymbolId) {
         const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
         if (sym) { e.preventDefault(); setSymbolClipboard(sym); }
+        return;
+      }
+      // Ctrl+D / Ctrl+В — дублировать выбранное обозначение
+      if (e.ctrlKey && (e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") && !isEditing && selectedSymbolId) {
+        const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
+        if (sym) {
+          e.preventDefault();
+          const newId = `SYM_${Date.now()}`;
+          setSchemaSymbols(prev => [...prev, {
+            ...sym,
+            id: newId,
+            branchId: null,
+            t: undefined,
+            x: sym.x + 20,
+            y: sym.y + 20,
+          }]);
+          setSelectedSymbolId(newId);
+        }
         return;
       }
       // F6, F9 — всегда работают
@@ -3325,6 +3365,8 @@ export default function CadPage() {
                       bkManualR: 0,
                       bkManualAirPerm: false,
                       bkCustomAirPerm: 0,
+                      bkAirPerm: br?.bulkheadAirPerm ?? 0,
+                      bkBulkheadR: br?.bulkheadR ?? 0,
                       bkSurveyQ: 0,
                       bkSurveyDP: 0,
                     };

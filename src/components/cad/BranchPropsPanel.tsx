@@ -644,15 +644,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             {onFanSymbolScale && (
               <InlineLabel label="Масштаб УО">
                 <div className="flex items-center gap-1 w-full">
-                  <button
-                    onClick={() => onFanSymbolScale(Math.max(0.4, (fanSymbolScale ?? 1) - 0.2))}
-                    className="text-[10px] px-1.5 rounded"
-                    style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer", lineHeight: "16px" }}>−</button>
-                  <span className="flex-1 text-center text-[11px]">{((fanSymbolScale ?? 1) * 100).toFixed(0)}%</span>
-                  <button
-                    onClick={() => onFanSymbolScale(Math.min(4, (fanSymbolScale ?? 1) + 0.2))}
-                    className="text-[10px] px-1.5 rounded"
-                    style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer", lineHeight: "16px" }}>+</button>
+                  <input type="range" min={5} max={400} step={5}
+                    value={Math.round((fanSymbolScale ?? 1) * 100)}
+                    onChange={(e) => onFanSymbolScale(Number(e.target.value) / 100)}
+                    className="flex-1" style={{ accentColor: "#2563eb" }} />
+                  <input type="number" min={5} max={400} step={5}
+                    value={Math.round((fanSymbolScale ?? 1) * 100)}
+                    onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); onFanSymbolScale(v / 100); }}
+                    className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                    style={{ fontSize: 11 }} />
+                  <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
                 </div>
               </InlineLabel>
             )}
