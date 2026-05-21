@@ -597,20 +597,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # ══ ШАГ 6: Итерации Кросса ═══════════════════════════════════════════
     # По Андрияшеву: поправка δQ = -ΔH / Σ(2·R·|Q|)
     # ΔH = Σ [ R·Qi·|Qi| - H_вент(|Qi|)·sign_i - H_нат·sign_i ]
-    # Обновление: Qi ← Qi + ω·δQ·sign_i  для всех ветвей контура
+    # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура
     # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
-    # Адаптивный relaxation: ω=0.6 на первых 300 итерациях, потом ω=1.0
     max_dq = float("inf")
     it = 0
-    stag_check_interval = 200   # проверяем стагнацию каждые N итераций
-    stag_threshold = 0.90       # если невязка уменьшилась менее чем на 10% — стагнация
-    prev_stag_dq = float("inf") # невязка на предыдущей контрольной точке
 
     for it in range(1, max_iter + 1):
         max_dq = 0.0
-
-        # Адаптивный relaxation factor: плавный прогрев на первых итерациях
-        omega = 0.6 + 0.4 * min(1.0, (it - 1) / 300.0)
 
         for loop in loops_global:
             # Невязка давлений по контуру (Па)
@@ -649,9 +642,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             if abs(dq) > 2.0 * q_lim:
                 dq = math.copysign(2.0 * q_lim, dq)
 
-            # Применяем relaxation
-            dq *= omega
-
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
 
@@ -664,16 +654,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         if max_dq < tol:
             it += 1
             break
-
-        # Детектор стагнации: если невязка почти не убывает — переключаемся на МКР
-        if it % stag_check_interval == 0:
-            if max_dq > stag_threshold * prev_stag_dq:
-                log.append(f"Кросс: стагнация на итерации {it} (δQ={max_dq:.4f}), переключение на МКР")
-                result_mkr = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp)
-                result_mkr.setdefault("log", [])
-                result_mkr["log"] = log + result_mkr["log"]
-                return result_mkr
-            prev_stag_dq = max_dq
 
     converged = max_dq < tol
     if not converged:
