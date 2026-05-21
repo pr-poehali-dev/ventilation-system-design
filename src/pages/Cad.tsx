@@ -1173,14 +1173,23 @@ export default function CadPage() {
         if (symbolClipboard) {
           e.preventDefault();
           const newId = `SYM_${Date.now()}`;
-          setSchemaSymbols(prev => [...prev, {
-            ...symbolClipboard,
-            id: newId,
-            branchId: null,
-            t: undefined,
-            x: symbolClipboard.x + 20,
-            y: symbolClipboard.y + 20,
-          }]);
+          if (symbolClipboard.branchId) {
+            // Символ был привязан к ветви — вставляем со смещением offset
+            setSchemaSymbols(prev => [...prev, {
+              ...symbolClipboard,
+              id: newId,
+              offsetX: (symbolClipboard.offsetX ?? 0) + 30,
+              offsetY: (symbolClipboard.offsetY ?? 0) + 30,
+            }]);
+          } else {
+            // Свободный символ — смещаем мировые координаты
+            setSchemaSymbols(prev => [...prev, {
+              ...symbolClipboard,
+              id: newId,
+              x: symbolClipboard.x + 20,
+              y: symbolClipboard.y + 20,
+            }]);
+          }
           setSelectedSymbolId(newId);
         }
         return;
@@ -1197,14 +1206,23 @@ export default function CadPage() {
         if (sym) {
           e.preventDefault();
           const newId = `SYM_${Date.now()}`;
-          setSchemaSymbols(prev => [...prev, {
-            ...sym,
-            id: newId,
-            branchId: null,
-            t: undefined,
-            x: sym.x + 20,
-            y: sym.y + 20,
-          }]);
+          if (sym.branchId) {
+            // Символ привязан к ветви — дублируем со смещением offset
+            setSchemaSymbols(prev => [...prev, {
+              ...sym,
+              id: newId,
+              offsetX: (sym.offsetX ?? 0) + 30,
+              offsetY: (sym.offsetY ?? 0) + 30,
+            }]);
+          } else {
+            // Свободный символ — смещаем мировые координаты
+            setSchemaSymbols(prev => [...prev, {
+              ...sym,
+              id: newId,
+              x: sym.x + 20,
+              y: sym.y + 20,
+            }]);
+          }
           setSelectedSymbolId(newId);
         }
         return;
