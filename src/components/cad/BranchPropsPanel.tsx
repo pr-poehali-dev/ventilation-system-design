@@ -1026,6 +1026,22 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </div>
             )}
 
+            {(() => {
+              if (!branch.hasFan || branch.fanMode !== "curve" || Math.abs(branch.flow) < 0.01) return null;
+              const curve = getFanById(branch.fanCurveId);
+              if (!curve) return null;
+              const Q = Math.abs(branch.flow);
+              const qMaxScaled = curve.qMax * (branch.fanRpm > 0 && curve.rpmNominal > 0
+                ? branch.fanRpm / curve.rpmNominal : 1);
+              if (Q <= qMaxScaled * 1.02) return null;
+              return (
+                <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
+                  style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+                  ⚠ Q={Q.toFixed(2)} м³/с превышает max {qMaxScaled.toFixed(1)} м³/с для {curve.name}. Вентилятор работает вне паспортной зоны.
+                </div>
+              );
+            })()}
+
             <InlineLabel label="Q выраб., м³/с">
               <ComputedInput value={branch.fanReverse
                 ? numFmt(-Math.abs(branch.flow), 2)

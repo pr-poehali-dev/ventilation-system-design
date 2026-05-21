@@ -7,7 +7,7 @@ import {
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
-import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
@@ -1156,11 +1156,49 @@ export default function CadPage() {
       }
 
       // Применяем результат
-      const resultBranches = data.branches as { id: string; Q: number; velocity: number; H: number; isDead?: boolean }[];
+      const resultBranches = data.branches as { id: string; Q: number; velocity: number; H: number; Hfan?: number; isDead?: boolean }[];
       setBranches(prev => prev.map(b => {
         const rb = resultBranches.find(r => r.id === b.id);
         if (!rb) return b;
-        return { ...b, flow: rb.Q, velocity: rb.velocity, dP: rb.H, isDead: rb.isDead ?? false };
+
+        let newFanPressure = b.fanPressure;
+        let newFanEfficiency = b.fanEfficiency;
+        let newFanShaftPower = b.fanShaftPower;
+        let newPower = b.power;
+
+        if (b.hasFan && rb.Hfan !== undefined) {
+          newFanPressure = rb.Hfan;
+
+          if (b.fanMode === "curve") {
+            const curve = getFanById(b.fanCurveId);
+            if (curve) {
+              const Qfan = Math.abs(rb.Q);
+              const etaBase = fanEfficiency(curve, Qfan);
+              const effFactor = b.fanReverse ? (curve.reverseEfficiencyFactor ?? 0.82) : 1;
+              newFanEfficiency = Math.max(0.05, etaBase * effFactor);
+              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Qfan * Math.max(1, b.fanParallel ?? 1), newFanEfficiency);
+              newPower = newFanShaftPower;
+            }
+          } else {
+            // constant mode: КПД задаётся вручную, мощность = H*Q/η
+            const eta = b.fanEfficiency > 0 ? b.fanEfficiency : 0.65;
+            const Qfan = Math.abs(rb.Q) * Math.max(1, b.fanParallel ?? 1);
+            newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Qfan, eta);
+            newPower = newFanShaftPower;
+          }
+        }
+
+        return {
+          ...b,
+          flow: rb.Q,
+          velocity: rb.velocity,
+          dP: rb.H,
+          isDead: rb.isDead ?? false,
+          fanPressure: newFanPressure,
+          fanEfficiency: newFanEfficiency,
+          fanShaftPower: newFanShaftPower,
+          power: newPower,
+        };
       }));
 
       // Сохраняем расходы прямого режима (без реверса) для последующей проверки k_rev >= 0.6

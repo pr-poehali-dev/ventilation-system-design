@@ -812,6 +812,14 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         Hv   = fan_H(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
+
+        # Проверка Q > qMax для вентилятора с кривой характеристики
+        if e.get("hasFan") and not e.get("fanStopped"):
+            q_max = e.get("qMax", 0)
+            if q_max > 0 and abs(q) > q_max * 1.02:
+                diag.append({"level": "warning", "category": "fan_overload",
+                             "message": f"Ветвь {e['id']}: Q={abs(q):.2f} м³/с превышает qMax={q_max:.1f} м³/с — вентилятор вышел за паспортную зону"})
+
         out.append({"id": e["id"], "Q": round(q, 4), "H": round(H, 3),
                     "Hfan": round(Hv, 3), "velocity": round(vel, 3),
                     "isDead": is_dead})
