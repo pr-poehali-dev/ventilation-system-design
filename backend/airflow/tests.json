@@ -292,11 +292,11 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Кросс — естественная тяга без вентилятора",
+      "name": "МКР — естественная тяга без вентилятора",
       "method": "POST",
       "path": "/",
       "body": {
-        "method": "cross",
+        "method": "mkr",
         "nodes": [
           {"id": "U1", "isAtm": true, "z": 100, "airTemp": 5},
           {"id": "N1", "z": -200, "airTemp": 25},
