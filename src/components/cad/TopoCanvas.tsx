@@ -117,6 +117,10 @@ interface Props {
   activeSymbolTypeId?: string | null;
   /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь) */
   onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null) => void;
+  /** Тип символа в режиме "ожидания привязки" (после копирования/дублирования) */
+  pendingSymbolTypeId?: string | null;
+  /** Разместить ожидающий символ: t — позиция 0..1 вдоль ветви, null = свободно */
+  onPendingSymbolPlace?: (branchId: string, t: number, x: number, y: number) => void;
   /** Конфигурация единиц измерения для отображения меток на схеме */
   unitsConfig?: UnitsConfig;
   /** Смещение блока индикаторов ветви (перетаскивание пользователем) */
@@ -154,6 +158,7 @@ export default function TopoCanvas(props: Props) {
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
+    pendingSymbolTypeId, onPendingSymbolPlace,
     restoreView, onViewStateChange,
     unitsConfig = DEFAULT_UNITS_CONFIG,
     onBranchLabelOffset,
@@ -191,6 +196,7 @@ export default function TopoCanvas(props: Props) {
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [hoverBranchId, setHoverBranchId] = useState<string | null>(null);
+  const [hoverScreenPos, setHoverScreenPos] = useState<{ sx: number; sy: number } | null>(null);
 
   // Перетаскивание угла подложки горизонта: какой именно угол тащим.
   const [draggingCorner, setDraggingCorner] = useState<
@@ -424,14 +430,43 @@ export default function TopoCanvas(props: Props) {
     const hitN = hitNode(sx, sy, projNodes);
     const hitB = !hitN ? hitBranch(sx, sy, projNodes, branches) : null;
 
+    // ─── РЕЖИМ «ОЖИДАНИЯ ПРИВЯЗКИ» (после Ctrl+V/Ctrl+D) — клик на ветвь ─
+    if (pendingSymbolTypeId && onPendingSymbolPlace) {
+      if (hitB) {
+        // Вычисляем точную позицию t вдоль ветви
+        const from = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.fromId);
+        const to   = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.toId);
+        const fromN = from?.node;
+        const toN   = to?.node;
+        if (from && to && fromN && toN) {
+          const C = to.sx - from.sx, D = to.sy - from.sy;
+          const A = sx - from.sx,   B = sy - from.sy;
+          const lenSq = C * C + D * D;
+          const t = lenSq > 0 ? Math.max(0.05, Math.min(0.95, (A * C + B * D) / lenSq)) : 0.5;
+          const wx = fromN.x + (toN.x - fromN.x) * t;
+          const wy = fromN.y + (toN.y - fromN.y) * t;
+          onPendingSymbolPlace(hitB, t, wx, wy);
+        }
+      }
+      return;
+    }
+
     // ─── ИНСТРУМЕНТ «СИМВОЛ» — клик на ветвь = размещает символ посередине ─
     if (tool === "symbol" && activeSymbolTypeId && onSymbolPlace) {
       if (hitB) {
-        // Размещаем на середине ветви
-        const fromN = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.fromId)?.node;
-        const toN   = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.toId)?.node;
-        if (fromN && toN) {
-          onSymbolPlace(activeSymbolTypeId, (fromN.x + toN.x) / 2, (fromN.y + toN.y) / 2, hitB);
+        // Вычисляем точную позицию t вдоль ветви
+        const from = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.fromId);
+        const to   = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.toId);
+        const fromN = from?.node;
+        const toN   = to?.node;
+        if (from && to && fromN && toN) {
+          const C = to.sx - from.sx, D = to.sy - from.sy;
+          const A = sx - from.sx,   B = sy - from.sy;
+          const lenSq = C * C + D * D;
+          const t = lenSq > 0 ? Math.max(0.05, Math.min(0.95, (A * C + B * D) / lenSq)) : 0.5;
+          const wx = fromN.x + (toN.x - fromN.x) * t;
+          const wy = fromN.y + (toN.y - fromN.y) * t;
+          onSymbolPlace(activeSymbolTypeId, wx, wy, hitB);
         }
       } else {
         // Клик на пустом месте — в мировых координатах
@@ -562,9 +597,11 @@ export default function TopoCanvas(props: Props) {
     if (w) setHoverPos({ x: Math.round(w.x), y: Math.round(w.y) });
     else setHoverPos(null);
 
-    // Подсветка ветви при tool=symbol
-    if (tool === "symbol") {
-      const hb = hitBranch(sx, sy, projNodes, branches);
+    setHoverScreenPos({ sx, sy });
+
+    // Подсветка ветви при tool=symbol или pendingSymbol
+    if (tool === "symbol" || pendingSymbolTypeId) {
+      const hb = hitBranchR(sx, sy, projNodes, branches, 10);
       setHoverBranchId(hb ?? null);
     } else if (hoverBranchId) {
       setHoverBranchId(null);
@@ -813,6 +850,7 @@ export default function TopoCanvas(props: Props) {
       style={{
         background: is3D ? "linear-gradient(to bottom, #f0f4f8 0%, #ffffff 60%, #f5f5f5 100%)" : "#ffffff",
         cursor: rotStart ? "grabbing" : panStart ? "grabbing"
+          : pendingSymbolTypeId ? "copy"
           : tool === "node" ? "crosshair"
           : tool === "symbol" ? "copy"
           : tool === "rotate" ? "grab"
@@ -1215,6 +1253,40 @@ export default function TopoCanvas(props: Props) {
           return (
             <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
               stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.7" />
+          );
+        })()}
+
+        {/* Ghost-символ в режиме ожидания привязки (Ctrl+V / Ctrl+D) */}
+        {pendingSymbolTypeId && hoverScreenPos && (() => {
+          const lt = LEGEND_TYPES.find(l => l.id === pendingSymbolTypeId);
+          if (!lt) return null;
+          const symScale = Math.min(1, view.scale / 0.4);
+          const SZ = Math.round(32 * symScale);
+          let gsx = hoverScreenPos.sx, gsy = hoverScreenPos.sy;
+          // Если над ветвью — снэп к ветви
+          if (hoverBranchId) {
+            const br = branches.find(b => b.id === hoverBranchId);
+            const fN = br ? projNodes.find(p => p.node.id === br.fromId) : null;
+            const tN = br ? projNodes.find(p => p.node.id === br.toId) : null;
+            if (fN && tN) {
+              const C = tN.sx - fN.sx, D = tN.sy - fN.sy;
+              const A = hoverScreenPos.sx - fN.sx, B = hoverScreenPos.sy - fN.sy;
+              const lenSq = C * C + D * D;
+              const t = lenSq > 0 ? Math.max(0.05, Math.min(0.95, (A * C + B * D) / lenSq)) : 0.5;
+              gsx = fN.sx + C * t;
+              gsy = fN.sy + D * t;
+            }
+          }
+          return (
+            <g opacity={0.6} style={{ pointerEvents: "none" }}>
+              {hoverBranchId && (
+                <circle cx={gsx} cy={gsy} r={SZ * 0.7}
+                  fill="none" stroke="#2563eb" strokeWidth={2} strokeDasharray="4 3" />
+              )}
+              <svg x={gsx - SZ / 2} y={gsy - SZ / 2 - 4} width={SZ} height={SZ}
+                viewBox="0 0 48 40" overflow="visible"
+                dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+            </g>
           );
         })()}
 
@@ -1763,6 +1835,14 @@ export default function TopoCanvas(props: Props) {
         style={{ color: "#444" }}>
         М 1:{(1 / Math.max(0.00001, view.scale * 0.001)).toFixed(0)}
       </div>
+
+      {/* Подсказка — режим ожидания привязки */}
+      {pendingSymbolTypeId && (
+        <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
+          style={{ background: "#059669", color: "white" }}>
+          Кликните на ветвь чтобы разместить УО · Esc — отмена
+        </div>
+      )}
 
       {/* Подсказка */}
       {tool === "node" && (

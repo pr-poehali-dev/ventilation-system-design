@@ -557,6 +557,8 @@ export default function CadPage() {
   ]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
+  // Режим «ожидания привязки»: символ из буфера ждёт клика на ветвь
+  const [pendingSymbol, setPendingSymbol] = useState<SchemaSymbol | null>(null);
 
   const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
   const [showUOPanel, setShowUOPanel] = useState(false);
@@ -1168,29 +1170,11 @@ export default function CadPage() {
         handleSave();
         return;
       }
-      // Ctrl+V / Ctrl+М — вставить условное обозначение из буфера
+      // Ctrl+V / Ctrl+М — вставить условное обозначение из буфера (режим ожидания привязки)
       if (e.ctrlKey && (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") && !isEditing) {
         if (symbolClipboard) {
           e.preventDefault();
-          const newId = `SYM_${Date.now()}`;
-          if (symbolClipboard.branchId) {
-            // Символ был привязан к ветви — вставляем со смещением offset
-            setSchemaSymbols(prev => [...prev, {
-              ...symbolClipboard,
-              id: newId,
-              offsetX: (symbolClipboard.offsetX ?? 0) + 30,
-              offsetY: (symbolClipboard.offsetY ?? 0) + 30,
-            }]);
-          } else {
-            // Свободный символ — смещаем мировые координаты
-            setSchemaSymbols(prev => [...prev, {
-              ...symbolClipboard,
-              id: newId,
-              x: symbolClipboard.x + 20,
-              y: symbolClipboard.y + 20,
-            }]);
-          }
-          setSelectedSymbolId(newId);
+          setPendingSymbol({ ...symbolClipboard, id: `SYM_${Date.now()}` });
         }
         return;
       }
@@ -1200,30 +1184,12 @@ export default function CadPage() {
         if (sym) { e.preventDefault(); setSymbolClipboard(sym); }
         return;
       }
-      // Ctrl+D / Ctrl+В — дублировать выбранное обозначение
+      // Ctrl+D / Ctrl+В — дублировать выбранное обозначение (режим ожидания привязки)
       if (e.ctrlKey && (e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") && !isEditing && selectedSymbolId) {
         const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
         if (sym) {
           e.preventDefault();
-          const newId = `SYM_${Date.now()}`;
-          if (sym.branchId) {
-            // Символ привязан к ветви — дублируем со смещением offset
-            setSchemaSymbols(prev => [...prev, {
-              ...sym,
-              id: newId,
-              offsetX: (sym.offsetX ?? 0) + 30,
-              offsetY: (sym.offsetY ?? 0) + 30,
-            }]);
-          } else {
-            // Свободный символ — смещаем мировые координаты
-            setSchemaSymbols(prev => [...prev, {
-              ...sym,
-              id: newId,
-              x: sym.x + 20,
-              y: sym.y + 20,
-            }]);
-          }
-          setSelectedSymbolId(newId);
+          setPendingSymbol({ ...sym, id: `SYM_${Date.now()}` });
         }
         return;
       }
@@ -1270,6 +1236,10 @@ export default function CadPage() {
       if (isEditing) return;
 
       if (e.key === "Escape" || e.key === "Enter") {
+        if (pendingSymbol) {
+          setPendingSymbol(null);
+          return;
+        }
         setSelectedNodeId(null);
         setSelectedBranchId(null);
         setTool("select");
@@ -1278,7 +1248,7 @@ export default function CadPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard]);
+  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard, pendingSymbol]);
 
   // Проверяет, является ли узел промежуточным (ровно 2 смежных ветви)
   const getNodeAdjacentBranches = (nodeId: string) => {
@@ -3356,6 +3326,25 @@ export default function CadPage() {
               }}
               onBranchLabelOffset={(id, ox, oy) => setBranches(prev => prev.map(b => b.id === id ? { ...b, labelOffsetX: ox, labelOffsetY: oy } : b))}
               activeSymbolTypeId={activeSymbolTypeId}
+              pendingSymbolTypeId={pendingSymbol?.typeId ?? null}
+              onPendingSymbolPlace={(branchId, t, x, y) => {
+                if (!pendingSymbol) return;
+                const newSym: SchemaSymbol = {
+                  ...pendingSymbol,
+                  branchId,
+                  t,
+                  x,
+                  y,
+                  offsetX: 0,
+                  offsetY: 0,
+                };
+                setSchemaSymbols(prev => [...prev, newSym]);
+                setSelectedSymbolId(newSym.id);
+                setSelectedBranchId(null);
+                setSelectedNodeId(null);
+                setActiveSide("params");
+                setPendingSymbol(null);
+              }}
               onSymbolPlace={(typeId, x, y, branchId) => {
                 if (SQUAD_TYPES.includes(typeId)) {
                   setSquadDialog({ typeId, x, y, branchId });
