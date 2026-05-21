@@ -1088,7 +1088,7 @@ export default function CadPage() {
                       ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
                       ?? b.bulkheadAirPerm ?? 0);
                   const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0) * 1e3);
+                  r = kAir > 0 ? 1 / (kAir * kAir) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
                 }
               }
               return sum + r;
@@ -2503,7 +2503,7 @@ export default function CadPage() {
                       ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                       ?? brForSym.bulkheadAirPerm ?? 0);
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0) * 1e-6;
+                  rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0);
                 }
                 return rNsm8 * q * Math.abs(q);
               })();
@@ -2569,28 +2569,28 @@ export default function CadPage() {
                             } else if (mode === "survey") {
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              const rNsm8 = q > 0 ? dp / (q * q) : 0;
-                              rKmu = rNsm8 / 10;
+                              const rMurg = q > 0 ? dp / (q * q) : 0;
+                              rKmu = rMurg / 1000;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               const branchArea = brForSym?.area ?? 0;
                               const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
                                 || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-                              let rNsm8 = 0;
+                              let rMurg = 0;
                               if (isFullyOpen) {
-                                rNsm8 = 0;
+                                rMurg = 0;
                               } else if (sw > 0.001) {
                                 const mu = 0.65;
-                                rNsm8 = rho / (2 * mu * mu * sw * sw);
+                                rMurg = rho / (2 * mu * mu * sw * sw);
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
                                 const rRefDisp = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefDisp ?? brForSym?.bulkheadR ?? 0) * 1e-6;
+                                rMurg = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefDisp ?? brForSym?.bulkheadR ?? 0);
                               }
-                              rKmu = rNsm8 / 10;
+                              rKmu = rMurg / 1000;
                             }
                             if (rKmu === 0) return "0 кМюрг";
                             const mag = Math.floor(Math.log10(Math.abs(rKmu)));
