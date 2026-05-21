@@ -191,7 +191,7 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 8, qMax: 32, qNominal: 18, hNominal: 2200,
     rpmMin: 0, rpmMax: 1480, rpmNominal: 1480,
     bladeAngles: [15, 25, 35],
-    reverseH0: 1300, reverseH1: -1.5, reverseH2: -2.0,
+    reverseH0: 2120, reverseH1: -8, reverseH2: -1.8,
     reverseQMin: 6, reverseQMax: 26,
     reverseEfficiencyFactor: 0.80,
   },
