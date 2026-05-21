@@ -513,7 +513,14 @@ export default function CadPage() {
       });
       // Синхронизируем символы сразу по актуальным (updated) ветвям
       setSchemaSymbols(prev2 => prev2.map(s => {
-        if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
+        if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || s.bkManualAirPerm) return s;
+        // Приоритет 1: собственный bkBulkheadId символа
+        if (s.bkBulkheadId) {
+          const ref = mineBulkheads.find(b => b.id === s.bkBulkheadId);
+          if (ref) return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0 };
+        }
+        // Приоритет 2: bulkheadId ветви
+        if (!s.branchId) return s;
         const br = updated.find(b => b.id === s.branchId);
         if (!br || !br.bulkheadId) return s;
         const ref = mineBulkheads.find(b => b.id === br.bulkheadId);
@@ -1076,8 +1083,12 @@ export default function CadPage() {
                   r = rho / (2 * mu * mu * sw * sw);
                 } else {
                   // Глухая перемычка — по воздухопроницаемости или справочному R
-                  const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0);
-                  r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3);
+                  const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
+                    : (s.bkAirPerm
+                      ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
+                      ?? b.bulkheadAirPerm ?? 0);
+                  const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+                  r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0) * 1e3);
                 }
               }
               return sum + r;
@@ -2487,10 +2498,12 @@ export default function CadPage() {
                   const mu = 0.65;
                   rNsm8 = rho2 / (2 * mu * mu * sw * sw);
                 } else {
-                  const kAir = sym.bkManualAirPerm
-                    ? (sym.bkCustomAirPerm ?? 0)
-                    : (sym.bkAirPerm ?? brForSym.bulkheadAirPerm ?? 0);
-                  rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) * 1e-6;
+                  const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
+                    : (sym.bkAirPerm
+                      ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
+                      ?? brForSym.bulkheadAirPerm ?? 0);
+                  const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+                  rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0) * 1e-6;
                 }
                 return rNsm8 * q * Math.abs(q);
               })();
@@ -2570,10 +2583,12 @@ export default function CadPage() {
                                 const mu = 0.65;
                                 rNsm8 = rho / (2 * mu * mu * sw * sw);
                               } else {
-                                const kAir = sym.bkManualAirPerm
-                                  ? (sym.bkCustomAirPerm ?? 0)
-                                  : (sym.bkAirPerm ?? brForSym?.bulkheadAirPerm ?? 0);
-                                rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? brForSym?.bulkheadR ?? 0) * 1e-6;
+                                const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
+                                  : (sym.bkAirPerm
+                                    ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
+                                    ?? brForSym?.bulkheadAirPerm ?? 0);
+                                const rRefDisp = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+                                rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefDisp ?? brForSym?.bulkheadR ?? 0) * 1e-6;
                               }
                               rKmu = rNsm8 / 10;
                             }
@@ -2614,6 +2629,31 @@ export default function CadPage() {
                             </div>
                           ) : (
                             <>
+                              {/* Тип перемычки из справочника */}
+                              {mineBulkheads.length > 0 && (
+                                <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                                  <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип:</span>
+                                  <select
+                                    value={sym.bkBulkheadId ?? brForSym?.bulkheadId ?? ""}
+                                    onChange={e => {
+                                      const sel = mineBulkheads.find(b => b.id === e.target.value);
+                                      updSym({
+                                        bkBulkheadId: e.target.value || undefined,
+                                        bkBulkheadName: sel?.name ?? undefined,
+                                        bkAirPerm: sel?.airPermeability ?? 0,
+                                        bkBulkheadR: sel?.rMkyurg ?? 0,
+                                        bkFailurePressure: sel?.failurePressure ?? 0,
+                                      });
+                                    }}
+                                    className="flex-1 text-[11px] px-1"
+                                    style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                                    <option value="">— не выбрано —</option>
+                                    {mineBulkheads.map(b => (
+                                      <option key={b.id} value={b.id}>{b.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                               <div className="font-semibold text-[10px] text-gray-500 mb-1 mt-0.5" style={{ letterSpacing: "0.03em" }}>
                                 Воздухопроницаемость
                               </div>
@@ -2635,9 +2675,12 @@ export default function CadPage() {
                                     style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                                 ) : (
                                   <span className="flex-1 text-right text-gray-700 text-[11px]">
-                                    {(sym.bkAirPerm ?? brForSym?.bulkheadAirPerm)
-                                      ? `${(sym.bkAirPerm ?? brForSym?.bulkheadAirPerm ?? 0).toFixed(4)} м²/(с·√Па)`
-                                      : "—"}
+                                    {(() => {
+                                      const ap = sym.bkAirPerm
+                                        ?? (sym.bkBulkheadId ? mineBulkheads.find(b => b.id === sym.bkBulkheadId)?.airPermeability : undefined)
+                                        ?? brForSym?.bulkheadAirPerm;
+                                      return ap ? `${ap.toFixed(4)} м²/(с·√Па)` : "—";
+                                    })()}
                                   </span>
                                 )}
                               </div>
