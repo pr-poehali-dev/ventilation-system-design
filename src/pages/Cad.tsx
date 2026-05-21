@@ -2455,6 +2455,43 @@ export default function CadPage() {
               const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
               const isWindowBulkhead = WINDOW_BULKHEAD_IDS.has(sym.typeId);
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+              // ΔP перемычки = R_sym × Q × |Q| (не dP всей ветви, а только вклад этого символа)
+              const symDeltaP = (() => {
+                if (!brForSym) return null;
+                const q = brForSym.flow ?? 0;
+                const mode = sym.bkResMode ?? "project";
+                if (mode === "manual") {
+                  const rNsm8 = (sym.bkManualR ?? 0) * 10;
+                  return rNsm8 * q * Math.abs(q);
+                }
+                if (mode === "survey") {
+                  const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
+                  const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
+                  return rNsm8 * q * Math.abs(q);
+                }
+                // project
+                const sw = sym.bkWindowArea ?? 0;
+                const branchArea = brForSym.area ?? 0;
+                const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
+                  || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
+                if (isFullyOpen) return 0;
+                let rNsm8 = 0;
+                if (sw > 0.001) {
+                  const fnFrom2 = nodes.find(n => n.id === brForSym.fromId);
+                  const fnTo2   = nodes.find(n => n.id === brForSym.toId);
+                  const tF2 = fnFrom2 ? (fnFrom2.atmosphereLink ? surfaceTemp : (fnFrom2.airTemp ?? surfaceTemp)) : surfaceTemp;
+                  const tT2 = fnTo2   ? (fnTo2.atmosphereLink   ? surfaceTemp : (fnTo2.airTemp   ?? surfaceTemp)) : surfaceTemp;
+                  const rho2 = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF2 + tT2) / 2)));
+                  const mu = 0.65;
+                  rNsm8 = rho2 / (2 * mu * mu * sw * sw);
+                } else {
+                  const kAir = sym.bkManualAirPerm
+                    ? (sym.bkCustomAirPerm ?? 0)
+                    : (sym.bkAirPerm ?? brForSym.bulkheadAirPerm ?? 0);
+                  rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) * 1e-6;
+                }
+                return rNsm8 * q * Math.abs(q);
+              })();
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
               const updBr = (patch: Partial<typeof branches[0]>) =>
@@ -2607,7 +2644,7 @@ export default function CadPage() {
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
-                              {brForSym?.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                              {symDeltaP != null ? `${Math.round(symDeltaP)} Па` : "— Па"}
                             </span>
                           </div>
                         </>
@@ -2635,7 +2672,7 @@ export default function CadPage() {
                           <div className="flex items-center gap-1">
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
-                              {brForSym?.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                              {symDeltaP != null ? `${Math.round(symDeltaP)} Па` : "— Па"}
                             </span>
                           </div>
                         </>
@@ -2655,7 +2692,7 @@ export default function CadPage() {
                           <div className="flex items-center gap-1">
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
                             <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
-                              {brForSym?.dP != null ? `${Math.round(brForSym.dP)} Па` : "— Па"}
+                              {symDeltaP != null ? `${Math.round(symDeltaP)} Па` : "— Па"}
                             </span>
                           </div>
                         </>
