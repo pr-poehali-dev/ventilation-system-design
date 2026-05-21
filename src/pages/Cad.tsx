@@ -742,6 +742,10 @@ export default function CadPage() {
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
   const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
+  // Флаг несохранённых изменений
+  const [isDirty, setIsDirty] = useState<boolean>(false);
+  // Диалог подтверждения закрытия
+  const [showCloseConfirm, setShowCloseConfirm] = useState<boolean>(false);
 
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -775,6 +779,27 @@ export default function CadPage() {
     view: savedViewState ?? undefined,
   });
 
+  // Отслеживаем изменения проекта — помечаем как «несохранённый»
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    setIsDirty(true);
+  }, [nodes, branchesRaw, schemaSymbols, mineFans, mineBulkheads, mineTypes,
+      calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
+      infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
+      showFlowArrows, flowDisplay, zScale]);
+
+  // Предупреждение при закрытии/обновлении вкладки
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
   // Записать содержимое в уже открытый FileHandle (перезапись)
   const writeToHandle = async (handle: FileSystemFileHandle, data: object) => {
     const writable = await handle.createWritable();
@@ -788,6 +813,7 @@ export default function CadPage() {
     if (fileHandleRef.current) {
       try {
         await writeToHandle(fileHandleRef.current, data);
+        setIsDirty(false);
         return;
       } catch {
         // handle стал недоступен — fallback на скачивание
@@ -802,6 +828,7 @@ export default function CadPage() {
     a.download = projectFileName;
     a.click();
     URL.revokeObjectURL(url);
+    setIsDirty(false);
   };
 
   const handleSaveAs = async () => {
@@ -817,6 +844,7 @@ export default function CadPage() {
         const fname = handle.name;
         setProjectFileName(fname);
         await writeToHandle(handle, { ...data, name: fname });
+        setIsDirty(false);
         return;
       } catch {
         // Пользователь отменил — ничего не делаем
@@ -835,6 +863,7 @@ export default function CadPage() {
     a.download = fname;
     a.click();
     URL.revokeObjectURL(url);
+    setIsDirty(false);
   };
 
   const handleOpen = async () => {
@@ -1482,12 +1511,13 @@ export default function CadPage() {
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded-sm flex items-center justify-center"
             style={{ background: "#2563eb", color: "white", fontSize: "10px", fontWeight: "bold" }}>В</div>
-          <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}</span>
+          <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
         <div className="flex items-center gap-1">
           <button className="w-7 h-5 hover:bg-black/10 flex items-center justify-center text-xs">—</button>
           <button className="w-7 h-5 hover:bg-black/10 flex items-center justify-center text-xs">▢</button>
-          <button className="w-7 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs">✕</button>
+          <button className="w-7 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs"
+            onClick={() => { if (isDirty) { setShowCloseConfirm(true); } else { window.close(); } }}>✕</button>
         </div>
       </div>
 
@@ -3867,6 +3897,45 @@ export default function CadPage() {
         </div>
       </div>
     )}
+    {/* ── Диалог подтверждения закрытия ───────────────────────────────── */}
+    {showCloseConfirm && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.45)" }}>
+        <div className="bg-white rounded shadow-xl border border-gray-300 w-[340px]"
+          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200"
+            style={{ background: "#f5f5f5", borderRadius: "8px 8px 0 0" }}>
+            <Icon name="FileQuestion" size={16} className="text-yellow-600" />
+            <span className="text-[13px] font-semibold text-gray-800">Несохранённые изменения</span>
+          </div>
+          <div className="px-4 py-4">
+            <p className="text-[13px] text-gray-700 mb-1">
+              Проект <strong>«{projectFileName}»</strong> содержит несохранённые изменения.
+            </p>
+            <p className="text-[12px] text-gray-500">Сохранить перед закрытием?</p>
+          </div>
+          <div className="flex gap-2 justify-end px-4 pb-4">
+            <button
+              onClick={() => setShowCloseConfirm(false)}
+              className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+              Отмена
+            </button>
+            <button
+              onClick={() => { setShowCloseConfirm(false); window.close(); }}
+              className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-red-50 text-red-600">
+              Не сохранять
+            </button>
+            <button
+              onClick={async () => { await handleSave(); setShowCloseConfirm(false); window.close(); }}
+              className="h-7 px-3 text-[12px] rounded text-white"
+              style={{ background: "#2563eb" }}>
+              Сохранить
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     </>
   );
 }
