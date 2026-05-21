@@ -594,12 +594,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             if e["id"] not in dead_end_ids:
                 Q[i] = q0
 
-    # ══ ШАГ 6: Итерации Кросса ═══════════════════════════════════════════
+    # ══ ШАГ 6: Итерации Кросса с адаптивным демпфированием ══════════════
     # По Андрияшеву: поправка δQ = -ΔH / Σ(2·R·|Q|)
-    # ΔH = Σ [ R·Qi·|Qi| - H_вент(|Qi|)·sign_i - H_нат·sign_i ]
-    # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура
-    # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
+    # Адаптивное демпфирование: alpha начинается с 0.5, растёт по мере сходимости.
+    # Это устраняет осцилляции в сетях с ВМП и при реверсе.
+    has_reverse = any(e.get("fanReverse") for e in edges)
+    alpha = 0.4 if has_reverse else 0.6   # при реверсе — меньший шаг
     max_dq = float("inf")
+    prev_max_dq = float("inf")
     it = 0
 
     for it in range(1, max_iter + 1):
@@ -636,11 +638,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             # Поправка расхода по Кроссу: δQ = -ΔH / Σ(2·R·|Q|)
             dq = -sum_H / sum_2RQ
 
-            # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0)
+            # Ограничение взрыва: |δQ| ≤ 1.5 * max(|Q| в контуре, q0)
             q_max_loop = max((abs(Q[gi]) for gi, _ in loop), default=q0)
             q_lim = max(q_max_loop, q0)
-            if abs(dq) > 2.0 * q_lim:
-                dq = math.copysign(2.0 * q_lim, dq)
+            if abs(dq) > 1.5 * q_lim:
+                dq = math.copysign(1.5 * q_lim, dq)
+
+            # Применяем демпфирование
+            dq *= alpha
 
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
@@ -650,6 +655,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 Q[gi] += dq * sign
                 if not math.isfinite(Q[gi]):
                     Q[gi] = 0.0
+
+        # Адаптивно повышаем alpha по мере сходимости
+        if it > 20 and max_dq < prev_max_dq * 0.95:
+            alpha = min(1.0, alpha + 0.005)
+        elif max_dq > prev_max_dq:   # осцилляция — снижаем шаг
+            alpha = max(0.2, alpha * 0.9)
+        prev_max_dq = max_dq
 
         if max_dq < tol:
             it += 1
