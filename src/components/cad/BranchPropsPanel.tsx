@@ -992,10 +992,19 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 className="w-full text-[11px] px-1"
                 style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
                 <option>Внутри перемычки</option>
-                <option>Снаружи перемычки</option>
-                <option>На сопряжении</option>
+                <option>Без перемычки</option>
               </select>
             </InlineLabel>
+
+            {(branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (
+              <InlineLabel label="R перемычки, мюрг">
+                <EditInput
+                  type="number" step="0.001" min="0"
+                  value={branch.fanCrossingR ?? 0}
+                  onChange={(v) => onUpdate({ fanCrossingR: Math.max(0, parseFloat(v) || 0) })}
+                />
+              </InlineLabel>
+            )}
 
             <SectionHeader title="Вычисленные параметры" />
 

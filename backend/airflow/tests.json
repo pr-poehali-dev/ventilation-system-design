@@ -310,7 +310,7 @@
         "surfaceTemp": 5
       },
       "expectedStatus": 200,
-      "expectedBody": {"nodes": []},
+      "expectedBody": {"converged": true},
       "bodyMatcher": "partial"
     }
   ]

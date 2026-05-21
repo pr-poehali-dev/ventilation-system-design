@@ -29,7 +29,7 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
     try:
         body = json.loads(event.get("body") or "{}")
-    except Exception:
+    except BaseException:
         return err(400, "Ошибка парсинга JSON")
 
     nodes_in     = body.get("nodes", [])
@@ -47,7 +47,7 @@ def handler(event: dict, context) -> dict:
             result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp)
         else:
             result = solve(nodes_in, branches_in, options, normal_flows, surface_temp)
-    except Exception as ex:
+    except BaseException as ex:
         import traceback
         return err(500, f"Ошибка: {ex}\n{traceback.format_exc()}")
 
@@ -60,6 +60,10 @@ def handler(event: dict, context) -> dict:
 
 def get_R(b):
     r = float(b.get("R") or b.get("resistance") or 0.0)
+    # Если вентилятор установлен внутри перемычки — добавляем сопротивление перемычки
+    if b.get("hasFan") and b.get("fanInstall", "Внутри перемычки") == "Внутри перемычки":
+        crossing_r = float(b.get("fanCrossingR") or 0.0)
+        r += crossing_r
     return max(r, 1e-9)
 
 
