@@ -25,7 +25,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
@@ -1055,9 +1055,14 @@ export default function CadPage() {
                 const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
                 r = q > 0 ? dp / (q * q) : 0;
               } else {
-                const sw = s.bkWindowArea ?? 0;
-                if (sw > 0.001) { const mu = 0.65; r = rho / (2 * mu * mu * sw * sw); }
-                else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3); }
+                // Полностью открытая дверь на всё сечение — R = 0 всегда
+                if (OPEN_DOOR_IDS.has(s.typeId)) {
+                  r = 0;
+                } else {
+                  const sw = s.bkWindowArea ?? 0;
+                  if (sw > 0.001) { const mu = 0.65; r = rho / (2 * mu * mu * sw * sw); }
+                  else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3); }
+                }
               }
               return sum + r;
             }, 0);
@@ -2496,6 +2501,9 @@ export default function CadPage() {
                               const dp = sym.bkSurveyDP ?? 0;
                               const rNsm8 = q > 0 ? dp / (q * q) : 0;
                               rKmu = rNsm8 / 10;
+                            } else if (OPEN_DOOR_IDS.has(sym.typeId)) {
+                              // Полностью открытая дверь на всё сечение — R = 0
+                              rKmu = 0;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               let rNsm8 = 0;
