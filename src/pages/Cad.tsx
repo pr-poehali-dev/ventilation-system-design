@@ -1026,7 +1026,7 @@ export default function CadPage() {
               } else {
                 const sw = s.bkWindowArea ?? 0;
                 if (sw > 0.001) { const mu = 0.65; r = rho / (2 * mu * mu * sw * sw); }
-                else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : (s.bkBulkheadR ?? b.bulkheadR ?? 0); }
+                else { const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0) : (s.bkAirPerm ?? b.bulkheadAirPerm ?? 0); r = kAir > 0 ? 1 / (kAir * kAir) : ((s.bkBulkheadR ?? b.bulkheadR ?? 0) * 1e3); }
               }
               return sum + r;
             }, 0);
@@ -2430,20 +2430,19 @@ export default function CadPage() {
                     Общие свойства
                   </div>
 
-                  {/* Масштаб УО */}
+                  {/* Масштаб */}
                   <div className="flex items-center gap-1 mb-1.5">
-                    <span className="text-gray-500 w-20 flex-shrink-0">Масштаб УО</span>
-                    <div className="flex items-center gap-1 flex-1">
-                      <button
-                        onClick={() => updSym({ scale: Math.max(0.05, (sym.scale ?? 1) - 0.2) })}
-                        className="text-[10px] px-1.5 rounded"
-                        style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer", lineHeight: "16px" }}>−</button>
-                      <span className="flex-1 text-center text-[11px]">{Math.round((sym.scale ?? 1) * 100)}%</span>
-                      <button
-                        onClick={() => updSym({ scale: Math.min(4, (sym.scale ?? 1) + 0.2) })}
-                        className="text-[10px] px-1.5 rounded"
-                        style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer", lineHeight: "16px" }}>+</button>
-                    </div>
+                    <span className="text-gray-500 w-20 flex-shrink-0">Масштаб</span>
+                    <input type="range" min={5} max={400} step={5}
+                      value={Math.round((sym.scale ?? 1) * 100)}
+                      onChange={(e) => updSym({ scale: Number(e.target.value) / 100 })}
+                      className="flex-1" style={{ accentColor: "#2563eb" }} />
+                    <input type="number" min={5} max={400} step={5}
+                      value={Math.round((sym.scale ?? 1) * 100)}
+                      onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); updSym({ scale: v / 100 }); }}
+                      className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                      style={{ fontSize: 11 }} />
+                    <span className="text-gray-500 flex-shrink-0">%</span>
                   </div>
 
                   {/* Описание */}
@@ -2471,35 +2470,31 @@ export default function CadPage() {
                           R = {(() => {
                             const mode = sym.bkResMode ?? "project";
                             const rho = 1.2;
-                            let rMuyurg = 0; // сопротивление в Мюрг (Па·с²/м⁴)
+                            let rKmu = 0;
                             if (mode === "manual") {
-                              // bkManualR хранится в кМюрг → переводим в Мюрг
-                              rMuyurg = (sym.bkManualR ?? 0) * 1000;
+                              rKmu = sym.bkManualR ?? 0;
                             } else if (mode === "survey") {
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              rMuyurg = q > 0 ? dp / (q * q) : 0;
+                              const rNsm8 = q > 0 ? dp / (q * q) : 0;
+                              rKmu = rNsm8 / 10;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
+                              let rNsm8 = 0;
                               if (sw > 0.001) {
                                 const mu = 0.65;
-                                rMuyurg = rho / (2 * mu * mu * sw * sw);
+                                rNsm8 = rho / (2 * mu * mu * sw * sw);
                               } else {
                                 const kAir = sym.bkManualAirPerm
                                   ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm ?? brForSym?.bulkheadAirPerm ?? 0);
-                                if (kAir > 0) {
-                                  rMuyurg = 1 / (kAir * kAir); // R = 1/A², Мюрг
-                                } else {
-                                  // fallback: bulkheadR из справочника хранится в Мюрг
-                                  rMuyurg = sym.bkBulkheadR ?? brForSym?.bulkheadR ?? 0;
-                                }
+                                rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? brForSym?.bulkheadR ?? 0) * 1e-6;
                               }
+                              rKmu = rNsm8 / 10;
                             }
-                            const rKmu = rMuyurg / 1000; // Мюрг → кМюрг
                             if (rKmu === 0) return "0 кМюрг";
                             const mag = Math.floor(Math.log10(Math.abs(rKmu)));
-                            const d = Math.max(0, Math.min(4, -mag + 2));
+                            const d = Math.max(4, -mag + 2);
                             return `${rKmu.toFixed(d)} кМюрг`;
                           })()}
                         </span>
