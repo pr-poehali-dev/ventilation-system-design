@@ -979,10 +979,7 @@ export default function CadPage() {
         return [b.id, { curve, k, af }];
       }));
 
-      const resp = await fetch(AIRFLOW_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const requestBody = {
           method: calcMode,
           nodes: nodes.map(n => ({
             id: n.id,
@@ -1051,9 +1048,15 @@ export default function CadPage() {
           ...(branches.some(b => b.fanReverse) && Object.keys(normalFlows).length > 0
             ? { normalFlows }
             : {}),
-        }),
+      };
+      console.log("[SOLVE] REQUEST:", JSON.stringify(requestBody, null, 2));
+      const resp = await fetch(AIRFLOW_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
       });
       const data = await resp.json();
+      console.log("[SOLVE] RESPONSE:", JSON.stringify(data, null, 2));
 
       if (!resp.ok || data.error) {
         const msg = data.error || "Ошибка расчёта";
