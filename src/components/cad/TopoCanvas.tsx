@@ -1382,7 +1382,7 @@ export default function TopoCanvas(props: Props) {
                   // После rotate(brAngle): X — вдоль ветви, Y — поперёк
                   // ph — высота прямоугольника ПОПЕРЁК ветви (по Y)
                   // pw — ширина прямоугольника ВДОЛЬ ветви (по X)
-                  const ph = Math.max(16, Math.min(40, SZ * 0.85));  // поперёк (Y)
+                  const ph = Math.max(16, SZ * 0.85);  // поперёк (Y)
                   const pw = Math.max(5, Math.round(ph * 0.38));      // вдоль (X)
                   const gap = Math.max(3, pw * 0.5);                  // зазор двери
 

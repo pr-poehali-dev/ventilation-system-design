@@ -1150,7 +1150,16 @@ export default function CadPage() {
       if (e.ctrlKey && e.key === "v" && !isEditing) {
         if (symbolClipboard) {
           e.preventDefault();
-          addSymbol(symbolClipboard.typeId, symbolClipboard.x + 5, symbolClipboard.y - 5, null, symbolClipboard.label, symbolClipboard.scale);
+          const newId = `SYM_${Date.now()}`;
+          setSchemaSymbols(prev => [...prev, {
+            ...symbolClipboard,
+            id: newId,
+            branchId: null,
+            t: undefined,
+            x: symbolClipboard.x + 20,
+            y: symbolClipboard.y + 20,
+          }]);
+          setSelectedSymbolId(newId);
         }
         return;
       }
@@ -2384,13 +2393,16 @@ export default function CadPage() {
                   {/* Масштаб */}
                   <div className="flex items-center gap-1 mb-1.5">
                     <span className="text-gray-500 w-20 flex-shrink-0">Масштаб</span>
-                    <input type="range" min={40} max={400} step={10}
+                    <input type="range" min={5} max={400} step={5}
                       value={Math.round((sym.scale ?? 1) * 100)}
                       onChange={(e) => updSym({ scale: Number(e.target.value) / 100 })}
                       className="flex-1" style={{ accentColor: "#2563eb" }} />
-                    <span className="w-10 text-right text-gray-700 flex-shrink-0">
-                      {Math.round((sym.scale ?? 1) * 100)} %
-                    </span>
+                    <input type="number" min={5} max={400} step={5}
+                      value={Math.round((sym.scale ?? 1) * 100)}
+                      onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); updSym({ scale: v / 100 }); }}
+                      className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                      style={{ fontSize: 11 }} />
+                    <span className="text-gray-500 flex-shrink-0">%</span>
                   </div>
 
                   {/* Описание */}
