@@ -64,7 +64,9 @@ def get_R(b):
     if b.get("hasFan") and b.get("fanInstall", "Внутри перемычки") == "Внутри перемычки":
         crossing_r = float(b.get("fanCrossingR") or 0.0)
         r += crossing_r
-    return max(r, 1e-9)
+    # Минимум 1e-4 мюрг — физический предел крупного ствола (30 м² × 1000 м).
+    # Меньшие R создают численные «дыры» с нереалистично большим расходом.
+    return max(r, 1e-4)
 
 
 def fan_H(e, Q):
@@ -74,6 +76,8 @@ def fan_H(e, Q):
     При реверсе используется отдельная P–Q характеристика если задана (reverseH0/H1/H2).
     N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
+    При Q > qMax: для curve возвращаем 0 (паспорт закончился); для constant —
+    линейно спадаем (защита от Q→∞ в итерациях).
     """
     if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
@@ -103,7 +107,17 @@ def fan_H(e, Q):
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
         return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
-    return float(e.get("fanPressure", 0))
+    # Constant-режим: применяем qMax для защиты от Q→∞ (как в Вентиляция-2):
+    # при Q > qMax напор резко падает (вентилятор выходит из рабочей зоны).
+    fp = float(e.get("fanPressure", 0))
+    q_max = float(e.get("qMax", 0))
+    if q_max > 0:
+        q_one = abs(Q) / N
+        if q_one > q_max:
+            # Линейный спад до нуля на 2×qMax
+            decay = max(0.0, 1.0 - (q_one - q_max) / q_max)
+            return fp * decay
+    return fp
 
 
 def fan_H_display(e, Q):
@@ -670,24 +684,50 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     log.append(f"R_net={R_net:.4f} (главный путь), активных={len(active_edges)}, тупиков={len(dead_end_ids)}")
 
     def bisect_q0():
-        af = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
-        if af:
+        """Начальное приближение Q₀ — рабочая точка главного вентилятора.
+        Алгоритм Вентиляция-2: ищем Q где Σ H_фан(Q) = R_net × Q² с ограничением
+        Q ≤ qMax_паспорта (вентилятор не может работать за паспортом).
+        Если qMax задан — Q₀ берём в зоне 50-80% от qMax (зона макс КПД).
+        """
+        # Главный вентилятор — с максимальным h0 (или fanPressure)
+        main_fans = [e for e in active_fans if e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ")]
+        if not main_fans:
+            main_fans = active_fans
+        if not main_fans:
+            return 1.0
+        # Берём qMax главного вентилятора как верхнюю границу
+        q_max_main = 0.0
+        for e in main_fans:
+            qmx = float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
+                              else "qMax", 0))
+            if qmx > q_max_main:
+                q_max_main = qmx
+
+        af_curve = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
+        if af_curve:
             q_lo = 0.1
-            q_hi_list = [float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
-                                     else "qMax", 90.0)) for e in af]
-            q_hi = min(q_hi_list) if q_hi_list else 90.0
+            q_hi = q_max_main if q_max_main > 0 else 90.0
             def f(q):
-                return sum(fan_H(e, q) for e in af) - R_net * q * q
+                return sum(fan_H(e, q) for e in af_curve) - R_net * q * q
             if f(q_lo) <= 0: return q_lo
-            if f(q_hi) >= 0: return q_hi
+            if f(q_hi) >= 0:
+                # Решение за паспортом → берём qMax (физический предел)
+                return q_hi * 0.9
             for _ in range(64):
                 qm = 0.5 * (q_lo + q_hi)
                 if f(qm) > 0: q_lo = qm
                 else:         q_hi = qm
                 if q_hi - q_lo < 0.01: break
             return 0.5 * (q_lo + q_hi)
+
+        # Constant-режим: H_фан фиксированный. Q₀ = sqrt(H/R), но ограничен qMax.
         H0 = sum(fan_H(e, 1.0) for e in active_fans)
-        if H0 > 0: return math.sqrt(H0 / R_net)
+        if H0 > 0:
+            q_calc = math.sqrt(H0 / R_net)
+            if q_max_main > 0:
+                # Ограничиваем паспортным qMax (зона 70-90% макс КПД)
+                return min(q_calc, q_max_main * 0.9)
+            return q_calc
         # Без вентилятора — естественная тяга. Q₀ через суммарную тягу первого контура.
         if loops_global:
             lp = loops_global[0]
@@ -1152,7 +1192,7 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
 def _mkr_fan_H(e, Q):
     """Напор вентилятора H>=0 (модуль). Знак (направление) учитывается
     в формуле невязки МКР через fan_dir = -1 при fanReverse (как в Кроссе).
-    Унифицировано с fan_H() для согласованности методов.
+    Унифицировано с fan_H() — включая защиту от Q→∞ через qMax.
     """
     if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
@@ -1174,7 +1214,15 @@ def _mkr_fan_H(e, Q):
                 return 0.0
             h = float(e.get("h0", 0)) + float(e.get("h1", 0)) * q_one + float(e.get("h2", 0)) * q_one * q_one
         return max(0.0, h)
-    return max(0.0, float(e.get("fanPressure", 0)))
+    # Constant с qMax — спад при выходе за паспорт
+    fp = max(0.0, float(e.get("fanPressure", 0)))
+    q_max = float(e.get("qMax", 0))
+    if q_max > 0:
+        q_one = abs(Q) / N
+        if q_one > q_max:
+            decay = max(0.0, 1.0 - (q_one - q_max) / q_max)
+            return fp * decay
+    return fp
 
 
 def _mkr_fan_dH(e, Q):
