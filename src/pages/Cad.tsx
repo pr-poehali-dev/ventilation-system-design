@@ -443,8 +443,8 @@ export default function CadPage() {
   // Метод расчёта: cross = Кросс, mkr = МКР
   const [calcMode, setCalcMode] = useState<"cross" | "mkr">("cross");
   // Параметры расчёта
-  const [solverTolerance, setSolverTolerance] = useState(0.01);
-  const [solverMaxIter, setSolverMaxIter] = useState(2000);
+  const [solverTolerance, setSolverTolerance] = useState(0.001);
+  const [solverMaxIter, setSolverMaxIter] = useState(5000);
   const [solverAlpha, setSolverAlpha] = useState(0.8);
   // Температура воздуха на поверхности (для расчёта естественной тяги)
   const [surfaceTemp, setSurfaceTemp] = useState(20);
