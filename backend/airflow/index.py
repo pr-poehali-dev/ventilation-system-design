@@ -510,14 +510,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     dead_end_ids = find_dead_ends(edges)
     if dead_end_ids:
         log.append(f"Тупиков={len(dead_end_ids)}: {', '.join(sorted(dead_end_ids))}")
-    # Диагностика: все ветви у ЛЮБОГО узла с дисбалансом > 0.01
-    # Считаем Q_map предварительно
-    _qmap_tmp = {e["id"]: 0.0 for e in edges}  # будет заполнен после итераций
-    # Также выводим все ветви у узла 66f26bfd
-    for e in edges:
-        if "66f26bfd" in e.get("a","") or "66f26bfd" in e.get("b",""):
-            status = "ТУПИК" if e["id"] in dead_end_ids else "актив"
-            print(f"[NODE66] {e['id']} {e['a'][:25]}→{e['b'][:25]} angle={e.get('angle',0):.0f} {status} hasFan={e.get('hasFan',False)}")
 
     active_edges = [e for e in edges if e["id"] not in dead_end_ids]
     active_idx   = {i: gi for gi, e in enumerate(edges)
@@ -728,16 +720,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 print(f"[GND-OUT-rev] {e['id']} Q={q:.4f}")
     print(f"[GND balance] IN={gnd_in:.4f} OUT={gnd_out:.4f} diff={gnd_out-gnd_in:.4f}")
 
-    # Проверка Кирхгофа в каждом узле
-    node_balance = collections.defaultdict(float)
-    for e in edges:
-        q = Q_map.get(e["id"], 0.0)
-        node_balance[e["a"]] -= q   # из узла a
-        node_balance[e["b"]] += q   # в узел b (или из b если q<0)
-    for node, bal in sorted(node_balance.items(), key=lambda x: -abs(x[1])):
-        if abs(bal) > 0.01 and node != GND:
-            print(f"[KIRCH] узел {node[:30]} дисбаланс={bal:.4f}")
-
     # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
     # Такой вентилятор образует петлю в графе и не участвует в балансе Кирхгофа.
     # Его реальный расход = сумма расходов всех ветвей, втекающих в GND
@@ -931,11 +913,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
-            # Вентилятор без расчётного расхода:
-            # - GND→GND ("Без перемычки"): используем R_net (суммарное R сети)
-            # - Тупиковый ВМП (один конец подземный): используем R собственной ветви
-            is_gnd_loop = (e["a"] == GND and e["b"] == GND)
-            R = (R_net if R_net > 0 else e["R"]) if is_gnd_loop else e["R"]
+            # Вентилятор без расчётного расхода, или главный вентилятор GND→GND
+            # ("Без перемычки" — оба конца атмосферные). Такой вентилятор выпадает
+            # из итераций Кросса (петля), поэтому считаем рабочую точку напрямую:
+            # H_fan(Q) = R_сети·Q² → бисекция по R_net.
+            R = R_net if R_net > 0 else e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
                 q_hi = float(e.get("qMax", 90.0))
