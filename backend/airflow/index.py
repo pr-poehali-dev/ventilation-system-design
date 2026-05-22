@@ -618,6 +618,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # в make_result через собственную рабочую точку H(Q)=R*Q².
     R_net = sum(e["R"] for e in active_edges if not e["hasFan"])
     if R_net <= 0: R_net = 1e-3
+    log.append(f"R_net={R_net:.4f}, активных={len(active_edges)}, тупиков={len(dead_end_ids)}")
 
     def bisect_q0():
         af = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
