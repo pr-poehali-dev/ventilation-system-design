@@ -613,58 +613,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     loops_global = [[(active_idx[ai], sign) for ai, sign in loop] for loop in loops_active]
     log.append(f"Контуров={len(loops_global)}")
 
-    # ══ ШАГ 4: Листовые ВМП + начальный расход q0 ═══════════════════════
-    # Определяем листовые ВМП СНАЧАЛА — они исключаются из R_net и bisect_q0
-    degree_cross = collections.defaultdict(int)
-    for e in active_edges:
-        degree_cross[e["a"]] += 1
-        degree_cross[e["b"]] += 1
-
-    cross_leaf_vmp = {}  # id → Q
-    for e in active_edges:
-        if not e.get("hasFan") or e.get("fanStopped"):
-            continue
-        # Только ВМП "Без перемычки" — тупиковый, считается независимо.
-        # ВМП "Внутри перемычки" создаёт замкнутый контур (трубопровод + выработка)
-        # и участвует в основном расчёте как обычный вентилятор.
-        if e.get("fanType") != "ВМП":
-            continue
-        if e.get("fanInstall", "Внутри перемычки") != "Без перемычки":
-            continue  # "Внутри перемычки" — в основной расчёт
-        # Рабочая точка ВМП: H(Q) = R * Q²
-        R_vmp = e["R"] if e["R"] > 0 else 1e-3
-        q_hi = float(e.get("qMax", 90.0))
-        def _f_vmp(qv, _e=e, _R=R_vmp):
-            return fan_H(_e, qv) - _R * qv * qv
-        qv = 0.0
-        if _f_vmp(0.1) > 0 and _f_vmp(q_hi) < 0:
-            lo2, hi2 = 0.1, q_hi
-            for _ in range(80):
-                mid2 = 0.5 * (lo2 + hi2)
-                if _f_vmp(mid2) > 0:
-                    lo2 = mid2
-                else:
-                    hi2 = mid2
-                if hi2 - lo2 < 0.001:
-                    break
-            qv = 0.5 * (lo2 + hi2)
-        elif _f_vmp(0.1) <= 0:
-            qv = 0.1
-        else:
-            qv = q_hi
-        cross_leaf_vmp[e["id"]] = qv
-        log.append(f"ВМП {e['id']}: Q={qv:.3f} м³/с (рабочая точка)")
-
-    # R_net и q0 — только по основной сети (без листовых ВМП)
-    main_active = [e for e in active_edges if e["id"] not in cross_leaf_vmp]
-    R_net = sum(e["R"] for e in main_active if not e["hasFan"])
+    # ══ ШАГ 4: Начальный расход q0 (рабочая точка главного вентилятора) ══
+    # ВМП теперь в dead_end_ids и не участвуют в расчёте — их Q считается
+    # в make_result через собственную рабочую точку H(Q)=R*Q².
+    R_net = sum(e["R"] for e in active_edges if not e["hasFan"])
     if R_net <= 0: R_net = 1e-3
 
-    # Главные активные вентиляторы (не листовые ВМП) — для bisect_q0
-    main_active_fans = [e for e in active_fans if e["id"] not in cross_leaf_vmp]
-
     def bisect_q0():
-        af = [e for e in main_active_fans if e.get("fanMode", "constant") == "curve"]
+        af = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
         if af:
             q_lo = 0.1
             q_hi_list = [float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
@@ -680,16 +636,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 else:         q_hi = qm
                 if q_hi - q_lo < 0.01: break
             return 0.5 * (q_lo + q_hi)
-        H0 = sum(fan_H(e, 1.0) for e in main_active_fans)
+        H0 = sum(fan_H(e, 1.0) for e in active_fans)
         if H0 > 0: return math.sqrt(H0 / R_net)
-        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in main_active)
+        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
         return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
 
     q0 = bisect_q0()
-    log.append(f"Q₀={q0:.3f} м³/с (главная сеть, R={R_net:.4f})")
+    log.append(f"Q₀={q0:.3f} м³/с")
 
     # ══ ШАГ 5: Начальное Q по дереву BFS (1-й закон Кирхгофа) ═══════════
-    # Q[global_idx] — расход по каждой ветви (положительный = направление a→b)
     Q = [0.0] * len(edges)
 
     adj_tree = collections.defaultdict(list)
@@ -698,31 +653,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             adj_tree[e["a"]].append((gi, e["b"]))
             adj_tree[e["b"]].append((gi, e["a"]))
 
-    # Сначала проставляем Q листовых ВМП (фиксированные значения)
-    for e in active_edges:
-        if e["id"] in cross_leaf_vmp:
-            Q[id_to_gi[e["id"]]] = cross_leaf_vmp[e["id"]]
-
     fan_tree = next(
-        (e for e in active_edges
-         if e["hasFan"] and e["id"] in tree_ids and e["id"] not in cross_leaf_vmp),
+        (e for e in active_edges if e["hasFan"] and e["id"] in tree_ids),
         None
     )
     if fan_tree:
         gfi = id_to_gi[fan_tree["id"]]
         Q[gfi] = q0
-        # Учитываем вклад листовых ВМП в баланс узлов при BFS
-        node_q = {fan_tree["b"]: q0, fan_tree["a"]: -q0}
-        # Корректируем начальный баланс с учётом ВМП
-        for e in active_edges:
-            if e["id"] in cross_leaf_vmp:
-                qv = cross_leaf_vmp[e["id"]]
-                a_deg = degree_cross[e["a"]]
-                b_deg = degree_cross[e["b"]]
-                if a_deg == 1 and e["a"] != GND:
-                    node_q[e["b"]] = node_q.get(e["b"], 0.0) - qv
-                else:
-                    node_q[e["a"]] = node_q.get(e["a"], 0.0) - qv
+        node_q  = {fan_tree["b"]: q0, fan_tree["a"]: -q0}
         visited = {fan_tree["a"], fan_tree["b"]}
         queue   = collections.deque([fan_tree["b"]])
         while queue:
@@ -733,17 +671,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             q_each = incoming / len(nxt)
             for gi, nb in nxt:
                 e = edges[gi]
-                if e["id"] not in cross_leaf_vmp:
-                    Q[gi] = q_each if e["a"] == node else -q_each
+                Q[gi] = q_each if e["a"] == node else -q_each
                 node_q[nb] = node_q.get(nb, 0.0) + q_each
                 visited.add(nb)
                 queue.append(nb)
     else:
-        # нет вентилятора в дереве — q0 для всех активных (кроме листовых ВМП)
         for i, e in enumerate(edges):
-            if e["id"] not in dead_end_ids and e["id"] not in cross_leaf_vmp:
+            if e["id"] not in dead_end_ids:
                 Q[i] = q0
-        # Даже без вентилятора в дереве, Q листовых ВМП уже зафиксированы выше
 
     # ══ ШАГ 6: Итерации Кросса ═══════════════════════════════════════════
     # По Андрияшеву: поправка δQ = -ΔH / Σ(2·R·|Q|)
@@ -815,11 +750,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     for i, e in enumerate(edges):
         print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f} {e['a']}→{e['b']}"
               f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
-
-    # Восстанавливаем Q листовых ВМП (контуры могли их изменить через путь дерева)
-    for e in active_edges:
-        if e["id"] in cross_leaf_vmp:
-            Q[id_to_gi[e["id"]]] = cross_leaf_vmp[e["id"]]
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
@@ -894,10 +824,11 @@ def find_dead_ends(edges):
     #   через рабочую точку в make_result (is_dead and hasFan)
     # - Вертикальные выработки (угол ≥ 75°): стволы, скважины — не тупики по физике
     VERTICAL_ANGLE_THRESHOLD = 75.0
+    # Защищаем только ГВУ/ВВУ (участвуют в основном контуре).
+    # ВМП любого типа НЕ защищаем — они тупиковые, их Q считается в make_result.
     protected = set(
         e["id"] for e in edges
-        if (e["hasFan"] and e.get("fanType", "ГВУ") != "ВМП")
-        or (e["hasFan"] and e.get("fanType") == "ВМП" and e.get("fanInstall", "Внутри перемычки") == "Без перемычки")
+        if (e["hasFan"] and e.get("fanType", "ГВУ") not in ("ВМП",))
         or e.get("angle", 0) >= VERTICAL_ANGLE_THRESHOLD
     )
 
@@ -1354,116 +1285,30 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Q по глобальным индексам
     Q = [0.0] * len(edges)
 
-    # ── Определяем листовые ВМП ДО расчёта r_total ──────────────────────
-    # Листовой ВМП: вентилятор, у которого один конец тупиковый (степень 1,
-    # не GND). Это ВМП в забое — нагнетает воздух независимо от основной сети.
-    # Главный вентилятор шахты: подключён к GND (atmosphereLink) → НЕ листовой.
-    degree_active = collections.defaultdict(int)
-    for e in active_edges_list:
-        degree_active[e["a"]] += 1
-        degree_active[e["b"]] += 1
-
-    leaf_vmp_ids = set()
-    for e in active_edges_list:
-        if not e.get("hasFan") or e.get("fanStopped"):
-            continue
-        # Тупиковый ВМП: тип=ВМП И установка "Без перемычки".
-        # ВМП "Внутри перемычки" — в основном расчёте (создаёт замкнутый контур).
-        if e.get("fanType") == "ВМП" and e.get("fanInstall", "Внутри перемычки") == "Без перемычки":
-            leaf_vmp_ids.add(e["id"])
-            log.append(f"ВМП (тупиковый, без перемычки): {e['id']}")
-
-    # Начальный расход — только по основной сети (без листовых ВМП и их ветвей)
-    # r_total = R сетевых ветвей без вентиляторов и без ветвей листовых ВМП
-    main_edges = [e for e in active_edges_list if e["id"] not in leaf_vmp_ids]
-    r_total = sum(e["R"] for e in main_edges if not e.get("hasFan"))
+    # ВМП теперь в dead_end_ids — не участвуют в расчёте.
+    # Их Q вычисляется в make_result через собственную рабочую точку H(Q)=R*Q².
+    r_total = sum(e["R"] for e in active_edges_list if not e.get("hasFan"))
     if r_total <= 0:
         r_total = 1e-3
-    # q0 по главному вентилятору (не ВМП)
-    q0 = _estimate_q0_mkr(main_edges, r_total)
-    log.append(f"МКР Q₀={q0:.3f} м³/с (главная сеть R={r_total:.4f})")
+    q0 = _estimate_q0_mkr(active_edges_list, r_total)
+    log.append(f"МКР Q₀={q0:.3f} м³/с")
 
-    # Рассчитываем Q листовых ВМП через рабочую точку H(Q) = R_local * Q²
-    # R_local = сопротивление самой ветви ВМП
-    def calc_leaf_vmp_q(e):
-        R_vmp = e["R"] if e["R"] > 0 else 1e-3
-        mode = e.get("fanMode", "constant")
-        N = max(1, int(e.get("fanParallel", 1) or 1))
-        if mode == "curve":
-            is_rev = e.get("fanReverse") and e.get("reverseH0") is not None
-            q_hi = float(e.get("reverseQMax" if is_rev else "qMax", 90.0))
-            def f(q):
-                return abs(_mkr_fan_H(e, q)) - R_vmp * q * q
-            lo, hi = 0.0, q_hi
-            if f(lo) <= 0:
-                return lo
-            if f(hi) >= 0:
-                return hi
-            for _ in range(80):
-                mid = 0.5 * (lo + hi)
-                if f(mid) > 0:
-                    lo = mid
-                else:
-                    hi = mid
-                if hi - lo < 0.001:
-                    break
-            return max(0.0, 0.5 * (lo + hi))
-        else:
-            h0 = abs(_mkr_fan_H(e, 1.0))
-            return math.sqrt(h0 / R_vmp) if h0 > 0 and R_vmp > 0 else 0.0
-
-    # Словарь local_idx → global_idx для листовых ВМП (для быстрого обновления в цикле)
-    leaf_vmp_local_to_global = {
-        i: local_to_global[i]
-        for i, e in enumerate(active_edges_list)
-        if e["id"] in leaf_vmp_ids
-    }
-
-    # Устанавливаем Q листовых ВМП
-    for li, gi in leaf_vmp_local_to_global.items():
-        e = active_edges_list[li]
-        qv = calc_leaf_vmp_q(e)
-        Q[gi] = qv
-        log.append(f"ВМП {e['id']}: Q={qv:.3f} м³/с (рабочая точка)")
-
-    # Инициализация хорд
+    # Инициализация хорд и вентиляторов
     for ci in chords:
-        gi = local_to_global[ci]
-        e = active_edges_list[ci]
-        if e["id"] not in leaf_vmp_ids:
-            Q[gi] = q0
-    # Магистральные вентиляторы (не листовые ВМП)
+        Q[local_to_global[ci]] = q0
     for i, e in enumerate(active_edges_list):
-        if e.get("hasFan") and e["id"] not in leaf_vmp_ids:
+        if e.get("hasFan"):
             Q[local_to_global[i]] = q0
 
-    # BFS bottom-up: синхронизация ветвей дерева по Кирхгофу-1.
-    # Листовые ВМП исключены из балансов — их Q учитывается как внешний сток
-    # в узле подключения, чтобы основная сеть правильно компенсировала этот расход.
+    # BFS bottom-up: синхронизация ветвей дерева по Кирхгофу-1
     def sync_tree_q(Q_arr):
         bal = collections.defaultdict(float)
-        # Вклад хорд + не-листовых вентиляторов в балансы
         for i, e in enumerate(active_edges_list):
-            if e["id"] in leaf_vmp_ids:
-                # Листовой ВМП — добавляем как фиксированный сток в узле подключения
-                gi = local_to_global[i]
-                qv = Q_arr[gi]
-                # Определяем узел подключения (не тупиковый конец)
-                a_deg = degree_active[e["a"]]
-                b_deg = degree_active[e["b"]]
-                if a_deg == 1 and e["a"] != GND:
-                    # e["b"] — узел подключения к сети
-                    bal[e["b"]] -= qv   # ВМП отбирает qv из узла b
-                else:
-                    # e["a"] — узел подключения к сети
-                    bal[e["a"]] -= qv   # ВМП отбирает qv из узла a
-                continue
             if i in tree_set and not e.get("hasFan"):
                 continue
             gi = local_to_global[i]
             bal[e["a"]] -= Q_arr[gi]
             bal[e["b"]] += Q_arr[gi]
-        # bottom-up: ветви дерева получают Q из балансов узлов
         for idx in range(len(bfs_order) - 1, 0, -1):
             v  = bfs_order[idx]
             p  = parent_map.get(v)
@@ -1471,9 +1316,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
             p_node, li = p
             e  = active_edges_list[li]
-            # Пропускаем листовые ВМП в дереве — их Q фиксирован
-            if e["id"] in leaf_vmp_ids:
-                continue
             gi = local_to_global[li]
             b  = bal[v]
             if e["b"] == v:
@@ -1544,11 +1386,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
         # Синхронизация ветвей дерева по Кирхгофу-1
         sync_tree_q(Q)
-
-        # Обновляем Q листовых ВМП через рабочую точку (фиксированный Q,
-        # т.к. ВМП — тупиковая ветвь с независимым давлением)
-        for li, gi in leaf_vmp_local_to_global.items():
-            Q[gi] = calc_leaf_vmp_q(active_edges_list[li])
 
         # Адаптивное демпфирование: увеличиваем если сходится, снижаем если растёт
         if it > 5:
