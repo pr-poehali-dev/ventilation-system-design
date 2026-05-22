@@ -705,19 +705,11 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     for e in edges:
         q = Q_map.get(e["id"], 0.0)
         if e["a"] == GND and e["b"] != GND:
-            if q > 0:
-                gnd_out += q
-                print(f"[GND-OUT] {e['id']} Q={q:.4f} {'ВЕН' if e['hasFan'] else ''}")
-            else:
-                gnd_in -= q
-                print(f"[GND-IN-rev] {e['id']} Q={q:.4f}")
+            if q > 0: gnd_out += q
+            else:     gnd_in  -= q
         elif e["b"] == GND and e["a"] != GND:
-            if q > 0:
-                gnd_in += q
-                print(f"[GND-IN] {e['id']} Q={q:.4f} {'ВЕН' if e['hasFan'] else ''}")
-            else:
-                gnd_out -= q
-                print(f"[GND-OUT-rev] {e['id']} Q={q:.4f}")
+            if q > 0: gnd_in  += q
+            else:     gnd_out -= q
     print(f"[GND balance] IN={gnd_in:.4f} OUT={gnd_out:.4f} diff={gnd_out-gnd_in:.4f}")
 
     # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
