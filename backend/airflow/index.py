@@ -499,7 +499,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     """
     tol      = float(options.get("tolerance", 0.01))
     max_iter = int(options.get("maxIter", 5000))
-    alpha    = float(options.get("alpha", 1.0))   # коэффициент демпфирования Кросса
 
     log  = []
     diag = []
@@ -617,19 +616,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # ══ ШАГ 4: Начальный расход q0 (рабочая точка главного вентилятора) ══
     # ВМП теперь в dead_end_ids и не участвуют в расчёте — их Q считается
     # в make_result через собственную рабочую точку H(Q)=R*Q².
-    # R_net — характеристическое сопротивление для оценки Q₀.
-    # Используем медиану R активных ветвей, умноженную на количество ветвей в дереве.
-    # Простая сумма завышает R в 100-1000x для больших сетей (много параллельных ветвей).
-    # Параллельная формула занижает R для малых сетей (2-3 ветви).
-    # Медиана*N_tree даёт разумную оценку последовательного эквивалента.
-    _r_all = sorted(e["R"] for e in active_edges if not e["hasFan"] and e["R"] > 1e-6)
-    _n_tree = max(1, len([e for e in active_edges if e["id"] in tree_ids and not e["hasFan"]]))
-    if _r_all:
-        _median_r = _r_all[len(_r_all) // 2]
-        R_net = _median_r * _n_tree
-    else:
-        R_net = 1e-3
-    log.append(f"R_net={R_net:.4f} (медиана*дерево={_n_tree}), активных={len(active_edges)}, тупиков={len(dead_end_ids)}")
+    R_net = sum(e["R"] for e in active_edges if not e["hasFan"])
+    if R_net <= 0: R_net = 1e-3
+    log.append(f"R_net={R_net:.4f}, активных={len(active_edges)}, тупиков={len(dead_end_ids)}")
 
     def bisect_q0():
         af = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
@@ -650,15 +639,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             return 0.5 * (q_lo + q_hi)
         H0 = sum(fan_H(e, 1.0) for e in active_fans)
         if H0 > 0: return math.sqrt(H0 / R_net)
-        # Без вентилятора — естественная тяга. Q₀ = sqrt(|ΣH_nat_контура| / R_контура)
-        # Берём первый контур и считаем суммарную тягу и сопротивление по нему.
-        if loops_global:
-            lp = loops_global[0]
-            h_sum = abs(sum(edges[gi].get("naturalDraft", 0.0) * s for gi, s in lp))
-            r_sum = sum(edges[gi]["R"] for gi, _ in lp)
-            if h_sum > 0 and r_sum > 1e-9:
-                return math.sqrt(h_sum / r_sum)
-        H_nat = max((abs(e.get("naturalDraft", 0.0)) for e in active_edges), default=0.0)
+        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
         return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
 
     q0 = bisect_q0()
@@ -706,8 +687,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура
     # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
     max_dq = float("inf")
-    prev_dq = float("inf")
-    no_progress = 0
     it = 0
 
     for it in range(1, max_iter + 1):
@@ -741,15 +720,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             if sum_2RQ < 1e-12:
                 continue
 
-            # Поправка расхода по Кроссу: δQ = -ΔH / Σ(2·R·|Q|) с демпфированием alpha
-            dq = alpha * (-sum_H / sum_2RQ)
+            # Поправка расхода по Кроссу: δQ = -ΔH / Σ(2·R·|Q|)
+            dq = -sum_H / sum_2RQ
 
-            # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0) * 1.5
-            # Мягкий клип (1.5 вместо 2.0) для стабильности при естественной тяге
+            # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0)
             q_max_loop = max((abs(Q[gi]) for gi, _ in loop), default=q0)
             q_lim = max(q_max_loop, q0)
-            if abs(dq) > q_lim:
-                dq = math.copysign(q_lim, dq)
+            if abs(dq) > 2.0 * q_lim:
+                dq = math.copysign(2.0 * q_lim, dq)
 
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
@@ -763,16 +741,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         if max_dq < tol:
             it += 1
             break
-
-        # Адаптивное демпфирование: если прогресс застыл — снижаем alpha
-        if max_dq >= prev_dq * 0.99:
-            no_progress += 1
-            if no_progress >= 10 and alpha > 0.05:
-                alpha = max(0.05, alpha * 0.7)
-                no_progress = 0
-        else:
-            no_progress = 0
-        prev_dq = max_dq
 
     converged = max_dq < tol
     if not converged:
