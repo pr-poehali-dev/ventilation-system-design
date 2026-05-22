@@ -815,6 +815,29 @@ def find_dead_ends(edges):
             active_edges.discard(i)
             dead_edges.add(edges[i]["id"])
 
+    # Шаг 2: BFS от GND по оставшимся активным рёбрам.
+    # Любая ветвь, недостижимая из GND — изолированная петля тупиков (Q=0).
+    # Пример: замкнутое кольцо выработок без выхода на поверхность.
+    reachable_nodes = {GND}
+    queue = [GND]
+    while queue:
+        node = queue.pop()
+        for i in active_edges:
+            e = edges[i]
+            if e["a"] == node and e["b"] not in reachable_nodes:
+                reachable_nodes.add(e["b"])
+                queue.append(e["b"])
+            elif e["b"] == node and e["a"] not in reachable_nodes:
+                reachable_nodes.add(e["a"])
+                queue.append(e["a"])
+
+    for i in list(active_edges):
+        e = edges[i]
+        if e["a"] not in reachable_nodes and e["b"] not in reachable_nodes:
+            if e["id"] not in protected:
+                active_edges.discard(i)
+                dead_edges.add(e["id"])
+
     return dead_edges
 
 
