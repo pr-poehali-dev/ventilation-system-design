@@ -217,9 +217,11 @@ export default function CadPage() {
           ? { ...s, airDirection: patch.fanReverse ? "reverse" : "forward" }
           : s
       ));
-      // При переключении реверса — всегда перезапускаем расчёт сети,
-      // чтобы стрелки на схеме корректно отобразили новое направление потока.
-      setTimeout(() => handleSolveRef.current?.(), 100);
+      // При переключении на реверс: если нет прямого расчёта — запускаем автоматически
+      // (аналог reverse_fan() из эталона — сначала получаем q_norm, потом q_rev)
+      if (patch.fanReverse === true && Object.keys(normalFlows).length === 0) {
+        setTimeout(() => handleSolveRef.current?.(), 100);
+      }
     }
 
     // Аналог disable_fan(): при остановке/запуске вентилятора — автопересчёт сети.

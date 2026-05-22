@@ -967,11 +967,7 @@ export default function TopoCanvas(props: Props) {
           if (!from || !to) return null;
           const isSel = selectedBranchId === b.id || (selectedBranchIds?.has(b.id) ?? false);
           const isMultiSel = selectedBranchIds?.has(b.id) ?? false;
-          // При реверсе вентилятора поток идёт против направления ветви.
-          // Если расчёт ещё не был выполнен (flow > 0), принудительно переворачиваем
-          // стрелки для ветви самого вентилятора; после пересчёта flow < 0 само по себе.
-          const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && b.flow >= 0;
-          const reversed = b.flow < 0 || fanReverseOverride;
+          const reversed = b.flow < 0;
           // Координаты «начала потока» → «конца потока»
           const sxA = reversed ? to.sx : from.sx;
           const syA = reversed ? to.sy : from.sy;
