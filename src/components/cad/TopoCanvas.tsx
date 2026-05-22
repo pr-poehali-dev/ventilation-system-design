@@ -189,7 +189,12 @@ export default function TopoCanvas(props: Props) {
   const is3D = view.elevation < 89.5 || view.azimuth !== 0;
 
   const [panStart, setPanStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
-  const [rotStart, setRotStart] = useState<{ x: number; y: number; az: number; el: number } | null>(null);
+  const [rotStart, setRotStart] = useState<{
+    x: number; y: number; az: number; el: number;
+    ox: number; oy: number;
+    pivot: { x: number; y: number; z: number };
+    pivotScreen: { sx: number; sy: number };
+  } | null>(null);
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
@@ -266,7 +271,7 @@ export default function TopoCanvas(props: Props) {
     const pad = 0.1;
     const scaleX = (size.w * (1 - pad * 2)) / dw;
     const scaleY = (size.h * (1 - pad * 2)) / dh;
-    const newScale = Math.max(0.002, Math.min(500, Math.min(scaleX, scaleY)));
+    const newScale = Math.max(0.0005, Math.min(5000, Math.min(scaleX, scaleY)));
     const csx = (minSx + maxSx) / 2;
     const csy = (minSy + maxSy) / 2;
     setView((v) => ({
@@ -408,11 +413,41 @@ export default function TopoCanvas(props: Props) {
     onCanvasContextMenu?.(e.clientX, e.clientY);
   };
 
+  // Вычисление центра схемы (pivot) и его экранной проекции — для orbit-вращения.
+  // Если узлов нет, fallback на (0,0,0). Это решает проблему: схема построена
+  // далеко от 0,0,0 (например x=8890, y=16720), а вращение шло вокруг 0 —
+  // теперь вращается вокруг геометрического центра.
+  const computeRotPivot = () => {
+    if (nodes.length === 0) {
+      return {
+        pivot: { x: 0, y: 0, z: 0 },
+        pivotScreen: project3D({ x: 0, y: 0, z: 0 }, proj),
+      };
+    }
+    let sx = 0, sy = 0, sz = 0;
+    for (const n of nodes) {
+      sx += n.x; sy += n.y; sz += n.z * (zScale ?? 1);
+    }
+    const cx = sx / nodes.length;
+    const cy = sy / nodes.length;
+    const cz = sz / nodes.length;
+    return {
+      pivot: { x: cx, y: cy, z: cz },
+      pivotScreen: project3D({ x: cx, y: cy, z: cz }, proj),
+    };
+  };
+
   // ─── Обработчики мыши ───────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     // Правая кнопка или tool=rotate → вращение в 3D
     if (e.button === 2 || tool === "rotate") {
-      setRotStart({ x: e.clientX, y: e.clientY, az: view.azimuth, el: view.elevation });
+      const { pivot, pivotScreen } = computeRotPivot();
+      setRotStart({
+        x: e.clientX, y: e.clientY,
+        az: view.azimuth, el: view.elevation,
+        ox: view.offsetX, oy: view.offsetY,
+        pivot, pivotScreen,
+      });
       e.preventDefault();
       return;
     }
@@ -581,7 +616,13 @@ export default function TopoCanvas(props: Props) {
     setBranchFrom(null);
     // Свободный клик в 3D = вращение, в 2D = панорама
     if (is3D) {
-      setRotStart({ x: e.clientX, y: e.clientY, az: view.azimuth, el: view.elevation });
+      const { pivot, pivotScreen } = computeRotPivot();
+      setRotStart({
+        x: e.clientX, y: e.clientY,
+        az: view.azimuth, el: view.elevation,
+        ox: view.offsetX, oy: view.offsetY,
+        pivot, pivotScreen,
+      });
     } else {
       setPanStart({ x: e.clientX, y: e.clientY, ox: view.offsetX, oy: view.offsetY });
     }
@@ -612,7 +653,21 @@ export default function TopoCanvas(props: Props) {
       const dy = e.clientY - rotStart.y;
       const newAz = rotStart.az + dx * 0.5;     // 0.5°/px
       const newEl = Math.max(0, Math.min(90, rotStart.el - dy * 0.5));
-      setView((v) => ({ ...v, azimuth: newAz, elevation: newEl }));
+      // Orbit camera: после изменения углов перепроецируем pivot и сдвигаем
+      // offset так, чтобы центр схемы остался в той же экранной точке.
+      // Это даёт вращение «вокруг схемы», а не вокруг (0,0,0) мира.
+      const tmpProj = {
+        scale: view.scale,
+        offsetX: rotStart.ox,
+        offsetY: rotStart.oy,
+        azimuth: newAz,
+        elevation: newEl,
+        zScale,
+      };
+      const newPivotScreen = project3D(rotStart.pivot, tmpProj);
+      const newOx = rotStart.ox + (rotStart.pivotScreen.sx - newPivotScreen.sx);
+      const newOy = rotStart.oy + (rotStart.pivotScreen.sy - newPivotScreen.sy);
+      setView((v) => ({ ...v, azimuth: newAz, elevation: newEl, offsetX: newOx, offsetY: newOy }));
       return;
     }
     if (panStart) {
@@ -664,12 +719,16 @@ export default function TopoCanvas(props: Props) {
     const py = e.clientY - rect.top;
     const raw = e.deltaY;
     const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
-    // Плавный зум: фактор пропорционален величине delta, ограничен за один шаг
-    const step = Math.min(Math.abs(delta) / 120, 3);
-    const base = 1 + 0.12 * step;
+    // Плавный экспоненциальный зум: одинаковый «ощутимый» шаг на любом масштабе.
+    // step ограничен 2 (раньше 3) и базовый коэффициент 0.08 (раньше 0.12) —
+    // даёт ~8% за один тик колеса вместо ~36% (более плавно при близком зуме).
+    const step = Math.min(Math.abs(delta) / 120, 2);
+    const base = Math.exp(0.08 * step);
     const factor = delta > 0 ? 1 / base : base;
     setView((v) => {
-      const newScale = Math.max(0.002, Math.min(500, v.scale * factor));
+      // Расширенные лимиты: мин 0.0005 (далёкий обзор), макс 5000 (детальный зум).
+      // Это убирает «резкое исчезновение» при близком увеличении.
+      const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
       const wx = (px - v.offsetX) / v.scale;
       const wy = (py - v.offsetY) / v.scale;
       const newView = {
@@ -721,7 +780,7 @@ export default function TopoCanvas(props: Props) {
       const baseOx    = touchRef.current.ox;
       const baseOy    = touchRef.current.oy;
       setView(v => {
-        const newScale = Math.max(0.002, Math.min(500, baseScale * factor));
+        const newScale = Math.max(0.0005, Math.min(5000, baseScale * factor));
         const wx = (cx - baseOx) / baseScale;
         const wy = (cy - baseOy) / baseScale;
         prevScaleOverride.current = newScale;
