@@ -937,15 +937,17 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                     "Hfan": round(Hv, 3), "velocity": round(vel, 3),
                     "isDead": is_dead})
 
-    # При реверсе:
-    # - Ребро вентилятора было развёрнуто в графе (a↔b), поэтому МКР считает
-    #   его Q > 0 (направление a→b развёрнутого ребра = физически toId→fromId).
-    # - Все остальные ветви считаются с Q > 0 относительно перевёрнутого графа,
-    #   что физически означает обратное направление относительно исходных fromId→toId.
-    # Поэтому при реверсе инвертируем Q ВСЕХ ветвей — фронт рисует стрелки в обратную сторону.
-    fan_rev_ids = {e["id"] for e in edges if e.get("fanReverse") and e.get("hasFan")}
-    if fan_rev_ids and not force_zero:
-        out = [dict(b, Q=-b["Q"]) for b in out]
+    # При реверсе только ребро вентилятора переворачивалось в графе (a↔b),
+    # поэтому солвер даёт его Q > 0 в направлении a→b перевёрнутого ребра —
+    # физически это toId→fromId. Чтобы фронтенд показал отрицательный Q
+    # (flow < 0 → стрелки в обратную сторону) инвертируем Q только у
+    # реверсного вентилятора.
+    # Сетевые ветви НЕ переворачивались → их Q < 0 уже означает реверсный
+    # поток (против fromId→toId), инвертировать их не нужно.
+    if not force_zero:
+        rev_fan_ids = {e["id"] for e in edges if e.get("fanReverse") and e.get("hasFan")}
+        if rev_fan_ids:
+            out = [dict(b, Q=-b["Q"]) if b["id"] in rev_fan_ids else b for b in out]
 
     return {"branches": out, "nodes": [], "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
