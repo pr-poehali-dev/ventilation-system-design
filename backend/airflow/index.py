@@ -700,24 +700,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
-    # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
-    # Такой вентилятор образует петлю в графе и не участвует в балансе Кирхгофа.
-    # Его реальный расход = сумма расходов всех ветвей, втекающих в GND
-    # (или вытекающих — в зависимости от знака), минус сам вентилятор.
-    for e in edges:
-        if e.get("hasFan") and not e.get("fanStopped") and e["a"] == GND and e["b"] == GND:
-            # Считаем баланс GND по всем НЕ-вентиляторным ветвям у GND
-            q_gnd = 0.0
-            for oe in edges:
-                if oe["id"] == e["id"]:
-                    continue
-                if oe["a"] == GND:
-                    q_gnd += Q_map.get(oe["id"], 0.0)   # вытекает из GND
-                elif oe["b"] == GND:
-                    q_gnd -= Q_map.get(oe["id"], 0.0)   # втекает в GND
-            # Вентилятор компенсирует этот дисбаланс
-            Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
-
     # ── Диагностика утечек через перемычки ──────────────────────────────
     leakage_edges = [e for e in edges if e.get("isLeakage")]
     leakage_total = sum(abs(Q_map.get(e["id"], 0)) for e in leakage_edges)
@@ -1255,19 +1237,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     log.append(f"МКР итераций={it} |ΔH|={max_dh:.3f} Па δQ={max_dq:.4f} м³/с")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
-
-    # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
-    for e in edges:
-        if e.get("hasFan") and not e.get("fanStopped") and e["a"] == GND and e["b"] == GND:
-            q_gnd = 0.0
-            for oe in edges:
-                if oe["id"] == e["id"]:
-                    continue
-                if oe["a"] == GND:
-                    q_gnd += Q_map.get(oe["id"], 0.0)
-                elif oe["b"] == GND:
-                    q_gnd -= Q_map.get(oe["id"], 0.0)
-            Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
 
     # Проверка реверса
     check_reverse(edges, Q_map, normal_flows or {}, diag)
