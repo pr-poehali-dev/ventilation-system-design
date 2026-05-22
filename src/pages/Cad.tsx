@@ -1415,7 +1415,12 @@ export default function CadPage() {
     if (selectedSymbolId) {
       const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
       if (sym?.typeId === "fan" && sym.branchId) {
-        updateBranch(sym.branchId, { hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0 });
+        updateBranch(sym.branchId, {
+          hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0,
+          fanStopped: false, fanReverse: false, fanRpm: 0,
+          fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
+          fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
+        });
       }
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
@@ -3487,7 +3492,12 @@ export default function CadPage() {
               onSymbolDelete={(id) => {
                 const sym = schemaSymbols.find(s => s.id === id);
                 if (sym?.typeId === "fan" && sym.branchId) {
-                  updateBranch(sym.branchId, { hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0 });
+                  updateBranch(sym.branchId, {
+                    hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0,
+                    fanStopped: false, fanReverse: false, fanRpm: 0,
+                    fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
+                    fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
+                  });
                 }
                 removeSymbol(id);
                 setSelectedSymbolId(null);

@@ -1344,7 +1344,9 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         # независимо как рабочая точка, не через балансировку дерева.
         is_leaf_a = (a_deg == 1 and e["a"] != GND)
         is_leaf_b = (b_deg == 1 and e["b"] != GND)
-        if is_leaf_a or is_leaf_b:
+        # Главный вентилятор шахты подключён к GND (атмосфере) — не листовой ВМП
+        is_main_fan = (e["a"] == GND or e["b"] == GND)
+        if (is_leaf_a or is_leaf_b) and not is_main_fan:
             leaf_vmp_ids.add(e["id"])
             log.append(
                 f"Листовой ВМП {e['id']}: "
