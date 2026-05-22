@@ -101,8 +101,15 @@ def fan_H(e, Q):
             rh2 = float(e.get("reverseH2", 0))
             return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
         # Прямая характеристика
-        if q_one > float(e.get("qMax", 1e9)):
-            return 0.0
+        q_max_fan = float(e.get("qMax", 1e9))
+        if q_one > q_max_fan:
+            # За паспортом — резкий спад до 0 на 1.1×qMax (как Вентиляция-2)
+            decay = max(0.0, 1.0 - (q_one - q_max_fan) / (0.1 * q_max_fan))
+            h0 = float(e.get("h0", 0))
+            h1 = float(e.get("h1", 0))
+            h2 = float(e.get("h2", 0))
+            h_at_max = max(0.0, h0 + h1 * q_max_fan + h2 * q_max_fan * q_max_fan)
+            return h_at_max * decay
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
@@ -114,8 +121,8 @@ def fan_H(e, Q):
     if q_max > 0:
         q_one = abs(Q) / N
         if q_one > q_max:
-            # Линейный спад до нуля на 2×qMax
-            decay = max(0.0, 1.0 - (q_one - q_max) / q_max)
+            # Резкий спад до нуля на 1.1×qMax (Вентиляция-2 имеет «обрыв»)
+            decay = max(0.0, 1.0 - (q_one - q_max) / (0.1 * q_max))
             return fp * decay
     return fp
 
@@ -592,6 +599,41 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         diag.append({"level": "error", "category": "topology",
                      "message": "Все ветви тупиковые — нет замкнутого контура вентиляции."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
+    # ══ ШАГ 1а: Предрасчёт Q ВМП и узловых источников ════════════════════
+    # ВМП в тупике — это локальная петля (трубопровод+возврат), которая
+    # в основной сети не нарушает Кирхгофа: воздух забирается из узла
+    # подключения и возвращается в него же по той же выработке.
+    # НО! Если ВМП "Без перемычки", воздух из узла идёт в забой и теряется
+    # → в основной сети это утечка (negative source).
+    # Здесь считаем Q каждого ВМП заранее, и при необходимости добавляем
+    # узловой источник для коррекции основного расчёта.
+    vmp_pre_q = {}  # branch_id -> Q ВМП в тупике
+    for e in edges:
+        if e["id"] not in dead_end_ids or not e.get("hasFan") or e.get("fanStopped"):
+            continue
+        # Считаем рабочую точку ВМП через его собственное R
+        R_vmp = e["R"] if e["R"] > 1e-6 else 1e-3
+        q_lo = float(e.get("qMin", 0.1))
+        q_hi = float(e.get("qMax", 90.0))
+        def f_vmp(qv, _e=e, _R=R_vmp):
+            return fan_H(_e, qv) - _R * qv * qv
+        q_v = 0.0
+        if f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
+            for _ in range(60):
+                qm = 0.5 * (q_lo + q_hi)
+                if f_vmp(qm) > 0: q_lo = qm
+                else:             q_hi = qm
+                if q_hi - q_lo < 0.001: break
+            q_v = 0.5 * (q_lo + q_hi)
+        elif f_vmp(q_lo) <= 0:
+            q_v = q_lo
+        else:
+            q_v = q_hi
+        vmp_pre_q[e["id"]] = q_v
+
+    if vmp_pre_q:
+        log.append(f"ВМП предрасчёт: {len(vmp_pre_q)} шт, Σ|Q_ВМП|={sum(abs(q) for q in vmp_pre_q.values()):.1f} м³/с")
 
     # ══ ШАГ 2: Остовное дерево по активным рёбрам (Union-Find) ══════════
     # Вентиляторы — в дерево в первую очередь
@@ -1210,17 +1252,24 @@ def _mkr_fan_H(e, Q):
                 return 0.0
             h = float(e.get("reverseH0", 0)) + float(e.get("reverseH1", 0)) * q_one + float(e.get("reverseH2", 0)) * q_one * q_one
         else:
-            if q_one > float(e.get("qMax", 1e9)):
-                return 0.0
+            q_max_fan = float(e.get("qMax", 1e9))
+            if q_one > q_max_fan:
+                # Резкий спад до 0 на 1.1×qMax (как Вентиляция-2)
+                decay = max(0.0, 1.0 - (q_one - q_max_fan) / (0.1 * q_max_fan))
+                h0v = float(e.get("h0", 0))
+                h1v = float(e.get("h1", 0))
+                h2v = float(e.get("h2", 0))
+                h_at_max = max(0.0, h0v + h1v * q_max_fan + h2v * q_max_fan * q_max_fan)
+                return h_at_max * decay
             h = float(e.get("h0", 0)) + float(e.get("h1", 0)) * q_one + float(e.get("h2", 0)) * q_one * q_one
         return max(0.0, h)
-    # Constant с qMax — спад при выходе за паспорт
+    # Constant с qMax — резкий спад при выходе за паспорт (как Вентиляция-2)
     fp = max(0.0, float(e.get("fanPressure", 0)))
     q_max = float(e.get("qMax", 0))
     if q_max > 0:
         q_one = abs(Q) / N
         if q_one > q_max:
-            decay = max(0.0, 1.0 - (q_one - q_max) / q_max)
+            decay = max(0.0, 1.0 - (q_one - q_max) / (0.1 * q_max))
             return fp * decay
     return fp
 
