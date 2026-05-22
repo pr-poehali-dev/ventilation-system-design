@@ -510,6 +510,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     dead_end_ids = find_dead_ends(edges)
     if dead_end_ids:
         log.append(f"Тупиков={len(dead_end_ids)}: {', '.join(sorted(dead_end_ids))}")
+    # Диагностика: все ветви у ЛЮБОГО узла с дисбалансом > 0.01
+    # Считаем Q_map предварительно
+    _qmap_tmp = {e["id"]: 0.0 for e in edges}  # будет заполнен после итераций
+    # Также выводим все ветви у узла 66f26bfd
+    for e in edges:
+        if "66f26bfd" in e.get("a","") or "66f26bfd" in e.get("b",""):
+            status = "ТУПИК" if e["id"] in dead_end_ids else "актив"
+            print(f"[NODE66] {e['id']} {e['a'][:25]}→{e['b'][:25]} angle={e.get('angle',0):.0f} {status} hasFan={e.get('hasFan',False)}")
 
     active_edges = [e for e in edges if e["id"] not in dead_end_ids]
     active_idx   = {i: gi for gi, e in enumerate(edges)
@@ -695,10 +703,60 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
     log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, сошлось={converged}")
     for i, e in enumerate(edges):
-        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f}"
+        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f} {e['a']}→{e['b']}"
               f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
+
+    # ── Диагностика баланса GND ──────────────────────────────────────────
+    gnd_in, gnd_out = 0.0, 0.0
+    for e in edges:
+        q = Q_map.get(e["id"], 0.0)
+        if e["a"] == GND and e["b"] != GND:
+            if q > 0:
+                gnd_out += q
+                print(f"[GND-OUT] {e['id']} Q={q:.4f} {'ВЕН' if e['hasFan'] else ''}")
+            else:
+                gnd_in -= q
+                print(f"[GND-IN-rev] {e['id']} Q={q:.4f}")
+        elif e["b"] == GND and e["a"] != GND:
+            if q > 0:
+                gnd_in += q
+                print(f"[GND-IN] {e['id']} Q={q:.4f} {'ВЕН' if e['hasFan'] else ''}")
+            else:
+                gnd_out -= q
+                print(f"[GND-OUT-rev] {e['id']} Q={q:.4f}")
+    print(f"[GND balance] IN={gnd_in:.4f} OUT={gnd_out:.4f} diff={gnd_out-gnd_in:.4f}")
+
+    # Проверка Кирхгофа в каждом узле
+    node_balance = collections.defaultdict(float)
+    for e in edges:
+        q = Q_map.get(e["id"], 0.0)
+        node_balance[e["a"]] -= q   # из узла a
+        node_balance[e["b"]] += q   # в узел b (или из b если q<0)
+    for node, bal in sorted(node_balance.items(), key=lambda x: -abs(x[1])):
+        if abs(bal) > 0.01 and node != GND:
+            print(f"[KIRCH] узел {node[:30]} дисбаланс={bal:.4f}")
+
+    # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
+    # Такой вентилятор образует петлю в графе и не участвует в балансе Кирхгофа.
+    # Его реальный расход = сумма расходов всех ветвей, втекающих в GND
+    # (или вытекающих — в зависимости от знака), минус сам вентилятор.
+    for e in edges:
+        if e.get("hasFan") and not e.get("fanStopped") and e["a"] == GND and e["b"] == GND:
+            # Баланс GND: Q>0 означает поток a→b.
+            # oe["a"]==GND, Q>0 → поток из GND → GND теряет: -Q
+            # oe["b"]==GND, Q>0 → поток в GND  → GND получает: +Q
+            q_gnd = 0.0
+            for oe in edges:
+                if oe["id"] == e["id"]:
+                    continue
+                if oe["a"] == GND:
+                    q_gnd -= Q_map.get(oe["id"], 0.0)   # из GND
+                elif oe["b"] == GND:
+                    q_gnd += Q_map.get(oe["id"], 0.0)   # в GND
+            # Вентилятор восполняет дефицит GND
+            Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
 
     # ── Диагностика утечек через перемычки ──────────────────────────────
     leakage_edges = [e for e in edges if e.get("isLeakage")]
@@ -736,20 +794,15 @@ def find_dead_ends(edges):
     Это правильно находит длинные тупиковые цепочки любой глубины.
     """
     # Строим множество «живых» рёбер — начинаем со всех
-    # Узлы с ВМП (вентилятором местного проветривания) не удаляем
-    vmp_nodes = set()
-    for e in edges:
-        if e["hasFan"]:
-            vmp_nodes.add(e["a"])
-            vmp_nodes.add(e["b"])
-
-    # Рёбра, которые нельзя удалять:
-    # - ВМП (вентилятор местного проветривания)
-    # - вертикальные выработки (угол ≥ 75°): стволы, скважины — не тупики по физике
+    # Рёбра, которые нельзя удалять как тупики:
+    # - Активный ВМП (работающий вентилятор): нагнетает воздух в тупик — не тупик по физике
+    # - Остановленный ВМП (fanStopped=True): ведёт себя как обычная ветвь — может быть тупиком
+    # - Вертикальные выработки (угол ≥ 75°): стволы, скважины — не тупики по физике
     VERTICAL_ANGLE_THRESHOLD = 75.0
     protected = set(
         e["id"] for e in edges
-        if e["hasFan"] or e.get("angle", 0) >= VERTICAL_ANGLE_THRESHOLD
+        if (e["hasFan"] and not e.get("fanStopped", False))
+        or e.get("angle", 0) >= VERTICAL_ANGLE_THRESHOLD
     )
 
     # Граф: узел → список индексов рёбер
@@ -797,6 +850,71 @@ def find_dead_ends(edges):
             active_edges.discard(i)
             dead_edges.add(edges[i]["id"])
 
+    # Шаг 2: итеративно убираем «висячие петли» — подграфы, подключённые к основной
+    # сети только через одну точку (сочленение). Такие петли не имеют сквозного тока:
+    # воздух входит и выходит через один и тот же узел → Q=0 физически.
+    #
+    # Алгоритм: повторяем пока есть изменения:
+    #   - находим все узлы, достижимые из GND БЕЗ прохождения через данный узел v
+    #   - если GND недостижим без v → v является точкой сочленения
+    #   - все ветви по другую сторону от v (не содержащие GND) — мёртвые
+    #
+    # Упрощённая версия: ищем узлы, удаление которых отключает часть графа от GND.
+    # Отключённая часть — тупиковая петля.
+
+    changed2 = True
+    while changed2:
+        changed2 = False
+
+        # Строим граф только из активных рёбер
+        adj2 = collections.defaultdict(set)
+        for i in active_edges:
+            e = edges[i]
+            adj2[e["a"]].add(e["b"])
+            adj2[e["b"]].add(e["a"])
+
+        # Все узлы активного графа
+        all_nodes2 = set(adj2.keys())
+
+        # Для каждого не-GND узла проверяем: достижим ли GND без него?
+        for v in list(all_nodes2):
+            if v == GND:
+                continue
+
+            # BFS из GND без узла v
+            reachable = {GND}
+            q2 = [GND]
+            while q2:
+                cur = q2.pop()
+                for nb in adj2[cur]:
+                    if nb != v and nb not in reachable:
+                        reachable.add(nb)
+                        q2.append(nb)
+
+            # Узлы НЕ достижимые из GND без v — они висят на v
+            hanging = all_nodes2 - reachable - {v}
+            if not hanging:
+                continue
+
+            # Убиваем все ребра полностью внутри hanging (оба конца в hanging)
+            to_kill = set()
+            for i in list(active_edges):
+                e = edges[i]
+                if e["a"] in hanging and e["b"] in hanging:
+                    if e["id"] not in protected:
+                        to_kill.add(i)
+                # Рёбра между v и hanging тоже убиваем (они не несут сквозного тока)
+                elif (e["a"] == v and e["b"] in hanging) or (e["b"] == v and e["a"] in hanging):
+                    if e["id"] not in protected:
+                        to_kill.add(i)
+
+            if to_kill:
+                for i in to_kill:
+                    active_edges.discard(i)
+                    dead_edges.add(edges[i]["id"])
+                changed2 = True
+                break  # пересчитываем граф заново
+
     return dead_edges
 
 
@@ -813,11 +931,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
-            # Вентилятор без расчётного расхода, или главный вентилятор GND→GND
-            # ("Без перемычки" — оба конца атмосферные). Такой вентилятор выпадает
-            # из итераций Кросса (петля), поэтому считаем рабочую точку напрямую:
-            # H_fan(Q) = R_сети·Q² → бисекция по R_net.
-            R = R_net if R_net > 0 else e["R"]
+            # Вентилятор без расчётного расхода:
+            # - GND→GND ("Без перемычки"): используем R_net (суммарное R сети)
+            # - Тупиковый ВМП (один конец подземный): используем R собственной ветви
+            is_gnd_loop = (e["a"] == GND and e["b"] == GND)
+            R = (R_net if R_net > 0 else e["R"]) if is_gnd_loop else e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
                 q_hi = float(e.get("qMax", 90.0))
@@ -1237,6 +1355,19 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     log.append(f"МКР итераций={it} |ΔH|={max_dh:.3f} Па δQ={max_dq:.4f} м³/с")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
+
+    # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
+    for e in edges:
+        if e.get("hasFan") and not e.get("fanStopped") and e["a"] == GND and e["b"] == GND:
+            q_gnd = 0.0
+            for oe in edges:
+                if oe["id"] == e["id"]:
+                    continue
+                if oe["a"] == GND:
+                    q_gnd -= Q_map.get(oe["id"], 0.0)   # из GND
+                elif oe["b"] == GND:
+                    q_gnd += Q_map.get(oe["id"], 0.0)   # в GND
+            Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
 
     # Проверка реверса
     check_reverse(edges, Q_map, normal_flows or {}, diag)
