@@ -606,38 +606,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     loops_global = [[(active_idx[ai], sign) for ai, sign in loop] for loop in loops_active]
     log.append(f"Контуров={len(loops_global)}")
 
-    # ══ ШАГ 4: Начальный расход q0 (рабочая точка вентилятора) ══════════
-    R_net = sum(e["R"] for e in active_edges if not e["hasFan"])
-    if R_net <= 0: R_net = 1e-3
-
-    def bisect_q0():
-        af = [e for e in active_fans if e.get("fanMode","constant") == "curve"]
-        if af:
-            q_lo = 0.1
-            q_hi_list = [float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
-                                     else "qMax", 90.0)) for e in af]
-            q_hi = min(q_hi_list) if q_hi_list else 90.0
-            def f(q):
-                return sum(fan_H(e, q) for e in af) - R_net * q * q
-            if f(q_lo) <= 0: return q_lo
-            if f(q_hi) >= 0: return q_hi
-            for _ in range(64):
-                qm = 0.5 * (q_lo + q_hi)
-                if f(qm) > 0: q_lo = qm
-                else:         q_hi = qm
-                if q_hi - q_lo < 0.01: break
-            return 0.5 * (q_lo + q_hi)
-        # constant или остановлен
-        H0 = sum(fan_H(e, 1.0) for e in active_fans)
-        if H0 > 0: return math.sqrt(H0 / R_net)
-        # только естественная тяга
-        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
-        return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
-
-    q0 = bisect_q0()
-    log.append(f"Q₀={q0:.3f} м³/с")
-
-    # Листовые ВМП в Кросс-солвере: вентиляторы, один конец которых тупиковый
+    # ══ ШАГ 4: Листовые ВМП + начальный расход q0 ═══════════════════════
+    # Определяем листовые ВМП СНАЧАЛА — они исключаются из R_net и bisect_q0
     degree_cross = collections.defaultdict(int)
     for e in active_edges:
         degree_cross[e["a"]] += 1
@@ -649,7 +619,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             continue
         a_deg = degree_cross[e["a"]]
         b_deg = degree_cross[e["b"]]
-        if (a_deg == 1 and e["a"] != GND) or (b_deg == 1 and e["b"] != GND):
+        is_main_fan = (e["a"] == GND or e["b"] == GND)
+        if not is_main_fan and ((a_deg == 1 and e["a"] != GND) or (b_deg == 1 and e["b"] != GND)):
             # Рабочая точка листового ВМП: H(Q) = R * Q²
             R_vmp = e["R"] if e["R"] > 0 else 1e-3
             q_hi = float(e.get("qMax", 90.0))
@@ -673,6 +644,39 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 qv = q_hi
             cross_leaf_vmp[e["id"]] = qv
             log.append(f"ВМП {e['id']}: Q={qv:.3f} м³/с (рабочая точка)")
+
+    # R_net и q0 — только по основной сети (без листовых ВМП)
+    main_active = [e for e in active_edges if e["id"] not in cross_leaf_vmp]
+    R_net = sum(e["R"] for e in main_active if not e["hasFan"])
+    if R_net <= 0: R_net = 1e-3
+
+    # Главные активные вентиляторы (не листовые ВМП) — для bisect_q0
+    main_active_fans = [e for e in active_fans if e["id"] not in cross_leaf_vmp]
+
+    def bisect_q0():
+        af = [e for e in main_active_fans if e.get("fanMode", "constant") == "curve"]
+        if af:
+            q_lo = 0.1
+            q_hi_list = [float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
+                                     else "qMax", 90.0)) for e in af]
+            q_hi = min(q_hi_list) if q_hi_list else 90.0
+            def f(q):
+                return sum(fan_H(e, q) for e in af) - R_net * q * q
+            if f(q_lo) <= 0: return q_lo
+            if f(q_hi) >= 0: return q_hi
+            for _ in range(64):
+                qm = 0.5 * (q_lo + q_hi)
+                if f(qm) > 0: q_lo = qm
+                else:         q_hi = qm
+                if q_hi - q_lo < 0.01: break
+            return 0.5 * (q_lo + q_hi)
+        H0 = sum(fan_H(e, 1.0) for e in main_active_fans)
+        if H0 > 0: return math.sqrt(H0 / R_net)
+        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in main_active)
+        return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
+
+    q0 = bisect_q0()
+    log.append(f"Q₀={q0:.3f} м³/с (главная сеть, R={R_net:.4f})")
 
     # ══ ШАГ 5: Начальное Q по дереву BFS (1-й закон Кирхгофа) ═══════════
     # Q[global_idx] — расход по каждой ветви (положительный = направление a→b)
@@ -1317,17 +1321,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Q по глобальным индексам
     Q = [0.0] * len(edges)
 
-    # Начальный расход
-    r_total = sum(e["R"] for e in active_edges_list if not e.get("hasFan"))
-    if r_total <= 0:
-        r_total = 1e-3
-    q0 = _estimate_q0_mkr(active_edges_list, r_total)
-    log.append(f"МКР Q₀={q0:.3f} м³/с")
-
-    # Определяем листовые ВМП: ветвь с вентилятором, у которой один конец —
-    # тупиковый узел (степень 1 в active_edges_list, не GND).
-    # Такие ВМП нагнетают воздух в тупиковую выработку — их Q рассчитывается
-    # через рабочую точку независимо от балансировки дерева.
+    # ── Определяем листовые ВМП ДО расчёта r_total ──────────────────────
+    # Листовой ВМП: вентилятор, у которого один конец тупиковый (степень 1,
+    # не GND). Это ВМП в забое — нагнетает воздух независимо от основной сети.
+    # Главный вентилятор шахты: подключён к GND (atmosphereLink) → НЕ листовой.
     degree_active = collections.defaultdict(int)
     for e in active_edges_list:
         degree_active[e["a"]] += 1
@@ -1339,9 +1336,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             continue
         a_deg = degree_active[e["a"]]
         b_deg = degree_active[e["b"]]
-        # Листовой ВМП: один конец имеет степень 1 и не является GND.
-        # Такой ВМП — тупиковый (нагнетает в забой), его Q рассчитывается
-        # независимо как рабочая точка, не через балансировку дерева.
         is_leaf_a = (a_deg == 1 and e["a"] != GND)
         is_leaf_b = (b_deg == 1 and e["b"] != GND)
         # Главный вентилятор шахты подключён к GND (атмосфере) — не листовой ВМП
@@ -1352,6 +1346,16 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 f"Листовой ВМП {e['id']}: "
                 f"a={e['a'][:12]}(deg={a_deg}) b={e['b'][:12]}(deg={b_deg})"
             )
+
+    # Начальный расход — только по основной сети (без листовых ВМП и их ветвей)
+    # r_total = R сетевых ветвей без вентиляторов и без ветвей листовых ВМП
+    main_edges = [e for e in active_edges_list if e["id"] not in leaf_vmp_ids]
+    r_total = sum(e["R"] for e in main_edges if not e.get("hasFan"))
+    if r_total <= 0:
+        r_total = 1e-3
+    # q0 по главному вентилятору (не ВМП)
+    q0 = _estimate_q0_mkr(main_edges, r_total)
+    log.append(f"МКР Q₀={q0:.3f} м³/с (главная сеть R={r_total:.4f})")
 
     # Рассчитываем Q листовых ВМП через рабочую точку H(Q) = R_local * Q²
     # R_local = сопротивление самой ветви ВМП
