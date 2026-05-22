@@ -695,7 +695,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
     log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, сошлось={converged}")
     for i, e in enumerate(edges):
-        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f} {e['a']}→{e['b']}"
+        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f}"
               f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
