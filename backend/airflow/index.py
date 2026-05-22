@@ -430,14 +430,19 @@ def check_reverse(edges, Q_result, normal_flows, diag):
         })
 
 
-def check_kirchhoff(edges, Q_map, diag, tol=0.5):
+def check_kirchhoff(edges, Q_map, diag, tol=0.5, dead_end_ids=None):
     """
     Проверяет 1-й закон Кирхгофа (баланс расходов) в каждом узле.
-    Для каждого не-GND узла считает: сумма Q входящих - сумма Q исходящих.
-    Если |дисбаланс| > tol м³/с — добавляет предупреждение в diag.
+    Тупиковые ветви без вентиляторов имеют Q=0 и не нарушают баланс.
+    Тупиковые ветви с ВМП исключаются — их Q это "сток" в точке подключения,
+    не нарушение Кирхгофа (воздух физически входит и выходит из тупика).
     """
+    dead_ends = dead_end_ids or set()
     node_balance = collections.defaultdict(float)
     for e in edges:
+        # Тупиковые ветви с ВМП — исключаем из проверки баланса
+        if e["id"] in dead_ends and e.get("hasFan"):
+            continue
         q = Q_map.get(e["id"], 0.0)
         if e["a"] != GND:
             node_balance[e["a"]] -= q   # вытекает из узла a
@@ -738,6 +743,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         for i, e in enumerate(edges):
             if e["id"] not in dead_end_ids and e["id"] not in cross_leaf_vmp:
                 Q[i] = q0
+        # Даже без вентилятора в дереве, Q листовых ВМП уже зафиксированы выше
 
     # ══ ШАГ 6: Итерации Кросса ═══════════════════════════════════════════
     # По Андрияшеву: поправка δQ = -ΔH / Σ(2·R·|Q|)
@@ -846,7 +852,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                                 f"(k_ут={k_ut:.2f} = {k_ut*100:.0f}% от Q вент.)"})
 
     # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
-    check_kirchhoff(edges, Q_map, diag)
+    check_kirchhoff(edges, Q_map, diag, dead_end_ids=dead_end_ids)
 
     # ── Проверка норматива реверса ───────────────────────────────────────
     check_reverse(edges, Q_map, normal_flows or {}, diag)
@@ -1580,7 +1586,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
 
     # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
-    check_kirchhoff(edges, Q_map, diag)
+    check_kirchhoff(edges, Q_map, diag, dead_end_ids=dead_end_ids)
 
     # Проверка реверса
     check_reverse(edges, Q_map, normal_flows or {}, diag)
