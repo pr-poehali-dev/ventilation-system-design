@@ -882,12 +882,17 @@ def find_dead_ends(edges):
             vmp_nodes.add(e["b"])
 
     # Рёбра, которые нельзя удалять:
-    # - ВМП (вентилятор местного проветривания)
-    # - вертикальные выработки (угол ≥ 75°): стволы, скважины — не тупики по физике
+    # - Главные/вспомогательные вентиляторы (ГВУ/ВВУ) — они в основном контуре
+    # - ВМП "Без перемычки" — тупиковые, но их Q считается через рабочую точку
+    # - ВМП "Внутри перемычки" — МОГУТ быть удалены как тупики; их Q считается
+    #   через рабочую точку в make_result (is_dead and hasFan)
+    # - Вертикальные выработки (угол ≥ 75°): стволы, скважины — не тупики по физике
     VERTICAL_ANGLE_THRESHOLD = 75.0
     protected = set(
         e["id"] for e in edges
-        if e["hasFan"] or e.get("angle", 0) >= VERTICAL_ANGLE_THRESHOLD
+        if (e["hasFan"] and e.get("fanType", "ГВУ") != "ВМП")
+        or (e["hasFan"] and e.get("fanType") == "ВМП" and e.get("fanInstall", "Внутри перемычки") == "Без перемычки")
+        or e.get("angle", 0) >= VERTICAL_ANGLE_THRESHOLD
     )
 
     # Граф: узел → список индексов рёбер
@@ -1011,15 +1016,32 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         is_dead = e["id"] in dead_ends
         q = Q.get(e["id"], 0.0)
 
-        if is_dead:
-            q = 0.0  # тупиковые выработки без ВМП — Q=0 всегда
+        if is_dead and not e.get("hasFan"):
+            q = 0.0  # тупиковые выработки без вентилятора — Q=0
+        elif is_dead and e.get("hasFan"):
+            # Тупиковая ветвь с ВМП: рабочая точка через собственное R ветви
+            # (трубопровод ВМП), а не через R_net всей сети
+            R = e["R"] if e["R"] > 1e-6 else 1e-3
+            q_lo = float(e.get("qMin", 0.1))
+            q_hi = float(e.get("qMax", 90.0))
+            def f_vmp(qv, _e=e, _R=R):
+                return fan_H(_e, qv) - _R * qv * qv
+            if f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
+                for _ in range(60):
+                    qm = 0.5 * (q_lo + q_hi)
+                    if f_vmp(qm) > 0: q_lo = qm
+                    else:             q_hi = qm
+                    if q_hi - q_lo < 0.001: break
+                q = 0.5 * (q_lo + q_hi)
+            elif f_vmp(q_lo) <= 0:
+                q = q_lo
+            else:
+                q = q_hi
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
-            # Вентилятор без расчётного расхода, или главный вентилятор GND→GND
-            # ("Без перемычки" — оба конца атмосферные). Такой вентилятор выпадает
-            # из итераций Кросса (петля), поэтому считаем рабочую точку напрямую:
-            # H_fan(Q) = R_сети·Q² → бисекция по R_net.
+            # Главный вентилятор GND→GND ("Без перемычки") выпадает из итераций —
+            # считаем рабочую точку через R_net всей сети.
             R = R_net if R_net > 0 else e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
