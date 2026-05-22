@@ -823,9 +823,16 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 bfs_order.append(nb)
                 queue.append(nb)
 
-    # 1) Инициализируем все хорды (не в дереве, не тупики) одинаковым q0
+    # 1) Инициализируем все хорды (не в дереве, не тупики)
+    # КРИТИЧНО: q_chord = q0 / N_chords, чтобы суммарный поток через дерево
+    # к ГВУ не превышал Q_ГВУ. Иначе при N=5 хордах в стволе будет 5×q0.
     tree_branch_set = {parent_tree[v][1] for v in bfs_order if v in parent_tree}
-    q_chord = q0 * sign_init
+    n_chords = sum(1 for gi, e in enumerate(edges)
+                   if e["id"] not in dead_end_ids and gi not in tree_branch_set)
+    if n_chords < 1:
+        n_chords = 1
+    q_chord = (q0 / n_chords) * sign_init
+    log.append(f"Хорд={n_chords}, q_chord={q_chord:.3f} (q0/N)")
     for gi, e in enumerate(edges):
         if e["id"] in dead_end_ids:
             continue
@@ -857,6 +864,29 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             Q[gi] = b
         # Передаём баланс родителю
         node_bal[p_node] += b
+
+    # 4) Верификация начального баланса Кирхгофа в каждом узле (≠ GND)
+    # Если где-то Σ Q_in ≠ Σ Q_out → топология/дерево построены неверно.
+    init_bal_check = collections.defaultdict(float)
+    for gi, e in enumerate(edges):
+        if e["id"] in dead_end_ids:
+            continue
+        init_bal_check[e["a"]] -= Q[gi]
+        init_bal_check[e["b"]] += Q[gi]
+    max_init_bal = 0.0
+    worst_node = None
+    for nd, bal in init_bal_check.items():
+        if nd == GND:
+            continue
+        if abs(bal) > max_init_bal:
+            max_init_bal = abs(bal)
+            worst_node = nd
+    if max_init_bal > 0.01:
+        diag.append({"level": "warning", "category": "initial_balance",
+                     "message": f"Начальный баланс Кирхгофа нарушен: узел {worst_node}, |ΔQ|={max_init_bal:.2f} м³/с"})
+        log.append(f"⚠ Начальный |ΔQ|_max={max_init_bal:.3f} в узле {worst_node}")
+    else:
+        log.append(f"✓ Начальный баланс Кирхгофа: |ΔQ|_max={max_init_bal:.4f}")
 
     # ══ ШАГ 6: Итерации Кросса (Андрияшев-Кросс с демпфированием) ════════
     # ΔH контура = Σ [ R·Qi·|Qi| − fan_dir·H_вент(|Qi|)·sign_i − H_нат·sign_i ]
@@ -1210,17 +1240,49 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 diag.append({"level": "warning", "category": "fan_overload",
                              "message": f"Ветвь {e['id']}: Q={abs(q):.2f} м³/с превышает qMax={q_max:.1f} м³/с — вентилятор вышел за паспортную зону"})
 
+        # flowDir: направление реального потока (a→b при Q>0, b→a при Q<0)
+        # actualQ: модуль расхода (всегда положительный) — для отображения
+        flow_dir = "a->b" if q >= 0 else "b->a"
         out.append({"id": e["id"], "Q": round(q, 4), "H": round(H, 3),
                     "Hfan": round(Hv, 3), "velocity": round(vel, 3),
-                    "isDead": is_dead})
+                    "isDead": is_dead,
+                    "actualQ": round(abs(q), 4),
+                    "flowDir": flow_dir,
+                    "fromNode": e["a"], "toNode": e["b"]})
 
     # Реверс: после унификации build_graph рёбра больше не разворачиваются,
     # поэтому отрицательный Q автоматически означает обратное направление
     # потока относительно fromId→toId для всех ветвей. Дополнительная
     # инверсия больше не требуется (как в Вентсим/Аэросеть).
 
+    # ФИНАЛЬНАЯ ПРОВЕРКА БАЛАНСА КИРХГОФА в каждом узле (≠ GND)
+    # Σ Q_in - Σ Q_out должно быть 0 в любом узле кроме источника/стока (GND).
+    final_bal = collections.defaultdict(float)
+    for branch_out in out:
+        if branch_out.get("isDead"):
+            continue
+        q_val = branch_out["Q"]
+        final_bal[branch_out["fromNode"]] -= q_val
+        final_bal[branch_out["toNode"]] += q_val
+    worst_bal = 0.0
+    worst_nd = None
+    for nd, bal in final_bal.items():
+        if nd == GND:
+            continue
+        if abs(bal) > worst_bal:
+            worst_bal = abs(bal)
+            worst_nd = nd
+    log.append(f"Финальный баланс Кирхгофа: |ΔQ|_max={worst_bal:.4f} м³/с в узле {worst_nd}")
+    if worst_bal > 0.5:
+        diag.append({"level": "error", "category": "kirchhoff_balance",
+                     "message": f"Нарушен баланс масс: узел {worst_nd}, |ΣQ|={worst_bal:.2f} м³/с. Расчёт некорректен."})
+    elif worst_bal > 0.1:
+        diag.append({"level": "warning", "category": "kirchhoff_balance",
+                     "message": f"Баланс масс с погрешностью: узел {worst_nd}, |ΣQ|={worst_bal:.3f} м³/с"})
+
     return {"branches": out, "nodes": [], "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
+            "kirchhoffBalance": round(worst_bal, 4),
             "log": log, "diagnostics": diag}
 
 
@@ -1514,14 +1576,18 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         if e.get("hasFan") and e.get("fanReverse") and e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
             sign_mkr = -1.0
             break
-    q_init_mkr = q0 * sign_mkr
+    # КРИТИЧНО: q_init_mkr = q0 / N_chords (как в Кросс),
+    # чтобы суммарный поток через дерево не превышал Q_ГВУ.
+    n_chords_mkr = max(1, len(chords))
+    q_init_mkr = (q0 / n_chords_mkr) * sign_mkr
+    log.append(f"МКР хорд={n_chords_mkr}, q_chord={q_init_mkr:.3f}")
     for ci in chords:
         Q[local_to_global[ci]] = q_init_mkr
     for i, e in enumerate(active_edges_list):
         if e.get("hasFan"):
             # ВМП всегда инициализируем с положительным знаком (свой напор)
             if e.get("fanType") == "ВМП":
-                Q[local_to_global[i]] = q0
+                Q[local_to_global[i]] = q0 / n_chords_mkr
             else:
                 Q[local_to_global[i]] = q_init_mkr
 
