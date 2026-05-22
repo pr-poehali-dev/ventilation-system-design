@@ -713,7 +713,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # ── Проверка норматива реверса ───────────────────────────────────────
     check_reverse(edges, Q_map, normal_flows or {}, diag)
 
-    return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids)
+    return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids, R_net=R_net)
 
 
 def find_dead_ends(edges):
@@ -800,7 +800,7 @@ def find_dead_ends(edges):
     return dead_edges
 
 
-def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, dead_end_ids=None):
+def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, dead_end_ids=None, R_net=0.0):
     # dead_end_ids передаётся из solve() (уже вычислено), иначе пересчитываем
     dead_ends = dead_end_ids if dead_end_ids is not None else find_dead_ends(edges)
     out = []
@@ -813,10 +813,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and abs(q) < 1e-6:
-            # Тупиковая ветвь с ВМП: расход не вычислился методом Кросса
-            # (вентилятор в разомкнутой ветви). Считаем рабочую точку:
-            # H_fan(Q) = R·Q² → бисекция
-            R = e["R"]
+            # Вентилятор без расчётного расхода (GND→GND или тупиковая ветвь).
+            # Считаем рабочую точку: H_fan(Q) = R_сети·Q² → бисекция.
+            # Для вентилятора "Без перемычки" (GND→GND) R ветви ≈ 0,
+            # поэтому используем R_net — суммарное сопротивление шахтной сети.
+            R = max(e["R"], R_net) if R_net > 0 else e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
                 q_hi = float(e.get("qMax", 90.0))
@@ -1240,7 +1241,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Проверка реверса
     check_reverse(edges, Q_map, normal_flows or {}, diag)
 
-    return make_result(edges, Q_map, it, converged, max_dh, log, diag, dead_end_ids=dead_end_ids)
+    return make_result(edges, Q_map, it, converged, max_dh, log, diag, dead_end_ids=dead_end_ids, R_net=r_total)
 
 
 def empty_result(msg):

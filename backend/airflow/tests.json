@@ -312,6 +312,32 @@
       "expectedStatus": 200,
       "expectedBody": {"converged": true},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Вентилятор GND→GND (Без перемычки) — напор и Q должны быть ненулевыми",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "N1"},
+          {"id": "N2"},
+          {"id": "ATM2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "fan", "fromId": "ATM1", "toId": "ATM2", "R": 0.001,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 1000,
+           "fanInstall": "Без перемычки"},
+          {"id": "b1", "fromId": "ATM1", "toId": "N1", "R": 0.1},
+          {"id": "b2", "fromId": "N1",   "toId": "N2", "R": 0.1},
+          {"id": "b3", "fromId": "N2",   "toId": "ATM2","R": 0.1}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 2000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
     }
   ]
 }
