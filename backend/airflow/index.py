@@ -1193,13 +1193,23 @@ def _tree_path(src, dst, edges, parent):
 
 
 def _estimate_q0_mkr(edges, r_total):
-    """Начальный расход из рабочей точки вентилятора (бисекция)."""
+    """Начальный расход из рабочей точки вентилятора (бисекция).
+    Выбирает главный вентилятор — с максимальным h0 (напором при Q=0),
+    чтобы не взять ВМП с малым напором вместо главного вентилятора шахты.
+    """
     fans = [e for e in edges if e.get("hasFan") and not e.get("fanStopped")]
     if not fans:
         h_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in edges)
         return math.sqrt(h_nat / r_total) if h_nat > 0 and r_total > 0 else 1.0
 
-    fan = fans[0]
+    # Берём вентилятор с максимальным напором при нулевом расходе
+    def fan_h0(e):
+        mode = e.get("fanMode", "constant")
+        if mode == "curve":
+            return abs(float(e.get("h0", 0)))
+        return abs(float(e.get("fanPressure", 0)))
+
+    fan = max(fans, key=fan_h0)
     mode = fan.get("fanMode", "constant")
     if mode == "curve":
         is_rev = fan.get("fanReverse") and fan.get("reverseH0") is not None
@@ -1329,12 +1339,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             continue
         a_deg = degree_active[e["a"]]
         b_deg = degree_active[e["b"]]
-        # Листовой ВМП: один конец имеет степень 1 и не является GND
-        if (a_deg == 1 and e["a"] != GND) or (b_deg == 1 and e["b"] != GND):
+        # Листовой ВМП: один конец имеет степень 1 и не является GND.
+        # Такой ВМП — тупиковый (нагнетает в забой), его Q рассчитывается
+        # независимо как рабочая точка, не через балансировку дерева.
+        is_leaf_a = (a_deg == 1 and e["a"] != GND)
+        is_leaf_b = (b_deg == 1 and e["b"] != GND)
+        if is_leaf_a or is_leaf_b:
             leaf_vmp_ids.add(e["id"])
-
-    if leaf_vmp_ids:
-        log.append(f"Листовые ВМП: {', '.join(sorted(leaf_vmp_ids))}")
+            log.append(
+                f"Листовой ВМП {e['id']}: "
+                f"a={e['a'][:12]}(deg={a_deg}) b={e['b'][:12]}(deg={b_deg})"
+            )
 
     # Рассчитываем Q листовых ВМП через рабочую точку H(Q) = R_local * Q²
     # R_local = сопротивление самой ветви ВМП
