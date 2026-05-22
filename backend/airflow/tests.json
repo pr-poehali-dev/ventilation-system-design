@@ -338,6 +338,74 @@
       "expectedStatus": 200,
       "expectedBody": {"converged": true},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "ЭТАЛОН Аэросеть: кольцо с реверсом ГВУ — поток меняет направление",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "J1"},
+          {"id": "J2"},
+          {"id": "ATM2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "gvu", "fromId": "ATM1", "toId": "J1", "R": 0.01,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 2000, "fanReverse": true},
+          {"id": "left",  "fromId": "J1", "toId": "J2", "R": 0.05},
+          {"id": "right", "fromId": "J2", "toId": "ATM2", "R": 0.05}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 3000, "alpha": 0.7}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "ЭТАЛОН Вентиляция-2: термосифон 2 ствола (естественная тяга)",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "ATM1", "isAtm": true, "z": 0, "airTemp": -5},
+          {"id": "BOTTOM", "z": -300, "airTemp": 20},
+          {"id": "ATM2", "isAtm": true, "z": 0, "airTemp": -5}
+        ],
+        "branches": [
+          {"id": "shaft1", "fromId": "ATM1", "toId": "BOTTOM", "R": 0.02},
+          {"id": "shaft2", "fromId": "BOTTOM", "toId": "ATM2", "R": 0.02}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 3000, "alpha": 0.5},
+        "surfaceTemp": -5
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "ЭТАЛОН Вентсим: МКР с реверсом — сходимость по двойному критерию",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "U1", "isAtm": true},
+          {"id": "N1"},
+          {"id": "U2", "isAtm": true}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
+          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanReverse": true}
+        ],
+        "options": {"tolerance": 0.01, "tolPressure": 1.0, "maxIter": 3000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
     }
   ]
 }

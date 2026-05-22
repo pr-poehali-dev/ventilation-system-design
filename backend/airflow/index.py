@@ -69,7 +69,8 @@ def get_R(b):
 
 def fan_H(e, Q):
     """Напор вентилятора H при суммарном расходе Q (м³/с → Па).
-    При fanReverse ребро в графе развёрнуто (a↔b), поэтому H >= 0 всегда.
+    Возвращает H>=0 (модуль характеристики). Знак (направление действия)
+    управляется флагом fanReverse в формуле невязки контура (как в Вентсим/Аэросеть).
     При реверсе используется отдельная P–Q характеристика если задана (reverseH0/H1/H2).
     N параллельных вентиляторов: каждый пропускает Q/N → характеристика сдвигается вправо в N раз.
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
@@ -81,7 +82,11 @@ def fan_H(e, Q):
     if mode == "curve":
         q_one = abs(Q) / N
         if q_one <= 0:
-            return 0.0
+            # При Q=0 возвращаем h0 (статический напор), а не 0 —
+            # иначе бисекция рабочей точки не найдёт корень.
+            if e.get("fanReverse") and e.get("reverseH0") is not None:
+                return max(0.0, float(e.get("reverseH0", 0)))
+            return max(0.0, float(e.get("h0", 0)))
         # При реверсе — используем отдельную характеристику если передана
         if e.get("fanReverse") and e.get("reverseH0") is not None:
             q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
@@ -188,24 +193,22 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
 
     edges = []
     for b in branches_in:
-        reverse = bool(b.get("fanReverse", False))
-        is_fan  = bool(b.get("hasFan", False))
-        # Разворачиваем ТОЛЬКО ребро вентилятора при реверсе.
-        # Остальные ветви остаются в исходной ориентации — иначе вся сеть переворачивается
-        # и нарушается 1-й закон Кирхгофа (Q вентилятора ≠ Q сети).
-        should_flip = reverse and is_fan
+        # Единая ориентация рёбер: ВСЕГДА from→to (как в Вентсим/Аэросеть).
+        # Реверс вентилятора учитывается в формуле невязки через знак, а не
+        # через разворот ребра. Это обеспечивает корректный баланс Кирхгофа
+        # и согласованность Q между методами Кросса и МКР.
         orig_from = b["fromId"]
         orig_to   = b["toId"]
-        node_a = to_gnd(orig_to   if should_flip else orig_from)
-        node_b = to_gnd(orig_from if should_flip else orig_to)
+        node_a = to_gnd(orig_from)
+        node_b = to_gnd(orig_to)
 
-        # Высотные отметки и температуры узлов ветви
+        # Высотные отметки и температуры узлов ветви — всегда по физической
+        # ориентации from→to. Знак H_nat для реверса учитывается в формуле.
         fz  = node_z.get(orig_from, float(b.get("fromZ", 0.0) or 0.0))
         tz  = node_z.get(orig_to,   float(b.get("toZ",   0.0) or 0.0))
         ft  = node_temp.get(orig_from, surface_temp)
         tt  = node_temp.get(orig_to,   surface_temp)
-        # При реверсе ребро развёрнуто — меняем и направление естественной тяги
-        h_nat = natural_draft_h(fz, tz, ft, tt) if not should_flip else natural_draft_h(tz, fz, tt, ft)
+        h_nat = natural_draft_h(fz, tz, ft, tt)
 
         edges.append({
             "id":          b["id"],
@@ -221,7 +224,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
             "qMin":        float(b.get("qMin", 1.0)),
             "qMax":        float(b.get("qMax", 1e9)),
             "area":        float(b.get("area", 0)),
-            "fanReverse":  reverse,
+            "fanReverse":  bool(b.get("fanReverse", False)),
             "fanParallel": max(1, int(b.get("fanParallel", 1) or 1)),
             # Реверсная P–Q характеристика из каталога (если передана фронтендом)
             "reverseH0":   b.get("reverseH0"),
@@ -499,6 +502,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     """
     tol      = float(options.get("tolerance", 0.01))
     max_iter = int(options.get("maxIter", 5000))
+    alpha    = float(options.get("alpha", 0.7))   # демпфирование Кросса (0.5-0.8 как в Аэросеть)
 
     log  = []
     diag = []
@@ -614,11 +618,56 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     log.append(f"Контуров={len(loops_global)}")
 
     # ══ ШАГ 4: Начальный расход q0 (рабочая точка главного вентилятора) ══
-    # ВМП теперь в dead_end_ids и не участвуют в расчёте — их Q считается
-    # в make_result через собственную рабочую точку H(Q)=R*Q².
-    R_net = sum(e["R"] for e in active_edges if not e["hasFan"])
-    if R_net <= 0: R_net = 1e-3
-    log.append(f"R_net={R_net:.4f}, активных={len(active_edges)}, тупиков={len(dead_end_ids)}")
+    # R_net — характеристическое сопротивление основного пути от ГВУ к атмосфере.
+    # Берём кратчайший путь по дереву от вентилятора до GND и суммируем R вдоль него
+    # (как в Аэросеть). Это даёт реалистичную оценку рабочей точки для шахт с
+    # большим количеством параллельных ветвей, где sum(R) даёт сотни тысяч.
+    def compute_r_main():
+        # Граф дерева для BFS
+        adj_t = collections.defaultdict(list)
+        for e in active_edges:
+            if e["id"] in tree_ids:
+                adj_t[e["a"]].append((e["id"], e["b"], e["R"]))
+                adj_t[e["b"]].append((e["id"], e["a"], e["R"]))
+        # Главный вентилятор: с максимальным h0 (либо первый активный)
+        main_fan = None
+        max_h0 = -1.0
+        for e in active_fans:
+            h0 = abs(float(e.get("h0", 0))) if e.get("fanMode") == "curve" else abs(float(e.get("fanPressure", 0)))
+            if h0 > max_h0:
+                max_h0 = h0
+                main_fan = e
+        if not main_fan:
+            return None
+        # BFS от любого конца вентилятора до GND, накапливая R
+        start = main_fan["a"] if main_fan["a"] != GND else main_fan["b"]
+        if start == GND:
+            return main_fan["R"]
+        visited = {start}
+        queue = collections.deque([(start, main_fan["R"])])
+        while queue:
+            node, r_sum = queue.popleft()
+            if node == GND:
+                return r_sum
+            for eid, nb, r in adj_t[node]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, r_sum + r))
+        return None
+
+    r_main = compute_r_main()
+    # Запасной вариант: медиана(R)*N_tree даёт разумную оценку для эквивалента сети.
+    # Чистая сумма sum(R) завышает для больших сетей (199 ветвей × 0.5 = 100),
+    # а параллельная 1/Σ(1/√R)² занижает.
+    r_branches = sorted(e["R"] for e in active_edges if not e["hasFan"] and e["R"] > 1e-9)
+    if r_main and r_main > 1e-6:
+        R_net = r_main
+    elif r_branches:
+        n_tree = max(1, sum(1 for e in active_edges if e["id"] in tree_ids and not e["hasFan"]))
+        R_net = r_branches[len(r_branches) // 2] * n_tree
+    else:
+        R_net = 1e-3
+    log.append(f"R_net={R_net:.4f} (главный путь), активных={len(active_edges)}, тупиков={len(dead_end_ids)}")
 
     def bisect_q0():
         af = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
@@ -639,7 +688,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
             return 0.5 * (q_lo + q_hi)
         H0 = sum(fan_H(e, 1.0) for e in active_fans)
         if H0 > 0: return math.sqrt(H0 / R_net)
-        H_nat = sum(abs(e.get("naturalDraft", 0.0)) for e in active_edges)
+        # Без вентилятора — естественная тяга. Q₀ через суммарную тягу первого контура.
+        if loops_global:
+            lp = loops_global[0]
+            h_sum = abs(sum(edges[gi].get("naturalDraft", 0.0) * s for gi, s in lp))
+            r_sum = sum(edges[gi]["R"] for gi, _ in lp)
+            if h_sum > 0 and r_sum > 1e-9:
+                return math.sqrt(h_sum / r_sum)
+        H_nat = max((abs(e.get("naturalDraft", 0.0)) for e in active_edges), default=0.0)
         return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
 
     q0 = bisect_q0()
@@ -658,10 +714,16 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         (e for e in active_edges if e["hasFan"] and e["id"] in tree_ids),
         None
     )
+    # Если есть реверсный вентилятор — стартовое направление всей сети инвертируется
+    # (как в Аэросеть/Вентсим): воздух идёт в обратную сторону относительно
+    # естественной ориентации from→to. Это даёт правильную сходимость с первой итерации.
+    sign_init = -1.0 if (fan_tree and fan_tree.get("fanReverse")) else 1.0
+    q_init = q0 * sign_init
+
     if fan_tree:
         gfi = id_to_gi[fan_tree["id"]]
-        Q[gfi] = q0
-        node_q  = {fan_tree["b"]: q0, fan_tree["a"]: -q0}
+        Q[gfi] = q_init
+        node_q  = {fan_tree["b"]: q_init, fan_tree["a"]: -q_init}
         visited = {fan_tree["a"], fan_tree["b"]}
         queue   = collections.deque([fan_tree["b"]])
         while queue:
@@ -676,17 +738,25 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 node_q[nb] = node_q.get(nb, 0.0) + q_each
                 visited.add(nb)
                 queue.append(nb)
+        # Хорды и неинициализированные ветви — инициализируем с тем же знаком
+        for i, e in enumerate(edges):
+            if e["id"] not in dead_end_ids and Q[i] == 0.0:
+                Q[i] = q_init
     else:
         for i, e in enumerate(edges):
             if e["id"] not in dead_end_ids:
-                Q[i] = q0
+                Q[i] = q_init
 
-    # ══ ШАГ 6: Итерации Кросса ═══════════════════════════════════════════
-    # По Андрияшеву: поправка δQ = -ΔH / Σ(2·R·|Q|)
-    # ΔH = Σ [ R·Qi·|Qi| - H_вент(|Qi|)·sign_i - H_нат·sign_i ]
-    # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура
+    # ══ ШАГ 6: Итерации Кросса (Андрияшев-Кросс с демпфированием) ════════
+    # ΔH контура = Σ [ R·Qi·|Qi| − fan_dir·H_вент(|Qi|)·sign_i − H_нат·sign_i ]
+    # где fan_dir = -1 при fanReverse, +1 иначе (как в Вентсим).
+    # Поправка: δQ = -α·ΔH / Σ(2·R·|Q| + |dH/dQ|)
+    # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура.
     # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
     max_dq = float("inf")
+    prev_max_dq = float("inf")
+    alpha_cur = alpha
+    osc_streak = 0   # счётчик осцилляций (для адаптивного снижения alpha)
     it = 0
 
     for it in range(1, max_iter + 1):
@@ -706,28 +776,33 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 sum_H   += R * qi * abs(qi)
                 sum_2RQ += 2.0 * R * abs(qi)
 
-                # Вентилятор: вычитаем его напор из невязки
+                # Вентилятор: напор не зависит от знака потока, только от
+                # ориентации вентилятора и направления обхода контура.
+                # fan_dir=+1 (прямой) → напор по a→b; fan_dir=-1 (реверс) → по b→a.
+                # В обходе с sign: реальный вклад = fan_dir * sign.
                 if e["hasFan"]:
+                    fan_dir = -1.0 if e.get("fanReverse") else 1.0
                     Hv = fan_H(e, abs(Q[gi]))
-                    sum_H   -= Hv * (1.0 if qi >= 0 else -1.0)
+                    sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
-                # Естественная тяга: вычитаем как дополнительный напор
+                # Естественная тяга: вклад в обход = h_nat * sign (фиксированный знак,
+                # не зависит от знака потока, как и вентилятор)
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
-                    sum_H -= h_nat * (1.0 if qi >= 0 else -1.0)
+                    sum_H -= h_nat * sign
 
             if sum_2RQ < 1e-12:
                 continue
 
-            # Поправка расхода по Кроссу: δQ = -ΔH / Σ(2·R·|Q|)
-            dq = -sum_H / sum_2RQ
+            # Поправка с демпфированием α: δQ = -α·ΔH / Σ(2·R·|Q|)
+            dq = alpha_cur * (-sum_H / sum_2RQ)
 
             # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0)
             q_max_loop = max((abs(Q[gi]) for gi, _ in loop), default=q0)
             q_lim = max(q_max_loop, q0)
-            if abs(dq) > 2.0 * q_lim:
-                dq = math.copysign(2.0 * q_lim, dq)
+            if abs(dq) > q_lim:
+                dq = math.copysign(q_lim, dq)
 
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
@@ -741,6 +816,17 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         if max_dq < tol:
             it += 1
             break
+
+        # Адаптивное демпфирование: если максимальная поправка растёт —
+        # снижаем α (детекция осцилляций как в Аэросеть).
+        if max_dq > prev_max_dq * 0.99:
+            osc_streak += 1
+            if osc_streak >= 5 and alpha_cur > 0.05:
+                alpha_cur = max(0.05, alpha_cur * 0.7)
+                osc_streak = 0
+        else:
+            osc_streak = 0
+        prev_max_dq = max_dq
 
     converged = max_dq < tol
     if not converged:
@@ -1017,17 +1103,10 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                     "Hfan": round(Hv, 3), "velocity": round(vel, 3),
                     "isDead": is_dead})
 
-    # При реверсе только ребро вентилятора переворачивалось в графе (a↔b),
-    # поэтому солвер даёт его Q > 0 в направлении a→b перевёрнутого ребра —
-    # физически это toId→fromId. Чтобы фронтенд показал отрицательный Q
-    # (flow < 0 → стрелки в обратную сторону) инвертируем Q только у
-    # реверсного вентилятора.
-    # Сетевые ветви НЕ переворачивались → их Q < 0 уже означает реверсный
-    # поток (против fromId→toId), инвертировать их не нужно.
-    if not force_zero:
-        rev_fan_ids = {e["id"] for e in edges if e.get("fanReverse") and e.get("hasFan")}
-        if rev_fan_ids:
-            out = [dict(b, Q=-b["Q"]) if b["id"] in rev_fan_ids else b for b in out]
+    # Реверс: после унификации build_graph рёбра больше не разворачиваются,
+    # поэтому отрицательный Q автоматически означает обратное направление
+    # потока относительно fromId→toId для всех ветвей. Дополнительная
+    # инверсия больше не требуется (как в Вентсим/Аэросеть).
 
     return {"branches": out, "nodes": [], "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
@@ -1042,14 +1121,20 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
 # ══════════════════════════════════════════════════════════════════════
 
 def _mkr_fan_H(e, Q):
-    """Напор вентилятора. При revers — отрицательный (нагнетание против a→b)."""
+    """Напор вентилятора H>=0 (модуль). Знак (направление) учитывается
+    в формуле невязки МКР через fan_dir = -1 при fanReverse (как в Кроссе).
+    Унифицировано с fan_H() для согласованности методов.
+    """
     if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
     N    = max(1, int(e.get("fanParallel", 1) or 1))
-    sign = -1.0 if e.get("fanReverse") else 1.0
     mode = e.get("fanMode", "constant")
     if mode == "curve":
         q_one = abs(Q) / N
+        if q_one <= 0:
+            if e.get("fanReverse") and e.get("reverseH0") is not None:
+                return max(0.0, float(e.get("reverseH0", 0)))
+            return max(0.0, float(e.get("h0", 0)))
         if e.get("fanReverse") and e.get("reverseH0") is not None:
             q_max = float(e.get("reverseQMax", e.get("qMax", 1e9)))
             if q_one > q_max:
@@ -1059,8 +1144,8 @@ def _mkr_fan_H(e, Q):
             if q_one > float(e.get("qMax", 1e9)):
                 return 0.0
             h = float(e.get("h0", 0)) + float(e.get("h1", 0)) * q_one + float(e.get("h2", 0)) * q_one * q_one
-        return sign * max(0.0, h)
-    return sign * max(0.0, float(e.get("fanPressure", 0)))
+        return max(0.0, h)
+    return max(0.0, float(e.get("fanPressure", 0)))
 
 
 def _mkr_fan_dH(e, Q):
@@ -1187,7 +1272,7 @@ def _estimate_q0_mkr(edges, r_total):
             return q_hi * 0.5
 
         def f(q):
-            return abs(_mkr_fan_H(fan, q)) - r_total * q * q
+            return _mkr_fan_H(fan, q) - r_total * q * q   # H>=0, поэтому abs не нужен
 
         lo, hi = 0.0, q_hi
         if f(lo) <= 0:
@@ -1204,7 +1289,7 @@ def _estimate_q0_mkr(edges, r_total):
                 break
         return max(0.1, 0.5 * (lo + hi))
 
-    h0 = abs(_mkr_fan_H(fan, 1.0))
+    h0 = _mkr_fan_H(fan, 1.0)
     if h0 > 0 and r_total > 0:
         return math.sqrt(h0 / r_total)
     return 1.0
@@ -1294,22 +1379,33 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
-    # Инициализация хорд и вентиляторов
+    # При реверсе инвертируем стартовый знак всей сети (как Аэросеть/Вентсим):
+    # реверс физически меняет направление потока во всех ветвях.
+    has_reverse_fan = any(e.get("fanReverse") and e.get("hasFan") for e in active_edges_list)
+    q_init_mkr = -q0 if has_reverse_fan else q0
     for ci in chords:
-        Q[local_to_global[ci]] = q0
+        Q[local_to_global[ci]] = q_init_mkr
     for i, e in enumerate(active_edges_list):
         if e.get("hasFan"):
-            Q[local_to_global[i]] = q0
+            Q[local_to_global[i]] = q_init_mkr
 
-    # BFS bottom-up: синхронизация ветвей дерева по Кирхгофу-1
+    # BFS bottom-up: синхронизация Q ветвей дерева по 1-му закону Кирхгофа.
+    # Алгоритм (как в Аэросеть/Вентсим):
+    #   1) считаем дисбаланс в каждом узле от ВСЕХ хорд (нетривиальные ветви)
+    #   2) проходим дерево снизу вверх — Q родительского ребра = сумма Q дочерних
+    # Это исключает невязки Кирхгофа в МКР после каждой итерации.
+    tree_branches = {parent_map[v][1] for v in bfs_order if parent_map.get(v)}
+
     def sync_tree_q(Q_arr):
+        # Начальный дисбаланс — только от ХОРД (не древесных рёбер)
         bal = collections.defaultdict(float)
         for i, e in enumerate(active_edges_list):
-            if i in tree_set and not e.get("hasFan"):
-                continue
+            if i in tree_branches:
+                continue   # древесные пересчитываются ниже
             gi = local_to_global[i]
             bal[e["a"]] -= Q_arr[gi]
             bal[e["b"]] += Q_arr[gi]
+        # Снизу вверх: каждое древесное ребро уравнивает баланс своего листа
         for idx in range(len(bfs_order) - 1, 0, -1):
             v  = bfs_order[idx]
             p  = parent_map.get(v)
@@ -1319,12 +1415,13 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             e  = active_edges_list[li]
             gi = local_to_global[li]
             b  = bal[v]
+            # Q в направлении ребра: чтобы баланс в v стал равен 0
             if e["b"] == v:
                 Q_arr[gi] = -b
-                bal[p_node] += b
             else:
                 Q_arr[gi] = b
-                bal[p_node] += b
+            # Передаём баланс родителю
+            bal[p_node] += b
 
     sync_tree_q(Q)
 
@@ -1336,6 +1433,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     relaxation = 0.5 if active_fans else 0.15
     prev_dh = float("inf")
     it = 0
+    min_iter = 5  # минимум итераций перед проверкой сходимости
 
     for it in range(1, max_iter + 1):
         max_dh = 0.0
@@ -1355,23 +1453,26 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 den += 2.0 * R * abs(qd)
 
                 if e.get("hasFan"):
+                    # Напор вентилятора по обходу контура: fan_dir * sign
+                    # (не зависит от знака потока — только от ориентации)
+                    fan_dir = -1.0 if e.get("fanReverse") else 1.0
                     H = _mkr_fan_H(e, Q[gi])
-                    num -= H * (1.0 if qd >= 0 else -1.0)
+                    num -= fan_dir * H * sign
                     den += _mkr_fan_dH(e, Q[gi])
 
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
-                    num -= h_nat * (1.0 if qd >= 0 else -1.0)
+                    num -= h_nat * sign
 
             if den < 1e-12:
                 continue
 
             dq_raw = -num / den
-            # Защита от взрыва: не более 2×max|Q| в контуре (или q0 если Q≈0)
+            # Защита от взрыва: не более max|Q| в контуре (как в Аэросеть)
             q_ref_mkr = max((abs(Q[local_to_global[li]]) for li, _ in contour), default=0.0)
             q_ref_mkr = max(q_ref_mkr, q0)
-            if abs(dq_raw) > 2.0 * q_ref_mkr:
-                dq_raw = math.copysign(2.0 * q_ref_mkr, dq_raw)
+            if abs(dq_raw) > q_ref_mkr:
+                dq_raw = math.copysign(q_ref_mkr, dq_raw)
             dq = relaxation * dq_raw
 
             if abs(num) > max_dh:
@@ -1396,12 +1497,15 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 relaxation = min(1.0, relaxation + 0.01)
         prev_dh = max_dh
 
-        # Критерий остановки: двойной (по ΔH И по δQ)
-        if max_dh < tol_h or max_dq < tol_q:
+        # Критерий остановки: строгий двойной (по ΔH И по δQ) как в Аэросеть.
+        # Минимум min_iter итераций перед проверкой — иначе можно случайно
+        # сойтись на нулевом старте при q0=0.
+        if it >= min_iter and max_dh < tol_h and max_dq < tol_q:
             it += 1
             break
 
-    converged = max_dh < tol_h or max_dq < tol_q
+    # Двойной критерий И — обе невязки должны выполняться (стандарт Аэросеть/Вентсим)
+    converged = max_dh < tol_h and max_dq < tol_q
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
                      "message": f"МКР не сошлось за {max_iter} итераций. |ΔH|={max_dh:.2f} Па, δQ={max_dq:.4f} м³/с"})
