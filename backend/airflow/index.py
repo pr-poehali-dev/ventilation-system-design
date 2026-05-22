@@ -230,6 +230,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
             "reverseQMax": b.get("reverseQMax"),
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
             "fanStopped":  bool(b.get("fanStopped", False)),
+            "fanType":     b.get("fanType", "ГВУ"),  # ГВУ / ВВУ / ВМП
             "isLeakage":   bool(b.get("isLeakage", False)),
             "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
             "angle":       abs(float(b.get("angle", 0) or 0)),
@@ -617,33 +618,33 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     for e in active_edges:
         if not e.get("hasFan") or e.get("fanStopped"):
             continue
-        a_deg = degree_cross[e["a"]]
-        b_deg = degree_cross[e["b"]]
-        is_main_fan = (e["a"] == GND or e["b"] == GND)
-        if not is_main_fan and ((a_deg == 1 and e["a"] != GND) or (b_deg == 1 and e["b"] != GND)):
-            # Рабочая точка листового ВМП: H(Q) = R * Q²
-            R_vmp = e["R"] if e["R"] > 0 else 1e-3
-            q_hi = float(e.get("qMax", 90.0))
-            def _f_vmp(qv, _e=e, _R=R_vmp):
-                return fan_H(_e, qv) - _R * qv * qv
-            qv = 0.0
-            if _f_vmp(0.1) > 0 and _f_vmp(q_hi) < 0:
-                lo2, hi2 = 0.1, q_hi
-                for _ in range(80):
-                    mid2 = 0.5 * (lo2 + hi2)
-                    if _f_vmp(mid2) > 0:
-                        lo2 = mid2
-                    else:
-                        hi2 = mid2
-                    if hi2 - lo2 < 0.001:
-                        break
-                qv = 0.5 * (lo2 + hi2)
-            elif _f_vmp(0.1) <= 0:
-                qv = 0.1
-            else:
-                qv = q_hi
-            cross_leaf_vmp[e["id"]] = qv
-            log.append(f"ВМП {e['id']}: Q={qv:.3f} м³/с (рабочая точка)")
+        # ВМП определяется явно по полю fanType="ВМП" (местного проветривания).
+        # Такие ветви — тупиковые, их Q рассчитывается независимо через рабочую точку.
+        if e.get("fanType") != "ВМП":
+            continue
+        # Рабочая точка ВМП: H(Q) = R * Q²
+        R_vmp = e["R"] if e["R"] > 0 else 1e-3
+        q_hi = float(e.get("qMax", 90.0))
+        def _f_vmp(qv, _e=e, _R=R_vmp):
+            return fan_H(_e, qv) - _R * qv * qv
+        qv = 0.0
+        if _f_vmp(0.1) > 0 and _f_vmp(q_hi) < 0:
+            lo2, hi2 = 0.1, q_hi
+            for _ in range(80):
+                mid2 = 0.5 * (lo2 + hi2)
+                if _f_vmp(mid2) > 0:
+                    lo2 = mid2
+                else:
+                    hi2 = mid2
+                if hi2 - lo2 < 0.001:
+                    break
+            qv = 0.5 * (lo2 + hi2)
+        elif _f_vmp(0.1) <= 0:
+            qv = 0.1
+        else:
+            qv = q_hi
+        cross_leaf_vmp[e["id"]] = qv
+        log.append(f"ВМП {e['id']}: Q={qv:.3f} м³/с (рабочая точка)")
 
     # R_net и q0 — только по основной сети (без листовых ВМП)
     main_active = [e for e in active_edges if e["id"] not in cross_leaf_vmp]
@@ -1334,18 +1335,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     for e in active_edges_list:
         if not e.get("hasFan") or e.get("fanStopped"):
             continue
-        a_deg = degree_active[e["a"]]
-        b_deg = degree_active[e["b"]]
-        is_leaf_a = (a_deg == 1 and e["a"] != GND)
-        is_leaf_b = (b_deg == 1 and e["b"] != GND)
-        # Главный вентилятор шахты подключён к GND (атмосфере) — не листовой ВМП
-        is_main_fan = (e["a"] == GND or e["b"] == GND)
-        if (is_leaf_a or is_leaf_b) and not is_main_fan:
+        # ВМП определяется явно по полю fanType="ВМП"
+        if e.get("fanType") == "ВМП":
             leaf_vmp_ids.add(e["id"])
-            log.append(
-                f"Листовой ВМП {e['id']}: "
-                f"a={e['a'][:12]}(deg={a_deg}) b={e['b'][:12]}(deg={b_deg})"
-            )
+            log.append(f"ВМП (местного проветривания): {e['id']}")
 
     # Начальный расход — только по основной сети (без листовых ВМП и их ветвей)
     # r_total = R сетевых ветвей без вентиляторов и без ветвей листовых ВМП

@@ -1101,6 +1101,7 @@ export default function CadPage() {
               area: b.area,
               angle: b.angle ?? 0,
               hasFan: b.hasFan,
+              fanType: b.fanType ?? "ГВУ",
               fanMode: b.fanMode,
               fanPressure: b.fanPressure,
               fanInstall:  b.fanInstall ?? "Внутри перемычки",
@@ -3548,7 +3549,7 @@ export default function CadPage() {
                     const alreadyHasFan = schemaSymbols.some(s => s.typeId === "fan" && s.branchId === branchId);
                     if (!alreadyHasFan) {
                       addSymbol(typeId, x, y, branchId);
-                      updateBranch(branchId, { hasFan: true, fanMode: "curve" });
+                      updateBranch(branchId, { hasFan: true, fanMode: "curve", fanType: "ВМП", fanInstall: "Без перемычки" });
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
                       setActiveSide("fan");

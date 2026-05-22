@@ -60,6 +60,7 @@ export interface TopoBranch {
   vMax: number;             // м/с — макс. допустимая скорость
   // ─── Вентилятор (источник напора) ────────────────────
   hasFan: boolean;          // ветвь содержит вентилятор
+  fanType: "ГВУ" | "ВВУ" | "ВМП"; // тип: главная/вспомогательная/местного проветривания
   fanMode: "constant" | "curve"; // постоянная депрессия или Q-H хар-ка
   fanPressure: number;      // Па — депрессия (для mode=constant), или фактическая (mode=curve)
   fanName: string;
@@ -208,6 +209,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     localXi: 0,
     vMax: 15,
     hasFan: false,
+    fanType: "ГВУ",
     fanMode: "constant",
     fanPressure: 0,
     fanName: "",

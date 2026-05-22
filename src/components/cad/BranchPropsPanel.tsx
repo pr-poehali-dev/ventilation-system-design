@@ -671,6 +671,18 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
             <SectionHeader title="Режим проветривания" />
 
+            <InlineLabel label="Назначение">
+              <select
+                value={branch.fanType ?? "ГВУ"}
+                onChange={(e) => onUpdate({ fanType: e.target.value as "ГВУ" | "ВВУ" | "ВМП" })}
+                className="w-full text-[11px] px-1"
+                style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                <option value="ГВУ">ГВУ — главная вентиляторная установка</option>
+                <option value="ВВУ">ВВУ — вспомогательная вентиляторная установка</option>
+                <option value="ВМП">ВМП — вентилятор местного проветривания</option>
+              </select>
+            </InlineLabel>
+
             <InlineLabel label="Тип">
               <select
                 value={branch.fanMode}
