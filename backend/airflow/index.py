@@ -1472,7 +1472,20 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     relaxation = 0.5 if active_fans else 0.15
     prev_dh = float("inf")
     it = 0
-    min_iter = 5  # минимум итераций перед проверкой сходимости
+    min_iter = 10  # минимум итераций перед проверкой сходимости (больше для шахт)
+
+    # Характерный напор системы — для относительного критерия сходимости.
+    # Как в Вентсим: tol_h_relative = max(абс_tol, 0.001 * H_характерное).
+    h_char = 0.0
+    for e in active_edges_list:
+        if e.get("hasFan") and not e.get("fanStopped"):
+            if e.get("fanMode") == "curve":
+                h_char = max(h_char, abs(float(e.get("h0", 0))))
+            else:
+                h_char = max(h_char, abs(float(e.get("fanPressure", 0))))
+        h_char = max(h_char, abs(e.get("naturalDraft", 0.0)))
+    # Относительный допуск: 0.5% от макс. напора в сети (≈ 10 Па для 2000 Па ГВУ)
+    tol_h_rel = max(tol_h, 0.005 * h_char)
 
     for it in range(1, max_iter + 1):
         max_dh = 0.0
@@ -1507,9 +1520,11 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
 
             dq_raw = -num / den
-            # Защита от взрыва: не более max|Q| в контуре (как в Аэросеть)
+            # Защита от взрыва: ограничиваем только по max|Q| в контуре, БЕЗ q0
+            # (для большой сети q0 мал — это душило сходимость).
             q_ref_mkr = max((abs(Q[local_to_global[li]]) for li, _ in contour), default=0.0)
-            q_ref_mkr = max(q_ref_mkr, q0)
+            if q_ref_mkr < 0.1:
+                q_ref_mkr = max(q0, 1.0)   # минимум 1 м³/с для устойчивости
             if abs(dq_raw) > q_ref_mkr:
                 dq_raw = math.copysign(q_ref_mkr, dq_raw)
             dq = relaxation * dq_raw
@@ -1528,26 +1543,26 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         # Синхронизация ветвей дерева по Кирхгофу-1
         sync_tree_q(Q)
 
-        # Адаптивное демпфирование: увеличиваем если сходится, снижаем если растёт
+        # Адаптивное демпфирование (как в Аэросеть): быстрый рост при сходимости,
+        # резкое снижение при росте невязки. Стабилизирует расчёт больших сетей.
         if it > 5:
-            if max_dh > prev_dh * 1.1:
-                relaxation = max(0.1, relaxation * 0.8)
-            elif it > 20 and max_dh < prev_dh:
-                relaxation = min(1.0, relaxation + 0.01)
+            if max_dh > prev_dh * 1.05:
+                relaxation = max(0.1, relaxation * 0.7)
+            elif max_dh < prev_dh * 0.95:
+                relaxation = min(1.0, relaxation * 1.1)  # рост 10%/итерация, не 1%
         prev_dh = max_dh
 
-        # Критерий остановки: строгий двойной (по ΔH И по δQ) как в Аэросеть.
-        # Минимум min_iter итераций перед проверкой — иначе можно случайно
-        # сойтись на нулевом старте при q0=0.
-        if it >= min_iter and max_dh < tol_h and max_dq < tol_q:
+        # Критерий остановки: двойной (по ΔH И по δQ) с относительным допуском.
+        # tol_h_rel для больших сетей вместо абсолютного tol_h.
+        if it >= min_iter and max_dh < tol_h_rel and max_dq < tol_q:
             it += 1
             break
 
-    # Двойной критерий И — обе невязки должны выполняться (стандарт Аэросеть/Вентсим)
-    converged = max_dh < tol_h and max_dq < tol_q
+    # Двойной критерий — обе невязки должны выполняться
+    converged = max_dh < tol_h_rel and max_dq < tol_q
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
-                     "message": f"МКР не сошлось за {max_iter} итераций. |ΔH|={max_dh:.2f} Па, δQ={max_dq:.4f} м³/с"})
+                     "message": f"МКР не сошлось за {max_iter} итераций. |ΔH|={max_dh:.2f} Па (допуск {tol_h_rel:.2f}), δQ={max_dq:.4f} м³/с"})
 
     log.append(f"МКР итераций={it} |ΔH|={max_dh:.3f} Па δQ={max_dq:.4f} м³/с")
 
