@@ -1872,6 +1872,33 @@ export default function TopoCanvas(props: Props) {
             </g>
           );
         })()}
+
+        {/* ─── МАРКЕР PIVOT-ТОЧКИ (виден только во время вращения) ─── */}
+        {rotStart && (() => {
+          // Перепроецируем pivot в текущей проекции (углы уже обновлены).
+          const ps = project3D(rotStart.pivot, proj);
+          return (
+            <g style={{ pointerEvents: "none" }}>
+              {/* Внешний полупрозрачный круг */}
+              <circle cx={ps.sx} cy={ps.sy} r="14"
+                fill="none" stroke="#f59e0b" strokeWidth="1.2"
+                strokeDasharray="3 2" opacity="0.6" />
+              {/* Крестик */}
+              <line x1={ps.sx - 8} y1={ps.sy} x2={ps.sx + 8} y2={ps.sy}
+                stroke="#f59e0b" strokeWidth="1.5" />
+              <line x1={ps.sx} y1={ps.sy - 8} x2={ps.sx} y2={ps.sy + 8}
+                stroke="#f59e0b" strokeWidth="1.5" />
+              {/* Центральная точка */}
+              <circle cx={ps.sx} cy={ps.sy} r="2.5"
+                fill="#f59e0b" stroke="#7c2d12" strokeWidth="0.8" />
+              {/* Подпись */}
+              <text x={ps.sx + 18} y={ps.sy + 4} fontSize="10"
+                fontFamily="Arial, sans-serif" fill="#7c2d12" fontWeight="600">
+                центр вращения
+              </text>
+            </g>
+          );
+        })()}
       </svg>
 
       {/* Индикаторы */}
