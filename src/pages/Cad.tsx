@@ -1093,16 +1093,20 @@ export default function CadPage() {
               }
               return sum + r;
             }, 0);
+            const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
+              ? (b.fanCrossingR ?? 0) : 0;
             return {
               id: b.id,
               fromId: b.fromId,
               toId: b.toId,
-              R: b.resistance + rBulkheads,
+              R: b.resistance + rBulkheads + fanCrossingR,
               area: b.area,
               angle: b.angle ?? 0,
               hasFan: b.hasFan,
               fanMode: b.fanMode,
               fanPressure: b.fanPressure,
+              fanInstall:  b.fanInstall ?? "Внутри перемычки",
+              fanCrossingR: b.fanCrossingR ?? 0,
               fanReverse:  b.fanReverse ?? false,
               fanStopped:  b.fanStopped ?? false,
               fanParallel: Math.max(1, b.fanParallel ?? 1),
