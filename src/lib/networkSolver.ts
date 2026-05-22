@@ -515,8 +515,19 @@ export function solveNetwork(
   // Хорды также получают Q0 (в направлении a→b, т.е. e.Q = Q0 > 0).
   // ──────────────────────────────────────────────────────────────────────────
 
-  // Суммарное R только дерева (приблизительно путь вентилятор→атмосфера)
-  const Rtree = edges.filter((_, i) => treeSet.has(i)).reduce((s, e) => s + e.R, 0);
+  // Суммарное R пути через вентилятор: если вентилятор — хорда, берём его контур;
+  // если вентилятор в дереве — суммируем всё дерево.
+  const fanEdgeIdx = edges.findIndex(e => e.hasFan && !e.fanStopped);
+  let Rtree: number;
+  if (fanEdgeIdx >= 0 && !treeSet.has(fanEdgeIdx)) {
+    // Вентилятор — хорда: R пути = R самого вентилятора + R дерева в его контуре
+    const fanEdge = edges[fanEdgeIdx];
+    const contourPath = treePath(fanEdge.b, fanEdge.a, edges, parent);
+    Rtree = contourPath.reduce((s, ce) => s + edges[ce.edgeIdx].R, 0);
+  } else {
+    // Вентилятор в дереве: суммируем все рёбра дерева
+    Rtree = edges.filter((_, i) => treeSet.has(i)).reduce((s, e) => s + e.R, 0);
+  }
   const Q0    = Math.max(0.1, estimateQ0(edges, Rtree));
   log.push(`Q₀ = ${Q0.toFixed(2)} м³/с`);
 
