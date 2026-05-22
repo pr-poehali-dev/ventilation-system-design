@@ -720,6 +720,16 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 print(f"[GND-OUT-rev] {e['id']} Q={q:.4f}")
     print(f"[GND balance] IN={gnd_in:.4f} OUT={gnd_out:.4f} diff={gnd_out-gnd_in:.4f}")
 
+    # Проверка Кирхгофа в каждом узле
+    node_balance = collections.defaultdict(float)
+    for e in edges:
+        q = Q_map.get(e["id"], 0.0)
+        node_balance[e["a"]] -= q   # из узла a
+        node_balance[e["b"]] += q   # в узел b (или из b если q<0)
+    for node, bal in sorted(node_balance.items(), key=lambda x: -abs(x[1])):
+        if abs(bal) > 0.01 and node != GND:
+            print(f"[KIRCH] узел {node[:30]} дисбаланс={bal:.4f}")
+
     # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
     # Такой вентилятор образует петлю в графе и не участвует в балансе Кирхгофа.
     # Его реальный расход = сумма расходов всех ветвей, втекающих в GND
