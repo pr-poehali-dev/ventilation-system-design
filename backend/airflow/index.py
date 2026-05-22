@@ -230,7 +230,8 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
             "reverseQMax": b.get("reverseQMax"),
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
             "fanStopped":  bool(b.get("fanStopped", False)),
-            "fanType":     b.get("fanType", "ГВУ"),  # ГВУ / ВВУ / ВМП
+            "fanType":     b.get("fanType", "ГВУ"),     # ГВУ / ВВУ / ВМП
+            "fanInstall":  b.get("fanInstall", "Внутри перемычки"),
             "isLeakage":   bool(b.get("isLeakage", False)),
             "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
             "angle":       abs(float(b.get("angle", 0) or 0)),
@@ -618,10 +619,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     for e in active_edges:
         if not e.get("hasFan") or e.get("fanStopped"):
             continue
-        # ВМП определяется явно по полю fanType="ВМП" (местного проветривания).
-        # Такие ветви — тупиковые, их Q рассчитывается независимо через рабочую точку.
+        # Только ВМП "Без перемычки" — тупиковый, считается независимо.
+        # ВМП "Внутри перемычки" создаёт замкнутый контур (трубопровод + выработка)
+        # и участвует в основном расчёте как обычный вентилятор.
         if e.get("fanType") != "ВМП":
             continue
+        if e.get("fanInstall", "Внутри перемычки") != "Без перемычки":
+            continue  # "Внутри перемычки" — в основной расчёт
         # Рабочая точка ВМП: H(Q) = R * Q²
         R_vmp = e["R"] if e["R"] > 0 else 1e-3
         q_hi = float(e.get("qMax", 90.0))
@@ -1335,10 +1339,11 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     for e in active_edges_list:
         if not e.get("hasFan") or e.get("fanStopped"):
             continue
-        # ВМП определяется явно по полю fanType="ВМП"
-        if e.get("fanType") == "ВМП":
+        # Тупиковый ВМП: тип=ВМП И установка "Без перемычки".
+        # ВМП "Внутри перемычки" — в основном расчёте (создаёт замкнутый контур).
+        if e.get("fanType") == "ВМП" and e.get("fanInstall", "Внутри перемычки") == "Без перемычки":
             leaf_vmp_ids.add(e["id"])
-            log.append(f"ВМП (местного проветривания): {e['id']}")
+            log.append(f"ВМП (тупиковый, без перемычки): {e['id']}")
 
     # Начальный расход — только по основной сети (без листовых ВМП и их ветвей)
     # r_total = R сетевых ветвей без вентиляторов и без ветвей листовых ВМП
