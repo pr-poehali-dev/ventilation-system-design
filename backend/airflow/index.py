@@ -913,11 +913,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
-            # Вентилятор без расчётного расхода, или главный вентилятор GND→GND
-            # ("Без перемычки" — оба конца атмосферные). Такой вентилятор выпадает
-            # из итераций Кросса (петля), поэтому считаем рабочую точку напрямую:
-            # H_fan(Q) = R_сети·Q² → бисекция по R_net.
-            R = R_net if R_net > 0 else e["R"]
+            # Вентилятор без расчётного расхода:
+            # - GND→GND ("Без перемычки"): используем R_net (суммарное R сети)
+            # - Тупиковый ВМП (один конец подземный): используем R собственной ветви
+            is_gnd_loop = (e["a"] == GND and e["b"] == GND)
+            R = (R_net if R_net > 0 else e["R"]) if is_gnd_loop else e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
                 q_hi = float(e.get("qMax", 90.0))
