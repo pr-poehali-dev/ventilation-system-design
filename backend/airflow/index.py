@@ -701,51 +701,80 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     q0 = bisect_q0()
     log.append(f"Q₀={q0:.3f} м³/с")
 
-    # ══ ШАГ 5: Начальное Q по дереву BFS (1-й закон Кирхгофа) ═══════════
+    # ══ ШАГ 5: Начальное Q — строгое соблюдение 1-го закона Кирхгофа ═════
+    # Алгоритм Аэросеть/Вентсим:
+    #   1) Каждой хорде присваиваем Q = q0 (одинаковое стартовое значение)
+    #   2) Древесные ветви считаем по балансу: BFS bottom-up от листьев к GND.
+    # Это гарантирует Σ Q_in = Σ Q_out в КАЖДОМ узле с первой итерации.
+    # Метод Кросса сохраняет это свойство (поправка dq*sign не меняет балансов).
     Q = [0.0] * len(edges)
 
+    # Знак для реверсного ГВУ: инвертируем стартовый Q ствола вентилятора,
+    # чтобы избежать осцилляций. Для остальных вентиляторов (ВМП в перемычке) —
+    # начальный знак положительный, физика сама определит направление.
+    sign_init = 1.0
+    main_fan = None
+    for e in active_fans:
+        if e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
+            main_fan = e
+            if e.get("fanReverse"):
+                sign_init = -1.0
+            break
+
+    # Дерево: BFS для получения parent_map и порядка узлов
+    parent_tree = {}      # node -> (parent_node, edge_global_idx)
     adj_tree = collections.defaultdict(list)
     for gi, e in enumerate(edges):
         if e["id"] in tree_ids:
             adj_tree[e["a"]].append((gi, e["b"]))
             adj_tree[e["b"]].append((gi, e["a"]))
 
-    fan_tree = next(
-        (e for e in active_edges if e["hasFan"] and e["id"] in tree_ids),
-        None
-    )
-    # Если есть реверсный вентилятор — стартовое направление всей сети инвертируется
-    # (как в Аэросеть/Вентсим): воздух идёт в обратную сторону относительно
-    # естественной ориентации from→to. Это даёт правильную сходимость с первой итерации.
-    sign_init = -1.0 if (fan_tree and fan_tree.get("fanReverse")) else 1.0
-    q_init = q0 * sign_init
-
-    if fan_tree:
-        gfi = id_to_gi[fan_tree["id"]]
-        Q[gfi] = q_init
-        node_q  = {fan_tree["b"]: q_init, fan_tree["a"]: -q_init}
-        visited = {fan_tree["a"], fan_tree["b"]}
-        queue   = collections.deque([fan_tree["b"]])
-        while queue:
-            node = queue.popleft()
-            incoming = node_q.get(node, 0.0)
-            nxt = [(gi, nb) for gi, nb in adj_tree[node] if nb not in visited]
-            if not nxt: continue
-            q_each = incoming / len(nxt)
-            for gi, nb in nxt:
-                e = edges[gi]
-                Q[gi] = q_each if e["a"] == node else -q_each
-                node_q[nb] = node_q.get(nb, 0.0) + q_each
+    visited = {GND}
+    bfs_order = [GND]
+    queue = collections.deque([GND])
+    while queue:
+        u = queue.popleft()
+        for gi, nb in adj_tree[u]:
+            if nb not in visited:
                 visited.add(nb)
+                parent_tree[nb] = (u, gi)
+                bfs_order.append(nb)
                 queue.append(nb)
-        # Хорды и неинициализированные ветви — инициализируем с тем же знаком
-        for i, e in enumerate(edges):
-            if e["id"] not in dead_end_ids and Q[i] == 0.0:
-                Q[i] = q_init
-    else:
-        for i, e in enumerate(edges):
-            if e["id"] not in dead_end_ids:
-                Q[i] = q_init
+
+    # 1) Инициализируем все хорды (не в дереве, не тупики) одинаковым q0
+    tree_branch_set = {parent_tree[v][1] for v in bfs_order if v in parent_tree}
+    q_chord = q0 * sign_init
+    for gi, e in enumerate(edges):
+        if e["id"] in dead_end_ids:
+            continue
+        if gi not in tree_branch_set:
+            Q[gi] = q_chord
+
+    # 2) Считаем дисбаланс в каждом узле от хорд
+    node_bal = collections.defaultdict(float)
+    for gi, e in enumerate(edges):
+        if e["id"] in dead_end_ids or gi in tree_branch_set:
+            continue
+        node_bal[e["a"]] -= Q[gi]
+        node_bal[e["b"]] += Q[gi]
+
+    # 3) Древесные ветви: bottom-up от листьев — Q компенсирует дисбаланс узла
+    for idx in range(len(bfs_order) - 1, 0, -1):
+        v = bfs_order[idx]
+        p = parent_tree.get(v)
+        if p is None:
+            continue
+        p_node, gi = p
+        e = edges[gi]
+        b = node_bal[v]
+        # Чтобы баланс в v стал 0: если ребро втекает в v (e.b == v), Q = -b;
+        # если вытекает (e.a == v), Q = b.
+        if e["b"] == v:
+            Q[gi] = -b
+        else:
+            Q[gi] = b
+        # Передаём баланс родителю
+        node_bal[p_node] += b
 
     # ══ ШАГ 6: Итерации Кросса (Андрияшев-Кросс с демпфированием) ════════
     # ΔH контура = Σ [ R·Qi·|Qi| − fan_dir·H_вент(|Qi|)·sign_i − H_нат·sign_i ]
@@ -1379,15 +1408,25 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
-    # При реверсе инвертируем стартовый знак всей сети (как Аэросеть/Вентсим):
-    # реверс физически меняет направление потока во всех ветвях.
-    has_reverse_fan = any(e.get("fanReverse") and e.get("hasFan") for e in active_edges_list)
-    q_init_mkr = -q0 if has_reverse_fan else q0
+    # Инициализация хорд: одинаковое q0 для всех хорд.
+    # При реверсе ГЛАВНОГО вентилятора (ГВУ/ВВУ) — инвертируем знак,
+    # чтобы стартовать ближе к решению. ВМП НЕ инвертируем: их направление
+    # определяется балансом сети, а не глобальным реверсом.
+    sign_mkr = 1.0
+    for e in active_edges_list:
+        if e.get("hasFan") and e.get("fanReverse") and e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
+            sign_mkr = -1.0
+            break
+    q_init_mkr = q0 * sign_mkr
     for ci in chords:
         Q[local_to_global[ci]] = q_init_mkr
     for i, e in enumerate(active_edges_list):
         if e.get("hasFan"):
-            Q[local_to_global[i]] = q_init_mkr
+            # ВМП всегда инициализируем с положительным знаком (свой напор)
+            if e.get("fanType") == "ВМП":
+                Q[local_to_global[i]] = q0
+            else:
+                Q[local_to_global[i]] = q_init_mkr
 
     # BFS bottom-up: синхронизация Q ветвей дерева по 1-му закону Кирхгофа.
     # Алгоритм (как в Аэросеть/Вентсим):

@@ -406,6 +406,92 @@
       "expectedStatus": 200,
       "expectedBody": {"converged": true},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "БАЛАНС: Кросс сложная сеть 6 узлов + ВМП — должен сойтись без нарушений Кирхгофа",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "ATM2", "isAtm": true},
+          {"id": "J1"}, {"id": "J2"}, {"id": "J3"}, {"id": "J4"},
+          {"id": "VMP1"}
+        ],
+        "branches": [
+          {"id": "shaft1", "fromId": "ATM1", "toId": "J1", "R": 0.01,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 3000, "fanType": "ГВУ"},
+          {"id": "br1", "fromId": "J1", "toId": "J2", "R": 0.05},
+          {"id": "br2", "fromId": "J2", "toId": "J3", "R": 0.08},
+          {"id": "br3", "fromId": "J3", "toId": "J4", "R": 0.05},
+          {"id": "br4", "fromId": "J4", "toId": "ATM2", "R": 0.02},
+          {"id": "by1", "fromId": "J1", "toId": "J3", "R": 0.1},
+          {"id": "by2", "fromId": "J2", "toId": "J4", "R": 0.12},
+          {"id": "vmp_pipe", "fromId": "J2", "toId": "VMP1", "R": 0.5,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 500, "fanType": "ВМП"}
+        ],
+        "options": {"tolerance": 0.01, "maxIter": 5000, "alpha": 0.7}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "БАЛАНС МКР: та же сеть 6 узлов",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "ATM2", "isAtm": true},
+          {"id": "J1"}, {"id": "J2"}, {"id": "J3"}, {"id": "J4"},
+          {"id": "VMP1"}
+        ],
+        "branches": [
+          {"id": "shaft1", "fromId": "ATM1", "toId": "J1", "R": 0.01,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 3000, "fanType": "ГВУ"},
+          {"id": "br1", "fromId": "J1", "toId": "J2", "R": 0.05},
+          {"id": "br2", "fromId": "J2", "toId": "J3", "R": 0.08},
+          {"id": "br3", "fromId": "J3", "toId": "J4", "R": 0.05},
+          {"id": "br4", "fromId": "J4", "toId": "ATM2", "R": 0.02},
+          {"id": "by1", "fromId": "J1", "toId": "J3", "R": 0.1},
+          {"id": "by2", "fromId": "J2", "toId": "J4", "R": 0.12},
+          {"id": "vmp_pipe", "fromId": "J2", "toId": "VMP1", "R": 0.5,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 500, "fanType": "ВМП"}
+        ],
+        "options": {"tolerance": 0.01, "tolPressure": 1.0, "maxIter": 5000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "РЕВЕРС ГВУ + ВМП в перемычке (нерезерсная) — сходимость",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {"id": "ATM1", "isAtm": true},
+          {"id": "ATM2", "isAtm": true},
+          {"id": "J1"}, {"id": "J2"}, {"id": "TUP"}
+        ],
+        "branches": [
+          {"id": "gvu", "fromId": "ATM1", "toId": "J1", "R": 0.01,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 2000,
+           "fanType": "ГВУ", "fanReverse": true},
+          {"id": "main", "fromId": "J1", "toId": "J2", "R": 0.05},
+          {"id": "exit", "fromId": "J2", "toId": "ATM2", "R": 0.03},
+          {"id": "vmp",  "fromId": "J1", "toId": "TUP", "R": 0.4,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 800, "fanType": "ВМП"}
+        ],
+        "options": {"tolerance": 0.01, "tolPressure": 1.0, "maxIter": 5000}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
     }
   ]
 }
