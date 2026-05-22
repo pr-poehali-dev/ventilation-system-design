@@ -510,11 +510,14 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     dead_end_ids = find_dead_ends(edges)
     if dead_end_ids:
         log.append(f"Тупиков={len(dead_end_ids)}: {', '.join(sorted(dead_end_ids))}")
-    # Диагностика: все ветви у проблемного узла
+    # Диагностика: все ветви у ЛЮБОГО узла с дисбалансом > 0.01
+    # Считаем Q_map предварительно
+    _qmap_tmp = {e["id"]: 0.0 for e in edges}  # будет заполнен после итераций
+    # Также выводим все ветви у узла 66f26bfd
     for e in edges:
         if "66f26bfd" in e.get("a","") or "66f26bfd" in e.get("b",""):
             status = "ТУПИК" if e["id"] in dead_end_ids else "актив"
-            print(f"[NODE66] {e['id']} {e['a'][:20]}→{e['b'][:20]} Q_init=? angle={e.get('angle',0):.0f} {status}")
+            print(f"[NODE66] {e['id']} {e['a'][:25]}→{e['b'][:25]} angle={e.get('angle',0):.0f} {status} hasFan={e.get('hasFan',False)}")
 
     active_edges = [e for e in edges if e["id"] not in dead_end_ids]
     active_idx   = {i: gi for gi, e in enumerate(edges)
