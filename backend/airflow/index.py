@@ -815,70 +815,28 @@ def find_dead_ends(edges):
             active_edges.discard(i)
             dead_edges.add(edges[i]["id"])
 
-    # Шаг 2: итеративно убираем «висячие петли» — подграфы, подключённые к основной
-    # сети только через одну точку (сочленение). Такие петли не имеют сквозного тока:
-    # воздух входит и выходит через один и тот же узел → Q=0 физически.
-    #
-    # Алгоритм: повторяем пока есть изменения:
-    #   - находим все узлы, достижимые из GND БЕЗ прохождения через данный узел v
-    #   - если GND недостижим без v → v является точкой сочленения
-    #   - все ветви по другую сторону от v (не содержащие GND) — мёртвые
-    #
-    # Упрощённая версия: ищем узлы, удаление которых отключает часть графа от GND.
-    # Отключённая часть — тупиковая петля.
-
-    changed2 = True
-    while changed2:
-        changed2 = False
-
-        # Строим граф только из активных рёбер
-        adj2 = collections.defaultdict(set)
+    # Шаг 2: BFS от GND по оставшимся активным рёбрам.
+    # Любая ветвь, недостижимая из GND — изолированная петля тупиков (Q=0).
+    # Пример: замкнутое кольцо выработок без выхода на поверхность.
+    reachable_nodes = {GND}
+    queue = [GND]
+    while queue:
+        node = queue.pop()
         for i in active_edges:
             e = edges[i]
-            adj2[e["a"]].add(e["b"])
-            adj2[e["b"]].add(e["a"])
+            if e["a"] == node and e["b"] not in reachable_nodes:
+                reachable_nodes.add(e["b"])
+                queue.append(e["b"])
+            elif e["b"] == node and e["a"] not in reachable_nodes:
+                reachable_nodes.add(e["a"])
+                queue.append(e["a"])
 
-        # Все узлы активного графа
-        all_nodes2 = set(adj2.keys())
-
-        # Для каждого не-GND узла проверяем: достижим ли GND без него?
-        for v in list(all_nodes2):
-            if v == GND:
-                continue
-
-            # BFS из GND без узла v
-            reachable = {GND}
-            q2 = [GND]
-            while q2:
-                cur = q2.pop()
-                for nb in adj2[cur]:
-                    if nb != v and nb not in reachable:
-                        reachable.add(nb)
-                        q2.append(nb)
-
-            # Узлы НЕ достижимые из GND без v — они висят на v
-            hanging = all_nodes2 - reachable - {v}
-            if not hanging:
-                continue
-
-            # Убиваем все ребра полностью внутри hanging (оба конца в hanging)
-            to_kill = set()
-            for i in list(active_edges):
-                e = edges[i]
-                if e["a"] in hanging and e["b"] in hanging:
-                    if e["id"] not in protected:
-                        to_kill.add(i)
-                # Рёбра между v и hanging тоже убиваем (они не несут сквозного тока)
-                elif (e["a"] == v and e["b"] in hanging) or (e["b"] == v and e["a"] in hanging):
-                    if e["id"] not in protected:
-                        to_kill.add(i)
-
-            if to_kill:
-                for i in to_kill:
-                    active_edges.discard(i)
-                    dead_edges.add(edges[i]["id"])
-                changed2 = True
-                break  # пересчитываем граф заново
+    for i in list(active_edges):
+        e = edges[i]
+        if e["a"] not in reachable_nodes and e["b"] not in reachable_nodes:
+            if e["id"] not in protected:
+                active_edges.discard(i)
+                dead_edges.add(e["id"])
 
     return dead_edges
 
