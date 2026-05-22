@@ -706,18 +706,16 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # (или вытекающих — в зависимости от знака), минус сам вентилятор.
     for e in edges:
         if e.get("hasFan") and not e.get("fanStopped") and e["a"] == GND and e["b"] == GND:
-            # Баланс GND: Q>0 означает поток a→b.
-            # oe["a"]==GND, Q>0 → поток из GND → GND теряет: -Q
-            # oe["b"]==GND, Q>0 → поток в GND  → GND получает: +Q
+            # Считаем баланс GND по всем НЕ-вентиляторным ветвям у GND
             q_gnd = 0.0
             for oe in edges:
                 if oe["id"] == e["id"]:
                     continue
                 if oe["a"] == GND:
-                    q_gnd -= Q_map.get(oe["id"], 0.0)   # из GND
+                    q_gnd += Q_map.get(oe["id"], 0.0)   # вытекает из GND
                 elif oe["b"] == GND:
-                    q_gnd += Q_map.get(oe["id"], 0.0)   # в GND
-            # Вентилятор восполняет дефицит GND
+                    q_gnd -= Q_map.get(oe["id"], 0.0)   # втекает в GND
+            # Вентилятор компенсирует этот дисбаланс
             Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
 
     # ── Диагностика утечек через перемычки ──────────────────────────────
@@ -1326,9 +1324,9 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 if oe["id"] == e["id"]:
                     continue
                 if oe["a"] == GND:
-                    q_gnd -= Q_map.get(oe["id"], 0.0)   # из GND
+                    q_gnd += Q_map.get(oe["id"], 0.0)
                 elif oe["b"] == GND:
-                    q_gnd += Q_map.get(oe["id"], 0.0)   # в GND
+                    q_gnd -= Q_map.get(oe["id"], 0.0)
             Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
 
     # Проверка реверса
