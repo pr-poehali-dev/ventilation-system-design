@@ -364,8 +364,7 @@ export function solveNetwork(
         }
         // fallback: R уже вычислен при выборе из справочника
         return b.bulkheadR ?? 0;
-      })() : 0)
-      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) : 0)),
+      })() : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanMode:       b.fanMode,
