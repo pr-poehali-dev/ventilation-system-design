@@ -428,6 +428,51 @@ def check_reverse(edges, Q_result, normal_flows, diag):
         })
 
 
+def check_kirchhoff(edges, Q_map, diag, tol=0.5):
+    """
+    Проверяет 1-й закон Кирхгофа (баланс расходов) в каждом узле.
+    Для каждого не-GND узла считает: сумма Q входящих - сумма Q исходящих.
+    Если |дисбаланс| > tol м³/с — добавляет предупреждение в diag.
+    """
+    node_balance = collections.defaultdict(float)
+    for e in edges:
+        q = Q_map.get(e["id"], 0.0)
+        if e["a"] != GND:
+            node_balance[e["a"]] -= q   # вытекает из узла a
+        if e["b"] != GND:
+            node_balance[e["b"]] += q   # втекает в узел b
+
+    violations = []
+    for node, bal in node_balance.items():
+        if abs(bal) > tol:
+            violations.append((node, bal))
+
+    if violations:
+        violations.sort(key=lambda x: abs(x[1]), reverse=True)
+        worst_node, worst_bal = violations[0]
+        details = "; ".join(
+            f"узел {n[:16]}…={b:+.2f}" if len(n) > 20 else f"узел {n}={b:+.2f}"
+            for n, b in violations[:5]
+        )
+        diag.append({
+            "level": "warning",
+            "category": "kirchhoff",
+            "message": (
+                f"Нарушение 1-го закона Кирхгофа в {len(violations)} узлах "
+                f"(макс. дисбаланс {worst_bal:+.3f} м³/с). "
+                f"{details}"
+            )
+        })
+    else:
+        max_imb = max((abs(b) for b in node_balance.values()), default=0.0)
+        if max_imb > 0.01:
+            diag.append({
+                "level": "info",
+                "category": "kirchhoff",
+                "message": f"Баланс расходов: макс. погрешность {max_imb:.3f} м³/с"
+            })
+
+
 def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     """
     Метод Кросса (Андрияшев, «Расчёт вентиляционных сетей шахт», классический алгоритм).
@@ -727,6 +772,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         diag.append({"level": "info", "category": "branch_flow",
                      "message": f"Суммарная утечка: {leakage_total:.1f} м³/с "
                                 f"(k_ут={k_ut:.2f} = {k_ut*100:.0f}% от Q вент.)"})
+
+    # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
+    check_kirchhoff(edges, Q_map, diag)
 
     # ── Проверка норматива реверса ───────────────────────────────────────
     check_reverse(edges, Q_map, normal_flows or {}, diag)
@@ -1335,6 +1383,9 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 elif oe["b"] == GND:
                     q_gnd -= Q_map.get(oe["id"], 0.0)
             Q_map[e["id"]] = -q_gnd if q_gnd != 0.0 else Q_map.get(e["id"], 0.0)
+
+    # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
+    check_kirchhoff(edges, Q_map, diag)
 
     # Проверка реверса
     check_reverse(edges, Q_map, normal_flows or {}, diag)
