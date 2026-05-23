@@ -39,18 +39,18 @@ export default function MobileStub({ onForceDesktop }: Props) {
 
       <p className="text-base leading-relaxed mb-8 max-w-xs"
         style={{ color: "hsl(215, 15%, 55%)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
-        Вентиляция-CAD — профессиональный инструмент для проектирования вентиляции шахт.
+        ПВ-Система — профессиональный инструмент для проектирования вентиляции и водоснабжения.
         Для комфортной работы требуется экран компьютера.
       </p>
 
-      <div className="mb-6 p-4 rounded-2xl"
+      <div className="mb-6 p-4 rounded-2xl flex flex-col items-center"
         style={{ background: "hsl(220, 18%, 11%)", border: "1px solid hsl(220, 15%, 18%)" }}>
-        <p className="text-xs mb-3" style={{ color: "hsl(215, 15%, 55%)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        <p className="text-xs mb-3 text-center w-full" style={{ color: "hsl(215, 15%, 55%)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
           Отсканируйте с компьютера или планшета
         </p>
         <QRCodeSVG
           value={url}
-          size={160}
+          size={200}
           bgColor="hsl(220, 18%, 11%)"
           fgColor="hsl(210, 20%, 90%)"
           level="M"
