@@ -78,7 +78,7 @@ export interface SchemaSymbol {
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search";
 
 interface Excavation {
   id: string;
@@ -610,6 +610,9 @@ export default function CadPage() {
   const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
   // ─── ЛЕВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (свойства/параметры) ────────────────────
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
+  // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
 
   // ─── ДИАЛОГ «ВЫДЕЛЕНИЕ ПОДОБНОГО» (S+S) ─────────────────────────────
   const [showSelectSimilar, setShowSelectSimilar] = useState(false);
@@ -2447,12 +2450,14 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
+                  else if (e.target.value === "search") setActiveSide("search");
                   else setActiveSide("general");
                 }}>
                 <option value="props">Свойства</option>
+                <option value="search">Поиск</option>
                 <option value="horizons">Горизонты</option>
                 <option value="check">Проверка</option>
               </select>
@@ -2464,6 +2469,7 @@ export default function CadPage() {
             <span className="text-xs font-semibold text-gray-800">
               {activeSide === "params" && (selectedNode ? `Узел: ${selectedNode.number || selectedNode.id}` : selectedBranch ? `Ветвь: ${selectedBranch.id}` : "Параметры")}
               {activeSide === "general" && "Свойства объекта"}
+              {activeSide === "search" && "Поиск"}
               {activeSide === "horizons" && "Горизонты"}
               {activeSide === "vent" && "Аэродинамика"}
               {activeSide === "thermo" && "Теплофизические параметры"}
@@ -2490,6 +2496,144 @@ export default function CadPage() {
 
           {/* Свойства */}
           <div className="flex-1 overflow-y-auto">
+
+            {/* ═══ ВКЛАДКА: ПОИСК ═════════════════════════════════════ */}
+            {activeSide === "search" && (() => {
+              const q = searchQuery.trim().toLowerCase();
+              type Hit = { kind: "node" | "branch"; id: string; title: string; subtitle: string };
+              const hits: Hit[] = [];
+              if (q.length > 0) {
+                if (searchScope === "all" || searchScope === "nodes") {
+                  for (const n of nodes) {
+                    const fields = [n.id, n.name, n.number].filter(Boolean).map(String);
+                    if (fields.some(f => f.toLowerCase().includes(q))) {
+                      hits.push({
+                        kind: "node",
+                        id: n.id,
+                        title: n.name || `Узел ${n.number || n.id}`,
+                        subtitle: `№ ${n.number || "—"} · X=${n.x.toFixed(1)} Y=${n.y.toFixed(1)} Z=${n.z.toFixed(1)}`,
+                      });
+                    }
+                  }
+                }
+                if (searchScope === "all" || searchScope === "branches") {
+                  for (const b of branches) {
+                    const fromN = nodes.find(n => n.id === b.fromId);
+                    const toN = nodes.find(n => n.id === b.toId);
+                    const fields = [b.id, b.type, b.fanName, fromN?.name, toN?.name, fromN?.number, toN?.number]
+                      .filter(Boolean).map(String);
+                    if (fields.some(f => f.toLowerCase().includes(q))) {
+                      hits.push({
+                        kind: "branch",
+                        id: b.id,
+                        title: `Ветвь ${b.id}${b.type ? ` (${b.type})` : ""}`,
+                        subtitle: `${fromN?.name || b.fromId} → ${toN?.name || b.toId}${b.hasFan ? " · вентилятор" : ""}`,
+                      });
+                    }
+                  }
+                }
+              }
+              const maxShow = 200;
+              const shown = hits.slice(0, maxShow);
+              return (
+                <div className="p-2 text-[11px]">
+                  {/* Поле ввода */}
+                  <div className="relative mb-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      autoFocus
+                      placeholder="Введите номер, наименование, ID…"
+                      className="w-full pl-6 pr-6 py-1 border border-gray-400 rounded text-[12px] outline-none focus:border-blue-500"
+                      style={{ height: 26 }}
+                    />
+                    <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                      <Icon name="Search" size={12} />
+                    </span>
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery("")}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                        title="Очистить">
+                        <Icon name="X" size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Фильтр по типу */}
+                  <div className="flex gap-1 mb-2">
+                    {([
+                      { v: "all" as const, l: "Всё" },
+                      { v: "nodes" as const, l: "Узлы" },
+                      { v: "branches" as const, l: "Ветви" },
+                    ]).map(opt => (
+                      <button key={opt.v}
+                        onClick={() => setSearchScope(opt.v)}
+                        className="flex-1 px-1 py-0.5 rounded text-[11px] border"
+                        style={{
+                          background: searchScope === opt.v ? "#2563eb" : "white",
+                          color: searchScope === opt.v ? "white" : "#374151",
+                          borderColor: searchScope === opt.v ? "#2563eb" : "#c8c8c8",
+                        }}>
+                        {opt.l}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Статус */}
+                  <div className="text-[10px] text-gray-500 mb-1.5 flex items-center justify-between">
+                    <span>
+                      {q.length === 0
+                        ? "Начните вводить запрос"
+                        : `Найдено: ${hits.length}${hits.length > maxShow ? ` (показано ${maxShow})` : ""}`}
+                    </span>
+                  </div>
+
+                  {/* Результаты */}
+                  <div className="flex flex-col gap-0.5">
+                    {shown.map((h) => {
+                      const isActive = (h.kind === "node" && selectedNodeId === h.id)
+                        || (h.kind === "branch" && selectedBranchId === h.id);
+                      return (
+                        <button key={`${h.kind}-${h.id}`}
+                          onClick={() => {
+                            if (h.kind === "node") {
+                              setSelectedNodeId(h.id);
+                              setSelectedBranchId(null);
+                            } else {
+                              setSelectedBranchId(h.id);
+                              setSelectedNodeId(null);
+                            }
+                          }}
+                          className="flex items-start gap-2 px-2 py-1.5 rounded text-left transition-colors"
+                          style={{
+                            background: isActive ? "#dbeafe" : "transparent",
+                            border: isActive ? "1px solid #2563eb" : "1px solid transparent",
+                          }}
+                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#f3f4f6"; }}
+                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
+                          <Icon
+                            name={h.kind === "node" ? "CircleDot" : "GitBranch"}
+                            size={14}
+                            className={h.kind === "node" ? "text-amber-700 mt-0.5" : "text-blue-700 mt-0.5"}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-800 truncate">{h.title}</div>
+                            <div className="text-[10px] text-gray-500 truncate">{h.subtitle}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {q.length > 0 && hits.length === 0 && (
+                      <div className="text-center text-gray-400 text-[11px] py-3">
+                        Ничего не найдено
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
 
             {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (узел) ════════════════════════════ */}
             {activeSide === "params" && selectedNode && (
