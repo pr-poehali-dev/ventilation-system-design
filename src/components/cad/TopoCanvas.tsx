@@ -1386,11 +1386,20 @@ export default function TopoCanvas(props: Props) {
 
           const isSel = selectedSymbolId === sym.id;
           const sc = sym.scale ?? 1;
-          // Контр-масштаб: при зуме схемы символы сохраняют читаемый размер.
-          // При view.scale < 0.4 символы уменьшаются вместе со схемой (не торчат огромными),
-          // при view.scale > 0.4 — остаются нормального размера (не растут бесконечно).
-          const symScale = Math.min(1, view.scale / 0.4);
-          const SZ = Math.round(32 * sc * symScale);
+          // Контр-масштаб: символы растут вместе со схемой при приближении,
+          // но плавно ограничиваются, чтобы не были гигантскими при сильном зуме.
+          // При view.scale < 0.4 — масштабируются вместе со схемой.
+          // При view.scale ≥ 0.4 — плавно подрастают с насыщением (smooth cap ~3x от базы).
+          let symScale: number;
+          if (view.scale < 0.4) {
+            symScale = view.scale / 0.4;
+          } else {
+            // Плавное насыщение: при view.scale = 0.4 -> 1, при view.scale → ∞ → 3
+            const k = (view.scale - 0.4) / 0.4;
+            symScale = 1 + 2 * (k / (k + 2));
+          }
+          // Без округления (иначе при sc < 0.2 символ исчезает); минимум 4 px на экране.
+          const SZ = Math.max(4, 32 * sc * symScale);
           const HX = px - SZ / 2;
           const HY = py - SZ / 2 - 4;
 
@@ -1649,20 +1658,34 @@ export default function TopoCanvas(props: Props) {
                     stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
                 </g>
               )}
-              {/* Стрелка направления воздуха на символе вентилятора */}
+              {/* Стрелка направления воздуха — встроена в иконку вентилятора,
+                  проходит через её центр и масштабируется вместе с ней. */}
               {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts && (() => {
                 const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
                 const arrowAngle = sym.airDirection === "reverse"
                   ? brAngle + 180 : brAngle;
-                const cx2 = px, cy2 = py + SZ * 0.55;
-                const aLen = Math.max(SZ * 0.45, 12);
+                // Центр иконки в экранных координатах: viewBox=48x40, центр (24,20),
+                // HX = px - SZ/2, HY = py - SZ/2 - 4. Размер по X = SZ, по Y = SZ*(40/48).
+                const iconCx = HX + SZ / 2;
+                const iconCy = HY + SZ * (20 / 48);
+                const aLen = SZ * 0.92;                       // ~весь диаметр
+                const stroke = Math.max(1.2, SZ * 0.06);
+                const head = Math.max(4, SZ * 0.18);
                 return (
-                  <g transform={`translate(${cx2},${cy2}) rotate(${arrowAngle})`}>
-                    <line x1={-aLen / 2} y1={0} x2={aLen / 2 - 5} y2={0}
-                      stroke="#dc2626" strokeWidth={Math.max(1.5, SZ / 20)} strokeLinecap="round" />
-                    <polygon points={`${aLen / 2 - 8},-4 ${aLen / 2},0 ${aLen / 2 - 8},4`}
-                      fill="#dc2626" stroke="white" strokeWidth="0.6" />
+                  <g transform={`translate(${iconCx},${iconCy}) rotate(${arrowAngle})`}>
+                    {/* Белая «подложка» для контраста с тёмными лопастями */}
+                    <line x1={-aLen / 2} y1={0} x2={aLen / 2 - head * 0.6} y2={0}
+                      stroke="white" strokeWidth={stroke + 2.5} strokeLinecap="round" opacity={0.9} />
+                    <polygon
+                      points={`${aLen / 2 - head - 1},${-(head * 0.55 + 1.5)} ${aLen / 2 + 1.5},0 ${aLen / 2 - head - 1},${head * 0.55 + 1.5}`}
+                      fill="white" opacity={0.9} />
+                    {/* Сама стрелка */}
+                    <line x1={-aLen / 2} y1={0} x2={aLen / 2 - head * 0.6} y2={0}
+                      stroke="#dc2626" strokeWidth={stroke} strokeLinecap="round" />
+                    <polygon
+                      points={`${aLen / 2 - head},${-head * 0.55} ${aLen / 2},0 ${aLen / 2 - head},${head * 0.55}`}
+                      fill="#dc2626" />
                   </g>
                 );
               })()}
