@@ -2554,7 +2554,7 @@ export default function CadPage() {
                     Перенумеровать
                   </button>
                   {showRenumberMenu && (
-                    <div className="absolute right-0 top-[26px] z-50 bg-white border border-gray-300 rounded-md shadow-xl text-[11px] w-[320px] overflow-hidden">
+                    <div className="absolute right-0 top-[26px] z-50 bg-white border border-gray-300 rounded-md shadow-xl text-[11px] overflow-hidden" style={{ width: "min(320px, calc(100vw - 24px))", maxWidth: leftPanelWidth - 8 }}>
                       {/* Шапка */}
                       <div className="px-3 py-2 border-b border-gray-200" style={{ background: "#f5f5f5" }}>
                         <div className="font-semibold text-[12px] text-gray-800 mb-0.5">Перенумерация узлов и ветвей</div>
