@@ -75,6 +75,10 @@ interface Props {
   onScaleChange?: (scale: number) => void;
   /** Сигнал «вписать всю сеть в экран» — меняется значение → TopoCanvas пересчитывает. */
   fitToScreenNonce?: number;
+  /** Сигнал «центрировать камеру на указанном узле/ветви». */
+  focusNonce?: number;
+  focusNodeId?: string | null;
+  focusBranchId?: string | null;
   /** Восстановить конкретный вид (при открытии файла с сохранённым view) */
   restoreView?: { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number } | null;
   /** Колбэк: сообщать наружу текущий полный вид (для сохранения в файл) */
@@ -149,6 +153,7 @@ export default function TopoCanvas(props: Props) {
     horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false,
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
+    focusNonce, focusNodeId, focusBranchId,
     editingHorizonImageId, onHorizonImageBoundsChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
@@ -282,6 +287,52 @@ export default function TopoCanvas(props: Props) {
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToScreenNonce]);
+
+  // ─── Центрирование камеры на конкретном узле/ветви ───────────────
+  useEffect(() => {
+    if (!focusNonce) return;
+    if (size.w < 50 || size.h < 50) return;
+
+    const tmpProj: ProjOptions = {
+      scale: 1, offsetX: 0, offsetY: 0,
+      azimuth: view.azimuth, elevation: view.elevation, zScale,
+    };
+
+    let targetX = 0, targetY = 0, found = false;
+    if (focusNodeId) {
+      const n = nodes.find(nn => nn.id === focusNodeId);
+      if (n) {
+        const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, tmpProj);
+        targetX = p.sx; targetY = p.sy; found = true;
+      }
+    } else if (focusBranchId) {
+      const b = branches.find(bb => bb.id === focusBranchId);
+      if (b) {
+        const fromN = nodes.find(n => n.id === b.fromId);
+        const toN = nodes.find(n => n.id === b.toId);
+        if (fromN && toN) {
+          const pf = project3D({ x: fromN.x, y: fromN.y, z: fromN.z * (zScale ?? 1) }, tmpProj);
+          const pt = project3D({ x: toN.x,   y: toN.y,   z: toN.z   * (zScale ?? 1) }, tmpProj);
+          targetX = (pf.sx + pt.sx) / 2;
+          targetY = (pf.sy + pt.sy) / 2;
+          found = true;
+        }
+      }
+    }
+    if (!found) return;
+
+    // Если масштаб слишком мелкий — приблизим, чтобы объект было видно.
+    const minScaleForFocus = 0.6;
+    const newScale = Math.max(view.scale, minScaleForFocus);
+
+    setView((v) => ({
+      ...v,
+      scale: newScale,
+      offsetX: size.w / 2 - targetX * newScale,
+      offsetY: size.h / 2 - targetY * newScale,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNonce]);
 
   useEffect(() => {
     const el = containerRef.current;

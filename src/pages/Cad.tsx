@@ -473,6 +473,10 @@ export default function CadPage() {
   // ─── МАСШТАБ И ВПИСЫВАНИЕ ───────────────────────────────────────────
   const [viewScale, setViewScale] = useState<number>(0.4);
   const [fitToScreenNonce, setFitToScreenNonce] = useState<number>(0);
+  // Сигнал «центрировать камеру на узле/ветви»
+  const [focusNonce, setFocusNonce] = useState<number>(0);
+  const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [focusBranchId, setFocusBranchId] = useState<string | null>(null);
   // При первом рендере переключаем на вид Фронт и вписываем сеть
   useEffect(() => {
     setViewPreset({ name: "front", nonce: Date.now() });
@@ -2600,10 +2604,15 @@ export default function CadPage() {
                             if (h.kind === "node") {
                               setSelectedNodeId(h.id);
                               setSelectedBranchId(null);
+                              setFocusNodeId(h.id);
+                              setFocusBranchId(null);
                             } else {
                               setSelectedBranchId(h.id);
                               setSelectedNodeId(null);
+                              setFocusBranchId(h.id);
+                              setFocusNodeId(null);
                             }
+                            setFocusNonce(Date.now());
                           }}
                           className="flex items-start gap-2 px-2 py-1.5 rounded text-left transition-colors"
                           style={{
@@ -3647,6 +3656,9 @@ export default function CadPage() {
               scaleOverride={viewScale}
               onScaleChange={setViewScale}
               fitToScreenNonce={fitToScreenNonce}
+              focusNonce={focusNonce}
+              focusNodeId={focusNodeId}
+              focusBranchId={focusBranchId}
               restoreView={savedViewToRestore}
               onViewStateChange={setSavedViewState}
               editingHorizonImageId={editingHorizonImageId}
