@@ -1601,7 +1601,7 @@ export default function CadPage() {
             style={{ lineHeight: 0 }}>
             <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-64.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           </button>
-          <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}{isDirty ? " *" : ""}</span>
+          <span className="text-xs font-medium">ПВ-Система — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
         <div className="flex items-center gap-1">
           <button className="w-7 h-5 hover:bg-black/10 flex items-center justify-center text-xs">—</button>
@@ -4137,7 +4137,7 @@ export default function CadPage() {
               draggable={false}
             />
             <div className="text-[22px] font-bold" style={{ color: "#0E3A6E" }}>ПВ-Система</div>
-            <div className="text-[12px] uppercase tracking-wider mt-1" style={{ color: "#4a6a8a" }}>Вентиляция-CAD</div>
+            <div className="text-[12px] uppercase tracking-wider mt-1" style={{ color: "#4a6a8a" }}>Проектирование вентиляции</div>
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>

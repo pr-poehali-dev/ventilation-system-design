@@ -24,7 +24,7 @@ export default function MobileStub({ onForceDesktop }: Props) {
       <div className="mb-8 flex items-center gap-3">
         <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-128.png" alt="ПВ-Система" className="w-10 h-10 object-contain" draggable={false} />
         <span className="text-xl font-semibold" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
-          Вентиляция-CAD
+          ПВ-Система
         </span>
       </div>
 
