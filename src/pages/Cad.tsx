@@ -2553,67 +2553,92 @@ export default function CadPage() {
                     <Icon name="Hash" size={12} />
                     Перенумеровать
                   </button>
-                  {showRenumberMenu && (
-                    <div className="absolute right-0 top-[26px] z-50 bg-white border border-gray-300 rounded-md shadow-xl text-[11px] overflow-hidden" style={{ width: "min(320px, calc(100vw - 24px))", maxWidth: leftPanelWidth - 8 }}>
-                      {/* Шапка */}
-                      <div className="px-3 py-2 border-b border-gray-200" style={{ background: "#f5f5f5" }}>
-                        <div className="font-semibold text-[12px] text-gray-800 mb-0.5">Перенумерация узлов и ветвей</div>
-                        <div className="text-[10px] text-gray-600 leading-snug">
-                          Заменит длинные ID (например, из импорта) на короткие
-                          номера 1, 2, 3… Все связи между объектами сохранятся.
-                        </div>
-                      </div>
+                  {showRenumberMenu && (() => {
+                    // Полноэкранная модалка-оверлей, чтобы не зависеть от ширины панели.
+                    const closeMenu = () => setShowRenumberMenu(false);
+                    return (
+                      <div
+                        className="fixed inset-0 z-[9998]"
+                        style={{ background: "rgba(0,0,0,0.25)" }}
+                        onClick={closeMenu}>
+                        <div
+                          className="absolute bg-white border border-gray-300 rounded-md shadow-2xl text-[12px] overflow-hidden"
+                          style={{
+                            top: "50%",
+                            left: "50%",
+                            transform: "translate(-50%, -50%)",
+                            width: "min(360px, calc(100vw - 32px))",
+                            maxHeight: "calc(100vh - 40px)",
+                          }}
+                          onClick={(e) => e.stopPropagation()}>
+                          {/* Шапка */}
+                          <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between" style={{ background: "#f5f5f5" }}>
+                            <div>
+                              <div className="font-semibold text-[13px] text-gray-800">Перенумерация узлов и ветвей</div>
+                            </div>
+                            <button onClick={closeMenu}
+                              className="w-6 h-6 hover:bg-black/10 rounded flex items-center justify-center text-gray-600"
+                              title="Закрыть">✕</button>
+                          </div>
 
-                      {/* Текущее состояние */}
-                      <div className="px-3 py-2 border-b border-gray-200 text-[10px] text-gray-600 flex items-center justify-between">
-                        <span>В проекте сейчас:</span>
-                        <span className="font-mono text-gray-800">
-                          {nodes.length} узлов · {branchesRaw.length} ветвей
-                        </span>
-                      </div>
+                          {/* Описание */}
+                          <div className="px-3 py-2 text-[11px] text-gray-600 leading-snug border-b border-gray-200">
+                            Заменит длинные ID (например, после импорта) на короткие
+                            номера 1, 2, 3… Все связи между объектами сохранятся.
+                          </div>
 
-                      {/* Вариант 1 */}
-                      <button onClick={() => {
-                          if (confirm(`Перенумеровать все объекты по порядку?\n\nУзлы получат номера 1…${nodes.length}\nВетви получат номера 1…${branchesRaw.length}\n\nВсе связи между ними сохранятся.`)) {
-                            renumberAll("asc");
-                          }
-                          setShowRenumberMenu(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-start gap-2.5 transition-colors">
-                        <div className="mt-0.5 text-blue-600"><Icon name="ArrowDown01" size={16} /></div>
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-800">Сначала первые</div>
-                          <div className="text-[10px] text-gray-500 leading-snug">
-                            Первый объект получит № 1, второй — № 2 и так далее.
+                          {/* Текущее состояние */}
+                          <div className="px-3 py-2 border-b border-gray-200 text-[11px] text-gray-600 flex items-center justify-between">
+                            <span>В проекте сейчас:</span>
+                            <span className="font-mono text-gray-800">
+                              {nodes.length} узлов · {branchesRaw.length} ветвей
+                            </span>
+                          </div>
+
+                          {/* Вариант 1 */}
+                          <button onClick={() => {
+                              if (confirm(`Перенумеровать все объекты по порядку?\n\nУзлы получат номера 1…${nodes.length}\nВетви получат номера 1…${branchesRaw.length}\n\nВсе связи между ними сохранятся.`)) {
+                                renumberAll("asc");
+                              }
+                              closeMenu();
+                            }}
+                            className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-start gap-2.5 transition-colors">
+                            <div className="mt-0.5 text-blue-600"><Icon name="ArrowDown01" size={18} /></div>
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-800 text-[12px]">Сначала первые (1 → N)</div>
+                              <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
+                                Первый объект получит № 1, второй — № 2 и так далее.
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Вариант 2 */}
+                          <button onClick={() => {
+                              if (confirm(`Перенумеровать все объекты в обратном порядке?\n\nПоследний объект станет № 1, предпоследний — № 2 и т.д.\n\nВсе связи между ними сохранятся.`)) {
+                                renumberAll("desc");
+                              }
+                              closeMenu();
+                            }}
+                            className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-start gap-2.5 border-t border-gray-200 transition-colors">
+                            <div className="mt-0.5 text-blue-600"><Icon name="ArrowDown10" size={18} /></div>
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-800 text-[12px]">Сначала последние (N → 1)</div>
+                              <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
+                                Последний объект получит № 1, предпоследний — № 2 и т.д.
+                                Как в АэроСеть.
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Подсказка снизу */}
+                          <div className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-200 flex items-start gap-1.5" style={{ background: "#fafafa" }}>
+                            <Icon name="Info" size={12} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                            <span>Действие нельзя отменить. Сохраните проект перед операцией.</span>
                           </div>
                         </div>
-                      </button>
-
-                      {/* Вариант 2 */}
-                      <button onClick={() => {
-                          if (confirm(`Перенумеровать все объекты в обратном порядке?\n\nПоследний объект станет № 1, предпоследний — № 2 и т.д.\n\nВсе связи между ними сохранятся.`)) {
-                            renumberAll("desc");
-                          }
-                          setShowRenumberMenu(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-start gap-2.5 border-t border-gray-200 transition-colors">
-                        <div className="mt-0.5 text-blue-600"><Icon name="ArrowDown10" size={16} /></div>
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-800">Сначала последние</div>
-                          <div className="text-[10px] text-gray-500 leading-snug">
-                            Последний объект получит № 1, предпоследний — № 2 и т.д.
-                            Как в АэроСеть.
-                          </div>
-                        </div>
-                      </button>
-
-                      {/* Подсказка снизу */}
-                      <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200 flex items-start gap-1.5" style={{ background: "#fafafa" }}>
-                        <Icon name="Info" size={11} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                        <span>Действие нельзя отменить. Сохраните проект перед операцией.</span>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
               <button onClick={() => setLeftPanelOpen(false)}
