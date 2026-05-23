@@ -1526,9 +1526,12 @@ export default function TopoCanvas(props: Props) {
                   // После rotate(brAngle): X — вдоль ветви, Y — поперёк
                   // ph — высота прямоугольника ПОПЕРЁК ветви (по Y)
                   // pw — ширина прямоугольника ВДОЛЬ ветви (по X)
-                  const ph = Math.max(16, SZ * 0.85);  // поперёк (Y)
-                  const pw = Math.max(5, Math.round(ph * 0.38));      // вдоль (X)
-                  const gap = Math.max(3, pw * 0.5);                  // зазор двери
+                  // Размеры пропорциональны SZ — символ масштабируется полностью,
+                  // а не только контур. Минимумы маленькие, чтобы при сильном
+                  // уменьшении не пропадал совсем.
+                  const ph = Math.max(3, SZ * 0.85);                  // поперёк (Y)
+                  const pw = Math.max(1.5, ph * 0.38);                // вдоль (X)
+                  const gap = Math.max(1, pw * 0.5);                  // зазор двери
 
                   // Флаги типа
                   const isDoor    = tid.includes("door_closed") || tid.includes("door_conc") ||
@@ -1543,7 +1546,7 @@ export default function TopoCanvas(props: Props) {
                   const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
                   const isFirePP  = tid === "fire_door_pp";
                   const isProem   = tid.includes("proem_");
-                  const sw2       = Math.max(1.5, pw * 0.12);  // толщина обводки
+                  const sw2       = Math.max(0.4, pw * 0.18);  // толщина обводки
 
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
@@ -1658,34 +1661,32 @@ export default function TopoCanvas(props: Props) {
                     stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
                 </g>
               )}
-              {/* Стрелка направления воздуха — встроена в иконку вентилятора,
-                  проходит через её центр и масштабируется вместе с ней. */}
-              {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts && (() => {
+              {/* Маленькая чёрная стрелка направления воздуха — выходит из
+                  границы окружности вентилятора. Можно отключить в свойствах. */}
+              {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts
+                && (sym.showFanArrow ?? true) && (() => {
                 const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
                 const arrowAngle = sym.airDirection === "reverse"
                   ? brAngle + 180 : brAngle;
-                // Центр иконки в экранных координатах: viewBox=48x40, центр (24,20),
-                // HX = px - SZ/2, HY = py - SZ/2 - 4. Размер по X = SZ, по Y = SZ*(40/48).
+                // Центр иконки в экранных координатах.
                 const iconCx = HX + SZ / 2;
                 const iconCy = HY + SZ * (20 / 48);
-                const aLen = SZ * 0.92;                       // ~весь диаметр
-                const stroke = Math.max(1.2, SZ * 0.06);
-                const head = Math.max(4, SZ * 0.18);
+                // Радиус круга в SVG: 16 из 48 → доля 16/48.
+                const rIcon = SZ * (16 / 48);
+                const aLen = SZ * 0.32;                       // короткая стрелка
+                const stroke = Math.max(0.8, SZ * 0.045);
+                const head = Math.max(3, SZ * 0.13);
+                // Хвост — на границе круга, остриё — снаружи.
+                const x0 = rIcon;
+                const x1 = rIcon + aLen;
                 return (
                   <g transform={`translate(${iconCx},${iconCy}) rotate(${arrowAngle})`}>
-                    {/* Белая «подложка» для контраста с тёмными лопастями */}
-                    <line x1={-aLen / 2} y1={0} x2={aLen / 2 - head * 0.6} y2={0}
-                      stroke="white" strokeWidth={stroke + 2.5} strokeLinecap="round" opacity={0.9} />
+                    <line x1={x0} y1={0} x2={x1 - head * 0.5} y2={0}
+                      stroke="#111" strokeWidth={stroke} strokeLinecap="round" />
                     <polygon
-                      points={`${aLen / 2 - head - 1},${-(head * 0.55 + 1.5)} ${aLen / 2 + 1.5},0 ${aLen / 2 - head - 1},${head * 0.55 + 1.5}`}
-                      fill="white" opacity={0.9} />
-                    {/* Сама стрелка */}
-                    <line x1={-aLen / 2} y1={0} x2={aLen / 2 - head * 0.6} y2={0}
-                      stroke="#dc2626" strokeWidth={stroke} strokeLinecap="round" />
-                    <polygon
-                      points={`${aLen / 2 - head},${-head * 0.55} ${aLen / 2},0 ${aLen / 2 - head},${head * 0.55}`}
-                      fill="#dc2626" />
+                      points={`${x1 - head},${-head * 0.55} ${x1},0 ${x1 - head},${head * 0.55}`}
+                      fill="#111" />
                   </g>
                 );
               })()}

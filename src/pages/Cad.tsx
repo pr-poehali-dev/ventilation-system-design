@@ -53,6 +53,7 @@ export interface SchemaSymbol {
   label?: string;   // подпись (например "5 чел.")
   description?: string; // описание (свободный текст)
   airDirection?: "forward" | "reverse"; // направление воздуха относительно ветви
+  showFanArrow?: boolean; // показывать стрелку направления у вентилятора (по умолчанию true)
   appearYear?: number;  // дата появления — год
   appearMonth?: string; // дата появления — месяц
   appearDay?: number;   // дата появления — день
@@ -2805,16 +2806,25 @@ export default function CadPage() {
 
                   {/* Направление (вентилятор) */}
                   {sym.typeId === "fan" && (
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <span className="text-gray-500 w-20 flex-shrink-0">Направление</span>
-                      <select value={sym.airDirection ?? "forward"}
-                        onChange={(e) => updSym({ airDirection: e.target.value as "forward" | "reverse" })}
-                        className="flex-1 text-[11px] px-1"
-                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                        <option value="forward">По ветви (→)</option>
-                        <option value="reverse">Против ветви (←)</option>
-                      </select>
-                    </div>
+                    <>
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-20 flex-shrink-0">Направление</span>
+                        <select value={sym.airDirection ?? "forward"}
+                          onChange={(e) => updSym({ airDirection: e.target.value as "forward" | "reverse" })}
+                          className="flex-1 text-[11px] px-1"
+                          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                          <option value="forward">По ветви (→)</option>
+                          <option value="reverse">Против ветви (←)</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center gap-2 mb-1.5 cursor-pointer select-none">
+                        <input type="checkbox"
+                          checked={sym.showFanArrow ?? true}
+                          onChange={(e) => updSym({ showFanArrow: e.target.checked })}
+                          style={{ width: 13, height: 13, accentColor: "#2563eb" }} />
+                        <span className="text-gray-700">Показывать стрелку направления</span>
+                      </label>
+                    </>
                   )}
 
 
