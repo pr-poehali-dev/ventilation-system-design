@@ -1288,6 +1288,13 @@ export default function CadPage() {
         handleSave();
         return;
       }
+      // Ctrl+F / Ctrl+А — открыть поиск по схеме
+      if (e.ctrlKey && (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А")) {
+        e.preventDefault();
+        setLeftPanelOpen(true);
+        setActiveSide("search");
+        return;
+      }
       // Ctrl+V / Ctrl+М — вставить условное обозначение из буфера (режим ожидания привязки)
       if (e.ctrlKey && (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") && !isEditing) {
         if (symbolClipboard) {
