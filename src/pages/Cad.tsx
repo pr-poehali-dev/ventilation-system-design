@@ -341,6 +341,42 @@ export default function CadPage() {
     return String(i);
   };
 
+  // Перенумеровать все узлы и ветви последовательными ID 1, 2, 3...
+  // direction: "asc" — с первого, "desc" — с последнего (как в АэроСеть).
+  // Пересвязывает все ссылки: branches.fromId/toId, schemaSymbols.branchId.
+  const renumberAll = (direction: "asc" | "desc" = "asc") => {
+    const nodeMap = new Map<string, string>();
+    const order = direction === "asc" ? nodes : [...nodes].reverse();
+    order.forEach((n, i) => nodeMap.set(n.id, String(i + 1)));
+
+    const branchMap = new Map<string, string>();
+    const bOrder = direction === "asc" ? branchesRaw : [...branchesRaw].reverse();
+    bOrder.forEach((b, i) => branchMap.set(b.id, String(i + 1)));
+
+    setNodes((prev) => prev.map((n) => {
+      const newId = nodeMap.get(n.id) ?? n.id;
+      return { ...n, id: newId, number: newId, name: n.name?.startsWith("Узел ") || !n.name ? `Узел ${newId}` : n.name };
+    }));
+
+    setBranches((prev) => prev.map((b) => ({
+      ...b,
+      id: branchMap.get(b.id) ?? b.id,
+      fromId: nodeMap.get(b.fromId) ?? b.fromId,
+      toId: nodeMap.get(b.toId) ?? b.toId,
+    })));
+
+    setSchemaSymbols((prev) => prev.map((s) => ({
+      ...s,
+      branchId: s.branchId ? (branchMap.get(s.branchId) ?? s.branchId) : s.branchId,
+    })));
+
+    // Сбросим выделение, чтобы не ссылаться на старые id.
+    setSelectedNodeId(null);
+    setSelectedBranchId(null);
+    setSelectedSymbolId(null);
+    setIsDirty(true);
+  };
+
   // Создаёт узел в указанной мировой точке. Если активен горизонт —
   // навязывает его Z и horizonId. Возвращает ID созданного узла.
   const handleNodeAdd = (x: number, y: number, z: number): string => {
@@ -617,6 +653,19 @@ export default function CadPage() {
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
+  // ─── МЕНЮ «ПЕРЕНУМЕРОВАТЬ» ─────────────────────────────────────────
+  const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
+  const renumberMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!showRenumberMenu) return;
+    const onDoc = (e: MouseEvent) => {
+      if (renumberMenuRef.current && !renumberMenuRef.current.contains(e.target as Node)) {
+        setShowRenumberMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showRenumberMenu]);
 
   // ─── ДИАЛОГ «ВЫДЕЛЕНИЕ ПОДОБНОГО» (S+S) ─────────────────────────────
   const [showSelectSimilar, setShowSelectSimilar] = useState(false);
@@ -2491,9 +2540,44 @@ export default function CadPage() {
               {activeSide === "measure" && "Замеры"}
               {activeSide === "pipes" && "Трубопроводы"}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {activeSide === "params" && selectedNode && (
                 <span className="text-[10px] text-gray-500 font-mono">{selectedNode.id}</span>
+              )}
+              {(activeSide === "topology" || activeSide === "general") && (
+                <div className="relative" ref={renumberMenuRef}>
+                  <button onClick={() => setShowRenumberMenu(v => !v)}
+                    className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
+                    style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                    title="Перенумеровать узлы и ветви (после импорта)">
+                    <Icon name="Hash" size={12} />
+                    Перенумеровать
+                  </button>
+                  {showRenumberMenu && (
+                    <div className="absolute right-0 top-[26px] z-50 bg-white border border-gray-300 rounded shadow-lg text-[11px] min-w-[200px]">
+                      <button onClick={() => {
+                          if (confirm("Перенумеровать все узлы и ветви по порядку (1, 2, 3…)? Эта операция изменит все ID. Продолжить?")) {
+                            renumberAll("asc");
+                          }
+                          setShowRenumberMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2">
+                        <Icon name="ArrowDown01" size={12} />
+                        С первого (1 → N)
+                      </button>
+                      <button onClick={() => {
+                          if (confirm("Перенумеровать все узлы и ветви в обратном порядке? Эта операция изменит все ID. Продолжить?")) {
+                            renumberAll("desc");
+                          }
+                          setShowRenumberMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2 border-t border-gray-200">
+                        <Icon name="ArrowDown10" size={12} />
+                        С последнего (N → 1)
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               <button onClick={() => setLeftPanelOpen(false)}
                 className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
@@ -2697,6 +2781,7 @@ export default function CadPage() {
                   return bkSym?.typeId;
                 })()}
                 unitsConfig={unitsConfig}
+                nodes={nodes}
               />
             )}
 

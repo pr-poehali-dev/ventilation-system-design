@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type TopoBranch, type Horizon } from "@/lib/topology";
+import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
@@ -36,6 +36,8 @@ interface BranchPropsPanelProps {
   bulkheadSymTypeId?: string;
   /** Конфигурация единиц измерения */
   unitsConfig?: UnitsConfig;
+  /** Все узлы — для отображения коротких имён начального/конечного */
+  nodes?: TopoNode[];
 }
 
 const SH = "#e8eef8";
@@ -215,7 +217,12 @@ function fmtR(rKmu: number, minDecimals = 4): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [] }: BranchPropsPanelProps) {
+  const shortNode = (id: string): string => {
+    const n = nodes.find(nn => nn.id === id);
+    if (!n) return id;
+    return n.number || n.name || id;
+  };
   const tabMap: Record<string, InnerTab> = {
     topology: "Топология",
     fan: "Вентилятор",
@@ -268,11 +275,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </InlineLabel>
 
             <InlineLabel label="Нач. узел">
-              <EditInput value={branch.fromId} readOnly />
+              <EditInput value={shortNode(branch.fromId)} readOnly />
             </InlineLabel>
 
             <InlineLabel label="Кон. узел">
-              <EditInput value={branch.toId} readOnly />
+              <EditInput value={shortNode(branch.toId)} readOnly />
             </InlineLabel>
 
             <InlineLabel label="Длина, м">
