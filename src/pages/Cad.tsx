@@ -4149,7 +4149,7 @@ export default function CadPage() {
             <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
               © 2026 ПВ-Система. Все права защищены.<br/>
               Программа предназначена для проектирования систем<br/>
-              вентиляции и водоснабжения промышленных объектов.
+              вентиляции и водоснабжения рудников и шахт.
             </div>
           </div>
 
