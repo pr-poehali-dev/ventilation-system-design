@@ -1591,8 +1591,7 @@ export default function CadPage() {
       <div className="h-7 flex items-center justify-between px-2 select-none"
         style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}>
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded-sm flex items-center justify-center"
-            style={{ background: "#2563eb", color: "white", fontSize: "10px", fontWeight: "bold" }}>В</div>
+          <img src="/app-icon.svg" alt="ПВ-Система" className="w-4 h-4" draggable={false} />
           <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
         <div className="flex items-center gap-1">

@@ -22,10 +22,7 @@ export default function MobileStub({ onForceDesktop }: Props) {
       style={{ background: "hsl(220, 20%, 8%)", color: "hsl(210, 20%, 90%)" }}>
 
       <div className="mb-8 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-white text-lg"
-          style={{ background: "hsl(210, 100%, 56%)" }}>
-          В
-        </div>
+        <img src="/app-icon.svg" alt="ПВ-Система" className="w-10 h-10" draggable={false} />
         <span className="text-xl font-semibold" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
           Вентиляция-CAD
         </span>
