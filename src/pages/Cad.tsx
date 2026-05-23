@@ -753,6 +753,8 @@ export default function CadPage() {
   const [isDirty, setIsDirty] = useState<boolean>(false);
   // Диалог подтверждения закрытия
   const [showCloseConfirm, setShowCloseConfirm] = useState<boolean>(false);
+  // Окно "О программе"
+  const [showAbout, setShowAbout] = useState<boolean>(false);
 
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -1591,7 +1593,14 @@ export default function CadPage() {
       <div className="h-7 flex items-center justify-between px-2 select-none"
         style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}>
         <div className="flex items-center gap-2">
-          <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-64.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+          <button
+            type="button"
+            onClick={() => setShowAbout(true)}
+            title="О программе"
+            className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
+            style={{ lineHeight: 0 }}>
+            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-64.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+          </button>
           <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -4094,6 +4103,63 @@ export default function CadPage() {
               className="h-7 px-3 text-[12px] rounded text-white"
               style={{ background: "#2563eb" }}>
               Сохранить
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Окно «О программе» ──────────────────────────────────────────── */}
+    {showAbout && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.45)" }}
+        onClick={() => setShowAbout(false)}>
+        <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[460px] overflow-hidden"
+          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
+          onClick={(e) => e.stopPropagation()}>
+          {/* Шапка диалога */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
+            style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)" }}>
+            <span className="text-[12px] font-semibold text-gray-800">О программе</span>
+            <button
+              onClick={() => setShowAbout(false)}
+              className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
+          </div>
+
+          {/* Контент */}
+          <div className="px-6 py-6 flex flex-col items-center text-center"
+            style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
+            <img
+              src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-256.png"
+              alt="ПВ-Система"
+              className="w-24 h-24 object-contain mb-3"
+              style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.25))" }}
+              draggable={false}
+            />
+            <div className="text-[22px] font-bold" style={{ color: "#0E3A6E" }}>ПВ-Система</div>
+            <div className="text-[12px] uppercase tracking-wider mt-1" style={{ color: "#4a6a8a" }}>Вентиляция-CAD</div>
+
+            <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
+              <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">2026.05</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции рудников и шахт</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop</span></div>
+            </div>
+
+            <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
+              © 2026 ПВ-Система. Все права защищены.<br/>
+              Программа предназначена для расчёта воздухораспределения,<br/>
+              моделирования аэродинамических сетей и подбора вентиляторных установок.
+            </div>
+          </div>
+
+          {/* Футер */}
+          <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <button
+              onClick={() => setShowAbout(false)}
+              className="h-7 px-4 text-[12px] rounded text-white font-medium"
+              style={{ background: "#2563eb" }}>
+              OK
             </button>
           </div>
         </div>
