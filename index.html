@@ -70,6 +70,22 @@
         background: linear-gradient(90deg, transparent, #1FA0E8, #0E63B0, transparent);
         animation: splashBar 1.4s ease-in-out infinite;
       }
+      #app-splash .splash-version {
+        margin-top: 18px;
+        font-size: 12px;
+        color: #5a7a9a;
+        letter-spacing: 0.4px;
+      }
+      #app-splash .splash-footer {
+        position: absolute;
+        bottom: 18px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 11px;
+        color: #6b8aa8;
+        letter-spacing: 0.3px;
+      }
       @keyframes splashPulse {
         0%, 100% { transform: scale(1); }
         50%      { transform: scale(1.05); }
@@ -113,6 +129,8 @@
   <div class="splash-title">ПВ-Система</div>
   <div class="splash-subtitle">Вентиляция-CAD</div>
   <div class="splash-progress"></div>
+  <div class="splash-version">Версия 1.0.0</div>
+  <div class="splash-footer">© 2026 ПВ-Система. Все права защищены.</div>
 </div>
 <div id="root"></div>
 <script type="module" src="/src/main.tsx"></script>
