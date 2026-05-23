@@ -608,6 +608,8 @@ export default function CadPage() {
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
   const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
+  // ─── ЛЕВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (свойства/параметры) ────────────────────
+  const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
 
   // ─── ДИАЛОГ «ВЫДЕЛЕНИЕ ПОДОБНОГО» (S+S) ─────────────────────────────
   const [showSelectSimilar, setShowSelectSimilar] = useState(false);
@@ -2375,7 +2377,18 @@ export default function CadPage() {
       {/* ═══ MAIN AREA ════════════════════════════════════════════════════ */}
       <div className="flex-1 flex overflow-hidden">
 
+        {/* ── КНОПКА-ПОЛОСКА «РАЗВЕРНУТЬ ЛЕВУЮ ПАНЕЛЬ» ─────────────── */}
+        {!leftPanelOpen && (
+          <button onClick={() => setLeftPanelOpen(true)}
+            className="flex-shrink-0 flex items-center justify-center w-6 h-full border-r"
+            style={{ background: "#f5f5f5", borderColor: "#b8b8b8", color: "#374151", cursor: "pointer" }}
+            title="Показать панель свойств">
+            <Icon name="PanelLeftOpen" size={14} />
+          </button>
+        )}
+
         {/* ── ВЕРТИКАЛЬНЫЕ ВКЛАДКИ СЛЕВА ────────────────────────────── */}
+        {leftPanelOpen && (<>
         <div className="flex flex-col flex-shrink-0"
           style={{ width: (selectedNodeId || selectedBranchId || fanSymbolBranchId) ? 24 : 0, background: "#e8e8e8", borderRight: (selectedNodeId || selectedBranchId || fanSymbolBranchId) ? "1px solid #b8b8b8" : "none", overflow: "hidden", transition: "width 0.15s" }}>
           {(selectedNodeId
@@ -2461,9 +2474,18 @@ export default function CadPage() {
               {activeSide === "measure" && "Замеры"}
               {activeSide === "pipes" && "Трубопроводы"}
             </span>
-            {activeSide === "params" && selectedNode && (
-              <span className="text-[10px] text-gray-500 font-mono">{selectedNode.id}</span>
-            )}
+            <div className="flex items-center gap-2">
+              {activeSide === "params" && selectedNode && (
+                <span className="text-[10px] text-gray-500 font-mono">{selectedNode.id}</span>
+              )}
+              <button onClick={() => setLeftPanelOpen(false)}
+                className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
+                style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                title="Скрыть панель свойств">
+                <Icon name="PanelLeftClose" size={12} />
+                Свернуть
+              </button>
+            </div>
           </div>
 
           {/* Свойства */}
@@ -3265,6 +3287,7 @@ export default function CadPage() {
           className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           style={{ background: "#d0d0d0" }}
           title="Перетащите, чтобы изменить ширину панели" />
+        </>)}
 
         {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS + ИНСТРУМЕНТЫ) ────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#ffffff" }}>
