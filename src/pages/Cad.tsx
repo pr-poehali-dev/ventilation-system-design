@@ -4137,19 +4137,19 @@ export default function CadPage() {
               draggable={false}
             />
             <div className="text-[22px] font-bold" style={{ color: "#0E3A6E" }}>ПВ-Система</div>
-            <div className="text-[12px] uppercase tracking-wider mt-1" style={{ color: "#4a6a8a" }}>Проектирование вентиляции</div>
+            <div className="text-[12px] uppercase tracking-wider mt-1" style={{ color: "#4a6a8a" }}>Проектирование вентиляции и водоснабжения</div>
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">2026.05</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции рудников и шахт</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop</span></div>
             </div>
 
             <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
               © 2026 ПВ-Система. Все права защищены.<br/>
-              Программа предназначена для расчёта воздухораспределения,<br/>
-              моделирования аэродинамических сетей и подбора вентиляторных установок.
+              Программа предназначена для проектирования систем<br/>
+              вентиляции и водоснабжения промышленных объектов.
             </div>
           </div>
 
