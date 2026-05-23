@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Генерация набора иконок",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
