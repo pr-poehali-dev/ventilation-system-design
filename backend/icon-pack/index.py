@@ -2,12 +2,44 @@ import os
 import io
 import json
 import boto3
-import cairosvg
+import urllib.request
 from PIL import Image
 
 
+SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9cbce9b6-64f2-457e-93ba-9177d48d71b2.jpg"
+
+
+def remove_white_background(img: Image.Image, threshold: int = 240) -> Image.Image:
+    """Делает белый/почти-белый фон прозрачным."""
+    img = img.convert("RGBA")
+    px = img.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = px[x, y]
+            if r >= threshold and g >= threshold and b >= threshold:
+                px[x, y] = (255, 255, 255, 0)
+    return img
+
+
+def crop_to_content(img: Image.Image, pad_ratio: float = 0.06) -> Image.Image:
+    """Обрезает изображение по непрозрачному содержимому и добавляет небольшие поля, центрирует в квадрат."""
+    bbox = img.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    w, h = img.size
+    side = max(w, h)
+    pad = int(side * pad_ratio)
+    side_padded = side + pad * 2
+    canvas = Image.new("RGBA", (side_padded, side_padded), (0, 0, 0, 0))
+    off_x = (side_padded - w) // 2
+    off_y = (side_padded - h) // 2
+    canvas.paste(img, (off_x, off_y), img)
+    return canvas
+
+
 def handler(event, context):
-    """Генерирует PNG-набор и .ico-файл из app-icon.svg, заливает в S3 и возвращает CDN-ссылки."""
+    """Берёт реальный логотип, делает прозрачный фон, генерирует PNG/ICO во всех размерах и заливает в S3."""
     method = event.get('httpMethod', 'GET')
 
     if method == 'OPTIONS':
@@ -22,35 +54,12 @@ def handler(event, context):
             'body': ''
         }
 
-    svg_source = '''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="circleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3FA9F5"/>
-      <stop offset="100%" stop-color="#0E63B0"/>
-    </linearGradient>
-    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#4DB8F5"/>
-      <stop offset="100%" stop-color="#0F5BAF"/>
-    </linearGradient>
-    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#8AD8F8"/>
-      <stop offset="100%" stop-color="#1FA0E8"/>
-    </linearGradient>
-    <clipPath id="circleClip">
-      <circle cx="256" cy="256" r="232"/>
-    </clipPath>
-  </defs>
-  <circle cx="256" cy="256" r="232" fill="url(#circleGrad)"/>
-  <g clip-path="url(#circleClip)">
-    <path d="M70 250 C 130 170, 200 165, 245 230 C 260 250, 270 250, 285 235 L 285 290 L 70 290 Z" fill="#2D8FD6" opacity="0.85"/>
-    <path d="M40 360 C 110 310, 180 410, 256 360 C 332 310, 402 410, 472 360 L 472 520 L 40 520 Z" fill="url(#waveGrad)"/>
-    <path d="M40 330 C 110 285, 180 380, 256 330 C 332 285, 402 380, 472 330" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
-    <path d="M325 130 C 325 130, 280 200, 280 240 C 280 270, 305 290, 325 290 C 345 290, 370 270, 370 240 C 370 200, 325 130, 325 130 Z" fill="url(#dropGrad)"/>
-    <ellipse cx="312" cy="235" rx="7" ry="18" fill="#FFFFFF" opacity="0.55"/>
-  </g>
-  <circle cx="256" cy="256" r="232" fill="none" stroke="#0A4A8C" stroke-width="4" opacity="0.35"/>
-</svg>'''
+    with urllib.request.urlopen(SOURCE_URL, timeout=20) as resp:
+        raw = resp.read()
+
+    src = Image.open(io.BytesIO(raw)).convert("RGBA")
+    src = remove_white_background(src, threshold=238)
+    src = crop_to_content(src, pad_ratio=0.04)
 
     s3 = boto3.client(
         's3',
@@ -63,15 +72,14 @@ def handler(event, context):
     cdn_base = f"https://cdn.poehali.dev/projects/{aws_key}/bucket"
     results = {}
 
-    sizes = [16, 32, 48, 64, 128, 256, 512]
-    pil_images = []
+    sizes = [16, 32, 48, 64, 128, 256, 512, 1024]
+    pil_images_for_ico = []
 
     for size in sizes:
-        png_bytes = cairosvg.svg2png(
-            bytestring=svg_source.encode('utf-8'),
-            output_width=size,
-            output_height=size
-        )
+        img = src.resize((size, size), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG', optimize=True)
+        png_bytes = buf.getvalue()
         key = f"icons/app-icon-{size}.png"
         s3.put_object(
             Bucket='files',
@@ -80,17 +88,15 @@ def handler(event, context):
             ContentType='image/png'
         )
         results[f"png_{size}"] = f"{cdn_base}/{key}"
-
-        img = Image.open(io.BytesIO(png_bytes)).convert('RGBA')
         if size in (16, 32, 48, 64, 128, 256):
-            pil_images.append(img)
+            pil_images_for_ico.append(img)
 
     ico_buf = io.BytesIO()
-    pil_images[0].save(
+    pil_images_for_ico[0].save(
         ico_buf,
         format='ICO',
         sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
-        append_images=pil_images[1:]
+        append_images=pil_images_for_ico[1:]
     )
     ico_buf.seek(0)
     s3.put_object(
@@ -100,14 +106,6 @@ def handler(event, context):
         ContentType='image/x-icon'
     )
     results['ico'] = f"{cdn_base}/icons/app-icon.ico"
-
-    s3.put_object(
-        Bucket='files',
-        Key='icons/app-icon.svg',
-        Body=svg_source.encode('utf-8'),
-        ContentType='image/svg+xml'
-    )
-    results['svg'] = f"{cdn_base}/icons/app-icon.svg"
 
     return {
         'statusCode': 200,

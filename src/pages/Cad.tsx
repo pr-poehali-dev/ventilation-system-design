@@ -1591,7 +1591,7 @@ export default function CadPage() {
       <div className="h-7 flex items-center justify-between px-2 select-none"
         style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}>
         <div className="flex items-center gap-2">
-          <img src="/app-icon.svg" alt="ПВ-Система" className="w-4 h-4" draggable={false} />
+          <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-64.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           <span className="text-xs font-medium">Вентиляция-CAD — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
         <div className="flex items-center gap-1">
