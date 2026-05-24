@@ -1665,7 +1665,7 @@ export default function CadPage() {
             title="О программе"
             className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
             style={{ lineHeight: 0 }}>
-            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-64.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/dd1fabee-50f5-490e-a8d0-19501520690c.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           </button>
           <span className="text-xs font-medium">ПВ-Система — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
@@ -4473,14 +4473,12 @@ export default function CadPage() {
           <div className="px-6 py-6 flex flex-col items-center text-center"
             style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
             <img
-              src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-256.png"
+              src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/ef0b03a9-fdf4-4a39-bd09-13ae79b760a9.png"
               alt="ПВ-Система"
-              className="w-24 h-24 object-contain mb-3"
-              style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.25))" }}
+              className="w-48 object-contain mb-2"
+              style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
               draggable={false}
             />
-            <div className="text-[22px] font-bold" style={{ color: "#0E3A6E" }}>ПВ-Система</div>
-            <div className="text-[12px] uppercase tracking-wider mt-1" style={{ color: "#4a6a8a" }}>Проектирование вентиляции и водоснабжения</div>
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>

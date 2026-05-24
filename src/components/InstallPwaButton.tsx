@@ -54,7 +54,7 @@ export default function InstallPwaButton() {
       className="fixed bottom-4 right-4 z-[9999] flex items-center gap-2 bg-white rounded-lg shadow-2xl border border-gray-300 px-3 py-2"
       style={{ fontFamily: "Segoe UI, Arial, sans-serif", fontSize: 12, maxWidth: 320 }}>
       <img
-        src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-128.png"
+        src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/dd1fabee-50f5-490e-a8d0-19501520690c.png"
         alt="ПВ-Система"
         className="w-8 h-8 flex-shrink-0"
         draggable={false}

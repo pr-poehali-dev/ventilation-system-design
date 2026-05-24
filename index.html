@@ -59,21 +59,13 @@
         visibility: hidden;
         pointer-events: none;
       }
-      #app-splash .splash-logo-wrap {
-        width: 140px;
-        height: 140px;
-        border-radius: 32px;
-        background: linear-gradient(145deg, #3FA9F5 0%, #0E63B0 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        animation: splashPulse 2.2s ease-in-out infinite;
-        box-shadow: 0 8px 32px rgba(14, 99, 176, 0.45);
-      }
       #app-splash .splash-logo {
-        width: 96px;
-        height: 96px;
+        width: 280px;
+        max-width: 80vw;
+        height: auto;
         object-fit: contain;
+        animation: splashPulse 2.2s ease-in-out infinite;
+        filter: drop-shadow(0 6px 20px rgba(14, 99, 176, 0.18));
       }
       #app-splash .splash-title {
         margin-top: 24px;
@@ -135,11 +127,9 @@
     </style>
     <meta name="description" content="ПВ-Система">
     <meta name="author" content="poehali.dev"/>
-    <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-16.png">
-    <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-256.png">
-    <link rel="apple-touch-icon" sizes="192x192" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-maskable-192.png">
-    <link rel="shortcut icon" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon.ico">
+    <link rel="icon" type="image/png" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/dd1fabee-50f5-490e-a8d0-19501520690c.png">
+    <link rel="shortcut icon" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/dd1fabee-50f5-490e-a8d0-19501520690c.png">
+    <link rel="apple-touch-icon" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/eb09a028-8e64-423a-80a3-a70ce4f5b7fd.png">
     <meta property="og:title" content="ПВ-Система">
     <meta property="og:description" content="ПВ-Система">
     <meta property="og:image:width" content="4800">
@@ -161,12 +151,9 @@
 
 <body>
 <div id="app-splash">
-  <div class="splash-logo-wrap">
-    <img class="splash-logo"
-         src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-512.png"
-         alt="ПВ-Система"/>
-  </div>
-  <div class="splash-title">ПВ-Система</div>
+  <img class="splash-logo"
+       src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/ef0b03a9-fdf4-4a39-bd09-13ae79b760a9.png"
+       alt="ПВ-Система"/>
   <div class="splash-subtitle">Проектирование вентиляции и водоснабжения</div>
   <div class="splash-progress"></div>
   <div class="splash-version">Версия 1.0.0</div>
