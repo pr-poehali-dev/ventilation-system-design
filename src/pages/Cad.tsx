@@ -653,6 +653,7 @@ export default function CadPage() {
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
+  const getSvgRef = useRef<(() => string) | null>(null);
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
@@ -3820,6 +3821,7 @@ export default function CadPage() {
               focusNonce={focusNonce}
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}
+              onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
               restoreView={savedViewToRestore}
               onViewStateChange={setSavedViewState}
               editingHorizonImageId={editingHorizonImageId}
@@ -4203,6 +4205,7 @@ export default function CadPage() {
       <PrintDialog
         onClose={() => setShowPrintDialog(false)}
         projectName={projectFileName.replace(/\.vproj$/, "")}
+        getSvg={() => getSvgRef.current?.() ?? ""}
       />
     )}
 

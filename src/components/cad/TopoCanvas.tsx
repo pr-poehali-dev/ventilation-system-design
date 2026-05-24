@@ -129,6 +129,8 @@ interface Props {
   unitsConfig?: UnitsConfig;
   /** Смещение блока индикаторов ветви (перетаскивание пользователем) */
   onBranchLabelOffset?: (id: string, ox: number, oy: number) => void;
+  /** Колбэк: зарегистрировать функцию получения SVG для печати */
+  onRegisterGetSvg?: (fn: () => string) => void;
 }
 
 export type FlowDisplayMode =
@@ -167,7 +169,17 @@ export default function TopoCanvas(props: Props) {
     restoreView, onViewStateChange,
     unitsConfig = DEFAULT_UNITS_CONFIG,
     onBranchLabelOffset,
+    onRegisterGetSvg,
   } = props;
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // Регистрируем функцию получения SVG для печати
+  useEffect(() => {
+    if (!onRegisterGetSvg) return;
+    onRegisterGetSvg(() => svgRef.current?.outerHTML ?? "");
+   
+  }, [onRegisterGetSvg]);
 
   // Карта горизонтов по id (для быстрых lookups)
   const horizonMap = (() => {
@@ -967,7 +979,7 @@ export default function TopoCanvas(props: Props) {
           : tool === "pan" ? "grab" : "default",
       }}>
 
-      <svg width={size.w} height={size.h}
+      <svg ref={svgRef} width={size.w} height={size.h}
         style={{ touchAction: "none" }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
