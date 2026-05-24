@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Cad from "./pages/Cad";
 import NotFound from "./pages/NotFound";
 import MobileStub from "./components/MobileStub";
+import InstallPwaButton from "./components/InstallPwaButton";
 
 const queryClient = new QueryClient();
 
@@ -74,6 +75,7 @@ const App = () => {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      <InstallPwaButton />
     </TooltipProvider>
   </QueryClientProvider>
   );
