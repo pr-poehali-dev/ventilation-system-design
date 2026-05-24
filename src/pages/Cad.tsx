@@ -1675,7 +1675,7 @@ export default function CadPage() {
             title="О программе"
             className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
             style={{ lineHeight: 0 }}>
-            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/dd1fabee-50f5-490e-a8d0-19501520690c.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b18134d6-982c-4097-8517-97edbebc0d8f.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           </button>
           <span className="text-xs font-medium">ПВ-Система — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
