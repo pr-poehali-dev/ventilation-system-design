@@ -5,51 +5,17 @@ import boto3
 import urllib.request
 from PIL import Image
 
+# Логотип с белым фоном — используем как есть
+SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/92941d5a-a650-4da0-83ae-aac48083fd93.jpg"
 
-SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/32b00d34-418f-4980-92b9-8d8b754c8420.jpg"
-BG_COLOR = (14, 99, 176, 255)   # #0E63B0 — синий фирменный
 
-
-def remove_white_background(img: Image.Image, threshold: int = 238) -> Image.Image:
-    img = img.convert("RGBA")
-    px = img.load()
+def to_square(img: Image.Image) -> Image.Image:
+    """Обрезает до квадрата по меньшей стороне (центровка)."""
     w, h = img.size
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = px[x, y]
-            if r >= threshold and g >= threshold and b >= threshold:
-                px[x, y] = (255, 255, 255, 0)
-    return img
-
-
-def crop_to_content(img: Image.Image, pad_ratio: float = 0.04) -> Image.Image:
-    bbox = img.getbbox()
-    if bbox:
-        img = img.crop(bbox)
-    w, h = img.size
-    side = max(w, h)
-    pad = int(side * pad_ratio)
-    side_padded = side + pad * 2
-    canvas = Image.new("RGBA", (side_padded, side_padded), (0, 0, 0, 0))
-    off_x = (side_padded - w) // 2
-    off_y = (side_padded - h) // 2
-    canvas.paste(img, (off_x, off_y), img)
-    return canvas
-
-
-def make_maskable(logo: Image.Image, size: int, pad_ratio: float = 0.20) -> Image.Image:
-    """Maskable: синий фон + логотип с отступами safe-zone 20% со всех сторон."""
-    canvas = Image.new("RGBA", (size, size), BG_COLOR)
-    logo_size = int(size * (1.0 - pad_ratio * 2))
-    logo_resized = logo.resize((logo_size, logo_size), Image.LANCZOS)
-    off = (size - logo_size) // 2
-    canvas.paste(logo_resized, (off, off), logo_resized)
-    return canvas
-
-
-def make_plain(logo: Image.Image, size: int) -> Image.Image:
-    """Прозрачный фон, логотип по центру — для обычных иконок any."""
-    return logo.resize((size, size), Image.LANCZOS)
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    return img.crop((left, top, left + side, top + side))
 
 
 def save_png(img: Image.Image) -> bytes:
@@ -59,7 +25,7 @@ def save_png(img: Image.Image) -> bytes:
 
 
 def handler(event, context):
-    """Генерирует plain и maskable иконки из логотипа, заливает в S3."""
+    """Берёт логотип с белым фоном, нарезает в нужные размеры и заливает в S3."""
     method = event.get("httpMethod", "GET")
     if method == "OPTIONS":
         return {"statusCode": 200, "headers": {
@@ -70,9 +36,9 @@ def handler(event, context):
     with urllib.request.urlopen(SOURCE_URL, timeout=20) as resp:
         raw = resp.read()
 
-    src = Image.open(io.BytesIO(raw)).convert("RGBA")
-    src = remove_white_background(src, threshold=238)
-    src = crop_to_content(src, pad_ratio=0.04)
+    # Открываем как RGB (белый фон сохраняется), приводим к квадрату
+    src = Image.open(io.BytesIO(raw)).convert("RGB")
+    src = to_square(src)
 
     s3 = boto3.client("s3",
         endpoint_url="https://bucket.poehali.dev",
@@ -83,23 +49,27 @@ def handler(event, context):
     cdn = f"https://cdn.poehali.dev/projects/{aws_key}/bucket"
     results = {}
 
-    # Обычные (any) иконки с прозрачным фоном
+    # Все размеры — с белым фоном (purpose: any)
     for size in [64, 128, 192, 256, 512, 1024]:
-        img = make_plain(src, size)
+        img = src.resize((size, size), Image.LANCZOS)
         key = f"icons/app-icon-{size}.png"
         s3.put_object(Bucket="files", Key=key, Body=save_png(img), ContentType="image/png")
         results[f"any_{size}"] = f"{cdn}/{key}"
 
-    # Maskable иконки (синий фон + safe zone) для Android/PWA
+    # Maskable — тот же белый квадрат, но с небольшим отступом (safe-zone)
     for size in [192, 512]:
-        img = make_maskable(src, size, pad_ratio=0.20)
+        canvas = Image.new("RGB", (size, size), (255, 255, 255))
+        pad = int(size * 0.08)
+        logo_size = size - pad * 2
+        logo = src.resize((logo_size, logo_size), Image.LANCZOS)
+        canvas.paste(logo, (pad, pad))
         key = f"icons/app-icon-maskable-{size}.png"
-        s3.put_object(Bucket="files", Key=key, Body=save_png(img), ContentType="image/png")
+        s3.put_object(Bucket="files", Key=key, Body=save_png(canvas), ContentType="image/png")
         results[f"maskable_{size}"] = f"{cdn}/{key}"
 
     # ICO для favicon
     ico_sizes = [16, 32, 48, 64, 128, 256]
-    ico_imgs = [make_plain(src, s) for s in ico_sizes]
+    ico_imgs = [src.resize((s, s), Image.LANCZOS) for s in ico_sizes]
     ico_buf = io.BytesIO()
     ico_imgs[0].save(ico_buf, format="ICO",
         sizes=[(s, s) for s in ico_sizes], append_images=ico_imgs[1:])
