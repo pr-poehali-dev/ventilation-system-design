@@ -6,7 +6,7 @@ import urllib.request
 from PIL import Image
 
 # Логотип с белым фоном — используем как есть
-SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/92941d5a-a650-4da0-83ae-aac48083fd93.jpg"
+SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/1037aa86-6f0e-4dc3-b119-78f0a56e07c9.jpg"
 
 
 def to_square(img: Image.Image) -> Image.Image:
