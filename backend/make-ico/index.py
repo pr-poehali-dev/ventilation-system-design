@@ -6,7 +6,7 @@ import urllib.request
 from PIL import Image
 
 # Готовая иконка без фона 512×512 — для рабочего стола / favicon
-SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/ee3f938a-cd11-475a-bfdb-a42108d9a729.png"
+SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/32160b55-c1c9-49e9-8644-e797531c5237.png"
 
 
 def handler(event, context):
