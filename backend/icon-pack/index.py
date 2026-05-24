@@ -6,7 +6,7 @@ import urllib.request
 from PIL import Image
 
 
-SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9cbce9b6-64f2-457e-93ba-9177d48d71b2.jpg"
+SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/32b00d34-418f-4980-92b9-8d8b754c8420.jpg"
 BG_COLOR = (14, 99, 176, 255)   # #0E63B0 — синий фирменный
 
 
