@@ -36,18 +36,13 @@ if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
 
 const splash = document.getElementById('app-splash');
 if (splash) {
-  const minShowMs = 900;
-  // Жёсткий максимум — сплеш убирается не позже чем через 3 секунды в любом случае
-  const maxShowMs = 3000;
-  const startedAt = (window as unknown as { __splashStartedAt?: number }).__splashStartedAt ?? performance.now();
-  const elapsed = performance.now() - startedAt;
-  const wait = Math.max(0, Math.min(minShowMs - elapsed, maxShowMs));
-
   const hideSplash = () => {
-    if (!splash.parentNode) return; // уже убран
-    splash.classList.add('hide');
-    setTimeout(() => splash.remove(), 600);
+    if (!document.getElementById('app-splash')) return;
+    const el = document.getElementById('app-splash')!;
+    el.style.opacity = '0';
+    el.style.visibility = 'hidden';
+    setTimeout(() => el.remove(), 600);
   };
-
-  setTimeout(hideSplash, wait);
+  // Убираем через 1.5 сек — гарантированно, независимо от React
+  setTimeout(hideSplash, 1500);
 }
