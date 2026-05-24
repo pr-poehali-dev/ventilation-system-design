@@ -59,12 +59,21 @@
         visibility: hidden;
         pointer-events: none;
       }
-      #app-splash .splash-logo {
-        width: 180px;
-        height: 180px;
-        object-fit: contain;
+      #app-splash .splash-logo-wrap {
+        width: 140px;
+        height: 140px;
+        border-radius: 32px;
+        background: linear-gradient(145deg, #3FA9F5 0%, #0E63B0 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
         animation: splashPulse 2.2s ease-in-out infinite;
-        filter: drop-shadow(0 8px 24px rgba(14, 99, 176, 0.25));
+        box-shadow: 0 8px 32px rgba(14, 99, 176, 0.45);
+      }
+      #app-splash .splash-logo {
+        width: 96px;
+        height: 96px;
+        object-fit: contain;
       }
       #app-splash .splash-title {
         margin-top: 24px;
@@ -129,7 +138,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-16.png">
     <link rel="icon" type="image/png" sizes="192x192" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-256.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-256.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-maskable-192.png">
     <link rel="shortcut icon" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon.ico">
     <meta property="og:title" content="ПВ-Система">
     <meta property="og:description" content="ПВ-Система">
@@ -152,9 +161,11 @@
 
 <body>
 <div id="app-splash">
-  <img class="splash-logo"
-       src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-512.png"
-       alt="ПВ-Система"/>
+  <div class="splash-logo-wrap">
+    <img class="splash-logo"
+         src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/app-icon-512.png"
+         alt="ПВ-Система"/>
+  </div>
   <div class="splash-title">ПВ-Система</div>
   <div class="splash-subtitle">Проектирование вентиляции и водоснабжения</div>
   <div class="splash-progress"></div>
