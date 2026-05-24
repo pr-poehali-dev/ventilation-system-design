@@ -29,26 +29,25 @@ if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
       })
       .catch(() => { /* SW не критичен — приложение работает и без него */ });
 
-    // При смене активного SW — перезагружаем страницу один раз
-    let reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloaded) return;
-      reloaded = true;
-      window.location.reload();
-    });
+    // При смене активного SW — НЕ перезагружаем автоматически,
+    // чтобы не зациклить сплеш. Новая версия подхватится при следующем открытии.
   });
 }
 
 const splash = document.getElementById('app-splash');
 if (splash) {
-  // Заставка показывается везде — и в браузере, и в PWA.
-  // В PWA после системного splash-экрана пользователь видит нашу красивую заставку.
   const minShowMs = 900;
+  // Жёсткий максимум — сплеш убирается не позже чем через 3 секунды в любом случае
+  const maxShowMs = 3000;
   const startedAt = (window as unknown as { __splashStartedAt?: number }).__splashStartedAt ?? performance.now();
   const elapsed = performance.now() - startedAt;
-  const wait = Math.max(0, minShowMs - elapsed);
-  setTimeout(() => {
+  const wait = Math.max(0, Math.min(minShowMs - elapsed, maxShowMs));
+
+  const hideSplash = () => {
+    if (!splash.parentNode) return; // уже убран
     splash.classList.add('hide');
     setTimeout(() => splash.remove(), 600);
-  }, wait);
+  };
+
+  setTimeout(hideSplash, wait);
 }
