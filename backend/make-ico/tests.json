@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Генерация ICO для рабочего стола",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
