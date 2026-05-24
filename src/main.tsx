@@ -41,21 +41,12 @@ if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
 
 const splash = document.getElementById('app-splash');
 if (splash) {
-  // В PWA (standalone) браузер уже показал системный splash с иконкой —
-  // наш HTML-сплеш будет дублём. Убираем его мгновенно без анимации.
-  const isPwa = window.matchMedia('(display-mode: standalone)').matches
-    || (navigator as unknown as { standalone?: boolean }).standalone === true;
-
-  if (isPwa) {
-    splash.remove();
-  } else {
-    const minShowMs = 900;
-    const startedAt = (window as unknown as { __splashStartedAt?: number }).__splashStartedAt ?? performance.now();
-    const elapsed = performance.now() - startedAt;
-    const wait = Math.max(0, minShowMs - elapsed);
-    setTimeout(() => {
-      splash.classList.add('hide');
-      setTimeout(() => splash.remove(), 600);
-    }, wait);
-  }
+  const minShowMs = 900;
+  const startedAt = (window as unknown as { __splashStartedAt?: number }).__splashStartedAt ?? performance.now();
+  const elapsed = performance.now() - startedAt;
+  const wait = Math.max(0, minShowMs - elapsed);
+  setTimeout(() => {
+    splash.classList.add('hide');
+    setTimeout(() => splash.remove(), 600);
+  }, wait);
 }
