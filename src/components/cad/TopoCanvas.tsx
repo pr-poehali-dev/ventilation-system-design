@@ -1844,7 +1844,7 @@ export default function TopoCanvas(props: Props) {
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
           // Фиксированный размер в px — не зависит от масштаба схемы
-          const r = isSel ? 6 : 4;
+          const r = isSel ? 4 : 2.5;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           return (
