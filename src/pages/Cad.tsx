@@ -943,7 +943,12 @@ export default function CadPage() {
     if ("showOpenFilePicker" in window) {
       try {
         const [handle] = await (window as Window & { showOpenFilePicker: (o: object) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker({
-          types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
+          types: [{ description: "Проект вентиляции", accept: {
+            "application/json": [".vproj", ".json"],
+            "text/plain": [".vproj", ".json"],
+            "*/*": [".vproj", ".json"],
+          }}],
+          excludeAcceptAllOption: false,
         });
         const file = await handle.getFile();
         const text = await file.text();
@@ -963,9 +968,10 @@ export default function CadPage() {
       }
     }
     // Fallback: <input type=file>
+    // На Android accept=".vproj" делает файлы неактивными — используем широкий список типов
     const inp = document.createElement("input");
     inp.type = "file";
-    inp.accept = ".vproj,.json";
+    inp.accept = ".vproj,.json,application/json,text/plain,*/*";
     inp.onchange = () => {
       const file = inp.files?.[0];
       if (!file) return;
