@@ -232,8 +232,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
   const [name, setName] = useState(branch.id);
-  const [isCapital, setIsCapital] = useState(false);
-  const [isProjected, setIsProjected] = useState(false);
   const [plast, setPlast] = useState(PLAST_OPTIONS[0]);
   const [pla, setPla] = useState(PLA_OPTIONS[0]);
   const [pole, setPole] = useState(POLE_OPTIONS[0]);
@@ -412,11 +410,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <div style={{ borderBottom: "1px solid #e0e0e0", margin: "2px 0" }} />
 
             <InlineLabel label="Капитальная">
-              <CheckField checked={isCapital} onChange={setIsCapital} />
+              <CheckField checked={branch.capital ?? false} onChange={(v) => onUpdate({ capital: v })} />
             </InlineLabel>
 
             <InlineLabel label="Проектируемая">
-              <CheckField checked={isProjected} onChange={setIsProjected} />
+              <CheckField checked={branch.designed ?? false} onChange={(v) => onUpdate({ designed: v })} />
             </InlineLabel>
 
             <SectionHeader title="Аэродинамика" />
