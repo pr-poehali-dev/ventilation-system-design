@@ -22,7 +22,7 @@ export default function MobileStub({ onForceDesktop }: Props) {
       style={{ background: "hsl(220, 20%, 8%)", color: "hsl(210, 20%, 90%)" }}>
 
       <div className="mb-8 flex items-center gap-3">
-        <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b18134d6-982c-4097-8517-97edbebc0d8f.png" alt="ПВ-Система" className="w-10 h-10 object-contain" draggable={false} />
+        <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png" alt="ПВ-Система" className="w-10 h-10 object-contain" draggable={false} />
         <span className="text-xl font-semibold" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
           ПВ-Система
         </span>

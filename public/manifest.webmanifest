@@ -12,14 +12,14 @@
   "categories": ["productivity", "utilities", "business"],
   "icons": [
     {
-      "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b18134d6-982c-4097-8517-97edbebc0d8f.png",
-      "sizes": "256x256",
+      "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b18134d6-982c-4097-8517-97edbebc0d8f.png",
-      "sizes": "256x256",
+      "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     }
@@ -29,7 +29,7 @@
       "name": "Новый проект",
       "short_name": "Новый",
       "url": "/?new=1",
-      "icons": [{"src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b18134d6-982c-4097-8517-97edbebc0d8f.png", "sizes": "256x256"}]
+      "icons": [{"src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png", "sizes": "512x512"}]
     }
   ]
 }

@@ -4,7 +4,7 @@
  *  - Статика (js/css/png/svg/woff2) — stale-while-revalidate
  *  - Кросс-доменные CDN запросы — cache-first
  */
-const VERSION = 'pv-sistema-v1.0.8';
+const VERSION = 'pv-sistema-v1.0.9';
 const CACHE_STATIC = `${VERSION}-static`;
 const CACHE_RUNTIME = `${VERSION}-runtime`;
 
