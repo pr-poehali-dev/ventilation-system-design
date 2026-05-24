@@ -213,6 +213,8 @@ export default function TopoCanvas(props: Props) {
     pivotScreen: { sx: number; sy: number };
   } | null>(null);
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
+  // Накопитель для плавного зума колесом (RAF-батчинг)
+  const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
@@ -781,28 +783,46 @@ export default function TopoCanvas(props: Props) {
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     const raw = e.deltaY;
-    const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
-    // Плавный экспоненциальный зум: одинаковый «ощутимый» шаг на любом масштабе.
-    // step ограничен 2 (раньше 3) и базовый коэффициент 0.08 (раньше 0.12) —
-    // даёт ~8% за один тик колеса вместо ~36% (более плавно при близком зуме).
-    const step = Math.min(Math.abs(delta) / 120, 2);
-    const base = Math.exp(0.08 * step);
-    const factor = delta > 0 ? 1 / base : base;
-    setView((v) => {
-      // Расширенные лимиты: мин 0.0005 (далёкий обзор), макс 5000 (детальный зум).
-      // Это убирает «резкое исчезновение» при близком увеличении.
-      const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
-      const wx = (px - v.offsetX) / v.scale;
-      const wy = (py - v.offsetY) / v.scale;
-      const newView = {
-        ...v,
-        scale: newScale,
-        offsetX: px - wx * newScale,
-        offsetY: py - wy * newScale,
-      };
-      prevScaleOverride.current = newScale;
-      if (onScaleChange) onScaleChange(newScale);
-      return newView;
+    // Нормализуем единицы: строки (deltaMode=1) → пиксели, страницы (=2) → пиксели
+    const delta = e.deltaMode === 1 ? raw * 20 : e.deltaMode === 2 ? raw * 200 : raw;
+
+    const wa = wheelAccRef.current;
+    // Обновляем позицию курсора (берём последнюю перед флашем)
+    wa.px = px;
+    wa.py = py;
+    // Накапливаем delta; знак сохраняется, абсолютное значение ограничено
+    wa.acc += delta;
+    // Ограничиваем накопленное значение чтобы не было «выстрела» после паузы
+    wa.acc = Math.max(-300, Math.min(300, wa.acc));
+
+    if (wa.rafId !== null) return; // уже запланирован flush
+
+    wa.rafId = requestAnimationFrame(() => {
+      wa.rafId = null;
+      const accDelta = wa.acc;
+      wa.acc = 0; // сбрасываем накопитель
+
+      // Очень мягкий коэффициент: 0.001 на единицу дельты → ~6% за стандартный тик (120px)
+      // При быстрой прокрутке (delta=300) — максимум 26% за кадр, не резкий скачок
+      const logFactor = accDelta * 0.0006;
+      const factor = Math.exp(-logFactor);
+
+      setView((v) => {
+        const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
+        // Стабилизация при граничных значениях — убирает дёрганье
+        if (newScale === v.scale) return v;
+        const wx = (wa.px - v.offsetX) / v.scale;
+        const wy = (wa.py - v.offsetY) / v.scale;
+        const newView = {
+          ...v,
+          scale: newScale,
+          offsetX: wa.px - wx * newScale,
+          offsetY: wa.py - wy * newScale,
+        };
+        prevScaleOverride.current = newScale;
+        if (onScaleChange) onScaleChange(newScale);
+        return newView;
+      });
     });
   };
 
@@ -836,7 +856,9 @@ export default function TopoCanvas(props: Props) {
     } else if (e.touches.length === 2 && touchRef.current.dist !== undefined) {
       const t1 = e.touches[0], t2 = e.touches[1];
       const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-      const factor = newDist / touchRef.current.dist;
+      // Плавный pinch: ограничиваем максимальный фактор за кадр
+      const rawFactor = newDist / touchRef.current.dist;
+      const factor = Math.max(0.85, Math.min(1.18, rawFactor));
       const cx = touchRef.current.x;
       const cy = touchRef.current.y;
       const baseScale = touchRef.current.scale!;
