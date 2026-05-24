@@ -24,9 +24,18 @@ function useIsMobile() {
 
 const App = () => {
   const isMobile = useIsMobile();
-  const [forceDesktop, setForceDesktop] = useState(
-    () => localStorage.getItem("force-desktop") === "1"
-  );
+  // По умолчанию на мобильном сразу открываем десктопную версию.
+  // Заглушку «Открыть на компьютере» показываем только если пользователь
+  // явно её запросил (?stub=1) или сохранил выбор.
+  const [forceDesktop, setForceDesktop] = useState(() => {
+    const saved = localStorage.getItem("force-desktop");
+    if (saved === "0") return false;          // явно выбрал «остаться на стабе»
+    return true;                              // по умолчанию — сразу ПК-версия
+  });
+  const [showMobileStub, setShowMobileStub] = useState(() => {
+    return new URLSearchParams(window.location.search).get("stub") === "1"
+      || localStorage.getItem("force-desktop") === "0";
+  });
 
   const applyDesktopViewport = () => {
     const vp = document.getElementById("viewport-meta") as HTMLMetaElement | null;
@@ -41,13 +50,16 @@ const App = () => {
     localStorage.setItem("force-desktop", "1");
     applyDesktopViewport();
     setForceDesktop(true);
+    setShowMobileStub(false);
   };
 
   useEffect(() => {
-    if (forceDesktop) applyDesktopViewport();
-  }, [forceDesktop]);
+    // На мобильном устройстве всегда применяем десктопный viewport,
+    // если не показываем заглушку.
+    if (isMobile && forceDesktop && !showMobileStub) applyDesktopViewport();
+  }, [isMobile, forceDesktop, showMobileStub]);
 
-  if (isMobile && !forceDesktop) return <MobileStub onForceDesktop={handleForceDesktop} />;
+  if (isMobile && showMobileStub) return <MobileStub onForceDesktop={handleForceDesktop} />;
 
   return (
   <QueryClientProvider client={queryClient}>

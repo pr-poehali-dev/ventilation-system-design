@@ -57,33 +57,36 @@ export default function MobileStub({ onForceDesktop }: Props) {
         />
       </div>
 
-      <button
-        onClick={handleCopy}
-        className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium text-base transition-all active:scale-95 mb-3"
-        style={{
-          background: copied ? "hsl(140, 60%, 35%)" : "hsl(210, 100%, 56%)",
-          color: "hsl(220, 20%, 8%)",
-          fontFamily: "'IBM Plex Sans', sans-serif",
-        }}>
-        {copied
-          ? <><Check size={18} /> Ссылка скопирована</>
-          : <><Copy size={18} /> Скопировать ссылку</>
-        }
-      </button>
-
+      {/* Главная кнопка: открыть в полной (десктопной) версии */}
       <button
         onClick={onForceDesktop}
-        className="text-sm px-4 py-2 rounded-lg transition-all active:scale-95"
+        className="flex items-center gap-2 px-7 py-3.5 rounded-xl font-semibold text-base transition-all active:scale-95 mb-3"
         style={{
-          color: "hsl(215, 15%, 50%)",
+          background: "hsl(210, 100%, 56%)",
+          color: "white",
+          fontFamily: "'IBM Plex Sans', sans-serif",
+          boxShadow: "0 4px 14px rgba(33, 150, 243, 0.35)",
+        }}>
+        <Monitor size={18} /> Открыть в полной версии
+      </button>
+
+      {/* Второстепенная кнопка: скопировать ссылку для отправки на ПК */}
+      <button
+        onClick={handleCopy}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all active:scale-95 text-sm"
+        style={{
+          color: "hsl(210, 50%, 75%)",
           fontFamily: "'IBM Plex Sans', sans-serif",
           border: "1px solid hsl(220, 15%, 22%)",
         }}>
-        Всё равно открыть на этом устройстве
+        {copied
+          ? <><Check size={14} /> Ссылка скопирована</>
+          : <><Copy size={14} /> Скопировать ссылку для ПК</>
+        }
       </button>
 
-      <p className="mt-8 text-sm" style={{ color: "hsl(215, 15%, 40%)", fontFamily: "'IBM Plex Mono', monospace" }}>
-        ventilation-cad.ru
+      <p className="mt-8 text-xs" style={{ color: "hsl(215, 15%, 40%)", fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        ПВ-Система · версия 1.0.0
       </p>
     </div>
   );

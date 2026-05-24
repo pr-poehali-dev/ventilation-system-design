@@ -3,6 +3,25 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" id="viewport-meta"/>
+    <script>
+      // На мобильном устройстве сразу применяем десктопный viewport,
+      // чтобы приложение загружалось как полная ПК-версия с первого кадра.
+      (function() {
+        try {
+          var w = window.innerWidth || document.documentElement.clientWidth;
+          var stubRequested = new URLSearchParams(window.location.search).get('stub') === '1'
+            || localStorage.getItem('force-desktop') === '0';
+          if (w < 768 && !stubRequested) {
+            var vp = document.getElementById('viewport-meta');
+            if (vp) {
+              var cssW = window.screen.width || w;
+              var scale = (cssW / 1280).toFixed(3);
+              vp.setAttribute('content', 'width=1280, initial-scale=' + scale + ', minimum-scale=0.1, maximum-scale=10, user-scalable=yes');
+            }
+          }
+        } catch (e) { /* noop */ }
+      })();
+    </script>
     <title>ПВ-Система</title>
     <style>
       html, body, #root {
