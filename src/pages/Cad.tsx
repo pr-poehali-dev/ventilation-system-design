@@ -25,6 +25,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
+import PrintDialog from "@/components/cad/PrintDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
@@ -650,6 +651,8 @@ export default function CadPage() {
   const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
   // ─── ЛЕВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (свойства/параметры) ────────────────────
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
+  // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
+  const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
@@ -1344,6 +1347,12 @@ export default function CadPage() {
         setActiveSide("search");
         return;
       }
+      // Ctrl+P / Ctrl+З — открыть диалог печати
+      if (e.ctrlKey && (e.key === "p" || e.key === "P" || e.key === "з" || e.key === "З")) {
+        e.preventDefault();
+        setShowPrintDialog(true);
+        return;
+      }
       // Ctrl+V / Ctrl+М — вставить условное обозначение из буфера (режим ожидания привязки)
       if (e.ctrlKey && (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") && !isEditing) {
         if (symbolClipboard) {
@@ -1690,6 +1699,7 @@ export default function CadPage() {
         <RibbonTabBtn label="Трубы" active={activeRibbon === "costs"} onClick={() => setActiveRibbon("costs")} />
         <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => setActiveRibbon("general")} />
         <RibbonTabBtn label="Общее" active={false} onClick={() => {}} highlight />
+        <RibbonTabBtn label="Печать" active={false} onClick={() => setShowPrintDialog(true)} />
         <div className="ml-auto pr-2 pb-0.5">
           <button className="w-5 h-5 hover:bg-black/10 flex items-center justify-center"
             title="Свернуть ленту">
@@ -4186,6 +4196,14 @@ export default function CadPage() {
     {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
     {showLegend && (
       <LegendDialog onClose={() => setShowLegend(false)} />
+    )}
+
+    {/* ═══ ШИРОКОФОРМАТНАЯ ПЕЧАТЬ ════════════════════════════════════════ */}
+    {showPrintDialog && (
+      <PrintDialog
+        onClose={() => setShowPrintDialog(false)}
+        projectName={projectFileName.replace(/\.vproj$/, "")}
+      />
     )}
 
     {/* ═══ ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ════════════════════════════════════ */}
