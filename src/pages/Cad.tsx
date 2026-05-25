@@ -25,6 +25,7 @@ import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
+import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS } from "@/lib/schemaSymbols";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
@@ -357,34 +358,81 @@ export default function CadPage() {
     return String(i);
   };
 
-  // Перенумеровать все узлы и ветви последовательными ID 1, 2, 3...
-  // direction: "asc" — с первого, "desc" — с последнего (как в АэроСеть).
-  // Пересвязывает все ссылки: branches.fromId/toId, schemaSymbols.branchId.
-  const renumberAll = (direction: "asc" | "desc" = "asc") => {
+  // Перенумеровать узлы и/или ветви с расширенными настройками.
+  const renumberAll = (opts: RenumberOptions | "asc" | "desc" = "asc") => {
+    // Обратная совместимость со старым вызовом (строка)
+    const options: RenumberOptions = (typeof opts === "string") ? {
+      area: "all", horizonId: "", mode: "restart", objects: "both",
+      startFrom: 1, direction: opts,
+    } : opts;
+
+    const { area, horizonId, mode, objects, startFrom, direction } = options;
+
+    // Фильтрация по горизонту
+    const targetNodes = area === "horizon"
+      ? nodes.filter((n) => {
+          const nb = branchesRaw.filter((b) => b.fromId === n.id || b.toId === n.id);
+          return nb.some((b) => b.horizonId === horizonId);
+        })
+      : nodes;
+
+    const targetBranches = area === "horizon"
+      ? branchesRaw.filter((b) => b.horizonId === horizonId)
+      : branchesRaw;
+
+    // Определяем стартовый номер
+    const getStart = (existingIds: string[]) => {
+      if (mode === "continue") {
+        const max = existingIds.reduce((m, id) => {
+          const n = parseInt(id);
+          return isNaN(n) ? m : Math.max(m, n);
+        }, 0);
+        return max + 1;
+      }
+      return startFrom;
+    };
+
+    const nodeStart = getStart(nodes.map((n) => n.id));
+    const branchStart = getStart(branchesRaw.map((b) => b.id));
+
     const nodeMap = new Map<string, string>();
-    const order = direction === "asc" ? nodes : [...nodes].reverse();
-    order.forEach((n, i) => nodeMap.set(n.id, String(i + 1)));
+    if (objects === "nodes" || objects === "both") {
+      const order = direction === "asc" ? targetNodes : [...targetNodes].reverse();
+      order.forEach((n, i) => nodeMap.set(n.id, String(nodeStart + i)));
+    }
 
     const branchMap = new Map<string, string>();
-    const bOrder = direction === "asc" ? branchesRaw : [...branchesRaw].reverse();
-    bOrder.forEach((b, i) => branchMap.set(b.id, String(i + 1)));
+    if (objects === "branches" || objects === "both") {
+      const order = direction === "asc" ? targetBranches : [...targetBranches].reverse();
+      order.forEach((b, i) => branchMap.set(b.id, String(branchStart + i)));
+    }
 
-    setNodes((prev) => prev.map((n) => {
-      const newId = nodeMap.get(n.id) ?? n.id;
-      return { ...n, id: newId, number: newId, name: n.name?.startsWith("Узел ") || !n.name ? `Узел ${newId}` : n.name };
-    }));
+    if (nodeMap.size > 0) {
+      setNodes((prev) => prev.map((n) => {
+        const newId = nodeMap.get(n.id) ?? n.id;
+        return { ...n, id: newId, number: newId, name: n.name?.startsWith("Узел ") || !n.name ? `Узел ${newId}` : n.name };
+      }));
+    }
 
-    setBranches((prev) => prev.map((b) => ({
-      ...b,
-      id: branchMap.get(b.id) ?? b.id,
-      fromId: nodeMap.get(b.fromId) ?? b.fromId,
-      toId: nodeMap.get(b.toId) ?? b.toId,
-    })));
-
-    setSchemaSymbols((prev) => prev.map((s) => ({
-      ...s,
-      branchId: s.branchId ? (branchMap.get(s.branchId) ?? s.branchId) : s.branchId,
-    })));
+    if (branchMap.size > 0) {
+      setBranches((prev) => prev.map((b) => ({
+        ...b,
+        id: branchMap.get(b.id) ?? b.id,
+        fromId: nodeMap.get(b.fromId) ?? b.fromId,
+        toId: nodeMap.get(b.toId) ?? b.toId,
+      })));
+      setSchemaSymbols((prev) => prev.map((s) => ({
+        ...s,
+        branchId: s.branchId ? (branchMap.get(s.branchId) ?? s.branchId) : s.branchId,
+      })));
+    } else if (nodeMap.size > 0) {
+      // Обновляем fromId/toId ветвей если переименовали только узлы
+      setBranches((prev) => prev.map((b) => ({
+        ...b,
+        fromId: nodeMap.get(b.fromId) ?? b.fromId,
+        toId: nodeMap.get(b.toId) ?? b.toId,
+      })));
+    }
 
     // Сбросим выделение, чтобы не ссылаться на старые id.
     setSelectedNodeId(null);
@@ -672,8 +720,9 @@ export default function CadPage() {
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
-  // ─── МЕНЮ «ПЕРЕНУМЕРОВАТЬ» ─────────────────────────────────────────
+  // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
+  const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
   const renumberMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!showRenumberMenu) return;
@@ -2574,101 +2623,13 @@ export default function CadPage() {
                 <span className="text-[10px] text-gray-500 font-mono">{selectedNode.id}</span>
               )}
               {(activeSide === "topology" || activeSide === "general") && (
-                <div className="relative" ref={renumberMenuRef}>
-                  <button onClick={() => setShowRenumberMenu(v => !v)}
-                    className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
-                    style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
-                    title="Перенумеровать узлы и ветви (после импорта)">
-                    <Icon name="Hash" size={12} />
-                    Перенумеровать
-                  </button>
-                  {showRenumberMenu && (() => {
-                    // Полноэкранная модалка-оверлей, чтобы не зависеть от ширины панели.
-                    const closeMenu = () => setShowRenumberMenu(false);
-                    return (
-                      <div
-                        className="fixed inset-0 z-[9998]"
-                        style={{ background: "rgba(0,0,0,0.25)" }}
-                        onClick={closeMenu}>
-                        <div
-                          className="absolute bg-white border border-gray-300 rounded-md shadow-2xl text-[12px] overflow-hidden"
-                          style={{
-                            top: "50%",
-                            left: "50%",
-                            transform: "translate(-50%, -50%)",
-                            width: "min(360px, calc(100vw - 32px))",
-                            maxHeight: "calc(100vh - 40px)",
-                          }}
-                          onClick={(e) => e.stopPropagation()}>
-                          {/* Шапка */}
-                          <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between" style={{ background: "#f5f5f5" }}>
-                            <div>
-                              <div className="font-semibold text-[13px] text-gray-800">Перенумерация узлов и ветвей</div>
-                            </div>
-                            <button onClick={closeMenu}
-                              className="w-6 h-6 hover:bg-black/10 rounded flex items-center justify-center text-gray-600"
-                              title="Закрыть">✕</button>
-                          </div>
-
-                          {/* Описание */}
-                          <div className="px-3 py-2 text-[11px] text-gray-600 leading-snug border-b border-gray-200">
-                            Заменит длинные ID (например, после импорта) на короткие
-                            номера 1, 2, 3… Все связи между объектами сохранятся.
-                          </div>
-
-                          {/* Текущее состояние */}
-                          <div className="px-3 py-2 border-b border-gray-200 text-[11px] text-gray-600 flex items-center justify-between">
-                            <span>В проекте сейчас:</span>
-                            <span className="font-mono text-gray-800">
-                              {nodes.length} узлов · {branchesRaw.length} ветвей
-                            </span>
-                          </div>
-
-                          {/* Вариант 1 */}
-                          <button onClick={() => {
-                              if (confirm(`Перенумеровать все объекты по порядку?\n\nУзлы получат номера 1…${nodes.length}\nВетви получат номера 1…${branchesRaw.length}\n\nВсе связи между ними сохранятся.`)) {
-                                renumberAll("asc");
-                              }
-                              closeMenu();
-                            }}
-                            className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-start gap-2.5 transition-colors">
-                            <div className="mt-0.5 text-blue-600"><Icon name="ArrowDown01" size={18} /></div>
-                            <div className="flex-1">
-                              <div className="font-medium text-gray-800 text-[12px]">Сначала первые (1 → N)</div>
-                              <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
-                                Первый объект получит № 1, второй — № 2 и так далее.
-                              </div>
-                            </div>
-                          </button>
-
-                          {/* Вариант 2 */}
-                          <button onClick={() => {
-                              if (confirm(`Перенумеровать все объекты в обратном порядке?\n\nПоследний объект станет № 1, предпоследний — № 2 и т.д.\n\nВсе связи между ними сохранятся.`)) {
-                                renumberAll("desc");
-                              }
-                              closeMenu();
-                            }}
-                            className="w-full text-left px-3 py-2.5 hover:bg-blue-50 flex items-start gap-2.5 border-t border-gray-200 transition-colors">
-                            <div className="mt-0.5 text-blue-600"><Icon name="ArrowDown10" size={18} /></div>
-                            <div className="flex-1">
-                              <div className="font-medium text-gray-800 text-[12px]">Сначала последние (N → 1)</div>
-                              <div className="text-[11px] text-gray-500 leading-snug mt-0.5">
-                                Последний объект получит № 1, предпоследний — № 2 и т.д.
-                                Как в АэроСеть.
-                              </div>
-                            </div>
-                          </button>
-
-                          {/* Подсказка снизу */}
-                          <div className="px-3 py-2 text-[11px] text-gray-500 border-t border-gray-200 flex items-start gap-1.5" style={{ background: "#fafafa" }}>
-                            <Icon name="Info" size={12} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                            <span>Действие нельзя отменить. Сохраните проект перед операцией.</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
+                <button onClick={() => setShowRenumberDialog(true)}
+                  className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
+                  style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                  title="Автонумерация объектов">
+                  <Icon name="Hash" size={12} />
+                  Перенумеровать
+                </button>
               )}
               <button onClick={() => setLeftPanelOpen(false)}
                 className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
@@ -4344,6 +4305,20 @@ export default function CadPage() {
           </div>
         </div>
       </div>
+    )}
+
+    {/* ═══ АВТОНУМЕРАЦИЯ ОБЪЕКТОВ ═══════════════════════════════════════ */}
+    {showRenumberDialog && (
+      <RenumberDialog
+        nodeCount={nodes.length}
+        branchCount={branchesRaw.length}
+        horizons={horizons.map((h) => ({ id: h.id, name: h.name }))}
+        onClose={() => setShowRenumberDialog(false)}
+        onConfirm={(opts) => {
+          renumberAll(opts);
+          setShowRenumberDialog(false);
+        }}
+      />
     )}
 
     {/* ═══ ВЫДЕЛЕНИЕ ПОДОБНОГО (S+S) ══════════════════════════════════════ */}
