@@ -177,14 +177,29 @@ export default function CadPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
-  // Переключаем вкладку при смене выбранного узла
+  // Запоминаем последнюю вкладку отдельно для узлов и ветвей
+  const lastNodeTab = useRef<SideTab>("params");
+  const lastBranchTab = useRef<SideTab>("general");
+
+  // Переключаем вкладку при смене выбранного узла/ветви — восстанавливаем последнюю
   useEffect(() => {
     if (selectedNodeId) {
-      setActiveSide("params");
+      setActiveSide(lastNodeTab.current);
+    } else if (selectedBranchId) {
+      setActiveSide(lastBranchTab.current);
     } else {
       setActiveSide("general");
     }
-  }, [selectedNodeId]);
+  }, [selectedNodeId, selectedBranchId]);
+
+  // Запоминаем вкладку при каждом изменении activeSide
+  useEffect(() => {
+    if (selectedNodeId) {
+      lastNodeTab.current = activeSide;
+    } else if (selectedBranchId) {
+      lastBranchTab.current = activeSide;
+    }
+  }, [activeSide]);
 
   // Если активна вкладка "fan", но у ветви нет вентилятора — сбросить на "topology"
   useEffect(() => {
@@ -3247,8 +3262,27 @@ export default function CadPage() {
                       className="cad-input flex-1" />
                   </LabeledRow>
                   <LabeledRow label="Номер:" labelWidth={88}>
-                    <input type="text" value={excavation.number}
-                      onChange={(e) => setExcavation({ ...excavation, number: e.target.value })}
+                    <input type="text"
+                      value={selectedBranch ? selectedBranch.id : (selectedNode ? (selectedNode.number || selectedNode.id) : excavation.number)}
+                      onChange={(e) => {
+                        if (selectedBranch) {
+                          // Переименование ветви: пересвязываем все ссылки
+                          const newId = e.target.value;
+                          if (!newId || newId === selectedBranch.id) return;
+                          setBranches((prev) => prev.map((b) =>
+                            b.id === selectedBranch.id ? { ...b, id: newId } : b
+                          ));
+                          setSchemaSymbols((prev) => prev.map((s) =>
+                            s.branchId === selectedBranch.id ? { ...s, branchId: newId } : s
+                          ));
+                          setSelectedBranchId(newId);
+                          setIsDirty(true);
+                        } else if (selectedNode) {
+                          updateNode(selectedNode.id, { number: e.target.value });
+                        } else {
+                          setExcavation({ ...excavation, number: e.target.value });
+                        }
+                      }}
                       className="cad-input flex-1" />
                   </LabeledRow>
                   <LabeledRow label="Горизонт:" labelWidth={88}>
