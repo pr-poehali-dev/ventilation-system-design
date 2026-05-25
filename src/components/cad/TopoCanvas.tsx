@@ -194,6 +194,33 @@ export default function TopoCanvas(props: Props) {
     return !h || h.visible;
   });
 
+  // Множество ID скрытых ветвей (по горизонту) — для фильтрации узлов и УО
+  const hiddenBranchIds = new Set(
+    branches
+      .filter((b) => {
+        if (!b.horizonId) return false;
+        const h = horizonMap.get(b.horizonId);
+        return h && !h.visible;
+      })
+      .map((b) => b.id)
+  );
+
+  // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам.
+  // Узлы без ветвей или с хотя бы одной видимой ветвью — остаются видимыми.
+  const hiddenNodeIds = new Set(
+    nodes
+      .filter((n) => {
+        const nodesBranches = branches.filter(
+          (b) => b.fromId === n.id || b.toId === n.id
+        );
+        // Если у узла нет ветвей — показываем (свободный узел)
+        if (nodesBranches.length === 0) return false;
+        // Скрываем только если ВСЕ ветви скрыты
+        return nodesBranches.every((b) => hiddenBranchIds.has(b.id));
+      })
+      .map((n) => n.id)
+  );
+
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
@@ -1442,6 +1469,8 @@ export default function TopoCanvas(props: Props) {
         {schemaSymbols.map(sym => {
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           if (!lt) return null;
+          // Если УО привязано к ветви скрытого горизонта — скрываем его вместе с ветвью
+          if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
 
           let basePx: number, basePy: number;
           let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
@@ -1874,6 +1903,8 @@ export default function TopoCanvas(props: Props) {
         {nodesSorted.map(({ node, sx, sy }) => {
           // Если узел скрыт через «Видимость узлов» — не рендерим ничего
           if (node.visible === false) return null;
+          // Если все ветви узла принадлежат скрытым горизонтам — скрываем узел
+          if (hiddenNodeIds.has(node.id)) return null;
           const isSel = selectedNodeId === node.id || (selectedNodeIds?.has(node.id) ?? false);
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
