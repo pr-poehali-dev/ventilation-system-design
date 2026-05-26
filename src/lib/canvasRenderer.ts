@@ -1,0 +1,518 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// canvasRenderer.ts — Canvas 2D рендерер для больших схем (>CANVAS_THRESHOLD ветвей)
+// Математика проекции полностью переиспользуется из topology.ts
+// ─────────────────────────────────────────────────────────────────────────────
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength } from "./topology";
+import { type InfoDisplayConfig } from "./infoConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "./unitsConfig";
+
+export const CANVAS_THRESHOLD = 600;
+
+export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
+
+export interface ProjNode {
+  node: TopoNode;
+  sx: number;
+  sy: number;
+  depth: number;
+}
+
+export interface CanvasRenderOptions {
+  ctx: CanvasRenderingContext2D;
+  width: number;
+  height: number;
+
+  nodes: TopoNode[];
+  branches: TopoBranch[];
+  horizons: Horizon[];
+  horizonMap: Map<string, Horizon>;
+  visibleBranches: TopoBranch[];
+  hiddenBranchIds: Set<string>;
+  projNodes: ProjNode[];
+  projNodesMap: Map<string, ProjNode>;
+
+  proj: ProjOptions;
+  view: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
+  is3D: boolean;
+  zScale: number;
+  zLevel: number;
+
+  selectedBranchId: string | null;
+  selectedBranchIds: Set<string>;
+  selectedNodeId: string | null;
+  selectedNodeIds: Set<string>;
+  hoverBranchId: string | null;
+
+  branchWidth: number;
+  branchBorder: number;
+  thinLines: boolean;
+  colorByHorizon: boolean;
+  showFlowArrows: boolean;
+  flowDisplay: FlowDisplayMode;
+
+  animOffset: number;
+
+  infoConfig?: InfoDisplayConfig | null;
+  unitsConfig: UnitsConfig;
+}
+
+// ─── Цвет ветви по скорости ────────────────────────────────────────────────
+const VELOCITY_STOPS = [
+  { v: 0,  r: 156, g: 163, b: 175 },
+  { v: 3,  r: 59,  g: 130, b: 246 },
+  { v: 8,  r: 16,  g: 185, b: 129 },
+  { v: 15, r: 234, g: 179, b: 8   },
+  { v: 25, r: 239, g: 68,  b: 68  },
+];
+
+export function velocityColor(v: number): string {
+  if (v <= 0) return "#9ca3af";
+  let lo = VELOCITY_STOPS[0], hi = VELOCITY_STOPS[VELOCITY_STOPS.length - 1];
+  for (let i = 0; i < VELOCITY_STOPS.length - 1; i++) {
+    if (v >= VELOCITY_STOPS[i].v && v <= VELOCITY_STOPS[i + 1].v) {
+      lo = VELOCITY_STOPS[i]; hi = VELOCITY_STOPS[i + 1]; break;
+    }
+  }
+  const t = lo.v === hi.v ? 1 : Math.min(1, (v - lo.v) / (hi.v - lo.v));
+  return `rgb(${Math.round(lo.r + (hi.r - lo.r) * t)},${Math.round(lo.g + (hi.g - lo.g) * t)},${Math.round(lo.b + (hi.b - lo.b) * t)})`;
+}
+
+function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
+  const v = unit.fromBase(rMkyurg);
+  if (v === 0) return `0 ${unit.symbol}`;
+  const mag = Math.floor(Math.log10(Math.abs(v)));
+  const decimals = Math.max(unit.decimals, -mag + 1);
+  return `${v.toFixed(decimals)}${unit.symbol}`;
+}
+
+// ─── Сетка 2D (план) ───────────────────────────────────────────────────────
+function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number, offsetX: number, offsetY: number) {
+  if (scale < 0.5) {
+    ctx.fillStyle = "#f8f9fa";
+    ctx.fillRect(0, 0, w, h);
+    return;
+  }
+  const minor = 20 * scale;
+  const major = 100 * scale;
+  const ox = offsetX % major;
+  const oy = offsetY % major;
+
+  ctx.save();
+  ctx.strokeStyle = "#f0f0f0";
+  ctx.lineWidth = 0.5;
+  for (let x = ox % minor; x < w; x += minor) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = oy % minor; y < h; y += minor) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.strokeStyle = "#dcdcdc";
+  ctx.lineWidth = 0.8;
+  for (let x = ox; x < w; x += major) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = oy; y < h; y += major) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.restore();
+}
+
+// ─── 3D-сетка (горизонтальная плоскость z=0) ──────────────────────────────
+function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
+  const step = 500, range = 3000;
+  ctx.save();
+  ctx.strokeStyle = "#d4d4d4";
+  ctx.globalAlpha = 0.7;
+  ctx.lineWidth = 0.6;
+  for (let x = -range; x <= range; x += step) {
+    const a = project3D({ x, y: -range, z: 0 }, proj);
+    const b = project3D({ x, y: range, z: 0 }, proj);
+    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+  }
+  for (let y = -range; y <= range; y += step) {
+    const a = project3D({ x: -range, y, z: 0 }, proj);
+    const b = project3D({ x: range, y, z: 0 }, proj);
+    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const O = project3D({ x: 0, y: 0, z: 0 }, proj);
+  const Xa = project3D({ x: 500, y: 0, z: 0 }, proj);
+  const Ya = project3D({ x: 0, y: 500, z: 0 }, proj);
+  const Za = project3D({ x: 0, y: 0, z: 500 }, proj);
+  [["#ef4444", O, Xa, "X"], ["#22c55e", O, Ya, "Y"], ["#3b82f6", O, Za, "Z"]].forEach(([color, from, to, label]) => {
+    ctx.strokeStyle = color as string;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo((from as { sx: number; sy: number }).sx, (from as { sx: number; sy: number }).sy);
+    ctx.lineTo((to as { sx: number; sy: number }).sx, (to as { sx: number; sy: number }).sy);
+    ctx.stroke();
+    ctx.fillStyle = color as string;
+    ctx.font = "10px sans-serif";
+    ctx.fillText(label as string, (to as { sx: number; sy: number }).sx + 4, (to as { sx: number; sy: number }).sy);
+  });
+  ctx.restore();
+}
+
+// ─── Основной рендер всей схемы ────────────────────────────────────────────
+export function renderCanvas(opts: CanvasRenderOptions) {
+  const {
+    ctx, width, height, view, proj, is3D,
+    visibleBranches, projNodesMap, projNodes,
+    selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
+    hoverBranchId,
+    branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
+    flowDisplay, animOffset,
+    horizonMap, infoConfig, unitsConfig,
+  } = opts;
+
+  ctx.clearRect(0, 0, width, height);
+
+  // ─── LOD пороги ───────────────────────────────────────────────────────────
+  const sc = view.scale;
+  const lodChevrons = sc >= 0.25;
+  const lodArrows   = sc >= 0.15;
+  const lodLabels   = sc >= 0.04;
+  const lodBorder   = sc >= 0.10;
+  const lodNodes    = sc >= 0.03;
+
+  // ─── Фон / сетка ──────────────────────────────────────────────────────────
+  if (is3D) {
+    ctx.fillStyle = "#f5f5f4";
+    ctx.fillRect(0, 0, width, height);
+    drawGrid3D(ctx, proj);
+  } else {
+    drawGrid2D(ctx, width, height, sc, view.offsetX, view.offsetY);
+  }
+
+  // ─── Сортировка ветвей по глубине (painter's algorithm) ───────────────────
+  const sorted = [...visibleBranches].map((b) => {
+    const from = projNodesMap.get(b.fromId);
+    const to   = projNodesMap.get(b.toId);
+    const depth = from && to ? (from.depth + to.depth) / 2 : 0;
+    return { b, from, to, depth };
+  }).sort((a, b) => a.depth - b.depth);
+
+  // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
+  for (const { b, from, to } of sorted) {
+    if (!from || !to) continue;
+
+    const isSel     = selectedBranchId === b.id || selectedBranchIds.has(b.id);
+    const isMulti   = selectedBranchIds.has(b.id);
+    const isDead    = b.isDead ?? false;
+    const isLeakage = b.isLeakage ?? false;
+    const Q  = Math.abs(b.flow);
+    const V  = b.velocity;
+    const overV = V > b.vMax;
+
+    const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && b.flow >= 0;
+    const reversed = b.flow < 0 || fanReverseOverride;
+    const sxA = reversed ? to.sx : from.sx;
+    const syA = reversed ? to.sy : from.sy;
+    const sxB = reversed ? from.sx : to.sx;
+    const syB = reversed ? from.sy : to.sy;
+    const midX = (from.sx + to.sx) / 2;
+    const midY = (from.sy + to.sy) / 2;
+
+    const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
+    const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
+      : isLeakage ? "#f97316"
+      : overV    ? "#dc2626"
+      : (colorByHorizon && horizonColor) ? horizonColor
+      : Q > 0    ? velocityColor(V)
+      : "#9ca3af";
+
+    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
+    const baseW = isSel ? bw + 1 : bw;
+    const w = thinLines ? 1 : baseW;
+    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+
+    const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
+    const showDashes   = flowVisible && (flowDisplay === "flow"     || flowDisplay === "both");
+    const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
+
+    const dx = sxB - sxA, dy = syB - syA;
+    const segLen = Math.hypot(dx, dy);
+    const ux = segLen > 0 ? dx / segLen : 0;
+    const uy = segLen > 0 ? dy / segLen : 0;
+    const angle = Math.atan2(dy, dx);
+
+    // Подсветка hover
+    if (hoverBranchId === b.id) {
+      ctx.save();
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = w + 8;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Обводка
+    if (bwBorder > 0) {
+      ctx.save();
+      ctx.strokeStyle = "#1f2937";
+      ctx.lineWidth = w + bwBorder * 2;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash(isLeakage ? [6, 4] : []);
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Основная линия
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = w;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = flowVisible ? 0.55 : 1;
+    ctx.setLineDash(isLeakage ? [6, 4] : []);
+    ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+    ctx.restore();
+
+    // Бегущий пунктир
+    if (showDashes) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      ctx.lineCap = "butt";
+      ctx.globalAlpha = 0.95;
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -animOffset;
+      ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Шевроны
+    if (showChevrons && segLen > 24) {
+      const step = 30;
+      const count = Math.max(1, Math.floor(segLen / step));
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 0.6;
+      ctx.globalAlpha = 0.9;
+      for (let i = 0; i < count; i++) {
+        const t0 = (i + 1) / (count + 1);
+        const cx = sxA + dx * t0;
+        const cy = syA + dy * t0;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(-4, -4); ctx.lineTo(4, 0); ctx.lineTo(-4, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // Маркер истока
+    if (flowVisible) {
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(sxA, syA, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // Стрелки потока (F9)
+    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80) {
+      const stepA = 130;
+      const count = Math.max(1, Math.floor(segLen / stepA));
+      const arrowLen = Math.min(28, Math.max(16, w * 4));
+      const hw = arrowLen / 2;
+      ctx.save();
+      ctx.fillStyle = "#dc2626";
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < count; i++) {
+        const t0 = (i + 1) / (count + 1);
+        const cx = sxA + dx * t0;
+        const cy = syA + dy * t0;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(angle);
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = Math.max(1.5, w * 0.7);
+        ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 6, 0); ctx.stroke();
+        ctx.fillStyle = "#dc2626";
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(hw - 9, -5); ctx.lineTo(hw, 0); ctx.lineTo(hw - 9, 5);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // Метки ветвей
+    if (lodLabels) {
+      const ic = infoConfig;
+      const labelOpacity = Math.min(1, (sc - 0.04) / 0.08);
+      const branchNum = b.id.replace(/^B/, "");
+      const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
+      const showCircle = !ic || ic.branchNumber;
+      const circleR = 10;
+      const lox = b.labelOffsetX ?? 0;
+      const loy = b.labelOffsetY ?? -16;
+      const circleX = midX + lox;
+      const circleY = midY + loy;
+
+      ctx.save();
+      ctx.globalAlpha = labelOpacity;
+
+      if (showCircle) {
+        ctx.beginPath();
+        ctx.arc(circleX, circleY, circleR, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+        ctx.strokeStyle = isSel ? "#2563eb" : "#374151";
+        ctx.lineWidth = isSel ? 1.5 : 1;
+        ctx.stroke();
+        ctx.fillStyle = isSel ? "#2563eb" : "#111827";
+        ctx.font = `600 ${branchNum.length > 2 ? 7 : 9}px "Segoe UI",sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(branchNum, circleX, circleY);
+      }
+
+      const dataLines: string[] = [];
+      if (!isDead && ic) {
+        const uFlow = getUnit(unitsConfig, "flow");
+        const uVel  = getUnit(unitsConfig, "velocity");
+        const uPres = getUnit(unitsConfig, "pressure");
+        const uLen  = getUnit(unitsConfig, "length");
+        const uArea = getUnit(unitsConfig, "area");
+        const uRes  = getUnit(unitsConfig, "resistance");
+        const len = b.length || Math.round(calcBranchLength(from.node, to.node));
+        const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
+        if (ic.branchName && b.type) dataLines.push(b.type);
+        if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
+        if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
+        if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
+        if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1000 / 9.81, uRes)}`);
+        if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
+        if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
+        if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
+      } else if (!isDead && !ic && hasCalc) {
+        const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
+        dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
+        if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
+      }
+
+      if (dataLines.length > 0) {
+        const lh = 11;
+        const dataX = midX + lox + (showCircle ? circleR + 4 : 0);
+        const dataY = midY + loy;
+
+        // Выноска если метка сдвинута
+        if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
+          ctx.save();
+          ctx.strokeStyle = "#94a3b8";
+          ctx.lineWidth = 0.8;
+          ctx.setLineDash([3, 2]);
+          ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(dataX, dataY); ctx.stroke();
+          ctx.restore();
+        }
+
+        ctx.font = `600 8.5px "Segoe UI",sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const bh = dataLines.length * lh + 4;
+        dataLines.forEach((ln, li) => {
+          const ty = dataY - bh / 2 + lh * (li + 0.6);
+          ctx.strokeStyle = "white";
+          ctx.lineWidth = 3;
+          ctx.lineJoin = "round";
+          ctx.strokeText(ln, dataX, ty);
+          ctx.fillStyle = overV ? "#dc2626" : "#1e3a5f";
+          ctx.fillText(ln, dataX, ty);
+        });
+      }
+      ctx.restore();
+    }
+
+    void ux; void uy;
+  }
+
+  // ─── УЗЛЫ ─────────────────────────────────────────────────────────────────
+  if (lodNodes) {
+    const nodesSorted = [...projNodes].sort((a, b) => a.depth - b.depth);
+    for (const pn of nodesSorted) {
+      const n = pn.node;
+      if (n.visible === false) continue;
+
+      const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
+      const isAtm = n.atmosphereLink;
+      const r = isSel ? 7 : 5;
+
+      ctx.save();
+
+      if (isSel) {
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 2]); ctx.stroke();
+      }
+
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r, 0, Math.PI * 2);
+      if (isAtm) {
+        ctx.fillStyle = "#22c55e";
+        ctx.strokeStyle = "#15803d";
+      } else {
+        ctx.fillStyle = isSel ? "#2563eb" : "white";
+        ctx.strokeStyle = isSel ? "#1d4ed8" : "#374151";
+      }
+      ctx.lineWidth = isSel ? 2 : 1;
+      ctx.setLineDash([]);
+      ctx.fill(); ctx.stroke();
+
+      // Номер узла при достаточном зуме
+      if (sc > 0.12 && (n.number || n.name)) {
+        const label = n.number || n.name;
+        ctx.font = `500 8px "Segoe UI",sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.lineJoin = "round";
+        ctx.strokeText(label, pn.sx, pn.sy - r - 1);
+        ctx.fillStyle = "#111827";
+        ctx.fillText(label, pn.sx, pn.sy - r - 1);
+      }
+
+      ctx.restore();
+    }
+  }
+}
+
+// ─── Hit-тесты (переиспользуются из TopoCanvas) ────────────────────────────
+export function hitNodeCanvas(
+  sx: number, sy: number,
+  projNodes: ProjNode[],
+  r = 8,
+): string | null {
+  const r2 = r * r;
+  for (let i = projNodes.length - 1; i >= 0; i--) {
+    const p = projNodes[i];
+    const dx = sx - p.sx, dy = sy - p.sy;
+    if (dx * dx + dy * dy < r2) return p.node.id;
+  }
+  return null;
+}
+
+export function hitBranchCanvas(
+  sx: number, sy: number,
+  projNodesMap: Map<string, ProjNode>,
+  branches: TopoBranch[],
+  tol = 5,
+): string | null {
+  const tol2 = tol * tol;
+  for (const b of branches) {
+    const from = projNodesMap.get(b.fromId);
+    const to   = projNodesMap.get(b.toId);
+    if (!from || !to) continue;
+    const C = to.sx - from.sx, D = to.sy - from.sy;
+    const lenSq = C * C + D * D;
+    if (lenSq === 0) continue;
+    const A = sx - from.sx, B = sy - from.sy;
+    const t = Math.max(0, Math.min(1, (A * C + B * D) / lenSq));
+    const dx = sx - (from.sx + t * C), dy = sy - (from.sy + t * D);
+    if (dx * dx + dy * dy < tol2) return b.id;
+  }
+  return null;
+}

@@ -6,6 +6,7 @@ import {
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import CanvasLayer, { CANVAS_THRESHOLD } from "@/components/cad/CanvasLayer";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -173,12 +174,15 @@ export default function TopoCanvas(props: Props) {
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const canvasExportRef = useRef<(() => string) | null>(null);
 
-  // Регистрируем функцию получения SVG для печати
+  // Регистрируем функцию получения содержимого для печати (SVG или Canvas PNG)
   useEffect(() => {
     if (!onRegisterGetSvg) return;
-    onRegisterGetSvg(() => svgRef.current?.outerHTML ?? "");
-   
+    onRegisterGetSvg(() => {
+      if (canvasExportRef.current) return canvasExportRef.current();
+      return svgRef.current?.outerHTML ?? "";
+    });
   }, [onRegisterGetSvg]);
 
   // Карта горизонтов по id (для быстрых lookups)
@@ -491,7 +495,7 @@ export default function TopoCanvas(props: Props) {
   // ─── Контекстное меню по правой кнопке ─────────────────────────────────
   const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
     const hitN = hitNode(sx, sy, projNodes);
@@ -560,7 +564,7 @@ export default function TopoCanvas(props: Props) {
       return;
     }
 
-    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
@@ -733,7 +737,7 @@ export default function TopoCanvas(props: Props) {
   };
 
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
@@ -818,7 +822,7 @@ export default function TopoCanvas(props: Props) {
 
   const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
     const raw = e.deltaY;
@@ -868,7 +872,7 @@ export default function TopoCanvas(props: Props) {
   // ─── Touch: pan (1 палец) + pinch-zoom (2 пальца) + tap для выделения ──
   const onTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
     if (e.touches.length === 1) {
       const t = e.touches[0];
       const sx = t.clientX - rect.left;
@@ -886,7 +890,7 @@ export default function TopoCanvas(props: Props) {
   const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
     e.preventDefault();
     if (!touchRef.current) return;
-    const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as Element).getBoundingClientRect();
     if (e.touches.length === 1 && touchRef.current.dist === undefined) {
       const t = e.touches[0];
       const dx = (t.clientX - rect.left) - touchRef.current.x;
@@ -919,7 +923,7 @@ export default function TopoCanvas(props: Props) {
     // Тап: если палец не двигался (< 10px) — выделяем узел/ветвь как при клике мышью
     if (e.changedTouches.length === 1 && touchRef.current && touchRef.current.dist === undefined) {
       const t = e.changedTouches[0];
-      const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+      const rect = (e.currentTarget as Element).getBoundingClientRect();
       const sx = t.clientX - rect.left;
       const sy = t.clientY - rect.top;
       const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
@@ -1031,20 +1035,82 @@ export default function TopoCanvas(props: Props) {
 
   // Вертикальные направляющие — убраны (создавали сотни пунктирных линий при 3D-виде CSV-схем)
 
+  // ─── Автопереключение SVG ↔ Canvas ────────────────────────────────────────
+  const useCanvas = visibleBranches.length > CANVAS_THRESHOLD;
+  if (!useCanvas) canvasExportRef.current = null;
+
+  const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
+    : pendingSymbolTypeId ? "copy"
+    : tool === "node" ? "crosshair"
+    : tool === "symbol" ? "copy"
+    : tool === "rotate" ? "grab"
+    : tool === "pan" ? "grab" : "default";
+
+  // Canvas-обёртки: перенаправляем события HTMLCanvasElement → обработчикам SVG
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const asS = <T,>(e: T) => e as unknown as any;
+  const onMouseDownCanvas   = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseDown(asS(e));
+  const onMouseMoveCanvas   = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseMove(asS(e));
+  const onMouseUpCanvas     = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseUp(asS(e));
+  const onWheelCanvas       = (e: React.WheelEvent<HTMLCanvasElement>)  => onWheel(asS(e));
+  const onContextMenuCanvas = (e: React.MouseEvent<HTMLCanvasElement>)  => onContextMenuSVG(asS(e));
+  const onTouchStartCanvas  = (e: React.TouchEvent<HTMLCanvasElement>)  => onTouchStart(asS(e));
+  const onTouchMoveCanvas   = (e: React.TouchEvent<HTMLCanvasElement>)  => onTouchMove(asS(e));
+  const onTouchEndCanvas    = (e: React.TouchEvent<HTMLCanvasElement>)  => onTouchEnd(asS(e));
+
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden"
       style={{
         background: is3D ? "linear-gradient(to bottom, #f0f4f8 0%, #ffffff 60%, #f5f5f5 100%)" : "#ffffff",
-        cursor: rotStart ? "grabbing" : panStart ? "grabbing"
-          : pendingSymbolTypeId ? "copy"
-          : tool === "node" ? "crosshair"
-          : tool === "symbol" ? "copy"
-          : tool === "rotate" ? "grab"
-          : tool === "pan" ? "grab" : "default",
+        cursor: cursorStyle,
       }}>
 
+      {/* ── Canvas-рендерер (большие схемы > CANVAS_THRESHOLD ветвей) ── */}
+      {useCanvas && (
+        <CanvasLayer
+          width={size.w}
+          height={size.h}
+          nodes={nodes}
+          branches={branches}
+          horizons={horizons ?? []}
+          horizonMap={horizonMap}
+          visibleBranches={visibleBranches}
+          hiddenBranchIds={hiddenBranchIds}
+          projNodes={projNodes}
+          projNodesMap={projNodesMap}
+          proj={proj}
+          view={view}
+          is3D={is3D}
+          zScale={zScale}
+          zLevel={zLevel}
+          selectedBranchId={selectedBranchId}
+          selectedBranchIds={selectedBranchIds ?? new Set()}
+          selectedNodeId={selectedNodeId}
+          selectedNodeIds={selectedNodeIds ?? new Set()}
+          hoverBranchId={hoverBranchId}
+          branchWidth={branchWidth}
+          branchBorder={branchBorder}
+          thinLines={thinLines}
+          colorByHorizon={colorByHorizon}
+          showFlowArrows={showFlowArrows}
+          flowDisplay={flowDisplay}
+          infoConfig={infoConfig}
+          unitsConfig={unitsConfig}
+          onMouseDown={onMouseDownCanvas}
+          onMouseMove={onMouseMoveCanvas}
+          onMouseUp={onMouseUpCanvas}
+          onWheel={onWheelCanvas}
+          onContextMenu={onContextMenuCanvas}
+          onTouchStart={onTouchStartCanvas}
+          onTouchMove={onTouchMoveCanvas}
+          onTouchEnd={onTouchEndCanvas}
+          onRegisterGetCanvas={(fn) => { canvasExportRef.current = fn; }}
+        />
+      )}
+
+      {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgRef} width={size.w} height={size.h}
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", display: useCanvas ? "none" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -2066,6 +2132,11 @@ export default function TopoCanvas(props: Props) {
       {/* Индикаторы */}
       <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"
         style={{ color: "#444", marginLeft: "0px", paddingBottom: "0px" }}>
+        {useCanvas && (
+          <span className="mr-2 px-1 rounded" style={{ background: "#d1fae5", color: "#065f46" }}>
+            Canvas · {visibleBranches.length} вет.
+          </span>
+        )}
         {is3D && <span className="mr-2">3D · Az: {view.azimuth.toFixed(0)}° · El: {view.elevation.toFixed(0)}°</span>}
         {hoverPos && (() => {
           // Вывод координат с учётом активной плоскости
