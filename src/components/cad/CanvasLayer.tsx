@@ -89,18 +89,13 @@ export default function CanvasLayer(props: CanvasLayerProps) {
   const rafRef    = useRef<number | null>(null);
   const animOffsetRef = useRef(0);
 
-  // Инициализация размера и нативный wheel (не пассивный) при монтировании
+  // Инициализация размера при монтировании
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    // Устанавливаем начальный размер
     canvas.width  = width;
     canvas.height = height;
     draw();
-    // wheel — не пассивный, иначе e.preventDefault() игнорируется
-    const handler = (e: WheelEvent) => { e.preventDefault(); e.stopPropagation(); };
-    canvas.addEventListener("wheel", handler, { passive: false });
-    return () => canvas.removeEventListener("wheel", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

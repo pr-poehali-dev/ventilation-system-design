@@ -387,15 +387,50 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Нативный wheel-listener на контейнере — предотвращает скролл страницы
-  // React регистрирует onWheel как passive в некоторых браузерах, поэтому добавляем вручную
+  // Нативный wheel-listener — вся логика зума здесь (React onWheel пассивен в некоторых браузерах)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const handler = (e: WheelEvent) => e.preventDefault();
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = el.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const raw = e.deltaY;
+      const delta = e.deltaMode === 1 ? raw * 20 : e.deltaMode === 2 ? raw * 200 : raw;
+
+      const wa = wheelAccRef.current;
+      wa.px = px;
+      wa.py = py;
+      wa.acc = Math.max(-250, Math.min(250, wa.acc + delta));
+
+      if (wa.rafId !== null) return;
+
+      wa.rafId = requestAnimationFrame(() => {
+        wa.rafId = null;
+        const accDelta = wa.acc;
+        wa.acc = 0;
+        const factor = Math.exp(-accDelta * 0.0008);
+        const fpx = wa.px;
+        const fpy = wa.py;
+
+        setView((v) => {
+          const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
+          if (Math.abs(newScale - v.scale) < 1e-10) return v;
+          const wx = (fpx - v.offsetX) / v.scale;
+          const wy = (fpy - v.offsetY) / v.scale;
+          prevScaleOverride.current = newScale;
+          if (onScaleChange) onScaleChange(newScale);
+          return { ...v, scale: newScale, offsetX: fpx - wx * newScale, offsetY: fpy - wy * newScale };
+        });
+      });
+    };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, []);
+   
+  }, [onScaleChange]);
 
   // Флаг: после применения пресета вписать схему в экран
   const fitAfterPresetRef = useRef(false);
@@ -830,53 +865,9 @@ export default function TopoCanvas(props: Props) {
     setDraggingCorner(null);
   };
 
-  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    const rect = (e.currentTarget as Element).getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    const raw = e.deltaY;
-    // Нормализуем единицы: строки (deltaMode=1) → пиксели, страницы (=2) → пиксели
-    const delta = e.deltaMode === 1 ? raw * 20 : e.deltaMode === 2 ? raw * 200 : raw;
-
-    const wa = wheelAccRef.current;
-    wa.px = px;
-    wa.py = py;
-    // Накапливаем delta с ограничением чтобы не было «выстрела» после паузы
-    wa.acc = Math.max(-250, Math.min(250, wa.acc + delta));
-
-    if (wa.rafId !== null) return; // уже запланирован flush
-
-    wa.rafId = requestAnimationFrame(() => {
-      wa.rafId = null;
-      const accDelta = wa.acc;
-      wa.acc = 0;
-
-      // Плавный логарифмический зум: ~8% за стандартный тик (100px)
-      const factor = Math.exp(-accDelta * 0.0008);
-
-      // Фиксируем px/py в локальных переменных до setView — избегаем гонки ref
-      const fpx = wa.px;
-      const fpy = wa.py;
-
-      setView((v) => {
-        const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
-        if (Math.abs(newScale - v.scale) < 1e-10) return v;
-        // Мировая точка под курсором должна остаться на месте
-        const wx = (fpx - v.offsetX) / v.scale;
-        const wy = (fpy - v.offsetY) / v.scale;
-        const newView = {
-          ...v,
-          scale: newScale,
-          offsetX: fpx - wx * newScale,
-          offsetY: fpy - wy * newScale,
-        };
-        prevScaleOverride.current = newScale;
-        if (onScaleChange) onScaleChange(newScale);
-        return newView;
-      });
-    });
-  };
+  // Зум через колёсико полностью обрабатывается нативным listener выше.
+  // React-обработчик нужен только для типизации JSX.
+  const onWheel = (e: React.WheelEvent<SVGSVGElement>) => { e.preventDefault(); };
 
   // ─── Touch: pan (1 палец) + pinch-zoom (2 пальца) + tap для выделения ──
   const onTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
