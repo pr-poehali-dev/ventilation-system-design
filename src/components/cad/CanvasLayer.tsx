@@ -89,6 +89,21 @@ export default function CanvasLayer(props: CanvasLayerProps) {
   const rafRef    = useRef<number | null>(null);
   const animOffsetRef = useRef(0);
 
+  // Инициализация размера и нативный wheel (не пассивный) при монтировании
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // Устанавливаем начальный размер
+    canvas.width  = width;
+    canvas.height = height;
+    draw();
+    // wheel — не пассивный, иначе e.preventDefault() игнорируется
+    const handler = (e: WheelEvent) => { e.preventDefault(); e.stopPropagation(); };
+    canvas.addEventListener("wheel", handler, { passive: false });
+    return () => canvas.removeEventListener("wheel", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Анимация потока — один RAF на весь холст (вместо 1872 SVG <animate>)
   const needsAnim = flowDisplay === "flow" || flowDisplay === "both";
 
@@ -167,6 +182,17 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     if (!onRegisterGetCanvas) return;
     onRegisterGetCanvas(() => canvasRef.current?.toDataURL("image/png") ?? "");
   }, [onRegisterGetCanvas]);
+
+  // Изменяем размер canvas императивно — без сброса содержимого при каждом рендере React
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width  = width;
+      canvas.height = height;
+      draw(); // перерисовываем сразу после изменения размера
+    }
+  }, [width, height, draw]);
 
   return (
     <canvas
