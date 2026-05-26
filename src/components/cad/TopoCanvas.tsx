@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   type TopoNode, type TopoBranch, type ProjOptions, type ViewPreset, type WorkPlane,
   type Horizon,
@@ -182,20 +182,21 @@ export default function TopoCanvas(props: Props) {
   }, [onRegisterGetSvg]);
 
   // Карта горизонтов по id (для быстрых lookups)
-  const horizonMap = (() => {
+  const horizonMap = useMemo(() => {
     const m = new Map<string, Horizon>();
     (horizons ?? []).forEach((h) => m.set(h.id, h));
     return m;
-  })();
+  }, [horizons]);
+
   // Видимые ветви: если горизонт привязан и скрыт — фильтруем
-  const visibleBranches = branches.filter((b) => {
+  const visibleBranches = useMemo(() => branches.filter((b) => {
     if (!b.horizonId) return true;
     const h = horizonMap.get(b.horizonId);
     return !h || h.visible;
-  });
+  }), [branches, horizonMap]);
 
   // Множество ID скрытых ветвей (по горизонту) — для фильтрации узлов и УО
-  const hiddenBranchIds = new Set(
+  const hiddenBranchIds = useMemo(() => new Set(
     branches
       .filter((b) => {
         if (!b.horizonId) return false;
@@ -203,23 +204,20 @@ export default function TopoCanvas(props: Props) {
         return h && !h.visible;
       })
       .map((b) => b.id)
-  );
+  ), [branches, horizonMap]);
 
   // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам.
-  // Узлы без ветвей или с хотя бы одной видимой ветвью — остаются видимыми.
-  const hiddenNodeIds = new Set(
+  const hiddenNodeIds = useMemo(() => new Set(
     nodes
       .filter((n) => {
         const nodesBranches = branches.filter(
           (b) => b.fromId === n.id || b.toId === n.id
         );
-        // Если у узла нет ветвей — показываем (свободный узел)
         if (nodesBranches.length === 0) return false;
-        // Скрываем только если ВСЕ ветви скрыты
         return nodesBranches.every((b) => hiddenBranchIds.has(b.id));
       })
       .map((n) => n.id)
-  );
+  ), [nodes, branches, hiddenBranchIds]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -442,20 +440,32 @@ export default function TopoCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.azimuth, view.elevation]);
 
-  const proj: ProjOptions = {
+  const proj: ProjOptions = useMemo(() => ({
     scale: view.scale,
     offsetX: view.offsetX,
     offsetY: view.offsetY,
     azimuth: view.azimuth,
     elevation: view.elevation,
     zScale,
-  };
+  }), [view.scale, view.offsetX, view.offsetY, view.azimuth, view.elevation, zScale]);
 
   // zScale применяем к Z-координате перед проекцией
-  const projectWithZ = (p: { x: number; y: number; z: number }) =>
-    project3D({ ...p, z: p.z * (zScale ?? 1) }, proj);
+  const projectWithZ = useCallback((p: { x: number; y: number; z: number }) =>
+    project3D({ ...p, z: p.z * (zScale ?? 1) }, proj),
+  [proj, zScale]);
 
-  const projNodes = nodes.map((n) => ({ node: n, ...projectWithZ(n) }));
+  // Проекции всех узлов — пересчитываются только при изменении nodes или proj
+  const projNodes = useMemo(
+    () => nodes.map((n) => ({ node: n, ...projectWithZ(n) })),
+    [nodes, projectWithZ]
+  );
+
+  // Map для O(1) lookup по ID узла (вместо O(n) find внутри рендера)
+  const projNodesMap = useMemo(() => {
+    const m = new Map<string, { node: typeof projNodes[0]["node"]; sx: number; sy: number; depth: number }>();
+    for (const p of projNodes) m.set(p.node.id, p);
+    return m;
+  }, [projNodes]);
 
   // Применить пресет ракурса
   const applyPreset = useCallback((preset: ViewPreset) => {
@@ -495,7 +505,7 @@ export default function TopoCanvas(props: Props) {
       onNodeContextMenu?.(hitN, e.clientX, e.clientY);
       return;
     }
-    const hitB = hitBranch(sx, sy, projNodes, branches);
+    const hitB = hitBranch(sx, sy, projNodesMap, branches);
     if (hitB) {
       onSelectBranch(hitB);
       onSelectNode(null);
@@ -555,14 +565,15 @@ export default function TopoCanvas(props: Props) {
     const sy = e.clientY - rect.top;
 
     const hitN = hitNode(sx, sy, projNodes);
-    const hitB = !hitN ? hitBranch(sx, sy, projNodes, branches) : null;
+    const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, branches) : null;
 
     // ─── РЕЖИМ «ОЖИДАНИЯ ПРИВЯЗКИ» (после Ctrl+V/Ctrl+D) — клик на ветвь ─
     if (pendingSymbolTypeId && onPendingSymbolPlace) {
       if (hitB) {
         // Вычисляем точную позицию t вдоль ветви
-        const from = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.fromId);
-        const to   = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.toId);
+        const brHit = branches.find(b => b.id === hitB);
+        const from = brHit ? projNodesMap.get(brHit.fromId) : null;
+        const to   = brHit ? projNodesMap.get(brHit.toId)   : null;
         const fromN = from?.node;
         const toN   = to?.node;
         if (from && to && fromN && toN) {
@@ -582,8 +593,9 @@ export default function TopoCanvas(props: Props) {
     if (tool === "symbol" && activeSymbolTypeId && onSymbolPlace) {
       if (hitB) {
         // Вычисляем точную позицию t вдоль ветви
-        const from = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.fromId);
-        const to   = projNodes.find(p => p.node.id === branches.find(b => b.id === hitB)?.toId);
+        const brHit2 = branches.find(b => b.id === hitB);
+        const from = brHit2 ? projNodesMap.get(brHit2.fromId) : null;
+        const to   = brHit2 ? projNodesMap.get(brHit2.toId)   : null;
         const fromN = from?.node;
         const toN   = to?.node;
         if (from && to && fromN && toN) {
@@ -734,7 +746,7 @@ export default function TopoCanvas(props: Props) {
 
     // Подсветка ветви при tool=symbol или pendingSymbol
     if (tool === "symbol" || pendingSymbolTypeId) {
-      const hb = hitBranchR(sx, sy, projNodes, branches, 10);
+      const hb = hitBranchR(sx, sy, projNodesMap, branches, 10);
       setHoverBranchId(hb ?? null);
     } else if (hoverBranchId) {
       setHoverBranchId(null);
@@ -914,7 +926,7 @@ export default function TopoCanvas(props: Props) {
       if (moved < 10) {
         // Увеличиваем радиус hit-теста для пальца (16px вместо 8px для мыши)
         const hitN = hitNodeR(sx, sy, projNodes, 16);
-        const hitB = !hitN ? hitBranchR(sx, sy, projNodes, branches, 12) : null;
+        const hitB = !hitN ? hitBranchR(sx, sy, projNodesMap, branches, 12) : null;
         if (hitN) {
           onSelectNode(hitN);
           onSelectBranch(null);
@@ -939,15 +951,18 @@ export default function TopoCanvas(props: Props) {
   };
 
   // Сортировка ветвей по средней глубине (painter's алгоритм)
-  // Только видимые: ветви скрытых горизонтов выпадают из рендера.
-  const branchesSorted = [...visibleBranches].map((b) => {
-    const from = projNodes.find((p) => p.node.id === b.fromId);
-    const to = projNodes.find((p) => p.node.id === b.toId);
+  // O(n log n) вместо O(n²) — используем Map для lookup
+  const branchesSorted = useMemo(() => [...visibleBranches].map((b) => {
+    const from = projNodesMap.get(b.fromId);
+    const to = projNodesMap.get(b.toId);
     const depth = from && to ? (from.depth + to.depth) / 2 : 0;
     return { branch: b, depth };
-  }).sort((a, b) => a.depth - b.depth);
+  }).sort((a, b) => a.depth - b.depth), [visibleBranches, projNodesMap]);
 
-  const nodesSorted = [...projNodes].sort((a, b) => a.depth - b.depth);
+  const nodesSorted = useMemo(
+    () => [...projNodes].sort((a, b) => a.depth - b.depth),
+    [projNodes]
+  );
 
   // Сетка плоскости (план z=0)
   const renderGroundGrid = () => {
@@ -1132,9 +1147,15 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* ─── ВЕТВИ (отсортированы по глубине) ────────────────────────── */}
-        {branchesSorted.map(({ branch: b }) => {
-          const from = projNodes.find((p) => p.node.id === b.fromId);
-          const to = projNodes.find((p) => p.node.id === b.toId);
+        {/* Пороги LOD: при отдалении отключаем дорогостоящие элементы */}
+        {(() => {
+          const lodChevrons  = view.scale >= 0.25;  // шевроны/пунктир — только при достаточном зуме
+          const lodArrows    = view.scale >= 0.15;  // стрелки потока
+          const lodLabels    = view.scale >= 0.04;  // метки с цифрами
+          const lodBorder    = view.scale >= 0.10;  // обводка линий
+          return branchesSorted.map(({ branch: b }) => {
+          const from = projNodesMap.get(b.fromId);
+          const to = projNodesMap.get(b.toId);
           if (!from || !to) return null;
           const isSel = selectedBranchId === b.id || (selectedBranchIds?.has(b.id) ?? false);
           const isMultiSel = selectedBranchIds?.has(b.id) ?? false;
@@ -1192,8 +1213,8 @@ export default function TopoCanvas(props: Props) {
           const baseW = isSel ? bw + 1 : bw;
           const w = thinLines ? 1 : baseW;
           // Обводка (контур вокруг линии): ширина = w + 2*border
-          const borderW = thinLines ? 0 : Math.max(0, bb);
-          const flowVisible = !thinLines && Q > 0.1 && flowDisplay !== "off";
+          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+          const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
 
@@ -1268,7 +1289,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Стрелки направления свежей струи (F9, после расчёта) ── */}
               {/* Полноценные стрелки с хвостиком (─►), как в АэроСеть */}
-              {showFlowArrows && !thinLines && Q > 0.1 && segLen > 80 && (() => {
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 && (() => {
                 const step = 130;
                 const count = Math.max(1, Math.floor(segLen / step));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
@@ -1298,7 +1319,7 @@ export default function TopoCanvas(props: Props) {
               })()}
 
 
-              {view.scale > 0.04 && (() => {
+              {lodLabels && (() => {
                 const ic = infoConfig;
                 const labelOpacity = Math.min(1, (view.scale - 0.04) / 0.08);
                 const branchNum = b.id.replace(/^B/, "");
@@ -1413,11 +1434,12 @@ export default function TopoCanvas(props: Props) {
 
             </g>
           );
-        })}
+        });
+        })()}
 
         {/* Превью создания ветви */}
         {tool === "branch" && branchFrom && hoverPos && (() => {
-          const from = projNodes.find((p) => p.node.id === branchFrom);
+          const from = projNodesMap.get(branchFrom);
           if (!from) return null;
           // Z для превью берём из активной плоскости (если фикс по Z) или у узла-начала
           const fromNode = from.node;
@@ -1441,8 +1463,8 @@ export default function TopoCanvas(props: Props) {
           // Если над ветвью — снэп к ветви
           if (hoverBranchId) {
             const br = branches.find(b => b.id === hoverBranchId);
-            const fN = br ? projNodes.find(p => p.node.id === br.fromId) : null;
-            const tN = br ? projNodes.find(p => p.node.id === br.toId) : null;
+            const fN = br ? projNodesMap.get(br.fromId) : null;
+            const tN = br ? projNodesMap.get(br.toId) : null;
             if (fN && tN) {
               const C = tN.sx - fN.sx, D = tN.sy - fN.sy;
               const A = hoverScreenPos.sx - fN.sx, B = hoverScreenPos.sy - fN.sy;
@@ -1477,8 +1499,8 @@ export default function TopoCanvas(props: Props) {
 
           if (sym.branchId) {
             const br = branches.find(b => b.id === sym.branchId);
-            const fN = br ? projNodes.find(p => p.node.id === br.fromId) : null;
-            const tN = br ? projNodes.find(p => p.node.id === br.toId) : null;
+            const fN = br ? projNodesMap.get(br.fromId) : null;
+            const tN = br ? projNodesMap.get(br.toId) : null;
             if (fN && tN) {
               fsx = fN.sx; fsy = fN.sy; tsx2 = tN.sx; tsy2 = tN.sy;
               hasBranchPts = true;
@@ -2181,28 +2203,29 @@ function hitNode(sx: number, sy: number,
   return hitNodeR(sx, sy, projNodes, 8);
 }
 
+type ProjNodeEntry = { node: TopoNode; sx: number; sy: number; depth: number };
+
 function hitBranchR(sx: number, sy: number,
-  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[],
+  projNodesMap: Map<string, ProjNodeEntry>,
   branches: TopoBranch[], tol = 5): string | null {
+  const tol2 = tol * tol;
   for (const b of branches) {
-    const from = projNodes.find((p) => p.node.id === b.fromId);
-    const to = projNodes.find((p) => p.node.id === b.toId);
+    const from = projNodesMap.get(b.fromId);
+    const to = projNodesMap.get(b.toId);
     if (!from || !to) continue;
-    const A = sx - from.sx, B = sy - from.sy;
     const C = to.sx - from.sx, D = to.sy - from.sy;
-    const dot = A * C + B * D;
     const lenSq = C * C + D * D;
     if (lenSq === 0) continue;
-    const t = Math.max(0, Math.min(1, dot / lenSq));
-    const px = from.sx + t * C, py = from.sy + t * D;
-    const dist = Math.hypot(sx - px, sy - py);
-    if (dist < tol) return b.id;
+    const A = sx - from.sx, B = sy - from.sy;
+    const t = Math.max(0, Math.min(1, (A * C + B * D) / lenSq));
+    const dx = sx - (from.sx + t * C), dy = sy - (from.sy + t * D);
+    if (dx * dx + dy * dy < tol2) return b.id;
   }
   return null;
 }
 
 function hitBranch(sx: number, sy: number,
-  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[],
+  projNodesMap: Map<string, ProjNodeEntry>,
   branches: TopoBranch[]): string | null {
-  return hitBranchR(sx, sy, projNodes, branches, 5);
+  return hitBranchR(sx, sy, projNodesMap, branches, 5);
 }
