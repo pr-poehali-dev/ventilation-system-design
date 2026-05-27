@@ -4,6 +4,7 @@ import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
   DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, recalcAll, makeNode, makeBranch,
+  project3D,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
@@ -3855,7 +3856,7 @@ export default function CadPage() {
               const sy = e.clientY - rect.top;
               const { scale, offsetX, offsetY } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
               const wx = (sx - offsetX) / scale;
-              const wy = (sy - offsetY) / scale;
+              const wy = (offsetY - sy) / scale;   // Y инвертирован: sy = offsetY - wy*scale
               setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy } : p));
               setPositionPlaceMode(false);
             }}
@@ -3867,7 +3868,7 @@ export default function CadPage() {
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
               const dx = (sx - startSx) / scale;
-              const dy = (sy - startSy) / scale;
+              const dy = -(sy - startSy) / scale;   // Y инвертирован
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy } : p));
             }}
             onMouseUp={() => { posDragRef.current = null; setDraggingPosId(null); }}
@@ -4038,68 +4039,80 @@ export default function CadPage() {
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {
-              const { scale, offsetX, offsetY } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
-              // Пересчёт диаметра: 1 мм на экране = 3.78 px (96dpi), но берём фиксированно от viewScale
+              const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
+
+              // Проецирует мировую точку (x,y,z=0) в экранные координаты
+              const proj = (wx: number, wy: number, wz = 0) => {
+                const p = project3D({ x: wx, y: wy, z: wz }, projOpts);
+                return { sx: p.sx, sy: p.sy };
+              };
+
+              // Размер маркера: фиксированный в пикселях (не зависит от масштаба схемы)
+              // diameter в настройке — в мм, 1 мм = 3.78 px на 96dpi
               const PX_PER_MM = 3.78;
-              // Позиции которые имеют привязанные ветви у текущей активной позиции (для окрашивания)
+
+              // Активная позиция для F3-режима привязки
               const activePosForBind = posBranchBindMode && selectedPositionId
                 ? positions.find(p => p.id === selectedPositionId) : null;
+
               return (
                 <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
-                  {/* Выноски — пунктирные линии от центра маркера к центру привязанных ветвей */}
+
+                  {/* ── F3-режим: подсветка ВСЕХ ветвей — привязанные цветом, непривязанные серым ── */}
+                  {activePosForBind && branches.map((br) => {
+                    const fn = nodes.find(n => n.id === br.fromId);
+                    const tn = nodes.find(n => n.id === br.toId);
+                    if (!fn || !tn) return null;
+                    const p1 = proj(fn.x, fn.y, fn.z);
+                    const p2 = proj(tn.x, tn.y, tn.z);
+                    const isBound = activePosForBind.branchIds.includes(br.id);
+                    return (
+                      <line key={`bind-${br.id}`}
+                        x1={p1.sx} y1={p1.sy} x2={p2.sx} y2={p2.sy}
+                        stroke={isBound ? activePosForBind.color : "#888"}
+                        strokeWidth={isBound ? 7 : 4}
+                        opacity={isBound ? 0.55 : 0.18}
+                        strokeLinecap="round"
+                        strokeDasharray={isBound ? undefined : "6,4"}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    );
+                  })}
+
+                  {/* ── Выноски: пунктир от центра маркера к центру привязанных ветвей ── */}
                   {showPosLeaders && positions.map((pos) => {
-                    const sx = pos.x * scale + offsetX;
-                    const sy = pos.y * scale + offsetY;
+                    const pm = proj(pos.x, pos.y);
                     return pos.branchIds.map((bid) => {
                       const br = branches.find(b => b.id === bid);
                       if (!br) return null;
                       const fn = nodes.find(n => n.id === br.fromId);
                       const tn = nodes.find(n => n.id === br.toId);
                       if (!fn || !tn) return null;
-                      // Центр ветви в экранных координатах
-                      const cx = ((fn.x + tn.x) / 2) * scale + offsetX;
-                      const cy = ((fn.y + tn.y) / 2) * scale + offsetY;
-                      const lw = (pos.leaderThickness ?? 0.2) * PX_PER_MM;
+                      const pf = proj(fn.x, fn.y, fn.z);
+                      const pt = proj(tn.x, tn.y, tn.z);
+                      const cx = (pf.sx + pt.sx) / 2;
+                      const cy = (pf.sy + pt.sy) / 2;
+                      const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
                       return (
                         <line key={`leader-${pos.id}-${bid}`}
-                          x1={sx} y1={sy} x2={cx} y2={cy}
-                          stroke={pos.color} strokeWidth={Math.max(0.5, lw)}
-                          strokeDasharray="4,3" strokeLinecap="round"
-                          opacity={0.8} style={{ pointerEvents: "none" }}
+                          x1={pm.sx} y1={pm.sy} x2={cx} y2={cy}
+                          stroke={pos.color} strokeWidth={lw}
+                          strokeDasharray="5,3" strokeLinecap="round"
+                          opacity={0.85} style={{ pointerEvents: "none" }}
                         />
                       );
                     });
                   })}
 
-                  {/* Окрашивание ветвей в режиме F3 */}
-                  {activePosForBind && activePosForBind.branchIds.map((bid) => {
-                    const br = branches.find(b => b.id === bid);
-                    if (!br) return null;
-                    const fn = nodes.find(n => n.id === br.fromId);
-                    const tn = nodes.find(n => n.id === br.toId);
-                    if (!fn || !tn) return null;
-                    const x1 = fn.x * scale + offsetX;
-                    const y1 = fn.y * scale + offsetY;
-                    const x2 = tn.x * scale + offsetX;
-                    const y2 = tn.y * scale + offsetY;
-                    return (
-                      <line key={`bind-${bid}`}
-                        x1={x1} y1={y1} x2={x2} y2={y2}
-                        stroke={activePosForBind.color} strokeWidth={6}
-                        opacity={0.45} strokeLinecap="round"
-                        style={{ pointerEvents: "none" }}
-                      />
-                    );
-                  })}
-
-                  {/* Маркеры позиций */}
+                  {/* ── Маркеры позиций ── */}
                   {positions.map((pos) => {
-                    const sx = pos.x * scale + offsetX;
-                    const sy = pos.y * scale + offsetY;
+                    const { sx, sy } = proj(pos.x, pos.y);
+                    // Радиус фиксированный в пикселях (diameter мм × PX_PER_MM / 2)
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
                     const isReverse = pos.positionType === "reverse";
-                    const fontSize = r < 14 ? r * 0.8 : (pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85);
+                    const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
                     return (
                       <g
                         key={pos.id}
@@ -4120,6 +4133,7 @@ export default function CadPage() {
                           setLeftPanelOpen(true);
                           const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                           if (!containerRect) return;
+                          // Обратное проецирование: из экранных в мировые (только план, elevation=90°)
                           posDragRef.current = {
                             id: pos.id,
                             startSx: e.clientX - containerRect.left,
@@ -4129,15 +4143,15 @@ export default function CadPage() {
                           };
                         }}
                       >
-                        {/* Реверсивная: красная обводка через белый зазор */}
+                        {/* Реверсивная: двойная красная обводка с белым зазором */}
                         {isReverse && (
                           <>
-                            <circle r={r + 6} fill="none" stroke="#e53e3e" strokeWidth={2.5} />
-                            <circle r={r + 3} fill="none" stroke="#fff" strokeWidth={3} />
+                            <circle r={r + 7} fill="none" stroke="#e53e3e" strokeWidth={2.5} />
+                            <circle r={r + 4} fill="none" stroke="#fff" strokeWidth={3} />
                           </>
                         )}
-                        {/* Выделение */}
-                        {isSelected && <circle r={r + 3} fill="none" stroke="#2563eb" strokeWidth={2.5} strokeDasharray="4,2" />}
+                        {/* Синее пунктирное кольцо при выделении */}
+                        {isSelected && <circle r={r + 4} fill="none" stroke="#2563eb" strokeWidth={2} strokeDasharray="5,2.5" />}
                         {/* Основной круг */}
                         <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={2} />
                         {/* Номер — чёрный по стандарту ПЛА */}
