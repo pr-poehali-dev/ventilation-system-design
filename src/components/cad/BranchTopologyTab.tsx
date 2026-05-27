@@ -108,7 +108,7 @@ export default function BranchTopologyTab({
           value={branch.shape}
           onChange={(e) => {
             const s = e.target.value as TopoBranch["shape"];
-            const extra: Partial<TopoBranch> = { shape: s };
+            const extra: Partial<TopoBranch> = { shape: s, manualSection: s === "custom" };
             if (s === "arch" && (!branch.archHeight || branch.archHeight > branch.rectWidth / 2)) {
               extra.archHeight = branch.rectWidth / 2;
             }
@@ -129,7 +129,7 @@ export default function BranchTopologyTab({
           <EditInput
             type="number" step="0.1"
             value={branch.diameter}
-            onChange={(v) => onUpdate({ diameter: parseFloat(v) || 0 })}
+            onChange={(v) => onUpdate({ diameter: parseFloat(v) || 0, manualSection: false })}
           />
         </InlineLabel>
       )}
@@ -138,7 +138,7 @@ export default function BranchTopologyTab({
           <EditInput
             type="number" step="0.1"
             value={branch.rectWidth}
-            onChange={(v) => onUpdate({ rectWidth: parseFloat(v) || 0 })}
+            onChange={(v) => onUpdate({ rectWidth: parseFloat(v) || 0, manualSection: false })}
           />
         </InlineLabel>
       )}
@@ -147,7 +147,7 @@ export default function BranchTopologyTab({
           <EditInput
             type="number" step="0.1"
             value={branch.rectHeight}
-            onChange={(v) => onUpdate({ rectHeight: parseFloat(v) || 0 })}
+            onChange={(v) => onUpdate({ rectHeight: parseFloat(v) || 0, manualSection: false })}
           />
         </InlineLabel>
       )}
@@ -156,7 +156,7 @@ export default function BranchTopologyTab({
           <EditInput
             type="number" step="0.05"
             value={branch.archHeight}
-            onChange={(v) => onUpdate({ archHeight: parseFloat(v) || 0 })}
+            onChange={(v) => onUpdate({ archHeight: parseFloat(v) || 0, manualSection: false })}
           />
         </InlineLabel>
       )}
@@ -165,7 +165,7 @@ export default function BranchTopologyTab({
           <EditInput
             type="number" step="0.1"
             value={branch.trapTopWidth}
-            onChange={(v) => onUpdate({ trapTopWidth: parseFloat(v) || 0 })}
+            onChange={(v) => onUpdate({ trapTopWidth: parseFloat(v) || 0, manualSection: false })}
           />
         </InlineLabel>
       )}
