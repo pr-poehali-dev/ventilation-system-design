@@ -190,7 +190,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     rectWidth: 7,
     rectHeight: 5.5,
     trapTopWidth: 5,
-    archHeight: 1.5,
+    archHeight: 3.5,   // a/2 = 7/2 — полукруг по умолчанию
     area: 38.5,
     perimeter: 25,
     dh: (4 * 38.5) / 25,

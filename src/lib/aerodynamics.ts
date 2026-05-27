@@ -48,19 +48,19 @@ export function calcSection(p: SectionParams): { area: number; perimeter: number
     }
     case "arch": {
       // Прямоугольная часть высотой b + круговой сегмент (стрела h, хорда a)
-      // Если archHeight не задана или >= a/2 — считаем как полукруг (r = a/2)
+      // Стандарт горных выработок: h = a/2 (полукруг) → P/√S ≈ 3.77-3.79
       const a = p.width ?? 0;
-      const b = p.height ?? 0;         // высота прямых стен
+      const b = p.height ?? 0;                     // высота прямых стен
       const h = (p.archHeight !== undefined && p.archHeight > 0)
-        ? Math.min(p.archHeight, a / 2 + 0.001)   // стрела не может быть > r полукруга
-        : a / 2;                                    // по умолчанию — полукруг
+        ? Math.min(p.archHeight, a / 2)            // стрела ≤ a/2 (не более полукруга)
+        : a / 2;                                   // по умолчанию — полукруг
 
       // Радиус дуги по стреле h и хорде a: r = (a²/4 + h²) / (2h)
-      const r = h > 0 ? (a * a / 4 + h * h) / (2 * h) : a / 2;
-      // Угол дуги (полный, в радианах): θ = 2·arcsin(a / (2r))
+      const r = h > 0 ? (a * a / 4 + h * h) / (2 * h) : (a > 0 ? a / 2 : 0);
+      // Угол дуги: θ = 2·arcsin(a / (2r))
       const sinHalf = a > 0 && r > 0 ? Math.min(1, a / (2 * r)) : 0;
       const theta = 2 * Math.asin(sinHalf);
-      // Площадь сегмента: S_сег = r²·(θ - sin θ) / 2
+      // Площадь сегмента: S_сег = r²·(θ − sin θ) / 2
       const arcArea = r * r * (theta - Math.sin(theta)) / 2;
       // Длина дуги: l = r·θ
       const arcLen = r * theta;

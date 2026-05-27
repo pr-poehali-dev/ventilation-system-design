@@ -106,7 +106,14 @@ export default function BranchTopologyTab({
       <InlineLabel label="Форма сечения">
         <select
           value={branch.shape}
-          onChange={(e) => onUpdate({ shape: e.target.value as TopoBranch["shape"] })}
+          onChange={(e) => {
+            const s = e.target.value as TopoBranch["shape"];
+            const extra: Partial<TopoBranch> = { shape: s };
+            if (s === "arch" && (!branch.archHeight || branch.archHeight > branch.rectWidth / 2)) {
+              extra.archHeight = branch.rectWidth / 2;
+            }
+            onUpdate(extra);
+          }}
           className="w-full text-[11px] px-1"
           style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
           <option value="round">Круглое</option>
