@@ -1,14 +1,27 @@
 // Позиции — маркеры на схеме горной выработки
 
+export type PositionType = "normal" | "reverse";
+export type AccidentType = "Пожар" | "Взрыв" | "Внезапный выброс" | "Загазирование" | "Нет";
+
 export interface Position {
   id: string;
-  number: number;        // номер позиции (отображается на маркере)
-  name: string;          // название позиции
-  color: string;         // цвет маркера (hex, например "#e53e3e")
-  borderColor: string;   // цвет границы маркера
-  x: number;             // мировые координаты X (м)
-  y: number;             // мировые координаты Y (м)
-  branchIds: string[];   // привязанные ветви
+  number: number;          // номер позиции (отображается на маркере)
+  name: string;            // название позиции
+  scenario: string;        // сценарий
+  ventMode: string;        // режим проветривания
+  positionType: PositionType; // тип: безреверсивная / реверсивная
+  accidentType: AccidentType; // вид аварии
+  isMineWide: boolean;     // общешахтная позиция
+  color: string;           // цвет фона маркера (hex)
+  colorUnified: boolean;   // "единый для копий"
+  borderColor: string;     // цвет границы маркера
+  diameter: number;        // диаметр маркера, мм
+  font: string;            // шрифт (GOST type A, Arial, ...)
+  leaderThickness: number; // толщина выносок, мм
+  attachedFile: string;    // имя прикреплённого файла
+  x: number;               // мировые координаты X (м)
+  y: number;               // мировые координаты Y (м)
+  branchIds: string[];     // привязанные ветви
   comment: string;
 }
 
@@ -17,8 +30,18 @@ export function makePosition(partial?: Partial<Position>): Position {
     id: Math.random().toString(36).slice(2, 10),
     number: 1,
     name: "",
+    scenario: "",
+    ventMode: "Режим проветривания 1",
+    positionType: "normal",
+    accidentType: "Пожар",
+    isMineWide: false,
     color: "#e53e3e",
+    colorUnified: true,
     borderColor: "#c53030",
+    diameter: 13,
+    font: "GOST type A",
+    leaderThickness: 0.2,
+    attachedFile: "",
     x: 0,
     y: 0,
     branchIds: [],
@@ -35,4 +58,23 @@ export const POSITION_COLORS: { label: string; color: string; border: string }[]
   { label: "Синий",     color: "#3182ce", border: "#2b6cb0" },
   { label: "Фиолетовый",color: "#805ad5", border: "#6b46c1" },
   { label: "Серый",     color: "#718096", border: "#4a5568" },
+];
+
+export const VENT_MODES = [
+  "Режим проветривания 1",
+  "Режим проветривания 2",
+  "Режим проветривания 3",
+  "Аварийный режим",
+];
+
+export const ACCIDENT_TYPES: AccidentType[] = [
+  "Пожар", "Взрыв", "Внезапный выброс", "Загазирование", "Нет",
+];
+
+export const FONT_OPTIONS = [
+  "GOST type A",
+  "GOST type B",
+  "Arial",
+  "Times New Roman",
+  "Courier New",
 ];
