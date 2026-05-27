@@ -596,6 +596,10 @@ export default function CadPage() {
   // Drag маркера позиции
   const posDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number } | null>(null);
   const [draggingPosId, setDraggingPosId] = useState<string | null>(null);
+  // Режим привязки ветвей к позиции (F3)
+  const [posBranchBindMode, setPosBranchBindMode] = useState(false);
+  // Показывать выноски позиций (И/B)
+  const [showPosLeaders, setShowPosLeaders] = useState(false);
 
   // Nonce для импорта DXF — когда меняется, переключаем вид + fitToScreen
   const [importNonce, setImportNonce] = useState(0);
@@ -1456,9 +1460,21 @@ export default function CadPage() {
         }
         return;
       }
+      // F3 — режим привязки ветвей к позиции
+      if (e.key === "F3") {
+        e.preventDefault();
+        if (selectedPositionId) setPosBranchBindMode((v) => !v);
+        return;
+      }
       // F6, F9 — всегда работают
       if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
       if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
+      // И (рус.) / B (англ.) — показать/скрыть выноски позиций
+      if ((e.key === "и" || e.key === "И" || e.key === "b" || e.key === "B") && !isEditing) {
+        e.preventDefault();
+        setShowPosLeaders((v) => !v);
+        return;
+      }
 
       // Ctrl+R — развернуть выбранную ветвь
       if (e.ctrlKey && (e.key === "r" || e.key === "R") && !isEditing) {
@@ -1511,7 +1527,7 @@ export default function CadPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard, pendingSymbol]);
+  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard, pendingSymbol, selectedPositionId]);
 
   // Проверяет, является ли узел промежуточным (ровно 2 смежных ветви)
   const getNodeAdjacentBranches = (nodeId: string) => {
@@ -3614,12 +3630,16 @@ export default function CadPage() {
                 positions={positions}
                 branches={branches}
                 selectedPositionId={selectedPositionId}
-                onSelect={setSelectedPositionId}
+                onSelect={(id) => { setSelectedPositionId(id); if (!id) setPosBranchBindMode(false); }}
                 onAdd={(pos) => setPositions((prev) => [...prev, pos])}
                 onUpdate={(id, patch) => setPositions((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p))}
-                onDelete={(id) => setPositions((prev) => prev.filter((p) => p.id !== id))}
+                onDelete={(id) => { setPositions((prev) => prev.filter((p) => p.id !== id)); setPosBranchBindMode(false); }}
                 onPlaceMode={() => setPositionPlaceMode((v) => !v)}
                 placeModeActive={positionPlaceMode}
+                branchBindMode={posBranchBindMode}
+                onToggleBranchBind={() => { if (selectedPositionId) setPosBranchBindMode((v) => !v); }}
+                showLeaders={showPosLeaders}
+                onToggleLeaders={() => setShowPosLeaders((v) => !v)}
               />
             )}
           </div>
@@ -3886,7 +3906,18 @@ export default function CadPage() {
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
               onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); } }}
-              onSelectBranch={(id) => { setSelectedBranchId(id); setSelectedBranchIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); } }}
+              onSelectBranch={(id) => {
+                if (posBranchBindMode && selectedPositionId && id) {
+                  // Режим F3: привязываем/отвязываем ветвь к позиции
+                  setPositions(prev => prev.map(p => {
+                    if (p.id !== selectedPositionId) return p;
+                    const has = p.branchIds.includes(id);
+                    return { ...p, branchIds: has ? p.branchIds.filter(x => x !== id) : [...p.branchIds, id] };
+                  }));
+                  return;
+                }
+                setSelectedBranchId(id); setSelectedBranchIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); }
+              }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
@@ -4008,26 +4039,85 @@ export default function CadPage() {
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {
               const { scale, offsetX, offsetY } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
+              // Пересчёт диаметра: 1 мм на экране = 3.78 px (96dpi), но берём фиксированно от viewScale
+              const PX_PER_MM = 3.78;
+              // Позиции которые имеют привязанные ветви у текущей активной позиции (для окрашивания)
+              const activePosForBind = posBranchBindMode && selectedPositionId
+                ? positions.find(p => p.id === selectedPositionId) : null;
               return (
-                <svg
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}
-                >
+                <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+                  {/* Выноски — пунктирные линии от центра маркера к центру привязанных ветвей */}
+                  {showPosLeaders && positions.map((pos) => {
+                    const sx = pos.x * scale + offsetX;
+                    const sy = pos.y * scale + offsetY;
+                    return pos.branchIds.map((bid) => {
+                      const br = branches.find(b => b.id === bid);
+                      if (!br) return null;
+                      const fn = nodes.find(n => n.id === br.fromId);
+                      const tn = nodes.find(n => n.id === br.toId);
+                      if (!fn || !tn) return null;
+                      // Центр ветви в экранных координатах
+                      const cx = ((fn.x + tn.x) / 2) * scale + offsetX;
+                      const cy = ((fn.y + tn.y) / 2) * scale + offsetY;
+                      const lw = (pos.leaderThickness ?? 0.2) * PX_PER_MM;
+                      return (
+                        <line key={`leader-${pos.id}-${bid}`}
+                          x1={sx} y1={sy} x2={cx} y2={cy}
+                          stroke={pos.color} strokeWidth={Math.max(0.5, lw)}
+                          strokeDasharray="4,3" strokeLinecap="round"
+                          opacity={0.8} style={{ pointerEvents: "none" }}
+                        />
+                      );
+                    });
+                  })}
+
+                  {/* Окрашивание ветвей в режиме F3 */}
+                  {activePosForBind && activePosForBind.branchIds.map((bid) => {
+                    const br = branches.find(b => b.id === bid);
+                    if (!br) return null;
+                    const fn = nodes.find(n => n.id === br.fromId);
+                    const tn = nodes.find(n => n.id === br.toId);
+                    if (!fn || !tn) return null;
+                    const x1 = fn.x * scale + offsetX;
+                    const y1 = fn.y * scale + offsetY;
+                    const x2 = tn.x * scale + offsetX;
+                    const y2 = tn.y * scale + offsetY;
+                    return (
+                      <line key={`bind-${bid}`}
+                        x1={x1} y1={y1} x2={x2} y2={y2}
+                        stroke={activePosForBind.color} strokeWidth={6}
+                        opacity={0.45} strokeLinecap="round"
+                        style={{ pointerEvents: "none" }}
+                      />
+                    );
+                  })}
+
+                  {/* Маркеры позиций */}
                   {positions.map((pos) => {
                     const sx = pos.x * scale + offsetX;
                     const sy = pos.y * scale + offsetY;
-                    const r = 14;
+                    const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
+                    const isReverse = pos.positionType === "reverse";
+                    const fontSize = r < 14 ? r * 0.8 : (pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85);
                     return (
                       <g
                         key={pos.id}
                         transform={`translate(${sx}, ${sy})`}
                         style={{ pointerEvents: "all", cursor: draggingPosId === pos.id ? "grabbing" : "grab" }}
-                        onClick={(e) => { if (draggingPosId === pos.id) return; e.stopPropagation(); setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id); setActiveSide("positions"); }}
+                        onClick={(e) => {
+                          if (draggingPosId === pos.id) return;
+                          e.stopPropagation();
+                          setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id);
+                          setActiveSide("positions");
+                          setLeftPanelOpen(true);
+                        }}
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           setSelectedPositionId(pos.id);
                           setDraggingPosId(pos.id);
                           setActiveSide("positions");
+                          setLeftPanelOpen(true);
                           const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                           if (!containerRect) return;
                           posDragRef.current = {
@@ -4039,10 +4129,21 @@ export default function CadPage() {
                           };
                         }}
                       >
-                        <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={isSelected ? 3 : 2} />
+                        {/* Реверсивная: красная обводка через белый зазор */}
+                        {isReverse && (
+                          <>
+                            <circle r={r + 6} fill="none" stroke="#e53e3e" strokeWidth={2.5} />
+                            <circle r={r + 3} fill="none" stroke="#fff" strokeWidth={3} />
+                          </>
+                        )}
+                        {/* Выделение */}
+                        {isSelected && <circle r={r + 3} fill="none" stroke="#2563eb" strokeWidth={2.5} strokeDasharray="4,2" />}
+                        {/* Основной круг */}
+                        <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={2} />
+                        {/* Номер — чёрный по стандарту ПЛА */}
                         <text
                           textAnchor="middle" dominantBaseline="central"
-                          fill="#fff" fontSize={pos.number >= 100 ? 9 : pos.number >= 10 ? 11 : 13}
+                          fill="#000" fontSize={fontSize}
                           fontWeight="bold" fontFamily="sans-serif"
                           style={{ userSelect: "none" }}
                         >

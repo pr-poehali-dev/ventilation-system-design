@@ -19,6 +19,8 @@ export interface Position {
   font: string;            // шрифт (GOST type A, Arial, ...)
   leaderThickness: number; // толщина выносок, мм
   attachedFile: string;    // имя прикреплённого файла
+  attachedFileData: string; // содержимое файла в base64 (data URL)
+  attachedFileMime: string; // MIME-тип файла
   x: number;               // мировые координаты X (м)
   y: number;               // мировые координаты Y (м)
   branchIds: string[];     // привязанные ветви
@@ -42,6 +44,8 @@ export function makePosition(partial?: Partial<Position>): Position {
     font: "GOST type A",
     leaderThickness: 0.2,
     attachedFile: "",
+    attachedFileData: "",
+    attachedFileMime: "",
     x: 0,
     y: 0,
     branchIds: [],

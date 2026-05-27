@@ -16,6 +16,10 @@ interface Props {
   onDelete: (id: string) => void;
   onPlaceMode: () => void;
   placeModeActive: boolean;
+  branchBindMode?: boolean;
+  onToggleBranchBind?: () => void;
+  showLeaders?: boolean;
+  onToggleLeaders?: () => void;
 }
 
 export default function PositionsPanel({
@@ -28,6 +32,10 @@ export default function PositionsPanel({
   onDelete,
   onPlaceMode,
   placeModeActive,
+  branchBindMode,
+  onToggleBranchBind,
+  showLeaders,
+  onToggleLeaders,
 }: Props) {
   const [editingNumberId, setEditingNumberId] = useState<string | null>(null);
   const [editingNumberVal, setEditingNumberVal] = useState("");
@@ -71,6 +79,22 @@ export default function PositionsPanel({
           <Icon name="MapPin" size={12} />
           На схему
         </button>
+        {/* F3 — привязка ветвей */}
+        {selected && (
+          <button
+            onClick={onToggleBranchBind}
+            title="F3 — режим привязки ветвей к позиции"
+            style={{ ...btnStyle, background: branchBindMode ? "#dcfce7" : "#f5f5f5", color: branchBindMode ? "#16a34a" : "#374151", fontWeight: branchBindMode ? 700 : 400, padding: "1px 5px" }}>
+            F3
+          </button>
+        )}
+        {/* И/B — выноски */}
+        <button
+          onClick={onToggleLeaders}
+          title="И / B — показать/скрыть выноски"
+          style={{ ...btnStyle, background: showLeaders ? "#fef9c3" : "#f5f5f5", color: showLeaders ? "#a16207" : "#374151", padding: "1px 5px" }}>
+          <Icon name="Link" size={12} />
+        </button>
         {selected && (
           <button
             onClick={() => { onDelete(selected.id); onSelect(null); }}
@@ -80,6 +104,13 @@ export default function PositionsPanel({
           </button>
         )}
       </div>
+
+      {/* Индикатор режима F3 */}
+      {branchBindMode && selected && (
+        <div style={{ background: "#dcfce7", borderBottom: "1px solid #86efac", padding: "3px 8px", fontSize: 11, color: "#15803d" }}>
+          Режим привязки: кликайте по ветвям на схеме. F3 — выход.
+        </div>
+      )}
 
       {/* Список позиций */}
       <div className="overflow-y-auto" style={{ flex: "0 0 auto", maxHeight: 160, borderBottom: "1px solid #d0d0d0" }}>
@@ -242,24 +273,71 @@ export default function PositionsPanel({
           </Row>
 
           <GroupHeader>Прикреплённый файл</GroupHeader>
-          <div className="px-2 py-1 flex items-center gap-2">
+          <div className="px-2 py-1 flex flex-col gap-1">
             {selected.attachedFile ? (
               <>
-                <span style={{ fontSize: 11, color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {selected.attachedFile}
-                </span>
-                <button onClick={() => upd({ attachedFile: "" })}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#999", padding: 0 }}>
-                  <Icon name="X" size={12} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <Icon name="Paperclip" size={12} />
+                  <span style={{ fontSize: 11, color: "#333", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={selected.attachedFile}>
+                    {selected.attachedFile}
+                  </span>
+                  <button onClick={() => upd({ attachedFile: "", attachedFileData: "", attachedFileMime: "" })}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#999", padding: 0 }} title="Открепить файл">
+                    <Icon name="X" size={12} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  {/* Скачать */}
+                  <button
+                    onClick={() => {
+                      if (!selected.attachedFileData) return;
+                      const a = document.createElement("a");
+                      a.href = selected.attachedFileData;
+                      a.download = selected.attachedFile;
+                      a.click();
+                    }}
+                    style={{ ...btnStyle, fontSize: 10, display: "flex", alignItems: "center", gap: 3, padding: "1px 6px" }}>
+                    <Icon name="Download" size={11} />
+                    Скачать
+                  </button>
+                  {/* Просмотреть (только для изображений и PDF) */}
+                  {(selected.attachedFileMime.startsWith("image/") || selected.attachedFileMime === "application/pdf") && (
+                    <button
+                      onClick={() => {
+                        if (!selected.attachedFileData) return;
+                        const w = window.open();
+                        if (w) {
+                          if (selected.attachedFileMime.startsWith("image/")) {
+                            w.document.write(`<img src="${selected.attachedFileData}" style="max-width:100%;height:auto;" />`);
+                          } else {
+                            w.document.write(`<iframe src="${selected.attachedFileData}" style="width:100%;height:100vh;border:none;"></iframe>`);
+                          }
+                        }
+                      }}
+                      style={{ ...btnStyle, fontSize: 10, display: "flex", alignItems: "center", gap: 3, padding: "1px 6px" }}>
+                      <Icon name="Eye" size={11} />
+                      Просмотр
+                    </button>
+                  )}
+                </div>
               </>
             ) : (
-              <label style={{ fontSize: 11, color: "#2563eb", cursor: "pointer" }}>
+              <label style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                <Icon name="Paperclip" size={12} />
                 Прикрепить новый файл
                 <input type="file" style={{ display: "none" }}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) upd({ attachedFile: f.name });
+                    if (!f) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      upd({
+                        attachedFile: f.name,
+                        attachedFileData: ev.target?.result as string ?? "",
+                        attachedFileMime: f.type,
+                      });
+                    };
+                    reader.readAsDataURL(f);
                   }} />
               </label>
             )}
