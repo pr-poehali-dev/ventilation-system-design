@@ -17,6 +17,8 @@ import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
+import PositionsPanel from "@/components/cad/PositionsPanel";
+import { type Position } from "@/lib/positions";
 import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
 import { type ExcelImportResult } from "@/lib/excelImport";
 import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
@@ -80,7 +82,7 @@ export interface SchemaSymbol {
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions";
 
 interface Excavation {
   id: string;
@@ -587,6 +589,13 @@ export default function CadPage() {
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
   type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
+  // Текущий вид — обновляется TopoCanvas в реальном времени (нужен для проекции позиций)
+  const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number }>({ scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 0 });
+
+  // ─── Позиции ────────────────────────────────────────────────────────────
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [selectedPositionId, setSelectedPositionId] = useState<string | null>(null);
+  const [positionPlaceMode, setPositionPlaceMode] = useState(false);
 
   // Nonce для импорта DXF — когда меняется, переключаем вид + fitToScreen
   const [importNonce, setImportNonce] = useState(0);
@@ -2588,13 +2597,15 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
                   else if (e.target.value === "search") setActiveSide("search");
+                  else if (e.target.value === "positions") setActiveSide("positions");
                   else setActiveSide("general");
                 }}>
                 <option value="props">Свойства</option>
+                <option value="positions">Позиции</option>
                 <option value="search">Поиск</option>
                 <option value="horizons">Горизонты</option>
                 <option value="check">Проверка</option>
@@ -2617,6 +2628,7 @@ export default function CadPage() {
               {activeSide === "coords" && "Координаты"}
               {activeSide === "measure" && "Замеры"}
               {activeSide === "pipes" && "Трубопроводы"}
+              {activeSide === "positions" && "Позиции"}
             </span>
             <div className="flex items-center gap-1">
               {activeSide === "params" && selectedNode && (
@@ -3595,6 +3607,21 @@ export default function CadPage() {
                 Вкладка «{activeSide}» в разработке
               </div>
             )}
+
+            {/* ═══ ПОЗИЦИИ ══════════════════════════════════════════════ */}
+            {activeSide === "positions" && (
+              <PositionsPanel
+                positions={positions}
+                branches={branches}
+                selectedPositionId={selectedPositionId}
+                onSelect={setSelectedPositionId}
+                onAdd={(pos) => setPositions((prev) => [...prev, pos])}
+                onUpdate={(id, patch) => setPositions((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p))}
+                onDelete={(id) => setPositions((prev) => prev.filter((p) => p.id !== id))}
+                onPlaceMode={() => setPositionPlaceMode((v) => !v)}
+                placeModeActive={positionPlaceMode}
+              />
+            )}
           </div>
         </div>
 
@@ -3798,7 +3825,22 @@ export default function CadPage() {
           </div>
 
           {/* Холст топологии */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative"
+            onClick={(e) => {
+              if (!positionPlaceMode) return;
+              const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
+              if (!sel) return;
+              // Конвертируем экранные координаты в мировые через сохранённый view
+              const rect = e.currentTarget.getBoundingClientRect();
+              const sx = e.clientX - rect.left;
+              const sy = e.clientY - rect.top;
+              const { scale, offsetX, offsetY } = savedViewState;
+              const wx = (sx - offsetX) / scale;
+              const wy = (sy - offsetY) / scale;
+              setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy } : p));
+              setPositionPlaceMode(false);
+            }}
+            style={positionPlaceMode ? { cursor: "crosshair" } : undefined}>
             <TopoCanvas
               nodes={nodes}
               branches={branches}
@@ -3950,6 +3992,41 @@ export default function CadPage() {
                 }
               }}
             />
+
+            {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
+            {positions.length > 0 && (() => {
+              const { scale, offsetX, offsetY } = savedViewState;
+              return (
+                <svg
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}
+                >
+                  {positions.map((pos) => {
+                    const sx = pos.x * scale + offsetX;
+                    const sy = pos.y * scale + offsetY;
+                    const r = 14;
+                    const isSelected = pos.id === selectedPositionId;
+                    return (
+                      <g
+                        key={pos.id}
+                        transform={`translate(${sx}, ${sy})`}
+                        style={{ pointerEvents: "all", cursor: "pointer" }}
+                        onClick={(e) => { e.stopPropagation(); setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id); setActiveSide("positions"); }}
+                      >
+                        <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={isSelected ? 3 : 2} />
+                        <text
+                          textAnchor="middle" dominantBaseline="central"
+                          fill="#fff" fontSize={pos.number >= 100 ? 9 : pos.number >= 10 ? 11 : 13}
+                          fontWeight="bold" fontFamily="sans-serif"
+                          style={{ userSelect: "none" }}
+                        >
+                          {pos.number}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              );
+            })()}
 
           </div>
         </div>
