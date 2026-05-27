@@ -589,13 +589,13 @@ export default function CadPage() {
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
   type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
-  // Текущий вид — обновляется TopoCanvas в реальном времени (нужен для проекции позиций)
-  const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number }>({ scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 0 });
-
   // ─── Позиции ────────────────────────────────────────────────────────────
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedPositionId, setSelectedPositionId] = useState<string | null>(null);
   const [positionPlaceMode, setPositionPlaceMode] = useState(false);
+  // Drag маркера позиции
+  const posDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number } | null>(null);
+  const [draggingPosId, setDraggingPosId] = useState<string | null>(null);
 
   // Nonce для импорта DXF — когда меняется, переключаем вид + fitToScreen
   const [importNonce, setImportNonce] = useState(0);
@@ -3830,16 +3830,28 @@ export default function CadPage() {
               if (!positionPlaceMode) return;
               const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
               if (!sel) return;
-              // Конвертируем экранные координаты в мировые через сохранённый view
               const rect = e.currentTarget.getBoundingClientRect();
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
-              const { scale, offsetX, offsetY } = savedViewState;
+              const { scale, offsetX, offsetY } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
               const wx = (sx - offsetX) / scale;
               const wy = (sy - offsetY) / scale;
               setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy } : p));
               setPositionPlaceMode(false);
             }}
+            onMouseMove={(e) => {
+              if (!posDragRef.current) return;
+              const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
+              const { scale } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
+              const rect = e.currentTarget.getBoundingClientRect();
+              const sx = e.clientX - rect.left;
+              const sy = e.clientY - rect.top;
+              const dx = (sx - startSx) / scale;
+              const dy = (sy - startSy) / scale;
+              setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy } : p));
+            }}
+            onMouseUp={() => { posDragRef.current = null; setDraggingPosId(null); }}
+            onMouseLeave={() => { posDragRef.current = null; setDraggingPosId(null); }}
             style={positionPlaceMode ? { cursor: "crosshair" } : undefined}>
             <TopoCanvas
               nodes={nodes}
@@ -3995,7 +4007,7 @@ export default function CadPage() {
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {
-              const { scale, offsetX, offsetY } = savedViewState;
+              const { scale, offsetX, offsetY } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
               return (
                 <svg
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}
@@ -4009,8 +4021,23 @@ export default function CadPage() {
                       <g
                         key={pos.id}
                         transform={`translate(${sx}, ${sy})`}
-                        style={{ pointerEvents: "all", cursor: "pointer" }}
-                        onClick={(e) => { e.stopPropagation(); setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id); setActiveSide("positions"); }}
+                        style={{ pointerEvents: "all", cursor: draggingPosId === pos.id ? "grabbing" : "grab" }}
+                        onClick={(e) => { if (draggingPosId === pos.id) return; e.stopPropagation(); setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id); setActiveSide("positions"); }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          setSelectedPositionId(pos.id);
+                          setDraggingPosId(pos.id);
+                          setActiveSide("positions");
+                          const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
+                          if (!containerRect) return;
+                          posDragRef.current = {
+                            id: pos.id,
+                            startSx: e.clientX - containerRect.left,
+                            startSy: e.clientY - containerRect.top,
+                            startWx: pos.x,
+                            startWy: pos.y,
+                          };
+                        }}
                       >
                         <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={isSelected ? 3 : 2} />
                         <text
