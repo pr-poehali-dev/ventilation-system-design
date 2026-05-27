@@ -144,6 +144,15 @@ export default function BranchTopologyTab({
           />
         </InlineLabel>
       )}
+      {branch.shape === "arch" && (
+        <InlineLabel label="Стрела свода h, м">
+          <EditInput
+            type="number" step="0.05"
+            value={branch.archHeight}
+            onChange={(v) => onUpdate({ archHeight: parseFloat(v) || 0 })}
+          />
+        </InlineLabel>
+      )}
       {branch.shape === "trap" && (
         <InlineLabel label="Верх c, м">
           <EditInput
