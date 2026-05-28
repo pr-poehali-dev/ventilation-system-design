@@ -477,19 +477,17 @@ export default function PositionsPanel({
                 e.target.value = "";
                 if (selected.branchIds.includes(branchId)) return;
                 const newBranchIds = [...selected.branchIds, branchId];
-                // Если первая привязка и позиция не размещена — авто-координаты у ближайшего узла ветви
-                const isFirstBranch = selected.branchIds.length === 0;
-                const notPlaced = selected.x === 0 && selected.y === 0;
-                if (isFirstBranch && notPlaced) {
+                // Если позиция ещё не размещена — авто-ставим рядом с узлом ветви
+                if (!selected.placed) {
                   const br = branches.find(b => b.id === branchId);
                   const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
                   const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
                   const refN = fromN && toN
-                    ? (Math.abs(fromN.z) <= Math.abs(toN.z) ? fromN : toN)
+                    ? (fromN.z >= toN.z ? fromN : toN)
                     : (fromN ?? toN);
                   if (refN) {
-                    const OFFSET = 30;
-                    upd({ branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z });
+                    const OFFSET = 50;
+                    upd({ branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true });
                     return;
                   }
                 }

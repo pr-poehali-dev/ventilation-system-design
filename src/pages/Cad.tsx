@@ -3944,7 +3944,7 @@ export default function CadPage() {
               if (!wStart || !wCur) return;
               const dx = wCur.x - wStart.x;
               const dy = wCur.y - wStart.y;
-              setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy } : p));
+              setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy, placed: true } : p));
             }}
             onClick={(e) => {
               // Режим рисования выноски: клик = зафиксировать конец (с привязкой к ветви если snap)
@@ -4032,22 +4032,19 @@ export default function CadPage() {
                     }
                     // Добавляем ветвь
                     const newBranchIds = [...p.branchIds, id];
-                    // Если это первая привязка И позиция на нулевых координатах (не размещена) —
-                    // автоматически ставим рядом с ближайшим узлом ветви
-                    const isFirstBranch = p.branchIds.length === 0;
-                    const notPlaced = p.x === 0 && p.y === 0;
-                    if (isFirstBranch && notPlaced) {
+                    // Если позиция ещё не размещена — авто-ставим рядом с узлом ветви
+                    if (!p.placed) {
                       const br = branches.find(b => b.id === id);
                       const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
                       const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
-                      // Берём узел с меньшей абсолютной Z (ближе к поверхности = более заметный)
+                      // Берём узел с наибольшей Z (ближе к поверхности = более заметный)
                       const refN = fromN && toN
-                        ? (Math.abs(fromN.z) <= Math.abs(toN.z) ? fromN : toN)
+                        ? (fromN.z >= toN.z ? fromN : toN)
                         : (fromN ?? toN);
                       if (refN) {
-                        // Смещаем на ~30м от узла по диагонали XY, берём z узла
-                        const OFFSET = 30;
-                        return { ...p, branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z };
+                        // Смещаем на ~50м от узла по XY, берём z узла
+                        const OFFSET = 50;
+                        return { ...p, branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
                       }
                     }
                     return { ...p, branchIds: newBranchIds };
@@ -4129,7 +4126,7 @@ export default function CadPage() {
                 const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
                 if (!sel) return;
                 const wz = activeHorizon ? activeHorizon.z : (sel.z ?? 0);
-                setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz } : p));
+                setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz, placed: true } : p));
                 setPositionPlaceMode(false);
               }}
               branchBindMode={posBranchBindMode}

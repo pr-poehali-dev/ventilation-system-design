@@ -24,6 +24,7 @@ export interface Position {
   x: number;               // мировые координаты X (м)
   y: number;               // мировые координаты Y (м)
   z: number;               // высотная отметка Z (м)
+  placed: boolean;         // true = позиция явно размещена на схеме (кликом или авто)
   branchIds: string[];     // привязанные ветви
   comment: string;
   // Конец выноски (мировые координаты). Если null — выноска не задана.
@@ -56,6 +57,7 @@ export function makePosition(partial?: Partial<Position>): Position {
     x: 0,
     y: 0,
     z: 0,
+    placed: false,
     branchIds: [],
     comment: "",
     leaderEndX: null,
