@@ -23,6 +23,7 @@ export interface Position {
   attachedFileMime: string; // MIME-тип файла
   x: number;               // мировые координаты X (м)
   y: number;               // мировые координаты Y (м)
+  z: number;               // высотная отметка Z (м)
   branchIds: string[];     // привязанные ветви
   comment: string;
   // Конец выноски (мировые координаты). Если null — выноска не задана.
@@ -51,6 +52,7 @@ export function makePosition(partial?: Partial<Position>): Position {
     attachedFileMime: "",
     x: 0,
     y: 0,
+    z: 0,
     branchIds: [],
     comment: "",
     leaderEndX: null,

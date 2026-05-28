@@ -372,6 +372,34 @@ export default function PositionsPanel({
                 <span style={{ fontSize: 11, color: "#666" }}>м</span>
               </div>
             </Row>
+            <Row label="Высотная отметка Z:">
+              <div className="flex items-center gap-1">
+                <input type="number" step={1} value={Math.round(selected.z ?? 0)}
+                  onChange={(e) => upd({ z: parseFloat(e.target.value) || 0 })}
+                  style={{ ...inputStyle, width: 80, textAlign: "right" }} />
+                <span style={{ fontSize: 11, color: "#666" }}>м</span>
+              </div>
+            </Row>
+          </div>
+
+          <GroupHeader>Выноска</GroupHeader>
+          <div style={{ padding: "4px 8px", borderBottom: "1px solid #e8e8e8" }}>
+            {selected.leaderEndX != null ? (
+              <div className="flex items-center gap-2">
+                <span style={{ fontSize: 11, color: "#555", flex: 1 }}>
+                  Конец: X={Math.round(selected.leaderEndX)} Y={Math.round(selected.leaderEndY ?? 0)} м
+                </span>
+                <button
+                  onClick={() => upd({ leaderEndX: null, leaderEndY: null })}
+                  style={{ ...btnStyle, padding: "1px 6px", color: "#dc2626", border: "1px solid #fca5a5", background: "#fff5f5", fontSize: 11 }}>
+                  Удалить
+                </button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: "#aaa" }}>
+                Нет выноски. Нажмите <b>И</b> (рус.) / <b>B</b> (англ.) для добавления.
+              </div>
+            )}
           </div>
 
           <GroupHeader>Привязанные ветви</GroupHeader>

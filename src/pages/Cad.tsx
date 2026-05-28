@@ -4025,7 +4025,8 @@ export default function CadPage() {
               onPositionPlace={(wx, wy) => {
                 const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
                 if (!sel) return;
-                setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy } : p));
+                const wz = activeHorizon ? activeHorizon.z : (sel.z ?? 0);
+                setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz } : p));
                 setPositionPlaceMode(false);
               }}
               branchBindMode={posBranchBindMode}
@@ -4104,8 +4105,8 @@ export default function CadPage() {
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
                 >
 
-                  {/* ── Выноски: одиночная пунктирная линия от маркера до leaderEnd ── */}
-                  {showPosLeaders && positions.map((pos) => {
+                  {/* ── Выноски: пунктир от маркера до leaderEnd (показ не зависит от showPosLeaders) ── */}
+                  {positions.map((pos) => {
                     if (pos.leaderEndX == null || pos.leaderEndY == null) return null;
                     const pm = proj(pos.x, pos.y);
                     const pe = proj(pos.leaderEndX, pos.leaderEndY);
@@ -4158,6 +4159,15 @@ export default function CadPage() {
                           setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id);
                           setActiveSide("positions");
                           setLeftPanelOpen(true);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPositionId(pos.id);
+                          setActiveSide("positions");
+                          setLeftPanelOpen(true);
+                          // Сбрасываем выбор узлов/ветвей, фокус на позицию
+                          setSelectedNodeId(null);
+                          setSelectedBranchId(null);
                         }}
                         onMouseDown={(e) => {
                           e.stopPropagation();
