@@ -1480,15 +1480,22 @@ export default function CadPage() {
           const pos = positions.find(p => p.id === selectedPositionId);
           if (pos) {
             if (pos.leaderEndX == null) {
-              // Нет выноски — создаём рядом с маркером и включаем drag
+              // Нет выноски — проецируем маркер на экран, смещаем на 80px вправо и вверх,
+              // затем обратно проецируем в мировые координаты на плоскости z=pos.z
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
-              const offsetPx = 60 / Math.max(0.01, vs.scale);
-              setPositions(prev => prev.map(p =>
-                p.id === selectedPositionId
-                  ? { ...p, leaderEndX: p.x + offsetPx, leaderEndY: p.y + offsetPx }
-                  : p
-              ));
-              setShowPosLeaders(true);
+              const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
+              const pm = project3D({ x: pos.x, y: pos.y, z: pos.z ?? 0 }, projOpts);
+              // Смещаем конец выноски на 80px вправо-вверх от маркера
+              const endSx = pm.sx + 80;
+              const endSy = pm.sy - 80;
+              const endW = unprojectToPlane(endSx, endSy, vs, { axis: "z", value: pos.z ?? 0 });
+              if (endW) {
+                setPositions(prev => prev.map(p =>
+                  p.id === selectedPositionId
+                    ? { ...p, leaderEndX: endW.x, leaderEndY: endW.y }
+                    : p
+                ));
+              }
             } else {
               // Есть выноска — убираем
               setPositions(prev => prev.map(p =>
@@ -3874,14 +3881,17 @@ export default function CadPage() {
 
           {/* Холст топологии */}
           <div className="flex-1 relative"
+            style={{ cursor: draggingLeaderPosId ? "crosshair" : undefined }}
             onMouseMove={(e) => {
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
-              // Drag конца выноски
+              // Drag конца выноски — проецируем на плоскость z=pos.z
               if (leaderDragRef.current) {
-                const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
+                const dragPos = positions.find(p => p.id === leaderDragRef.current!.posId);
+                const pz = dragPos?.z ?? 0;
+                const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
                 if (!w) return;
                 setPositions(prev => prev.map(p =>
                   p.id === leaderDragRef.current!.posId
@@ -3890,11 +3900,13 @@ export default function CadPage() {
                 ));
                 return;
               }
-              // Drag маркера позиции
+              // Drag маркера позиции — проецируем на плоскость z=pos.z
               if (!posDragRef.current) return;
               const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
-              const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: 0 });
-              const wCur   = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
+              const dragPos = positions.find(p => p.id === id);
+              const pz = dragPos?.z ?? 0;
+              const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: pz });
+              const wCur   = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
               if (!wStart || !wCur) return;
               const dx = wCur.x - wStart.x;
               const dy = wCur.y - wStart.y;
@@ -4105,18 +4117,22 @@ export default function CadPage() {
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
                 >
 
-                  {/* ── Выноски: пунктир от маркера до leaderEnd (показ не зависит от showPosLeaders) ── */}
+                  {/* ── Выноски: пунктир от края маркера до leaderEnd ── */}
                   {positions.map((pos) => {
                     if (pos.leaderEndX == null || pos.leaderEndY == null) return null;
-                    const pm = proj(pos.x, pos.y);
-                    const pe = proj(pos.leaderEndX, pos.leaderEndY);
+                    const pz = pos.z ?? 0;
+                    // Проецируем обе точки с правильным z
+                    const pm = proj(pos.x, pos.y, pz);
+                    const pe = proj(pos.leaderEndX, pos.leaderEndY, pz);
                     const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
-                    // Сокращаем линию до края маркера
                     const dx = pe.sx - pm.sx, dy = pe.sy - pm.sy;
                     const dist = Math.hypot(dx, dy);
-                    const ux = dist > 0 ? dx / dist : 0, uy = dist > 0 ? dy / dist : 0;
+                    if (dist < 2) return null;
+                    const ux = dx / dist, uy = dy / dist;
+                    // Начало — от края маркера
                     const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
+                    const isDragging = draggingLeaderPosId === pos.id;
                     return (
                       <g key={`leader-${pos.id}`}>
                         <line
@@ -4126,10 +4142,11 @@ export default function CadPage() {
                           opacity={0.9}
                           style={{ pointerEvents: "none" }}
                         />
-                        {/* Ручка конца выноски — тащить мышью */}
+                        {/* Ручка конца выноски */}
                         <circle
-                          cx={pe.sx} cy={pe.sy} r={5}
-                          fill={pos.color} stroke="#fff" strokeWidth={1.5}
+                          cx={pe.sx} cy={pe.sy} r={isDragging ? 7 : 5}
+                          fill={isDragging ? "#fff" : pos.color}
+                          stroke={pos.color} strokeWidth={1.5}
                           style={{ pointerEvents: "all", cursor: "crosshair" }}
                           onMouseDown={(e) => {
                             e.stopPropagation();
@@ -4143,7 +4160,7 @@ export default function CadPage() {
 
                   {/* ── Маркеры позиций ── */}
                   {positions.map((pos) => {
-                    const { sx, sy } = proj(pos.x, pos.y);
+                    const { sx, sy } = proj(pos.x, pos.y, pos.z ?? 0);
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
                     const isReverse = pos.positionType === "reverse";
@@ -4209,6 +4226,17 @@ export default function CadPage() {
               );
             })()}
 
+            {/* Подсказка при drag конца выноски */}
+            {draggingLeaderPosId && (
+              <div style={{
+                position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
+                background: "rgba(0,0,0,0.72)", color: "#fff", fontSize: 12, fontWeight: 500,
+                padding: "5px 14px", borderRadius: 6, pointerEvents: "none", zIndex: 100,
+                letterSpacing: 0.2, boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+              }}>
+                ✛ Отпустите для фиксации выноски
+              </div>
+            )}
           </div>
         </div>
 
