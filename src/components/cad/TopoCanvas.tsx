@@ -243,6 +243,8 @@ export default function TopoCanvas(props: Props) {
     scale: 0.4, offsetX: 400, offsetY: 300,
     azimuth: 0, elevation: 90,    // план по умолчанию
   });
+  // Ref для синхронного чтения view внутри нативных event listeners (обходим stale closure)
+  const viewRef = useRef<ViewState>({ scale: 0.4, offsetX: 400, offsetY: 300, azimuth: 0, elevation: 90 });
 
   const is3D = view.elevation < 89.5 || view.azimuth !== 0;
 
@@ -254,7 +256,7 @@ export default function TopoCanvas(props: Props) {
     pivotScreen: { sx: number; sy: number };
   } | null>(null);
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
-  // Батчинг wheel-событий: накапливаем за один RAF-кадр, применяем разом
+  // Зум: ref для синхронного применения без батчинга
   const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
@@ -283,6 +285,9 @@ export default function TopoCanvas(props: Props) {
     }));
      
   }, [restoreView]);
+
+  // Синхронизируем viewRef — всегда актуальное значение для нативных listeners
+  useEffect(() => { viewRef.current = view; });
 
   // ─── РЕПОРТИНГ ТЕКУЩЕГО ВИДА НАРУЖУ (для сохранения) ────────────────
   useEffect(() => {
@@ -399,7 +404,7 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Нативный wheel-listener — зум к курсору, батчинг за один RAF-кадр
+  // Нативный wheel-listener — синхронный зум к курсору (без батчинга, без RAF)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -412,46 +417,39 @@ export default function TopoCanvas(props: Props) {
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
 
-      // Нормализуем дельту по режиму (px / lines / pages)
+      // Нормализуем: deltaMode 0=px, 1=lines(~18px), 2=pages
       const raw = e.deltaY;
-      const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
+      const norm = e.deltaMode === 1 ? raw * 18 : e.deltaMode === 2 ? raw * 400 : raw;
 
-      const wa = wheelAccRef.current;
-      wa.px = px;
-      wa.py = py;
-      // Накапливаем логарифмическую дельту, ограничиваем чтобы за кадр не улететь
-      wa.acc = Math.max(-300, Math.min(300, wa.acc + delta));
+      // Жёсткий cap: максимум ±80px за одно событие (убирает "прыжки" физ.колеса)
+      const capped = Math.max(-80, Math.min(80, norm));
 
-      // Применяем один раз в следующем кадре (батчинг множества событий за ~16мс)
-      if (wa.rafId !== null) return;
-      wa.rafId = requestAnimationFrame(() => {
-        wa.rafId = null;
-        const d = wa.acc;
-        wa.acc = 0;
-        // factor < 1 → уменьшение, factor > 1 → увеличение
-        // коэффициент 0.001: поворот на 100px ≈ ×1.105 (умеренный шаг)
-        const factor = Math.exp(-d * 0.001);
-        const fpx = wa.px;
-        const fpy = wa.py;
-        setView((v) => {
-          const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
-          if (newScale === v.scale) return v;
-          // Точка под курсором не должна смещаться
-          const wx = (fpx - v.offsetX) / v.scale;
-          const wy = (fpy - v.offsetY) / v.scale;
-          prevScaleOverride.current = newScale;
-          if (onScaleChange) onScaleChange(newScale);
-          return { ...v, scale: newScale, offsetX: fpx - wx * newScale, offsetY: fpy - wy * newScale };
-        });
-      });
+      // factor: 80px → ×1.083 (умеренный, предсказуемый шаг)
+      const factor = Math.pow(0.999, capped);
+
+      // Читаем актуальный view синхронно из ref (не stale closure)
+      const v = viewRef.current;
+      const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
+      if (newScale === v.scale) return;
+
+      // Точка под курсором остаётся на месте
+      const wx = (px - v.offsetX) / v.scale;
+      const wy = (py - v.offsetY) / v.scale;
+      const newView: ViewState = {
+        ...v,
+        scale: newScale,
+        offsetX: px - wx * newScale,
+        offsetY: py - wy * newScale,
+      };
+
+      viewRef.current = newView;
+      prevScaleOverride.current = newScale;
+      if (onScaleChange) onScaleChange(newScale);
+      setView(newView);
     };
 
     el.addEventListener("wheel", handler, { passive: false });
-    return () => {
-      el.removeEventListener("wheel", handler);
-      const wa = wheelAccRef.current;
-      if (wa.rafId !== null) { cancelAnimationFrame(wa.rafId); wa.rafId = null; wa.acc = 0; }
-    };
+    return () => el.removeEventListener("wheel", handler);
   }, [onScaleChange]);
 
   // Флаг: после применения пресета вписать схему в экран
