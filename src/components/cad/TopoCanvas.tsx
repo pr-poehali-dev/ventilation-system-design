@@ -254,13 +254,8 @@ export default function TopoCanvas(props: Props) {
     pivotScreen: { sx: number; sy: number };
   } | null>(null);
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
-  // Инертный зум: velocity затухает, применяется каждый RAF-кадр
-  const wheelAccRef = useRef<{
-    velocity: number;  // логарифмическая скорость зума (затухает)
-    px: number; py: number;
-    rafId: number | null;
-    lastTs: number;
-  }>({ velocity: 0, px: 0, py: 0, rafId: null, lastTs: 0 });
+  // Батчинг wheel-событий: накапливаем за один RAF-кадр, применяем разом
+  const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
@@ -404,7 +399,7 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Нативный wheel-listener — плавный инертный зум без рывков
+  // Нативный wheel-listener — зум к курсору, батчинг за один RAF-кадр
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -417,63 +412,45 @@ export default function TopoCanvas(props: Props) {
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
 
-      // Нормализуем дельту: deltaMode 0=px, 1=lines, 2=pages
+      // Нормализуем дельту по режиму (px / lines / pages)
       const raw = e.deltaY;
-      const delta = e.deltaMode === 1 ? raw * 20 : e.deltaMode === 2 ? raw * 200 : raw;
+      const delta = e.deltaMode === 1 ? raw * 30 : e.deltaMode === 2 ? raw * 300 : raw;
 
       const wa = wheelAccRef.current;
-      // Обновляем точку зума только если курсор значительно сместился (не дёргаем центр)
       wa.px = px;
       wa.py = py;
-      // Добавляем импульс к скорости, ограничиваем максимум за одно событие
-      const impulse = Math.max(-60, Math.min(60, delta)) * 0.0008;
-      wa.velocity = Math.max(-0.3, Math.min(0.3, wa.velocity - impulse));
+      // Накапливаем логарифмическую дельту, ограничиваем чтобы за кадр не улететь
+      wa.acc = Math.max(-300, Math.min(300, wa.acc + delta));
 
-      // Запускаем RAF-цикл если не запущен
+      // Применяем один раз в следующем кадре (батчинг множества событий за ~16мс)
       if (wa.rafId !== null) return;
-
-      const loop = (ts: number) => {
-        const wa2 = wheelAccRef.current;
-        const dt = Math.min(50, ts - (wa2.lastTs || ts)); // мс, не более 50мс
-        wa2.lastTs = ts;
-
-        if (Math.abs(wa2.velocity) < 0.0001) {
-          // Скорость исчерпана — стоп
-          wa2.rafId = null;
-          wa2.velocity = 0;
-          return;
-        }
-
-        // Применяем текущий кадр зума
-        const frameFactor = Math.exp(wa2.velocity * dt * 0.05);
-        const fpx = wa2.px;
-        const fpy = wa2.py;
-
+      wa.rafId = requestAnimationFrame(() => {
+        wa.rafId = null;
+        const d = wa.acc;
+        wa.acc = 0;
+        // factor < 1 → уменьшение, factor > 1 → увеличение
+        // коэффициент 0.001: поворот на 100px ≈ ×1.105 (умеренный шаг)
+        const factor = Math.exp(-d * 0.001);
+        const fpx = wa.px;
+        const fpy = wa.py;
         setView((v) => {
-          const newScale = Math.max(0.0005, Math.min(5000, v.scale * frameFactor));
-          if (Math.abs(newScale - v.scale) < 1e-10) return v;
+          const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
+          if (newScale === v.scale) return v;
+          // Точка под курсором не должна смещаться
           const wx = (fpx - v.offsetX) / v.scale;
           const wy = (fpy - v.offsetY) / v.scale;
           prevScaleOverride.current = newScale;
           if (onScaleChange) onScaleChange(newScale);
           return { ...v, scale: newScale, offsetX: fpx - wx * newScale, offsetY: fpy - wy * newScale };
         });
-
-        // Затухание: ~85% за кадр (мягкое инерционное замедление)
-        wa2.velocity *= Math.pow(0.82, dt / 16);
-
-        wa2.rafId = requestAnimationFrame(loop);
-      };
-
-      wa.lastTs = performance.now();
-      wa.rafId = requestAnimationFrame(loop);
+      });
     };
 
     el.addEventListener("wheel", handler, { passive: false });
     return () => {
       el.removeEventListener("wheel", handler);
       const wa = wheelAccRef.current;
-      if (wa.rafId !== null) { cancelAnimationFrame(wa.rafId); wa.rafId = null; }
+      if (wa.rafId !== null) { cancelAnimationFrame(wa.rafId); wa.rafId = null; wa.acc = 0; }
     };
   }, [onScaleChange]);
 
