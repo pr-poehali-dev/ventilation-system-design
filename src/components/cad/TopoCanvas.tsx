@@ -132,6 +132,14 @@ interface Props {
   onBranchLabelOffset?: (id: string, ox: number, oy: number) => void;
   /** Колбэк: зарегистрировать функцию получения SVG для печати */
   onRegisterGetSvg?: (fn: () => string) => void;
+  /** Режим размещения маркера позиции на схеме (клик = разместить) */
+  positionPlaceMode?: boolean;
+  /** Колбэк: пользователь кликнул на схему в режиме размещения позиции */
+  onPositionPlace?: (wx: number, wy: number) => void;
+  /** Режим привязки ветвей к позиции (F3) — все ветви подсвечиваются */
+  branchBindMode?: boolean;
+  /** Карта branchId → цвет позиции (для подсветки привязанных ветвей в F3) */
+  branchPositionColors?: Map<string, { color: string; bound: boolean }>;
 }
 
 export type FlowDisplayMode =
@@ -171,6 +179,10 @@ export default function TopoCanvas(props: Props) {
     unitsConfig = DEFAULT_UNITS_CONFIG,
     onBranchLabelOffset,
     onRegisterGetSvg,
+    positionPlaceMode = false,
+    onPositionPlace,
+    branchBindMode = false,
+    branchPositionColors,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -610,11 +622,28 @@ export default function TopoCanvas(props: Props) {
     }
 
     const rect = (e.currentTarget as Element).getBoundingClientRect();
+
+    // ─── РЕЖИМ РАЗМЕЩЕНИЯ МАРКЕРА ПОЗИЦИИ ──────────────────────────────
+    if (positionPlaceMode && onPositionPlace && e.button === 0) {
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const w = unprojectToPlane(sx, sy, view, { axis: "z", value: 0 }) ?? unproject2D(sx, sy, view);
+      onPositionPlace(w.x, w.y);
+      e.stopPropagation();
+      return;
+    }
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
     const hitN = hitNode(sx, sy, projNodes);
     const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, branches) : null;
+
+    // ─── РЕЖИМ ПРИВЯЗКИ ВЕТВЕЙ К ПОЗИЦИИ (F3) ──────────────────────────
+    if (branchBindMode && hitB) {
+      onSelectBranch(hitB);
+      e.stopPropagation();
+      return;
+    }
 
     // ─── РЕЖИМ «ОЖИДАНИЯ ПРИВЯЗКИ» (после Ctrl+V/Ctrl+D) — клик на ветвь ─
     if (pendingSymbolTypeId && onPendingSymbolPlace) {
@@ -1110,7 +1139,7 @@ export default function TopoCanvas(props: Props) {
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgRef} width={size.w} height={size.h}
-        style={{ touchAction: "none", visibility: useCanvas ? "hidden" : undefined, pointerEvents: useCanvas ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? -1 : undefined }}
+        style={{ touchAction: "none", visibility: useCanvas ? "hidden" : undefined, pointerEvents: useCanvas ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? -1 : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -1295,12 +1324,25 @@ export default function TopoCanvas(props: Props) {
           const ux = segLen > 0 ? dx / segLen : 0;
           const uy = segLen > 0 ? dy / segLen : 0;
 
+          // ── Подсветка в F3-режиме привязки ────────────────────────────────
+          const posBindInfo = branchPositionColors?.get(b.id);
+
           return (
             <g key={b.id}>
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                   stroke="#f59e0b" strokeWidth={w + 8} strokeLinecap="round" opacity="0.35" />
+              )}
+              {/* Подсветка F3-режима: привязанные ярко, непривязанные тускло */}
+              {branchBindMode && posBindInfo && posBindInfo.bound && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={posBindInfo.color} strokeWidth={w + 7} strokeLinecap="round" opacity="0.55" />
+              )}
+              {branchBindMode && posBindInfo && !posBindInfo.bound && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#888" strokeWidth={w + 3} strokeLinecap="round" opacity="0.15"
+                  strokeDasharray="6,4" />
               )}
               {/* Контурная обводка (рисуется ПОД основной линией, шире на 2*borderW) */}
               {borderW > 0 && (

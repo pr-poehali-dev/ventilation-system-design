@@ -4,7 +4,7 @@ import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
   DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, recalcAll, makeNode, makeBranch,
-  project3D,
+  project3D, unprojectToPlane,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
@@ -3847,33 +3847,23 @@ export default function CadPage() {
 
           {/* Холст топологии */}
           <div className="flex-1 relative"
-            onClick={(e) => {
-              if (!positionPlaceMode) return;
-              const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
-              if (!sel) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              const sx = e.clientX - rect.left;
-              const sy = e.clientY - rect.top;
-              const { scale, offsetX, offsetY } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
-              const wx = (sx - offsetX) / scale;
-              const wy = (offsetY - sy) / scale;   // Y инвертирован: sy = offsetY - wy*scale
-              setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy } : p));
-              setPositionPlaceMode(false);
-            }}
             onMouseMove={(e) => {
               if (!posDragRef.current) return;
               const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
-              const { scale } = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0 };
+              const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
-              const dx = (sx - startSx) / scale;
-              const dy = -(sy - startSy) / scale;   // Y инвертирован
+              // Мировые координаты начальной и текущей точек курсора → дельта
+              const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: 0 });
+              const wCur   = unprojectToPlane(sx, sy,       vs, { axis: "z", value: 0 });
+              if (!wStart || !wCur) return;
+              const dx = wCur.x - wStart.x;
+              const dy = wCur.y - wStart.y;
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy } : p));
             }}
             onMouseUp={() => { posDragRef.current = null; setDraggingPosId(null); }}
-            onMouseLeave={() => { posDragRef.current = null; setDraggingPosId(null); }}
-            style={positionPlaceMode ? { cursor: "crosshair" } : undefined}>
+            onMouseLeave={() => { posDragRef.current = null; setDraggingPosId(null); }}>
             <TopoCanvas
               nodes={nodes}
               branches={branches}
@@ -3987,6 +3977,24 @@ export default function CadPage() {
                 setActiveSide("params");
                 setPendingSymbol(null);
               }}
+              positionPlaceMode={positionPlaceMode}
+              onPositionPlace={(wx, wy) => {
+                const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
+                if (!sel) return;
+                setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy } : p));
+                setPositionPlaceMode(false);
+              }}
+              branchBindMode={posBranchBindMode}
+              branchPositionColors={(() => {
+                if (!posBranchBindMode || !selectedPositionId) return undefined;
+                const pos = positions.find(p => p.id === selectedPositionId);
+                if (!pos) return undefined;
+                const map = new Map<string, { color: string; bound: boolean }>();
+                branches.forEach(b => {
+                  map.set(b.id, { color: pos.color, bound: pos.branchIds.includes(b.id) });
+                });
+                return map;
+              })()}
               onSymbolPlace={(typeId, x, y, branchId) => {
                 if (SQUAD_TYPES.includes(typeId)) {
                   setSquadDialog({ typeId, x, y, branchId });
@@ -4052,33 +4060,8 @@ export default function CadPage() {
               // diameter в настройке — в мм, 1 мм = 3.78 px на 96dpi
               const PX_PER_MM = 3.78;
 
-              // Активная позиция для F3-режима привязки
-              const activePosForBind = posBranchBindMode && selectedPositionId
-                ? positions.find(p => p.id === selectedPositionId) : null;
-
               return (
                 <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
-
-                  {/* ── F3-режим: подсветка ВСЕХ ветвей — привязанные цветом, непривязанные серым ── */}
-                  {activePosForBind && branches.map((br) => {
-                    const fn = nodes.find(n => n.id === br.fromId);
-                    const tn = nodes.find(n => n.id === br.toId);
-                    if (!fn || !tn) return null;
-                    const p1 = proj(fn.x, fn.y, fn.z);
-                    const p2 = proj(tn.x, tn.y, tn.z);
-                    const isBound = activePosForBind.branchIds.includes(br.id);
-                    return (
-                      <line key={`bind-${br.id}`}
-                        x1={p1.sx} y1={p1.sy} x2={p2.sx} y2={p2.sy}
-                        stroke={isBound ? activePosForBind.color : "#888"}
-                        strokeWidth={isBound ? 7 : 4}
-                        opacity={isBound ? 0.55 : 0.18}
-                        strokeLinecap="round"
-                        strokeDasharray={isBound ? undefined : "6,4"}
-                        style={{ pointerEvents: "none" }}
-                      />
-                    );
-                  })}
 
                   {/* ── Выноски: пунктир от центра маркера к центру привязанных ветвей ── */}
                   {showPosLeaders && positions.map((pos) => {
