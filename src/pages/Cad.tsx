@@ -3950,11 +3950,26 @@ export default function CadPage() {
               // Режим рисования выноски: клик = зафиксировать конец (с привязкой к ветви если snap)
               if (!leaderDrawMode) return;
               if (leaderSnapBranch) {
-                // Привязываем к ветви
+                // Привязываем выноску к ветви
                 const { branchId, t } = leaderSnapBranch;
+                // Если позиция ещё не размещена — авто-ставим рядом с узлом ветви
+                const drawPos = positions.find(p => p.id === leaderDrawMode);
+                let autoCoords: { x: number; y: number; z: number; placed: true } | null = null;
+                if (drawPos && !drawPos.placed) {
+                  const br = branches.find(b => b.id === branchId);
+                  const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                  const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                  const refN = fromN && toN
+                    ? (fromN.z >= toN.z ? fromN : toN)
+                    : (fromN ?? toN);
+                  if (refN) {
+                    const OFFSET = 50;
+                    autoCoords = { x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
+                  }
+                }
                 setPositions(prev => prev.map(p =>
                   p.id === leaderDrawMode
-                    ? { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null }
+                    ? { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null, ...(autoCoords ?? {}) }
                     : p
                 ));
               } else {
@@ -4024,28 +4039,26 @@ export default function CadPage() {
               onSelectBranch={(id) => {
                 if (posBranchBindMode && selectedPositionId && id) {
                   // Режим F3: привязываем/отвязываем ветвь к позиции
+                  // Вычисляем авто-координаты ДО setPositions (избегаем stale closure)
+                  const br = branches.find(b => b.id === id);
+                  const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                  const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                  // Берём узел с наибольшей Z (меньше по глубине = ближе к поверхности)
+                  const refN = fromN && toN
+                    ? (fromN.z >= toN.z ? fromN : toN)
+                    : (fromN ?? toN);
+
                   setPositions(prev => prev.map(p => {
                     if (p.id !== selectedPositionId) return p;
                     const has = p.branchIds.includes(id);
                     if (has) {
                       return { ...p, branchIds: p.branchIds.filter(x => x !== id) };
                     }
-                    // Добавляем ветвь
                     const newBranchIds = [...p.branchIds, id];
-                    // Если позиция ещё не размещена — авто-ставим рядом с узлом ветви
-                    if (!p.placed) {
-                      const br = branches.find(b => b.id === id);
-                      const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
-                      const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
-                      // Берём узел с наибольшей Z (ближе к поверхности = более заметный)
-                      const refN = fromN && toN
-                        ? (fromN.z >= toN.z ? fromN : toN)
-                        : (fromN ?? toN);
-                      if (refN) {
-                        // Смещаем на ~50м от узла по XY, берём z узла
-                        const OFFSET = 50;
-                        return { ...p, branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
-                      }
+                    // Авто-размещение если позиция ещё не размещена
+                    if (!p.placed && refN) {
+                      const OFFSET = 50;
+                      return { ...p, branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
                     }
                     return { ...p, branchIds: newBranchIds };
                   }));
