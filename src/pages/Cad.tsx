@@ -3875,22 +3875,39 @@ export default function CadPage() {
           {/* Холст топологии */}
           <div className="flex-1 relative"
             onMouseMove={(e) => {
-              if (!posDragRef.current) return;
-              const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
-              // Мировые координаты начальной и текущей точек курсора → дельта
+              // Drag конца выноски
+              if (leaderDragRef.current) {
+                const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
+                if (!w) return;
+                setPositions(prev => prev.map(p =>
+                  p.id === leaderDragRef.current!.posId
+                    ? { ...p, leaderEndX: w.x, leaderEndY: w.y }
+                    : p
+                ));
+                return;
+              }
+              // Drag маркера позиции
+              if (!posDragRef.current) return;
+              const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
               const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: 0 });
-              const wCur   = unprojectToPlane(sx, sy,       vs, { axis: "z", value: 0 });
+              const wCur   = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
               if (!wStart || !wCur) return;
               const dx = wCur.x - wStart.x;
               const dy = wCur.y - wStart.y;
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy } : p));
             }}
-            onMouseUp={() => { posDragRef.current = null; setDraggingPosId(null); }}
-            onMouseLeave={() => { posDragRef.current = null; setDraggingPosId(null); }}>
+            onMouseUp={() => {
+              posDragRef.current = null; setDraggingPosId(null);
+              leaderDragRef.current = null; setDraggingLeaderPosId(null);
+            }}
+            onMouseLeave={() => {
+              posDragRef.current = null; setDraggingPosId(null);
+              leaderDragRef.current = null; setDraggingLeaderPosId(null);
+            }}>
             <TopoCanvas
               nodes={nodes}
               branches={branches}
@@ -4084,22 +4101,7 @@ export default function CadPage() {
 
               return (
                 <svg
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", cursor: draggingLeaderPosId ? "crosshair" : undefined }}
-                  onMouseMove={(e) => {
-                    if (!leaderDragRef.current) return;
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const sx = e.clientX - rect.left;
-                    const sy = e.clientY - rect.top;
-                    const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
-                    if (!w) return;
-                    setPositions(prev => prev.map(p =>
-                      p.id === leaderDragRef.current!.posId
-                        ? { ...p, leaderEndX: w.x, leaderEndY: w.y }
-                        : p
-                    ));
-                  }}
-                  onMouseUp={() => { leaderDragRef.current = null; setDraggingLeaderPosId(null); }}
-                  onMouseLeave={() => { leaderDragRef.current = null; setDraggingLeaderPosId(null); }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
                 >
 
                   {/* ── Выноски: одиночная пунктирная линия от маркера до leaderEnd ── */}
