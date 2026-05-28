@@ -3934,9 +3934,10 @@ export default function CadPage() {
                 ));
                 return;
               }
-              // Drag маркера позиции — проецируем на плоскость z=pos.z
+              // Drag маркера позиции — только если мышь реально сдвинулась (порог 4px)
               if (!posDragRef.current) return;
               const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
+              if (Math.hypot(sx - startSx, sy - startSy) < 4) return;
               const dragPos = positions.find(p => p.id === id);
               const pz = dragPos?.z ?? 0;
               const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: pz });
@@ -3947,8 +3948,12 @@ export default function CadPage() {
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy, placed: true } : p));
             }}
             onClick={(e) => {
-              // Режим рисования выноски: клик = зафиксировать конец (с привязкой к ветви если snap)
-              if (!leaderDrawMode) return;
+              // Клик на пустое место — снять выбор позиции
+              if (!leaderDrawMode) {
+                // e.target — сам div-контейнер или TopoCanvas, не маркер позиции
+                setSelectedPositionId(null);
+                return;
+              }
               if (leaderSnapBranch) {
                 // Привязываем выноску к ветви
                 const { branchId, t } = leaderSnapBranch;
@@ -4357,39 +4362,44 @@ export default function CadPage() {
                       <g
                         key={pos.id}
                         transform={`translate(${sx}, ${sy})`}
-                        style={{ pointerEvents: "all", cursor: draggingPosId === pos.id ? "grabbing" : "default" }}
-                        onClick={(e) => {
-                          if (draggingPosId === pos.id) return;
-                          e.stopPropagation();
-                          // Одиночный клик — только выбор, без открытия свойств
-                          setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id);
-                          // Сбрасываем режим рисования выноски если был активен
-                          if (leaderDrawMode) { setLeaderDrawMode(null); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          // Двойной клик — выбор + открытие свойств в левой панели
-                          setSelectedPositionId(pos.id);
-                          setActiveSide("positions");
-                          setLeftPanelOpen(true);
-                          setSelectedNodeId(null);
-                          setSelectedBranchId(null);
-                        }}
+                        style={{ pointerEvents: "all", cursor: draggingPosId === pos.id ? "grabbing" : isSelected ? "grab" : "pointer" }}
                         onMouseDown={(e) => {
                           e.stopPropagation();
-                          setSelectedPositionId(pos.id);
-                          setDraggingPosId(pos.id);
                           if (leaderDrawMode) { setLeaderDrawMode(null); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }
                           const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                           if (!containerRect) return;
+
+                          const startSx = e.clientX - containerRect.left;
+                          const startSy = e.clientY - containerRect.top;
+
+                          // Детектируем двойной клик вручную (надёжнее браузерного dblclick)
+                          const now = Date.now();
+                          const lastClick = (e.currentTarget as SVGGElement & { _lastClick?: number })._lastClick ?? 0;
+                          const isDouble = now - lastClick < 350;
+                          (e.currentTarget as SVGGElement & { _lastClick?: number })._lastClick = now;
+
+                          if (isDouble) {
+                            // Двойной клик — открываем настройки позиции в левой панели
+                            setSelectedPositionId(pos.id);
+                            setActiveSide("positions");
+                            setLeftPanelOpen(true);
+                            setSelectedNodeId(null);
+                            setSelectedBranchId(null);
+                            return;
+                          }
+
+                          // Одиночный клик — выбор + готовность к перетаскиванию
+                          setSelectedPositionId(pos.id);
+                          setDraggingPosId(pos.id);
                           posDragRef.current = {
                             id: pos.id,
-                            startSx: e.clientX - containerRect.left,
-                            startSy: e.clientY - containerRect.top,
+                            startSx,
+                            startSy,
                             startWx: pos.x,
                             startWy: pos.y,
                           };
                         }}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {isReverse && (
                           <>
