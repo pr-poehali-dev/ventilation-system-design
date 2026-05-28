@@ -29,6 +29,9 @@ export interface Position {
   // Конец выноски (мировые координаты). Если null — выноска не задана.
   leaderEndX: number | null;
   leaderEndY: number | null;
+  // Привязка конца выноски к ветви (как УО): branchId + t (0..1 вдоль ветви)
+  leaderBranchId: string | null;
+  leaderT: number | null;
 }
 
 export function makePosition(partial?: Partial<Position>): Position {
@@ -57,6 +60,8 @@ export function makePosition(partial?: Partial<Position>): Position {
     comment: "",
     leaderEndX: null,
     leaderEndY: null,
+    leaderBranchId: null,
+    leaderT: null,
     ...partial,
   };
 }

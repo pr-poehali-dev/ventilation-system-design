@@ -602,6 +602,8 @@ export default function CadPage() {
   const [draggingLeaderPosId, setDraggingLeaderPosId] = useState<string | null>(null);
   // Режим рисования выноски: клик на схему = установить конец выноски
   const [leaderDrawMode, setLeaderDrawMode] = useState<string | null>(null); // posId или null
+  // Snap к ветви в режиме рисования выноски
+  const [leaderSnapBranch, setLeaderSnapBranch] = useState<{ branchId: string; t: number; sx: number; sy: number } | null>(null);
   // Курсор мыши в экранных координатах для предпросмотра выноски
   const [leaderCursorScreen, setLeaderCursorScreen] = useState<{ sx: number; sy: number } | null>(null);
   // Режим привязки ветвей к позиции (F3)
@@ -1477,23 +1479,25 @@ export default function CadPage() {
       // F6, F9 — всегда работают
       if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
       if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
-      // И/ИИ (рус.) / B/BB (англ.) — добавить выноску (режим рисования) или убрать
+      // И/B — добавить выноску (режим рисования) или убрать
       if ((e.key === "и" || e.key === "И" || e.key === "b" || e.key === "B") && !isEditing) {
         e.preventDefault();
         if (selectedPositionId) {
           const pos = positions.find(p => p.id === selectedPositionId);
           if (pos) {
-            if (pos.leaderEndX != null) {
+            const hasLeader = pos.leaderEndX != null || pos.leaderBranchId != null;
+            if (hasLeader) {
               // Уже есть выноска — убираем
               setPositions(prev => prev.map(p =>
                 p.id === selectedPositionId
-                  ? { ...p, leaderEndX: null, leaderEndY: null }
+                  ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null }
                   : p
               ));
             } else {
               // Нет выноски — запускаем режим рисования
               setLeaderDrawMode(selectedPositionId);
               setLeaderCursorScreen(null);
+              setLeaderSnapBranch(null);
             }
           }
         }
@@ -1543,6 +1547,7 @@ export default function CadPage() {
         if (leaderDrawMode) {
           setLeaderDrawMode(null);
           setLeaderCursorScreen(null);
+          setLeaderSnapBranch(null);
           return;
         }
         if (pendingSymbol) {
@@ -3671,8 +3676,8 @@ export default function CadPage() {
                 showLeaders={showPosLeaders}
                 onToggleLeaders={() => setShowPosLeaders((v) => !v)}
                 leaderDrawMode={leaderDrawMode}
-                onStartLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderCursorScreen(null); }}
-                onRemoveLeader={(posId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, leaderEndX: null, leaderEndY: null } : p))}
+                onStartLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }}
+                onRemoveLeader={(posId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null } : p))}
               />
             )}
           </div>
@@ -3885,9 +3890,36 @@ export default function CadPage() {
               const rect = e.currentTarget.getBoundingClientRect();
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
-              // Режим рисования выноски — обновляем экранную позицию курсора для предпросмотра
+              // Режим рисования выноски — snap к ближайшей ветви
               if (leaderDrawMode) {
                 setLeaderCursorScreen({ sx, sy });
+                // Ищем ближайшую ветвь в радиусе 14px (как hitBranchR в TopoCanvas)
+                const SNAP_R = 14;
+                let bestBranchId: string | null = null;
+                let bestT = 0.5;
+                let bestDist = SNAP_R;
+                let bestSx = sx, bestSy = sy;
+                for (const b of branches) {
+                  const fromN = nodes.find(n => n.id === b.fromId);
+                  const toN   = nodes.find(n => n.id === b.toId);
+                  if (!fromN || !toN) continue;
+                  const f = project3D({ x: fromN.x, y: fromN.y, z: fromN.z * (zScale ?? 1) },
+                    { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation });
+                  const t2 = project3D({ x: toN.x, y: toN.y, z: toN.z * (zScale ?? 1) },
+                    { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation });
+                  const C = t2.sx - f.sx, D = t2.sy - f.sy;
+                  const A = sx - f.sx,   B = sy - f.sy;
+                  const lenSq = C * C + D * D;
+                  if (lenSq < 1) continue;
+                  const tt = Math.max(0.02, Math.min(0.98, (A * C + B * D) / lenSq));
+                  const px = f.sx + C * tt, py = f.sy + D * tt;
+                  const dist = Math.hypot(sx - px, sy - py);
+                  if (dist < bestDist) {
+                    bestDist = dist; bestBranchId = b.id; bestT = tt;
+                    bestSx = px; bestSy = py;
+                  }
+                }
+                setLeaderSnapBranch(bestBranchId ? { branchId: bestBranchId, t: bestT, sx: bestSx, sy: bestSy } : null);
                 return;
               }
               // Drag конца выноски — проецируем на плоскость z=pos.z
@@ -3916,22 +3948,36 @@ export default function CadPage() {
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy } : p));
             }}
             onClick={(e) => {
-              // Режим рисования выноски: клик на пустое место = зафиксировать конец
+              // Режим рисования выноски: клик = зафиксировать конец (с привязкой к ветви если snap)
               if (!leaderDrawMode) return;
-              const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
-              const rect = e.currentTarget.getBoundingClientRect();
-              const sx = e.clientX - rect.left;
-              const sy = e.clientY - rect.top;
-              const drawPos = positions.find(p => p.id === leaderDrawMode);
-              const pz = drawPos?.z ?? 0;
-              const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
-              if (w) {
+              if (leaderSnapBranch) {
+                // Привязываем к ветви
+                const { branchId, t } = leaderSnapBranch;
                 setPositions(prev => prev.map(p =>
-                  p.id === leaderDrawMode ? { ...p, leaderEndX: w.x, leaderEndY: w.y } : p
+                  p.id === leaderDrawMode
+                    ? { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null }
+                    : p
                 ));
+              } else {
+                // Свободная точка
+                const vs2 = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+                const rect = e.currentTarget.getBoundingClientRect();
+                const sx2 = e.clientX - rect.left;
+                const sy2 = e.clientY - rect.top;
+                const drawPos = positions.find(p => p.id === leaderDrawMode);
+                const pz = drawPos?.z ?? 0;
+                const w = unprojectToPlane(sx2, sy2, vs2, { axis: "z", value: pz });
+                if (w) {
+                  setPositions(prev => prev.map(p =>
+                    p.id === leaderDrawMode
+                      ? { ...p, leaderEndX: w.x, leaderEndY: w.y, leaderBranchId: null, leaderT: null }
+                      : p
+                  ));
+                }
               }
               setLeaderDrawMode(null);
               setLeaderCursorScreen(null);
+              setLeaderSnapBranch(null);
             }}
             onMouseUp={() => {
               posDragRef.current = null; setDraggingPosId(null);
@@ -3941,6 +3987,7 @@ export default function CadPage() {
               posDragRef.current = null; setDraggingPosId(null);
               leaderDragRef.current = null; setDraggingLeaderPosId(null);
               setLeaderCursorScreen(null);
+              setLeaderSnapBranch(null);
             }}>
             <TopoCanvas
               nodes={nodes}
@@ -4127,38 +4174,81 @@ export default function CadPage() {
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
               // zScale применяем к z-оси, как это делает TopoCanvas
               const proj = (wx: number, wy: number, wz = 0) => {
-                const p = project3D(
-                  { x: wx, y: wy, z: wz * (zScale ?? 1) },
-                  { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation }
-                );
+                const p = project3D({ x: wx, y: wy, z: wz * (zScale ?? 1) }, projOpts);
                 return { sx: p.sx, sy: p.sy };
               };
+              // Проекция узла с zScale
+              const projNode = (n: { x: number; y: number; z: number }) =>
+                project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, projOpts);
               const PX_PER_MM = 3.78;
+
+              // Вспомогательная: экранные координаты конца выноски по привязке к ветви
+              const leaderBranchEnd = (branchId: string, t: number): { sx: number; sy: number } | null => {
+                const br = branches.find(b => b.id === branchId);
+                const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                if (!fromN || !toN) return null;
+                const fP = projNode(fromN);
+                const tP = projNode(toN);
+                return { sx: fP.sx + (tP.sx - fP.sx) * t, sy: fP.sy + (tP.sy - fP.sy) * t };
+              };
 
               return (
                 <svg
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
                 >
+                  {/* ── Подсветка ветви под snap (режим рисования) ── */}
+                  {leaderDrawMode && leaderSnapBranch && (() => {
+                    const br = branches.find(b => b.id === leaderSnapBranch.branchId);
+                    const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                    const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                    if (!fromN || !toN) return null;
+                    const fP = projNode(fromN), tP = projNode(toN);
+                    const pos = positions.find(p => p.id === leaderDrawMode);
+                    return (
+                      <g style={{ pointerEvents: "none" }}>
+                        <line x1={fP.sx} y1={fP.sy} x2={tP.sx} y2={tP.sy}
+                          stroke={pos?.color ?? "#2563eb"} strokeWidth={4} opacity={0.35}
+                          strokeLinecap="round" />
+                        <circle cx={leaderSnapBranch.sx} cy={leaderSnapBranch.sy} r={7}
+                          fill={pos?.color ?? "#2563eb"} opacity={0.85} />
+                      </g>
+                    );
+                  })()}
 
-                  {/* ── Выноски: пунктир от края маркера до leaderEnd ── */}
+                  {/* ── Выноски ── */}
                   {positions.map((pos) => {
                     const pz = pos.z ?? 0;
                     const pm = proj(pos.x, pos.y, pz);
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
                     const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
-
-                    // Предпросмотр: если этот pos в режиме рисования — тянем к курсору
                     const isDrawing = leaderDrawMode === pos.id;
+
+                    // Вычисляем конец выноски
                     let endSx: number | null = null, endSy: number | null = null;
-                    if (isDrawing && leaderCursorScreen) {
-                      endSx = leaderCursorScreen.sx;
-                      endSy = leaderCursorScreen.sy;
+                    let isBranchAttached = false;
+
+                    if (isDrawing) {
+                      // В режиме рисования — snap к ветви или курсор
+                      if (leaderSnapBranch) {
+                        endSx = leaderSnapBranch.sx; endSy = leaderSnapBranch.sy;
+                        isBranchAttached = true;
+                      } else if (leaderCursorScreen) {
+                        endSx = leaderCursorScreen.sx; endSy = leaderCursorScreen.sy;
+                      }
+                    } else if (pos.leaderBranchId && pos.leaderT != null) {
+                      // Привязан к ветви — вычисляем через проекцию
+                      const ep = leaderBranchEnd(pos.leaderBranchId, pos.leaderT);
+                      if (ep) { endSx = ep.sx; endSy = ep.sy; isBranchAttached = true; }
                     } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
+                      // Свободная точка
                       const pe = proj(pos.leaderEndX, pos.leaderEndY, pz);
                       endSx = pe.sx; endSy = pe.sy;
                     }
+
                     if (endSx == null || endSy == null) return null;
 
                     const dx = endSx - pm.sx, dy = endSy - pm.sy;
@@ -4170,6 +4260,7 @@ export default function CadPage() {
 
                     return (
                       <g key={`leader-${pos.id}`}>
+                        {/* Пунктирная линия */}
                         <line
                           x1={x1} y1={y1} x2={endSx} y2={endSy}
                           stroke={pos.color} strokeWidth={lw}
@@ -4177,8 +4268,14 @@ export default function CadPage() {
                           opacity={isDrawing ? 0.6 : 0.9}
                           style={{ pointerEvents: "none" }}
                         />
-                        {/* Ручка конца выноски (только когда зафиксирована) */}
-                        {!isDrawing && (
+                        {/* Точка привязки к ветви */}
+                        {isBranchAttached && !isDrawing && (
+                          <circle cx={endSx} cy={endSy} r={4}
+                            fill={pos.color} stroke="#fff" strokeWidth={1.5}
+                            style={{ pointerEvents: "none" }} />
+                        )}
+                        {/* Ручка для перемещения (только когда не привязана к ветви) */}
+                        {!isBranchAttached && !isDrawing && (
                           <circle
                             cx={endSx} cy={endSy} r={isDragging ? 7 : 5}
                             fill={isDragging ? "#fff" : pos.color}
@@ -4193,9 +4290,27 @@ export default function CadPage() {
                         )}
                         {/* Курсор при предпросмотре */}
                         {isDrawing && (
-                          <circle cx={endSx} cy={endSy} r={6}
+                          <circle cx={endSx} cy={endSy} r={isBranchAttached ? 8 : 5}
+                            fill={isBranchAttached ? pos.color : "none"}
+                            stroke={pos.color} strokeWidth={1.5}
+                            opacity={isBranchAttached ? 0.9 : 0.7}
+                            strokeDasharray={isBranchAttached ? undefined : "3,2"}
+                            style={{ pointerEvents: "none" }} />
+                        )}
+                        {/* Кнопка переместить для привязанных к ветви */}
+                        {isBranchAttached && !isDrawing && pos.id === selectedPositionId && (
+                          <circle cx={endSx} cy={endSy} r={8}
                             fill="none" stroke={pos.color} strokeWidth={1.5}
-                            strokeDasharray="3,2" style={{ pointerEvents: "none" }} />
+                            strokeDasharray="4,2"
+                            style={{ pointerEvents: "all", cursor: "crosshair" }}
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              // Запускаем режим перерисовки выноски
+                              setLeaderDrawMode(pos.id);
+                              setLeaderCursorScreen(null);
+                              setLeaderSnapBranch(null);
+                            }}
+                          />
                         )}
                       </g>
                     );

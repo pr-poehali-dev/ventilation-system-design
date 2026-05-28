@@ -397,14 +397,40 @@ export default function PositionsPanel({
               /* Активен режим рисования */
               <div style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "4px 8px" }}>
                 <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 600, marginBottom: 2 }}>
-                  Кликните на схеме — конец выноски
+                  Кликните на ветви или схеме
                 </div>
-                <div style={{ fontSize: 10, color: "#64748b" }}>Esc — отмена</div>
+                <div style={{ fontSize: 10, color: "#64748b" }}>Snap к ветви — автоматически  ·  Esc — отмена</div>
               </div>
-            ) : selected.leaderEndX != null ? (
-              /* Выноска есть */
+            ) : selected.leaderBranchId ? (
+              /* Выноска привязана к ветви */
               <div className="flex items-center gap-2">
                 <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 1 }}>Привязана к ветви</div>
+                  <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 600 }}>
+                    {(() => {
+                      const b = branches.find(br => br.id === selected.leaderBranchId);
+                      return b ? `${b.id}. ${b.type || "Ветвь"}` : selected.leaderBranchId;
+                    })()}
+                  </div>
+                </div>
+                <button
+                  title="Переместить выноску"
+                  onClick={() => onStartLeaderDraw?.(selected.id)}
+                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#2563eb", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+                  <Icon name="Move" size={11} />
+                </button>
+                <button
+                  title="Удалить выноску"
+                  onClick={() => onRemoveLeader?.(selected.id)}
+                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#dc2626", border: "1px solid #fca5a5", background: "#fff5f5" }}>
+                  <Icon name="X" size={11} />
+                </button>
+              </div>
+            ) : selected.leaderEndX != null ? (
+              /* Выноска — свободная точка */
+              <div className="flex items-center gap-2">
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, color: "#64748b", marginBottom: 1 }}>Свободная точка</div>
                   <div style={{ fontSize: 11, color: "#555" }}>
                     X={Math.round(selected.leaderEndX)} Y={Math.round(selected.leaderEndY ?? 0)} м
                   </div>
