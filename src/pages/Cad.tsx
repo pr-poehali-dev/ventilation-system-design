@@ -3715,18 +3715,18 @@ export default function CadPage() {
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
-            {/* ── Направление потока ── */}
-            <span className="text-[11px] text-gray-700" title="Способ показа направления воздушного потока">Поток:</span>
-            <div className="flex border border-gray-300 rounded overflow-hidden">
-              <FlowBtn label="Анимация" active={flowDisplay === "flow"}
-                onClick={() => setFlowDisplay("flow")} hint="Бегущий пунктир в направлении потока" />
-              <FlowBtn label="Стрелки" active={flowDisplay === "chevrons"}
-                onClick={() => setFlowDisplay("chevrons")} hint="Шевроны вдоль ветви" />
-              <FlowBtn label="Оба" active={flowDisplay === "both"}
-                onClick={() => setFlowDisplay("both")} hint="Анимация + шевроны" />
-              <FlowBtn label="Откл" active={flowDisplay === "off"}
-                onClick={() => setFlowDisplay("off")} hint="Без индикации направления (по умолчанию)" />
-            </div>
+            {/* ── Анимация потока (toggle) ── */}
+            <button
+              onClick={() => setFlowDisplay(d => d === "off" ? "flow" : "off")}
+              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
+              style={{
+                background: flowDisplay !== "off" ? "#2563eb" : "white",
+                color: flowDisplay !== "off" ? "white" : "#1f1f1f",
+                border: "1px solid " + (flowDisplay !== "off" ? "#1d4ed8" : "#d0d0d0"),
+              }}
+              title="Анимация движения воздуха — вкл/откл">
+              <Icon name="Wind" size={11} /> Анимация
+            </button>
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 

@@ -404,7 +404,10 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Нативный wheel-listener — синхронный зум к курсору (без батчинга, без RAF)
+  // Нативный wheel-listener:
+  //   Ctrl+колесо       → зум к курсору
+  //   Shift+колесо      → панорама по горизонтали
+  //   Обычное колесо    → панорама по вертикали
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -417,40 +420,49 @@ export default function TopoCanvas(props: Props) {
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
 
-      // Нормализуем: deltaMode 0=px, 1=lines(~18px), 2=pages
-      const raw = e.deltaY;
-      const norm = e.deltaMode === 1 ? raw * 18 : e.deltaMode === 2 ? raw * 400 : raw;
+      // Нормализуем дельту: deltaMode 0=px, 1=lines, 2=pages
+      const rawY = e.deltaY;
+      const rawX = e.deltaX;
+      const normY = e.deltaMode === 1 ? rawY * 18 : e.deltaMode === 2 ? rawY * 400 : rawY;
+      const normX = e.deltaMode === 1 ? rawX * 18 : e.deltaMode === 2 ? rawX * 400 : rawX;
 
-      // Жёсткий cap: максимум ±80px за одно событие (убирает "прыжки" физ.колеса)
-      const capped = Math.max(-80, Math.min(80, norm));
-
-      // factor: 80px → ×1.083 (умеренный, предсказуемый шаг)
-      const factor = Math.pow(0.999, capped);
-
-      // Читаем актуальный view синхронно из ref (не stale closure)
       const v = viewRef.current;
-      const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
-      if (newScale === v.scale) return;
 
-      // Точка под курсором остаётся на месте
-      const wx = (px - v.offsetX) / v.scale;
-      const wy = (py - v.offsetY) / v.scale;
-      const newView: ViewState = {
-        ...v,
-        scale: newScale,
-        offsetX: px - wx * newScale,
-        offsetY: py - wy * newScale,
-      };
-
-      viewRef.current = newView;
-      // НЕ вызываем onScaleChange — это создаёт петлю: wheel→onScaleChange→scaleOverride→setView→двойной зум
-      // Масштаб в тулбаре обновляется через onViewStateChange (savedViewState)
-      setView(newView);
+      if (e.ctrlKey || e.metaKey) {
+        // ── ЗУМ К КУРСОРУ ────────────────────────────────────────────
+        const capped = Math.max(-80, Math.min(80, normY));
+        const factor = Math.pow(0.999, capped);
+        const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
+        if (newScale === v.scale) return;
+        const wx = (px - v.offsetX) / v.scale;
+        const wy = (py - v.offsetY) / v.scale;
+        const newView: ViewState = {
+          ...v,
+          scale: newScale,
+          offsetX: px - wx * newScale,
+          offsetY: py - wy * newScale,
+        };
+        viewRef.current = newView;
+        setView(newView);
+      } else if (e.shiftKey) {
+        // ── ПАНОРАМА ПО ГОРИЗОНТАЛИ (Shift+колесо) ───────────────────
+        const pan = Math.max(-120, Math.min(120, normY + normX));
+        const newView: ViewState = { ...v, offsetX: v.offsetX - pan };
+        viewRef.current = newView;
+        setView(newView);
+      } else {
+        // ── ПАНОРАМА ПО ВЕРТИКАЛИ (обычное колесо) ───────────────────
+        const panY = Math.max(-120, Math.min(120, normY));
+        const panX = Math.max(-120, Math.min(120, normX));
+        const newView: ViewState = { ...v, offsetX: v.offsetX - panX, offsetY: v.offsetY - panY };
+        viewRef.current = newView;
+        setView(newView);
+      }
     };
 
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
-  }, [onScaleChange]);
+  }, []);
 
   // Флаг: после применения пресета вписать схему в экран
   const fitAfterPresetRef = useRef(false);
