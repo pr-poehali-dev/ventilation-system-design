@@ -432,7 +432,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     void ux; void uy;
   }
 
-  // ─── УЗЛЫ ─────────────────────────────────────────────────────────────────
+  // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {
     const nodesSorted = [...projNodes].sort((a, b) => a.depth - b.depth);
     for (const pn of nodesSorted) {
@@ -440,39 +440,59 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (n.visible === false) continue;
 
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
+      const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      const r = isSel ? 7 : 5;
+      // Размеры идентичны SVG: r=4 выделен, r=2.5 обычный
+      const r = isSel ? 4 : 2.5;
+      const color = isAtm ? "#7dd3fc" : "#c8a882";
+      const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
 
       ctx.save();
 
+      // Кольцо выделения
       if (isSel) {
         ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4, 0, Math.PI * 2);
-        ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 1.5;
+        ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
         ctx.setLineDash([3, 2]); ctx.stroke();
+        ctx.setLineDash([]);
       }
 
+      // Основной круг
       ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r, 0, Math.PI * 2);
-      if (isAtm) {
-        ctx.fillStyle = "#22c55e";
-        ctx.strokeStyle = "#15803d";
-      } else {
-        ctx.fillStyle = isSel ? "#2563eb" : "white";
-        ctx.strokeStyle = isSel ? "#1d4ed8" : "#374151";
-      }
+      ctx.fillStyle = color;
+      ctx.strokeStyle = isSel ? ringColor : "#1f2937";
       ctx.lineWidth = isSel ? 2 : 1;
-      ctx.setLineDash([]);
       ctx.fill(); ctx.stroke();
 
-      // Номер узла при достаточном зуме
-      if (sc > 0.12 && (n.number || n.name)) {
-        const label = n.number || n.name;
-        ctx.font = `500 8px "Segoe UI",sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "bottom";
-        ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.lineJoin = "round";
-        ctx.strokeText(label, pn.sx, pn.sy - r - 1);
-        ctx.fillStyle = "#111827";
-        ctx.fillText(label, pn.sx, pn.sy - r - 1);
+      // Внутреннее кольцо для atmosphereLink (как SVG)
+      if (isAtm) {
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, Math.max(1.5, r * 0.55), 0, Math.PI * 2);
+        ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 1]); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Метки узла (как SVG: смещение +8,-8, fontSize=9)
+      if (sc > 0.08) {
+        const ic = infoConfig;
+        const nodeOpacity = Math.min(1, (sc - 0.08) / 0.12);
+        const nlines: string[] = [];
+        if (!ic) {
+          if (n.name) nlines.push(n.name);
+        } else {
+          if (ic.nodeNumber && n.number) nlines.push(`${n.number}`);
+        }
+        if (nlines.length > 0) {
+          ctx.font = `500 9px "Segoe UI",sans-serif`;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+          ctx.globalAlpha = nodeOpacity;
+          ctx.fillStyle = "#6b7280";
+          nlines.forEach((ln, li) => {
+            ctx.fillText(ln, pn.sx + 8, pn.sy - 8 + (li + 1) * 11);
+          });
+          ctx.globalAlpha = 1;
+        }
       }
 
       ctx.restore();

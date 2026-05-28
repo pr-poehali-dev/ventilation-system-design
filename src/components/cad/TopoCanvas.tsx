@@ -254,8 +254,13 @@ export default function TopoCanvas(props: Props) {
     pivotScreen: { sx: number; sy: number };
   } | null>(null);
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
-  // Накопитель для плавного зума колесом (RAF-батчинг)
-  const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
+  // Инертный зум: velocity затухает, применяется каждый RAF-кадр
+  const wheelAccRef = useRef<{
+    velocity: number;  // логарифмическая скорость зума (затухает)
+    px: number; py: number;
+    rafId: number | null;
+    lastTs: number;
+  }>({ velocity: 0, px: 0, py: 0, rafId: null, lastTs: 0 });
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
@@ -399,10 +404,11 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Нативный wheel-listener — вся логика зума здесь (React onWheel пассивен в некоторых браузерах)
+  // Нативный wheel-listener — плавный инертный зум без рывков
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
     const handler = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -410,26 +416,41 @@ export default function TopoCanvas(props: Props) {
       const rect = el.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
+
+      // Нормализуем дельту: deltaMode 0=px, 1=lines, 2=pages
       const raw = e.deltaY;
       const delta = e.deltaMode === 1 ? raw * 20 : e.deltaMode === 2 ? raw * 200 : raw;
 
       const wa = wheelAccRef.current;
+      // Обновляем точку зума только если курсор значительно сместился (не дёргаем центр)
       wa.px = px;
       wa.py = py;
-      wa.acc = Math.max(-250, Math.min(250, wa.acc + delta));
+      // Добавляем импульс к скорости, ограничиваем максимум за одно событие
+      const impulse = Math.max(-60, Math.min(60, delta)) * 0.0008;
+      wa.velocity = Math.max(-0.3, Math.min(0.3, wa.velocity - impulse));
 
+      // Запускаем RAF-цикл если не запущен
       if (wa.rafId !== null) return;
 
-      wa.rafId = requestAnimationFrame(() => {
-        wa.rafId = null;
-        const accDelta = wa.acc;
-        wa.acc = 0;
-        const factor = Math.exp(-accDelta * 0.0008);
-        const fpx = wa.px;
-        const fpy = wa.py;
+      const loop = (ts: number) => {
+        const wa2 = wheelAccRef.current;
+        const dt = Math.min(50, ts - (wa2.lastTs || ts)); // мс, не более 50мс
+        wa2.lastTs = ts;
+
+        if (Math.abs(wa2.velocity) < 0.0001) {
+          // Скорость исчерпана — стоп
+          wa2.rafId = null;
+          wa2.velocity = 0;
+          return;
+        }
+
+        // Применяем текущий кадр зума
+        const frameFactor = Math.exp(wa2.velocity * dt * 0.05);
+        const fpx = wa2.px;
+        const fpy = wa2.py;
 
         setView((v) => {
-          const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
+          const newScale = Math.max(0.0005, Math.min(5000, v.scale * frameFactor));
           if (Math.abs(newScale - v.scale) < 1e-10) return v;
           const wx = (fpx - v.offsetX) / v.scale;
           const wy = (fpy - v.offsetY) / v.scale;
@@ -437,11 +458,23 @@ export default function TopoCanvas(props: Props) {
           if (onScaleChange) onScaleChange(newScale);
           return { ...v, scale: newScale, offsetX: fpx - wx * newScale, offsetY: fpy - wy * newScale };
         });
-      });
+
+        // Затухание: ~85% за кадр (мягкое инерционное замедление)
+        wa2.velocity *= Math.pow(0.82, dt / 16);
+
+        wa2.rafId = requestAnimationFrame(loop);
+      };
+
+      wa.lastTs = performance.now();
+      wa.rafId = requestAnimationFrame(loop);
     };
+
     el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-   
+    return () => {
+      el.removeEventListener("wheel", handler);
+      const wa = wheelAccRef.current;
+      if (wa.rafId !== null) { cancelAnimationFrame(wa.rafId); wa.rafId = null; }
+    };
   }, [onScaleChange]);
 
   // Флаг: после применения пресета вписать схему в экран
