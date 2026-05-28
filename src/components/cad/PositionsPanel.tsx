@@ -20,6 +20,12 @@ interface Props {
   onToggleBranchBind?: () => void;
   showLeaders?: boolean;
   onToggleLeaders?: () => void;
+  /** ID позиции в режиме рисования выноски (null = не активен) */
+  leaderDrawMode?: string | null;
+  /** Запустить режим рисования выноски для позиции */
+  onStartLeaderDraw?: (posId: string) => void;
+  /** Удалить выноску позиции */
+  onRemoveLeader?: (posId: string) => void;
 }
 
 export default function PositionsPanel({
@@ -36,6 +42,9 @@ export default function PositionsPanel({
   onToggleBranchBind,
   showLeaders,
   onToggleLeaders,
+  leaderDrawMode,
+  onStartLeaderDraw,
+  onRemoveLeader,
 }: Props) {
   const [editingNumberId, setEditingNumberId] = useState<string | null>(null);
   const [editingNumberVal, setEditingNumberVal] = useState("");
@@ -384,21 +393,44 @@ export default function PositionsPanel({
 
           <GroupHeader>Выноска</GroupHeader>
           <div style={{ padding: "4px 8px", borderBottom: "1px solid #e8e8e8" }}>
-            {selected.leaderEndX != null ? (
+            {leaderDrawMode === selected.id ? (
+              /* Активен режим рисования */
+              <div style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "4px 8px" }}>
+                <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 600, marginBottom: 2 }}>
+                  Кликните на схеме — конец выноски
+                </div>
+                <div style={{ fontSize: 10, color: "#64748b" }}>Esc — отмена</div>
+              </div>
+            ) : selected.leaderEndX != null ? (
+              /* Выноска есть */
               <div className="flex items-center gap-2">
-                <span style={{ fontSize: 11, color: "#555", flex: 1 }}>
-                  Конец: X={Math.round(selected.leaderEndX)} Y={Math.round(selected.leaderEndY ?? 0)} м
-                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#555" }}>
+                    X={Math.round(selected.leaderEndX)} Y={Math.round(selected.leaderEndY ?? 0)} м
+                  </div>
+                </div>
                 <button
-                  onClick={() => upd({ leaderEndX: null, leaderEndY: null })}
-                  style={{ ...btnStyle, padding: "1px 6px", color: "#dc2626", border: "1px solid #fca5a5", background: "#fff5f5", fontSize: 11 }}>
-                  Удалить
+                  title="Переместить конец выноски"
+                  onClick={() => onStartLeaderDraw?.(selected.id)}
+                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#2563eb", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+                  <Icon name="Move" size={11} />
+                </button>
+                <button
+                  title="Удалить выноску"
+                  onClick={() => onRemoveLeader?.(selected.id)}
+                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#dc2626", border: "1px solid #fca5a5", background: "#fff5f5" }}>
+                  <Icon name="X" size={11} />
                 </button>
               </div>
             ) : (
-              <div style={{ fontSize: 11, color: "#aaa" }}>
-                Нет выноски. Нажмите <b>И</b> (рус.) / <b>B</b> (англ.) для добавления.
-              </div>
+              /* Выноски нет */
+              <button
+                onClick={() => onStartLeaderDraw?.(selected.id)}
+                className="flex items-center gap-1"
+                style={{ ...btnStyle, width: "100%", justifyContent: "center", padding: "3px 8px", color: "#2563eb", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+                <Icon name="PlusCircle" size={12} />
+                Добавить выноску
+              </button>
             )}
           </div>
 
