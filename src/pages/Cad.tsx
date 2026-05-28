@@ -3851,7 +3851,7 @@ export default function CadPage() {
 
             {/* ── Масштаб 1:N ── */}
             <span className="text-[11px] text-gray-700" title="Масштаб как в АэроСеть: 1:N">М 1:</span>
-            <input type="number" value={Math.round(1 / Math.max(0.0001, viewScale * 0.001))}
+            <input type="number" value={Math.round(1 / Math.max(0.0001, (savedViewState?.scale ?? viewScale) * 0.001))}
               onChange={(e) => {
                 const n = Math.max(50, Math.min(500000, Number(e.target.value)));
                 // viewScale (px/м) = 1 / (N · 0.001), считаем что 1 px ≈ 1 мм на экране

@@ -443,8 +443,8 @@ export default function TopoCanvas(props: Props) {
       };
 
       viewRef.current = newView;
-      prevScaleOverride.current = newScale;
-      if (onScaleChange) onScaleChange(newScale);
+      // НЕ вызываем onScaleChange — это создаёт петлю: wheel→onScaleChange→scaleOverride→setView→двойной зум
+      // Масштаб в тулбаре обновляется через onViewStateChange (savedViewState)
       setView(newView);
     };
 
