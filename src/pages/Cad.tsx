@@ -3883,7 +3883,7 @@ export default function CadPage() {
 
           {/* Холст топологии */}
           <div className="flex-1 relative"
-            style={{ cursor: (draggingLeaderPosId || leaderDrawMode) ? "crosshair" : undefined }}
+            style={{ cursor: leaderDrawMode ? "crosshair" : undefined }}
             onMouseMove={(e) => {
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
@@ -4228,7 +4228,7 @@ export default function CadPage() {
 
               return (
                 <svg
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", cursor: leaderDrawMode ? "crosshair" : "inherit" }}
                 >
                   {/* ── Подсветка ветви под snap (режим рисования) ── */}
                   {leaderDrawMode && leaderSnapBranch && (() => {
@@ -4363,6 +4363,8 @@ export default function CadPage() {
                           e.stopPropagation();
                           // Одиночный клик — только выбор, без открытия свойств
                           setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id);
+                          // Сбрасываем режим рисования выноски если был активен
+                          if (leaderDrawMode) { setLeaderDrawMode(null); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }
                         }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
@@ -4377,6 +4379,7 @@ export default function CadPage() {
                           e.stopPropagation();
                           setSelectedPositionId(pos.id);
                           setDraggingPosId(pos.id);
+                          if (leaderDrawMode) { setLeaderDrawMode(null); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }
                           const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                           if (!containerRect) return;
                           posDragRef.current = {
