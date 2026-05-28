@@ -25,6 +25,9 @@ export interface Position {
   y: number;               // мировые координаты Y (м)
   branchIds: string[];     // привязанные ветви
   comment: string;
+  // Конец выноски (мировые координаты). Если null — выноска не задана.
+  leaderEndX: number | null;
+  leaderEndY: number | null;
 }
 
 export function makePosition(partial?: Partial<Position>): Position {
@@ -50,6 +53,8 @@ export function makePosition(partial?: Partial<Position>): Position {
     y: 0,
     branchIds: [],
     comment: "",
+    leaderEndX: null,
+    leaderEndY: null,
     ...partial,
   };
 }

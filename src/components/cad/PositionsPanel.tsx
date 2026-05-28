@@ -354,6 +354,26 @@ export default function PositionsPanel({
             </div>
           </Row>
 
+          <GroupHeader>Физические координаты</GroupHeader>
+          <div style={{ padding: "4px 8px", background: "#f8f8f8", borderBottom: "1px solid #e8e8e8" }}>
+            <Row label="Координата X:">
+              <div className="flex items-center gap-1">
+                <input type="number" step={1} value={Math.round(selected.x)}
+                  onChange={(e) => upd({ x: parseFloat(e.target.value) || 0 })}
+                  style={{ ...inputStyle, width: 80, textAlign: "right" }} />
+                <span style={{ fontSize: 11, color: "#666" }}>м</span>
+              </div>
+            </Row>
+            <Row label="Координата Y:">
+              <div className="flex items-center gap-1">
+                <input type="number" step={1} value={Math.round(selected.y)}
+                  onChange={(e) => upd({ y: parseFloat(e.target.value) || 0 })}
+                  style={{ ...inputStyle, width: 80, textAlign: "right" }} />
+                <span style={{ fontSize: 11, color: "#666" }}>м</span>
+              </div>
+            </Row>
+          </div>
+
           <GroupHeader>Привязанные ветви</GroupHeader>
           <div className="px-2 py-1 flex flex-col gap-0.5">
             {selected.branchIds.length === 0 && (

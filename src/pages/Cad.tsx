@@ -597,6 +597,9 @@ export default function CadPage() {
   // Drag маркера позиции
   const posDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number } | null>(null);
   const [draggingPosId, setDraggingPosId] = useState<string | null>(null);
+  // Drag конца выноски позиции
+  const leaderDragRef = useRef<{ posId: string } | null>(null);
+  const [draggingLeaderPosId, setDraggingLeaderPosId] = useState<string | null>(null);
   // Режим привязки ветвей к позиции (F3)
   const [posBranchBindMode, setPosBranchBindMode] = useState(false);
   // Показывать выноски позиций (И/B)
@@ -1470,10 +1473,34 @@ export default function CadPage() {
       // F6, F9 — всегда работают
       if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
       if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
-      // И (рус.) / B (англ.) — показать/скрыть выноски позиций
+      // И (рус.) / B (англ.) — добавить/убрать выноску для выбранной позиции
       if ((e.key === "и" || e.key === "И" || e.key === "b" || e.key === "B") && !isEditing) {
         e.preventDefault();
-        setShowPosLeaders((v) => !v);
+        if (selectedPositionId) {
+          const pos = positions.find(p => p.id === selectedPositionId);
+          if (pos) {
+            if (pos.leaderEndX == null) {
+              // Нет выноски — создаём рядом с маркером и включаем drag
+              const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const offsetPx = 60 / Math.max(0.01, vs.scale);
+              setPositions(prev => prev.map(p =>
+                p.id === selectedPositionId
+                  ? { ...p, leaderEndX: p.x + offsetPx, leaderEndY: p.y + offsetPx }
+                  : p
+              ));
+              setShowPosLeaders(true);
+            } else {
+              // Есть выноска — убираем
+              setPositions(prev => prev.map(p =>
+                p.id === selectedPositionId
+                  ? { ...p, leaderEndX: null, leaderEndY: null }
+                  : p
+              ));
+            }
+          }
+        } else {
+          setShowPosLeaders((v) => !v);
+        }
         return;
       }
 
@@ -4049,49 +4076,71 @@ export default function CadPage() {
             {positions.length > 0 && (() => {
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
-
-              // Проецирует мировую точку (x,y,z=0) в экранные координаты
               const proj = (wx: number, wy: number, wz = 0) => {
                 const p = project3D({ x: wx, y: wy, z: wz }, projOpts);
                 return { sx: p.sx, sy: p.sy };
               };
-
-              // Размер маркера: фиксированный в пикселях (не зависит от масштаба схемы)
-              // diameter в настройке — в мм, 1 мм = 3.78 px на 96dpi
               const PX_PER_MM = 3.78;
 
               return (
-                <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}>
+                <svg
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", cursor: draggingLeaderPosId ? "crosshair" : undefined }}
+                  onMouseMove={(e) => {
+                    if (!leaderDragRef.current) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const sx = e.clientX - rect.left;
+                    const sy = e.clientY - rect.top;
+                    const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
+                    if (!w) return;
+                    setPositions(prev => prev.map(p =>
+                      p.id === leaderDragRef.current!.posId
+                        ? { ...p, leaderEndX: w.x, leaderEndY: w.y }
+                        : p
+                    ));
+                  }}
+                  onMouseUp={() => { leaderDragRef.current = null; setDraggingLeaderPosId(null); }}
+                  onMouseLeave={() => { leaderDragRef.current = null; setDraggingLeaderPosId(null); }}
+                >
 
-                  {/* ── Выноски: пунктир от центра маркера к центру привязанных ветвей ── */}
+                  {/* ── Выноски: одиночная пунктирная линия от маркера до leaderEnd ── */}
                   {showPosLeaders && positions.map((pos) => {
+                    if (pos.leaderEndX == null || pos.leaderEndY == null) return null;
                     const pm = proj(pos.x, pos.y);
-                    return pos.branchIds.map((bid) => {
-                      const br = branches.find(b => b.id === bid);
-                      if (!br) return null;
-                      const fn = nodes.find(n => n.id === br.fromId);
-                      const tn = nodes.find(n => n.id === br.toId);
-                      if (!fn || !tn) return null;
-                      const pf = proj(fn.x, fn.y, fn.z);
-                      const pt = proj(tn.x, tn.y, tn.z);
-                      const cx = (pf.sx + pt.sx) / 2;
-                      const cy = (pf.sy + pt.sy) / 2;
-                      const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
-                      return (
-                        <line key={`leader-${pos.id}-${bid}`}
-                          x1={pm.sx} y1={pm.sy} x2={cx} y2={cy}
+                    const pe = proj(pos.leaderEndX, pos.leaderEndY);
+                    const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
+                    const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
+                    // Сокращаем линию до края маркера
+                    const dx = pe.sx - pm.sx, dy = pe.sy - pm.sy;
+                    const dist = Math.hypot(dx, dy);
+                    const ux = dist > 0 ? dx / dist : 0, uy = dist > 0 ? dy / dist : 0;
+                    const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
+                    return (
+                      <g key={`leader-${pos.id}`}>
+                        <line
+                          x1={x1} y1={y1} x2={pe.sx} y2={pe.sy}
                           stroke={pos.color} strokeWidth={lw}
-                          strokeDasharray="5,3" strokeLinecap="round"
-                          opacity={0.85} style={{ pointerEvents: "none" }}
+                          strokeDasharray="6,3" strokeLinecap="round"
+                          opacity={0.9}
+                          style={{ pointerEvents: "none" }}
                         />
-                      );
-                    });
+                        {/* Ручка конца выноски — тащить мышью */}
+                        <circle
+                          cx={pe.sx} cy={pe.sy} r={5}
+                          fill={pos.color} stroke="#fff" strokeWidth={1.5}
+                          style={{ pointerEvents: "all", cursor: "crosshair" }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            leaderDragRef.current = { posId: pos.id };
+                            setDraggingLeaderPosId(pos.id);
+                          }}
+                        />
+                      </g>
+                    );
                   })}
 
                   {/* ── Маркеры позиций ── */}
                   {positions.map((pos) => {
                     const { sx, sy } = proj(pos.x, pos.y);
-                    // Радиус фиксированный в пикселях (diameter мм × PX_PER_MM / 2)
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
                     const isReverse = pos.positionType === "reverse";
@@ -4116,7 +4165,6 @@ export default function CadPage() {
                           setLeftPanelOpen(true);
                           const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                           if (!containerRect) return;
-                          // Обратное проецирование: из экранных в мировые (только план, elevation=90°)
                           posDragRef.current = {
                             id: pos.id,
                             startSx: e.clientX - containerRect.left,
@@ -4126,18 +4174,14 @@ export default function CadPage() {
                           };
                         }}
                       >
-                        {/* Реверсивная: двойная красная обводка с белым зазором */}
                         {isReverse && (
                           <>
                             <circle r={r + 7} fill="none" stroke="#e53e3e" strokeWidth={2.5} />
                             <circle r={r + 4} fill="none" stroke="#fff" strokeWidth={3} />
                           </>
                         )}
-                        {/* Синее пунктирное кольцо при выделении */}
                         {isSelected && <circle r={r + 4} fill="none" stroke="#2563eb" strokeWidth={2} strokeDasharray="5,2.5" />}
-                        {/* Основной круг */}
                         <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={2} />
-                        {/* Номер — чёрный по стандарту ПЛА */}
                         <text
                           textAnchor="middle" dominantBaseline="central"
                           fill="#000" fontSize={fontSize}
