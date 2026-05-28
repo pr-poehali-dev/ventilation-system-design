@@ -344,7 +344,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     // Метки ветвей
     if (lodLabels) {
-      const ic = infoConfig;
+      // Индивидуальные индикаторы ветви переопределяют глобальный infoConfig
+      const ic = (b.indicators && Object.keys(b.indicators).length > 0)
+        ? { ...(infoConfig ?? {}), ...b.indicators } as typeof infoConfig
+        : infoConfig;
       const labelOpacity = Math.min(1, (sc - 0.04) / 0.08);
       const branchNum = b.id.replace(/^B/, "");
       const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;

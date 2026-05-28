@@ -2606,6 +2606,7 @@ export default function CadPage() {
             : ([
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
+                { id: "indicators", label: "Индикаторы" },
                 { id: "topology", label: "Топология" },
                 { id: "areas", label: "Участки" },
                 { id: "waterpipes", label: "Трубы:" },
@@ -3650,9 +3651,82 @@ export default function CadPage() {
               </>
             )}
 
+            {/* ═══ ВКЛАДКА: ИНДИКАТОРЫ ══════════════════════════════════ */}
+            {activeSide === "indicators" && (() => {
+              if (!selectedBranch) return (
+                <div className="p-4 text-center text-gray-400 text-xs">Выберите ветвь на схеме</div>
+              );
+              const ind = selectedBranch.indicators ?? {};
+              const setInd = (key: string, val: boolean) =>
+                updateBranch(selectedBranch.id, { indicators: { ...ind, [key]: val } });
+              const IndRow = ({ k, label }: { k: string; label: string }) => (
+                <label className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                  <input type="checkbox" checked={ind[k] ?? false}
+                    onChange={e => setInd(k, e.target.checked)}
+                    style={{ width: 13, height: 13, accentColor: "#2563eb", cursor: "pointer" }} />
+                  <span className="text-[11px] text-gray-700">{label}</span>
+                </label>
+              );
+              const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+                <div className="mb-2">
+                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
+                    style={{ borderBottom: "1px solid #e5e7eb" }}>{title}</div>
+                  <div className="pt-0.5">{children}</div>
+                </div>
+              );
+              return (
+                <div className="p-2 overflow-y-auto flex-1">
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-[11px] font-semibold text-gray-700">Отображаемые индикаторы</span>
+                    <button onClick={() => updateBranch(selectedBranch.id, { indicators: {} })}
+                      className="text-[10px] text-gray-400 hover:text-red-500 px-1"
+                      title="Сбросить все индикаторы">
+                      Сбросить
+                    </button>
+                  </div>
+
+                  <Section title="Общее">
+                    <IndRow k="branchName"   label="Название" />
+                    <IndRow k="branchNumber" label="Номер" />
+                  </Section>
+
+                  <Section title="Вентиляция — исходные данные">
+                    <IndRow k="branchVelocity"    label="Макс. допустимая скорость воздуха" />
+                    <IndRow k="branchAlpha"        label="Коэффициент шероховатости (α)" />
+                    <IndRow k="branchLocalXi"      label="Мин. допустимая скорость воздуха" />
+                    <IndRow k="branchResistance"   label="Аэродинамическое сопротивление" />
+                    <IndRow k="branchAngle"        label="Уклон" />
+                    <IndRow k="branchFlow"         label="Фактический расход воздуха" />
+                    <IndRow k="branchDepression"   label="Фактический перепад давления" />
+                    <IndRow k="branchLength"       label="Длина" />
+                    <IndRow k="branchHeight"       label="Объём" />
+                    <IndRow k="branchSection"      label="Поперечное сечение" />
+                  </Section>
+
+                  <Section title="Вентиляция — модельные данные">
+                    <IndRow k="branchFlowCalc"    label="Расход воздуха" />
+                    <IndRow k="branchVelocity"    label="Скорость воздуха" />
+                    <IndRow k="branchDepression"  label="Перепад давления" />
+                    <IndRow k="branchExtraFan"    label="Энергозатраты на единицу длины" />
+                    <IndRow k="branchResistanceSum" label="Финзатраты на единицу длины" />
+                    <IndRow k="branchNatDragC"    label="Гарантированный расход воздуха" />
+                  </Section>
+
+                  <Section title="Аварии — модельные данные">
+                    <IndRow k="branchMethane"       label="Концентрация метана" />
+                    <IndRow k="branchCOEmission"    label="Концентрация угарного газа" />
+                    <IndRow k="branchGasEmission"   label="Концентрация водорода" />
+                    <IndRow k="branchGasSpreadTime" label="Концентрация оксидов азота" />
+                    <IndRow k="branchNatDragT"      label="Тепловая критическая депрессия" />
+                    <IndRow k="branchNatDragW"      label="Тепловая депрессия пожара" />
+                  </Section>
+                </div>
+              );
+            })()}
+
             {/* ═══ ОСТАЛЬНЫЕ ВКЛАДКИ ═════════════════════════════════════ */}
             {(activeSide === "thermo" || activeSide === "areas"
-              || activeSide === "indicators" || activeSide === "coords"
+              || activeSide === "coords"
               || activeSide === "measure" || activeSide === "pipes") && (
               <div className="p-4 text-center text-gray-400 text-xs">
                 Вкладка «{activeSide}» в разработке
