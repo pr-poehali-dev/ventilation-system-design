@@ -3,12 +3,13 @@ import {
   type Position, makePosition, POSITION_COLORS,
   VENT_MODES, ACCIDENT_TYPES, FONT_OPTIONS,
 } from "@/lib/positions";
-import { type TopoBranch } from "@/lib/topology";
+import { type TopoBranch, type TopoNode } from "@/lib/topology";
 import Icon from "@/components/ui/icon";
 
 interface Props {
   positions: Position[];
   branches: TopoBranch[];
+  nodes: TopoNode[];
   selectedPositionId: string | null;
   onSelect: (id: string | null) => void;
   onAdd: (pos: Position) => void;
@@ -18,8 +19,6 @@ interface Props {
   placeModeActive: boolean;
   branchBindMode?: boolean;
   onToggleBranchBind?: () => void;
-  showLeaders?: boolean;
-  onToggleLeaders?: () => void;
   /** ID позиции в режиме рисования выноски (null = не активен) */
   leaderDrawMode?: string | null;
   /** Запустить режим рисования выноски для позиции */
@@ -31,6 +30,7 @@ interface Props {
 export default function PositionsPanel({
   positions,
   branches,
+  nodes,
   selectedPositionId,
   onSelect,
   onAdd,
@@ -40,8 +40,6 @@ export default function PositionsPanel({
   placeModeActive,
   branchBindMode,
   onToggleBranchBind,
-  showLeaders,
-  onToggleLeaders,
   leaderDrawMode,
   onStartLeaderDraw,
   onRemoveLeader,
@@ -97,13 +95,6 @@ export default function PositionsPanel({
             F3
           </button>
         )}
-        {/* И/B — выноски */}
-        <button
-          onClick={onToggleLeaders}
-          title="И / B — показать/скрыть выноски"
-          style={{ ...btnStyle, background: showLeaders ? "#fef9c3" : "#f5f5f5", color: showLeaders ? "#a16207" : "#374151", padding: "1px 5px" }}>
-          <Icon name="Link" size={12} />
-        </button>
         {selected && (
           <button
             onClick={() => { onDelete(selected.id); onSelect(null); }}
@@ -482,9 +473,27 @@ export default function PositionsPanel({
             <select style={{ ...inputStyle, width: "100%", marginTop: 4 }} defaultValue=""
               onChange={(e) => {
                 if (!e.target.value) return;
-                const id = e.target.value;
-                if (!selected.branchIds.includes(id)) upd({ branchIds: [...selected.branchIds, id] });
+                const branchId = e.target.value;
                 e.target.value = "";
+                if (selected.branchIds.includes(branchId)) return;
+                const newBranchIds = [...selected.branchIds, branchId];
+                // Если первая привязка и позиция не размещена — авто-координаты у ближайшего узла ветви
+                const isFirstBranch = selected.branchIds.length === 0;
+                const notPlaced = selected.x === 0 && selected.y === 0;
+                if (isFirstBranch && notPlaced) {
+                  const br = branches.find(b => b.id === branchId);
+                  const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                  const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                  const refN = fromN && toN
+                    ? (Math.abs(fromN.z) <= Math.abs(toN.z) ? fromN : toN)
+                    : (fromN ?? toN);
+                  if (refN) {
+                    const OFFSET = 30;
+                    upd({ branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z });
+                    return;
+                  }
+                }
+                upd({ branchIds: newBranchIds });
               }}>
               <option value="">— Привязать ветвь —</option>
               {branches.filter((b) => !selected.branchIds.includes(b.id)).map((b) => (

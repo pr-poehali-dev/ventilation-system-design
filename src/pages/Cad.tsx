@@ -3664,6 +3664,7 @@ export default function CadPage() {
               <PositionsPanel
                 positions={positions}
                 branches={branches}
+                nodes={nodes}
                 selectedPositionId={selectedPositionId}
                 onSelect={(id) => { setSelectedPositionId(id); if (!id) { setPosBranchBindMode(false); setLeaderDrawMode(null); } }}
                 onAdd={(pos) => setPositions((prev) => [...prev, pos])}
@@ -3673,8 +3674,6 @@ export default function CadPage() {
                 placeModeActive={positionPlaceMode}
                 branchBindMode={posBranchBindMode}
                 onToggleBranchBind={() => { if (selectedPositionId) setPosBranchBindMode((v) => !v); }}
-                showLeaders={showPosLeaders}
-                onToggleLeaders={() => setShowPosLeaders((v) => !v)}
                 leaderDrawMode={leaderDrawMode}
                 onStartLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }}
                 onRemoveLeader={(posId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null } : p))}
@@ -4028,7 +4027,30 @@ export default function CadPage() {
                   setPositions(prev => prev.map(p => {
                     if (p.id !== selectedPositionId) return p;
                     const has = p.branchIds.includes(id);
-                    return { ...p, branchIds: has ? p.branchIds.filter(x => x !== id) : [...p.branchIds, id] };
+                    if (has) {
+                      return { ...p, branchIds: p.branchIds.filter(x => x !== id) };
+                    }
+                    // Добавляем ветвь
+                    const newBranchIds = [...p.branchIds, id];
+                    // Если это первая привязка И позиция на нулевых координатах (не размещена) —
+                    // автоматически ставим рядом с ближайшим узлом ветви
+                    const isFirstBranch = p.branchIds.length === 0;
+                    const notPlaced = p.x === 0 && p.y === 0;
+                    if (isFirstBranch && notPlaced) {
+                      const br = branches.find(b => b.id === id);
+                      const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                      const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                      // Берём узел с меньшей абсолютной Z (ближе к поверхности = более заметный)
+                      const refN = fromN && toN
+                        ? (Math.abs(fromN.z) <= Math.abs(toN.z) ? fromN : toN)
+                        : (fromN ?? toN);
+                      if (refN) {
+                        // Смещаем на ~30м от узла по диагонали XY, берём z узла
+                        const OFFSET = 30;
+                        return { ...p, branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z };
+                      }
+                    }
+                    return { ...p, branchIds: newBranchIds };
                   }));
                   return;
                 }
@@ -4327,20 +4349,19 @@ export default function CadPage() {
                       <g
                         key={pos.id}
                         transform={`translate(${sx}, ${sy})`}
-                        style={{ pointerEvents: "all", cursor: draggingPosId === pos.id ? "grabbing" : "grab" }}
+                        style={{ pointerEvents: "all", cursor: draggingPosId === pos.id ? "grabbing" : "default" }}
                         onClick={(e) => {
                           if (draggingPosId === pos.id) return;
                           e.stopPropagation();
+                          // Одиночный клик — только выбор, без открытия свойств
                           setSelectedPositionId(pos.id === selectedPositionId ? null : pos.id);
-                          setActiveSide("positions");
-                          setLeftPanelOpen(true);
                         }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
+                          // Двойной клик — выбор + открытие свойств в левой панели
                           setSelectedPositionId(pos.id);
                           setActiveSide("positions");
                           setLeftPanelOpen(true);
-                          // Сбрасываем выбор узлов/ветвей, фокус на позицию
                           setSelectedNodeId(null);
                           setSelectedBranchId(null);
                         }}
@@ -4348,8 +4369,6 @@ export default function CadPage() {
                           e.stopPropagation();
                           setSelectedPositionId(pos.id);
                           setDraggingPosId(pos.id);
-                          setActiveSide("positions");
-                          setLeftPanelOpen(true);
                           const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
                           if (!containerRect) return;
                           posDragRef.current = {
