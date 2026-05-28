@@ -3952,26 +3952,24 @@ export default function CadPage() {
               if (leaderSnapBranch) {
                 // Привязываем выноску к ветви
                 const { branchId, t } = leaderSnapBranch;
-                // Если позиция ещё не размещена — авто-ставим рядом с узлом ветви
                 const drawPos = positions.find(p => p.id === leaderDrawMode);
-                let autoCoords: { x: number; y: number; z: number; placed: true } | null = null;
-                if (drawPos && !drawPos.placed) {
-                  const br = branches.find(b => b.id === branchId);
-                  const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
-                  const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
-                  const refN = fromN && toN
-                    ? (fromN.z >= toN.z ? fromN : toN)
-                    : (fromN ?? toN);
-                  if (refN) {
+                // Находим опорный узел ветви (верхний по z)
+                const br = branches.find(b => b.id === branchId);
+                const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                const refN = fromN && toN
+                  ? (fromN.z >= toN.z ? fromN : toN)
+                  : (fromN ?? toN);
+                setPositions(prev => prev.map(p => {
+                  if (p.id !== leaderDrawMode) return p;
+                  const base = { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null };
+                  // Авто-координаты: если не размещена ИЛИ z=0 (не соответствует сети)
+                  if (refN && (!p.placed || p.z === 0)) {
                     const OFFSET = 50;
-                    autoCoords = { x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
+                    return { ...base, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
                   }
-                }
-                setPositions(prev => prev.map(p =>
-                  p.id === leaderDrawMode
-                    ? { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null, ...(autoCoords ?? {}) }
-                    : p
-                ));
+                  return { ...base, placed: true };
+                }));
               } else {
                 // Свободная точка
                 const vs2 = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
@@ -4055,8 +4053,8 @@ export default function CadPage() {
                       return { ...p, branchIds: p.branchIds.filter(x => x !== id) };
                     }
                     const newBranchIds = [...p.branchIds, id];
-                    // Авто-размещение если позиция ещё не размещена
-                    if (!p.placed && refN) {
+                    // Авто-размещение если не размещена ИЛИ z=0 (не на сети)
+                    if (refN && (!p.placed || p.z === 0)) {
                       const OFFSET = 50;
                       return { ...p, branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
                     }

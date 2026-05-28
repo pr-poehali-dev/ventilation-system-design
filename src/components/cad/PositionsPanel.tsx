@@ -477,19 +477,17 @@ export default function PositionsPanel({
                 e.target.value = "";
                 if (selected.branchIds.includes(branchId)) return;
                 const newBranchIds = [...selected.branchIds, branchId];
-                // Если позиция ещё не размещена — авто-ставим рядом с узлом ветви
-                if (!selected.placed) {
-                  const br = branches.find(b => b.id === branchId);
-                  const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
-                  const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
-                  const refN = fromN && toN
-                    ? (fromN.z >= toN.z ? fromN : toN)
-                    : (fromN ?? toN);
-                  if (refN) {
-                    const OFFSET = 50;
-                    upd({ branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true });
-                    return;
-                  }
+                // Авто-координаты если не размещена ИЛИ z=0 (не на сети)
+                const br = branches.find(b => b.id === branchId);
+                const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                const refN = fromN && toN
+                  ? (fromN.z >= toN.z ? fromN : toN)
+                  : (fromN ?? toN);
+                if (refN && (!selected.placed || selected.z === 0)) {
+                  const OFFSET = 50;
+                  upd({ branchIds: newBranchIds, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true });
+                  return;
                 }
                 upd({ branchIds: newBranchIds });
               }}>
