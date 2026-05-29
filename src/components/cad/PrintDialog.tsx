@@ -487,14 +487,24 @@ body{background:white;font-family:Arial,sans-serif}
                 {previewDataUrl ? (
                   <img src={previewDataUrl} alt="preview"
                     style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "left top", display: "block" }}
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = "none";
+                      const p = (e.currentTarget as HTMLImageElement).parentElement;
+                      if (p) { const d = document.createElement("div"); d.textContent = "Ошибка отображения"; d.style.cssText = "display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#e00;font-size:13px;"; p.appendChild(d); }
+                    }}
                   />
                 ) : (
                   <div style={{
-                    width: "100%", height: "100%", display: "flex",
-                    alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 14,
+                    width: "100%", height: "100%", display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: 12, color: "#888",
                   }}>
-                    Схема не захвачена
+                    <div style={{
+                      width: 32, height: 32, border: "3px solid #ddd",
+                      borderTopColor: "#2563eb", borderRadius: "50%",
+                      animation: "spin 0.8s linear infinite",
+                    }} />
+                    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                    <span style={{ fontSize: 13 }}>Захват схемы…</span>
                   </div>
                 )}
               </div>
