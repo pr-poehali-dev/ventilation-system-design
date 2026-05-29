@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
@@ -86,7 +86,7 @@ export default function PrintDialog({
   const [customW, setCustomW] = useState(420);
   const [customH, setCustomH] = useState(297);
 
-  // null = auto-fit; number = явно заданный пользователем
+  // null = auto-fit (100%); number = множитель от fit (1.0 = 100%, 2.0 = 200%)
   const [userScale,   setUserScale]   = useState<number | null>(null);
   const [userOffsetX, setUserOffsetX] = useState<number | null>(null);
   const [userOffsetY, setUserOffsetY] = useState<number | null>(null);
@@ -140,87 +140,91 @@ export default function PrintDialog({
   const prevW = prevH * aspect;
   const px = (mm: number) => mm * (prevW / paper.w);
 
-  // ─── Вычисление базового view для всей схемы (scale=1, offset по bbox) ─
+  // ─── Bbox схемы в проекции при scale=1 ───────────────────────────────
+  const schemaBbox = useMemo(() => {
+    if (nodes.length === 0) return { minX: 0, maxX: 1, minY: 0, maxY: 1, w: 1, h: 1 };
+    const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
+      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
+      if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
+      if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
+    }
+    return { minX, maxX, minY, maxY, w: maxX - minX || 1, h: maxY - minY || 1 };
+  }, [nodes, viewState.azimuth, viewState.elevation, zScale]);
+
+  // ─── Вычисление базового view для страницы (150dpi) ─────────────────
+  // userScale = null → fit в 1 страницу; userScale = N → абсолютный px-scale
   const baseView = useMemo(() => {
     const isScene3D = viewState.elevation < 89.5 || viewState.azimuth !== 0;
     const DPI = 150;
     const mmToPx = (mm: number) => mm * DPI / 25.4;
-    const outW = mmToPx(workArea.w);
-    const outH = mmToPx(workArea.h);
+    const pageW = mmToPx(workArea.w);   // размер одной страницы в px при 150dpi
+    const pageH = mmToPx(workArea.h);
     const horizonMap = new Map(horizons.map(h => [h.id, h]));
-    let sc = 1, offsetX = 0, offsetY = 0;
-    let bboxW = 0, bboxH = 0, bboxMinX = 0, bboxMinY = 0;
-    if (nodes.length > 0) {
-      const tmpProj = { scale: 1, offsetX: 0, offsetY: 0, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const n of nodes) {
-        const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
-        if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
-        if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
-      }
-      const pad = 40;
-      const sw = maxX - minX || 1, sh = maxY - minY || 1;
-      bboxW = sw; bboxH = sh; bboxMinX = minX; bboxMinY = minY;
-      sc = Math.min((outW - pad * 2) / sw, (outH - pad * 2) / sh);
-      if (userScale !== null) sc = userScale;
-      offsetX = userOffsetX ?? ((outW - sw * sc) / 2 - minX * sc);
-      offsetY = userOffsetY ?? ((outH - sh * sc) / 2 - minY * sc);
-    }
-    return { sc, offsetX, offsetY, isScene3D, outW, outH, bboxW, bboxH, bboxMinX, bboxMinY, horizonMap };
-  }, [nodes, horizons, viewState, zScale, workArea, userScale, userOffsetX, userOffsetY]);
+    const { minX, minY, w: bw, h: bh } = schemaBbox;
+    const pad = 20 * DPI / 96;  // ~31px при 150dpi
+    // fit-scale: вписать схему в 1 страницу
+    const fitSc = Math.min((pageW - pad * 2) / bw, (pageH - pad * 2) / bh);
+    // Пользовательский scale в px: userScale хранится как процент/100 от fitSc
+    // т.е. userScale=1.0 → 100% = fit; userScale=2.0 → 200% = вдвое крупнее
+    const sc = userScale !== null ? fitSc * userScale : fitSc;
+    // offset центрирует схему на первой странице
+    const offsetX = userOffsetX ?? ((pageW - bw * sc) / 2 - minX * sc);
+    const offsetY = userOffsetY ?? ((pageH - bh * sc) / 2 - minY * sc);
+    return { sc, fitSc, offsetX, offsetY, isScene3D, pageW, pageH, horizonMap };
+  }, [schemaBbox, horizons, viewState, zScale, workArea, userScale, userOffsetX, userOffsetY]);
+
+  // Синхронизация scaleDisplay с реальным масштабом (только при userScale=null)
+  useEffect(() => {
+    if (userScale === null) setScaleDisplay(100);
+    else setScaleDisplay(Math.round(userScale * 100));
+  }, [userScale]);
 
   // ─── Вычисление тайлов (сетка страниц) ───────────────────────────────
   const tiles = useMemo(() => {
-    const { sc, offsetX, offsetY, outW, outH } = baseView;
-    // Полные размеры схемы на печатном canvas при заданном масштабе
-    const totalW = baseView.bboxW * sc;
-    const totalH = baseView.bboxH * sc;
-    // Начало схемы на canvas (с учётом offset)
-    const startX = baseView.bboxMinX * sc + offsetX;
-    const startY = baseView.bboxMinY * sc + offsetY;
-    // Сколько страниц нужно по горизонтали и вертикали
-    const endX = startX + totalW;
-    const endY = startY + totalH;
-    // Страница вмещает outW × outH пикселей
-    // Определяем диапазон тайлов так, чтобы покрыть всю схему
-    const colMin = Math.floor(startX / outW);
-    const colMax = Math.ceil(endX / outW) - 1;
-    const rowMin = Math.floor(startY / outH);
-    const rowMax = Math.ceil(endY / outH) - 1;
+    const { sc, offsetX, offsetY, pageW, pageH } = baseView;
+    const { minX, minY, w: bw, h: bh } = schemaBbox;
+    // Экранные координаты левого-верхнего и правого-нижнего угла bbox схемы
+    const schLeft   = minX * sc + offsetX;
+    const schTop    = minY * sc + offsetY;
+    const schRight  = schLeft + bw * sc;
+    const schBottom = schTop  + bh * sc;
+    // Индексы страниц: страница (col,row) покрывает [col*pageW .. (col+1)*pageW]
+    const colMin = Math.floor(schLeft   / pageW);
+    const colMax = Math.floor((schRight  - 0.5) / pageW);
+    const rowMin = Math.floor(schTop    / pageH);
+    const rowMax = Math.floor((schBottom - 0.5) / pageH);
     const cols = Math.max(1, colMax - colMin + 1);
     const rows = Math.max(1, rowMax - rowMin + 1);
-    const list: { col: number; row: number; pageIndex: number }[] = [];
+    const list: { col: number; row: number }[] = [];
     for (let r = rowMin; r <= rowMax; r++) {
       for (let c = colMin; c <= colMax; c++) {
-        list.push({ col: c, row: r, pageIndex: list.length });
+        list.push({ col: c, row: r });
       }
     }
     return { list, cols, rows, colMin, rowMin };
-  }, [baseView]);
+  }, [baseView, schemaBbox]);
 
   const totalPages = tiles.list.length;
 
-  // ─── Рендер одного тайла (тайл col,row = смещение offsetX - col*outW) ─
+  // ─── Рендер одного тайла ─────────────────────────────────────────────
+  // Тайл (col, row): сдвигаем offsetX на col*pageW → видна нужная часть схемы
   const renderTileToCanvas = useCallback(async (
-    outW: number, outH: number, col: number, row: number,
-    tileScale: number  // соотношение тайлового разрешения к базовому (150dpi)
+    outW: number, outH: number,
+    col: number, row: number,
+    dpiMult: number,  // 1 = 150dpi, >1 = повышенное разрешение
   ): Promise<string> => {
     const oc = document.createElement("canvas");
-    oc.width = outW; oc.height = outH;
+    oc.width = Math.round(outW * dpiMult); oc.height = Math.round(outH * dpiMult);
     const ctx = oc.getContext("2d");
     if (!ctx) return "";
 
-    const { sc, offsetX, offsetY, isScene3D, horizonMap } = baseView;
-    // Тайл (col, row) показывает часть схемы, сдвинутую на col*baseOutW, row*baseOutH
-    const baseOutW = baseView.outW;
-    const baseOutH = baseView.outH;
-    // Смещение для этого тайла: сдвигаем общий offset на позицию тайла
-    const tileOffX = offsetX - col * baseOutW;
-    const tileOffY = offsetY - row * baseOutH;
-    // Масштабируем если нужно другое разрешение
-    const scaledSc     = sc * tileScale;
-    const scaledOffX   = tileOffX * tileScale;
-    const scaledOffY   = tileOffY * tileScale;
+    const { sc, offsetX, offsetY, isScene3D, horizonMap, pageW, pageH } = baseView;
+    const scaledSc   = sc   * dpiMult;
+    const scaledOffX = (offsetX - col * pageW) * dpiMult;
+    const scaledOffY = (offsetY - row * pageH) * dpiMult;
 
     const sv = { scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
       azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
@@ -233,9 +237,9 @@ export default function PrintDialog({
     const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
     ctx.fillStyle = isScene3D ? "#f0f4f8" : "#ffffff";
-    ctx.fillRect(0, 0, outW, outH);
+    ctx.fillRect(0, 0, oc.width, oc.height);
     renderCanvas({
-      ctx, width: outW, height: outH,
+      ctx, width: oc.width, height: oc.height,
       nodes, branches, horizons, horizonMap,
       visibleBranches, hiddenBranchIds: new Set(),
       projNodes, projNodesMap, proj: sv, view: sv,
@@ -254,10 +258,15 @@ export default function PrintDialog({
   }, [baseView, nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig]);
 
-  // ─── Рендер схемы в offscreen canvas для экспорта (один тайл, fit) ────
+  // ─── Рендер схемы в offscreen canvas для экспорта (первый тайл) ──────
   const renderToCanvas = useCallback(async (outW: number, outH: number): Promise<string> => {
-    return renderTileToCanvas(outW, outH, tiles.colMin, tiles.rowMin, outW / baseView.outW);
-  }, [renderTileToCanvas, tiles.colMin, tiles.rowMin, baseView.outW]);
+    const { colMin, rowMin } = tiles;
+    const DPI = 150;
+    const mmToPx = (mm: number) => mm * DPI / 25.4;
+    const tileW = mmToPx(workArea.w);
+    const dpiMult = outW / tileW;
+    return renderTileToCanvas(tileW, mmToPx(workArea.h), colMin, rowMin, dpiMult);
+  }, [renderTileToCanvas, tiles, workArea]);
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
@@ -552,18 +561,18 @@ body{background:white;font-family:Arial,sans-serif}
                     onChange={e => {
                       const v = Math.max(1, +e.target.value || 1);
                       setScaleDisplay(v);
+                      // userScale = множитель относительно fit (100% = fit = 1.0)
                       setUserScale(v / 100);
                     }} />
                   <span style={{ fontSize: 11, color: "#555" }}>%</span>
                 </div>
               </Row>
               <button onClick={() => {
-                // Сбрасываем в auto-fit
-                setUserScale(null); setUserOffsetX(null); setUserOffsetY(null);
+                // 100% = fit в 1 лист
+                setUserScale(null);
+                setUserOffsetX(null); setUserOffsetY(null);
                 setOffsetXDisplay(0); setOffsetYDisplay(0);
-                // Читаем реальный fit-scale из canvas и показываем в поле
-                const fit = previewRef.current?.getFitView();
-                if (fit) setScaleDisplay(Math.round(fit.scale * 100));
+                setScaleDisplay(100);
               }}
                 className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-blue-50 hover:border-blue-400 bg-white font-medium text-gray-800">
                 Подобрать масштаб
@@ -663,9 +672,13 @@ body{background:white;font-family:Arial,sans-serif}
             }}>
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
-                // Смещение для этого тайла в превью-пикселях
-                const tileOffX = (baseView.offsetX - tile.col * baseView.outW) * (prevW / baseView.outW);
-                const tileOffY = (baseView.offsetY - tile.row * baseView.outH) * (prevH / baseView.outH);
+                // prevW/pageW — коэффициент масштабирования превью относительно печатного px
+                const prevToPage = prevW / baseView.pageW;
+                const prevSc     = baseView.sc * prevToPage;
+                const prevOffX   = (baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
+                const prevOffY   = (baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
+                const canvasW    = Math.max(1, Math.round(px(workArea.w)));
+                const canvasH    = Math.max(1, Math.round(px(workArea.h)));
                 return (
                   <div key={`${tile.col}-${tile.row}`} style={{
                     width: prevW, height: prevH, background: "white", flexShrink: 0,
@@ -685,7 +698,7 @@ body{background:white;font-family:Arial,sans-serif}
                     <div style={{
                       position: "absolute",
                       top: px(marginTop), left: px(marginLeft),
-                      width: px(workArea.w), height: px(workArea.h),
+                      width: canvasW, height: canvasH,
                       overflow: "hidden",
                     }}>
                       <PrintPreviewCanvas
@@ -698,11 +711,11 @@ body{background:white;font-family:Arial,sans-serif}
                         elevation={viewState.elevation}
                         zScale={zScale}
                         is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
-                        scale={baseView.sc * (prevW / baseView.outW)}
-                        offsetX={tileOffX}
-                        offsetY={tileOffY}
-                        width={Math.max(1, Math.round(px(workArea.w)))}
-                        height={Math.max(1, Math.round(px(workArea.h)))}
+                        scale={prevSc}
+                        offsetX={prevOffX}
+                        offsetY={prevOffY}
+                        width={canvasW}
+                        height={canvasH}
                         branchWidth={branchWidth}
                         branchBorder={branchBorder}
                         thinLines={thinLines}
