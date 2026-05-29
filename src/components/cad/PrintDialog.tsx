@@ -1,12 +1,19 @@
 import { useState, useMemo, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+import PrintPreviewCanvas from "./PrintPreviewCanvas";
+import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
+import { renderCanvas } from "@/lib/canvasRenderer";
+import { DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 
 interface PrintDialogProps {
   onClose: () => void;
   projectName?: string;
-  // Готовый dataUrl (PNG) или blob URL (SVG) — захватывается ДО открытия диалога
-  previewDataUrl?: string;
-  // Оригинальная SVG-строка для печати (если есть)
+  nodes: TopoNode[];
+  branches: TopoBranch[];
+  horizons: Horizon[];
+  viewState: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
+  branchWidth?: number;
+  branchBorder?: number;
   getSvgRaw?: () => string;
 }
 
@@ -49,7 +56,12 @@ const inp = "border border-gray-500 px-1.5 rounded text-[12px] text-gray-900 bg-
 const sel = inp + " cursor-pointer w-full";
 const ih = { height: 22 } as React.CSSProperties;
 
-export default function PrintDialog({ onClose, projectName = "Проект", previewDataUrl = "", getSvgRaw }: PrintDialogProps) {
+export default function PrintDialog({
+  onClose, projectName = "Проект",
+  nodes, branches, horizons, viewState,
+  branchWidth = 2, branchBorder = 0.4,
+  getSvgRaw,
+}: PrintDialogProps) {
   const [format, setFormat] = useState<PaperFormat>("A3");
   const [orientation, setOrientation] = useState<Orientation>("landscape");
   const [customW, setCustomW] = useState(420);
@@ -77,13 +89,12 @@ export default function PrintDialog({ onClose, projectName = "Проект", pre
   const [templates, setTemplates] = useState<Record<string, object>>(() => {
     try { return JSON.parse(localStorage.getItem("printTemplates") || "{}"); } catch { return {}; }
   });
-
-  // Экспорт
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf">("png");
   const [exportDpi, setExportDpi] = useState(150);
   const [exportQuality, setExportQuality] = useState(95);
 
+  // ─── Размеры бумаги ───────────────────────────────────────────────────
   const paper = useMemo(() => {
     if (format === "custom") return { w: customW, h: customH };
     const s = PAPER_SIZES[format];
@@ -95,7 +106,7 @@ export default function PrintDialog({ onClose, projectName = "Проект", pre
     h: paper.h - marginTop - marginBottom - (showStamp ? 56 : 0),
   }), [paper, marginLeft, marginRight, marginTop, marginBottom, showStamp]);
 
-  // ─── Размеры предпросмотра ───────────────────────────────────────────
+  // ─── Размеры предпросмотра ────────────────────────────────────────────
   const PREV_MAX_W = 700;
   const PREV_MAX_H = 520;
   const aspect = paper.w / paper.h;
@@ -103,10 +114,62 @@ export default function PrintDialog({ onClose, projectName = "Проект", pre
   const prevW = prevH * aspect;
   const px = (mm: number) => mm * (prevW / paper.w);
 
+  // ─── Рендер схемы в offscreen canvas для экспорта ────────────────────
+  const renderToCanvas = useCallback((outW: number, outH: number): string => {
+    const oc = document.createElement("canvas");
+    oc.width = outW; oc.height = outH;
+    const ctx = oc.getContext("2d");
+    if (!ctx) return "";
+
+    const horizonMap = new Map(horizons.map(h => [h.id, h]));
+    const visibleBranches = branches.filter(b => {
+      if (!b.horizonId) return true;
+      const h = horizonMap.get(b.horizonId);
+      return !h || h.visible;
+    });
+
+    // Масштабируем вид под нужный размер
+    const ratio = Math.min(outW / prevW, outH / prevH);
+    const sv = {
+      ...viewState,
+      scale: viewState.scale * ratio,
+      offsetX: viewState.offsetX * ratio,
+      offsetY: viewState.offsetY * ratio,
+    };
+    const proj = { ...sv, zScale: 1 };
+    const projNodes = nodes.map(n => ({
+      node: n, ...project3D({ x: n.x, y: n.y, z: n.z }, proj), depth: 0,
+    }));
+    const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, outW, outH);
+    renderCanvas({
+      ctx, width: outW, height: outH,
+      nodes, branches, horizons, horizonMap,
+      visibleBranches, hiddenBranchIds: new Set(),
+      projNodes, projNodesMap, proj, view: sv,
+      is3D: false, zScale: 1, zLevel: 0,
+      selectedBranchId: null, selectedBranchIds: new Set(),
+      selectedNodeId: null, selectedNodeIds: new Set(),
+      hoverBranchId: null,
+      branchWidth, branchBorder,
+      thinLines: false, colorByHorizon: false,
+      showFlowArrows: false, flowDisplay: "off",
+      animOffset: 0, infoConfig: null,
+      unitsConfig: DEFAULT_UNITS_CONFIG,
+    });
+    return oc.toDataURL("image/png");
+  }, [nodes, branches, horizons, viewState, prevW, prevH, branchWidth, branchBorder]);
+
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(() => {
-    const svg = getSvgRaw ? getSvgRaw() : "";
-    const scaleFactor = scale / 100;
+    // Для печати рендерим схему в PNG нужного размера
+    const DPI = 150;
+    const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
+    const printW = mmToPx(workArea.w);
+    const printH = mmToPx(workArea.h);
+    const schemaPng = renderToCanvas(printW, printH);
 
     const stampHtml = showStamp ? `
       <table class="stamp" cellpadding="0" cellspacing="0">
@@ -123,29 +186,16 @@ export default function PrintDialog({ onClose, projectName = "Проект", pre
         <tr><td colspan="5"></td></tr>
       </table>` : "";
 
-    // Если есть PNG превью — печатаем его (canvas-режим или fallback)
-    const isPng = previewDataUrl.startsWith("data:image/png") || previewDataUrl.startsWith("data:image/");
-    const hasSvg = svg && !svg.startsWith("data:") && svg.includes("<svg");
-
-    let schemaContent = "";
-    if (hasSvg) {
-      const tileSvgW = workArea.w / scaleFactor;
-      const tileSvgH = workArea.h / scaleFactor;
-      schemaContent = svg.replace(/<svg([^>]*)>/,
-        `<svg$1 viewBox="${offsetX} ${offsetY} ${tileSvgW} ${tileSvgH}" preserveAspectRatio="xMinYMin meet" width="${workArea.w}mm" height="${workArea.h}mm">`);
-    } else if (isPng) {
-      schemaContent = `<img src="${previewDataUrl}" style="width:${workArea.w}mm;height:${workArea.h}mm;object-fit:contain;object-position:left top;" />`;
-    }
-
     const pageHtml = `<div class="page">
       ${showFrame ? '<div class="frame"></div>' : ''}
-      <div class="schema-wrap">${schemaContent}</div>
+      <div class="schema-wrap">
+        <img src="${schemaPng}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" />
+      </div>
       ${stampHtml}
       ${showPageNumbers ? '<div class="page-num">1 / 1</div>' : ''}
     </div>`;
 
     const allPages = Array.from({ length: copies }, () => pageHtml).join("");
-    const orderedPages = reverseOrder ? allPages : allPages;
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>${drawingTitle}</title>
@@ -156,8 +206,7 @@ body{background:white;font-family:Arial,sans-serif}
 .page{width:${paper.w}mm;height:${paper.h}mm;position:relative;page-break-after:always;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm}
 .page:last-child{page-break-after:auto}
 .frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom+(showStamp?56:0)}mm;border:1px solid #000;pointer-events:none}
-.schema-wrap{width:100%;height:calc(100% - ${showStamp?56:0}mm);display:flex;align-items:flex-start;justify-content:flex-start;overflow:hidden}
-.schema-wrap svg,.schema-wrap img{display:block;max-width:100%;max-height:100%}
+.schema-wrap{width:100%;height:calc(100% - ${showStamp?56:0}mm);overflow:hidden}
 .stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
 .stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
 .col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
@@ -166,7 +215,7 @@ body{background:white;font-family:Arial,sans-serif}
 .org-cell{font-size:9pt;text-align:center}
 .page-num{position:absolute;bottom:${marginBottom+(showStamp?58:2)}mm;right:${marginRight+2}mm;font-size:9pt;color:#555}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body>${orderedPages}
+</style></head><body>${allPages}
 <script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
 </body></html>`;
 
@@ -175,50 +224,62 @@ body{background:white;font-family:Arial,sans-serif}
     win.document.open();
     win.document.write(html);
     win.document.close();
-  }, [paper, workArea, scale, offsetX, offsetY, marginTop, marginBottom, marginLeft, marginRight,
-      showStamp, showFrame, showPageNumbers, copies, reverseOrder, drawingTitle, drawingNumber,
-      engineer, approvedBy, organization, printDate, previewDataUrl, getSvgRaw]);
+  }, [paper, workArea, marginTop, marginBottom, marginLeft, marginRight, showStamp, showFrame,
+      showPageNumbers, copies, drawingTitle, drawingNumber, engineer, approvedBy, organization,
+      printDate, renderToCanvas]);
 
   // ─── Экспорт ─────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
-    const src = previewDataUrl;
-    if (!src) { alert("Схема не захвачена"); return; }
-
     if (exportFormat === "svg") {
       const raw = getSvgRaw ? getSvgRaw() : "";
-      if (!raw || raw.startsWith("data:")) { alert("SVG недоступен в canvas-режиме. Используйте PNG."); return; }
+      if (!raw || raw.startsWith("data:")) {
+        alert("SVG-экспорт недоступен. Используйте PNG.");
+        return;
+      }
       const blob = new Blob([raw], { type: "image/svg+xml" });
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = `${projectName}.svg`; a.click();
-      setShowExportDialog(false); return;
+      a.href = URL.createObjectURL(blob);
+      a.download = `${projectName}.svg`;
+      a.click();
+      setShowExportDialog(false);
+      return;
     }
-    if (exportFormat === "pdf") { handlePrint(); setShowExportDialog(false); return; }
+    if (exportFormat === "pdf") {
+      handlePrint();
+      setShowExportDialog(false);
+      return;
+    }
 
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    await new Promise<void>(res => {
-      img.onload = () => res(); img.onerror = () => res(); img.src = src;
-    });
-
-    const nW = img.naturalWidth  || 1600;
-    const nH = img.naturalHeight || 900;
+    // Растровые форматы — рендерим напрямую
     const scale2 = exportDpi / 96;
-    const outW = Math.round(nW * scale2);
-    const outH = Math.round(nH * scale2);
+    const outW = Math.round(prevW * scale2);
+    const outH = Math.round(prevH * scale2);
+    const pngSrc = renderToCanvas(outW, outH);
+    if (!pngSrc) { alert("Ошибка рендера"); return; }
 
-    const offscreen = document.createElement("canvas");
-    offscreen.width = outW; offscreen.height = outH;
-    const ctx = offscreen.getContext("2d")!;
+    if (exportFormat === "png") {
+      const a = document.createElement("a");
+      a.href = pngSrc; a.download = `${projectName}.png`; a.click();
+      setShowExportDialog(false);
+      return;
+    }
+
+    // Для jpg/bmp/tiff — перерисовываем через canvas
+    const img = new Image();
+    await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = pngSrc; });
+    const oc = document.createElement("canvas");
+    oc.width = outW; oc.height = outH;
+    const ctx = oc.getContext("2d")!;
     ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, outW, outH);
-    ctx.drawImage(img, 0, 0, outW, outH);
-
-    const mime: Record<string, string> = { png: "image/png", jpg: "image/jpeg", bmp: "image/bmp", tiff: "image/tiff" };
+    ctx.drawImage(img, 0, 0);
+    const mime: Record<string, string> = { jpg: "image/jpeg", bmp: "image/bmp", tiff: "image/tiff" };
     const q = exportFormat === "jpg" ? exportQuality / 100 : undefined;
-    const dataUrl = offscreen.toDataURL(mime[exportFormat] ?? "image/png", q);
     const a = document.createElement("a");
-    a.href = dataUrl; a.download = `${projectName}.${exportFormat}`; a.click();
+    a.href = oc.toDataURL(mime[exportFormat] ?? "image/png", q);
+    a.download = `${projectName}.${exportFormat}`;
+    a.click();
     setShowExportDialog(false);
-  }, [previewDataUrl, exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, handlePrint]);
+  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, handlePrint, renderToCanvas, prevW, prevH]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
@@ -246,13 +307,14 @@ body{background:white;font-family:Arial,sans-serif}
     setTemplates(next); localStorage.setItem("printTemplates", JSON.stringify(next));
   };
 
+  // ─── JSX ─────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center"
       style={{ background: "rgba(0,0,0,0.55)" }}>
       <div className="bg-white flex flex-col shadow-2xl border border-gray-400"
         style={{ width: 1060, maxHeight: "96vh", fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 12, borderRadius: 2 }}>
 
-        {/* ── Заголовок ── */}
+        {/* Заголовок */}
         <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
           style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)" }}>
           <div className="flex items-center gap-2">
@@ -269,10 +331,10 @@ body{background:white;font-family:Arial,sans-serif}
           </div>
         </div>
 
-        {/* ── Тело ── */}
+        {/* Тело */}
         <div className="flex flex-1 overflow-hidden">
 
-          {/* ── Левая панель ── */}
+          {/* Левая панель */}
           <div className="flex-shrink-0 overflow-y-auto border-r border-gray-300"
             style={{ width: 215, background: "#f4f4f4", color: "#1a1a1a" }}>
 
@@ -458,7 +520,7 @@ body{background:white;font-family:Arial,sans-serif}
             </div>
           </div>
 
-          {/* ── Предпросмотр ── */}
+          {/* Предпросмотр */}
           <div className="flex-1 overflow-auto flex flex-col items-center justify-start p-5"
             style={{ background: "#6e6e6e" }}>
 
@@ -477,25 +539,23 @@ body{background:white;font-family:Arial,sans-serif}
                 }} />
               )}
 
-              {/* Схема */}
+              {/* Схема — живой рендер через PrintPreviewCanvas */}
               <div style={{
                 position: "absolute",
                 top: px(marginTop), left: px(marginLeft),
                 width: px(workArea.w), height: px(workArea.h),
-                overflow: "hidden", background: "#fff",
+                overflow: "hidden",
               }}>
-                {previewDataUrl ? (
-                  <img src={previewDataUrl} alt="preview"
-                    style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "left top", display: "block" }}
-                  />
-                ) : (
-                  <div style={{
-                    width: "100%", height: "100%", display: "flex",
-                    alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 14,
-                  }}>
-                    Схема не захвачена
-                  </div>
-                )}
+                <PrintPreviewCanvas
+                  nodes={nodes}
+                  branches={branches}
+                  horizons={horizons}
+                  view={viewState}
+                  width={Math.max(1, Math.round(px(workArea.w)))}
+                  height={Math.max(1, Math.round(px(workArea.h)))}
+                  branchWidth={branchWidth}
+                  branchBorder={branchBorder}
+                />
               </div>
 
               {/* Штамп */}
@@ -529,7 +589,7 @@ body{background:white;font-family:Arial,sans-serif}
               )}
             </div>
 
-            {/* Строка состояния */}
+            {/* Статус-строка */}
             <div className="flex items-center justify-between w-full mt-3 flex-shrink-0"
               style={{ color: "white", fontSize: 11, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
               <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб {scale}%</span>
@@ -538,7 +598,7 @@ body{background:white;font-family:Arial,sans-serif}
           </div>
         </div>
 
-        {/* ── Кнопки внизу ── */}
+        {/* Кнопки внизу */}
         <div className="flex items-center justify-end gap-2 px-4 py-2 flex-shrink-0"
           style={{ background: "#efefef", borderTop: "1px solid #d0d0d0" }}>
           <button onClick={handlePrint}
@@ -553,7 +613,7 @@ body{background:white;font-family:Arial,sans-serif}
         </div>
       </div>
 
-      {/* ══ Диалог экспорта ══════════════════════════════════════════════ */}
+      {/* Диалог экспорта */}
       {showExportDialog && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center"
           style={{ background: "rgba(0,0,0,0.6)" }}>

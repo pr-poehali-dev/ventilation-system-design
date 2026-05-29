@@ -4899,7 +4899,12 @@ export default function CadPage() {
       <PrintDialog
         onClose={() => setShowPrintDialog(false)}
         projectName={projectFileName.replace(/\.vproj$/, "")}
-        previewDataUrl={printPreviewUrl}
+        nodes={nodes}
+        branches={branches}
+        horizons={horizons}
+        viewState={savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
+        branchWidth={branchWidth}
+        branchBorder={branchBorder}
         getSvgRaw={() => getSvgRef.current?.() ?? ""}
       />
     )}
