@@ -89,53 +89,147 @@ export default function PrintDialog({ onClose, getSvg, projectName = "Проек
   const [templateName, setTemplateName] = useState<string>("");
   const [templates, setTemplates] = useState<Record<string, object>>({});
 
-  // ─── SVG / превью ────────────────────────────────────────────────────────
-  const [svgDataUrl, setSvgDataUrl] = useState<string>("");
-  const [svgStr, setSvgStr] = useState<string>("");
-  const [svgViewBox, setSvgViewBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // ─── Источник предпросмотра ───────────────────────────────────────────────
+  // isPng=true  → getSvg() вернул PNG dataUrl (canvas-режим)
+  // isPng=false → getSvg() вернул SVG outerHTML (svg-режим)
+  const [previewSrc, setPreviewSrc] = useState<string>("");   // итоговый dataUrl для <img>
+  const [rawContent, setRawContent] = useState<string>("");   // оригинал для печати/экспорта
   const [selectedPage, setSelectedPage] = useState<number>(0);
 
-  // ─── Захват SVG ──────────────────────────────────────────────────────────
+  // ─── Диалог экспорта ──────────────────────────────────────────────────────
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf">("png");
+  const [exportDpi, setExportDpi] = useState(150);
+  const [exportQuality, setExportQuality] = useState(95);
+
+  // ─── Захват содержимого схемы ─────────────────────────────────────────────
   useEffect(() => {
     if (!getSvg) return;
     try {
       const raw = getSvg();
       if (!raw) return;
-      setSvgStr(raw);
+      setRawContent(raw);
 
-      // Парсим viewBox из SVG (формат: "x y w h")
-      const vbMatch = raw.match(/viewBox="([^"]+)"/);
-      const wMatch = raw.match(/\bwidth="(\d+(?:\.\d+)?)"/);
-      const hMatch = raw.match(/\bheight="(\d+(?:\.\d+)?)"/);
-      let vx = 0, vy = 0, svgW = 0, svgH = 0;
-      if (vbMatch) {
-        const parts = vbMatch[1].trim().split(/[\s,]+/).map(Number);
-        if (parts.length >= 4) { vx = parts[0]; vy = parts[1]; svgW = parts[2]; svgH = parts[3]; }
-      }
-      if (svgW <= 0 && wMatch) svgW = parseFloat(wMatch[1]);
-      if (svgH <= 0 && hMatch) svgH = parseFloat(hMatch[1]);
-      if (svgW > 0 && svgH > 0) setSvgViewBox({ x: vx, y: vy, w: svgW, h: svgH });
+      // Определяем тип: PNG dataUrl (canvas-режим) или SVG-строка
+      if (raw.startsWith("data:image/png")) {
+        // Canvas-режим: уже готовый PNG — показываем напрямую
+        setPreviewSrc(raw);
+      } else {
+        // SVG-режим: нормализуем и конвертируем в PNG через offscreen canvas
 
-      // Создаём нормализованный SVG для предпросмотра: явный viewBox + width/height в px
-      // убираем старые width/height чтобы не блокировали масштабирование
-      const normalized = raw
-        .replace(/<svg([^>]*)>/, (_, attrs) => {
-          // Убираем width= height= из атрибутов, оставляем viewBox
-          const cleaned = attrs
-            .replace(/\s*width="[^"]*"/g, "")
-            .replace(/\s*height="[^"]*"/g, "");
-          const vb = vbMatch ? "" : ` viewBox="${vx} ${vy} ${svgW} ${svgH}"`;
-          return `<svg${cleaned}${vb} preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block;">`;
+        // Парсим размеры
+        const vbMatch = raw.match(/viewBox="([^"]+)"/);
+        const wMatch  = raw.match(/\s+width="(\d+(?:\.\d+)?)"/);
+        const hMatch  = raw.match(/\s+height="(\d+(?:\.\d+)?)"/);
+        let svgW = 0, svgH = 0;
+        if (vbMatch) {
+          const p = vbMatch[1].trim().split(/[\s,]+/).map(Number);
+          if (p.length >= 4) { svgW = p[2]; svgH = p[3]; }
+        }
+        if (svgW <= 0 && wMatch) svgW = parseFloat(wMatch[1]);
+        if (svgH <= 0 && hMatch) svgH = parseFloat(hMatch[1]);
+
+        // Нормализованный SVG: убираем px-width/height, задаём % чтобы масштабировался
+        const normalized = raw.replace(/<svg([^>]*)>/, (_full, attrs: string) => {
+          let a = attrs;
+          a = a.replace(/\s+width="[^"]*"/, "");
+          a = a.replace(/\s+height="[^"]*"/, "");
+          // Если нет viewBox — добавляем из w/h
+          if (!vbMatch && svgW > 0 && svgH > 0) {
+            a += ` viewBox="0 0 ${svgW} ${svgH}"`;
+          }
+          return `<svg${a} preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block;">`;
         });
-      setSvgStr(normalized);
 
-      // Также blob-URL для экспорта
-      const blob = new Blob([raw], { type: "image/svg+xml" });
-      const url = URL.createObjectURL(blob);
-      setSvgDataUrl(url);
-      return () => URL.revokeObjectURL(url);
+        // Рендерим SVG в canvas → PNG dataUrl для надёжного предпросмотра
+        const RENDER_W = svgW > 0 ? Math.min(svgW, 2400) : 1600;
+        const RENDER_H = svgH > 0 ? Math.round(RENDER_W * svgH / svgW) : 900;
+
+        const blob = new Blob([normalized], { type: "image/svg+xml;charset=utf-8" });
+        const blobUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width  = RENDER_W;
+          canvas.height = RENDER_H;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { setPreviewSrc(blobUrl); return; }
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, RENDER_W, RENDER_H);
+          ctx.drawImage(img, 0, 0, RENDER_W, RENDER_H);
+          URL.revokeObjectURL(blobUrl);
+          setPreviewSrc(canvas.toDataURL("image/png"));
+        };
+        img.onerror = () => {
+          // Fallback: показываем blob напрямую
+          setPreviewSrc(blobUrl);
+        };
+        img.src = blobUrl;
+      }
     } catch { /* noop */ }
   }, [getSvg]);
+
+  // ─── Экспорт ─────────────────────────────────────────────────────────────
+  const handleExport = useCallback(async () => {
+    if (!rawContent && !previewSrc) return;
+
+    const dpiScale = exportDpi / 96;
+
+    if (exportFormat === "svg") {
+      // Экспорт SVG как есть
+      const content = rawContent.startsWith("data:image/png")
+        ? "" // canvas mode — нет SVG, пропускаем
+        : rawContent;
+      if (!content) { alert("SVG недоступен в Canvas-режиме. Используйте PNG."); return; }
+      const blob = new Blob([content], { type: "image/svg+xml" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${projectName}.svg`;
+      a.click();
+      return;
+    }
+
+    if (exportFormat === "pdf") {
+      // PDF через печать в PDF (системный диалог)
+      handlePrint();
+      return;
+    }
+
+    // Растровые форматы: рисуем через canvas
+    const sourceUrl = previewSrc || rawContent;
+    if (!sourceUrl) return;
+
+    // Получаем нативные размеры
+    const img = new Image();
+    await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = sourceUrl; });
+
+    const nativeW = img.naturalWidth  || 1600;
+    const nativeH = img.naturalHeight || 900;
+    const outW = Math.round(nativeW  * dpiScale);
+    const outH = Math.round(nativeH * dpiScale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width  = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = exportFormat === "jpg" ? "#ffffff" : "#ffffff";
+    ctx.fillRect(0, 0, outW, outH);
+    ctx.drawImage(img, 0, 0, outW, outH);
+
+    const mimeMap: Record<string, string> = {
+      png: "image/png", jpg: "image/jpeg", bmp: "image/bmp", tiff: "image/tiff",
+    };
+    const mime = mimeMap[exportFormat] ?? "image/png";
+    const ext  = exportFormat;
+    const quality = exportFormat === "jpg" ? exportQuality / 100 : undefined;
+    const dataUrl = canvas.toDataURL(mime, quality);
+
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `${projectName}.${ext}`;
+    a.click();
+    setShowExportDialog(false);
+  }, [rawContent, previewSrc, exportFormat, exportDpi, exportQuality, projectName]);
 
   // ─── Размер бумаги ───────────────────────────────────────────────────────
   const paper = useMemo(() => {
@@ -152,33 +246,15 @@ export default function PrintDialog({ onClose, getSvg, projectName = "Проек
 
   // Подобрать масштаб чтобы всё вошло на один лист
   const fitScale = useCallback(() => {
-    if (!svgViewBox) return;
-    const sx = (workArea.w / svgViewBox.w) * 100;
-    const sy = (workArea.h / svgViewBox.h) * 100;
-    setScale(Math.floor(Math.min(sx, sy)));
+    setScale(100);
     setOffsetX(0);
     setOffsetY(0);
-  }, [svgViewBox, workArea]);
+  }, []);
 
-  // ─── Разбивка на страницы (тайлинг) ─────────────────────────────────────
+  // Тайлинг: всегда одна страница (упрощённо — многостраничность через масштаб)
   const tiles = useMemo(() => {
-    if (!svgViewBox) return [{ col: 0, row: 0, x: 0, y: 0 }];
-    const scaleFactor = scale / 100;
-    // Сколько мм схемы помещается в одну страницу
-    const tileMmW = workArea.w / scaleFactor;
-    const tileMmH = workArea.h / scaleFactor;
-    // Реальные размеры схемы в мм (1px SVG = 0.2645 мм при 96dpi, но здесь абстрактные единицы)
-    // Считаем количество страниц
-    const cols = Math.max(1, Math.ceil(svgViewBox.w / tileMmW));
-    const rows = Math.max(1, Math.ceil(svgViewBox.h / tileMmH));
-    const result: { col: number; row: number; x: number; y: number }[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        result.push({ col: c, row: r, x: c * tileMmW, y: r * tileMmH });
-      }
-    }
-    return result;
-  }, [svgViewBox, scale, workArea]);
+    return [{ col: 0, row: 0, x: 0, y: 0 }];
+  }, []);
 
   const totalPages = tiles.length;
 
@@ -187,7 +263,7 @@ export default function PrintDialog({ onClose, getSvg, projectName = "Проек
 
   // ─── Печать ──────────────────────────────────────────────────────────────
   const handlePrint = () => {
-    const svg = svgStr || (getSvg ? getSvg() : "");
+    const svg = rawContent || (getSvg ? getSvg() : "");
 
     const stampHtml = showStamp ? `
       <table class="stamp" cellpadding="0" cellspacing="0">
@@ -371,14 +447,7 @@ ${allPages}
                 <Icon name="Printer" size={20} className="text-gray-700" />
                 <span style={{ fontSize: 10 }}>Печать</span>
               </button>
-              <button onClick={() => {
-                const svg = svgStr || (getSvg ? getSvg() : "");
-                const blob = new Blob([svg], { type: "image/svg+xml" });
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = `${projectName}.svg`;
-                a.click();
-              }}
+              <button onClick={() => setShowExportDialog(true)}
                 className="flex flex-col items-center gap-0.5 flex-1 py-1 hover:bg-gray-200 rounded"
                 style={{ border: "1px solid #c8c8c8", background: "white" }}>
                 <Icon name="Download" size={20} className="text-gray-700" />
@@ -594,7 +663,7 @@ ${allPages}
                   }} />
                 )}
 
-                {/* Схема — inline SVG в масштабируемом контейнере */}
+                {/* Схема — img из dataUrl (работает и для PNG canvas-режима, и для SVG→PNG) */}
                 <div style={{
                   position: "absolute",
                   top: px(marginTop),
@@ -602,11 +671,19 @@ ${allPages}
                   width: px(workArea.w),
                   height: px(workArea.h),
                   overflow: "hidden",
+                  background: "#fff",
                 }}>
-                  {svgStr ? (
-                    <div
-                      style={{ width: "100%", height: "100%" }}
-                      dangerouslySetInnerHTML={{ __html: svgStr }}
+                  {previewSrc ? (
+                    <img
+                      src={previewSrc}
+                      alt="preview"
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        objectPosition: "left top",
+                        display: "block",
+                      }}
                     />
                   ) : (
                     <div style={{
@@ -711,6 +788,122 @@ ${allPages}
           </button>
         </div>
       </div>
+
+      {/* ══ ДИАЛОГ ЭКСПОРТА ══════════════════════════════════════════════════ */}
+      {showExportDialog && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.6)" }}>
+          <div className="bg-white rounded shadow-2xl border border-gray-400"
+            style={{ width: 380, fontFamily: "Tahoma, Segoe UI, Arial, sans-serif" }}>
+
+            {/* Заголовок */}
+            <div className="flex items-center justify-between px-4 py-2"
+              style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)", borderRadius: "4px 4px 0 0" }}>
+              <div className="flex items-center gap-2">
+                <Icon name="Download" size={14} className="text-white" />
+                <span className="text-white font-bold text-[13px]">Экспорт схемы</span>
+              </div>
+              <button onClick={() => setShowExportDialog(false)}
+                className="text-white hover:bg-red-500 w-5 h-5 flex items-center justify-center rounded text-[11px]">✕</button>
+            </div>
+
+            {/* Тело */}
+            <div className="p-5 space-y-4">
+              {/* Формат */}
+              <div>
+                <div className="text-[12px] font-semibold text-gray-800 mb-2">Формат файла:</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["png","jpg","bmp","tiff","svg","pdf"] as const).map(f => (
+                    <button key={f}
+                      onClick={() => setExportFormat(f)}
+                      className="py-1.5 rounded border text-[12px] font-semibold uppercase transition-colors"
+                      style={{
+                        background: exportFormat === f ? "#2563eb" : "white",
+                        color: exportFormat === f ? "white" : "#374151",
+                        borderColor: exportFormat === f ? "#2563eb" : "#d1d5db",
+                      }}>
+                      {f.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1.5 text-[11px] text-gray-500">
+                  {exportFormat === "png"  && "PNG — без потерь, прозрачность, рекомендуется для схем"}
+                  {exportFormat === "jpg"  && "JPEG — с потерями, меньший размер файла"}
+                  {exportFormat === "bmp"  && "BMP — без сжатия, максимальное качество"}
+                  {exportFormat === "tiff" && "TIFF — для полиграфии и архивов"}
+                  {exportFormat === "svg"  && "SVG — векторный формат, масштабируется без потерь"}
+                  {exportFormat === "pdf"  && "PDF — откроется диалог печати в PDF"}
+                </div>
+              </div>
+
+              {/* Разрешение (только для растровых) */}
+              {!["svg","pdf"].includes(exportFormat) && (
+                <div>
+                  <div className="text-[12px] font-semibold text-gray-800 mb-2">Разрешение (DPI):</div>
+                  <div className="flex gap-2 mb-2">
+                    {[72, 96, 150, 300, 600].map(d => (
+                      <button key={d} onClick={() => setExportDpi(d)}
+                        className="flex-1 py-1 rounded border text-[11px] font-medium"
+                        style={{
+                          background: exportDpi === d ? "#2563eb" : "white",
+                          color: exportDpi === d ? "white" : "#374151",
+                          borderColor: exportDpi === d ? "#2563eb" : "#d1d5db",
+                        }}>
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-gray-700">Своё:</span>
+                    <input type="number" min={36} max={1200} value={exportDpi}
+                      onChange={e => setExportDpi(Math.max(36, Math.min(1200, +e.target.value || 96)))}
+                      className="border border-gray-400 rounded px-2 text-[12px] text-gray-900"
+                      style={{ width: 70, height: 24 }} />
+                    <span className="text-[11px] text-gray-500">dpi</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Качество (только JPEG) */}
+              {exportFormat === "jpg" && (
+                <div>
+                  <div className="text-[12px] font-semibold text-gray-800 mb-2">
+                    Качество JPEG: {exportQuality}%
+                  </div>
+                  <input type="range" min={10} max={100} step={5}
+                    value={exportQuality} onChange={e => setExportQuality(+e.target.value)}
+                    className="w-full" style={{ accentColor: "#2563eb" }} />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                    <span>Низкое</span><span>Среднее</span><span>Высокое</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Предполагаемый размер */}
+              {!["svg","pdf"].includes(exportFormat) && (
+                <div className="text-[11px] text-gray-500 bg-gray-50 rounded px-3 py-2 border border-gray-200">
+                  Приблизительный размер файла зависит от содержимого схемы
+                  {exportFormat === "jpg" && ` · Качество: ${exportQuality}%`}
+                </div>
+              )}
+            </div>
+
+            {/* Кнопки */}
+            <div className="flex gap-2 px-5 pb-5 justify-end">
+              <button onClick={handleExport}
+                className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600"
+                style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
+                <Icon name="Download" size={13} className="inline mr-1.5" />
+                Скачать {exportFormat.toUpperCase()}
+              </button>
+              <button onClick={() => setShowExportDialog(false)}
+                className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
