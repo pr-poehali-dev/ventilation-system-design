@@ -739,9 +739,44 @@ export default function CadPage() {
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
+  const [printPreviewUrl, setPrintPreviewUrl] = useState<string>("");
   const getSvgRef = useRef<(() => string) | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const liveSvgRef = useRef<SVGSVGElement | null>(null);
+
+  // Захватывает скриншот схемы синхронно и открывает диалог печати
+  const openPrintDialog = () => {
+    let dataUrl = "";
+    // 1) Приоритет — живой canvas (canvas-режим больших схем)
+    const canvas = liveCanvasRef.current;
+    if (canvas && canvas.width > 0 && canvas.height > 0) {
+      try {
+        const url = canvas.toDataURL("image/png");
+        if (url && url.length > 100) dataUrl = url;
+      } catch { /* tainted canvas — пробуем SVG */ }
+    }
+    // 2) SVG-режим — сериализуем живой SVG DOM
+    if (!dataUrl) {
+      const svg = liveSvgRef.current;
+      if (svg) {
+        try {
+          const serializer = new XMLSerializer();
+          const svgStr = serializer.serializeToString(svg);
+          const svgW = svg.width?.baseVal?.value || 1600;
+          const svgH = svg.height?.baseVal?.value || 900;
+          // Синхронно создаём blob URL и передаём как строку
+          const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+          dataUrl = URL.createObjectURL(blob);
+        } catch { /* ignore */ }
+      }
+    }
+    // 3) Fallback — getSvg()
+    if (!dataUrl && getSvgRef.current) {
+      dataUrl = getSvgRef.current() ?? "";
+    }
+    setPrintPreviewUrl(dataUrl);
+    setShowPrintDialog(true);
+  };
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
@@ -2037,19 +2072,16 @@ export default function CadPage() {
                 {fileSectionState === "print" && (
                   <>
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Печать схемы</div>
-                    <button onClick={() => { handlePrint(); setActiveRibbon("home"); }}
-                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-gray-50 border border-gray-200 group mb-2">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-gray-400" style={{ background: "#f9fafb" }}>
-                        <Icon name="Printer" size={22} className="text-gray-600" />
+                    <button onClick={() => { openPrintDialog(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group mb-2">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                        <Icon name="Printer" size={22} className="text-blue-600" />
                       </div>
                       <div>
-                        <div className="text-[13px] font-medium text-gray-800">Печать / PDF</div>
-                        <div className="text-[11px] text-gray-400">Открыть диалог печати браузера (Ctrl+P)</div>
+                        <div className="text-[13px] font-medium text-gray-800">Просмотр и печать</div>
+                        <div className="text-[11px] text-gray-400">Настройка формата, масштаба, экспорт</div>
                       </div>
                     </button>
-                    <div className="text-[11px] text-gray-500 px-1 mt-1">
-                      Совет: в диалоге печати выберите «Сохранить как PDF» для экспорта в PDF.
-                    </div>
                   </>
                 )}
 
@@ -4813,9 +4845,8 @@ export default function CadPage() {
       <PrintDialog
         onClose={() => setShowPrintDialog(false)}
         projectName={projectFileName.replace(/\.vproj$/, "")}
-        getSvg={() => getSvgRef.current?.() ?? ""}
-        getLiveCanvas={() => liveCanvasRef.current}
-        getLiveSvg={() => liveSvgRef.current}
+        previewDataUrl={printPreviewUrl}
+        getSvgRaw={() => getSvgRef.current?.() ?? ""}
       />
     )}
 
