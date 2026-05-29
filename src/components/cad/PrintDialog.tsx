@@ -6,6 +6,7 @@ import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
+import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -141,7 +142,7 @@ export default function PrintDialog({
 
   // ─── Рендер схемы в offscreen canvas для печати/экспорта ─────────────
   // Использует тот же fit-алгоритм что и PrintPreviewCanvas
-  const renderToCanvas = useCallback((outW: number, outH: number): string => {
+  const renderToCanvas = useCallback(async (outW: number, outH: number): Promise<string> => {
     const oc = document.createElement("canvas");
     oc.width = outW; oc.height = outH;
     const ctx = oc.getContext("2d");
@@ -193,18 +194,24 @@ export default function PrintDialog({
       showFlowArrows: false, flowDisplay,
       animOffset: 0, infoConfig, unitsConfig,
     });
+
+    // Рисуем условные обозначения поверх схемы
+    if (schemaSymbols.length > 0) {
+      await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, sc, unitsConfig);
+    }
+
     return oc.toDataURL("image/png");
-  }, [nodes, branches, horizons, viewState, zScale, userScale, userOffsetX, userOffsetY,
+  }, [nodes, branches, horizons, schemaSymbols, viewState, zScale, userScale, userOffsetX, userOffsetY,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig]);
 
   // ─── Печать ──────────────────────────────────────────────────────────
-  const handlePrint = useCallback(() => {
+  const handlePrint = useCallback(async () => {
     // Для печати рендерим схему в PNG нужного размера
     const DPI = 150;
     const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
     const printW = mmToPx(workArea.w);
     const printH = mmToPx(workArea.h);
-    const schemaPng = renderToCanvas(printW, printH);
+    const schemaPng = await renderToCanvas(printW, printH);
 
     const stampHtml = showStamp ? `
       <table class="stamp" cellpadding="0" cellspacing="0">
@@ -280,7 +287,7 @@ body{background:white;font-family:Arial,sans-serif}
       return;
     }
     if (exportFormat === "pdf") {
-      handlePrint();
+      await handlePrint();
       setShowExportDialog(false);
       return;
     }
@@ -289,7 +296,7 @@ body{background:white;font-family:Arial,sans-serif}
     const scale2 = exportDpi / 96;
     const outW = Math.round(prevW * scale2);
     const outH = Math.round(prevH * scale2);
-    const pngSrc = renderToCanvas(outW, outH);
+    const pngSrc = await renderToCanvas(outW, outH);
     if (!pngSrc) { alert("Ошибка рендера"); return; }
 
     if (exportFormat === "png") {
