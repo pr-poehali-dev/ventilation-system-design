@@ -27,6 +27,23 @@ export interface TopoNode {
   computedWallTemp: number;    // °C
   computedPressure: number;    // Па — абсолютное давление
   computedExplosivePressure: number; // кПа
+  // ─── Противопожарное водоснабжение ────────────────────────────
+  fireNodeType: "none" | "reservoir" | "consumer" | "junction"; // тип узла ППЗ
+  fireConsumerType: "fire_hydrant" | "sprinkler" | "monitor" | "other"; // тип потребителя
+  fireHydrantOpen: boolean;           // кран открыт
+  fireRequiredFlow: number;           // м³/ч — требуемый расход
+  fireInitPressure: number;           // МПа — начальное давление (для резервуара)
+  fireCapacity: number;               // м³ — ёмкость резервуара
+  fireHydrantDiameter: number;        // мм — диаметр выходного отверстия крана
+  fireResistanceMode: "project" | "manual"; // способ задания гидравлического сопротивления
+  fireManualR: number;                // МН·с²/м⁸ — ручное сопротивление
+  fireDescription: string;            // описание узла ППЗ
+  // Вычисленные параметры ППЗ
+  fireComputedStaticP: number;        // МПа — статическое давление
+  fireComputedDynamicP: number;       // МПа — динамическое давление
+  fireComputedFlow: number;           // м³/ч — расход
+  fireComputedR: number;              // МН·с²/м⁸ — сопротивление
+  fireComputedDrainTime: number;      // мин — время истечения (для резервуара)
 }
 
 export interface TopoBranch {
@@ -118,6 +135,21 @@ export interface TopoBranch {
   // Если задано — переопределяет глобальный infoConfig только для этой ветви.
   // Ключи соответствуют InfoDisplayConfig (только branch-поля). undefined = не задан (берётся глобал).
   indicators?: Record<string, boolean>;
+  // ─── Водопровод (ППЗ) ────────────────────────────────
+  hasWaterPipe: boolean;           // ветвь содержит трубопровод ППЗ
+  wpDiameter: number;              // мм — внутренний диаметр трубы
+  wpMaterial: string;              // материал трубы
+  wpLengthManual: boolean;         // длина задана вручную
+  wpLength: number;                // м — длина трубопровода
+  wpRoughnessMode: "smooth" | "rough" | "manual"; // способ задания шероховатости
+  wpRoughness: number;             // мм — абсолютная шероховатость
+  wpManualR: number;               // МН·с²/м⁸ — ручное сопротивление
+  wpLocalXi: number;               // сумма ξ местных сопротивлений
+  // Вычисленные параметры водопровода
+  wpComputedR: number;             // МН·с²/м⁸
+  wpComputedFlow: number;          // м³/ч
+  wpComputedVelocity: number;      // м/с
+  wpComputedDeltaP: number;        // МПа — потери давления
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
@@ -179,6 +211,21 @@ export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
     computedWallTemp: 0,
     computedPressure: 910,
     computedExplosivePressure: 0,
+    fireNodeType: "none",
+    fireConsumerType: "fire_hydrant",
+    fireHydrantOpen: false,
+    fireRequiredFlow: 0,
+    fireInitPressure: 0,
+    fireCapacity: 0,
+    fireHydrantDiameter: 0,
+    fireResistanceMode: "project",
+    fireManualR: 0,
+    fireDescription: "",
+    fireComputedStaticP: 0,
+    fireComputedDynamicP: 0,
+    fireComputedFlow: 0,
+    fireComputedR: 0,
+    fireComputedDrainTime: 0,
     ...partial,
   };
 }
@@ -261,6 +308,19 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     layer: "Стволы",
     horizonId: "",
     comment: "",
+    hasWaterPipe: false,
+    wpDiameter: 100,
+    wpMaterial: "Сталь",
+    wpLengthManual: false,
+    wpLength: 0,
+    wpRoughnessMode: "rough",
+    wpRoughness: 0.5,
+    wpManualR: 0,
+    wpLocalXi: 0,
+    wpComputedR: 0,
+    wpComputedFlow: 0,
+    wpComputedVelocity: 0,
+    wpComputedDeltaP: 0,
     ...partial,
   };
 }

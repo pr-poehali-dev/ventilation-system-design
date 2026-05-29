@@ -1346,8 +1346,95 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
         )}
 
         {innerTab === "Трубы: вода" && (
-          <div className="px-2 py-2 text-[11px] text-gray-400 text-center">
-            Водяные трубопроводы не заданы
+          <div>
+            <SectionHeader title="Водопровод ППЗ" />
+            <InlineLabel label="Трубопровод задан">
+              <CheckField
+                checked={branch.hasWaterPipe ?? false}
+                onChange={(v) => onUpdate({ hasWaterPipe: v })}
+              />
+            </InlineLabel>
+
+            {(branch.hasWaterPipe) && (<>
+              <SectionHeader title="Геометрия трубы" />
+              <InlineLabel label="Диаметр, мм">
+                <EditInput
+                  type="number" step="1"
+                  value={branch.wpDiameter ?? 100}
+                  onChange={(v) => onUpdate({ wpDiameter: parseFloat(v) || 0 })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Материал">
+                <SelectField
+                  value={branch.wpMaterial ?? "Сталь"}
+                  options={["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"]}
+                  onChange={(v) => onUpdate({ wpMaterial: v })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Длина вручную">
+                <CheckField
+                  checked={branch.wpLengthManual ?? false}
+                  onChange={(v) => onUpdate({ wpLengthManual: v })}
+                />
+              </InlineLabel>
+              {branch.wpLengthManual && (
+                <InlineLabel label="Длина, м">
+                  <EditInput
+                    type="number" step="0.1"
+                    value={branch.wpLength ?? 0}
+                    onChange={(v) => onUpdate({ wpLength: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+              )}
+
+              <SectionHeader title="Гидравлическое сопротивление" />
+              <InlineLabel label="Шероховатость">
+                <SelectField
+                  value={branch.wpRoughnessMode ?? "rough"}
+                  options={["smooth", "rough", "manual"]}
+                  onChange={(v) => onUpdate({ wpRoughnessMode: v as TopoBranch["wpRoughnessMode"] })}
+                />
+              </InlineLabel>
+              {(branch.wpRoughnessMode ?? "rough") === "rough" && (
+                <InlineLabel label="Шероховатость, мм">
+                  <EditInput
+                    type="number" step="0.01"
+                    value={branch.wpRoughness ?? 0.5}
+                    onChange={(v) => onUpdate({ wpRoughness: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+              )}
+              {(branch.wpRoughnessMode ?? "rough") === "manual" && (
+                <InlineLabel label="R, МН·с²/м⁸">
+                  <EditInput
+                    type="number" step="0.001"
+                    value={branch.wpManualR ?? 0}
+                    onChange={(v) => onUpdate({ wpManualR: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+              )}
+              <InlineLabel label="Σξ местных сопр.">
+                <EditInput
+                  type="number" step="0.1"
+                  value={branch.wpLocalXi ?? 0}
+                  onChange={(v) => onUpdate({ wpLocalXi: parseFloat(v) || 0 })}
+                />
+              </InlineLabel>
+
+              <SectionHeader title="Вычисленные параметры" />
+              <InlineLabel label="Сопротивление, МН·с²/м⁸">
+                <ComputedInput value={`${numFmt(branch.wpComputedR ?? 0, 4)}`} />
+              </InlineLabel>
+              <InlineLabel label="Расход, м³/ч">
+                <ComputedInput value={`${numFmt(branch.wpComputedFlow ?? 0, 2)}`} />
+              </InlineLabel>
+              <InlineLabel label="Скорость, м/с">
+                <ComputedInput value={`${numFmt(branch.wpComputedVelocity ?? 0, 2)}`} />
+              </InlineLabel>
+              <InlineLabel label="Потери давл., МПа">
+                <ComputedInput value={`${numFmt(branch.wpComputedDeltaP ?? 0, 4)}`} />
+              </InlineLabel>
+            </>)}
           </div>
         )}
 

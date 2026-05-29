@@ -456,11 +456,104 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       // Основной круг
+      const fireType = n.fireNodeType ?? "none";
+      const nodeColor = fireType === "reservoir" ? "#3b82f6"
+                      : fireType === "consumer"  ? "#ef4444"
+                      : fireType === "junction"  ? "#8b5cf6"
+                      : color;
       ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r, 0, Math.PI * 2);
-      ctx.fillStyle = color;
+      ctx.fillStyle = nodeColor;
       ctx.strokeStyle = isSel ? ringColor : "#1f2937";
       ctx.lineWidth = isSel ? 2 : 1;
       ctx.fill(); ctx.stroke();
+
+      // Иконка резервуара с водой (синий цилиндр)
+      if (fireType === "reservoir" && sc > 0.04) {
+        const ir = Math.max(5, r * 2.2);
+        const ix = pn.sx, iy = pn.sy;
+        ctx.save();
+        // Корпус резервуара (прямоугольник)
+        ctx.beginPath();
+        ctx.rect(ix - ir * 0.7, iy - ir * 0.9, ir * 1.4, ir * 1.5);
+        ctx.fillStyle = "#dbeafe";
+        ctx.strokeStyle = "#1d4ed8";
+        ctx.lineWidth = 1;
+        ctx.fill(); ctx.stroke();
+        // Крышка (верхний эллипс)
+        ctx.beginPath();
+        ctx.ellipse(ix, iy - ir * 0.9, ir * 0.7, ir * 0.28, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#93c5fd";
+        ctx.strokeStyle = "#1d4ed8";
+        ctx.lineWidth = 1;
+        ctx.fill(); ctx.stroke();
+        // Дно (нижний эллипс)
+        ctx.beginPath();
+        ctx.ellipse(ix, iy + ir * 0.6, ir * 0.7, ir * 0.28, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "#bfdbfe";
+        ctx.strokeStyle = "#1d4ed8";
+        ctx.lineWidth = 1;
+        ctx.fill(); ctx.stroke();
+        // Вертикальные рёбра для объёма
+        ctx.beginPath();
+        ctx.moveTo(ix - ir * 0.7, iy - ir * 0.9);
+        ctx.lineTo(ix - ir * 0.7, iy + ir * 0.6);
+        ctx.moveTo(ix + ir * 0.7, iy - ir * 0.9);
+        ctx.lineTo(ix + ir * 0.7, iy + ir * 0.6);
+        ctx.strokeStyle = "#1d4ed8";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Иконка пожарного крана (красная буква Т + кружок)
+      if (fireType === "consumer" && (n.fireConsumerType ?? "fire_hydrant") === "fire_hydrant" && sc > 0.04) {
+        const ir = Math.max(5, r * 2.2);
+        const ix = pn.sx, iy = pn.sy - ir * 0.2;
+        ctx.save();
+        // Вертикальная стойка крана
+        ctx.beginPath();
+        ctx.moveTo(ix, iy - ir * 1.0);
+        ctx.lineTo(ix, iy + ir * 0.5);
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Горизонтальная перекладина (вентиль)
+        ctx.beginPath();
+        ctx.moveTo(ix - ir * 0.8, iy - ir * 0.4);
+        ctx.lineTo(ix + ir * 0.8, iy - ir * 0.4);
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Основание
+        ctx.beginPath();
+        ctx.moveTo(ix - ir * 0.5, iy + ir * 0.5);
+        ctx.lineTo(ix + ir * 0.5, iy + ir * 0.5);
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Центральный кружок (корпус вентиля)
+        ctx.beginPath();
+        ctx.arc(ix, iy - ir * 0.4, ir * 0.25, 0, Math.PI * 2);
+        ctx.fillStyle = "#fca5a5";
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 1;
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+
+      // Иконка соединения труб (фиолетовый крестик)
+      if (fireType === "junction" && sc > 0.04) {
+        const ir = Math.max(4, r * 1.8);
+        const ix = pn.sx, iy = pn.sy;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(ix - ir, iy); ctx.lineTo(ix + ir, iy);
+        ctx.moveTo(ix, iy - ir); ctx.lineTo(ix, iy + ir);
+        ctx.strokeStyle = "#7c3aed";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Внутреннее кольцо для atmosphereLink (как SVG)
       if (isAtm) {
