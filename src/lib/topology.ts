@@ -109,6 +109,7 @@ export interface TopoBranch {
   designed: boolean;        // Проектируемая выработка
   labelOffsetX?: number;    // смещение блока индикаторов от середины ветви, px по X
   labelOffsetY?: number;    // смещение блока индикаторов от середины ветви, px по Y
+  labelAngle?: number;      // поворот блока индикаторов, градусы (0 = горизонтально)
   // ─── Общие ───────────────────────────────────────────
   layer: string;
   horizonId: string;        // ID горизонта (см. Horizon[]), пустая строка = без привязки

@@ -351,30 +351,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const labelOpacity = Math.min(1, (sc - 0.04) / 0.08);
       const branchNum = b.id.replace(/^B/, "");
       const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
-      const showCircle = !ic || ic.branchNumber;
-      const circleR = 10;
+      const showNum = !ic || ic.branchNumber;
       const lox = b.labelOffsetX ?? 0;
       const loy = b.labelOffsetY ?? -16;
-      const circleX = midX + lox;
-      const circleY = midY + loy;
-
-      ctx.save();
-      ctx.globalAlpha = labelOpacity;
-
-      if (showCircle) {
-        ctx.beginPath();
-        ctx.arc(circleX, circleY, circleR, 0, Math.PI * 2);
-        ctx.fillStyle = "white";
-        ctx.fill();
-        ctx.strokeStyle = isSel ? "#2563eb" : "#374151";
-        ctx.lineWidth = isSel ? 1.5 : 1;
-        ctx.stroke();
-        ctx.fillStyle = isSel ? "#2563eb" : "#111827";
-        ctx.font = `600 ${branchNum.length > 2 ? 7 : 9}px "Segoe UI",sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(branchNum, circleX, circleY);
-      }
+      const labelAng = (b.labelAngle ?? 0) * Math.PI / 180;
+      const anchorX = midX + lox;
+      const anchorY = midY + loy;
 
       const dataLines: string[] = [];
       if (!isDead && ic) {
@@ -400,35 +382,48 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
       }
 
-      if (dataLines.length > 0) {
-        const lh = 11;
-        const dataX = midX + lox + (showCircle ? circleR + 4 : 0);
-        const dataY = midY + loy;
+      // Все строки: номер (если нужен) + данные
+      const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
+      if (allLines.length === 0) continue;
 
-        // Выноска если метка сдвинута
-        if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
-          ctx.save();
-          ctx.strokeStyle = "#94a3b8";
-          ctx.lineWidth = 0.8;
-          ctx.setLineDash([3, 2]);
-          ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(dataX, dataY); ctx.stroke();
-          ctx.restore();
-        }
+      ctx.save();
+      ctx.globalAlpha = labelOpacity;
 
-        ctx.font = `600 8.5px "Segoe UI",sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const bh = dataLines.length * lh + 4;
-        dataLines.forEach((ln, li) => {
-          const ty = dataY - bh / 2 + lh * (li + 0.6);
-          ctx.strokeStyle = "white";
-          ctx.lineWidth = 3;
-          ctx.lineJoin = "round";
-          ctx.strokeText(ln, dataX, ty);
-          ctx.fillStyle = overV ? "#dc2626" : "#1e3a5f";
-          ctx.fillText(ln, dataX, ty);
-        });
+      // Выноска если метка сдвинута
+      if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
+        ctx.save();
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 0.8;
+        ctx.setLineDash([3, 2]);
+        ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
       }
+
+      // Переносим начало координат + поворот
+      ctx.translate(anchorX, anchorY);
+      if (labelAng !== 0) ctx.rotate(labelAng);
+
+      const lh = 11;
+      const bh = allLines.length * lh + 4;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      allLines.forEach((ln, li) => {
+        const ty = -bh / 2 + lh * (li + 0.6);
+        const isNumLine = li === 0 && showNum;
+        const fontSize = isNumLine ? (branchNum.length > 2 ? 7.5 : 9) : 8.5;
+        ctx.font = `600 ${fontSize}px "Segoe UI",sans-serif`;
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round";
+        ctx.strokeText(ln, 0, ty);
+        ctx.fillStyle = isNumLine
+          ? (isSel ? "#2563eb" : "#374151")
+          : (overV ? "#dc2626" : "#1e3a5f");
+        ctx.fillText(ln, 0, ty);
+      });
+
       ctx.restore();
     }
 

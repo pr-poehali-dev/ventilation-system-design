@@ -3412,6 +3412,49 @@ export default function CadPage() {
                 </FrameGroup>
 
                 {selectedBranch && (
+                  <FrameGroup title="Поворот индикаторов">
+                    <div className="text-[10px] text-gray-500 px-1 pb-1">
+                      Угол поворота блока меток на схеме (°)
+                    </div>
+                    <div className="flex items-center gap-2 px-1">
+                      <input
+                        type="range" min={-180} max={180} step={5}
+                        value={selectedBranch.labelAngle ?? 0}
+                        onChange={(e) => updateBranch(selectedBranch.id, { labelAngle: Number(e.target.value) })}
+                        className="flex-1"
+                        style={{ accentColor: "#2563eb" }}
+                      />
+                      <input
+                        type="number" min={-180} max={180} step={1}
+                        value={selectedBranch.labelAngle ?? 0}
+                        onChange={(e) => updateBranch(selectedBranch.id, { labelAngle: Number(e.target.value) || 0 })}
+                        className="text-[11px] text-right px-1"
+                        style={{ width: 46, border: "1px solid #c8c8c8", height: 20, outline: "none", background: "white" }}
+                      />
+                      <span className="text-[11px] text-gray-500">°</span>
+                      <button
+                        onClick={() => updateBranch(selectedBranch.id, { labelAngle: 0 })}
+                        className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 text-gray-500"
+                        title="Сбросить поворот">↺</button>
+                    </div>
+                    <div className="flex gap-1 px-1 pt-1">
+                      {[-90, -45, 0, 45, 90].map(a => (
+                        <button key={a}
+                          onClick={() => updateBranch(selectedBranch.id, { labelAngle: a })}
+                          className="flex-1 text-[10px] py-0.5 border rounded hover:bg-blue-50 hover:border-blue-400"
+                          style={{
+                            borderColor: (selectedBranch.labelAngle ?? 0) === a ? "#2563eb" : "#d1d5db",
+                            color: (selectedBranch.labelAngle ?? 0) === a ? "#2563eb" : "#374151",
+                            background: (selectedBranch.labelAngle ?? 0) === a ? "#eff6ff" : "white",
+                          }}>
+                          {a}°
+                        </button>
+                      ))}
+                    </div>
+                  </FrameGroup>
+                )}
+
+                {selectedBranch && (
                   <FrameGroup title="Примечание">
                     <textarea
                       value={selectedBranch.comment ?? ""}

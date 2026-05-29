@@ -1466,8 +1466,7 @@ export default function TopoCanvas(props: Props) {
                 const labelOpacity = Math.min(1, (view.scale - 0.04) / 0.08);
                 const branchNum = b.id.replace(/^B/, "");
                 const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
-                const showCircle = !ic || ic.branchNumber;
-                const circleR = 10;
+                const showNum = !ic || ic.branchNumber;
 
                 const dataLines: string[] = [];
                 if (isDead) {
@@ -1492,81 +1491,64 @@ export default function TopoCanvas(props: Props) {
                   if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
                 }
 
+                // Все строки: номер (если нужен) + данные
+                const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
+                if (allLines.length === 0) return null;
+
                 const lh = 11;
-                const bh = dataLines.length * lh + 4;
-                // Пользовательское смещение метки (перетаскивание)
+                const bh = allLines.length * lh + 4;
                 const lox = b.labelOffsetX ?? 0;
-                const loy = b.labelOffsetY ?? (-16);
-                // Позиция блока данных с учётом смещения
-                const dataX = midX + lox + (showCircle ? circleR + 4 : 0);
-                const dataY = midY + loy;
-                const hasData = dataLines.length > 0;
-                // Выноска от середины ветви к блоку данных
-                const leaderEndX = dataX;
-                const leaderEndY = dataY;
+                const loy = b.labelOffsetY ?? -16;
+                const labelAng = b.labelAngle ?? 0;
+                const anchorX = midX + lox;
+                const anchorY = midY + loy;
+                const hasMoved = Math.abs(lox) > 5 || Math.abs(loy + 16) > 5;
 
                 return (
                   <g opacity={labelOpacity}>
-                    {/* Кружок с номером */}
-                    {showCircle && (
-                      <g transform={`translate(${midX + lox},${midY + loy})`}>
-                        <circle r={circleR} fill="white" stroke={isSel ? "#2563eb" : "#374151"} strokeWidth={isSel ? 1.5 : 1} />
-                        <text textAnchor="middle" dominantBaseline="middle"
-                          fontSize={branchNum.length > 2 ? "7" : "9"}
-                          fontWeight="600"
-                          fill={isSel ? "#2563eb" : "#111827"}>
-                          {branchNum}
-                        </text>
-                      </g>
-                    )}
                     {/* Выноска если метка сдвинута */}
-                    {hasData && (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) && (
-                      <line
-                        x1={midX} y1={midY}
-                        x2={leaderEndX} y2={leaderEndY}
+                    {hasMoved && (
+                      <line x1={midX} y1={midY} x2={anchorX} y2={anchorY}
                         stroke="#94a3b8" strokeWidth="0.8" strokeDasharray="3 2"
-                        pointerEvents="none"
-                      />
+                        pointerEvents="none" />
                     )}
-                    {/* Блок текста — без фона, с белой обводкой для читаемости */}
-                    {hasData && (
-                      <g
-                        transform={`translate(${dataX},${dataY})`}
-                        style={{ cursor: onBranchLabelOffset ? "grab" : "default" }}
-                        onMouseDown={onBranchLabelOffset ? (e) => {
-                          if (e.button !== 0) return;
-                          e.stopPropagation();
-                          const startX = e.clientX;
-                          const startY = e.clientY;
-                          const origOx = b.labelOffsetX ?? 0;
-                          const origOy = b.labelOffsetY ?? -16;
-                          const onMove = (me: MouseEvent) => {
-                            onBranchLabelOffset(b.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
-                          };
-                          const onUp = () => {
-                            window.removeEventListener("mousemove", onMove);
-                            window.removeEventListener("mouseup", onUp);
-                          };
-                          window.addEventListener("mousemove", onMove);
-                          window.addEventListener("mouseup", onUp);
-                        } : undefined}
-                        onDoubleClick={onBranchLabelOffset ? (e) => {
-                          e.stopPropagation();
-                          onBranchLabelOffset(b.id, 0, -16);
-                        } : undefined}
-                      >
-                        {dataLines.map((ln, li) => (
-                          <text key={li} textAnchor="middle" dominantBaseline="middle"
-                            y={-bh / 2 + lh * (li + 0.6)}
-                            fontSize="8.5"
-                            fontWeight="600"
-                            fill={overV ? "#dc2626" : "#1e3a5f"}
-                            style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3, strokeLinejoin: "round" }}>
-                            {ln}
-                          </text>
-                        ))}
-                      </g>
-                    )}
+                    {/* Весь блок: номер + данные — единый текст без обводки кружком */}
+                    <g
+                      transform={`translate(${anchorX},${anchorY}) rotate(${labelAng})`}
+                      style={{ cursor: onBranchLabelOffset ? "grab" : "default" }}
+                      onMouseDown={onBranchLabelOffset ? (e) => {
+                        if (e.button !== 0) return;
+                        e.stopPropagation();
+                        const startX = e.clientX;
+                        const startY = e.clientY;
+                        const origOx = b.labelOffsetX ?? 0;
+                        const origOy = b.labelOffsetY ?? -16;
+                        const onMove = (me: MouseEvent) => {
+                          onBranchLabelOffset(b.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                        };
+                        const onUp = () => {
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      } : undefined}
+                      onDoubleClick={onBranchLabelOffset ? (e) => {
+                        e.stopPropagation();
+                        onBranchLabelOffset(b.id, 0, -16);
+                      } : undefined}
+                    >
+                      {allLines.map((ln, li) => (
+                        <text key={li} textAnchor="middle" dominantBaseline="middle"
+                          y={-bh / 2 + lh * (li + 0.6)}
+                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? "7.5" : "9") : "8.5"}
+                          fontWeight="600"
+                          fill={li === 0 && showNum ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f")}
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3, strokeLinejoin: "round" }}>
+                          {ln}
+                        </text>
+                      ))}
+                    </g>
                   </g>
                 );
               })()}
