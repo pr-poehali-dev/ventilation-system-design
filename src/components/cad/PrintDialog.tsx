@@ -129,64 +129,6 @@ export default function PrintDialog({
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
-  // Печать одного тайла
-  const handlePrintSingleTile = useCallback(async (tileIdx: number) => {
-    closeCtxMenu();
-    const tile = tiles.list[tileIdx];
-    if (!tile) return;
-    const DPI = 150;
-    const mmToPx = (mm: number) => mm * DPI / 25.4;
-    const printW = mmToPx(workArea.w);
-    const printH = mmToPx(workArea.h);
-    const png = await renderTileToCanvas(printW, printH, tile.col, tile.row, 1);
-    const pageNum = tileIdx + 1;
-    const stampHtml = showStamp ? `
-      <table class="stamp" cellpadding="0" cellspacing="0">
-        <tr><td colspan="5"></td>
-          <td rowspan="6" class="col-name">${drawingTitle}</td>
-          <td class="col-stage">Стадия</td><td class="col-sheet">Лист</td><td class="col-total">Листов</td></tr>
-        <tr><td>Разраб.</td><td>${engineer}</td><td></td><td></td><td>${printDate}</td>
-          <td rowspan="5" class="org-cell">${organization}</td>
-          <td>Р</td><td>${pageNum}</td><td>${tiles.list.length}</td></tr>
-        <tr><td>Пров.</td><td>${approvedBy}</td><td></td><td></td><td>${printDate}</td>
-          <td rowspan="4" colspan="3" class="num-cell">${drawingNumber}</td></tr>
-        <tr><td>Н.контр.</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td>Утв.</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td colspan="5"></td></tr>
-      </table>` : "";
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>${drawingTitle} — лист ${pageNum}</title>
-<style>
-@page{size:${paper.w}mm ${paper.h}mm;margin:0}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:white;font-family:Arial,sans-serif}
-.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm}
-.frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom + (showStamp ? 56 : 0)}mm;border:1px solid #000;pointer-events:none}
-.schema-wrap{width:100%;height:calc(100% - ${showStamp ? 56 : 0}mm);overflow:hidden}
-.stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
-.stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
-.col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
-.col-stage,.col-sheet,.col-total{width:12mm;text-align:center}
-.num-cell{font-size:10pt;font-weight:bold;text-align:center}
-.org-cell{font-size:9pt;text-align:center}
-.page-num{position:absolute;bottom:${marginBottom + (showStamp ? 58 : 2)}mm;right:${marginRight + 2}mm;font-size:9pt;color:#555}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body>
-<div class="page">
-  ${showFrame ? '<div class="frame"></div>' : ''}
-  <div class="schema-wrap"><img src="${png}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" /></div>
-  ${stampHtml}
-  ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
-</div>
-<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
-</body></html>`;
-    const win = window.open("", "_blank", "width=1400,height=900");
-    if (!win) { alert("Разрешите всплывающие окна"); return; }
-    win.document.open(); win.document.write(html); win.document.close();
-  }, [tiles, workArea, paper, marginTop, marginBottom, marginLeft, marginRight,
-      showStamp, showFrame, showPageNumbers, drawingTitle, drawingNumber,
-      engineer, approvedBy, organization, printDate, renderTileToCanvas, closeCtxMenu]);
-
   // Wheel-зум предпросмотра: масштабирует вид относительно позиции курсора
   const handlePreviewWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -449,6 +391,64 @@ body{background:white;font-family:Arial,sans-serif}
   }, [paper, workArea, marginTop, marginBottom, marginLeft, marginRight, showStamp, showFrame,
       showPageNumbers, copies, reverseOrder, drawingTitle, drawingNumber, engineer, approvedBy,
       organization, printDate, tiles, totalPages, renderTileToCanvas]);
+
+  // Печать одного тайла (после tiles и renderTileToCanvas)
+  const handlePrintSingleTile = useCallback(async (tileIdx: number) => {
+    closeCtxMenu();
+    const tile = tiles.list[tileIdx];
+    if (!tile) return;
+    const DPI = 150;
+    const mmToPx = (mm: number) => mm * DPI / 25.4;
+    const printW = mmToPx(workArea.w);
+    const printH = mmToPx(workArea.h);
+    const png = await renderTileToCanvas(printW, printH, tile.col, tile.row, 1);
+    const pageNum = tileIdx + 1;
+    const stampHtml = showStamp ? `
+      <table class="stamp" cellpadding="0" cellspacing="0">
+        <tr><td colspan="5"></td>
+          <td rowspan="6" class="col-name">${drawingTitle}</td>
+          <td class="col-stage">Стадия</td><td class="col-sheet">Лист</td><td class="col-total">Листов</td></tr>
+        <tr><td>Разраб.</td><td>${engineer}</td><td></td><td></td><td>${printDate}</td>
+          <td rowspan="5" class="org-cell">${organization}</td>
+          <td>Р</td><td>${pageNum}</td><td>${tiles.list.length}</td></tr>
+        <tr><td>Пров.</td><td>${approvedBy}</td><td></td><td></td><td>${printDate}</td>
+          <td rowspan="4" colspan="3" class="num-cell">${drawingNumber}</td></tr>
+        <tr><td>Н.контр.</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Утв.</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td colspan="5"></td></tr>
+      </table>` : "";
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${drawingTitle} — лист ${pageNum}</title>
+<style>
+@page{size:${paper.w}mm ${paper.h}mm;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:white;font-family:Arial,sans-serif}
+.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm}
+.frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom + (showStamp ? 56 : 0)}mm;border:1px solid #000;pointer-events:none}
+.schema-wrap{width:100%;height:calc(100% - ${showStamp ? 56 : 0}mm);overflow:hidden}
+.stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
+.stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
+.col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
+.col-stage,.col-sheet,.col-total{width:12mm;text-align:center}
+.num-cell{font-size:10pt;font-weight:bold;text-align:center}
+.org-cell{font-size:9pt;text-align:center}
+.page-num{position:absolute;bottom:${marginBottom + (showStamp ? 58 : 2)}mm;right:${marginRight + 2}mm;font-size:9pt;color:#555}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body>
+<div class="page">
+  ${showFrame ? '<div class="frame"></div>' : ''}
+  <div class="schema-wrap"><img src="${png}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" /></div>
+  ${stampHtml}
+  ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
+</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
+</body></html>`;
+    const win = window.open("", "_blank", "width=1400,height=900");
+    if (!win) { alert("Разрешите всплывающие окна"); return; }
+    win.document.open(); win.document.write(html); win.document.close();
+  }, [tiles, workArea, paper, marginTop, marginBottom, marginLeft, marginRight,
+      showStamp, showFrame, showPageNumbers, drawingTitle, drawingNumber,
+      engineer, approvedBy, organization, printDate, renderTileToCanvas, closeCtxMenu]);
 
   // ─── Экспорт ─────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
