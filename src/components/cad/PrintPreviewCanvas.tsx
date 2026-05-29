@@ -2,8 +2,9 @@
 // Вписывает схему в canvas автоматически, либо использует переданный view.
 import { useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "@/lib/topology";
-import { renderCanvas, type ProjNode } from "@/lib/canvasRenderer";
-import { DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { renderCanvas, type ProjNode, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { type InfoDisplayConfig } from "@/lib/infoConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 
 export interface PrintPreviewCanvasHandle {
   getFitView(): { scale: number; offsetX: number; offsetY: number } | null;
@@ -16,6 +17,9 @@ interface Props {
   horizons: Horizon[];
   azimuth?: number;
   elevation?: number;
+  zScale?: number;
+  is3D?: boolean;
+  // Явный вид (null = auto-fit)
   scale?: number;
   offsetX?: number;
   offsetY?: number;
@@ -23,14 +27,24 @@ interface Props {
   height: number;
   branchWidth?: number;
   branchBorder?: number;
+  thinLines?: boolean;
+  colorByHorizon?: boolean;
+  flowDisplay?: FlowDisplayMode;
+  infoConfig?: InfoDisplayConfig | null;
+  unitsConfig?: UnitsConfig;
 }
 
 const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function PrintPreviewCanvas({
   nodes, branches, horizons,
   azimuth = 0, elevation = 90,
+  zScale = 1, is3D = false,
   scale: scaleProp, offsetX: oxProp, offsetY: oyProp,
   width, height,
   branchWidth = 2, branchBorder = 0.4,
+  thinLines = false, colorByHorizon = false,
+  flowDisplay = "off",
+  infoConfig = null,
+  unitsConfig = DEFAULT_UNITS_CONFIG,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -49,20 +63,20 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     [branches, horizonMap]
   );
 
-  // Bounding box всех узлов (scale=1, offset=0)
+  // Bounding box всех узлов с учётом zScale и проекции (scale=1, offset=0)
   const bbox = useMemo(() => {
     if (nodes.length === 0) return null;
-    const tmpProj: ProjOptions = { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale: 1 };
+    const tmpProj: ProjOptions = { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const n of nodes) {
-      const p = project3D({ x: n.x, y: n.y, z: n.z }, tmpProj);
+      const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
       if (p.sx < minX) minX = p.sx;
       if (p.sx > maxX) maxX = p.sx;
       if (p.sy < minY) minY = p.sy;
       if (p.sy > maxY) maxY = p.sy;
     }
     return { minX, maxX, minY, maxY };
-  }, [nodes, azimuth, elevation]);
+  }, [nodes, azimuth, elevation, zScale]);
 
   // Auto-fit view под текущий размер canvas
   const fitView = useMemo(() => {
@@ -83,14 +97,14 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     scale:   scaleProp ?? fitView.scale,
     offsetX: oxProp    ?? fitView.offsetX,
     offsetY: oyProp    ?? fitView.offsetY,
-    azimuth, elevation, zScale: 1,
-  }), [scaleProp, oxProp, oyProp, fitView, azimuth, elevation]);
+    azimuth, elevation, zScale,
+  }), [scaleProp, oxProp, oyProp, fitView, azimuth, elevation, zScale]);
 
   const proj = useMemo<ProjOptions>(() => activeView, [activeView]);
 
   const projNodes = useMemo<ProjNode[]>(
-    () => nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z }, proj), depth: 0 })),
-    [nodes, proj]
+    () => nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj), depth: 0 })),
+    [nodes, proj, zScale]
   );
 
   const projNodesMap = useMemo(() => {
@@ -106,7 +120,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = is3D ? "#f0f4f8" : "#ffffff";
     ctx.fillRect(0, 0, width, height);
     renderCanvas({
       ctx, width, height,
@@ -114,19 +128,23 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       visibleBranches, hiddenBranchIds: new Set(),
       projNodes, projNodesMap, proj,
       view: activeView,
-      is3D: false, zScale: 1, zLevel: 0,
+      is3D, zScale, zLevel: 0,
       selectedBranchId: null, selectedBranchIds: new Set(),
       selectedNodeId: null, selectedNodeIds: new Set(),
       hoverBranchId: null,
       branchWidth, branchBorder,
-      thinLines: false, colorByHorizon: false,
-      showFlowArrows: false, flowDisplay: "off",
-      animOffset: 0, infoConfig: null,
-      unitsConfig: DEFAULT_UNITS_CONFIG,
+      thinLines, colorByHorizon,
+      showFlowArrows: false,
+      flowDisplay,
+      animOffset: 0,
+      infoConfig,
+      unitsConfig,
     });
   }, [nodes, branches, horizons, horizonMap, visibleBranches,
       projNodes, projNodesMap, proj, activeView,
-      width, height, branchWidth, branchBorder]);
+      is3D, zScale, width, height,
+      branchWidth, branchBorder, thinLines, colorByHorizon,
+      flowDisplay, infoConfig, unitsConfig]);
 
   useImperativeHandle(ref, () => ({
     getFitView: () => fitView,

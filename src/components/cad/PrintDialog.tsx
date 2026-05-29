@@ -2,8 +2,9 @@ import { useState, useMemo, useCallback, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
-import { renderCanvas } from "@/lib/canvasRenderer";
-import { DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { type InfoDisplayConfig } from "@/lib/infoConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -12,8 +13,15 @@ interface PrintDialogProps {
   branches: TopoBranch[];
   horizons: Horizon[];
   viewState: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
+  // Параметры отображения — как настроено в рабочей области
   branchWidth?: number;
   branchBorder?: number;
+  thinLines?: boolean;
+  colorByHorizon?: boolean;
+  flowDisplay?: FlowDisplayMode;
+  infoConfig?: InfoDisplayConfig | null;
+  unitsConfig?: UnitsConfig;
+  zScale?: number;
   getSvgRaw?: () => string;
 }
 
@@ -60,6 +68,10 @@ export default function PrintDialog({
   onClose, projectName = "Проект",
   nodes, branches, horizons, viewState,
   branchWidth = 2, branchBorder = 0.4,
+  thinLines = false, colorByHorizon = false,
+  flowDisplay = "off", infoConfig = null,
+  unitsConfig = DEFAULT_UNITS_CONFIG,
+  zScale = 1,
   getSvgRaw,
 }: PrintDialogProps) {
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
@@ -140,47 +152,47 @@ export default function PrintDialog({
     });
 
     // Вычисляем fit-view для нужного размера (идентично PrintPreviewCanvas)
-    let scale = 1, offsetX = 0, offsetY = 0;
+    const isScene3D = viewState.elevation < 89.5 || viewState.azimuth !== 0;
+    let sc = 1, offsetX = 0, offsetY = 0;
     if (nodes.length > 0) {
-      const tmpProj = { scale: 1, offsetX: 0, offsetY: 0, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale: 1 };
+      const tmpProj = { scale: 1, offsetX: 0, offsetY: 0, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const n of nodes) {
-        const p = project3D({ x: n.x, y: n.y, z: n.z }, tmpProj);
+        const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
         if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
         if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
       }
       const pad = 40;
       const sw = maxX - minX || 1, sh = maxY - minY || 1;
-      scale = Math.min((outW - pad * 2) / sw, (outH - pad * 2) / sh);
-      // Применяем пользовательский масштаб если задан
-      if (userScale !== null) scale = userScale;
-      offsetX = userOffsetX ?? ((outW  - sw * scale) / 2 - minX * scale);
-      offsetY = userOffsetY ?? ((outH - sh * scale) / 2 - minY * scale);
+      sc = Math.min((outW - pad * 2) / sw, (outH - pad * 2) / sh);
+      if (userScale !== null) sc = userScale;
+      offsetX = userOffsetX ?? ((outW  - sw * sc) / 2 - minX * sc);
+      offsetY = userOffsetY ?? ((outH - sh * sc) / 2 - minY * sc);
     }
 
-    const sv = { scale, offsetX, offsetY, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale: 1 };
+    const sv = { scale: sc, offsetX, offsetY, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
     const proj = sv;
-    const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z }, proj), depth: 0 }));
+    const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj), depth: 0 }));
     const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = isScene3D ? "#f0f4f8" : "#ffffff";
     ctx.fillRect(0, 0, outW, outH);
     renderCanvas({
       ctx, width: outW, height: outH,
       nodes, branches, horizons, horizonMap,
       visibleBranches, hiddenBranchIds: new Set(),
       projNodes, projNodesMap, proj, view: sv,
-      is3D: false, zScale: 1, zLevel: 0,
+      is3D: isScene3D, zScale, zLevel: 0,
       selectedBranchId: null, selectedBranchIds: new Set(),
       selectedNodeId: null, selectedNodeIds: new Set(),
       hoverBranchId: null, branchWidth, branchBorder,
-      thinLines: false, colorByHorizon: false,
-      showFlowArrows: false, flowDisplay: "off",
-      animOffset: 0, infoConfig: null,
-      unitsConfig: DEFAULT_UNITS_CONFIG,
+      thinLines, colorByHorizon,
+      showFlowArrows: false, flowDisplay,
+      animOffset: 0, infoConfig, unitsConfig,
     });
     return oc.toDataURL("image/png");
-  }, [nodes, branches, horizons, viewState, userScale, userOffsetX, userOffsetY, branchWidth, branchBorder]);
+  }, [nodes, branches, horizons, viewState, zScale, userScale, userOffsetX, userOffsetY,
+      branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig]);
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(() => {
@@ -596,6 +608,8 @@ body{background:white;font-family:Arial,sans-serif}
                   horizons={horizons}
                   azimuth={viewState.azimuth}
                   elevation={viewState.elevation}
+                  zScale={zScale}
+                  is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
                   scale={userScale ?? undefined}
                   offsetX={userOffsetX ?? undefined}
                   offsetY={userOffsetY ?? undefined}
@@ -603,6 +617,11 @@ body{background:white;font-family:Arial,sans-serif}
                   height={Math.max(1, Math.round(px(workArea.h)))}
                   branchWidth={branchWidth}
                   branchBorder={branchBorder}
+                  thinLines={thinLines}
+                  colorByHorizon={colorByHorizon}
+                  flowDisplay={flowDisplay}
+                  infoConfig={infoConfig}
+                  unitsConfig={unitsConfig}
                 />
               </div>
 

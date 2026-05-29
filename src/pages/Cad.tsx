@@ -4905,6 +4905,12 @@ export default function CadPage() {
         viewState={savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
         branchWidth={branchWidth}
         branchBorder={branchBorder}
+        thinLines={thinLines}
+        colorByHorizon={colorByHorizon}
+        flowDisplay={flowDisplay}
+        infoConfig={infoConfig}
+        unitsConfig={unitsConfig}
+        zScale={zScale}
         getSvgRaw={() => getSvgRef.current?.() ?? ""}
       />
     )}
