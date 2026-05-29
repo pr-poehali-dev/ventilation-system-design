@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 
 interface PrintDialogProps {
@@ -26,7 +26,7 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-1 px-3 py-1.5 text-left hover:bg-gray-100"
-        style={{ fontSize: 11, fontWeight: 600, color: "#333", background: "#efefef", borderBottom: open ? "1px solid #d8d8d8" : "none" }}>
+        style={{ fontSize: 12, fontWeight: 700, color: "#111", background: "#e0e0e0", borderBottom: open ? "1px solid #c8c8c8" : "none" }}>
         <span style={{ fontSize: 9, color: "#666" }}>{open ? "▼" : "►"}</span>
         {title}
       </button>
@@ -38,13 +38,13 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 mb-1.5">
-      <span style={{ width: 90, fontSize: 11, color: "#444", flexShrink: 0 }}>{label}</span>
+      <span style={{ width: 90, fontSize: 11, color: "#111", flexShrink: 0, fontWeight: 500 }}>{label}</span>
       <div className="flex-1">{children}</div>
     </div>
   );
 }
 
-const inputCls = "w-full border border-gray-400 px-1.5 rounded text-[11px] bg-white focus:outline-none focus:border-blue-500";
+const inputCls = "w-full border border-gray-500 px-1.5 rounded text-[12px] text-gray-900 bg-white focus:outline-none focus:border-blue-500";
 const inputStyle = { height: 22 };
 const selectCls = inputCls + " cursor-pointer";
 
@@ -92,8 +92,7 @@ export default function PrintDialog({ onClose, getSvg, projectName = "Проек
   // ─── SVG / превью ────────────────────────────────────────────────────────
   const [svgDataUrl, setSvgDataUrl] = useState<string>("");
   const [svgStr, setSvgStr] = useState<string>("");
-  const [svgViewBox, setSvgViewBox] = useState<{ w: number; h: number } | null>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [svgViewBox, setSvgViewBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [selectedPage, setSelectedPage] = useState<number>(0);
 
   // ─── Захват SVG ──────────────────────────────────────────────────────────
@@ -103,19 +102,34 @@ export default function PrintDialog({ onClose, getSvg, projectName = "Проек
       const raw = getSvg();
       if (!raw) return;
       setSvgStr(raw);
-      // Парсим viewBox / width-height из SVG
-      const wMatch = raw.match(/width="([^"]+)"/);
-      const hMatch = raw.match(/height="([^"]+)"/);
+
+      // Парсим viewBox из SVG (формат: "x y w h")
       const vbMatch = raw.match(/viewBox="([^"]+)"/);
-      let svgW = 0, svgH = 0;
+      const wMatch = raw.match(/\bwidth="(\d+(?:\.\d+)?)"/);
+      const hMatch = raw.match(/\bheight="(\d+(?:\.\d+)?)"/);
+      let vx = 0, vy = 0, svgW = 0, svgH = 0;
       if (vbMatch) {
-        const [, , vw, vh] = vbMatch[1].split(/\s+/).map(Number);
-        svgW = vw; svgH = vh;
-      } else if (wMatch && hMatch) {
-        svgW = parseFloat(wMatch[1]);
-        svgH = parseFloat(hMatch[1]);
+        const parts = vbMatch[1].trim().split(/[\s,]+/).map(Number);
+        if (parts.length >= 4) { vx = parts[0]; vy = parts[1]; svgW = parts[2]; svgH = parts[3]; }
       }
-      if (svgW > 0 && svgH > 0) setSvgViewBox({ w: svgW, h: svgH });
+      if (svgW <= 0 && wMatch) svgW = parseFloat(wMatch[1]);
+      if (svgH <= 0 && hMatch) svgH = parseFloat(hMatch[1]);
+      if (svgW > 0 && svgH > 0) setSvgViewBox({ x: vx, y: vy, w: svgW, h: svgH });
+
+      // Создаём нормализованный SVG для предпросмотра: явный viewBox + width/height в px
+      // убираем старые width/height чтобы не блокировали масштабирование
+      const normalized = raw
+        .replace(/<svg([^>]*)>/, (_, attrs) => {
+          // Убираем width= height= из атрибутов, оставляем viewBox
+          const cleaned = attrs
+            .replace(/\s*width="[^"]*"/g, "")
+            .replace(/\s*height="[^"]*"/g, "");
+          const vb = vbMatch ? "" : ` viewBox="${vx} ${vy} ${svgW} ${svgH}"`;
+          return `<svg${cleaned}${vb} preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block;">`;
+        });
+      setSvgStr(normalized);
+
+      // Также blob-URL для экспорта
       const blob = new Blob([raw], { type: "image/svg+xml" });
       const url = URL.createObjectURL(blob);
       setSvgDataUrl(url);
@@ -265,8 +279,8 @@ ${allPages}
   };
 
   // ─── Превью одной страницы ───────────────────────────────────────────────
-  const PREVIEW_W = 580;
-  const PREVIEW_H = 460;
+  const PREVIEW_W = 700;
+  const PREVIEW_H = 540;
 
   const pageW = paper.w;
   const pageH = paper.h;
@@ -275,19 +289,7 @@ ${allPages}
   const previewW = previewH * aspect;
   const px = (mm: number) => mm * (previewW / pageW);
 
-  // Количество колонок в сетке предпросмотра
-  const thumbCols = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(totalPages))));
-  const THUMB_AREA_W = PREVIEW_W;
-  const THUMB_AREA_H = PREVIEW_H;
-  const thumbW = Math.floor(THUMB_AREA_W / thumbCols) - 8;
-  const thumbH = Math.round(thumbW / aspect);
 
-  const workAreaFraction = { // доля рабочей области от страницы
-    x: marginLeft / pageW,
-    y: marginTop / pageH,
-    w: workArea.w / pageW,
-    h: (workArea.h) / pageH,
-  };
 
   // ─── Шаблоны (localStorage) ──────────────────────────────────────────────
   useEffect(() => {
@@ -334,7 +336,7 @@ ${allPages}
     <div className="fixed inset-0 z-[9999] flex items-center justify-center"
       style={{ background: "rgba(0,0,0,0.55)" }}>
       <div className="bg-white flex flex-col shadow-2xl border border-gray-400"
-        style={{ width: 920, maxHeight: "96vh", fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 11, borderRadius: 2 }}>
+        style={{ width: 1040, maxHeight: "96vh", fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 12, borderRadius: 2 }}>
 
         {/* ── Заголовок окна ── */}
         <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
@@ -359,7 +361,7 @@ ${allPages}
 
           {/* ── Левая панель настроек ── */}
           <div className="flex-shrink-0 overflow-y-auto border-r border-gray-300"
-            style={{ width: 200, background: "#f5f5f5", fontSize: 11 }}>
+            style={{ width: 200, background: "#f5f5f5", fontSize: 12, color: "#111" }}>
 
             {/* Кнопки печать / экспорт */}
             <div className="flex gap-2 px-2 py-2" style={{ borderBottom: "1px solid #d8d8d8" }}>
@@ -406,7 +408,7 @@ ${allPages}
 
             {/* Основные параметры */}
             <Section title="Основные параметры">
-              <div className="text-[10px] text-gray-500 mb-0.5">Принтер:</div>
+              <div style={{ fontSize: 11, color: "#333", marginBottom: 3 }}>Принтер:</div>
               <select className={selectCls} style={inputStyle}>
                 <option>Системный принтер</option>
               </select>
@@ -485,7 +487,7 @@ ${allPages}
                 className="w-full py-0.5 text-[10px] border border-gray-400 rounded hover:bg-blue-50 hover:border-blue-400 bg-white mb-2">
                 Подобрать масштаб
               </button>
-              <div className="text-[10px] text-gray-500 mb-1">Смещение:</div>
+              <div style={{ fontSize: 11, color: "#333", marginBottom: 4, fontWeight: 500 }}>Смещение:</div>
               <Row label="вправо:">
                 <div className="flex items-center gap-1">
                   <input type="number" className={inputCls} style={{ ...inputStyle, width: 55 }}
@@ -547,7 +549,7 @@ ${allPages}
                     ["Организация:", organization, setOrganization],
                   ] as [string, string, (v: string) => void][]).map(([lbl, val, set]) => (
                     <div key={lbl}>
-                      <div className="text-[10px] text-gray-500">{lbl}</div>
+                      <div style={{ fontSize: 11, color: "#333", marginBottom: 2 }}>{lbl}</div>
                       <input className={inputCls} style={inputStyle} value={val} onChange={e => set(e.target.value)} />
                     </div>
                   ))}
@@ -572,145 +574,116 @@ ${allPages}
           <div className="flex-1 overflow-auto flex flex-col"
             style={{ background: "#808080", padding: 16 }}>
 
-            {/* Если одна страница — большой предпросмотр */}
-            {totalPages === 1 ? (
-              <div className="flex items-center justify-center flex-1">
+            {/* ── Предпросмотр листа ── */}
+            <div className="flex items-start justify-center flex-1">
+              <div style={{
+                width: previewW, height: previewH,
+                background: "white",
+                boxShadow: "4px 4px 16px rgba(0,0,0,0.6)",
+                position: "relative",
+                flexShrink: 0,
+              }}>
+                {/* Рамка листа */}
+                {showFrame && (
+                  <div style={{
+                    position: "absolute",
+                    top: px(marginTop), left: px(marginLeft),
+                    right: px(marginRight),
+                    bottom: px(marginBottom + (showStamp ? 56 : 0)),
+                    border: "1px solid #333", pointerEvents: "none", zIndex: 2,
+                  }} />
+                )}
+
+                {/* Схема — inline SVG в масштабируемом контейнере */}
                 <div style={{
-                  width: previewW, height: previewH,
-                  background: "white", boxShadow: "3px 3px 12px rgba(0,0,0,0.5)",
-                  position: "relative", overflow: "hidden",
+                  position: "absolute",
+                  top: px(marginTop),
+                  left: px(marginLeft),
+                  width: px(workArea.w),
+                  height: px(workArea.h),
+                  overflow: "hidden",
                 }}>
-                  {/* Рамка */}
-                  {showFrame && (
-                    <div style={{
-                      position: "absolute",
-                      top: px(marginTop), left: px(marginLeft),
-                      right: px(marginRight), bottom: px(marginBottom + (showStamp ? 56 : 0)),
-                      border: "1px solid #333", pointerEvents: "none",
-                    }} />
-                  )}
-                  {/* Схема */}
-                  {svgDataUrl && (
-                    <img
-                      src={svgDataUrl}
-                      style={{
-                        position: "absolute",
-                        top: px(marginTop + (showFrame ? 1 : 0)),
-                        left: px(marginLeft + (showFrame ? 1 : 0)),
-                        width: px(workArea.w),
-                        height: px(workArea.h),
-                        objectFit: "contain",
-                        objectPosition: "left top",
-                        transformOrigin: "left top",
-                      }}
-                      alt="preview"
+                  {svgStr ? (
+                    <div
+                      style={{ width: "100%", height: "100%" }}
+                      dangerouslySetInnerHTML={{ __html: svgStr }}
                     />
-                  )}
-                  {/* Штамп */}
-                  {showStamp && (
+                  ) : (
                     <div style={{
-                      position: "absolute",
-                      bottom: px(marginBottom),
-                      right: px(marginRight),
-                      width: px(185),
-                      height: px(55),
-                      border: "1px solid #555",
-                      background: "white",
-                      fontSize: px(3),
+                      width: "100%", height: "100%",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#555",
+                      color: "#aaa", fontSize: 13,
                     }}>
-                      <span>Штамп</span>
+                      Загрузка схемы…
                     </div>
                   )}
-                  {/* Номер страницы */}
-                  {showPageNumbers && (
-                    <div style={{
-                      position: "absolute", bottom: px(marginBottom + (showStamp ? 57 : 1)),
-                      right: px(marginRight + 2), fontSize: px(3.5), color: "#888",
-                    }}>1 / 1</div>
-                  )}
                 </div>
+
+                {/* Штамп — мини-макет */}
+                {showStamp && (
+                  <div style={{
+                    position: "absolute",
+                    bottom: px(marginBottom),
+                    right: px(marginRight),
+                    width: px(185), height: px(55),
+                    border: "1px solid #555", background: "white", zIndex: 3,
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    fontSize: Math.max(6, px(2.5)),
+                    color: "#333",
+                  }}>
+                    <div style={{ borderRight: "1px solid #aaa", padding: "2px 4px" }}>
+                      <div style={{ fontWeight: 600, fontSize: Math.max(6, px(2)) }}>{drawingTitle || "Название"}</div>
+                      <div style={{ color: "#777" }}>{engineer && `Разраб.: ${engineer}`}</div>
+                    </div>
+                    <div style={{ padding: "2px 4px", fontWeight: 700, textAlign: "center" }}>
+                      {drawingNumber || "Номер"}
+                    </div>
+                  </div>
+                )}
+
+                {/* Номер страницы */}
+                {showPageNumbers && (
+                  <div style={{
+                    position: "absolute",
+                    bottom: px(marginBottom + (showStamp ? 57 : 1)),
+                    right: px(marginRight + 1),
+                    fontSize: Math.max(8, px(3)),
+                    color: "#666", zIndex: 3,
+                  }}>
+                    {clampedPage + 1} / {totalPages}
+                  </div>
+                )}
               </div>
-            ) : (
-              /* Сетка страниц */
-              <div>
-                <div className="text-white text-[11px] mb-3" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
-                  Всего страниц: <b>{totalPages}</b> — нажмите на страницу для выбора
-                </div>
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: `repeat(${thumbCols}, ${thumbW}px)`,
-                  gap: 12,
-                }}>
-                  {tiles.map((tile, idx) => {
-                    const isSelected = idx === clampedPage;
+
+              {/* Сетка страниц (если > 1) */}
+              {totalPages > 1 && (
+                <div style={{ marginLeft: 16, display: "flex", flexDirection: "column", gap: 4, maxHeight: previewH, overflowY: "auto" }}>
+                  <div style={{ color: "white", fontSize: 10, marginBottom: 4, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
+                    Страниц: {totalPages}
+                  </div>
+                  {tiles.map((_, idx) => {
+                    const isSel = idx === clampedPage;
                     return (
-                      <div key={idx} onClick={() => setSelectedPage(idx)}
+                      <button key={idx} onClick={() => setSelectedPage(idx)}
                         style={{
-                          width: thumbW, height: thumbH + 24,
-                          cursor: "pointer",
-                          display: "flex", flexDirection: "column", alignItems: "center",
-                        }}>
-                        <div style={{
-                          width: thumbW, height: thumbH,
+                          width: 60, height: Math.round(60 / aspect),
                           background: "white",
-                          boxShadow: isSelected
-                            ? "0 0 0 2px #4a9eff, 3px 3px 8px rgba(0,0,0,0.4)"
-                            : "2px 2px 6px rgba(0,0,0,0.4)",
-                          position: "relative",
-                          overflow: "hidden",
-                          border: isSelected ? "2px solid #4a9eff" : "none",
+                          border: isSel ? "2px solid #4a9eff" : "1px solid #888",
+                          boxShadow: isSel ? "0 0 0 1px #4a9eff" : "1px 1px 3px rgba(0,0,0,0.3)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 11, fontWeight: isSel ? 700 : 400,
+                          color: isSel ? "#2563eb" : "#555",
+                          cursor: "pointer",
+                          flexShrink: 0,
                         }}>
-                          {/* Мини-схема */}
-                          {svgDataUrl && (
-                            <img src={svgDataUrl}
-                              style={{
-                                position: "absolute",
-                                top: thumbW * workAreaFraction.y / pageW * pageH,
-                                left: thumbW * workAreaFraction.x,
-                                width: thumbW * workAreaFraction.w,
-                                height: thumbH * workAreaFraction.h,
-                                objectFit: "cover",
-                                objectPosition: `${(tile.x / (svgViewBox?.w || 1)) * 100}% ${(tile.y / (svgViewBox?.h || 1)) * 100}%`,
-                              }}
-                              alt={`page ${idx + 1}`}
-                            />
-                          )}
-                          {/* Большой номер страницы */}
-                          <div style={{
-                            position: "absolute", inset: 0,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: Math.min(48, thumbH * 0.5),
-                            fontWeight: 900, color: "rgba(0,0,0,0.08)",
-                            userSelect: "none", pointerEvents: "none",
-                          }}>
-                            {idx + 1}
-                          </div>
-                          {/* Штамп мини */}
-                          {showStamp && (
-                            <div style={{
-                              position: "absolute", bottom: 2, right: 2,
-                              width: thumbW * 0.55, height: thumbH * 0.18,
-                              border: "0.5px solid #bbb",
-                              background: "rgba(255,255,255,0.9)",
-                            }} />
-                          )}
-                        </div>
-                        {/* Подпись */}
-                        <div style={{
-                          fontSize: 10, color: "white", marginTop: 4,
-                          textShadow: "0 1px 2px rgba(0,0,0,0.7)",
-                          fontWeight: isSelected ? 700 : 400,
-                        }}>
-                          Страница {idx + 1}
-                        </div>
-                      </div>
+                        {idx + 1}
+                      </button>
                     );
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* ── Строка состояния ── */}
             <div className="flex items-center justify-between mt-3 flex-shrink-0"
