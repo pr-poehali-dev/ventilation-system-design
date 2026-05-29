@@ -746,83 +746,64 @@ export default function CadPage() {
 
   // Захватывает скриншот схемы и открывает диалог печати
   const openPrintDialog = () => {
-    const doOpen = (url: string) => {
-      setPrintPreviewUrl(url);
-      setShowPrintDialog(true);
-    };
-
-    // 1) Canvas-режим: читаем живой DOM-canvas напрямую
+    // 1) Canvas-режим: читаем живой DOM-canvas напрямую (тут всё готово)
     const canvas = liveCanvasRef.current;
     if (canvas && canvas.width > 0 && canvas.height > 0) {
       try {
         const url = canvas.toDataURL("image/png");
-        if (url && url.length > 500) { doOpen(url); return; }
+        if (url && url.length > 500) {
+          setPrintPreviewUrl(url);
+          setShowPrintDialog(true);
+          return;
+        }
       } catch { /* tainted — идём дальше */ }
     }
 
-    // 2) getSvgRef возвращает либо PNG dataUrl (canvas fallback), либо SVG outerHTML
+    // 2) SVG-режим: строим data URI напрямую, без Image/canvas (они зависают на blob href)
     const raw = getSvgRef.current?.() ?? "";
 
     if (raw.startsWith("data:image/png")) {
-      doOpen(raw); return;
+      setPrintPreviewUrl(raw);
+      setShowPrintDialog(true);
+      return;
     }
 
     if (raw && raw.includes("<svg")) {
-      // SVG outerHTML содержит width/height в px и НЕТ viewBox.
-      // Добавляем viewBox = "0 0 W H" из атрибутов, убираем px-размеры,
-      // рисуем в offscreen canvas → PNG (надёжно в любом браузере)
       const wm = raw.match(/\bwidth="(\d+(?:\.\d+)?)"/);
       const hm = raw.match(/\bheight="(\d+(?:\.\d+)?)"/);
       const svgW = wm ? parseFloat(wm[1]) : 1600;
       const svgH = hm ? parseFloat(hm[1]) : 900;
 
-      // Добавляем xmlns и viewBox, убираем inline style (touchAction и т.д.)
-      const fixedSvg = raw
-        .replace(/<svg([^>]*)>/, (_m, attrs: string) => {
-          let a = attrs;
-          // Убираем width= height= style= из тега
-          a = a.replace(/\s+width="[^"]*"/g, "");
-          a = a.replace(/\s+height="[^"]*"/g, "");
-          a = a.replace(/\s+style="[^"]*"/g, "");
-          // Добавляем viewBox и px-размеры для рендера
-          return `<svg${a} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="${svgW}" height="${svgH}">`;
-        });
+      const cleanSvg = raw
+        // Удаляем <image ...> теги — они содержат blob URL которые уже протухли
+        .replace(/<image\b[^>]*\/>/gi, "")
+        .replace(/<image\b[^>]*>[\s\S]*?<\/image>/gi, "")
+        // Фиксируем <svg>: убираем style/width/height, добавляем viewBox
+        .replace(/<svg([^>]*)>/i, (_m, attrs: string) => {
+          let a = attrs
+            .replace(/\s+width="[^"]*"/g, "")
+            .replace(/\s+height="[^"]*"/g, "")
+            .replace(/\s+style="[^"]*"/g, "");
+          // Добавляем xmlns если нет
+          if (!a.includes("xmlns")) a += ' xmlns="http://www.w3.org/2000/svg"';
+          // Добавляем viewBox если нет
+          if (!a.includes("viewBox")) a += ` viewBox="0 0 ${svgW} ${svgH}"`;
+          return `<svg${a} width="${svgW}" height="${svgH}">`;
+        })
+        // Удаляем xlink:href на blob:// — оставляем только data: и http:
+        .replace(/\s+xlink:href="blob:[^"]*"/g, "")
+        .replace(/\s+href="blob:[^"]*"/g, "");
 
-      // Рендерим SVG → PNG через offscreen canvas
-      const blob = new Blob([fixedSvg], { type: "image/svg+xml;charset=utf-8" });
-      const blobUrl = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(blobUrl);
-        const oc = document.createElement("canvas");
-        oc.width = svgW; oc.height = svgH;
-        const ctx = oc.getContext("2d");
-        if (!ctx) { doOpen(blobUrl); return; }
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, svgW, svgH);
-        try {
-          ctx.drawImage(img, 0, 0, svgW, svgH);
-          doOpen(oc.toDataURL("image/png"));
-        } catch {
-          // drawImage tainted — используем SVG data URI напрямую
-          const dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(fixedSvg);
-          doOpen(dataUri);
-        }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(blobUrl);
-        // Fallback: data URI напрямую
-        const dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(fixedSvg);
-        doOpen(dataUri);
-      };
-      img.src = blobUrl;
-      // Открываем диалог сразу — с пустым превью, обновится через img.onload
+      // Кодируем как data URI — мгновенно, не зависает, работает в <img>
+      const dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(cleanSvg);
+      setPrintPreviewUrl(dataUri);
       setShowPrintDialog(true);
       return;
     }
 
     // 3) Открываем без превью
-    doOpen("");
+    setPrintPreviewUrl("");
+    setShowPrintDialog(true);
   };
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
