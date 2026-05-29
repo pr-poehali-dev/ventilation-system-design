@@ -125,7 +125,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = is3D ? "#f0f4f8" : "#ffffff";
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
     renderCanvas({
       ctx, width, height,

@@ -153,7 +153,7 @@ export default function PrintDialog({
 
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf">("png");
-  const [exportDpi, setExportDpi] = useState(150);
+  const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
 
   // ─── Размеры бумаги ───────────────────────────────────────────────────
@@ -283,7 +283,7 @@ export default function PrintDialog({
     const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0 }));
     const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
-    ctx.fillStyle = isScene3D ? "#f0f4f8" : "#ffffff";
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, oc.width, oc.height);
     renderCanvas({
       ctx, width: oc.width, height: oc.height,
@@ -323,11 +323,11 @@ export default function PrintDialog({
     const printH = mmToPx(workArea.h);
     const total = totalPages * copies;
 
-    // Рендерим все тайлы
+    // Рендерим все тайлы в 300dpi (dpiMult=2)
     const tilesList = reverseOrder ? [...tiles.list].reverse() : tiles.list;
     const pngPages: string[] = [];
     for (const t of tilesList) {
-      pngPages.push(await renderTileToCanvas(printW, printH, t.col, t.row, 1));
+      pngPages.push(await renderTileToCanvas(printW, printH, t.col, t.row, 2));
     }
 
     const makeStamp = (idx: number, total2: number) => showStamp ? `
@@ -401,7 +401,7 @@ body{background:white;font-family:Arial,sans-serif}
     const mmToPx = (mm: number) => mm * DPI / 25.4;
     const printW = mmToPx(workArea.w);
     const printH = mmToPx(workArea.h);
-    const png = await renderTileToCanvas(printW, printH, tile.col, tile.row, 1);
+    const png = await renderTileToCanvas(printW, printH, tile.col, tile.row, 2);
     const pageNum = tileIdx + 1;
     const stampHtml = showStamp ? `
       <table class="stamp" cellpadding="0" cellspacing="0">
@@ -688,11 +688,11 @@ body{background:white;font-family:Arial,sans-serif}
                   <input type="number" className={inp} style={{ ...ih, width: 60 }}
                     value={offsetXDisplay}
                     onChange={e => {
-                      const v = +e.target.value || 0;
-                      setOffsetXDisplay(v);
-                      setUserOffsetX(v);
+                      const mm = +e.target.value || 0;
+                      setOffsetXDisplay(mm);
+                      setUserOffsetX(mm * 150 / 25.4);
                     }} />
-                  <span style={{ fontSize: 11, color: "#555" }}>px</span>
+                  <span style={{ fontSize: 11, color: "#555" }}>мм</span>
                 </div>
               </Row>
               <Row label="вниз:">
@@ -700,11 +700,11 @@ body{background:white;font-family:Arial,sans-serif}
                   <input type="number" className={inp} style={{ ...ih, width: 60 }}
                     value={offsetYDisplay}
                     onChange={e => {
-                      const v = +e.target.value || 0;
-                      setOffsetYDisplay(v);
-                      setUserOffsetY(v);
+                      const mm = +e.target.value || 0;
+                      setOffsetYDisplay(mm);
+                      setUserOffsetY(mm * 150 / 25.4);
                     }} />
-                  <span style={{ fontSize: 11, color: "#555" }}>px</span>
+                  <span style={{ fontSize: 11, color: "#555" }}>мм</span>
                 </div>
               </Row>
             </Section>
@@ -809,7 +809,7 @@ body{background:white;font-family:Arial,sans-serif}
                     style={{
                       width: prevW, height: prevH, background: "white", flexShrink: 0,
                       boxShadow: "2px 2px 8px rgba(0,0,0,0.25)", position: "relative",
-                      cursor: "context-menu",
+                      cursor: "context-menu", overflow: "hidden",
                     }}>
                     {/* Рамка */}
                     {showFrame && (
@@ -821,13 +821,8 @@ body{background:white;font-family:Arial,sans-serif}
                       }} />
                     )}
 
-                    {/* Схема — тайл через PrintPreviewCanvas */}
-                    <div style={{
-                      position: "absolute",
-                      top: px(marginTop), left: px(marginLeft),
-                      width: canvasW, height: canvasH,
-                      overflow: "hidden",
-                    }}>
+                    {/* Схема — тайл на весь лист чтобы подписи не обрезались полями */}
+                    <div style={{ position: "absolute", top: 0, left: 0, width: prevW, height: prevH }}>
                       <PrintPreviewCanvas
                         ref={idx === 0 ? previewRef : undefined}
                         nodes={nodes}
@@ -839,10 +834,10 @@ body{background:white;font-family:Arial,sans-serif}
                         zScale={zScale}
                         is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
                         scale={prevSc}
-                        offsetX={prevOffX}
-                        offsetY={prevOffY}
-                        width={canvasW}
-                        height={canvasH}
+                        offsetX={prevOffX + px(marginLeft)}
+                        offsetY={prevOffY + px(marginTop)}
+                        width={prevW}
+                        height={prevH}
                         branchWidth={branchWidth}
                         branchBorder={branchBorder}
                         thinLines={thinLines}
