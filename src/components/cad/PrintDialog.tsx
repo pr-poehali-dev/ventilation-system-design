@@ -119,6 +119,74 @@ export default function PrintDialog({
   const [templates, setTemplates] = useState<Record<string, object>>(() => {
     try { return JSON.parse(localStorage.getItem("printTemplates") || "{}"); } catch { return {}; }
   });
+  // Контекстное меню по ПКМ на листе
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; tileIdx: number } | null>(null);
+
+  const handleTileContextMenu = useCallback((e: React.MouseEvent, tileIdx: number) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, tileIdx });
+  }, []);
+
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+
+  // Печать одного тайла
+  const handlePrintSingleTile = useCallback(async (tileIdx: number) => {
+    closeCtxMenu();
+    const tile = tiles.list[tileIdx];
+    if (!tile) return;
+    const DPI = 150;
+    const mmToPx = (mm: number) => mm * DPI / 25.4;
+    const printW = mmToPx(workArea.w);
+    const printH = mmToPx(workArea.h);
+    const png = await renderTileToCanvas(printW, printH, tile.col, tile.row, 1);
+    const pageNum = tileIdx + 1;
+    const stampHtml = showStamp ? `
+      <table class="stamp" cellpadding="0" cellspacing="0">
+        <tr><td colspan="5"></td>
+          <td rowspan="6" class="col-name">${drawingTitle}</td>
+          <td class="col-stage">Стадия</td><td class="col-sheet">Лист</td><td class="col-total">Листов</td></tr>
+        <tr><td>Разраб.</td><td>${engineer}</td><td></td><td></td><td>${printDate}</td>
+          <td rowspan="5" class="org-cell">${organization}</td>
+          <td>Р</td><td>${pageNum}</td><td>${tiles.list.length}</td></tr>
+        <tr><td>Пров.</td><td>${approvedBy}</td><td></td><td></td><td>${printDate}</td>
+          <td rowspan="4" colspan="3" class="num-cell">${drawingNumber}</td></tr>
+        <tr><td>Н.контр.</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>Утв.</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td colspan="5"></td></tr>
+      </table>` : "";
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${drawingTitle} — лист ${pageNum}</title>
+<style>
+@page{size:${paper.w}mm ${paper.h}mm;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:white;font-family:Arial,sans-serif}
+.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm}
+.frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom + (showStamp ? 56 : 0)}mm;border:1px solid #000;pointer-events:none}
+.schema-wrap{width:100%;height:calc(100% - ${showStamp ? 56 : 0}mm);overflow:hidden}
+.stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
+.stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
+.col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
+.col-stage,.col-sheet,.col-total{width:12mm;text-align:center}
+.num-cell{font-size:10pt;font-weight:bold;text-align:center}
+.org-cell{font-size:9pt;text-align:center}
+.page-num{position:absolute;bottom:${marginBottom + (showStamp ? 58 : 2)}mm;right:${marginRight + 2}mm;font-size:9pt;color:#555}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body>
+<div class="page">
+  ${showFrame ? '<div class="frame"></div>' : ''}
+  <div class="schema-wrap"><img src="${png}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" /></div>
+  ${stampHtml}
+  ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
+</div>
+<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
+</body></html>`;
+    const win = window.open("", "_blank", "width=1400,height=900");
+    if (!win) { alert("Разрешите всплывающие окна"); return; }
+    win.document.open(); win.document.write(html); win.document.close();
+  }, [tiles, workArea, paper, marginTop, marginBottom, marginLeft, marginRight,
+      showStamp, showFrame, showPageNumbers, drawingTitle, drawingNumber,
+      engineer, approvedBy, organization, printDate, renderTileToCanvas, closeCtxMenu]);
+
   // Wheel-зум предпросмотра: масштабирует вид относительно позиции курсора
   const handlePreviewWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -198,9 +266,9 @@ export default function PrintDialog({
     // Пользовательский scale в px: userScale хранится как процент/100 от fitSc
     // т.е. userScale=1.0 → 100% = fit; userScale=2.0 → 200% = вдвое крупнее
     const sc = userScale !== null ? fitSc * userScale : fitSc;
-    // offset центрирует схему на первой странице
-    const offsetX = userOffsetX ?? ((pageW - bw * sc) / 2 - minX * sc);
-    const offsetY = userOffsetY ?? ((pageH - bh * sc) / 2 - minY * sc);
+    // offset: привязка к левому верхнему углу первой страницы + pad
+    const offsetX = userOffsetX ?? (pad - minX * sc);
+    const offsetY = userOffsetY ?? (pad - minY * sc);
     return { sc, fitSc, offsetX, offsetY, isScene3D, pageW, pageH, horizonMap };
   }, [schemaBbox, horizons, viewState, zScale, workArea, userScale, userOffsetX, userOffsetY]);
 
@@ -209,6 +277,15 @@ export default function PrintDialog({
     if (userScale === null) setScaleDisplay(100);
     else setScaleDisplay(Math.round(userScale * 100));
   }, [userScale]);
+
+  // Закрытие контекстного меню по клику/Escape
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    return () => window.removeEventListener("mousedown", close);
+  }, [ctxMenu]);
 
   // ─── Вычисление тайлов (сетка страниц) ───────────────────────────────
   const tiles = useMemo(() => {
@@ -692,8 +769,9 @@ body{background:white;font-family:Arial,sans-serif}
           <div
             ref={previewContainerRef}
             className="flex-1 overflow-scroll"
-            style={{ background: "#6e6e6e", cursor: "default", position: "relative" }}
+            style={{ background: "#ffffff", cursor: "default", position: "relative" }}
             onWheel={handlePreviewWheel}
+            onClick={closeCtxMenu}
           >
             {/* Невидимый spacer задаёт правильный размер скролл-области */}
             <div style={{
@@ -726,10 +804,13 @@ body{background:white;font-family:Arial,sans-serif}
                 const prevOffX   = (baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
                 const prevOffY   = (baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
                 return (
-                  <div key={`${tile.col}-${tile.row}`} style={{
-                    width: prevW, height: prevH, background: "white", flexShrink: 0,
-                    boxShadow: "4px 4px 20px rgba(0,0,0,0.65)", position: "relative",
-                  }}>
+                  <div key={`${tile.col}-${tile.row}`}
+                    onContextMenu={e => handleTileContextMenu(e, idx)}
+                    style={{
+                      width: prevW, height: prevH, background: "white", flexShrink: 0,
+                      boxShadow: "2px 2px 8px rgba(0,0,0,0.25)", position: "relative",
+                      cursor: "context-menu",
+                    }}>
                     {/* Рамка */}
                     {showFrame && (
                       <div style={{
@@ -817,6 +898,41 @@ body{background:white;font-family:Arial,sans-serif}
               })}
             </div>
             </div>{/* конец обёртки transform */}
+
+            {/* Контекстное меню */}
+            {ctxMenu && (
+              <div
+                onMouseDown={e => e.stopPropagation()}
+                style={{
+                  position: "fixed", zIndex: 9999,
+                  left: ctxMenu.x, top: ctxMenu.y,
+                  background: "white", border: "1px solid #ccc",
+                  borderRadius: 4, boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+                  minWidth: 200, overflow: "hidden",
+                  fontSize: 13, color: "#1a1a1a",
+                }}
+              >
+                <div style={{ padding: "6px 8px", background: "#f5f5f5", borderBottom: "1px solid #e0e0e0", fontSize: 11, color: "#666", fontWeight: 600 }}>
+                  Лист {ctxMenu.tileIdx + 1} из {totalPages}
+                </div>
+                <button
+                  onClick={() => handlePrintSingleTile(ctxMenu.tileIdx)}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#f0f4ff")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                >
+                  🖨 Печатать этот лист
+                </button>
+                <button
+                  onClick={() => { closeCtxMenu(); handlePrint(); }}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", borderTop: "1px solid #f0f0f0" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#f0f4ff")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                >
+                  🖨 Печатать всю схему ({totalPages} {totalPages === 1 ? "лист" : totalPages < 5 ? "листа" : "листов"})
+                </button>
+              </div>
+            )}
           </div>{/* конец контейнера предпросмотра */}
         </div>
 
