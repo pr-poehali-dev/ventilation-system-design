@@ -11,7 +11,9 @@ import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
 import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
+import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
+import { calcWaterNetwork } from "@/lib/waterHydraulics";
 import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
@@ -180,6 +182,12 @@ export default function CadPage() {
   const branches = useMemo(() => recalcAll(nodes, branchesRaw), [nodes, branchesRaw]);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
+
+  // Гидравлический расчёт водопроводной сети ППЗ
+  const waterNetwork = useMemo(
+    () => calcWaterNetwork(nodes, branches),
+    [nodes, branches],
+  );
 
   // Запоминаем последнюю вкладку отдельно для узлов и ветвей
   const lastNodeTab = useRef<SideTab>("params");
@@ -2684,7 +2692,7 @@ export default function CadPage() {
             ? ([
                 { id: "params", label: "Параметры" },
                 { id: "measure", label: "Замеры" },
-                { id: "pipes", label: "Трубы" },
+                { id: "waterpipes", label: "Трубы" },
                 { id: "indicators", label: "Индикаторы" },
               ] as { id: SideTab; label: string }[])
             : fanSymbolBranchId
@@ -2944,6 +2952,15 @@ export default function CadPage() {
               <NodePropsPanel
                 node={selectedNode}
                 onUpdate={(patch) => updateNode(selectedNode.id, patch)}
+              />
+            )}
+
+            {/* ═══ ВКЛАДКА: ТРУБЫ — узел (ППЗ) ══════════════════════════ */}
+            {activeSide === "waterpipes" && selectedNode && (
+              <NodeFirePanel
+                node={selectedNode}
+                onUpdate={(patch) => updateNode(selectedNode.id, patch)}
+                waterResult={waterNetwork.nodeResults.get(selectedNode.id)}
               />
             )}
 
