@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import Icon from "@/components/ui/icon";
-import PrintPreviewCanvas from "./PrintPreviewCanvas";
+import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
 import { renderCanvas } from "@/lib/canvasRenderer";
 import { DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -62,13 +62,23 @@ export default function PrintDialog({
   branchWidth = 2, branchBorder = 0.4,
   getSvgRaw,
 }: PrintDialogProps) {
+  // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
+  const previewRef = useRef<PrintPreviewCanvasHandle>(null);
+
   const [format, setFormat] = useState<PaperFormat>("A3");
   const [orientation, setOrientation] = useState<Orientation>("landscape");
   const [customW, setCustomW] = useState(420);
   const [customH, setCustomH] = useState(297);
-  const [scale, setScale] = useState(100);
-  const [offsetX, setOffsetX] = useState(0);
-  const [offsetY, setOffsetY] = useState(0);
+
+  // null = auto-fit; number = явно заданный пользователем
+  const [userScale,   setUserScale]   = useState<number | null>(null);
+  const [userOffsetX, setUserOffsetX] = useState<number | null>(null);
+  const [userOffsetY, setUserOffsetY] = useState<number | null>(null);
+
+  // Отображаемые значения (для полей ввода)
+  const [scaleDisplay,   setScaleDisplay]   = useState<number>(100);
+  const [offsetXDisplay, setOffsetXDisplay] = useState<number>(0);
+  const [offsetYDisplay, setOffsetYDisplay] = useState<number>(0);
   const [marginTop, setMarginTop] = useState(5);
   const [marginBottom, setMarginBottom] = useState(5);
   const [marginLeft, setMarginLeft] = useState(5);
@@ -114,7 +124,8 @@ export default function PrintDialog({
   const prevW = prevH * aspect;
   const px = (mm: number) => mm * (prevW / paper.w);
 
-  // ─── Рендер схемы в offscreen canvas для экспорта ────────────────────
+  // ─── Рендер схемы в offscreen canvas для печати/экспорта ─────────────
+  // Использует тот же fit-алгоритм что и PrintPreviewCanvas
   const renderToCanvas = useCallback((outW: number, outH: number): string => {
     const oc = document.createElement("canvas");
     oc.width = outW; oc.height = outH;
@@ -128,18 +139,28 @@ export default function PrintDialog({
       return !h || h.visible;
     });
 
-    // Масштабируем вид под нужный размер
-    const ratio = Math.min(outW / prevW, outH / prevH);
-    const sv = {
-      ...viewState,
-      scale: viewState.scale * ratio,
-      offsetX: viewState.offsetX * ratio,
-      offsetY: viewState.offsetY * ratio,
-    };
-    const proj = { ...sv, zScale: 1 };
-    const projNodes = nodes.map(n => ({
-      node: n, ...project3D({ x: n.x, y: n.y, z: n.z }, proj), depth: 0,
-    }));
+    // Вычисляем fit-view для нужного размера (идентично PrintPreviewCanvas)
+    let scale = 1, offsetX = 0, offsetY = 0;
+    if (nodes.length > 0) {
+      const tmpProj = { scale: 1, offsetX: 0, offsetY: 0, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale: 1 };
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const n of nodes) {
+        const p = project3D({ x: n.x, y: n.y, z: n.z }, tmpProj);
+        if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
+        if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
+      }
+      const pad = 40;
+      const sw = maxX - minX || 1, sh = maxY - minY || 1;
+      scale = Math.min((outW - pad * 2) / sw, (outH - pad * 2) / sh);
+      // Применяем пользовательский масштаб если задан
+      if (userScale !== null) scale = userScale;
+      offsetX = userOffsetX ?? ((outW  - sw * scale) / 2 - minX * scale);
+      offsetY = userOffsetY ?? ((outH - sh * scale) / 2 - minY * scale);
+    }
+
+    const sv = { scale, offsetX, offsetY, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale: 1 };
+    const proj = sv;
+    const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z }, proj), depth: 0 }));
     const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
     ctx.fillStyle = "#ffffff";
@@ -152,15 +173,14 @@ export default function PrintDialog({
       is3D: false, zScale: 1, zLevel: 0,
       selectedBranchId: null, selectedBranchIds: new Set(),
       selectedNodeId: null, selectedNodeIds: new Set(),
-      hoverBranchId: null,
-      branchWidth, branchBorder,
+      hoverBranchId: null, branchWidth, branchBorder,
       thinLines: false, colorByHorizon: false,
       showFlowArrows: false, flowDisplay: "off",
       animOffset: 0, infoConfig: null,
       unitsConfig: DEFAULT_UNITS_CONFIG,
     });
     return oc.toDataURL("image/png");
-  }, [nodes, branches, horizons, viewState, prevW, prevH, branchWidth, branchBorder]);
+  }, [nodes, branches, horizons, viewState, userScale, userOffsetX, userOffsetY, branchWidth, branchBorder]);
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(() => {
@@ -439,12 +459,24 @@ body{background:white;font-family:Arial,sans-serif}
             <Section title="Преобразование схемы">
               <Row label="Масштаб:">
                 <div className="flex items-center gap-1">
-                  <input type="number" min={1} max={1000} className={inp} style={{ ...ih, width: 60 }}
-                    value={scale} onChange={e => setScale(Math.max(1, +e.target.value || 1))} />
+                  <input type="number" min={1} max={10000} className={inp} style={{ ...ih, width: 60 }}
+                    value={scaleDisplay}
+                    onChange={e => {
+                      const v = Math.max(1, +e.target.value || 1);
+                      setScaleDisplay(v);
+                      setUserScale(v / 100);
+                    }} />
                   <span style={{ fontSize: 11, color: "#555" }}>%</span>
                 </div>
               </Row>
-              <button onClick={() => { setScale(100); setOffsetX(0); setOffsetY(0); }}
+              <button onClick={() => {
+                // Сбрасываем в auto-fit
+                setUserScale(null); setUserOffsetX(null); setUserOffsetY(null);
+                setOffsetXDisplay(0); setOffsetYDisplay(0);
+                // Читаем реальный fit-scale из canvas и показываем в поле
+                const fit = previewRef.current?.getFitView();
+                if (fit) setScaleDisplay(Math.round(fit.scale * 100));
+              }}
                 className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-blue-50 hover:border-blue-400 bg-white font-medium text-gray-800">
                 Подобрать масштаб
               </button>
@@ -452,15 +484,25 @@ body{background:white;font-family:Arial,sans-serif}
               <Row label="вправо:">
                 <div className="flex items-center gap-1">
                   <input type="number" className={inp} style={{ ...ih, width: 60 }}
-                    value={offsetX} onChange={e => setOffsetX(+e.target.value || 0)} />
-                  <span style={{ fontSize: 11, color: "#555" }}>мм</span>
+                    value={offsetXDisplay}
+                    onChange={e => {
+                      const v = +e.target.value || 0;
+                      setOffsetXDisplay(v);
+                      setUserOffsetX(v);
+                    }} />
+                  <span style={{ fontSize: 11, color: "#555" }}>px</span>
                 </div>
               </Row>
               <Row label="вниз:">
                 <div className="flex items-center gap-1">
                   <input type="number" className={inp} style={{ ...ih, width: 60 }}
-                    value={offsetY} onChange={e => setOffsetY(+e.target.value || 0)} />
-                  <span style={{ fontSize: 11, color: "#555" }}>мм</span>
+                    value={offsetYDisplay}
+                    onChange={e => {
+                      const v = +e.target.value || 0;
+                      setOffsetYDisplay(v);
+                      setUserOffsetY(v);
+                    }} />
+                  <span style={{ fontSize: 11, color: "#555" }}>px</span>
                 </div>
               </Row>
             </Section>
@@ -511,7 +553,8 @@ body{background:white;font-family:Arial,sans-serif}
             {/* Сброс */}
             <div className="px-3 py-2">
               <button onClick={() => {
-                setScale(100); setOffsetX(0); setOffsetY(0);
+                setUserScale(null); setUserOffsetX(null); setUserOffsetY(null);
+                setScaleDisplay(100); setOffsetXDisplay(0); setOffsetYDisplay(0);
                 setMarginTop(5); setMarginBottom(5); setMarginLeft(5); setMarginRight(5);
                 setShowPageNumbers(true); setShowFrame(false); setShowStamp(false);
               }} className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-gray-200 bg-white text-gray-700">
@@ -547,10 +590,15 @@ body{background:white;font-family:Arial,sans-serif}
                 overflow: "hidden",
               }}>
                 <PrintPreviewCanvas
+                  ref={previewRef}
                   nodes={nodes}
                   branches={branches}
                   horizons={horizons}
-                  view={viewState}
+                  azimuth={viewState.azimuth}
+                  elevation={viewState.elevation}
+                  scale={userScale ?? undefined}
+                  offsetX={userOffsetX ?? undefined}
+                  offsetY={userOffsetY ?? undefined}
                   width={Math.max(1, Math.round(px(workArea.w)))}
                   height={Math.max(1, Math.round(px(workArea.h)))}
                   branchWidth={branchWidth}
