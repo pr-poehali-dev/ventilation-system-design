@@ -740,6 +740,8 @@ export default function CadPage() {
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
   const getSvgRef = useRef<(() => string) | null>(null);
+  const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const liveSvgRef = useRef<SVGSVGElement | null>(null);
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
@@ -4147,6 +4149,8 @@ export default function CadPage() {
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}
               onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
+              onRegisterCanvasEl={(el) => { liveCanvasRef.current = el; }}
+              onRegisterSvgEl={(el) => { liveSvgRef.current = el; }}
               restoreView={savedViewToRestore}
               onViewStateChange={setSavedViewState}
               editingHorizonImageId={editingHorizonImageId}
@@ -4810,6 +4814,8 @@ export default function CadPage() {
         onClose={() => setShowPrintDialog(false)}
         projectName={projectFileName.replace(/\.vproj$/, "")}
         getSvg={() => getSvgRef.current?.() ?? ""}
+        getLiveCanvas={() => liveCanvasRef.current}
+        getLiveSvg={() => liveSvgRef.current}
       />
     )}
 

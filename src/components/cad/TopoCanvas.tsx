@@ -132,6 +132,10 @@ interface Props {
   onBranchLabelOffset?: (id: string, ox: number, oy: number) => void;
   /** Колбэк: зарегистрировать функцию получения SVG для печати */
   onRegisterGetSvg?: (fn: () => string) => void;
+  /** Колбэк: зарегистрировать прямой доступ к canvas DOM элементу */
+  onRegisterCanvasEl?: (el: HTMLCanvasElement | null) => void;
+  /** Колбэк: зарегистрировать прямой доступ к SVG DOM элементу */
+  onRegisterSvgEl?: (el: SVGSVGElement | null) => void;
   /** Режим размещения маркера позиции на схеме (клик = разместить) */
   positionPlaceMode?: boolean;
   /** Колбэк: пользователь кликнул на схему в режиме размещения позиции */
@@ -179,6 +183,8 @@ export default function TopoCanvas(props: Props) {
     unitsConfig = DEFAULT_UNITS_CONFIG,
     onBranchLabelOffset,
     onRegisterGetSvg,
+    onRegisterCanvasEl,
+    onRegisterSvgEl,
     positionPlaceMode = false,
     onPositionPlace,
     branchBindMode = false,
@@ -196,6 +202,14 @@ export default function TopoCanvas(props: Props) {
       return svgRef.current?.outerHTML ?? "";
     });
   }, [onRegisterGetSvg]);
+
+  // Регистрируем прямой доступ к SVG DOM элементу
+  useEffect(() => {
+    if (!onRegisterSvgEl) return;
+    onRegisterSvgEl(svgRef.current);
+    return () => onRegisterSvgEl(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onRegisterSvgEl, svgRef.current]);
 
   // Карта горизонтов по id (для быстрых lookups)
   const horizonMap = useMemo(() => {
@@ -1168,6 +1182,7 @@ export default function TopoCanvas(props: Props) {
           onTouchMove={(e) => { e.preventDefault(); }}
           onTouchEnd={(e) => { e.preventDefault(); }}
           onRegisterGetCanvas={(fn) => { canvasExportRef.current = fn; }}
+          onRegisterCanvasEl={onRegisterCanvasEl}
         />
       )}
 

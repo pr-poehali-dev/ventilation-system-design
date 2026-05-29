@@ -68,6 +68,8 @@ interface CanvasLayerProps {
 
   // экспорт canvas как изображения (для печати)
   onRegisterGetCanvas?: (fn: () => string) => void;
+  // прямой доступ к DOM canvas элементу
+  onRegisterCanvasEl?: (el: HTMLCanvasElement | null) => void;
 }
 
 export default function CanvasLayer(props: CanvasLayerProps) {
@@ -82,7 +84,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG,
     onMouseDown, onMouseMove, onMouseUp, onWheel, onContextMenu,
     onTouchStart, onTouchMove, onTouchEnd,
-    onRegisterGetCanvas,
+    onRegisterGetCanvas, onRegisterCanvasEl,
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -206,6 +208,13 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     if (!onRegisterGetCanvas) return;
     onRegisterGetCanvas(() => canvasRef.current?.toDataURL("image/png") ?? "");
   }, [onRegisterGetCanvas]);
+
+  // Регистрируем прямой доступ к DOM canvas
+  useEffect(() => {
+    if (!onRegisterCanvasEl) return;
+    onRegisterCanvasEl(canvasRef.current);
+    return () => onRegisterCanvasEl(null);
+  }, [onRegisterCanvasEl]);
 
   // Изменяем размер canvas императивно — без сброса содержимого при каждом рендере React
   useEffect(() => {

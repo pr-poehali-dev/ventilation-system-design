@@ -5,6 +5,9 @@ interface PrintDialogProps {
   onClose: () => void;
   getSvg?: () => string;
   projectName?: string;
+  // Прямой доступ к живому canvas (когда canvasExportRef есть) или SVG-элементу
+  getLiveCanvas?: () => HTMLCanvasElement | null;
+  getLiveSvg?: () => SVGSVGElement | null;
 }
 
 type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0" | "custom";
@@ -48,7 +51,7 @@ const inputCls = "w-full border border-gray-500 px-1.5 rounded text-[12px] text-
 const inputStyle = { height: 22 };
 const selectCls = inputCls + " cursor-pointer";
 
-export default function PrintDialog({ onClose, getSvg, projectName = "Проект" }: PrintDialogProps) {
+export default function PrintDialog({ onClose, getSvg, getLiveCanvas, getLiveSvg, projectName = "Проект" }: PrintDialogProps) {
   // ─── Параметры листа ───────────────────────────────────────────────────────
   const [format, setFormat] = useState<PaperFormat>("A3");
   const [orientation, setOrientation] = useState<Orientation>("landscape");
@@ -104,70 +107,107 @@ export default function PrintDialog({ onClose, getSvg, projectName = "Проек
 
   // ─── Захват содержимого схемы ─────────────────────────────────────────────
   useEffect(() => {
-    if (!getSvg) return;
+    // Небольшая задержка — даём canvas/SVG успеть отрисоваться
+    const timer = setTimeout(() => {
+      capturePreview();
+    }, 100);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const capturePreview = useCallback(() => {
     try {
+      // 1) Приоритет: живой Canvas DOM элемент
+      const liveCanvas = getLiveCanvas?.();
+      if (liveCanvas && liveCanvas.width > 0 && liveCanvas.height > 0) {
+        const dataUrl = liveCanvas.toDataURL("image/png");
+        if (dataUrl && dataUrl !== "data:,") {
+          setPreviewSrc(dataUrl);
+          setRawContent(dataUrl);
+          return;
+        }
+      }
+
+      // 2) Живой SVG DOM элемент — сериализуем и рисуем через Image
+      const liveSvg = getLiveSvg?.();
+      if (liveSvg) {
+        const svgW = liveSvg.width?.baseVal?.value || liveSvg.viewBox?.baseVal?.width || 1600;
+        const svgH = liveSvg.height?.baseVal?.value || liveSvg.viewBox?.baseVal?.height || 900;
+        const serializer = new XMLSerializer();
+        const svgStr = serializer.serializeToString(liveSvg);
+        setRawContent(svgStr);
+        renderSvgToPreview(svgStr, svgW, svgH);
+        return;
+      }
+
+      // 3) Fallback: getSvg() строка
+      if (!getSvg) return;
       const raw = getSvg();
       if (!raw) return;
       setRawContent(raw);
 
-      // Определяем тип: PNG dataUrl (canvas-режим) или SVG-строка
-      if (raw.startsWith("data:image/png")) {
-        // Canvas-режим: уже готовый PNG — показываем напрямую
+      if (raw.startsWith("data:image/png") || raw.startsWith("data:image/")) {
         setPreviewSrc(raw);
-      } else {
-        // SVG-режим: нормализуем и конвертируем в PNG через offscreen canvas
-
-        // Парсим размеры
-        const vbMatch = raw.match(/viewBox="([^"]+)"/);
-        const wMatch  = raw.match(/\s+width="(\d+(?:\.\d+)?)"/);
-        const hMatch  = raw.match(/\s+height="(\d+(?:\.\d+)?)"/);
-        let svgW = 0, svgH = 0;
-        if (vbMatch) {
-          const p = vbMatch[1].trim().split(/[\s,]+/).map(Number);
-          if (p.length >= 4) { svgW = p[2]; svgH = p[3]; }
-        }
-        if (svgW <= 0 && wMatch) svgW = parseFloat(wMatch[1]);
-        if (svgH <= 0 && hMatch) svgH = parseFloat(hMatch[1]);
-
-        // Нормализованный SVG: убираем px-width/height, задаём % чтобы масштабировался
-        const normalized = raw.replace(/<svg([^>]*)>/, (_full, attrs: string) => {
-          let a = attrs;
-          a = a.replace(/\s+width="[^"]*"/, "");
-          a = a.replace(/\s+height="[^"]*"/, "");
-          // Если нет viewBox — добавляем из w/h
-          if (!vbMatch && svgW > 0 && svgH > 0) {
-            a += ` viewBox="0 0 ${svgW} ${svgH}"`;
-          }
-          return `<svg${a} preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block;">`;
-        });
-
-        // Рендерим SVG в canvas → PNG dataUrl для надёжного предпросмотра
-        const RENDER_W = svgW > 0 ? Math.min(svgW, 2400) : 1600;
-        const RENDER_H = svgH > 0 ? Math.round(RENDER_W * svgH / svgW) : 900;
-
-        const blob = new Blob([normalized], { type: "image/svg+xml;charset=utf-8" });
-        const blobUrl = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          canvas.width  = RENDER_W;
-          canvas.height = RENDER_H;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) { setPreviewSrc(blobUrl); return; }
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, RENDER_W, RENDER_H);
-          ctx.drawImage(img, 0, 0, RENDER_W, RENDER_H);
-          URL.revokeObjectURL(blobUrl);
-          setPreviewSrc(canvas.toDataURL("image/png"));
-        };
-        img.onerror = () => {
-          // Fallback: показываем blob напрямую
-          setPreviewSrc(blobUrl);
-        };
-        img.src = blobUrl;
+        return;
       }
-    } catch { /* noop */ }
-  }, [getSvg]);
+
+      // SVG строка — рендерим
+      const vbMatch = raw.match(/viewBox="([^"]+)"/);
+      const wMatch  = raw.match(/\s+width="(\d+(?:\.\d+)?)"/);
+      const hMatch  = raw.match(/\s+height="(\d+(?:\.\d+)?)"/);
+      let svgW = 0, svgH = 0;
+      if (vbMatch) {
+        const p = vbMatch[1].trim().split(/[\s,]+/).map(Number);
+        if (p.length >= 4) { svgW = p[2]; svgH = p[3]; }
+      }
+      if (svgW <= 0 && wMatch) svgW = parseFloat(wMatch[1]);
+      if (svgH <= 0 && hMatch) svgH = parseFloat(hMatch[1]);
+      renderSvgToPreview(raw, svgW || 1600, svgH || 900);
+    } catch (e) {
+      console.error("[PrintDialog] capturePreview error:", e);
+    }
+   
+  }, [getLiveCanvas, getLiveSvg, getSvg]);
+
+  // Рендерит SVG-строку в PNG dataUrl и сохраняет в previewSrc
+  const renderSvgToPreview = (svgStr: string, svgW: number, svgH: number) => {
+    const RENDER_W = Math.min(Math.max(svgW, 800), 3000);
+    const RENDER_H = svgH > 0 ? Math.round(RENDER_W * svgH / svgW) : Math.round(RENDER_W * 0.6);
+
+    // Нормализуем SVG — убираем px-размеры, добавляем viewBox если нет
+    const hasVb = /viewBox=/i.test(svgStr);
+    const normalized = svgStr.replace(/<svg([^>]*)>/i, (_m, attrs: string) => {
+      let a = attrs
+        .replace(/\s+width="[^"]*"/g, "")
+        .replace(/\s+height="[^"]*"/g, "")
+        .replace(/\s+style="[^"]*"/g, "");
+      if (!hasVb && svgW > 0) a += ` viewBox="0 0 ${svgW} ${svgH}"`;
+      return `<svg${a} xmlns="http://www.w3.org/2000/svg" width="${RENDER_W}" height="${RENDER_H}" preserveAspectRatio="xMidYMid meet">`;
+    });
+
+    const blob = new Blob([normalized], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const offscreen = document.createElement("canvas");
+        offscreen.width  = RENDER_W;
+        offscreen.height = RENDER_H;
+        const ctx = offscreen.getContext("2d");
+        if (!ctx) { setPreviewSrc(url); return; }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, RENDER_W, RENDER_H);
+        ctx.drawImage(img, 0, 0, RENDER_W, RENDER_H);
+        URL.revokeObjectURL(url);
+        setPreviewSrc(offscreen.toDataURL("image/png"));
+      } catch {
+        setPreviewSrc(url);
+      }
+    };
+    img.onerror = () => { setPreviewSrc(url); };
+    img.src = url;
+  };
 
   // ─── Экспорт ─────────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
