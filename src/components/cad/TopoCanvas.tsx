@@ -1441,6 +1441,13 @@ export default function TopoCanvas(props: Props) {
                 <circle cx={sxA} cy={syA} r="2.5" fill={color} opacity="0.9" />
               )}
 
+              {/* ── Трубопровод ППЗ — тонкая синяя линия поверх ветви ── */}
+              {b.hasWaterPipe && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#2563eb" strokeWidth={Math.max(1, Math.min(2.5, view.scale * 10))}
+                  strokeLinecap="round" opacity="0.75" />
+              )}
+
               {/* ── Стрелки направления свежей струи (F9, после расчёта) ── */}
               {/* Полноценные стрелки с хвостиком (─►), как в АэроСеть */}
               {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 && (() => {
@@ -2073,15 +2080,82 @@ export default function TopoCanvas(props: Props) {
           const r = isSel ? 4 : 2.5;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
+          const fireType = node.fireNodeType ?? "none";
+          const hasFire = fireType !== "none";
+          // Размер иконки ППЗ (px), адаптируется к масштабу
+          const IS = Math.max(7, Math.min(18, view.scale * 80));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
-              {(isSel || isBranchFrom) && (
-                <circle r={r + 4} fill="none" stroke={ringColor} strokeWidth="1.5" />
+              {/* Кольцо выделения — только для обычных узлов */}
+              {(isSel || isBranchFrom) && !hasFire && (
+                <circle r={r + 4} fill="none" stroke={ringColor} strokeWidth="1.5"
+                  strokeDasharray={isSel ? "3 2" : undefined} />
               )}
-              <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={isSel ? 2 : 1} />
-              {node.atmosphereLink && (
-                <circle r={Math.max(1.5, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth="1.2" strokeDasharray="2 1" />
+              {/* Основной кружок — только для обычных узлов */}
+              {!hasFire && (
+                <>
+                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={isSel ? 2 : 1} />
+                  {node.atmosphereLink && (
+                    <circle r={Math.max(1.5, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth="1.2" strokeDasharray="2 1" />
+                  )}
+                </>
               )}
+
+              {/* ── Иконка РЕЗЕРВУАРА С ВОДОЙ ── */}
+              {fireType === "reservoir" && view.scale > 0.025 && (() => {
+                const hw = IS * 0.75, hh = IS * 0.55;
+                const lw = Math.max(1, IS * 0.08);
+                return (
+                  <g>
+                    {/* Белый фон */}
+                    <rect x={-hw} y={-hh} width={hw * 2} height={hh * 2} fill="white" />
+                    {/* Синяя вода (нижняя половина) */}
+                    <rect x={-hw} y={0} width={hw * 2} height={hh} fill="#bfdbfe" />
+                    {/* Волны */}
+                    <path d={`M${-hw},${hh * 0.3} C${-hw * 0.5},${hh * 0.1} ${-hw * 0.1},${hh * 0.5} ${0},${hh * 0.3} C${hw * 0.3},${hh * 0.1} ${hw * 0.6},${hh * 0.5} ${hw},${hh * 0.3}`}
+                      stroke="#1d4ed8" strokeWidth={Math.max(0.7, IS * 0.06)} fill="none" opacity="0.8" />
+                    <path d={`M${-hw},${hh * 0.7} C${-hw * 0.5},${hh * 0.5} ${-hw * 0.1},${hh * 0.9} ${0},${hh * 0.7} C${hw * 0.3},${hh * 0.5} ${hw * 0.6},${hh * 0.9} ${hw},${hh * 0.7}`}
+                      stroke="#1d4ed8" strokeWidth={Math.max(0.7, IS * 0.06)} fill="none" opacity="0.8" />
+                    {/* Рамка */}
+                    <rect x={-hw} y={-hh} width={hw * 2} height={hh * 2}
+                      fill="none" stroke="#1d4ed8" strokeWidth={lw} />
+                    {/* Кольцо выделения */}
+                    {isSel && <rect x={-hw - 3} y={-hh - 3} width={(hw + 3) * 2} height={(hh + 3) * 2}
+                      fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
+                  </g>
+                );
+              })()}
+
+              {/* ── Иконка ПОЖАРНОГО КРАНА (квадрат с крестом X) ── */}
+              {fireType === "consumer" && view.scale > 0.025 && (() => {
+                const hw = IS * 0.6;
+                const lw = Math.max(1, IS * 0.10);
+                return (
+                  <g>
+                    <rect x={-hw} y={-hw} width={hw * 2} height={hw * 2} fill="white" />
+                    <line x1={-hw * 0.8} y1={-hw * 0.8} x2={hw * 0.8} y2={hw * 0.8}
+                      stroke="#dc2626" strokeWidth={Math.max(0.8, IS * 0.08)} />
+                    <line x1={hw * 0.8} y1={-hw * 0.8} x2={-hw * 0.8} y2={hw * 0.8}
+                      stroke="#dc2626" strokeWidth={Math.max(0.8, IS * 0.08)} />
+                    <rect x={-hw} y={-hw} width={hw * 2} height={hw * 2}
+                      fill="none" stroke="#dc2626" strokeWidth={lw} />
+                    {isSel && <rect x={-hw - 3} y={-hw - 3} width={(hw + 3) * 2} height={(hw + 3) * 2}
+                      fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
+                  </g>
+                );
+              })()}
+
+              {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (кружок с точкой) ── */}
+              {fireType === "junction" && view.scale > 0.025 && (() => {
+                const jr = Math.max(4, Math.min(8, view.scale * 50));
+                return (
+                  <g>
+                    <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />
+                    <circle r={jr * 0.35} fill="#7c3aed" />
+                    {isSel && <circle r={jr + 4} fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
+                  </g>
+                );
+              })()}
               <g transform="translate(8, -8)">
                 {view.scale > 0.08 && (() => {
                   const ic = infoConfig;
