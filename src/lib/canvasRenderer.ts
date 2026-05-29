@@ -484,8 +484,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.setLineDash([]);
       }
       // Для fire-узлов иконка заменяет кружок — рисуем маленький кружок только как маркер центра
+      const consumerColor = (n.fireHydrantOpen ?? false) ? "#1d4ed8" : "#dc2626";
       const nodeColor = fireType === "reservoir" ? "#1d4ed8"
-                      : fireType === "consumer"  ? "#dc2626"
+                      : fireType === "consumer"  ? consumerColor
                       : fireType === "junction"  ? "#7c3aed"
                       : color;
       ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2) : r, 0, Math.PI * 2);
@@ -525,25 +526,28 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
-      // Кружок с боковыми ушками (вентиль/задвижка)
+      // Закрыт → красный, открыт → синий с заливкой
       if (fireType === "consumer" && sc > 0.025) {
         const IS = Math.max(7, Math.min(16, sc * 75));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
+        const hydrantOpen = n.fireHydrantOpen ?? false;
+        const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";
+        const fillColor = hydrantOpen ? "#bfdbfe" : "white";
         const cr = IS * 0.55;
         const earR = cr * 0.55;
         const lw = Math.max(1.2, IS * 0.10);
         // Левое ухо
         ctx.beginPath(); ctx.arc(ix - cr * 1.1, iy, earR, 0, Math.PI * 2);
-        ctx.fillStyle = "white"; ctx.strokeStyle = "#dc2626"; ctx.lineWidth = lw;
+        ctx.fillStyle = fillColor; ctx.strokeStyle = hydrantColor; ctx.lineWidth = lw;
         ctx.fill(); ctx.stroke();
         // Правое ухо
         ctx.beginPath(); ctx.arc(ix + cr * 1.1, iy, earR, 0, Math.PI * 2);
-        ctx.fillStyle = "white"; ctx.strokeStyle = "#dc2626"; ctx.lineWidth = lw;
+        ctx.fillStyle = fillColor; ctx.strokeStyle = hydrantColor; ctx.lineWidth = lw;
         ctx.fill(); ctx.stroke();
         // Основной кружок
         ctx.beginPath(); ctx.arc(ix, iy, cr, 0, Math.PI * 2);
-        ctx.fillStyle = "white"; ctx.strokeStyle = "#dc2626"; ctx.lineWidth = lw;
+        ctx.fillStyle = fillColor; ctx.strokeStyle = hydrantColor; ctx.lineWidth = lw;
         ctx.fill(); ctx.stroke();
         if (isSel) {
           ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;

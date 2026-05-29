@@ -2137,23 +2137,25 @@ export default function TopoCanvas(props: Props) {
               })()}
 
               {/* ── Иконка ПОЖАРНОГО КРАНА ──
-                   Кружок с двумя боковыми дугами-ушками (задвижка/вентиль).
-                   Классическое обозначение по скриншоту. */}
+                   Закрыт → красный контур, открыт → синяя заливка */}
               {fireType === "consumer" && view.scale > 0.025 && (() => {
-                const cr = IS * 0.55; // радиус основного кружка
+                const hydrantOpen = node.fireHydrantOpen ?? false;
+                const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";
+                const fillColor = hydrantOpen ? "#bfdbfe" : "white";
+                const cr = IS * 0.55;
                 const lw = Math.max(1.2, IS * 0.10);
-                const earR = cr * 0.55; // радиус ушек
+                const earR = cr * 0.55;
                 return (
                   <g>
                     {/* Левое ухо */}
                     <circle cx={-cr * 1.1} cy={0} r={earR}
-                      fill="white" stroke="#dc2626" strokeWidth={lw} />
+                      fill={fillColor} stroke={hydrantColor} strokeWidth={lw} />
                     {/* Правое ухо */}
                     <circle cx={cr * 1.1} cy={0} r={earR}
-                      fill="white" stroke="#dc2626" strokeWidth={lw} />
+                      fill={fillColor} stroke={hydrantColor} strokeWidth={lw} />
                     {/* Основной кружок поверх ушек */}
                     <circle cx={0} cy={0} r={cr}
-                      fill="white" stroke="#dc2626" strokeWidth={lw} />
+                      fill={fillColor} stroke={hydrantColor} strokeWidth={lw} />
                     {/* Кольцо выделения */}
                     {isSel && <circle r={cr + earR + 3} fill="none"
                       stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}

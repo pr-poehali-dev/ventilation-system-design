@@ -115,6 +115,8 @@ function computedVal(v: number | undefined, d = 3, suffix = ""): string {
 
 export default function NodeFirePanel({ node, onUpdate, waterResult }: NodeFirePanelProps) {
   const fireType = node.fireNodeType ?? "none";
+  const isOpen = node.fireHydrantOpen ?? false;
+  const isConsumer = fireType === "consumer";
 
   return (
     <div className="flex flex-col" style={{ fontSize: 11 }}>
@@ -194,30 +196,42 @@ export default function NodeFirePanel({ node, onUpdate, waterResult }: NodeFireP
       {/* ─── Вычисленные параметры ─────────────────────────────── */}
       {fireType !== "none" && (<>
         <SectionHeader title="Вычисленные параметры" />
+
+        {/* Статическое давление — всегда */}
         <Row label="Статическое давление:">
           <ComputedInput
             value={numVal(waterResult?.staticP, 3)}
             empty={!waterResult?.staticP}
           />
         </Row>
-        <Row label="Динамическое давление:">
-          <ComputedInput
-            value={computedVal(waterResult?.dynamicP, 3, "МПа")}
-            empty={!waterResult?.dynamicP}
-          />
-        </Row>
-        <Row label="Расход:">
-          <ComputedInput
-            value={computedVal(waterResult?.flow, 2, "м³/ч")}
-            empty={!waterResult?.flow}
-          />
-        </Row>
-        <Row label="Сопротивление:">
-          <ComputedInput
-            value={computedVal(waterResult?.resistance, 4, "МН·с²/м⁸")}
-            empty={!waterResult?.resistance}
-          />
-        </Row>
+
+        {/* Динамическое давление, расход, сопротивление — только при открытом кране */}
+        {(!isConsumer || isOpen) && (
+          <Row label="Динамическое давление:">
+            <ComputedInput
+              value={computedVal(waterResult?.dynamicP, 3, "МПа")}
+              empty={!waterResult?.dynamicP}
+            />
+          </Row>
+        )}
+        {(!isConsumer || isOpen) && (
+          <Row label="Расход:">
+            <ComputedInput
+              value={computedVal(waterResult?.flow, 2, "м³/ч")}
+              empty={!waterResult?.flow}
+            />
+          </Row>
+        )}
+        {(!isConsumer || isOpen) && (
+          <Row label="Сопротивление:">
+            <ComputedInput
+              value={computedVal(waterResult?.resistance, 4, "МН·с²/м⁸")}
+              empty={!waterResult?.resistance}
+            />
+          </Row>
+        )}
+
+        {/* Время истечения — только для резервуара */}
         {fireType === "reservoir" && (
           <Row label="Время истечения:">
             <ComputedInput
@@ -225,6 +239,13 @@ export default function NodeFirePanel({ node, onUpdate, waterResult }: NodeFireP
               empty={!waterResult?.drainTime}
             />
           </Row>
+        )}
+
+        {/* Подсказка при закрытом кране */}
+        {isConsumer && !isOpen && (
+          <div className="px-2 py-1 text-[10px] text-gray-400 italic">
+            Откройте кран для расчёта расхода
+          </div>
         )}
       </>)}
 
