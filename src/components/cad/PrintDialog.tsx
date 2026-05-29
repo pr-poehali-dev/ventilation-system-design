@@ -140,24 +140,16 @@ export default function PrintDialog({
   const prevW = prevH * aspect;
   const px = (mm: number) => mm * (prevW / paper.w);
 
-  // ─── Рендер схемы в offscreen canvas для печати/экспорта ─────────────
-  // Использует тот же fit-алгоритм что и PrintPreviewCanvas
-  const renderToCanvas = useCallback(async (outW: number, outH: number): Promise<string> => {
-    const oc = document.createElement("canvas");
-    oc.width = outW; oc.height = outH;
-    const ctx = oc.getContext("2d");
-    if (!ctx) return "";
-
-    const horizonMap = new Map(horizons.map(h => [h.id, h]));
-    const visibleBranches = branches.filter(b => {
-      if (!b.horizonId) return true;
-      const h = horizonMap.get(b.horizonId);
-      return !h || h.visible;
-    });
-
-    // Вычисляем fit-view для нужного размера (идентично PrintPreviewCanvas)
+  // ─── Вычисление базового view для всей схемы (scale=1, offset по bbox) ─
+  const baseView = useMemo(() => {
     const isScene3D = viewState.elevation < 89.5 || viewState.azimuth !== 0;
+    const DPI = 150;
+    const mmToPx = (mm: number) => mm * DPI / 25.4;
+    const outW = mmToPx(workArea.w);
+    const outH = mmToPx(workArea.h);
+    const horizonMap = new Map(horizons.map(h => [h.id, h]));
     let sc = 1, offsetX = 0, offsetY = 0;
+    let bboxW = 0, bboxH = 0, bboxMinX = 0, bboxMinY = 0;
     if (nodes.length > 0) {
       const tmpProj = { scale: 1, offsetX: 0, offsetY: 0, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -168,15 +160,76 @@ export default function PrintDialog({
       }
       const pad = 40;
       const sw = maxX - minX || 1, sh = maxY - minY || 1;
+      bboxW = sw; bboxH = sh; bboxMinX = minX; bboxMinY = minY;
       sc = Math.min((outW - pad * 2) / sw, (outH - pad * 2) / sh);
       if (userScale !== null) sc = userScale;
-      offsetX = userOffsetX ?? ((outW  - sw * sc) / 2 - minX * sc);
+      offsetX = userOffsetX ?? ((outW - sw * sc) / 2 - minX * sc);
       offsetY = userOffsetY ?? ((outH - sh * sc) / 2 - minY * sc);
     }
+    return { sc, offsetX, offsetY, isScene3D, outW, outH, bboxW, bboxH, bboxMinX, bboxMinY, horizonMap };
+  }, [nodes, horizons, viewState, zScale, workArea, userScale, userOffsetX, userOffsetY]);
 
-    const sv = { scale: sc, offsetX, offsetY, azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
-    const proj = sv;
-    const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj), depth: 0 }));
+  // ─── Вычисление тайлов (сетка страниц) ───────────────────────────────
+  const tiles = useMemo(() => {
+    const { sc, offsetX, offsetY, outW, outH } = baseView;
+    // Полные размеры схемы на печатном canvas при заданном масштабе
+    const totalW = baseView.bboxW * sc;
+    const totalH = baseView.bboxH * sc;
+    // Начало схемы на canvas (с учётом offset)
+    const startX = baseView.bboxMinX * sc + offsetX;
+    const startY = baseView.bboxMinY * sc + offsetY;
+    // Сколько страниц нужно по горизонтали и вертикали
+    const endX = startX + totalW;
+    const endY = startY + totalH;
+    // Страница вмещает outW × outH пикселей
+    // Определяем диапазон тайлов так, чтобы покрыть всю схему
+    const colMin = Math.floor(startX / outW);
+    const colMax = Math.ceil(endX / outW) - 1;
+    const rowMin = Math.floor(startY / outH);
+    const rowMax = Math.ceil(endY / outH) - 1;
+    const cols = Math.max(1, colMax - colMin + 1);
+    const rows = Math.max(1, rowMax - rowMin + 1);
+    const list: { col: number; row: number; pageIndex: number }[] = [];
+    for (let r = rowMin; r <= rowMax; r++) {
+      for (let c = colMin; c <= colMax; c++) {
+        list.push({ col: c, row: r, pageIndex: list.length });
+      }
+    }
+    return { list, cols, rows, colMin, rowMin };
+  }, [baseView]);
+
+  const totalPages = tiles.list.length;
+
+  // ─── Рендер одного тайла (тайл col,row = смещение offsetX - col*outW) ─
+  const renderTileToCanvas = useCallback(async (
+    outW: number, outH: number, col: number, row: number,
+    tileScale: number  // соотношение тайлового разрешения к базовому (150dpi)
+  ): Promise<string> => {
+    const oc = document.createElement("canvas");
+    oc.width = outW; oc.height = outH;
+    const ctx = oc.getContext("2d");
+    if (!ctx) return "";
+
+    const { sc, offsetX, offsetY, isScene3D, horizonMap } = baseView;
+    // Тайл (col, row) показывает часть схемы, сдвинутую на col*baseOutW, row*baseOutH
+    const baseOutW = baseView.outW;
+    const baseOutH = baseView.outH;
+    // Смещение для этого тайла: сдвигаем общий offset на позицию тайла
+    const tileOffX = offsetX - col * baseOutW;
+    const tileOffY = offsetY - row * baseOutH;
+    // Масштабируем если нужно другое разрешение
+    const scaledSc     = sc * tileScale;
+    const scaledOffX   = tileOffX * tileScale;
+    const scaledOffY   = tileOffY * tileScale;
+
+    const sv = { scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
+      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    const visibleBranches = branches.filter(b => {
+      if (!b.horizonId) return true;
+      const h = horizonMap.get(b.horizonId);
+      return !h || h.visible;
+    });
+    const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0 }));
     const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
     ctx.fillStyle = isScene3D ? "#f0f4f8" : "#ffffff";
@@ -185,7 +238,7 @@ export default function PrintDialog({
       ctx, width: outW, height: outH,
       nodes, branches, horizons, horizonMap,
       visibleBranches, hiddenBranchIds: new Set(),
-      projNodes, projNodesMap, proj, view: sv,
+      projNodes, projNodesMap, proj: sv, view: sv,
       is3D: isScene3D, zScale, zLevel: 0,
       selectedBranchId: null, selectedBranchIds: new Set(),
       selectedNodeId: null, selectedNodeIds: new Set(),
@@ -194,33 +247,41 @@ export default function PrintDialog({
       showFlowArrows: false, flowDisplay,
       animOffset: 0, infoConfig, unitsConfig,
     });
-
-    // Рисуем условные обозначения поверх схемы
     if (schemaSymbols.length > 0) {
-      await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, sc, unitsConfig);
+      await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
     }
-
     return oc.toDataURL("image/png");
-  }, [nodes, branches, horizons, schemaSymbols, viewState, zScale, userScale, userOffsetX, userOffsetY,
+  }, [baseView, nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig]);
+
+  // ─── Рендер схемы в offscreen canvas для экспорта (один тайл, fit) ────
+  const renderToCanvas = useCallback(async (outW: number, outH: number): Promise<string> => {
+    return renderTileToCanvas(outW, outH, tiles.colMin, tiles.rowMin, outW / baseView.outW);
+  }, [renderTileToCanvas, tiles.colMin, tiles.rowMin, baseView.outW]);
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
-    // Для печати рендерим схему в PNG нужного размера
     const DPI = 150;
     const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
     const printW = mmToPx(workArea.w);
     const printH = mmToPx(workArea.h);
-    const schemaPng = await renderToCanvas(printW, printH);
+    const total = totalPages * copies;
 
-    const stampHtml = showStamp ? `
+    // Рендерим все тайлы
+    const tilesList = reverseOrder ? [...tiles.list].reverse() : tiles.list;
+    const pngPages: string[] = [];
+    for (const t of tilesList) {
+      pngPages.push(await renderTileToCanvas(printW, printH, t.col, t.row, 1));
+    }
+
+    const makeStamp = (idx: number, total2: number) => showStamp ? `
       <table class="stamp" cellpadding="0" cellspacing="0">
         <tr><td colspan="5"></td>
           <td rowspan="6" class="col-name">${drawingTitle}</td>
           <td class="col-stage">Стадия</td><td class="col-sheet">Лист</td><td class="col-total">Листов</td></tr>
         <tr><td>Разраб.</td><td>${engineer}</td><td></td><td></td><td>${printDate}</td>
           <td rowspan="5" class="org-cell">${organization}</td>
-          <td>Р</td><td>1</td><td>1</td></tr>
+          <td>Р</td><td>${idx}</td><td>${total2}</td></tr>
         <tr><td>Пров.</td><td>${approvedBy}</td><td></td><td></td><td>${printDate}</td>
           <td rowspan="4" colspan="3" class="num-cell">${drawingNumber}</td></tr>
         <tr><td>Н.контр.</td><td></td><td></td><td></td><td></td></tr>
@@ -228,16 +289,21 @@ export default function PrintDialog({
         <tr><td colspan="5"></td></tr>
       </table>` : "";
 
-    const pageHtml = `<div class="page">
-      ${showFrame ? '<div class="frame"></div>' : ''}
-      <div class="schema-wrap">
-        <img src="${schemaPng}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" />
-      </div>
-      ${stampHtml}
-      ${showPageNumbers ? '<div class="page-num">1 / 1</div>' : ''}
-    </div>`;
-
-    const allPages = Array.from({ length: copies }, () => pageHtml).join("");
+    const pageHtmls: string[] = [];
+    let pageNum = 0;
+    for (let copy = 0; copy < copies; copy++) {
+      for (const png of pngPages) {
+        pageNum++;
+        pageHtmls.push(`<div class="page">
+  ${showFrame ? '<div class="frame"></div>' : ''}
+  <div class="schema-wrap">
+    <img src="${png}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" />
+  </div>
+  ${makeStamp(pageNum, total)}
+  ${showPageNumbers ? `<div class="page-num">${pageNum} / ${total}</div>` : ''}
+</div>`);
+      }
+    }
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>${drawingTitle}</title>
@@ -257,7 +323,7 @@ body{background:white;font-family:Arial,sans-serif}
 .org-cell{font-size:9pt;text-align:center}
 .page-num{position:absolute;bottom:${marginBottom+(showStamp?58:2)}mm;right:${marginRight+2}mm;font-size:9pt;color:#555}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body>${allPages}
+</style></head><body>${pageHtmls.join("")}
 <script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
 </body></html>`;
 
@@ -267,8 +333,8 @@ body{background:white;font-family:Arial,sans-serif}
     win.document.write(html);
     win.document.close();
   }, [paper, workArea, marginTop, marginBottom, marginLeft, marginRight, showStamp, showFrame,
-      showPageNumbers, copies, drawingTitle, drawingNumber, engineer, approvedBy, organization,
-      printDate, renderToCanvas]);
+      showPageNumbers, copies, reverseOrder, drawingTitle, drawingNumber, engineer, approvedBy,
+      organization, printDate, tiles, totalPages, renderTileToCanvas]);
 
   // ─── Экспорт ─────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
@@ -589,88 +655,113 @@ body{background:white;font-family:Arial,sans-serif}
           <div className="flex-1 overflow-auto flex flex-col items-center justify-start p-5"
             style={{ background: "#6e6e6e" }}>
 
-            {/* Лист */}
+            {/* Сетка листов — по cols столбцов */}
             <div style={{
-              width: prevW, height: prevH, background: "white", flexShrink: 0,
-              boxShadow: "4px 4px 20px rgba(0,0,0,0.65)", position: "relative",
+              display: "grid",
+              gridTemplateColumns: `repeat(${tiles.cols}, ${prevW}px)`,
+              gap: 16,
             }}>
-              {/* Рамка */}
-              {showFrame && (
-                <div style={{
-                  position: "absolute", zIndex: 2, pointerEvents: "none",
-                  top: px(marginTop), left: px(marginLeft),
-                  right: px(marginRight), bottom: px(marginBottom + (showStamp ? 56 : 0)),
-                  border: "1px solid #222",
-                }} />
-              )}
+              {tiles.list.map((tile, idx) => {
+                const pageNum = idx + 1;
+                // Смещение для этого тайла в превью-пикселях
+                const tileOffX = (baseView.offsetX - tile.col * baseView.outW) * (prevW / baseView.outW);
+                const tileOffY = (baseView.offsetY - tile.row * baseView.outH) * (prevH / baseView.outH);
+                return (
+                  <div key={`${tile.col}-${tile.row}`} style={{
+                    width: prevW, height: prevH, background: "white", flexShrink: 0,
+                    boxShadow: "4px 4px 20px rgba(0,0,0,0.65)", position: "relative",
+                  }}>
+                    {/* Рамка */}
+                    {showFrame && (
+                      <div style={{
+                        position: "absolute", zIndex: 2, pointerEvents: "none",
+                        top: px(marginTop), left: px(marginLeft),
+                        right: px(marginRight), bottom: px(marginBottom + (showStamp ? 56 : 0)),
+                        border: "1px solid #222",
+                      }} />
+                    )}
 
-              {/* Схема — живой рендер через PrintPreviewCanvas */}
-              <div style={{
-                position: "absolute",
-                top: px(marginTop), left: px(marginLeft),
-                width: px(workArea.w), height: px(workArea.h),
-                overflow: "hidden",
-              }}>
-                <PrintPreviewCanvas
-                  ref={previewRef}
-                  nodes={nodes}
-                  branches={branches}
-                  horizons={horizons}
-                  schemaSymbols={schemaSymbols}
-                  azimuth={viewState.azimuth}
-                  elevation={viewState.elevation}
-                  zScale={zScale}
-                  is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
-                  scale={userScale ?? undefined}
-                  offsetX={userOffsetX ?? undefined}
-                  offsetY={userOffsetY ?? undefined}
-                  width={Math.max(1, Math.round(px(workArea.w)))}
-                  height={Math.max(1, Math.round(px(workArea.h)))}
-                  branchWidth={branchWidth}
-                  branchBorder={branchBorder}
-                  thinLines={thinLines}
-                  colorByHorizon={colorByHorizon}
-                  flowDisplay={flowDisplay}
-                  infoConfig={infoConfig}
-                  unitsConfig={unitsConfig}
-                />
-              </div>
+                    {/* Схема — тайл через PrintPreviewCanvas */}
+                    <div style={{
+                      position: "absolute",
+                      top: px(marginTop), left: px(marginLeft),
+                      width: px(workArea.w), height: px(workArea.h),
+                      overflow: "hidden",
+                    }}>
+                      <PrintPreviewCanvas
+                        ref={idx === 0 ? previewRef : undefined}
+                        nodes={nodes}
+                        branches={branches}
+                        horizons={horizons}
+                        schemaSymbols={schemaSymbols}
+                        azimuth={viewState.azimuth}
+                        elevation={viewState.elevation}
+                        zScale={zScale}
+                        is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
+                        scale={baseView.sc * (prevW / baseView.outW)}
+                        offsetX={tileOffX}
+                        offsetY={tileOffY}
+                        width={Math.max(1, Math.round(px(workArea.w)))}
+                        height={Math.max(1, Math.round(px(workArea.h)))}
+                        branchWidth={branchWidth}
+                        branchBorder={branchBorder}
+                        thinLines={thinLines}
+                        colorByHorizon={colorByHorizon}
+                        flowDisplay={flowDisplay}
+                        infoConfig={infoConfig}
+                        unitsConfig={unitsConfig}
+                      />
+                    </div>
 
-              {/* Штамп */}
-              {showStamp && (
-                <div style={{
-                  position: "absolute", zIndex: 3,
-                  bottom: px(marginBottom), right: px(marginRight),
-                  width: px(185), height: px(55),
-                  border: "1px solid #666", background: "white",
-                  display: "grid", gridTemplateColumns: "1fr 1fr",
-                  fontSize: Math.max(6, px(2.5)), color: "#333",
-                }}>
-                  <div style={{ borderRight: "1px solid #aaa", padding: "2px 4px" }}>
-                    <div style={{ fontWeight: 600 }}>{drawingTitle || "Название"}</div>
-                    {engineer && <div style={{ fontSize: "0.9em", color: "#666" }}>Разраб.: {engineer}</div>}
+                    {/* Штамп */}
+                    {showStamp && (
+                      <div style={{
+                        position: "absolute", zIndex: 3,
+                        bottom: px(marginBottom), right: px(marginRight),
+                        width: px(185), height: px(55),
+                        border: "1px solid #666", background: "white",
+                        display: "grid", gridTemplateColumns: "1fr 1fr",
+                        fontSize: Math.max(6, px(2.5)), color: "#333",
+                      }}>
+                        <div style={{ borderRight: "1px solid #aaa", padding: "2px 4px" }}>
+                          <div style={{ fontWeight: 600 }}>{drawingTitle || "Название"}</div>
+                          {engineer && <div style={{ fontSize: "0.9em", color: "#666" }}>Разраб.: {engineer}</div>}
+                        </div>
+                        <div style={{ padding: "2px 4px", fontWeight: 700, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {drawingNumber || "Номер"}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Номер страницы */}
+                    {showPageNumbers && (
+                      <div style={{
+                        position: "absolute", zIndex: 3,
+                        bottom: px(marginBottom + (showStamp ? 57 : 1)),
+                        right: px(marginRight + 1),
+                        fontSize: Math.max(8, px(3)), color: "#888",
+                      }}>{pageNum} / {totalPages}</div>
+                    )}
+
+                    {/* Серый номер страницы в центре (как в референсе) для пустых областей */}
+                    {totalPages > 1 && (
+                      <div style={{
+                        position: "absolute", zIndex: 1, inset: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        pointerEvents: "none",
+                        fontSize: Math.round(prevH * 0.35), fontWeight: 700,
+                        color: "rgba(0,0,0,0.06)", userSelect: "none",
+                      }}>{pageNum}</div>
+                    )}
                   </div>
-                  <div style={{ padding: "2px 4px", fontWeight: 700, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {drawingNumber || "Номер"}
-                  </div>
-                </div>
-              )}
-
-              {/* Номер страницы */}
-              {showPageNumbers && (
-                <div style={{
-                  position: "absolute", zIndex: 3,
-                  bottom: px(marginBottom + (showStamp ? 57 : 1)),
-                  right: px(marginRight + 1),
-                  fontSize: Math.max(8, px(3)), color: "#888",
-                }}>1 / 1</div>
-              )}
+                );
+              })}
             </div>
 
             {/* Статус-строка */}
             <div className="flex items-center justify-between w-full mt-3 flex-shrink-0"
               style={{ color: "white", fontSize: 11, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
-              <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб {scaleDisplay}%</span>
+              <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб {scaleDisplay}% · {totalPages} {totalPages === 1 ? "лист" : totalPages < 5 ? "листа" : "листов"}</span>
               <span>100 %</span>
             </div>
           </div>
