@@ -464,6 +464,16 @@ export default function TopoCanvas(props: Props) {
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
+  // Refs для touch hit-test — заполняются ниже после объявления projNodes/projNodesMap
+  const touchHitRef = useRef<{
+    projNodes: Parameters<typeof hitNodeR>[2];
+    projNodesMap: Parameters<typeof hitBranchR>[1];
+    branches: typeof branches;
+    onSelectNode: typeof onSelectNode;
+    onSelectBranch: typeof onSelectBranch;
+    onScaleChange?: typeof onScaleChange;
+  } | null>(null);
+
   // Флаг: после применения пресета вписать схему в экран
   const fitAfterPresetRef = useRef(false);
 
@@ -547,6 +557,89 @@ export default function TopoCanvas(props: Props) {
     for (const p of projNodes) m.set(p.node.id, p);
     return m;
   }, [projNodes]);
+
+  // Обновляем ref для touch hit-test (всегда актуальные данные без пересоздания listeners)
+  touchHitRef.current = { projNodes, projNodesMap, branches, onSelectNode, onSelectBranch, onScaleChange };
+
+  // Нативные touch-listeners на SVG с {passive:false}
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const ts = (e: TouchEvent) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        touchRef.current = { x: t.clientX - rect.left, y: t.clientY - rect.top, ox: viewRef.current.offsetX, oy: viewRef.current.offsetY };
+      } else if (e.touches.length === 2) {
+        const t1 = e.touches[0], t2 = e.touches[1];
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        const cx = (t1.clientX + t2.clientX) / 2 - rect.left;
+        const cy = (t1.clientY + t2.clientY) / 2 - rect.top;
+        touchRef.current = { x: cx, y: cy, ox: viewRef.current.offsetX, oy: viewRef.current.offsetY, dist, scale: viewRef.current.scale };
+      }
+    };
+    const tm = (e: TouchEvent) => {
+      e.preventDefault();
+      if (!touchRef.current) return;
+      const rect = svg.getBoundingClientRect();
+      if (e.touches.length === 1 && touchRef.current.dist === undefined) {
+        const t = e.touches[0];
+        const dx = (t.clientX - rect.left) - touchRef.current.x;
+        const dy = (t.clientY - rect.top)  - touchRef.current.y;
+        const newView = { ...viewRef.current, offsetX: touchRef.current.ox + dx, offsetY: touchRef.current.oy + dy };
+        viewRef.current = newView;
+        setView(newView);
+      } else if (e.touches.length === 2 && touchRef.current.dist !== undefined) {
+        const t1 = e.touches[0], t2 = e.touches[1];
+        const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        const rawFactor = newDist / touchRef.current.dist;
+        const factor = Math.max(0.85, Math.min(1.18, rawFactor));
+        const cx = touchRef.current.x, cy = touchRef.current.y;
+        const baseScale = touchRef.current.scale!;
+        const baseOx = touchRef.current.ox, baseOy = touchRef.current.oy;
+        const newScale = Math.max(0.0005, Math.min(5000, baseScale * factor));
+        const wx = (cx - baseOx) / baseScale, wy = (cy - baseOy) / baseScale;
+        const newView = { ...viewRef.current, scale: newScale, offsetX: cx - wx * newScale, offsetY: cy - wy * newScale };
+        viewRef.current = newView;
+        prevScaleOverride.current = newScale;
+        setView(newView);
+        if (touchHitRef.current?.onScaleChange) touchHitRef.current.onScaleChange(newScale);
+      }
+    };
+    const te = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.changedTouches.length === 1 && touchRef.current && touchRef.current.dist === undefined) {
+        const t = e.changedTouches[0];
+        const rect = svg.getBoundingClientRect();
+        const sx = t.clientX - rect.left, sy = t.clientY - rect.top;
+        const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
+        if (moved < 10 && touchHitRef.current) {
+          const { projNodes: pn, projNodesMap: pnm, branches: br, onSelectNode: selN, onSelectBranch: selB } = touchHitRef.current;
+          const hitN = hitNodeR(sx, sy, pn, 16);
+          const hitB = !hitN ? hitBranchR(sx, sy, pnm, br, 12) : null;
+          if (hitN) { selN(hitN); selB(null); }
+          else if (hitB) { selB(hitB); selN(null); }
+          else { selN(null); selB(null); }
+        }
+      }
+      if (e.touches.length === 0) touchRef.current = null;
+    };
+    svg.addEventListener("touchstart",  ts, { passive: false });
+    svg.addEventListener("touchmove",   tm, { passive: false });
+    svg.addEventListener("touchend",    te, { passive: false });
+    svg.addEventListener("touchcancel", te, { passive: false });
+    return () => {
+      svg.removeEventListener("touchstart",  ts);
+      svg.removeEventListener("touchmove",   tm);
+      svg.removeEventListener("touchend",    te);
+      svg.removeEventListener("touchcancel", te);
+    };
+   
+  }, []);
+
+  // Аналогичные нативные touch для Canvas (когда включён canvas-режим)
+  // регистрируются в CanvasLayer через тот же подход
 
   // Применить пресет ракурса
   const applyPreset = useCallback((preset: ViewPreset) => {
@@ -918,83 +1011,6 @@ export default function TopoCanvas(props: Props) {
   // React-обработчик нужен только для типизации JSX.
   const onWheel = (e: React.WheelEvent<SVGSVGElement>) => { e.preventDefault(); };
 
-  // ─── Touch: pan (1 палец) + pinch-zoom (2 пальца) + tap для выделения ──
-  const onTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    const rect = (e.currentTarget as Element).getBoundingClientRect();
-    if (e.touches.length === 1) {
-      const t = e.touches[0];
-      const sx = t.clientX - rect.left;
-      const sy = t.clientY - rect.top;
-      touchRef.current = { x: sx, y: sy, ox: view.offsetX, oy: view.offsetY };
-    } else if (e.touches.length === 2) {
-      const t1 = e.touches[0], t2 = e.touches[1];
-      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-      const cx = ((t1.clientX + t2.clientX) / 2) - rect.left;
-      const cy = ((t1.clientY + t2.clientY) / 2) - rect.top;
-      touchRef.current = { x: cx, y: cy, ox: view.offsetX, oy: view.offsetY, dist, scale: view.scale };
-    }
-  };
-
-  const onTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    if (!touchRef.current) return;
-    const rect = (e.currentTarget as Element).getBoundingClientRect();
-    if (e.touches.length === 1 && touchRef.current.dist === undefined) {
-      const t = e.touches[0];
-      const dx = (t.clientX - rect.left) - touchRef.current.x;
-      const dy = (t.clientY - rect.top)  - touchRef.current.y;
-      setView(v => ({ ...v, offsetX: touchRef.current!.ox + dx, offsetY: touchRef.current!.oy + dy }));
-    } else if (e.touches.length === 2 && touchRef.current.dist !== undefined) {
-      const t1 = e.touches[0], t2 = e.touches[1];
-      const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-      // Плавный pinch: ограничиваем максимальный фактор за кадр
-      const rawFactor = newDist / touchRef.current.dist;
-      const factor = Math.max(0.85, Math.min(1.18, rawFactor));
-      const cx = touchRef.current.x;
-      const cy = touchRef.current.y;
-      const baseScale = touchRef.current.scale!;
-      const baseOx    = touchRef.current.ox;
-      const baseOy    = touchRef.current.oy;
-      setView(v => {
-        const newScale = Math.max(0.0005, Math.min(5000, baseScale * factor));
-        const wx = (cx - baseOx) / baseScale;
-        const wy = (cy - baseOy) / baseScale;
-        prevScaleOverride.current = newScale;
-        if (onScaleChange) onScaleChange(newScale);
-        return { ...v, scale: newScale, offsetX: cx - wx * newScale, offsetY: cy - wy * newScale };
-      });
-    }
-  };
-
-  const onTouchEnd = (e: React.TouchEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    // Тап: если палец не двигался (< 10px) — выделяем узел/ветвь как при клике мышью
-    if (e.changedTouches.length === 1 && touchRef.current && touchRef.current.dist === undefined) {
-      const t = e.changedTouches[0];
-      const rect = (e.currentTarget as Element).getBoundingClientRect();
-      const sx = t.clientX - rect.left;
-      const sy = t.clientY - rect.top;
-      const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
-      if (moved < 10) {
-        // Увеличиваем радиус hit-теста для пальца (16px вместо 8px для мыши)
-        const hitN = hitNodeR(sx, sy, projNodes, 16);
-        const hitB = !hitN ? hitBranchR(sx, sy, projNodesMap, branches, 12) : null;
-        if (hitN) {
-          onSelectNode(hitN);
-          onSelectBranch(null);
-        } else if (hitB) {
-          onSelectBranch(hitB);
-          onSelectNode(null);
-        } else {
-          onSelectNode(null);
-          onSelectBranch(null);
-        }
-      }
-    }
-    if (e.touches.length === 0) touchRef.current = null;
-  };
-
   // ─── Вспомогательные ────────────────────────────────────────────────────
   const zColor = (z: number) => {
     const minZ = -300, maxZ = 0;
@@ -1103,9 +1119,7 @@ export default function TopoCanvas(props: Props) {
   const onMouseUpCanvas     = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseUp(asS(e));
   const onWheelCanvas       = (e: React.WheelEvent<HTMLCanvasElement>)  => onWheel(asS(e));
   const onContextMenuCanvas = (e: React.MouseEvent<HTMLCanvasElement>)  => onContextMenuSVG(asS(e));
-  const onTouchStartCanvas  = (e: React.TouchEvent<HTMLCanvasElement>)  => onTouchStart(asS(e));
-  const onTouchMoveCanvas   = (e: React.TouchEvent<HTMLCanvasElement>)  => onTouchMove(asS(e));
-  const onTouchEndCanvas    = (e: React.TouchEvent<HTMLCanvasElement>)  => onTouchEnd(asS(e));
+  // Touch для canvas теперь регистрируются нативно в CanvasLayer (passive:false)
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden"
@@ -1150,25 +1164,22 @@ export default function TopoCanvas(props: Props) {
           onMouseUp={onMouseUpCanvas}
           onWheel={onWheelCanvas}
           onContextMenu={onContextMenuCanvas}
-          onTouchStart={onTouchStartCanvas}
-          onTouchMove={onTouchMoveCanvas}
-          onTouchEnd={onTouchEndCanvas}
+          onTouchStart={(e) => { e.preventDefault(); }}
+          onTouchMove={(e) => { e.preventDefault(); }}
+          onTouchEnd={(e) => { e.preventDefault(); }}
           onRegisterGetCanvas={(fn) => { canvasExportRef.current = fn; }}
         />
       )}
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgRef} width={size.w} height={size.h}
-        style={{ touchAction: "none", visibility: useCanvas ? "hidden" : undefined, pointerEvents: useCanvas ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? -1 : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
+        style={{ touchAction: "none", userSelect: "none", visibility: useCanvas ? "hidden" : undefined, pointerEvents: useCanvas ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? -1 : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
         onWheel={onWheel}
-        onContextMenu={onContextMenuSVG}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}>
+        onContextMenu={onContextMenuSVG}>
 
         <defs>
           {/* 2D-сетка — рисуем только если ячейка достаточно крупная */}

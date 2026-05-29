@@ -89,6 +89,14 @@ export default function CanvasLayer(props: CanvasLayerProps) {
   const rafRef    = useRef<number | null>(null);
   const animOffsetRef = useRef(0);
 
+  // Refs на touch-обработчики — нужны для нативной регистрации {passive:false}
+  const onTouchStartRef = useRef(onTouchStart);
+  const onTouchMoveRef  = useRef(onTouchMove);
+  const onTouchEndRef   = useRef(onTouchEnd);
+  onTouchStartRef.current = onTouchStart;
+  onTouchMoveRef.current  = onTouchMove;
+  onTouchEndRef.current   = onTouchEnd;
+
   // Инициализация размера при монтировании
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -97,6 +105,27 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     canvas.height = height;
     draw();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Регистрируем touch-события нативно с {passive:false} — иначе
+  // React 17+ делает их passive по умолчанию и e.preventDefault() не работает,
+  // браузер перехватывает scroll → canvas становится чёрным на мобильном.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ts = (e: TouchEvent) => onTouchStartRef.current(e as unknown as React.TouchEvent<HTMLCanvasElement>);
+    const tm = (e: TouchEvent) => { e.preventDefault(); onTouchMoveRef.current(e as unknown as React.TouchEvent<HTMLCanvasElement>); };
+    const te = (e: TouchEvent) => onTouchEndRef.current(e as unknown as React.TouchEvent<HTMLCanvasElement>);
+    canvas.addEventListener("touchstart",  ts, { passive: false });
+    canvas.addEventListener("touchmove",   tm, { passive: false });
+    canvas.addEventListener("touchend",    te, { passive: false });
+    canvas.addEventListener("touchcancel", te, { passive: false });
+    return () => {
+      canvas.removeEventListener("touchstart",  ts);
+      canvas.removeEventListener("touchmove",   tm);
+      canvas.removeEventListener("touchend",    te);
+      canvas.removeEventListener("touchcancel", te);
+    };
   }, []);
 
   // Анимация потока — один RAF на весь холст (вместо 1872 SVG <animate>)
@@ -194,16 +223,13 @@ export default function CanvasLayer(props: CanvasLayerProps) {
       ref={canvasRef}
       width={width}
       height={height}
-      style={{ display: "block", touchAction: "none" }}
+      style={{ display: "block", touchAction: "none", userSelect: "none" }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseUp}
       onWheel={onWheel}
       onContextMenu={onContextMenu}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
     />
   );
 }
