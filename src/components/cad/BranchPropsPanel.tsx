@@ -5,6 +5,7 @@ import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import { type WaterBranchResult } from "@/lib/waterHydraulics";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -38,6 +39,8 @@ interface BranchPropsPanelProps {
   unitsConfig?: UnitsConfig;
   /** Все узлы — для отображения коротких имён начального/конечного */
   nodes?: TopoNode[];
+  /** Результат гидравлического расчёта водопровода для этой ветви */
+  waterBranchResult?: WaterBranchResult;
 }
 
 const SH = "#e8eef8";
@@ -217,7 +220,7 @@ function fmtR(rKmu: number, minDecimals = 4): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [] }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -1423,16 +1426,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               <SectionHeader title="Вычисленные параметры" />
               <InlineLabel label="Сопротивление, МН·с²/м⁸">
-                <ComputedInput value={`${numFmt(branch.wpComputedR ?? 0, 4)}`} />
+                <ComputedInput value={numFmt(waterBranchResult?.resistance ?? 0, 4)} />
               </InlineLabel>
               <InlineLabel label="Расход, м³/ч">
-                <ComputedInput value={`${numFmt(branch.wpComputedFlow ?? 0, 2)}`} />
+                <ComputedInput value={numFmt(waterBranchResult?.flow ?? 0, 2)} />
               </InlineLabel>
               <InlineLabel label="Скорость, м/с">
-                <ComputedInput value={`${numFmt(branch.wpComputedVelocity ?? 0, 2)}`} />
+                <ComputedInput value={numFmt(waterBranchResult?.velocity ?? 0, 2)} />
               </InlineLabel>
               <InlineLabel label="Потери давл., МПа">
-                <ComputedInput value={`${numFmt(branch.wpComputedDeltaP ?? 0, 4)}`} />
+                <ComputedInput value={numFmt(waterBranchResult?.deltaP ?? 0, 4)} />
               </InlineLabel>
             </>)}
           </div>

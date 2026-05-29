@@ -3003,6 +3003,7 @@ export default function CadPage() {
                 })()}
                 unitsConfig={unitsConfig}
                 nodes={nodes}
+                waterBranchResult={waterNetwork.branchResults.get(selectedBranch.id)}
               />
             )}
 

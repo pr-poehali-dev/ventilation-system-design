@@ -179,20 +179,21 @@ export function calcWaterNetwork(
 
       let flow = 0;
       if (neighborFt === "consumer" && neighborNode) {
-        // Расчёт сопротивления потребителя
-        const mode = neighborNode.fireResistanceMode ?? "project";
-        let nozR = 0;
-        if (mode === "project") {
-          nozR = calcNozzleResistance(neighborNode.fireHydrantDiameter ?? 0);
-        } else {
-          nozR = neighborNode.fireManualR ?? 0;
+        // Кран закрыт → расход 0, давление не падает
+        const isOpen = neighborNode.fireHydrantOpen ?? false;
+        if (isOpen) {
+          const mode = neighborNode.fireResistanceMode ?? "project";
+          let nozR = 0;
+          if (mode === "project") {
+            nozR = calcNozzleResistance(neighborNode.fireHydrantDiameter ?? 0);
+          } else {
+            nozR = neighborNode.fireManualR ?? 0;
+          }
+          const totalR = brRes.resistance + nozR;
+          flow = totalR > 0 ? calcConsumerFlow(pAvail, totalR) : 0;
         }
-        const totalR = brRes.resistance + nozR;
-        flow = totalR > 0 ? calcConsumerFlow(pAvail, totalR) : 0;
-      } else {
-        // Соединение / следующий узел — передаём давление без потребления
-        flow = 0;
       }
+      // junction и все остальные — flow=0, просто передаём давление дальше
 
       const deltaP = calcPipeDeltaP(flow, brRes.resistance);
       const pOut = Math.max(0, pAvail - deltaP);
@@ -202,8 +203,9 @@ export function calcWaterNetwork(
       pressureMap.set(neighborId, pOut);
 
       if (neighborNode) {
+        const isOpen = neighborFt === "consumer" ? (neighborNode.fireHydrantOpen ?? false) : true;
         const nozR = (() => {
-          if (neighborFt !== "consumer") return 0;
+          if (neighborFt !== "consumer" || !isOpen) return 0;
           const mode = neighborNode.fireResistanceMode ?? "project";
           return mode === "project"
             ? calcNozzleResistance(neighborNode.fireHydrantDiameter ?? 0)
@@ -217,7 +219,7 @@ export function calcWaterNetwork(
 
         nodeResults.set(neighborId, {
           nodeId: neighborId,
-          staticP: pOut + dynP,
+          staticP: pOut + (neighborFt === "consumer" && !isOpen ? 0 : dynP),
           dynamicP: dynP,
           flow: nFlow,
           resistance: nozR,
