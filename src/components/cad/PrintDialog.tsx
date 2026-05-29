@@ -86,6 +86,10 @@ export default function PrintDialog({
   const [customW, setCustomW] = useState(420);
   const [customH, setCustomH] = useState(297);
 
+  // Масштаб предпросмотра (только визуальный зум, не влияет на печать)
+  const [viewZoom, setViewZoom] = useState(1);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+
   // null = auto-fit (100%); number = множитель от fit (1.0 = 100%, 2.0 = 200%)
   const [userScale,   setUserScale]   = useState<number | null>(null);
   const [userOffsetX, setUserOffsetX] = useState<number | null>(null);
@@ -115,6 +119,28 @@ export default function PrintDialog({
   const [templates, setTemplates] = useState<Record<string, object>>(() => {
     try { return JSON.parse(localStorage.getItem("printTemplates") || "{}"); } catch { return {}; }
   });
+  // Wheel-зум предпросмотра: масштабирует вид относительно позиции курсора
+  const handlePreviewWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const container = previewContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    // Позиция курсора относительно контента (с учётом текущего скролла)
+    const mouseX = e.clientX - rect.left + container.scrollLeft;
+    const mouseY = e.clientY - rect.top  + container.scrollTop;
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    setViewZoom(prev => {
+      const next = Math.max(0.1, Math.min(10, prev * factor));
+      // Компенсируем скролл, чтобы точка под курсором не смещалась
+      const ratio = next / prev;
+      requestAnimationFrame(() => {
+        container.scrollLeft = mouseX * ratio - (e.clientX - rect.left);
+        container.scrollTop  = mouseY * ratio - (e.clientY - rect.top);
+      });
+      return next;
+    });
+  }, []);
+
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf">("png");
   const [exportDpi, setExportDpi] = useState(150);
@@ -663,8 +689,25 @@ body{background:white;font-family:Arial,sans-serif}
           </div>
 
           {/* Предпросмотр */}
-          <div className="flex-1 overflow-auto flex flex-col items-center justify-start p-5"
-            style={{ background: "#6e6e6e" }}>
+          <div
+            ref={previewContainerRef}
+            className="flex-1 overflow-scroll"
+            style={{ background: "#6e6e6e", cursor: "default", position: "relative" }}
+            onWheel={handlePreviewWheel}
+          >
+            {/* Невидимый spacer задаёт правильный размер скролл-области */}
+            <div style={{
+              width:  (prevW  * tiles.cols  + 16 * (tiles.cols  - 1) + 40) * viewZoom,
+              height: (prevH * tiles.rows + 16 * (tiles.rows - 1) + 40) * viewZoom,
+              flexShrink: 0,
+            }} />
+            {/* Обёртка с transform: position absolute чтобы не влиять на поток */}
+            <div style={{
+              position: "absolute", top: 0, left: 0,
+              padding: 20,
+              transformOrigin: "top left",
+              transform: `scale(${viewZoom})`,
+            }}>
 
             {/* Сетка листов — по cols столбцов */}
             <div style={{
@@ -773,14 +816,17 @@ body{background:white;font-family:Arial,sans-serif}
                 );
               })}
             </div>
+            </div>{/* конец обёртки transform */}
+          </div>{/* конец контейнера предпросмотра */}
+        </div>
 
-            {/* Статус-строка */}
-            <div className="flex items-center justify-between w-full mt-3 flex-shrink-0"
-              style={{ color: "white", fontSize: 11, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
-              <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб {scaleDisplay}% · {totalPages} {totalPages === 1 ? "лист" : totalPages < 5 ? "листа" : "листов"}</span>
-              <span>100 %</span>
-            </div>
-          </div>
+        {/* Статус-строка */}
+        <div className="flex items-center justify-between px-4 py-1 flex-shrink-0"
+          style={{ background: "#555", color: "white", fontSize: 11, borderTop: "1px solid #444" }}>
+          <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб печати {scaleDisplay}% · {totalPages} {totalPages === 1 ? "лист" : totalPages < 5 ? "листа" : "листов"}</span>
+          <span style={{ cursor: "pointer" }} title="Сбросить зум предпросмотра" onClick={() => setViewZoom(1)}>
+            {Math.round(viewZoom * 100)} %
+          </span>
         </div>
 
         {/* Кнопки внизу */}
