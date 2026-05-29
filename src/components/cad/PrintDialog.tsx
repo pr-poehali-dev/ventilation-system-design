@@ -88,6 +88,7 @@ export default function PrintDialog({
 
   // Масштаб предпросмотра (только визуальный зум, не влияет на печать)
   const [viewZoom, setViewZoom] = useState(1);
+  const viewZoomRef = useRef(1);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   // null = auto-fit (100%); number = множитель от fit (1.0 = 100%, 2.0 = 200%)
@@ -152,24 +153,26 @@ export default function PrintDialog({
     setIsDragging(true);
   }, []);
 
-  // startOffsetX/Y нужно проставить снаружи через ref при mousedown
-  const dragBaseRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
+  const dragBaseRef = useRef<{ offsetX: number; offsetY: number; defaultOffsetX: number; defaultOffsetY: number }>(
+    { offsetX: 0, offsetY: 0, defaultOffsetX: 0, defaultOffsetY: 0 }
+  );
 
   const handlePreviewMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragRef.current) return;
     const dx = e.clientX - dragRef.current.startMouseX;
     const dy = e.clientY - dragRef.current.startMouseY;
-    // Экранные px → печатные px (150dpi): делим на prevToPage
-    const printDx = dx / dragRef.current.prevToPage;
-    const printDy = dy / dragRef.current.prevToPage;
+    // Экранные px → превью-px (убираем viewZoom) → печатные px (делим на prevToPage)
+    const zoom = viewZoomRef.current;
+    const printDx = dx / zoom / dragRef.current.prevToPage;
+    const printDy = dy / zoom / dragRef.current.prevToPage;
     const newOffX = dragBaseRef.current.offsetX + printDx;
     const newOffY = dragBaseRef.current.offsetY + printDy;
     setUserOffsetX(newOffX);
     setUserOffsetY(newOffY);
-    // Обновляем поля ввода (мм)
+    // Показываем дельту от дефолтного положения в мм
     const pxToMm = (v: number) => Math.round(v * 25.4 / 150 * 10) / 10;
-    setOffsetXDisplay(pxToMm(newOffX));
-    setOffsetYDisplay(pxToMm(newOffY));
+    setOffsetXDisplay(pxToMm(newOffX - dragBaseRef.current.defaultOffsetX));
+    setOffsetYDisplay(pxToMm(newOffY - dragBaseRef.current.defaultOffsetY));
   }, []);
 
   const handlePreviewMouseUp = useCallback(() => {
@@ -189,6 +192,7 @@ export default function PrintDialog({
     const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
     setViewZoom(prev => {
       const next = Math.max(0.1, Math.min(10, prev * factor));
+      viewZoomRef.current = next;
       // Компенсируем скролл, чтобы точка под курсором не смещалась
       const ratio = next / prev;
       requestAnimationFrame(() => {
@@ -256,10 +260,12 @@ export default function PrintDialog({
     // Пользовательский scale в px: userScale хранится как процент/100 от fitSc
     // т.е. userScale=1.0 → 100% = fit; userScale=2.0 → 200% = вдвое крупнее
     const sc = userScale !== null ? fitSc * userScale : fitSc;
-    // offset: привязка к левому верхнему углу первой страницы + pad
-    const offsetX = userOffsetX ?? (pad - minX * sc);
-    const offsetY = userOffsetY ?? (pad - minY * sc);
-    return { sc, fitSc, offsetX, offsetY, isScene3D, pageW, pageH, horizonMap };
+    // Дефолтный offset: левый верхний угол + pad
+    const defaultOffsetX = pad - minX * sc;
+    const defaultOffsetY = pad - minY * sc;
+    const offsetX = userOffsetX ?? defaultOffsetX;
+    const offsetY = userOffsetY ?? defaultOffsetY;
+    return { sc, fitSc, offsetX, offsetY, defaultOffsetX, defaultOffsetY, isScene3D, pageW, pageH, horizonMap };
   }, [schemaBbox, horizons, viewState, zScale, workArea, userScale, userOffsetX, userOffsetY]);
 
   // Синхронизация scaleDisplay с реальным масштабом (только при userScale=null)
@@ -415,10 +421,11 @@ export default function PrintDialog({
 @page{size:${paper.w}mm ${paper.h}mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:white;font-family:Arial,sans-serif}
-.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;page-break-after:always;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm}
+.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;page-break-after:always;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;background:white}
 .page:last-child{page-break-after:auto}
 .frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom+(showStamp?56:0)}mm;border:1px solid #000;pointer-events:none}
-.schema-wrap{width:100%;height:calc(100% - ${showStamp?56:0}mm);overflow:hidden}
+.schema-wrap{width:100%;height:calc(100% - ${showStamp?56:0}mm);overflow:hidden;background:white}
+.schema-wrap img{background:white;display:block}
 .stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
 .stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
 .col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
@@ -471,9 +478,10 @@ body{background:white;font-family:Arial,sans-serif}
 @page{size:${paper.w}mm ${paper.h}mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:white;font-family:Arial,sans-serif}
-.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm}
+.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;background:white}
 .frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom + (showStamp ? 56 : 0)}mm;border:1px solid #000;pointer-events:none}
-.schema-wrap{width:100%;height:calc(100% - ${showStamp ? 56 : 0}mm);overflow:hidden}
+.schema-wrap{width:100%;height:calc(100% - ${showStamp ? 56 : 0}mm);overflow:hidden;background:white}
+.schema-wrap img{background:white;display:block}
 .stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
 .stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
 .col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
@@ -738,7 +746,8 @@ body{background:white;font-family:Arial,sans-serif}
                     onChange={e => {
                       const mm = +e.target.value || 0;
                       setOffsetXDisplay(mm);
-                      setUserOffsetX(mm * 150 / 25.4);
+                      // дельта от дефолтного положения
+                      setUserOffsetX(baseView.defaultOffsetX + mm * 150 / 25.4);
                     }} />
                   <span style={{ fontSize: 11, color: "#555" }}>мм</span>
                 </div>
@@ -750,7 +759,7 @@ body{background:white;font-family:Arial,sans-serif}
                     onChange={e => {
                       const mm = +e.target.value || 0;
                       setOffsetYDisplay(mm);
-                      setUserOffsetY(mm * 150 / 25.4);
+                      setUserOffsetY(baseView.defaultOffsetY + mm * 150 / 25.4);
                     }} />
                   <span style={{ fontSize: 11, color: "#555" }}>мм</span>
                 </div>
@@ -858,7 +867,10 @@ body{background:white;font-family:Arial,sans-serif}
                   <div key={`${tile.col}-${tile.row}`}
                     onContextMenu={e => handleTileContextMenu(e, idx)}
                     onMouseDown={e => {
-                      dragBaseRef.current = { offsetX: baseView.offsetX, offsetY: baseView.offsetY };
+                      dragBaseRef.current = {
+                        offsetX: baseView.offsetX, offsetY: baseView.offsetY,
+                        defaultOffsetX: baseView.defaultOffsetX, defaultOffsetY: baseView.defaultOffsetY,
+                      };
                       handleTileMouseDown(e, prevToPage);
                     }}
                     style={{
