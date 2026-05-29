@@ -129,6 +129,54 @@ export default function PrintDialog({
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
+  // ─── Drag-перетаскивание схемы в предпросмотре ────────────────────────
+  const dragRef = useRef<{
+    startMouseX: number;
+    startMouseY: number;
+    startOffsetX: number;  // px 150dpi
+    startOffsetY: number;
+    prevToPage: number;    // коэффициент превью-px / печатный-px
+  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleTileMouseDown = useCallback((e: React.MouseEvent, prevToPageRatio: number) => {
+    if (e.button !== 0) return;  // только ЛКМ
+    e.preventDefault();
+    dragRef.current = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      startOffsetX: 0,   // заполняется ниже через baseView
+      startOffsetY: 0,
+      prevToPage: prevToPageRatio,
+    };
+    setIsDragging(true);
+  }, []);
+
+  // startOffsetX/Y нужно проставить снаружи через ref при mousedown
+  const dragBaseRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
+
+  const handlePreviewMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startMouseX;
+    const dy = e.clientY - dragRef.current.startMouseY;
+    // Экранные px → печатные px (150dpi): делим на prevToPage
+    const printDx = dx / dragRef.current.prevToPage;
+    const printDy = dy / dragRef.current.prevToPage;
+    const newOffX = dragBaseRef.current.offsetX + printDx;
+    const newOffY = dragBaseRef.current.offsetY + printDy;
+    setUserOffsetX(newOffX);
+    setUserOffsetY(newOffY);
+    // Обновляем поля ввода (мм)
+    const pxToMm = (v: number) => Math.round(v * 25.4 / 150 * 10) / 10;
+    setOffsetXDisplay(pxToMm(newOffX));
+    setOffsetYDisplay(pxToMm(newOffY));
+  }, []);
+
+  const handlePreviewMouseUp = useCallback(() => {
+    dragRef.current = null;
+    setIsDragging(false);
+  }, []);
+
   // Wheel-зум предпросмотра: масштабирует вид относительно позиции курсора
   const handlePreviewWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -769,9 +817,12 @@ body{background:white;font-family:Arial,sans-serif}
           <div
             ref={previewContainerRef}
             className="flex-1 overflow-scroll"
-            style={{ background: "#ffffff", cursor: "default", position: "relative" }}
+            style={{ background: "#ffffff", cursor: isDragging ? "grabbing" : "default", position: "relative" }}
             onWheel={handlePreviewWheel}
             onClick={closeCtxMenu}
+            onMouseMove={handlePreviewMouseMove}
+            onMouseUp={handlePreviewMouseUp}
+            onMouseLeave={handlePreviewMouseUp}
           >
             {/* Невидимый spacer задаёт правильный размер скролл-области */}
             <div style={{
@@ -806,10 +857,15 @@ body{background:white;font-family:Arial,sans-serif}
                 return (
                   <div key={`${tile.col}-${tile.row}`}
                     onContextMenu={e => handleTileContextMenu(e, idx)}
+                    onMouseDown={e => {
+                      dragBaseRef.current = { offsetX: baseView.offsetX, offsetY: baseView.offsetY };
+                      handleTileMouseDown(e, prevToPage);
+                    }}
                     style={{
                       width: prevW, height: prevH, background: "white", flexShrink: 0,
                       boxShadow: "2px 2px 8px rgba(0,0,0,0.25)", position: "relative",
-                      cursor: "context-menu", overflow: "hidden",
+                      cursor: isDragging ? "grabbing" : "grab",
+                      overflow: "hidden", userSelect: "none",
                     }}>
                     {/* Рамка */}
                     {showFrame && (
