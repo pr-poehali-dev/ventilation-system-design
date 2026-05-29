@@ -211,7 +211,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : overV    ? "#dc2626"
       : (colorByHorizon && horizonColor) ? horizonColor
       : Q > 0    ? velocityColor(V)
-      : "#9ca3af";
+      : "#ffffff";
 
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
@@ -310,16 +310,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.restore();
     }
 
-    // Стрелки потока (F9)
+    // Стрелки потока (F9) — тонкие
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80) {
       const stepA = 130;
       const count = Math.max(1, Math.floor(segLen / stepA));
       const arrowLen = Math.min(28, Math.max(16, w * 4));
       const hw = arrowLen / 2;
       ctx.save();
-      ctx.fillStyle = "#dc2626";
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 0.8;
       for (let i = 0; i < count; i++) {
         const t0 = (i + 1) / (count + 1);
         const cx = sxA + dx * t0;
@@ -327,15 +324,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(angle);
+        // Тонкий хвостик
         ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = Math.max(1.5, w * 0.7);
+        ctx.lineWidth = 1;
         ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 6, 0); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 5, 0); ctx.stroke();
+        // Компактный наконечник
         ctx.fillStyle = "#dc2626";
         ctx.strokeStyle = "white";
-        ctx.lineWidth = 0.8;
+        ctx.lineWidth = 0.6;
         ctx.beginPath();
-        ctx.moveTo(hw - 9, -5); ctx.lineTo(hw, 0); ctx.lineTo(hw - 9, 5);
+        ctx.moveTo(hw - 7, -4); ctx.lineTo(hw, 0); ctx.lineTo(hw - 7, 4);
         ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.restore();
       }
@@ -430,20 +429,27 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     void ux; void uy;
   }
 
-  // ─── ТРУБОПРОВОДЫ ППЗ (тонкая синяя линия внутри ветвей) ─────────────────
+  // ─── ТРУБОПРОВОДЫ ППЗ (яркая синяя линия у края ветви) ─────────────────
   if (lodNodes) {
     ctx.save();
     for (const { b, from, to } of sorted) {
       if (!b.hasWaterPipe || !from || !to) continue;
-      // Толщина = 1.5px независимо от масштаба, полупрозрачная
-      ctx.strokeStyle = "#2563eb";
-      ctx.lineWidth = Math.max(1, Math.min(2.5, sc * 10));
+      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const w2 = thinLines ? 1 : bw;
+      // Нормаль к ветви для смещения линии к краю
+      const ddx = to.sx - from.sx, ddy = to.sy - from.sy;
+      const segL = Math.hypot(ddx, ddy);
+      const nx = segL > 0 ? -ddy / segL : 0;
+      const ny = segL > 0 ?  ddx / segL : 0;
+      const offset = w2 * 0.38;
+      ctx.strokeStyle = "#1d4ed8";
+      ctx.lineWidth = 1.5;
       ctx.lineCap = "round";
-      ctx.globalAlpha = 0.75;
+      ctx.globalAlpha = 1;
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(from.sx, from.sy);
-      ctx.lineTo(to.sx, to.sy);
+      ctx.moveTo(from.sx + nx * offset, from.sy + ny * offset);
+      ctx.lineTo(to.sx   + nx * offset, to.sy   + ny * offset);
       ctx.stroke();
     }
     ctx.restore();
@@ -489,42 +495,28 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.fill(); ctx.stroke();
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
-      // Классическое обозначение: прямоугольник с горизонтальными волнистыми линиями
       if (fireType === "reservoir" && sc > 0.025) {
-        const IS = Math.max(7, Math.min(18, sc * 80)); // размер иконки, px (7..18)
+        const IS = Math.max(7, Math.min(18, sc * 80));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
-        const hw = IS * 0.75, hh = IS * 0.55;
-        // Белый фон
+        const hw = IS * 0.8, hh = IS * 0.6;
+        const lw = Math.max(1, IS * 0.09);
+        // Верхняя (пустая) половина
         ctx.fillStyle = "white";
-        ctx.fillRect(ix - hw, iy - hh, hw * 2, hh * 2);
-        // Синяя заливка нижней половины (вода)
-        ctx.fillStyle = "#bfdbfe";
+        ctx.fillRect(ix - hw, iy - hh, hw * 2, hh);
+        // Нижняя (вода) половина
+        ctx.fillStyle = "#1d4ed8";
         ctx.fillRect(ix - hw, iy, hw * 2, hh);
         // Рамка
         ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = Math.max(1, IS * 0.08);
+        ctx.lineWidth = lw;
         ctx.strokeRect(ix - hw, iy - hh, hw * 2, hh * 2);
-        // Горизонтальные линии-волны (уровень воды)
-        ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = Math.max(0.7, IS * 0.06);
-        ctx.globalAlpha = 0.7;
-        for (let li = 0; li < 2; li++) {
-          const ly = iy + hh * (0.25 + li * 0.45);
-          ctx.beginPath();
-          const step = hw * 0.5;
-          for (let wx = -hw; wx < hw; wx += step) {
-            const nx = Math.min(wx + step, hw);
-            ctx.moveTo(ix + wx, ly);
-            ctx.bezierCurveTo(ix + wx + step * 0.3, ly - IS * 0.08, ix + wx + step * 0.7, ly + IS * 0.08, ix + nx, ly);
-          }
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-        // Кольцо выделения поверх иконки
+        // Горизонтальная черта — уровень воды
+        ctx.beginPath();
+        ctx.moveTo(ix - hw, iy); ctx.lineTo(ix + hw, iy);
+        ctx.stroke();
         if (isSel) {
-          ctx.strokeStyle = ringColor;
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 2]);
           ctx.strokeRect(ix - hw - 3, iy - hh - 3, (hw + 3) * 2, (hh + 3) * 2);
           ctx.setLineDash([]);
@@ -533,51 +525,46 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
-      // Классическое обозначение ПК: квадрат с диагональным крестом внутри
+      // Кружок с боковыми ушками (вентиль/задвижка)
       if (fireType === "consumer" && sc > 0.025) {
         const IS = Math.max(7, Math.min(16, sc * 75));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
-        const hw = IS * 0.6;
-        // Белый фон
-        ctx.fillStyle = "white";
-        ctx.fillRect(ix - hw, iy - hw, hw * 2, hw * 2);
-        // Красная рамка (квадрат)
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = Math.max(1, IS * 0.10);
-        ctx.strokeRect(ix - hw, iy - hw, hw * 2, hw * 2);
-        // Диагональный крест (X) — стандартное обозначение ПК
-        ctx.beginPath();
-        ctx.moveTo(ix - hw * 0.8, iy - hw * 0.8); ctx.lineTo(ix + hw * 0.8, iy + hw * 0.8);
-        ctx.moveTo(ix + hw * 0.8, iy - hw * 0.8); ctx.lineTo(ix - hw * 0.8, iy + hw * 0.8);
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = Math.max(0.8, IS * 0.08);
-        ctx.stroke();
-        // Кольцо выделения
+        const cr = IS * 0.55;
+        const earR = cr * 0.55;
+        const lw = Math.max(1.2, IS * 0.10);
+        // Левое ухо
+        ctx.beginPath(); ctx.arc(ix - cr * 1.1, iy, earR, 0, Math.PI * 2);
+        ctx.fillStyle = "white"; ctx.strokeStyle = "#dc2626"; ctx.lineWidth = lw;
+        ctx.fill(); ctx.stroke();
+        // Правое ухо
+        ctx.beginPath(); ctx.arc(ix + cr * 1.1, iy, earR, 0, Math.PI * 2);
+        ctx.fillStyle = "white"; ctx.strokeStyle = "#dc2626"; ctx.lineWidth = lw;
+        ctx.fill(); ctx.stroke();
+        // Основной кружок
+        ctx.beginPath(); ctx.arc(ix, iy, cr, 0, Math.PI * 2);
+        ctx.fillStyle = "white"; ctx.strokeStyle = "#dc2626"; ctx.lineWidth = lw;
+        ctx.fill(); ctx.stroke();
         if (isSel) {
-          ctx.strokeStyle = ringColor;
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 2]);
-          ctx.strokeRect(ix - hw - 3, iy - hw - 3, (hw + 3) * 2, (hw + 3) * 2);
+          ctx.beginPath(); ctx.arc(ix, iy, cr + earR + 3, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
         }
         ctx.restore();
       }
 
       // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
-      // Маленький фиолетовый кружок с точкой
       if (fireType === "junction" && sc > 0.025) {
         const IS = Math.max(4, Math.min(8, sc * 50));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);
-        ctx.fillStyle = "white";
-        ctx.strokeStyle = "#7c3aed";
+        ctx.fillStyle = "white"; ctx.strokeStyle = "#7c3aed";
         ctx.lineWidth = Math.max(1, IS * 0.25);
         ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.arc(ix, iy, IS * 0.35, 0, Math.PI * 2);
-        ctx.fillStyle = "#7c3aed";
-        ctx.fill();
+        ctx.fillStyle = "#7c3aed"; ctx.fill();
         if (isSel) {
           ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 2]);

@@ -301,7 +301,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     bulkheadManualR: 0,
     bulkheadWindowArea: 0,
     bulkheadFailurePressure: 0,
-    lineWidth: 3,
+    lineWidth: 7,
     lineBorder: 0.6,
     capital: false,
     designed: false,

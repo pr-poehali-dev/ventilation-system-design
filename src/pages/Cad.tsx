@@ -677,7 +677,7 @@ export default function CadPage() {
   }, [branches]);
 
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
-  const [branchWidth, setBranchWidth] = useState<number>(3);    // px
+  const [branchWidth, setBranchWidth] = useState<number>(7);    // px
   const [branchBorder, setBranchBorder] = useState<number>(0.6); // px
   const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
   const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);

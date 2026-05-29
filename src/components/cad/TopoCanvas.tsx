@@ -1346,7 +1346,7 @@ export default function TopoCanvas(props: Props) {
             : overV ? "#dc2626"
             : (colorByHorizon && horizonColor) ? horizonColor
             : Q > 0 ? velocityColor(V)
-            : "#9ca3af";
+            : "#ffffff";
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
           const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
@@ -1441,12 +1441,22 @@ export default function TopoCanvas(props: Props) {
                 <circle cx={sxA} cy={syA} r="2.5" fill={color} opacity="0.9" />
               )}
 
-              {/* ── Трубопровод ППЗ — тонкая синяя линия поверх ветви ── */}
-              {b.hasWaterPipe && (
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke="#2563eb" strokeWidth={Math.max(1, Math.min(2.5, view.scale * 10))}
-                  strokeLinecap="round" opacity="0.75" />
-              )}
+              {/* ── Трубопровод ППЗ — яркая синяя линия со смещением к краю ветви ── */}
+              {b.hasWaterPipe && (() => {
+                // Перпендикуляр к ветви — смещаем линию к краю на (w/2 - 1.5)px
+                const nx = -uy; // нормаль
+                const ny = ux;
+                const offset = w * 0.38; // смещение от центра к краю
+                const x1o = from.sx + nx * offset;
+                const y1o = from.sy + ny * offset;
+                const x2o = to.sx + nx * offset;
+                const y2o = to.sy + ny * offset;
+                return (
+                  <line x1={x1o} y1={y1o} x2={x2o} y2={y2o}
+                    stroke="#1d4ed8" strokeWidth="1.5"
+                    strokeLinecap="round" opacity="1" />
+                );
+              })()}
 
               {/* ── Стрелки направления свежей струи (F9, после расчёта) ── */}
               {/* Полноценные стрелки с хвостиком (─►), как в АэроСеть */}
@@ -1464,13 +1474,13 @@ export default function TopoCanvas(props: Props) {
                       const hw = arrowLen / 2;
                       return (
                         <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                          {/* Хвостик — линия */}
-                          <line x1={-hw} y1={0} x2={hw - 6} y2={0}
-                            stroke="#dc2626" strokeWidth={Math.max(1.5, w * 0.7)}
+                          {/* Хвостик — тонкая линия */}
+                          <line x1={-hw} y1={0} x2={hw - 5} y2={0}
+                            stroke="#dc2626" strokeWidth="1"
                             strokeLinecap="round" />
-                          {/* Наконечник — треугольник */}
-                          <polygon points={`${hw - 9},-5 ${hw},0 ${hw - 9},5`}
-                            fill="#dc2626" stroke="white" strokeWidth="0.8"
+                          {/* Наконечник — компактный треугольник */}
+                          <polygon points={`${hw - 7},-4 ${hw},0 ${hw - 7},4`}
+                            fill="#dc2626" stroke="white" strokeWidth="0.6"
                             strokeLinejoin="round" />
                         </g>
                       );
@@ -2101,24 +2111,24 @@ export default function TopoCanvas(props: Props) {
                 </>
               )}
 
-              {/* ── Иконка РЕЗЕРВУАРА С ВОДОЙ ── */}
+              {/* ── Иконка РЕЗЕРВУАРА С ВОДОЙ ──
+                   Прямоугольник: верхняя часть белая/пустая, нижняя — синяя (вода). */}
               {fireType === "reservoir" && view.scale > 0.025 && (() => {
-                const hw = IS * 0.75, hh = IS * 0.55;
-                const lw = Math.max(1, IS * 0.08);
+                const hw = IS * 0.8, hh = IS * 0.6;
+                const lw = Math.max(1, IS * 0.09);
+                const mid = 0; // горизонтальная ось
                 return (
                   <g>
-                    {/* Белый фон */}
-                    <rect x={-hw} y={-hh} width={hw * 2} height={hh * 2} fill="white" />
-                    {/* Синяя вода (нижняя половина) */}
-                    <rect x={-hw} y={0} width={hw * 2} height={hh} fill="#bfdbfe" />
-                    {/* Волны */}
-                    <path d={`M${-hw},${hh * 0.3} C${-hw * 0.5},${hh * 0.1} ${-hw * 0.1},${hh * 0.5} ${0},${hh * 0.3} C${hw * 0.3},${hh * 0.1} ${hw * 0.6},${hh * 0.5} ${hw},${hh * 0.3}`}
-                      stroke="#1d4ed8" strokeWidth={Math.max(0.7, IS * 0.06)} fill="none" opacity="0.8" />
-                    <path d={`M${-hw},${hh * 0.7} C${-hw * 0.5},${hh * 0.5} ${-hw * 0.1},${hh * 0.9} ${0},${hh * 0.7} C${hw * 0.3},${hh * 0.5} ${hw * 0.6},${hh * 0.9} ${hw},${hh * 0.7}`}
-                      stroke="#1d4ed8" strokeWidth={Math.max(0.7, IS * 0.06)} fill="none" opacity="0.8" />
-                    {/* Рамка */}
+                    {/* Верхняя (пустая) половина */}
+                    <rect x={-hw} y={-hh} width={hw * 2} height={hh} fill="white" />
+                    {/* Нижняя (вода) половина */}
+                    <rect x={-hw} y={mid} width={hw * 2} height={hh} fill="#1d4ed8" />
+                    {/* Общая рамка */}
                     <rect x={-hw} y={-hh} width={hw * 2} height={hh * 2}
                       fill="none" stroke="#1d4ed8" strokeWidth={lw} />
+                    {/* Горизонтальная черта — уровень воды */}
+                    <line x1={-hw} y1={mid} x2={hw} y2={mid}
+                      stroke="#1d4ed8" strokeWidth={lw} />
                     {/* Кольцо выделения */}
                     {isSel && <rect x={-hw - 3} y={-hh - 3} width={(hw + 3) * 2} height={(hh + 3) * 2}
                       fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
@@ -2126,26 +2136,32 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Иконка ПОЖАРНОГО КРАНА (квадрат с крестом X) ── */}
+              {/* ── Иконка ПОЖАРНОГО КРАНА ──
+                   Кружок с двумя боковыми дугами-ушками (задвижка/вентиль).
+                   Классическое обозначение по скриншоту. */}
               {fireType === "consumer" && view.scale > 0.025 && (() => {
-                const hw = IS * 0.6;
-                const lw = Math.max(1, IS * 0.10);
+                const cr = IS * 0.55; // радиус основного кружка
+                const lw = Math.max(1.2, IS * 0.10);
+                const earR = cr * 0.55; // радиус ушек
                 return (
                   <g>
-                    <rect x={-hw} y={-hw} width={hw * 2} height={hw * 2} fill="white" />
-                    <line x1={-hw * 0.8} y1={-hw * 0.8} x2={hw * 0.8} y2={hw * 0.8}
-                      stroke="#dc2626" strokeWidth={Math.max(0.8, IS * 0.08)} />
-                    <line x1={hw * 0.8} y1={-hw * 0.8} x2={-hw * 0.8} y2={hw * 0.8}
-                      stroke="#dc2626" strokeWidth={Math.max(0.8, IS * 0.08)} />
-                    <rect x={-hw} y={-hw} width={hw * 2} height={hw * 2}
-                      fill="none" stroke="#dc2626" strokeWidth={lw} />
-                    {isSel && <rect x={-hw - 3} y={-hw - 3} width={(hw + 3) * 2} height={(hw + 3) * 2}
-                      fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
+                    {/* Левое ухо */}
+                    <circle cx={-cr * 1.1} cy={0} r={earR}
+                      fill="white" stroke="#dc2626" strokeWidth={lw} />
+                    {/* Правое ухо */}
+                    <circle cx={cr * 1.1} cy={0} r={earR}
+                      fill="white" stroke="#dc2626" strokeWidth={lw} />
+                    {/* Основной кружок поверх ушек */}
+                    <circle cx={0} cy={0} r={cr}
+                      fill="white" stroke="#dc2626" strokeWidth={lw} />
+                    {/* Кольцо выделения */}
+                    {isSel && <circle r={cr + earR + 3} fill="none"
+                      stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
                   </g>
                 );
               })()}
 
-              {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (кружок с точкой) ── */}
+              {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
                 const jr = Math.max(4, Math.min(8, view.scale * 50));
                 return (
