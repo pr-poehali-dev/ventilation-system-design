@@ -640,7 +640,7 @@ body{background:white;font-family:Arial,sans-serif}
             {/* Статус-строка */}
             <div className="flex items-center justify-between w-full mt-3 flex-shrink-0"
               style={{ color: "white", fontSize: 11, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>
-              <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб {scale}%</span>
+              <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб {scaleDisplay}%</span>
               <span>100 %</span>
             </div>
           </div>
