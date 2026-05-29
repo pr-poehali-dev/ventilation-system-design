@@ -203,13 +203,13 @@ export default function TopoCanvas(props: Props) {
     });
   }, [onRegisterGetSvg]);
 
-  // Регистрируем прямой доступ к SVG DOM элементу
-  useEffect(() => {
-    if (!onRegisterSvgEl) return;
-    onRegisterSvgEl(svgRef.current);
-    return () => onRegisterSvgEl(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRegisterSvgEl, svgRef.current]);
+  // Регистрируем прямой доступ к SVG DOM элементу через callback ref
+  // (useEffect с svgRef.current — антипаттерн, ref меняется до useEffect)
+  const svgCallbackRef = useCallback((el: SVGSVGElement | null) => {
+    (svgRef as React.MutableRefObject<SVGSVGElement | null>).current = el;
+    onRegisterSvgEl?.(el);
+   
+  }, [onRegisterSvgEl]);
 
   // Карта горизонтов по id (для быстрых lookups)
   const horizonMap = useMemo(() => {
@@ -1187,7 +1187,7 @@ export default function TopoCanvas(props: Props) {
       )}
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
-      <svg ref={svgRef} width={size.w} height={size.h}
+      <svg ref={svgCallbackRef} width={size.w} height={size.h}
         style={{ touchAction: "none", userSelect: "none", visibility: useCanvas ? "hidden" : undefined, pointerEvents: useCanvas ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? -1 : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}

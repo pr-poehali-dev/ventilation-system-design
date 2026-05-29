@@ -744,9 +744,9 @@ export default function CadPage() {
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const liveSvgRef = useRef<SVGSVGElement | null>(null);
 
-  // Захватывает скриншот схемы и открывает диалог печати
+  // Захватывает схему и открывает диалог печати
   const openPrintDialog = () => {
-    // 1) Canvas-режим: читаем живой DOM-canvas напрямую (тут всё готово)
+    // 1) Canvas-режим: читаем живой DOM-canvas напрямую
     const canvas = liveCanvasRef.current;
     if (canvas && canvas.width > 0 && canvas.height > 0) {
       try {
@@ -756,52 +756,78 @@ export default function CadPage() {
           setShowPrintDialog(true);
           return;
         }
-      } catch { /* tainted — идём дальше */ }
+      } catch { /* tainted */ }
     }
 
-    // 2) SVG-режим: строим data URI напрямую, без Image/canvas (они зависают на blob href)
-    const raw = getSvgRef.current?.() ?? "";
+    // 2) SVG-режим: XMLSerializer + viewBox из savedViewState
+    const svgEl = liveSvgRef.current;
+    if (svgEl) {
+      const w = svgEl.clientWidth || 1600;
+      const h = svgEl.clientHeight || 900;
+      const vs = savedViewState;
+      let vx = 0, vy = 0, vw = w, vh = h;
+      if (vs && vs.scale > 0) {
+        vx = -vs.offsetX / vs.scale;
+        vy = -vs.offsetY / vs.scale;
+        vw = w / vs.scale;
+        vh = h / vs.scale;
+      }
 
-    if (raw.startsWith("data:image/png")) {
-      setPrintPreviewUrl(raw);
-      setShowPrintDialog(true);
-      return;
-    }
+      const serializer = new XMLSerializer();
+      let s = serializer.serializeToString(svgEl);
 
-    if (raw && raw.includes("<svg")) {
-      const wm = raw.match(/\bwidth="(\d+(?:\.\d+)?)"/);
-      const hm = raw.match(/\bheight="(\d+(?:\.\d+)?)"/);
-      const svgW = wm ? parseFloat(wm[1]) : 1600;
-      const svgH = hm ? parseFloat(hm[1]) : 900;
+      // Скрываем <image> — они ссылаются на blob URL которые недоступны вне живого DOM
+      s = s.replace(/<image\b([^>]*)>/gi, (_m: string, attrs: string) => {
+        const cleaned = attrs
+          .replace(/\s+xlink:href="[^"]*"/g, "")
+          .replace(/\s+href="[^"]*"/g, "");
+        return `<image${cleaned}>`;
+      });
 
-      const cleanSvg = raw
-        // Удаляем <image ...> теги — они содержат blob URL которые уже протухли
-        .replace(/<image\b[^>]*\/>/gi, "")
-        .replace(/<image\b[^>]*>[\s\S]*?<\/image>/gi, "")
-        // Фиксируем <svg>: убираем style/width/height, добавляем viewBox
-        .replace(/<svg([^>]*)>/i, (_m, attrs: string) => {
-          let a = attrs
-            .replace(/\s+width="[^"]*"/g, "")
-            .replace(/\s+height="[^"]*"/g, "")
-            .replace(/\s+style="[^"]*"/g, "");
-          // Добавляем xmlns если нет
-          if (!a.includes("xmlns")) a += ' xmlns="http://www.w3.org/2000/svg"';
-          // Добавляем viewBox если нет
-          if (!a.includes("viewBox")) a += ` viewBox="0 0 ${svgW} ${svgH}"`;
-          return `<svg${a} width="${svgW}" height="${svgH}">`;
-        })
-        // Удаляем xlink:href на blob:// — оставляем только data: и http:
-        .replace(/\s+xlink:href="blob:[^"]*"/g, "")
-        .replace(/\s+href="blob:[^"]*"/g, "");
+      // Фиксируем <svg>: правильный viewBox
+      s = s.replace(/(<svg\b[^>]*?)(\s+width="[^"]*")?(\s+height="[^"]*")?(\s+style="[^"]*")?(\s+viewBox="[^"]*")?([^>]*>)/i,
+        (_m: string, pre: string, _w: string, _h: string, _st: string, _vb: string, post: string) => {
+          let a = pre;
+          if (!a.includes("xmlns=")) a += ' xmlns="http://www.w3.org/2000/svg"';
+          return `${a} width="${w}" height="${h}" viewBox="${vx} ${vy} ${vw} ${vh}" style="background:white"${post}`;
+        });
 
-      // Кодируем как data URI — мгновенно, не зависает, работает в <img>
-      const dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(cleanSvg);
+      const dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s);
       setPrintPreviewUrl(dataUri);
       setShowPrintDialog(true);
       return;
     }
 
-    // 3) Открываем без превью
+    // 3) Fallback: getSvgRef → строка outerHTML
+    const raw = getSvgRef.current?.() ?? "";
+    if (raw.startsWith("data:")) { setPrintPreviewUrl(raw); setShowPrintDialog(true); return; }
+
+    if (raw.includes("<svg")) {
+      const wm = raw.match(/\bwidth="(\d+(?:\.\d+)?)"/);
+      const hm = raw.match(/\bheight="(\d+(?:\.\d+)?)"/);
+      const sw = wm ? parseFloat(wm[1]) : 1600;
+      const sh = hm ? parseFloat(hm[1]) : 900;
+      const vs = savedViewState;
+      let vx2 = 0, vy2 = 0, vw2 = sw, vh2 = sh;
+      if (vs && vs.scale > 0) {
+        vx2 = -vs.offsetX / vs.scale; vy2 = -vs.offsetY / vs.scale;
+        vw2 = sw / vs.scale; vh2 = sh / vs.scale;
+      }
+      const clean = raw
+        .replace(/<image\b[^>]*\/?>/gi, "")
+        .replace(/\s+xlink:href="blob:[^"]*"/g, "")
+        .replace(/\s+href="blob:[^"]*"/g, "")
+        .replace(/<svg([^>]*)>/i, (_m: string, a: string) => {
+          let attrs = a.replace(/\s+width="[^"]*"/g, "").replace(/\s+height="[^"]*"/g, "")
+            .replace(/\s+style="[^"]*"/g, "").replace(/\s+viewBox="[^"]*"/g, "");
+          if (!attrs.includes("xmlns=")) attrs += ' xmlns="http://www.w3.org/2000/svg"';
+          return `<svg${attrs} width="${sw}" height="${sh}" viewBox="${vx2} ${vy2} ${vw2} ${vh2}" style="background:white">`;
+        });
+      setPrintPreviewUrl("data:image/svg+xml;charset=utf-8," + encodeURIComponent(clean));
+      setShowPrintDialog(true);
+      return;
+    }
+
     setPrintPreviewUrl("");
     setShowPrintDialog(true);
   };
