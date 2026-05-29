@@ -164,7 +164,9 @@ export default function PrintDialog({
     const pageH = mmToPx(workArea.h);
     const horizonMap = new Map(horizons.map(h => [h.id, h]));
     const { minX, minY, w: bw, h: bh } = schemaBbox;
-    const pad = 20 * DPI / 96;  // ~31px при 150dpi
+    // pad = 5мм в единицах 150dpi px — одинаково для печати и превью (пропорционально)
+    const padMm = 5;
+    const pad = padMm * DPI / 25.4;
     // fit-scale: вписать схему в 1 страницу
     const fitSc = Math.min((pageW - pad * 2) / bw, (pageH - pad * 2) / bh);
     // Пользовательский scale в px: userScale хранится как процент/100 от fitSc
@@ -672,13 +674,14 @@ body{background:white;font-family:Arial,sans-serif}
             }}>
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
-                // prevW/pageW — коэффициент масштабирования превью относительно печатного px
-                const prevToPage = prevW / baseView.pageW;
+                // Размеры canvas в превью-пикселях (рабочая область без полей)
+                const canvasW    = Math.max(1, Math.round(px(workArea.w)));
+                const canvasH    = Math.max(1, Math.round(px(workArea.h)));
+                // Коэффициент: сколько превью-px в одном печатном px (150dpi)
+                const prevToPage = canvasW / baseView.pageW;
                 const prevSc     = baseView.sc * prevToPage;
                 const prevOffX   = (baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
                 const prevOffY   = (baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
-                const canvasW    = Math.max(1, Math.round(px(workArea.w)));
-                const canvasH    = Math.max(1, Math.round(px(workArea.h)));
                 return (
                   <div key={`${tile.col}-${tile.row}`} style={{
                     width: prevW, height: prevH, background: "white", flexShrink: 0,
