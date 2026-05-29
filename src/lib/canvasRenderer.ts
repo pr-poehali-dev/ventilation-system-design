@@ -430,6 +430,25 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     void ux; void uy;
   }
 
+  // ─── ТРУБОПРОВОДЫ ППЗ (тонкая синяя линия внутри ветвей) ─────────────────
+  if (lodNodes) {
+    ctx.save();
+    for (const { b, from, to } of sorted) {
+      if (!b.hasWaterPipe || !from || !to) continue;
+      // Толщина = 1.5px независимо от масштаба, полупрозрачная
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = Math.max(1, Math.min(2.5, sc * 10));
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.75;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(from.sx, from.sy);
+      ctx.lineTo(to.sx, to.sy);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {
     const nodesSorted = [...projNodes].sort((a, b) => a.depth - b.depth);
@@ -447,111 +466,124 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       ctx.save();
 
-      // Кольцо выделения
-      if (isSel) {
+      // Основной круг
+      const fireType = n.fireNodeType ?? "none";
+      const hasFire = fireType !== "none";
+
+      // Кольцо выделения — только для обычных узлов (fire-узлы рисуют своё внутри иконок)
+      if (isSel && !hasFire) {
         ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4, 0, Math.PI * 2);
         ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
         ctx.setLineDash([3, 2]); ctx.stroke();
         ctx.setLineDash([]);
       }
-
-      // Основной круг
-      const fireType = n.fireNodeType ?? "none";
-      const nodeColor = fireType === "reservoir" ? "#3b82f6"
-                      : fireType === "consumer"  ? "#ef4444"
-                      : fireType === "junction"  ? "#8b5cf6"
+      // Для fire-узлов иконка заменяет кружок — рисуем маленький кружок только как маркер центра
+      const nodeColor = fireType === "reservoir" ? "#1d4ed8"
+                      : fireType === "consumer"  ? "#dc2626"
+                      : fireType === "junction"  ? "#7c3aed"
                       : color;
-      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2) : r, 0, Math.PI * 2);
       ctx.fillStyle = nodeColor;
-      ctx.strokeStyle = isSel ? ringColor : "#1f2937";
+      ctx.strokeStyle = isSel ? ringColor : (hasFire ? nodeColor : "#1f2937");
       ctx.lineWidth = isSel ? 2 : 1;
       ctx.fill(); ctx.stroke();
 
-      // Иконка резервуара с водой (синий цилиндр)
-      if (fireType === "reservoir" && sc > 0.04) {
-        const ir = Math.max(5, r * 2.2);
+      // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
+      // Классическое обозначение: прямоугольник с горизонтальными волнистыми линиями
+      if (fireType === "reservoir" && sc > 0.025) {
+        const IS = Math.max(7, Math.min(18, sc * 80)); // размер иконки, px (7..18)
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
-        // Корпус резервуара (прямоугольник)
-        ctx.beginPath();
-        ctx.rect(ix - ir * 0.7, iy - ir * 0.9, ir * 1.4, ir * 1.5);
-        ctx.fillStyle = "#dbeafe";
-        ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = 1;
-        ctx.fill(); ctx.stroke();
-        // Крышка (верхний эллипс)
-        ctx.beginPath();
-        ctx.ellipse(ix, iy - ir * 0.9, ir * 0.7, ir * 0.28, 0, 0, Math.PI * 2);
-        ctx.fillStyle = "#93c5fd";
-        ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = 1;
-        ctx.fill(); ctx.stroke();
-        // Дно (нижний эллипс)
-        ctx.beginPath();
-        ctx.ellipse(ix, iy + ir * 0.6, ir * 0.7, ir * 0.28, 0, 0, Math.PI * 2);
+        const hw = IS * 0.75, hh = IS * 0.55;
+        // Белый фон
+        ctx.fillStyle = "white";
+        ctx.fillRect(ix - hw, iy - hh, hw * 2, hh * 2);
+        // Синяя заливка нижней половины (вода)
         ctx.fillStyle = "#bfdbfe";
+        ctx.fillRect(ix - hw, iy, hw * 2, hh);
+        // Рамка
         ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = 1;
-        ctx.fill(); ctx.stroke();
-        // Вертикальные рёбра для объёма
-        ctx.beginPath();
-        ctx.moveTo(ix - ir * 0.7, iy - ir * 0.9);
-        ctx.lineTo(ix - ir * 0.7, iy + ir * 0.6);
-        ctx.moveTo(ix + ir * 0.7, iy - ir * 0.9);
-        ctx.lineTo(ix + ir * 0.7, iy + ir * 0.6);
+        ctx.lineWidth = Math.max(1, IS * 0.08);
+        ctx.strokeRect(ix - hw, iy - hh, hw * 2, hh * 2);
+        // Горизонтальные линии-волны (уровень воды)
         ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        ctx.lineWidth = Math.max(0.7, IS * 0.06);
+        ctx.globalAlpha = 0.7;
+        for (let li = 0; li < 2; li++) {
+          const ly = iy + hh * (0.25 + li * 0.45);
+          ctx.beginPath();
+          const step = hw * 0.5;
+          for (let wx = -hw; wx < hw; wx += step) {
+            const nx = Math.min(wx + step, hw);
+            ctx.moveTo(ix + wx, ly);
+            ctx.bezierCurveTo(ix + wx + step * 0.3, ly - IS * 0.08, ix + wx + step * 0.7, ly + IS * 0.08, ix + nx, ly);
+          }
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        // Кольцо выделения поверх иконки
+        if (isSel) {
+          ctx.strokeStyle = ringColor;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 2]);
+          ctx.strokeRect(ix - hw - 3, iy - hh - 3, (hw + 3) * 2, (hh + 3) * 2);
+          ctx.setLineDash([]);
+        }
         ctx.restore();
       }
 
-      // Иконка пожарного крана (красная буква Т + кружок)
-      if (fireType === "consumer" && (n.fireConsumerType ?? "fire_hydrant") === "fire_hydrant" && sc > 0.04) {
-        const ir = Math.max(5, r * 2.2);
-        const ix = pn.sx, iy = pn.sy - ir * 0.2;
-        ctx.save();
-        // Вертикальная стойка крана
-        ctx.beginPath();
-        ctx.moveTo(ix, iy - ir * 1.0);
-        ctx.lineTo(ix, iy + ir * 0.5);
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // Горизонтальная перекладина (вентиль)
-        ctx.beginPath();
-        ctx.moveTo(ix - ir * 0.8, iy - ir * 0.4);
-        ctx.lineTo(ix + ir * 0.8, iy - ir * 0.4);
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // Основание
-        ctx.beginPath();
-        ctx.moveTo(ix - ir * 0.5, iy + ir * 0.5);
-        ctx.lineTo(ix + ir * 0.5, iy + ir * 0.5);
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        // Центральный кружок (корпус вентиля)
-        ctx.beginPath();
-        ctx.arc(ix, iy - ir * 0.4, ir * 0.25, 0, Math.PI * 2);
-        ctx.fillStyle = "#fca5a5";
-        ctx.strokeStyle = "#dc2626";
-        ctx.lineWidth = 1;
-        ctx.fill(); ctx.stroke();
-        ctx.restore();
-      }
-
-      // Иконка соединения труб (фиолетовый крестик)
-      if (fireType === "junction" && sc > 0.04) {
-        const ir = Math.max(4, r * 1.8);
+      // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
+      // Классическое обозначение ПК: квадрат с диагональным крестом внутри
+      if (fireType === "consumer" && sc > 0.025) {
+        const IS = Math.max(7, Math.min(16, sc * 75));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
+        const hw = IS * 0.6;
+        // Белый фон
+        ctx.fillStyle = "white";
+        ctx.fillRect(ix - hw, iy - hw, hw * 2, hw * 2);
+        // Красная рамка (квадрат)
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = Math.max(1, IS * 0.10);
+        ctx.strokeRect(ix - hw, iy - hw, hw * 2, hw * 2);
+        // Диагональный крест (X) — стандартное обозначение ПК
         ctx.beginPath();
-        ctx.moveTo(ix - ir, iy); ctx.lineTo(ix + ir, iy);
-        ctx.moveTo(ix, iy - ir); ctx.lineTo(ix, iy + ir);
-        ctx.strokeStyle = "#7c3aed";
-        ctx.lineWidth = 2;
+        ctx.moveTo(ix - hw * 0.8, iy - hw * 0.8); ctx.lineTo(ix + hw * 0.8, iy + hw * 0.8);
+        ctx.moveTo(ix + hw * 0.8, iy - hw * 0.8); ctx.lineTo(ix - hw * 0.8, iy + hw * 0.8);
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = Math.max(0.8, IS * 0.08);
         ctx.stroke();
+        // Кольцо выделения
+        if (isSel) {
+          ctx.strokeStyle = ringColor;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 2]);
+          ctx.strokeRect(ix - hw - 3, iy - hw - 3, (hw + 3) * 2, (hw + 3) * 2);
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+      }
+
+      // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
+      // Маленький фиолетовый кружок с точкой
+      if (fireType === "junction" && sc > 0.025) {
+        const IS = Math.max(4, Math.min(8, sc * 50));
+        const ix = pn.sx, iy = pn.sy;
+        ctx.save();
+        ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.strokeStyle = "#7c3aed";
+        ctx.lineWidth = Math.max(1, IS * 0.25);
+        ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ix, iy, IS * 0.35, 0, Math.PI * 2);
+        ctx.fillStyle = "#7c3aed";
+        ctx.fill();
+        if (isSel) {
+          ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
+          ctx.setLineDash([3, 2]);
+          ctx.beginPath(); ctx.arc(ix, iy, IS + 4, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
         ctx.restore();
       }
 
