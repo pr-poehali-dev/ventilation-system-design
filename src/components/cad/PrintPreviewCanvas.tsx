@@ -1,10 +1,13 @@
 // Прямой рендер схемы в canvas для предпросмотра печати.
 // Вписывает схему в canvas автоматически, либо использует переданный view.
+// Поверх canvas — SVG-слой с условными обозначениями (УО).
 import { useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "@/lib/topology";
 import { renderCanvas, type ProjNode, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { type SchemaSymbol } from "@/pages/Cad";
+import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
 
 export interface PrintPreviewCanvasHandle {
   getFitView(): { scale: number; offsetX: number; offsetY: number } | null;
@@ -15,6 +18,7 @@ interface Props {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
+  schemaSymbols?: SchemaSymbol[];
   azimuth?: number;
   elevation?: number;
   zScale?: number;
@@ -36,6 +40,7 @@ interface Props {
 
 const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function PrintPreviewCanvas({
   nodes, branches, horizons,
+  schemaSymbols = [],
   azimuth = 0, elevation = 90,
   zScale = 1, is3D = false,
   scale: scaleProp, offsetX: oxProp, offsetY: oyProp,
@@ -152,12 +157,25 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   }), [fitView]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      style={{ display: "block", width: "100%", height: "100%" }}
-    />
+    <div style={{ position: "relative", width, height, flexShrink: 0 }}>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        style={{ display: "block" }}
+      />
+      {schemaSymbols.length > 0 && (
+        <SchemaSymbolsOverlay
+          symbols={schemaSymbols}
+          branches={branches}
+          projNodesMap={projNodesMap}
+          viewScale={activeView.scale}
+          unitsConfig={unitsConfig}
+          width={width}
+          height={height}
+        />
+      )}
+    </div>
   );
 });
 

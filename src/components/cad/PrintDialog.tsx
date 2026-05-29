@@ -5,6 +5,7 @@ import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/t
 import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { type SchemaSymbol } from "@/pages/Cad";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -14,6 +15,7 @@ interface PrintDialogProps {
   horizons: Horizon[];
   viewState: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
   // Параметры отображения — как настроено в рабочей области
+  schemaSymbols?: SchemaSymbol[];
   branchWidth?: number;
   branchBorder?: number;
   thinLines?: boolean;
@@ -67,6 +69,7 @@ const ih = { height: 22 } as React.CSSProperties;
 export default function PrintDialog({
   onClose, projectName = "Проект",
   nodes, branches, horizons, viewState,
+  schemaSymbols = [],
   branchWidth = 2, branchBorder = 0.4,
   thinLines = false, colorByHorizon = false,
   flowDisplay = "off", infoConfig = null,
@@ -606,6 +609,7 @@ body{background:white;font-family:Arial,sans-serif}
                   nodes={nodes}
                   branches={branches}
                   horizons={horizons}
+                  schemaSymbols={schemaSymbols}
                   azimuth={viewState.azimuth}
                   elevation={viewState.elevation}
                   zScale={zScale}
