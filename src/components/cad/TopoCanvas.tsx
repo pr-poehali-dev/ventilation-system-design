@@ -1949,22 +1949,46 @@ export default function TopoCanvas(props: Props) {
                     </g>
                   );
                 }
-                // Символы на трубах — поворачиваем вдоль ветви
-                const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
-                const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
-                const brAngleDeg = needsRotate
-                  ? Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI
-                  : 0;
+                // valve_reduce рисуем примитивами — квадрат вдоль ветви, треугольник поперёк
+                if (sym.typeId === "valve_reduce" && hasBranchPts) {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brLen = Math.hypot(brDx, brDy);
+                  // единичный вектор вдоль ветви
+                  const ax = brLen > 0 ? brDx / brLen : 1, ay = brLen > 0 ? brDy / brLen : 0;
+                  // единичный вектор поперёк ветви (перпендикуляр, повёрнут на 90° по часовой)
+                  const nx = ay, ny = -ax;
+                  const HS = SZ * 0.42; // полуширина квадрата вдоль трубы
+                  const HT = SZ * 0.38; // полувысота квадрата поперёк трубы
+                  // углы квадрата
+                  const q = (da: number, dn: number) => `${px + ax*da + nx*dn},${py + ay*da + ny*dn}`;
+                  const lw = Math.max(1, SZ * 0.07);
+                  return (
+                    <g pointerEvents="none">
+                      {/* Линии трубы (вдоль ветви до/после квадрата) */}
+                      <line x1={px - ax*HS*2.2} y1={py - ay*HS*2.2} x2={px - ax*HS} y2={py - ay*HS}
+                        stroke="#1e3a8a" strokeWidth={lw} />
+                      <line x1={px + ax*HS} y1={py + ay*HS} x2={px + ax*HS*2.2} y2={py + ay*HS*2.2}
+                        stroke="#1e3a8a" strokeWidth={lw} />
+                      {/* Белая подложка поверх синей линии трубы */}
+                      <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`}
+                        fill="white" stroke="none" />
+                      {/* Квадрат */}
+                      <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`}
+                        fill="white" stroke="#1e3a8a" strokeWidth={lw} />
+                      {/* Треугольник — вершина смотрит поперёк (по nx,ny направлению) */}
+                      <polygon points={`${q(-HS*0.65,-HT*0.6)} ${q(HS*0.65,-HT*0.6)} ${q(0,HT*0.65)}`}
+                        fill="#1e3a8a" />
+                    </g>
+                  );
+                }
+                // Остальные символы — через SVG viewBox без поворота
                 return (
-                  <g transform={needsRotate ? `rotate(${brAngleDeg},${px},${py})` : undefined}
-                    pointerEvents="none">
-                    <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
-                      overflow="visible"
-                      opacity={isFanStopped ? 0.35 : 1}
-                      style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
-                      pointerEvents="none"
-                      dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                  </g>
+                  <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
+                    overflow="visible"
+                    opacity={isFanStopped ? 0.35 : 1}
+                    style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
+                    pointerEvents="none"
+                    dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                 );
               })()}
               {/* Крестик на остановленном вентиляторе */}
@@ -2386,10 +2410,6 @@ export default function TopoCanvas(props: Props) {
             const HX = px - SZ / 2;
             const HY = py - SZ / 2 - 4;
 
-            const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
-            const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
-            const brAngleDeg = needsRotate ? Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI : 0;
-
             return (
               <g key={sym.id} data-sym={sym.id}
                 style={{ cursor: tool === "select" ? "move" : undefined }}
@@ -2431,11 +2451,29 @@ export default function TopoCanvas(props: Props) {
                 {/* hitbox */}
                 <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8} fill="transparent" stroke="none" />
                 {isSel && <circle cx={px} cy={py} r={SZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
-                <g transform={needsRotate ? `rotate(${brAngleDeg},${px},${py})` : undefined} pointerEvents="none">
+                {/* valve_reduce: рисуем примитивами — квадрат вдоль ветви, треугольник поперёк */}
+                {sym.typeId === "valve_reduce" && hasBranchPts ? (() => {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brLen = Math.hypot(brDx, brDy);
+                  const ax = brLen > 0 ? brDx / brLen : 1, ay = brLen > 0 ? brDy / brLen : 0;
+                  const nx = ay, ny = -ax; // перпендикуляр
+                  const HS = SZ * 0.42, HT = SZ * 0.38;
+                  const q = (da: number, dn: number) => `${px + ax*da + nx*dn},${py + ay*da + ny*dn}`;
+                  const lw = Math.max(1, SZ * 0.07);
+                  return (
+                    <g pointerEvents="none">
+                      <line x1={px - ax*HS*2.2} y1={py - ay*HS*2.2} x2={px - ax*HS} y2={py - ay*HS} stroke="#1e3a8a" strokeWidth={lw} />
+                      <line x1={px + ax*HS} y1={py + ay*HS} x2={px + ax*HS*2.2} y2={py + ay*HS*2.2} stroke="#1e3a8a" strokeWidth={lw} />
+                      <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="none" />
+                      <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="#1e3a8a" strokeWidth={lw} />
+                      <polygon points={`${q(-HS*0.65,-HT*0.6)} ${q(HS*0.65,-HT*0.6)} ${q(0,HT*0.65)}`} fill="#1e3a8a" />
+                    </g>
+                  );
+                })() : (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible" pointerEvents="none"
                     dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                </g>
+                )}
               </g>
             );
           })}
