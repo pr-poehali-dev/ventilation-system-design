@@ -129,6 +129,76 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
   const capacity = node.fireCapacity ?? 0;
   const drainTime = totalFlow > 0 && capacity > 0 ? (capacity / totalFlow) * 60 : 0;
 
+  // ─── Предупреждения ────────────────────────────────────────────
+  // Минимально допустимое давление пожарного рукава (0.1 МПа = 1 атм)
+  const MIN_PRESSURE = 0.1;
+  // Нормативное время работы пожаротушения (60 мин по ГОСТ)
+  const MIN_DRAIN_TIME = 60;
+
+  const warnings: { level: "error" | "warn"; text: string }[] = [];
+
+  if (isReservoir && openConsumers.length > 0) {
+    // 1. Время работы резервуара меньше норматива
+    if (drainTime > 0 && drainTime < MIN_DRAIN_TIME) {
+      warnings.push({
+        level: "error",
+        text: `Время работы ${Math.round(drainTime)} мин < норматива ${MIN_DRAIN_TIME} мин. Увеличьте ёмкость резервуара.`,
+      });
+    }
+    // 2. Потребители с недостаточным давлением (динамическое < 0.1 МПа)
+    const lowPressure = openConsumers.filter(c => {
+      const dp = allNodeResults?.get(c.id)?.dynamicP ?? 0;
+      return dp > 0 && dp < MIN_PRESSURE;
+    });
+    if (lowPressure.length > 0) {
+      const names = lowPressure.map(c => c.name || c.number || c.id.slice(-4)).join(", ");
+      warnings.push({
+        level: "error",
+        text: `Давление ниже 0.1 МПа (1 атм) на: ${names}. Рукав может не работать.`,
+      });
+    }
+    // 3. Потребители с расходом меньше требуемого
+    const lowFlow = openConsumers.filter(c => {
+      const req = c.fireRequiredFlow ?? 0;
+      const act = allNodeResults?.get(c.id)?.flow ?? 0;
+      return req > 0 && act < req * 0.9;
+    });
+    if (lowFlow.length > 0) {
+      const names = lowFlow.map(c => c.name || c.number || c.id.slice(-4)).join(", ");
+      warnings.push({
+        level: "warn",
+        text: `Расход < 90% от требуемого на: ${names}. Проверьте диаметры труб.`,
+      });
+    }
+    // 4. Давление резервуара выше 1.0 МПа (10 атм) — риск разрыва рукавов
+    const initP = node.fireInitPressure ?? 0;
+    if (initP > 1.0) {
+      warnings.push({
+        level: "warn",
+        text: `Давление резервуара ${(initP * 10).toFixed(1)} атм > 10 атм. Установите редукционный клапан на подводящих ветвях.`,
+      });
+    }
+  }
+
+  // Для потребителя — предупреждение о низком давлении
+  if (isConsumer && isOpen) {
+    const dp = waterResult?.dynamicP ?? 0;
+    if (dp > 0 && dp < MIN_PRESSURE) {
+      warnings.push({
+        level: "error",
+        text: `Динамическое давление ${(dp * 10).toFixed(2)} атм < 1 атм. Рукав не обеспечит тушение.`,
+      });
+    }
+    const req = node.fireRequiredFlow ?? 0;
+    const act = waterResult?.flow ?? 0;
+    if (req > 0 && act < req * 0.9) {
+      warnings.push({
+        level: "warn",
+        text: `Фактический расход ${act.toFixed(2)} м³/ч < требуемого ${req.toFixed(2)} м³/ч.`,
+      });
+    }
+  }
+
   return (
     <div className="flex flex-col" style={{ fontSize: 11 }}>
 
@@ -322,6 +392,25 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
         {isConsumer && !isOpen && (
           <div className="px-2 py-1 text-[10px] text-gray-400 italic">
             Откройте кран для расчёта расхода
+          </div>
+        )}
+
+        {/* ─── Блок предупреждений ──────────────────────────────── */}
+        {warnings.length > 0 && (
+          <div className="flex flex-col gap-0.5 px-1 py-1">
+            {warnings.map((w, i) => (
+              <div key={i} className="flex items-start gap-1 px-1.5 py-1 rounded text-[10px] leading-tight"
+                style={{
+                  background: w.level === "error" ? "#fef2f2" : "#fffbeb",
+                  border: `1px solid ${w.level === "error" ? "#fca5a5" : "#fcd34d"}`,
+                  color: w.level === "error" ? "#991b1b" : "#92400e",
+                }}>
+                <span style={{ flexShrink: 0, fontWeight: 700 }}>
+                  {w.level === "error" ? "✕" : "⚠"}
+                </span>
+                <span>{w.text}</span>
+              </div>
+            ))}
           </div>
         )}
       </>)}
