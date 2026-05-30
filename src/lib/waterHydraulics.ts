@@ -1,14 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Гидравлический расчёт водопроводной сети ППЗ
-// Метод: последовательное распределение давлений и расходов
+// Метод: двухпроходный (bottom-up расходы → top-down давления)
+//
+// Проход 1 (снизу-вверх): от потребителей к резервуару.
+//   Собираем суммарный расход в каждой ветви = сумма расходов всех потребителей
+//   downstream. Расход каждого потребителя вычисляется по начальному давлению
+//   резервуара (верхняя оценка), затем уточняется на проходе 2.
+//
+// Проход 2 (сверху-вниз): от резервуара к потребителям.
+//   Распределяем давление по сети с учётом суммарных расходов в трубах,
+//   найденных на проходе 1. Пересчитываем расходы потребителей по реальному
+//   давлению на их входе.
+//
+// Для сложных кольцевых сетей выполняем несколько итераций до сходимости.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 
 export interface WaterNodeResult {
   nodeId: string;
-  staticP: number;    // МПа — статическое давление
-  dynamicP: number;   // МПа — динамическое давление
+  staticP: number;    // МПа — статическое давление (давление в узле)
+  dynamicP: number;   // МПа — динамическое давление (потери на кране)
   flow: number;       // м³/ч — расход через узел (потребители)
   resistance: number; // МН·с²/м⁸ — гидравлическое сопротивление узла
   drainTime: number;  // мин — время истечения (только для резервуаров)
@@ -16,86 +28,80 @@ export interface WaterNodeResult {
 
 export interface WaterBranchResult {
   branchId: string;
-  flow: number;         // м³/ч
-  velocity: number;     // м/с
-  deltaP: number;       // МПа — потери давления
-  resistance: number;   // МН·с²/м⁸
-  reducerActive: boolean;   // редуктор сработал (срезал давление)
-  reducerInP: number;       // МПа — давление на входе клапана
-  reducerOutP: number;      // МПа — давление на выходе клапана (настроенное)
-  reducerDeltaP: number;    // МПа — сколько срезал клапан
+  flow: number;           // м³/ч — суммарный расход в трубе
+  velocity: number;       // м/с
+  deltaP: number;         // МПа — потери давления
+  resistance: number;     // МН·с²/м⁸
+  reducerActive: boolean; // редуктор сработал (срезал давление)
+  reducerInP: number;     // МПа — давление на входе клапана
+  reducerOutP: number;    // МПа — давление на выходе клапана
+  reducerDeltaP: number;  // МПа — сколько срезал клапан
 }
 
-// Расчёт гидравлического сопротивления трубы (МН·с²/м⁸)
-// Используется формула Дарси-Вейсбаха для напорного трубопровода
+// ─── Формулы ──────────────────────────────────────────────────────────────────
+
+// Сопротивление трубы по Дарси-Вейсбаху (МН·с²/м⁸)
 export function calcPipeResistance(
-  lengthM: number,     // длина, м
-  diamMm: number,      // внутренний диаметр, мм
-  roughnessMm: number, // абс. шероховатость, мм
-  localXi: number,     // сумма ξ местных сопротивлений
+  lengthM: number,
+  diamMm: number,
+  roughnessMm: number,
+  localXi: number,
 ): number {
   if (diamMm <= 0 || lengthM <= 0) return 0;
-  const d = diamMm / 1000;           // м
-  const A = Math.PI * d * d / 4;    // м²
-  const rho = 1000;                  // кг/м³ — плотность воды
-  // Коэффициент Дарси по формуле Шифринсона (приближение для турбулентного режима)
+  const d = diamMm / 1000;
+  const A = Math.PI * d * d / 4;
+  const rho = 1000;
   const lambda = 0.11 * Math.pow(roughnessMm / diamMm, 0.25);
-  // R = λ·L/(d·A²) + Σξ/(A²) — в системе Па/(м³/с)²
   const Rpa = (lambda * lengthM / d + localXi) / (A * A) * rho / 2;
-  // Переводим в МН·с²/м⁸ (1 МН·с²/м⁸ = 1e6 Па·с²/м⁶ = 1e6/(3600²) Па/(м³/ч)²)
-  // Р = R × Q²: Q в м³/с → переводим R в МН·с²/м⁸
-  // R [Па/(м³/с)²] → R [МН·с²/м⁸]: 1 МН = 1e6 Н, 1 Па = 1 Н/м², поэтому R_MN = Rpa / 1e6
   return Rpa / 1e6;
 }
 
-// Расчёт скорости (м/с) по расходу (м³/ч) и диаметру (мм)
+// Скорость воды (м/с)
 export function calcPipeVelocity(flowM3h: number, diamMm: number): number {
   if (diamMm <= 0) return 0;
   const d = diamMm / 1000;
   const A = Math.PI * d * d / 4;
-  const flowM3s = flowM3h / 3600;
-  return flowM3s / A;
+  return (flowM3h / 3600) / A;
 }
 
-// Расчёт потерь давления в трубе (МПа) по расходу (м³/ч) и сопротивлению (МН·с²/м⁸)
+// Потери давления в трубе (МПа): ΔP = R × Q|Q|
 export function calcPipeDeltaP(flowM3h: number, resistanceMNs2m8: number): number {
   const flowM3s = flowM3h / 3600;
   return resistanceMNs2m8 * flowM3s * Math.abs(flowM3s);
 }
 
-// Расчёт гидравлического сопротивления выходного отверстия потребителя
-// Используется формула истечения через отверстие Q = μ·A·√(2·ΔP/ρ)
-// Отсюда: R = ρ / (2 · (μ·A)²) [Па/(м³/с)²]
-export function calcNozzleResistance(
-  diamMm: number,  // диаметр отверстия, мм
-  mu = 0.82,       // коэффициент расхода (0.82 для пожарного крана)
-): number {
+// Сопротивление выходного отверстия крана (МН·с²/м⁸)
+export function calcNozzleResistance(diamMm: number, mu = 0.82): number {
   if (diamMm <= 0) return 0;
   const d = diamMm / 1000;
   const A = Math.PI * d * d / 4;
   const rho = 1000;
   const muA = mu * A;
-  return rho / (2 * muA * muA) / 1e6;  // МН·с²/м⁸
+  return rho / (2 * muA * muA) / 1e6;
 }
 
-// Расчёт расхода через потребитель по давлению и сопротивлению
-// Q = √(ΔP / R) [м³/с], переводим в м³/ч
+// Расход через потребитель: Q = √(ΔP / R) [м³/с] → м³/ч
 export function calcConsumerFlow(pressureMPa: number, resistanceMNs2m8: number): number {
   if (resistanceMNs2m8 <= 0 || pressureMPa <= 0) return 0;
   const pressurePa = pressureMPa * 1e6;
   const R = resistanceMNs2m8 * 1e6;
-  const flowM3s = Math.sqrt(pressurePa / R);
-  return flowM3s * 3600;  // м³/ч
+  return Math.sqrt(pressurePa / R) * 3600;
 }
 
-// Расчёт времени истечения резервуара (мин)
-// t = V / Q [с] → [мин]
+// Время истечения резервуара (мин)
 export function calcDrainTime(capacityM3: number, flowM3h: number): number {
   if (flowM3h <= 0) return 0;
-  return (capacityM3 / flowM3h) * 60;  // мин
+  return (capacityM3 / flowM3h) * 60;
 }
 
-// ─── Основная функция расчёта сети ────────────────────────────────────────────
+// ─── Вспомогательные типы для внутреннего расчёта ─────────────────────────────
+
+interface NodePressure {
+  nodeId: string;
+  pressure: number; // МПа
+}
+
+// ─── Основная функция расчёта ──────────────────────────────────────────────────
 export function calcWaterNetwork(
   nodes: TopoNode[],
   branches: TopoBranch[],
@@ -103,23 +109,13 @@ export function calcWaterNetwork(
   const nodeResults = new Map<string, WaterNodeResult>();
   const branchResults = new Map<string, WaterBranchResult>();
 
-  // Инициализируем все fire-узлы
-  for (const n of nodes) {
-    const ft = n.fireNodeType ?? "none";
-    if (ft === "none") continue;
-    nodeResults.set(n.id, {
-      nodeId: n.id,
-      staticP: ft === "reservoir" ? (n.fireInitPressure ?? 0) : 0,
-      dynamicP: 0,
-      flow: 0,
-      resistance: 0,
-      drainTime: 0,
-    });
-  }
+  // Только трубопроводные ветви
+  const waterBranches = branches.filter(b => b.hasWaterPipe);
+  if (waterBranches.length === 0) return { nodeResults, branchResults };
 
-  // Инициализируем ветви с водопроводами
-  for (const b of branches) {
-    if (!b.hasWaterPipe) continue;
+  // Инициализация: вычисляем сопротивление каждой трубы
+  const pipeR = new Map<string, number>(); // branchId → R [МН·с²/м⁸]
+  for (const b of waterBranches) {
     const len = b.wpLengthManual ? (b.wpLength ?? 0) : (b.length ?? 0);
     let R = 0;
     const mode = b.wpRoughnessMode ?? "rough";
@@ -129,146 +125,252 @@ export function calcWaterNetwork(
       const roughness = mode === "smooth" ? 0.03 : (b.wpRoughness ?? 0.5);
       R = calcPipeResistance(len, b.wpDiameter ?? 100, roughness, b.wpLocalXi ?? 0);
     }
+    pipeR.set(b.id, R);
     branchResults.set(b.id, {
       branchId: b.id, flow: 0, velocity: 0, deltaP: 0, resistance: R,
       reducerActive: false, reducerInP: 0, reducerOutP: 0, reducerDeltaP: 0,
     });
   }
 
-  // Простой расчёт: распространяем давление от резервуаров к потребителям
-  // (однократный проход без итераций — для простых линейных сетей)
-  const waterBranches = branches.filter(b => b.hasWaterPipe);
-
-  // BFS от резервуаров
-  const pressureMap = new Map<string, number>();
-  const queue: string[] = [];
-
+  // Инициализируем результаты узлов
   for (const n of nodes) {
-    if ((n.fireNodeType ?? "none") === "reservoir") {
-      const p = n.fireInitPressure ?? 0;
-      pressureMap.set(n.id, p);
-      // Учитываем высотное давление: ΔP = ρgh / 1e6 МПа
-      queue.push(n.id);
-    }
+    const ft = n.fireNodeType ?? "none";
+    if (ft === "none") continue;
+    nodeResults.set(n.id, {
+      nodeId: n.id,
+      staticP: ft === "reservoir" ? (n.fireInitPressure ?? 0) : 0,
+      dynamicP: 0, flow: 0, resistance: 0, drainTime: 0,
+    });
   }
 
-  const visited = new Set<string>();
-  while (queue.length > 0) {
-    const nodeId = queue.shift()!;
-    if (visited.has(nodeId)) continue;
-    visited.add(nodeId);
+  // Собираем список резервуаров и потребителей
+  const reservoirs = nodes.filter(n => (n.fireNodeType ?? "none") === "reservoir");
+  const consumers  = nodes.filter(n =>
+    (n.fireNodeType ?? "none") === "consumer" && (n.fireHydrantOpen ?? false),
+  );
+  if (reservoirs.length === 0) return { nodeResults, branchResults };
 
-    const pIn = pressureMap.get(nodeId) ?? 0;
+  // ─── Строим граф смежности только из water-ветвей ───────────────────────────
+  // adj[nodeId] = [{branchId, neighborId}]
+  const adj = new Map<string, { branchId: string; neighborId: string }[]>();
+  const addAdj = (nid: string, branchId: string, neighborId: string) => {
+    if (!adj.has(nid)) adj.set(nid, []);
+    adj.get(nid)!.push({ branchId, neighborId });
+  };
+  for (const b of waterBranches) {
+    addAdj(b.fromId, b.id, b.toId);
+    addAdj(b.toId,   b.id, b.fromId);
+  }
 
-    for (const br of waterBranches) {
-      const isFrom = br.fromId === nodeId;
-      const isTo = br.toId === nodeId;
-      if (!isFrom && !isTo) continue;
+  // ─── Итерационный расчёт (3 итерации достаточно для нелинейной сети) ─────────
+  // На каждой итерации:
+  //   1. Top-down: распределяем давления от резервуаров
+  //   2. Расходы потребителей по текущему давлению
+  //   3. Bottom-up: суммируем расходы по ветвям от листьев к корню
 
-      const neighborId = isFrom ? br.toId : br.fromId;
-      if (visited.has(neighborId)) continue;
+  // Начальные расходы потребителей — используем давление резервуара как верхнюю оценку
+  const consumerFlow = new Map<string, number>(); // nodeId → м³/ч
+  const initP = reservoirs[0].fireInitPressure ?? 0;
+  for (const c of consumers) {
+    const mode = c.fireResistanceMode ?? "project";
+    const nozR = mode === "project"
+      ? calcNozzleResistance(c.fireHydrantDiameter ?? 0)
+      : (c.fireManualR ?? 0);
+    const q = nozR > 0 ? calcConsumerFlow(initP, nozR) : 0;
+    consumerFlow.set(c.id, q);
+  }
 
-      const brRes = branchResults.get(br.id);
-      if (!brRes) continue;
+  const MAX_ITER = 5;
+  let nodePressures = new Map<string, number>(); // nodeId → МПа
 
-      // Учитываем разность высот: Δz в метрах → ΔP = ρgh / 1e6
-      const fromNode = nodes.find(n => n.id === br.fromId);
-      const toNode = nodes.find(n => n.id === br.toId);
-      const dz = fromNode && toNode ? (toNode.z - fromNode.z) : 0;
-      const deltaPh = 1000 * 9.81 * (isFrom ? dz : -dz) / 1e6; // МПа
+  for (let iter = 0; iter < MAX_ITER; iter++) {
 
-      // Предварительный расход (по максимально возможному давлению)
-      const pAvailRaw = Math.max(0, pIn - deltaPh);
+    // ── Проход 1: Bottom-up — суммируем расходы по ветвям ────────────────────
+    // Топологическая сортировка: BFS от листьев (потребителей) к резервуарам
+    // branchFlow[branchId] = суммарный расход через трубу
+    const branchFlow = new Map<string, number>();
+    for (const b of waterBranches) branchFlow.set(b.id, 0);
 
-      // ─── Редукционный клапан: ограничиваем давление на выходе ───
-      const hasReducer = br.wpHasReducer ?? false;
-      const reducerOutTarget = br.wpReducerOutPressure ?? 0.5;
-      const reducerActive = hasReducer && pAvailRaw > reducerOutTarget;
-      const pAvail = reducerActive ? reducerOutTarget : pAvailRaw;
-      const reducerDeltaP = reducerActive ? pAvailRaw - reducerOutTarget : 0;
+    // Считаем количество «не-обработанных» соседей каждого узла (in-degree из листьев)
+    const degree = new Map<string, number>();
+    for (const b of waterBranches) {
+      degree.set(b.fromId, (degree.get(b.fromId) ?? 0) + 1);
+      degree.set(b.toId,   (degree.get(b.toId)   ?? 0) + 1);
+    }
 
-      const neighborNode = nodes.find(n => n.id === neighborId);
-      const neighborFt = neighborNode?.fireNodeType ?? "none";
+    // Накопленный расход: сколько воды «вытекает» из узла в сторону резервуара
+    const nodeOutflow = new Map<string, number>(); // nodeId → м³/ч
+    for (const c of consumers) nodeOutflow.set(c.id, consumerFlow.get(c.id) ?? 0);
+    for (const r of reservoirs) nodeOutflow.set(r.id, 0);
 
-      let flow = 0;
-      if (neighborFt === "consumer" && neighborNode) {
-        // Кран закрыт → расход 0, давление не падает
-        const isOpen = neighborNode.fireHydrantOpen ?? false;
-        if (isOpen) {
-          const mode = neighborNode.fireResistanceMode ?? "project";
-          let nozR = 0;
-          if (mode === "project") {
-            nozR = calcNozzleResistance(neighborNode.fireHydrantDiameter ?? 0);
-          } else {
-            nozR = neighborNode.fireManualR ?? 0;
-          }
-          const totalR = brRes.resistance + nozR;
-          // При наличии редуктора расход ограничен также wpReducerMaxFlow
-          const flowCalc = totalR > 0 ? calcConsumerFlow(pAvail, totalR) : 0;
-          const maxFlow = hasReducer ? (br.wpReducerMaxFlow ?? 9999) : 9999;
-          flow = Math.min(flowCalc, maxFlow);
-        }
+    // BFS от потребителей к резервуарам по дереву трубопровода
+    // Используем алгоритм Кана: начинаем с узлов, смежных только с одной ветвью
+    // (листья дерева), и идём к корню (резервуару)
+    const leafQueue: string[] = [];
+    degree.forEach((deg, nid) => {
+      if (deg <= 1 && !reservoirs.find(r => r.id === nid)) leafQueue.push(nid);
+    });
+
+    const processedEdges = new Set<string>();
+    const bfsQueue = [...leafQueue];
+    const bfsVisited = new Set<string>();
+
+    while (bfsQueue.length > 0) {
+      const nid = bfsQueue.shift()!;
+      if (bfsVisited.has(nid)) continue;
+      bfsVisited.add(nid);
+
+      const outflow = nodeOutflow.get(nid) ?? 0;
+      const edges = adj.get(nid) ?? [];
+
+      // Находим «вышестоящую» ветвь (ту, что ближе к резервуару и ещё не обработана)
+      // Если узел — не потребитель, его расход = сумма всех входящих расходов от листьев
+      for (const { branchId, neighborId } of edges) {
+        if (processedEdges.has(branchId)) continue;
+        if (bfsVisited.has(neighborId)) continue; // сосед уже обработан — он ниже по потоку
+
+        // Добавляем расход этой ветви
+        const prevFlow = branchFlow.get(branchId) ?? 0;
+        branchFlow.set(branchId, prevFlow + outflow);
+        processedEdges.add(branchId);
+
+        // Добавляем в очередь соседа, передавая ему расход
+        const neighborOutflow = (nodeOutflow.get(neighborId) ?? 0) + outflow;
+        nodeOutflow.set(neighborId, neighborOutflow);
+        bfsQueue.push(neighborId);
+        break; // от каждого листа только одна «вышестоящая» ветвь
       }
-      // junction и все остальные — flow=0, просто передаём давление дальше
+    }
 
-      const deltaP = calcPipeDeltaP(flow, brRes.resistance);
-      const pOut = Math.max(0, pAvail - deltaP);
-      const vel = calcPipeVelocity(flow, br.wpDiameter ?? 100);
+    // ── Проход 2: Top-down — распределяем давления от резервуаров ───────────
+    nodePressures = new Map<string, number>();
+    for (const r of reservoirs) nodePressures.set(r.id, r.fireInitPressure ?? 0);
 
-      branchResults.set(br.id, {
-        ...brRes, flow, velocity: vel, deltaP,
-        reducerActive,
-        reducerInP: pAvailRaw,
-        reducerOutP: pAvail,
-        reducerDeltaP,
-      });
-      pressureMap.set(neighborId, pOut);
+    const tdQueue: string[] = reservoirs.map(r => r.id);
+    const tdVisited = new Set<string>();
 
-      if (neighborNode) {
-        const isOpen = neighborFt === "consumer" ? (neighborNode.fireHydrantOpen ?? false) : true;
-        const nozR = (() => {
-          if (neighborFt !== "consumer" || !isOpen) return 0;
-          const mode = neighborNode.fireResistanceMode ?? "project";
-          return mode === "project"
-            ? calcNozzleResistance(neighborNode.fireHydrantDiameter ?? 0)
-            : (neighborNode.fireManualR ?? 0);
-        })();
-        const nFlow = nozR > 0 ? calcConsumerFlow(pOut, nozR) : 0;
-        const dynP = nozR > 0 ? calcPipeDeltaP(nFlow, nozR) : 0;
-        const drainT = neighborFt === "reservoir"
-          ? calcDrainTime(neighborNode.fireCapacity ?? 0, flow)
-          : 0;
+    while (tdQueue.length > 0) {
+      const nid = tdQueue.shift()!;
+      if (tdVisited.has(nid)) continue;
+      tdVisited.add(nid);
 
-        nodeResults.set(neighborId, {
-          nodeId: neighborId,
-          staticP: pOut + (neighborFt === "consumer" && !isOpen ? 0 : dynP),
+      const pNode = nodePressures.get(nid) ?? 0;
+      const edges = adj.get(nid) ?? [];
+
+      for (const { branchId, neighborId } of edges) {
+        if (tdVisited.has(neighborId)) continue;
+
+        const br = waterBranches.find(b => b.id === branchId)!;
+        const R = pipeR.get(branchId) ?? 0;
+
+        // Высотная поправка
+        const fromNode = nodes.find(n => n.id === br.fromId);
+        const toNode   = nodes.find(n => n.id === br.toId);
+        const dz = fromNode && toNode ? (toNode.z - fromNode.z) : 0;
+        const isFrom = br.fromId === nid;
+        const deltaPh = 1000 * 9.81 * (isFrom ? dz : -dz) / 1e6;
+
+        const pAvailRaw = Math.max(0, pNode - deltaPh);
+
+        // Редукционный клапан
+        const hasReducer = br.wpHasReducer ?? false;
+        const reducerOutTarget = br.wpReducerOutPressure ?? 0.5;
+        const reducerActive = hasReducer && pAvailRaw > reducerOutTarget;
+        const pAvail = reducerActive ? reducerOutTarget : pAvailRaw;
+        const reducerDeltaP = reducerActive ? pAvailRaw - reducerOutTarget : 0;
+
+        // Суммарный расход в этой трубе (из bottom-up прохода)
+        const flow = branchFlow.get(branchId) ?? 0;
+        // Ограничение редуктором
+        const maxFlow = hasReducer ? (br.wpReducerMaxFlow ?? 9999) : 9999;
+        const flowEff = Math.min(flow, maxFlow);
+
+        const deltaP = calcPipeDeltaP(flowEff, R);
+        const pOut   = Math.max(0, pAvail - deltaP);
+        const vel    = calcPipeVelocity(flowEff, br.wpDiameter ?? 100);
+
+        branchResults.set(branchId, {
+          branchId, flow: flowEff, velocity: vel, deltaP, resistance: R,
+          reducerActive,
+          reducerInP:   pAvailRaw,
+          reducerOutP:  pAvail,
+          reducerDeltaP,
+        });
+
+        // Давление в соседнем узле
+        if (!nodePressures.has(neighborId) || pOut > (nodePressures.get(neighborId) ?? 0)) {
+          nodePressures.set(neighborId, pOut);
+        }
+        tdQueue.push(neighborId);
+      }
+    }
+
+    // ── Обновляем расходы потребителей по реальному давлению ─────────────────
+    let maxChange = 0;
+    for (const c of consumers) {
+      const pAtNode = nodePressures.get(c.id) ?? 0;
+      const mode = c.fireResistanceMode ?? "project";
+      const nozR = mode === "project"
+        ? calcNozzleResistance(c.fireHydrantDiameter ?? 0)
+        : (c.fireManualR ?? 0);
+      const newQ = nozR > 0 ? calcConsumerFlow(pAtNode, nozR) : 0;
+      const oldQ = consumerFlow.get(c.id) ?? 0;
+      maxChange = Math.max(maxChange, Math.abs(newQ - oldQ));
+      consumerFlow.set(c.id, newQ);
+    }
+
+    // Сходимость: если изменение < 0.01 м³/ч — останавливаемся
+    if (maxChange < 0.01) break;
+  }
+
+  // ─── Записываем финальные результаты узлов ────────────────────────────────
+  for (const n of nodes) {
+    const ft = n.fireNodeType ?? "none";
+    if (ft === "none") continue;
+
+    const pAtNode = nodePressures.get(n.id) ?? (ft === "reservoir" ? (n.fireInitPressure ?? 0) : 0);
+
+    if (ft === "consumer") {
+      const isOpen = n.fireHydrantOpen ?? false;
+      if (!isOpen) {
+        // Закрытый кран: только статическое давление
+        nodeResults.set(n.id, {
+          nodeId: n.id, staticP: pAtNode,
+          dynamicP: 0, flow: 0, resistance: 0, drainTime: 0,
+        });
+      } else {
+        const mode = n.fireResistanceMode ?? "project";
+        const nozR = mode === "project"
+          ? calcNozzleResistance(n.fireHydrantDiameter ?? 0)
+          : (n.fireManualR ?? 0);
+        const flow = consumerFlow.get(n.id) ?? 0;
+        const dynP = nozR > 0 ? calcPipeDeltaP(flow, nozR) : 0;
+        nodeResults.set(n.id, {
+          nodeId: n.id,
+          staticP: pAtNode + dynP,  // полное давление (статика + динамика)
           dynamicP: dynP,
-          flow: nFlow,
+          flow,
           resistance: nozR,
-          drainTime: drainT,
+          drainTime: 0,
         });
       }
-
-      queue.push(neighborId);
-    }
-  }
-
-  // Обновляем время истечения для резервуаров
-  for (const n of nodes) {
-    if ((n.fireNodeType ?? "none") !== "reservoir") continue;
-    // Суммарный расход из резервуара
-    let totalFlow = 0;
-    for (const br of waterBranches) {
-      if (br.fromId === n.id || br.toId === n.id) {
-        totalFlow += branchResults.get(br.id)?.flow ?? 0;
-      }
-    }
-    const res = nodeResults.get(n.id);
-    if (res) {
+    } else if (ft === "reservoir") {
+      // Суммарный расход резервуара = сумма всех потребителей
+      const totalFlow = consumers.reduce((s, c) => s + (consumerFlow.get(c.id) ?? 0), 0);
+      const capacity  = n.fireCapacity ?? 0;
       nodeResults.set(n.id, {
-        ...res,
+        nodeId: n.id,
+        staticP: n.fireInitPressure ?? 0,
+        dynamicP: 0,
         flow: totalFlow,
-        drainTime: calcDrainTime(n.fireCapacity ?? 0, totalFlow),
+        resistance: 0,
+        drainTime: calcDrainTime(capacity, totalFlow),
+      });
+    } else {
+      // junction — давление в узле
+      nodeResults.set(n.id, {
+        nodeId: n.id, staticP: pAtNode,
+        dynamicP: 0, flow: 0, resistance: 0, drainTime: 0,
       });
     }
   }
