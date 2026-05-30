@@ -551,6 +551,11 @@ export const WINDOW_BULKHEAD_IDS = new Set([
   "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
 ]);
 
+// ID редукционных клапанов водопровода ППЗ
+export const REDUCER_SYMBOL_IDS = new Set([
+  "valve_reduce",
+]);
+
 // ID всех перемычек для группировки в выпадающем списке
 export const BULKHEAD_SYMBOL_IDS = new Set([
   "bulkhead", "bulkhead_concrete", "bulkhead_wood", "bulkhead_brick", "bulkhead_metal",

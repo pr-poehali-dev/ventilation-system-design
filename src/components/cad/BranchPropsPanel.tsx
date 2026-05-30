@@ -6,6 +6,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -1430,6 +1431,99 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   onChange={(v) => onUpdate({ wpLocalXi: parseFloat(v) || 0 })}
                 />
               </InlineLabel>
+
+              {/* ─── РЕДУКЦИОННЫЙ КЛАПАН ─────────────────────────────── */}
+              {(branch.wpHasReducer) && (() => {
+                const model = getValveById(branch.wpReducerModel ?? "kppr_50");
+                const reducerActive = waterBranchResult?.reducerActive ?? false;
+                const inPMpa  = waterBranchResult?.reducerInP  ?? 0;
+                const outPMpa = waterBranchResult?.reducerOutP ?? 0;
+                const cutMpa  = waterBranchResult?.reducerDeltaP ?? 0;
+                const inPatm  = (inPMpa  * MPA_TO_ATM).toFixed(1);
+                const outPatm = (outPMpa * MPA_TO_ATM).toFixed(1);
+                const cutAtm  = (cutMpa  * MPA_TO_ATM).toFixed(1);
+                const outTarget = branch.wpReducerOutPressure ?? 0.5;
+                return (
+                  <>
+                    <SectionHeader title="Редукционный клапан" />
+
+                    {/* Модель */}
+                    <InlineLabel label="Модель:">
+                      <SelectField
+                        value={branch.wpReducerModel ?? "kppr_50"}
+                        options={PRESSURE_REDUCING_VALVES.map(v => ({ value: v.id, label: v.name }))}
+                        onChange={(v) => {
+                          const valve = getValveById(v);
+                          if (valve) {
+                            onUpdate({
+                              wpReducerModel: v,
+                              wpReducerMaxFlow: valve.id === "manual" ? (branch.wpReducerMaxFlow ?? 25) : valve.flowMax,
+                            });
+                          }
+                        }}
+                      />
+                    </InlineLabel>
+
+                    {/* Справка по модели */}
+                    {model && model.id !== "manual" && (
+                      <div className="px-1 pb-1 text-[10px] text-gray-400 leading-tight">
+                        {model.manufacturer} · DN{model.nominalDiameter} · вход до {(model.inletPressureMax * MPA_TO_ATM).toFixed(0)} атм · выход {(model.outletPressureMin * MPA_TO_ATM).toFixed(0)}–{(model.outletPressureMax * MPA_TO_ATM).toFixed(0)} атм
+                      </div>
+                    )}
+
+                    {/* Настройка выходного давления */}
+                    <InlineLabel label="Вых. давление, атм:">
+                      <EditInput
+                        type="number" step="0.5"
+                        value={+(outTarget * MPA_TO_ATM).toFixed(1)}
+                        onChange={(v) => {
+                          const atm = parseFloat(v) || 5;
+                          const mpa = atm / MPA_TO_ATM;
+                          const min = model ? model.outletPressureMin : 0.1;
+                          const max = model ? model.outletPressureMax : 9.9;
+                          onUpdate({ wpReducerOutPressure: Math.min(max, Math.max(min, mpa)) });
+                        }}
+                      />
+                    </InlineLabel>
+
+                    {/* Макс. расход (для ручного режима) */}
+                    {(branch.wpReducerModel ?? "kppr_50") === "manual" && (
+                      <InlineLabel label="Макс. расход, м³/ч:">
+                        <EditInput
+                          type="number" step="1"
+                          value={branch.wpReducerMaxFlow ?? 25}
+                          onChange={(v) => onUpdate({ wpReducerMaxFlow: parseFloat(v) || 0 })}
+                        />
+                      </InlineLabel>
+                    )}
+
+                    {/* Статус и результаты */}
+                    <div className="flex items-center px-1 py-0.5 gap-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                        style={{
+                          background: reducerActive ? "#fef08a" : "#e5e7eb",
+                          color: reducerActive ? "#92400e" : "#6b7280",
+                        }}>
+                        {reducerActive ? "● Активен" : "○ Не активен"}
+                      </span>
+                    </div>
+                    {reducerActive && (
+                      <>
+                        <InlineLabel label="Давл. на входе:">
+                          <ComputedInput value={`${numFmt(inPMpa, 3)} МПа (${inPatm} атм)`} />
+                        </InlineLabel>
+                        <InlineLabel label="Давл. на выходе:">
+                          <ComputedInput value={`${numFmt(outPMpa, 3)} МПа (${outPatm} атм)`} />
+                        </InlineLabel>
+                        <InlineLabel label="Срезано:">
+                          <ComputedInput value={`${numFmt(cutMpa, 3)} МПа (${cutAtm} атм)`} />
+                        </InlineLabel>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
 
               <SectionHeader title="Вычисленные параметры" />
               <InlineLabel label="Сопротивление, МН·с²/м⁸">

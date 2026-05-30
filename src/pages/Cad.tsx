@@ -32,7 +32,8 @@ import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type B
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
@@ -4322,6 +4323,15 @@ export default function CadPage() {
                     fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
                   });
                 }
+                // Сброс редуктора при удалении символа клапана
+                if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  updateBranch(sym.branchId, {
+                    wpHasReducer: false,
+                    wpReducerModel: "kppr_50",
+                    wpReducerOutPressure: 0.5,
+                    wpReducerMaxFlow: 25,
+                  });
+                }
                 removeSymbol(id);
                 setSelectedSymbolId(null);
               }}
@@ -4396,6 +4406,28 @@ export default function CadPage() {
                       setActiveSide("fan");
                       setFanSymbolBranchId(branchId);
                     }
+                  } else if (REDUCER_SYMBOL_IDS.has(typeId) && branchId) {
+                    // Редукционный клапан — привязываем к ветви водопровода
+                    const br = branches.find(b => b.id === branchId);
+                    const defaultValve = PRESSURE_REDUCING_VALVES[0];
+                    const newSym: SchemaSymbol = {
+                      id: `SYM_RD_${Date.now()}`,
+                      typeId, x, y, branchId, t: 0.5,
+                    };
+                    setSchemaSymbols(prev => [...prev, newSym]);
+                    // Ветвь: ставим флаг редуктора и дефолтные параметры
+                    if (br && !br.wpHasReducer) {
+                      updateBranch(branchId, {
+                        wpHasReducer: true,
+                        wpReducerModel: defaultValve.id,
+                        wpReducerOutPressure: 0.5,
+                        wpReducerMaxFlow: defaultValve.flowMax,
+                      });
+                    }
+                    setSelectedSymbolId(newSym.id);
+                    setSelectedBranchId(branchId);
+                    setSelectedNodeId(null);
+                    setActiveSide("params");
                   } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
                     // Каждый символ перемычки хранит свои параметры независимо (bk* поля)
                     const br = branches.find(b => b.id === branchId);

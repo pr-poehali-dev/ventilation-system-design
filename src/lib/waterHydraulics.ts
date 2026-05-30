@@ -16,10 +16,14 @@ export interface WaterNodeResult {
 
 export interface WaterBranchResult {
   branchId: string;
-  flow: number;       // м³/ч
-  velocity: number;   // м/с
-  deltaP: number;     // МПа — потери давления
-  resistance: number; // МН·с²/м⁸
+  flow: number;         // м³/ч
+  velocity: number;     // м/с
+  deltaP: number;       // МПа — потери давления
+  resistance: number;   // МН·с²/м⁸
+  reducerActive: boolean;   // редуктор сработал (срезал давление)
+  reducerInP: number;       // МПа — давление на входе клапана
+  reducerOutP: number;      // МПа — давление на выходе клапана (настроенное)
+  reducerDeltaP: number;    // МПа — сколько срезал клапан
 }
 
 // Расчёт гидравлического сопротивления трубы (МН·с²/м⁸)
@@ -127,6 +131,7 @@ export function calcWaterNetwork(
     }
     branchResults.set(b.id, {
       branchId: b.id, flow: 0, velocity: 0, deltaP: 0, resistance: R,
+      reducerActive: false, reducerInP: 0, reducerOutP: 0, reducerDeltaP: 0,
     });
   }
 
@@ -173,7 +178,15 @@ export function calcWaterNetwork(
       const deltaPh = 1000 * 9.81 * (isFrom ? dz : -dz) / 1e6; // МПа
 
       // Предварительный расход (по максимально возможному давлению)
-      const pAvail = Math.max(0, pIn - deltaPh);
+      const pAvailRaw = Math.max(0, pIn - deltaPh);
+
+      // ─── Редукционный клапан: ограничиваем давление на выходе ───
+      const hasReducer = br.wpHasReducer ?? false;
+      const reducerOutTarget = br.wpReducerOutPressure ?? 0.5;
+      const reducerActive = hasReducer && pAvailRaw > reducerOutTarget;
+      const pAvail = reducerActive ? reducerOutTarget : pAvailRaw;
+      const reducerDeltaP = reducerActive ? pAvailRaw - reducerOutTarget : 0;
+
       const neighborNode = nodes.find(n => n.id === neighborId);
       const neighborFt = neighborNode?.fireNodeType ?? "none";
 
@@ -190,7 +203,10 @@ export function calcWaterNetwork(
             nozR = neighborNode.fireManualR ?? 0;
           }
           const totalR = brRes.resistance + nozR;
-          flow = totalR > 0 ? calcConsumerFlow(pAvail, totalR) : 0;
+          // При наличии редуктора расход ограничен также wpReducerMaxFlow
+          const flowCalc = totalR > 0 ? calcConsumerFlow(pAvail, totalR) : 0;
+          const maxFlow = hasReducer ? (br.wpReducerMaxFlow ?? 9999) : 9999;
+          flow = Math.min(flowCalc, maxFlow);
         }
       }
       // junction и все остальные — flow=0, просто передаём давление дальше
@@ -199,7 +215,13 @@ export function calcWaterNetwork(
       const pOut = Math.max(0, pAvail - deltaP);
       const vel = calcPipeVelocity(flow, br.wpDiameter ?? 100);
 
-      branchResults.set(br.id, { ...brRes, flow, velocity: vel, deltaP });
+      branchResults.set(br.id, {
+        ...brRes, flow, velocity: vel, deltaP,
+        reducerActive,
+        reducerInP: pAvailRaw,
+        reducerOutP: pAvail,
+        reducerDeltaP,
+      });
       pressureMap.set(neighborId, pOut);
 
       if (neighborNode) {

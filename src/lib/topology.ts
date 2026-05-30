@@ -150,6 +150,11 @@ export interface TopoBranch {
   wpComputedFlow: number;          // м³/ч
   wpComputedVelocity: number;      // м/с
   wpComputedDeltaP: number;        // МПа — потери давления
+  // ─── Редукционный клапан ─────────────────────────────────
+  wpHasReducer: boolean;           // установлен редукционный клапан
+  wpReducerModel: string;          // ID модели из справочника pressureReducingValves
+  wpReducerOutPressure: number;    // МПа — настроенное выходное давление
+  wpReducerMaxFlow: number;        // м³/ч — макс. расход (для ручного режима)
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
@@ -321,6 +326,10 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpComputedFlow: 0,
     wpComputedVelocity: 0,
     wpComputedDeltaP: 0,
+    wpHasReducer: false,
+    wpReducerModel: "kppr_50",
+    wpReducerOutPressure: 0.5,
+    wpReducerMaxFlow: 25,
     ...partial,
   };
 }
