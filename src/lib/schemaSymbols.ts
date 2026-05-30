@@ -411,7 +411,7 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "pump_station",name: "Насос и насосная станция стационарные", group: "Водопровод",
     svgContent: `<circle cx="24" cy="20" r="14" fill="#222" stroke="#333" stroke-width="1.5"/><path d="M14,26 Q24,8 34,26" fill="none" stroke="white" stroke-width="1.5"/>` },
   { id: "valve_reduce",name: "Клапан редукционный",               group: "Водопровод",
-    svgContent: `<line x1="2" y1="20" x2="14" y2="20" stroke="#333" stroke-width="1.5"/><line x1="34" y1="20" x2="46" y2="20" stroke="#333" stroke-width="1.5"/><rect x="14" y="10" width="20" height="20" fill="white" stroke="#333" stroke-width="1.5"/><polygon points="18,13 30,13 24,27" fill="#333"/>` },
+    svgContent: `<line x1="2" y1="20" x2="14" y2="20" stroke="#1e3a8a" stroke-width="1.5"/><line x1="34" y1="20" x2="46" y2="20" stroke="#1e3a8a" stroke-width="1.5"/><rect x="14" y="10" width="20" height="20" fill="white" stroke="#1e3a8a" stroke-width="1.5"/><polygon points="18,13 30,13 24,27" fill="#1e3a8a"/>` },
   { id: "valve_water", name: "Вентиль запорный на водопроводе",   group: "Водопровод",
     svgContent: `<line x1="2" y1="20" x2="46" y2="20" stroke="#2196f3" stroke-width="1.5"/><polygon points="2,10 22,20 2,30" fill="none" stroke="#2196f3" stroke-width="1.5"/><polygon points="46,10 26,20 46,30" fill="none" stroke="#2196f3" stroke-width="1.5"/><line x1="24" y1="10" x2="24" y2="30" stroke="#2196f3" stroke-width="1.5"/>` },
 

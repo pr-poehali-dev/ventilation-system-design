@@ -1648,7 +1648,7 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ──────────────────────────── */}
-        {schemaSymbols.map(sym => {
+        {!useCanvas && schemaSymbols.map(sym => {
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           if (!lt) return null;
           // Если УО привязано к ветви скрытого горизонта — скрываем его вместе с ветвью
@@ -2341,6 +2341,106 @@ export default function TopoCanvas(props: Props) {
           );
         })()}
       </svg>
+
+      {/* ── Оверлей УО поверх canvas (видим всегда, интерактивен) ───────── */}
+      {useCanvas && (
+        <svg
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none" }}
+          width={size.w} height={size.h}
+          onMouseDown={(e) => { if ((e.target as SVGElement).closest("g[data-sym]")) return; onMouseDownCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>); }}
+          onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
+          {schemaSymbols.map(sym => {
+            const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
+            if (!lt) return null;
+            if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
+
+            let basePx: number, basePy: number;
+            let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
+            if (sym.branchId) {
+              const br = branches.find(b => b.id === sym.branchId);
+              const fN = br ? projNodesMap.get(br.fromId) : null;
+              const tN = br ? projNodesMap.get(br.toId) : null;
+              if (fN && tN) {
+                fsx = fN.sx; fsy = fN.sy; tsx2 = tN.sx; tsy2 = tN.sy;
+                hasBranchPts = true;
+                const t = sym.t ?? 0.5;
+                basePx = fsx + (tsx2 - fsx) * t;
+                basePy = fsy + (tsy2 - fsy) * t;
+              } else {
+                const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+                basePx = pt.sx; basePy = pt.sy;
+              }
+            } else {
+              const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+              basePx = pt.sx; basePy = pt.sy;
+            }
+
+            const px = basePx + (sym.offsetX ?? 0);
+            const py = basePy + (sym.offsetY ?? 0);
+            const isSel = selectedSymbolId === sym.id;
+            const sc = sym.scale ?? 1;
+            let symScaleV: number;
+            if (view.scale < 0.4) { symScaleV = view.scale / 0.4; }
+            else { const k = (view.scale - 0.4) / 0.4; symScaleV = 1 + 2 * (k / (k + 2)); }
+            const SZ = Math.max(4, 32 * sc * symScaleV);
+            const HX = px - SZ / 2;
+            const HY = py - SZ / 2 - 4;
+
+            const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
+            const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
+            const brAngleDeg = needsRotate ? Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI : 0;
+
+            return (
+              <g key={sym.id} data-sym={sym.id}
+                style={{ cursor: tool === "select" ? "move" : undefined }}
+                onClick={(e) => { if (tool !== "select") return; e.stopPropagation(); onSelectSymbol?.(isSel ? null : sym.id); onSymbolClick?.(sym.id); }}
+                onMouseDown={(e) => {
+                  if (e.button !== 0 || tool !== "select") return;
+                  e.stopPropagation(); e.preventDefault();
+                  onSelectSymbol?.(sym.id);
+                  const startX = e.clientX, startY = e.clientY;
+                  if (sym.branchId && hasBranchPts) {
+                    const snapFsx = fsx, snapFsy = fsy, snapTsx = tsx2, snapTsy = tsy2;
+                    const brLen2 = (snapTsx - snapFsx) ** 2 + (snapTsy - snapFsy) ** 2;
+                    const origOx = sym.offsetX ?? 0, origOy = sym.offsetY ?? 0;
+                    const svgEl = (e.currentTarget as SVGElement).closest("svg")!;
+                    const onMove = (me: MouseEvent) => {
+                      me.preventDefault();
+                      const dx = me.clientX - startX, dy = me.clientY - startY;
+                      if (me.ctrlKey || me.altKey) {
+                        onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
+                      } else {
+                        if (brLen2 < 1) return;
+                        const r = svgEl.getBoundingClientRect();
+                        const mx = me.clientX - r.left, my = me.clientY - r.top;
+                        const raw = ((mx - snapFsx) * (snapTsx - snapFsx) + (my - snapFsy) * (snapTsy - snapFsy)) / brLen2;
+                        onSymbolMoveAlongBranch?.(sym.id, Math.max(0.02, Math.min(0.98, raw)));
+                      }
+                    };
+                    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                    window.addEventListener("mousemove", onMove);
+                    window.addEventListener("mouseup", onUp);
+                  } else if (!sym.branchId) {
+                    const origX = sym.x, origY = sym.y;
+                    const onMove = (me: MouseEvent) => { me.preventDefault(); onSymbolMove?.(sym.id, origX + (me.clientX - startX) / view.scale, origY - (me.clientY - startY) / view.scale); };
+                    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                    window.addEventListener("mousemove", onMove);
+                    window.addEventListener("mouseup", onUp);
+                  }
+                }}>
+                {/* hitbox */}
+                <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8} fill="transparent" stroke="none" />
+                {isSel && <circle cx={px} cy={py} r={SZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
+                <g transform={needsRotate ? `rotate(${brAngleDeg},${px},${py})` : undefined} pointerEvents="none">
+                  <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
+                    overflow="visible" pointerEvents="none"
+                    dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                </g>
+              </g>
+            );
+          })}
+        </svg>
+      )}
 
       {/* Индикаторы */}
       <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"

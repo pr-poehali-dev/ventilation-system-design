@@ -469,14 +469,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.fillStyle = "white";
         ctx.fillRect(-RS, -RS * 0.85, RS * 2, RS * 1.7);
         // Квадрат (половина SZ вдоль трубы, полная высота)
-        ctx.strokeStyle = "#1d4ed8";
+        ctx.strokeStyle = "#1e3a8a";
         ctx.lineWidth = Math.max(1, RS * 0.12);
         ctx.fillStyle = "white";
         ctx.beginPath();
         ctx.rect(-RS * 0.85, -RS * 0.75, RS * 1.7, RS * 1.5);
         ctx.fill(); ctx.stroke();
         // Треугольник-стрелка вниз (поперёк трубы = по Y)
-        ctx.fillStyle = "#1d4ed8";
+        ctx.fillStyle = "#1e3a8a";
         ctx.beginPath();
         ctx.moveTo(-RS * 0.55, -RS * 0.45);
         ctx.lineTo( RS * 0.55, -RS * 0.45);
