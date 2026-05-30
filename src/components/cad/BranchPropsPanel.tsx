@@ -159,7 +159,7 @@ function SelectField({
   onChange,
 }: {
   value: string;
-  options: string[];
+  options: string[] | { value: string; label: string }[];
   onChange: (v: string) => void;
 }) {
   return (
@@ -174,7 +174,10 @@ function SelectField({
         outline: "none",
         fontFamily: "inherit",
       }}>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => typeof o === "string"
+        ? <option key={o} value={o}>{o}</option>
+        : <option key={o.value} value={o.value}>{o.label}</option>
+      )}
     </select>
   );
 }
@@ -1394,7 +1397,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <InlineLabel label="Шероховатость">
                 <SelectField
                   value={branch.wpRoughnessMode ?? "rough"}
-                  options={["smooth", "rough", "manual"]}
+                  options={[
+                    { value: "smooth", label: "Гладкая" },
+                    { value: "rough",  label: "Шероховатая" },
+                    { value: "manual", label: "Вручную" },
+                  ]}
                   onChange={(v) => onUpdate({ wpRoughnessMode: v as TopoBranch["wpRoughnessMode"] })}
                 />
               </InlineLabel>
