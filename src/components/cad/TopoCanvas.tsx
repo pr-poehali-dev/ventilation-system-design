@@ -144,6 +144,8 @@ interface Props {
   branchBindMode?: boolean;
   /** Карта branchId → цвет позиции (для подсветки привязанных ветвей в F3) */
   branchPositionColors?: Map<string, { color: string; bound: boolean }>;
+  /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
+  waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
 }
 
 export type FlowDisplayMode =
@@ -189,6 +191,7 @@ export default function TopoCanvas(props: Props) {
     onPositionPlace,
     branchBindMode = false,
     branchPositionColors,
+    waterNodeResults,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -1173,6 +1176,7 @@ export default function TopoCanvas(props: Props) {
           flowDisplay={flowDisplay}
           infoConfig={infoConfig}
           unitsConfig={unitsConfig}
+          waterNodeResults={waterNodeResults}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -2092,8 +2096,8 @@ export default function TopoCanvas(props: Props) {
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          // Размер иконки ППЗ (px), адаптируется к масштабу
-          const IS = Math.max(7, Math.min(18, view.scale * 80));
+          // Размер иконки ППЗ (px), пропорционален масштабу (без верхнего ограничения)
+          const IS = view.scale * 80;
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо выделения — только для обычных узлов */}
@@ -2163,9 +2167,33 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
+              {/* ── Маркер предупреждения ⚠ на проблемных кранах ── */}
+              {fireType === "consumer" && (node.fireHydrantOpen ?? false) && view.scale > 0.025 && (() => {
+                const res = waterNodeResults?.get(node.id);
+                if (!res) return null;
+                const MIN_P = 0.1;
+                const req   = node.fireRequiredFlow ?? 0;
+                const isErr = res.dynamicP > 0 && res.dynamicP < MIN_P;
+                const isWrn = !isErr && req > 0 && res.flow < req * 0.9;
+                if (!isErr && !isWrn) return null;
+                const cr   = IS * 0.55;
+                const earR = cr * 0.55;
+                const ox   = cr + earR + 2;   // правее правого уха
+                const oy   = -(cr + earR + 2); // выше
+                const rs   = Math.max(5, IS * 0.45);
+                const col  = isErr ? "#dc2626" : "#d97706";
+                return (
+                  <g transform={`translate(${ox},${oy})`}>
+                    <circle r={rs} fill={col} />
+                    <text textAnchor="middle" dominantBaseline="central"
+                      fontSize={rs * 1.1} fontWeight="bold" fill="white">!</text>
+                  </g>
+                );
+              })()}
+
               {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
-                const jr = Math.max(4, Math.min(8, view.scale * 50));
+                const jr = view.scale * 50;
                 return (
                   <g>
                     <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />

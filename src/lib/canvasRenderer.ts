@@ -5,6 +5,7 @@
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "./unitsConfig";
+import { type WaterNodeResult } from "./waterHydraulics";
 
 export const CANVAS_THRESHOLD = 600;
 
@@ -54,6 +55,7 @@ export interface CanvasRenderOptions {
 
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig: UnitsConfig;
+  waterNodeResults?: Map<string, WaterNodeResult>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -154,7 +156,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
-    horizonMap, infoConfig, unitsConfig,
+    horizonMap, infoConfig, unitsConfig, waterNodeResults,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
@@ -436,21 +438,60 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (!b.hasWaterPipe || !from || !to) continue;
       const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
       const w2 = thinLines ? 1 : bw;
-      // Нормаль к ветви для смещения линии к краю
       const ddx = to.sx - from.sx, ddy = to.sy - from.sy;
       const segL = Math.hypot(ddx, ddy);
       const nx = segL > 0 ? -ddy / segL : 0;
       const ny = segL > 0 ?  ddx / segL : 0;
       const offset = w2 * 0.38;
+      const lx1 = from.sx + nx * offset, ly1 = from.sy + ny * offset;
+      const lx2 = to.sx   + nx * offset, ly2 = to.sy   + ny * offset;
       ctx.strokeStyle = "#1d4ed8";
       ctx.lineWidth = 1.5;
       ctx.lineCap = "round";
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);
       ctx.beginPath();
-      ctx.moveTo(from.sx + nx * offset, from.sy + ny * offset);
-      ctx.lineTo(to.sx   + nx * offset, to.sy   + ny * offset);
+      ctx.moveTo(lx1, ly1);
+      ctx.lineTo(lx2, ly2);
       ctx.stroke();
+
+      // ─── Маркер редукционного клапана — ромб на середине синей линии ───
+      if ((b.wpHasReducer ?? false) && segL > 8) {
+        const mx = (lx1 + lx2) / 2, my = (ly1 + ly2) / 2;
+        // Единичный вектор вдоль трубы
+        const ux = segL > 0 ? ddx / segL : 1;
+        const uy = segL > 0 ? ddy / segL : 0;
+        const RS = Math.max(4, Math.min(10, sc * 22)); // размер ромба
+        ctx.save();
+        // Белая подложка (чтобы синяя линия не просвечивала)
+        ctx.beginPath();
+        ctx.moveTo(mx + ux * RS,       my + uy * RS);
+        ctx.lineTo(mx + nx * RS * 0.6, my + ny * RS * 0.6);
+        ctx.lineTo(mx - ux * RS,       my - uy * RS);
+        ctx.lineTo(mx - nx * RS * 0.6, my - ny * RS * 0.6);
+        ctx.closePath();
+        ctx.fillStyle = "white";
+        ctx.fill();
+        // Контур ромба
+        ctx.beginPath();
+        ctx.moveTo(mx + ux * RS,       my + uy * RS);
+        ctx.lineTo(mx + nx * RS * 0.6, my + ny * RS * 0.6);
+        ctx.lineTo(mx - ux * RS,       my - uy * RS);
+        ctx.lineTo(mx - nx * RS * 0.6, my - ny * RS * 0.6);
+        ctx.closePath();
+        ctx.strokeStyle = "#1d4ed8";
+        ctx.lineWidth = Math.max(1, RS * 0.15);
+        ctx.stroke();
+        // Буква «Р» по центру (при достаточном zoom)
+        if (RS >= 6) {
+          ctx.fillStyle = "#1d4ed8";
+          ctx.font = `bold ${Math.round(RS * 0.85)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("Р", mx, my);
+        }
+        ctx.restore();
+      }
     }
     ctx.restore();
   }
@@ -497,7 +538,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
       if (fireType === "reservoir" && sc > 0.025) {
-        const IS = Math.max(7, Math.min(18, sc * 80));
+        const IS = sc * 80;
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hw = IS * 0.8, hh = IS * 0.6;
@@ -528,7 +569,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
       // Закрыт → красный, открыт → синий с заливкой
       if (fireType === "consumer" && sc > 0.025) {
-        const IS = Math.max(7, Math.min(16, sc * 75));
+        const IS = sc * 75;
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hydrantOpen = n.fireHydrantOpen ?? false;
@@ -555,12 +596,39 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           ctx.beginPath(); ctx.arc(ix, iy, cr + earR + 3, 0, Math.PI * 2); ctx.stroke();
           ctx.setLineDash([]);
         }
+
+        // ─── Маркер предупреждения ! на кране ─────────────────────
+        if (hydrantOpen && waterNodeResults) {
+          const res = waterNodeResults.get(n.id);
+          if (res) {
+            const MIN_P = 0.1;
+            const req   = n.fireRequiredFlow ?? 0;
+            const isErr = res.dynamicP > 0 && res.dynamicP < MIN_P;
+            const isWrn = !isErr && req > 0 && res.flow < req * 0.9;
+            if (isErr || isWrn) {
+              const ox  = ix + cr + earR + 2;
+              const oy  = iy - cr - earR - 2;
+              const rs  = Math.max(4, IS * 0.45);
+              const col = isErr ? "#dc2626" : "#d97706";
+              ctx.save();
+              ctx.beginPath(); ctx.arc(ox, oy, rs, 0, Math.PI * 2);
+              ctx.fillStyle = col; ctx.fill();
+              ctx.fillStyle = "white";
+              ctx.font = `bold ${Math.round(rs * 1.2)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("!", ox, oy);
+              ctx.restore();
+            }
+          }
+        }
+
         ctx.restore();
       }
 
       // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
       if (fireType === "junction" && sc > 0.025) {
-        const IS = Math.max(4, Math.min(8, sc * 50));
+        const IS = sc * 50;
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);

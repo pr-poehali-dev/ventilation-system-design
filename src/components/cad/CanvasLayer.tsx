@@ -10,6 +10,7 @@ import {
 } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { type WaterNodeResult } from "@/lib/waterHydraulics";
 
 export { CANVAS_THRESHOLD };
 
@@ -55,6 +56,7 @@ interface CanvasLayerProps {
 
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
+  waterNodeResults?: Map<string, WaterNodeResult>;
 
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -81,7 +83,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay,
-    infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG,
+    infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG, waterNodeResults,
     onMouseDown, onMouseMove, onMouseUp, onWheel, onContextMenu,
     onTouchStart, onTouchMove, onTouchEnd,
     onRegisterGetCanvas, onRegisterCanvasEl,
@@ -176,6 +178,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
       animOffset: animOffsetRef.current,
       infoConfig: p.infoConfig,
       unitsConfig: p.unitsConfig ?? DEFAULT_UNITS_CONFIG,
+      waterNodeResults: p.waterNodeResults,
     });
   }, []);
 

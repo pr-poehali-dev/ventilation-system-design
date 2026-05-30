@@ -4306,6 +4306,7 @@ export default function CadPage() {
               onNodeMultiSelect={handleNodeMultiSelect}
               infoConfig={infoConfig}
               unitsConfig={unitsConfig}
+              waterNodeResults={waterNetwork.nodeResults}
               zScale={zScale}
               schemaSymbols={schemaSymbols}
               selectedSymbolId={selectedSymbolId}
