@@ -2962,6 +2962,8 @@ export default function CadPage() {
                 node={selectedNode}
                 onUpdate={(patch) => updateNode(selectedNode.id, patch)}
                 waterResult={waterNetwork.nodeResults.get(selectedNode.id)}
+                allNodes={nodes}
+                allNodeResults={waterNetwork.nodeResults}
               />
             )}
 

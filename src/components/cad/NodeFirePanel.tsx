@@ -5,6 +5,8 @@ interface NodeFirePanelProps {
   node: TopoNode;
   onUpdate: (patch: Partial<TopoNode>) => void;
   waterResult?: WaterNodeResult;
+  allNodes?: TopoNode[];
+  allNodeResults?: Map<string, WaterNodeResult>;
 }
 
 const SH = "#e8eef8";
@@ -113,10 +115,19 @@ function computedVal(v: number | undefined, d = 3, suffix = ""): string {
   return `${v.toFixed(d)}${suffix ? " " + suffix : ""}`;
 }
 
-export default function NodeFirePanel({ node, onUpdate, waterResult }: NodeFirePanelProps) {
+export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = [], allNodeResults }: NodeFirePanelProps) {
   const fireType = node.fireNodeType ?? "none";
   const isOpen = node.fireHydrantOpen ?? false;
   const isConsumer = fireType === "consumer";
+  const isReservoir = fireType === "reservoir";
+
+  // Список всех открытых потребителей и их расчётные данные
+  const openConsumers = isReservoir
+    ? allNodes.filter(n => (n.fireNodeType ?? "none") === "consumer" && (n.fireHydrantOpen ?? false))
+    : [];
+  const totalFlow = openConsumers.reduce((s, c) => s + (allNodeResults?.get(c.id)?.flow ?? 0), 0);
+  const capacity = node.fireCapacity ?? 0;
+  const drainTime = totalFlow > 0 && capacity > 0 ? (capacity / totalFlow) * 60 : 0;
 
   return (
     <div className="flex flex-col" style={{ fontSize: 11 }}>
@@ -231,15 +242,81 @@ export default function NodeFirePanel({ node, onUpdate, waterResult }: NodeFireP
           </Row>
         )}
 
-        {/* Время истечения — только для резервуара */}
-        {fireType === "reservoir" && (
-          <Row label="Время истечения:">
+        {/* ─── Резервуар: суммарный расход и время работы ─── */}
+        {isReservoir && (<>
+          <Row label="Суммарный расход:">
             <ComputedInput
-              value={computedVal(waterResult?.drainTime, 0, "мин")}
-              empty={!waterResult?.drainTime}
+              value={totalFlow > 0 ? `${totalFlow.toFixed(2)} м³/ч` : "0.00 м³/ч"}
+              empty={totalFlow === 0}
             />
           </Row>
-        )}
+          <Row label="Время работы:">
+            <ComputedInput
+              value={drainTime > 0 ? `${Math.round(drainTime)} мин` : "— мин"}
+              empty={drainTime === 0}
+            />
+          </Row>
+
+          {/* Таблица открытых потребителей */}
+          {openConsumers.length > 0 && (<>
+            <div className="flex items-center px-1 py-0.5 text-[10px] font-semibold select-none"
+              style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+              Открытые краны ({openConsumers.length})
+            </div>
+            {/* Шапка таблицы */}
+            <div className="flex text-[9px] text-gray-500 px-1 py-0.5"
+              style={{ borderBottom: "1px solid #ebebeb", background: "#f8fafc" }}>
+              <div style={{ width: 90 }}>Название / №</div>
+              <div style={{ width: 55, textAlign: "right" }}>Расход</div>
+              <div style={{ width: 55, textAlign: "right" }}>Дин. давл.</div>
+              <div style={{ width: 40, textAlign: "right" }}>%</div>
+            </div>
+            {openConsumers.map(c => {
+              const res = allNodeResults?.get(c.id);
+              const q   = res?.flow    ?? 0;
+              const dp  = res?.dynamicP ?? 0;
+              const req = c.fireRequiredFlow ?? 0;
+              const pct = req > 0 ? Math.round((q / req) * 100) : null;
+              const ok  = pct !== null && pct >= 90;
+              const label = c.name ? c.name : (c.number ? `Узел ${c.number}` : c.id.slice(-4));
+              return (
+                <div key={c.id} className="flex items-center text-[10px] px-1"
+                  style={{ minHeight: 18, borderBottom: "1px solid #ebebeb" }}>
+                  <div className="truncate" style={{ width: 90, color: "#374151" }} title={label}>
+                    {label}
+                  </div>
+                  <div style={{ width: 55, textAlign: "right", fontWeight: 600, color: "#1a1a1a" }}>
+                    {q.toFixed(2)}
+                  </div>
+                  <div style={{ width: 55, textAlign: "right", color: "#374151" }}>
+                    {dp.toFixed(3)}
+                  </div>
+                  <div style={{ width: 40, textAlign: "right",
+                    color: pct === null ? "#9ca3af" : ok ? "#15803d" : "#dc2626",
+                    fontWeight: 600 }}>
+                    {pct !== null ? `${pct}%` : "—"}
+                  </div>
+                </div>
+              );
+            })}
+            {/* Итого */}
+            <div className="flex items-center text-[10px] px-1 font-semibold"
+              style={{ minHeight: 18, borderTop: "2px solid #c8d4e8", background: "#f0f4ff" }}>
+              <div style={{ width: 90, color: "#1a3a6b" }}>Итого:</div>
+              <div style={{ width: 55, textAlign: "right", color: "#1a3a6b" }}>
+                {totalFlow.toFixed(2)}
+              </div>
+              <div style={{ width: 55, textAlign: "right" }}></div>
+              <div style={{ width: 40, textAlign: "right", color: "#6b7280" }}>м³/ч</div>
+            </div>
+          </>)}
+
+          {openConsumers.length === 0 && (
+            <div className="px-2 py-1 text-[10px] text-gray-400 italic">
+              Нет открытых потребителей
+            </div>
+          )}
+        </>)}
 
         {/* Подсказка при закрытом кране */}
         {isConsumer && !isOpen && (
