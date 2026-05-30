@@ -455,41 +455,34 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.lineTo(lx2, ly2);
       ctx.stroke();
 
-      // ─── Маркер редукционного клапана — ромб на середине синей линии ───
+      // ─── Маркер редукционного клапана по ГОСТ: квадрат со стрелкой ───
       if ((b.wpHasReducer ?? false) && segL > 8) {
         const mx = (lx1 + lx2) / 2, my = (ly1 + ly2) / 2;
-        // Единичный вектор вдоль трубы
         const ux = segL > 0 ? ddx / segL : 1;
         const uy = segL > 0 ? ddy / segL : 0;
-        const RS = Math.max(4, Math.min(10, sc * 22)); // размер ромба
+        const RS = Math.max(5, Math.min(12, sc * 26));
+        const angle = Math.atan2(uy, ux);
         ctx.save();
-        // Белая подложка (чтобы синяя линия не просвечивала)
-        ctx.beginPath();
-        ctx.moveTo(mx + ux * RS,       my + uy * RS);
-        ctx.lineTo(mx + nx * RS * 0.6, my + ny * RS * 0.6);
-        ctx.lineTo(mx - ux * RS,       my - uy * RS);
-        ctx.lineTo(mx - nx * RS * 0.6, my - ny * RS * 0.6);
-        ctx.closePath();
+        ctx.translate(mx, my);
+        ctx.rotate(angle);
+        // Белая подложка — перекрывает синюю линию трубы
         ctx.fillStyle = "white";
-        ctx.fill();
-        // Контур ромба
-        ctx.beginPath();
-        ctx.moveTo(mx + ux * RS,       my + uy * RS);
-        ctx.lineTo(mx + nx * RS * 0.6, my + ny * RS * 0.6);
-        ctx.lineTo(mx - ux * RS,       my - uy * RS);
-        ctx.lineTo(mx - nx * RS * 0.6, my - ny * RS * 0.6);
-        ctx.closePath();
+        ctx.fillRect(-RS, -RS * 0.85, RS * 2, RS * 1.7);
+        // Квадрат (половина SZ вдоль трубы, полная высота)
         ctx.strokeStyle = "#1d4ed8";
-        ctx.lineWidth = Math.max(1, RS * 0.15);
-        ctx.stroke();
-        // Буква «Р» по центру (при достаточном zoom)
-        if (RS >= 6) {
-          ctx.fillStyle = "#1d4ed8";
-          ctx.font = `bold ${Math.round(RS * 0.85)}px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("Р", mx, my);
-        }
+        ctx.lineWidth = Math.max(1, RS * 0.12);
+        ctx.fillStyle = "white";
+        ctx.beginPath();
+        ctx.rect(-RS * 0.85, -RS * 0.75, RS * 1.7, RS * 1.5);
+        ctx.fill(); ctx.stroke();
+        // Треугольник-стрелка вниз (поперёк трубы = по Y)
+        ctx.fillStyle = "#1d4ed8";
+        ctx.beginPath();
+        ctx.moveTo(-RS * 0.55, -RS * 0.45);
+        ctx.lineTo( RS * 0.55, -RS * 0.45);
+        ctx.lineTo( 0,          RS * 0.5);
+        ctx.closePath();
+        ctx.fill();
         ctx.restore();
       }
     }

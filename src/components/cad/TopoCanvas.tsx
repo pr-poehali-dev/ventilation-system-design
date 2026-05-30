@@ -1949,13 +1949,22 @@ export default function TopoCanvas(props: Props) {
                     </g>
                   );
                 }
+                // Символы на трубах — поворачиваем вдоль ветви
+                const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
+                const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
+                const brAngleDeg = needsRotate
+                  ? Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI
+                  : 0;
                 return (
-                  <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
-                    overflow="visible"
-                    opacity={isFanStopped ? 0.35 : 1}
-                    style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
-                    pointerEvents="none"
-                    dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                  <g transform={needsRotate ? `rotate(${brAngleDeg},${px},${py})` : undefined}
+                    pointerEvents="none">
+                    <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
+                      overflow="visible"
+                      opacity={isFanStopped ? 0.35 : 1}
+                      style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
+                      pointerEvents="none"
+                      dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                  </g>
                 );
               })()}
               {/* Крестик на остановленном вентиляторе */}

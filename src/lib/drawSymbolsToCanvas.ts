@@ -71,11 +71,19 @@ export async function drawSymbolsToCanvas(
     const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
     const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
 
+    // Угол поворота по направлению ветви (для символов на трубах)
+    const brAngleForSym = hasBranchPts
+      ? Math.atan2(tsy2 - fsy, tsx2 - fsx)
+      : 0;
+    // Символы, которые нужно поворачивать вдоль ветви
+    const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
+    const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
+
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);
     } else {
-      // SVG-иконка через Image
+      // SVG-иконка через Image (с поворотом для трубопроводных символов)
       const imgSize = Math.ceil(SZ);
       const img = await svgToImage(lt.svgContent, imgSize);
       ctx.save();
@@ -83,7 +91,13 @@ export async function drawSymbolsToCanvas(
         ctx.globalAlpha = 0.35;
         ctx.filter = "grayscale(1)";
       }
-      ctx.drawImage(img, HX, HY, SZ, SZ);
+      if (needsRotate) {
+        ctx.translate(px, py);
+        ctx.rotate(brAngleForSym);
+        ctx.drawImage(img, -SZ / 2, -SZ / 2 - 4, SZ, SZ);
+      } else {
+        ctx.drawImage(img, HX, HY, SZ, SZ);
+      }
       ctx.restore();
 
       // Крестик на остановленном вентиляторе
