@@ -1750,19 +1750,20 @@ export default function TopoCanvas(props: Props) {
                   const onMove = (me: MouseEvent) => {
                     const dx = me.clientX - startX;
                     const dy = me.clientY - startY;
-                    const mx = me.clientX - svgRect.left - (sym.offsetX ?? 0);
-                    const my = me.clientY - svgRect.top - (sym.offsetY ?? 0);
+                    // mx/my — чистые SVG-координаты курсора (без поправки на offsetX/Y символа)
+                    // fsx/tsy2 тоже в SVG-пространстве → проекция корректна
+                    const mx = me.clientX - svgRect.left;
+                    const my = me.clientY - svgRect.top;
 
                     if (me.ctrlKey || me.altKey) {
-                      // Ctrl/Alt+drag = смещение в любом направлении
+                      // Ctrl/Alt+drag = поперечное смещение символа от ветви
                       onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
                     } else {
-                      // Обычный drag = перемещение вдоль ветви
+                      // Обычный drag = перемещение вдоль ветви по проекции
                       if (brLen2 < 1) return;
                       const raw = ((mx - fsx) * (tsx2 - fsx) + (my - fsy) * (tsy2 - fsy)) / brLen2;
-                      const t = Math.max(0.05, Math.min(0.95, raw));
+                      const t = Math.max(0.02, Math.min(0.98, raw));
                       onSymbolMoveAlongBranch?.(sym.id, t);
-                      // Сохраняем текущий offset
                     }
                     void brLen;
                   };
@@ -2096,8 +2097,8 @@ export default function TopoCanvas(props: Props) {
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          // Размер иконки ППЗ (px), пропорционален масштабу (без верхнего ограничения)
-          const IS = view.scale * 80;
+          // Размер иконки ППЗ (px): мин 10px при отдалении, пропорционален при приближении
+          const IS = Math.max(10, view.scale * 80);
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо выделения — только для обычных узлов */}
@@ -2193,7 +2194,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
-                const jr = view.scale * 50;
+                const jr = Math.max(6, view.scale * 50);
                 return (
                   <g>
                     <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />

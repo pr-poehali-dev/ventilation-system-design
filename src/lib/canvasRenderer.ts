@@ -538,7 +538,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
       if (fireType === "reservoir" && sc > 0.025) {
-        const IS = sc * 80;
+        // Плавный рост: мин 10px при отдалении, нет жёсткого потолка при приближении
+        const IS = Math.max(10, sc * 80);
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hw = IS * 0.8, hh = IS * 0.6;
@@ -569,7 +570,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
       // Закрыт → красный, открыт → синий с заливкой
       if (fireType === "consumer" && sc > 0.025) {
-        const IS = sc * 75;
+        const IS = Math.max(10, sc * 75);
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hydrantOpen = n.fireHydrantOpen ?? false;
@@ -628,7 +629,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
       if (fireType === "junction" && sc > 0.025) {
-        const IS = sc * 50;
+        const IS = Math.max(6, sc * 50);
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);
