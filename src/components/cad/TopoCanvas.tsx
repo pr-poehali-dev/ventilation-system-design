@@ -1737,35 +1737,39 @@ export default function TopoCanvas(props: Props) {
               onMouseDown={(e) => {
                 if (e.button !== 0 || tool !== "select") return;
                 e.stopPropagation();
+                e.preventDefault(); // предотвращаем браузерный drag-and-drop
 
                 const startX = e.clientX, startY = e.clientY;
 
+                // Выбираем символ при mousedown (до отпускания)
+                onSelectSymbol?.(sym.id);
+
                 if (sym.branchId && hasBranchPts) {
-                  const brLen2 = (tsx2 - fsx) ** 2 + (tsy2 - fsy) ** 2;
-                  const brLen = Math.sqrt(brLen2);
+                  // Захватываем координаты узлов ветви в момент начала drag
+                  const snapFsx = fsx, snapFsy = fsy, snapTsx = tsx2, snapTsy = tsy2;
+                  const brLen2 = (snapTsx - snapFsx) ** 2 + (snapTsy - snapFsy) ** 2;
                   const origOx = sym.offsetX ?? 0;
                   const origOy = sym.offsetY ?? 0;
-                  const svgRect = (e.currentTarget as SVGElement).closest("svg")!.getBoundingClientRect();
+                  // Берём rect SVG — он стабилен в течение drag
+                  const svgEl = (e.currentTarget as SVGElement).closest("svg")!;
 
                   const onMove = (me: MouseEvent) => {
+                    me.preventDefault();
                     const dx = me.clientX - startX;
                     const dy = me.clientY - startY;
-                    // mx/my — чистые SVG-координаты курсора (без поправки на offsetX/Y символа)
-                    // fsx/tsy2 тоже в SVG-пространстве → проекция корректна
-                    const mx = me.clientX - svgRect.left;
-                    const my = me.clientY - svgRect.top;
-
                     if (me.ctrlKey || me.altKey) {
                       // Ctrl/Alt+drag = поперечное смещение символа от ветви
                       onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
                     } else {
-                      // Обычный drag = перемещение вдоль ветви по проекции
+                      // Обычный drag = перемещение вдоль ветви
                       if (brLen2 < 1) return;
-                      const raw = ((mx - fsx) * (tsx2 - fsx) + (my - fsy) * (tsy2 - fsy)) / brLen2;
+                      const svgRect = svgEl.getBoundingClientRect();
+                      const mx = me.clientX - svgRect.left;
+                      const my = me.clientY - svgRect.top;
+                      const raw = ((mx - snapFsx) * (snapTsx - snapFsx) + (my - snapFsy) * (snapTsy - snapFsy)) / brLen2;
                       const t = Math.max(0.02, Math.min(0.98, raw));
                       onSymbolMoveAlongBranch?.(sym.id, t);
                     }
-                    void brLen;
                   };
                   const onUp = () => {
                     window.removeEventListener("mousemove", onMove);
@@ -1774,9 +1778,10 @@ export default function TopoCanvas(props: Props) {
                   window.addEventListener("mousemove", onMove);
                   window.addEventListener("mouseup", onUp);
                 } else if (!sym.branchId) {
-                  // Свободный символ — обычный drag
+                  // Свободный символ — обычный drag в мировых координатах
                   const origX = sym.x, origY = sym.y;
                   const onMove = (me: MouseEvent) => {
+                    me.preventDefault();
                     const dx = (me.clientX - startX) / view.scale;
                     const dy = -(me.clientY - startY) / view.scale;
                     onSymbolMove?.(sym.id, origX + dx, origY + dy);
@@ -2097,8 +2102,10 @@ export default function TopoCanvas(props: Props) {
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          // Размер иконки ППЗ (px): мин 10px при отдалении, пропорционален при приближении
-          const IS = Math.max(10, view.scale * 80);
+          // Иконка ППЗ — фиксированный экранный размер, как узел (r=2.5).
+          // Базово 14px; при сильном приближении чуть растёт (макс ~22px),
+          // при отдалении — не уменьшается ниже 10px.
+          const IS = Math.min(22, Math.max(10, 14 + (view.scale - 0.4) * 12));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо выделения — только для обычных узлов */}
@@ -2194,7 +2201,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
-                const jr = Math.max(6, view.scale * 50);
+                const jr = Math.min(10, Math.max(5, 7 + (view.scale - 0.4) * 6));
                 return (
                   <g>
                     <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />
