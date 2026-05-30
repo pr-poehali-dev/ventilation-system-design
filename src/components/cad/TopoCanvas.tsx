@@ -1794,6 +1794,9 @@ export default function TopoCanvas(props: Props) {
                   window.addEventListener("mouseup", onUp);
                 }
               }}>
+              {/* Прозрачный hitbox — ловит все события мыши по всей зоне символа */}
+              <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
+                fill="transparent" stroke="none" />
               {/* Рамка выделения (без кнопок — управление в панели свойств) */}
               {isSel && (
                 <circle cx={px} cy={py} r={SZ / 2 + 4}
@@ -1951,6 +1954,7 @@ export default function TopoCanvas(props: Props) {
                     overflow="visible"
                     opacity={isFanStopped ? 0.35 : 1}
                     style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
+                    pointerEvents="none"
                     dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                 );
               })()}
@@ -2102,10 +2106,9 @@ export default function TopoCanvas(props: Props) {
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          // Иконка ППЗ — фиксированный экранный размер, как узел (r=2.5).
-          // Базово 14px; при сильном приближении чуть растёт (макс ~22px),
-          // при отдалении — не уменьшается ниже 10px.
-          const IS = Math.min(22, Math.max(10, 14 + (view.scale - 0.4) * 12));
+          // Иконка ППЗ — фиксированный экранный размер.
+          // Базово 10px; при приближении растёт до 16px.
+          const IS = Math.min(16, Math.max(7, 10 + (view.scale - 0.4) * 8));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо выделения — только для обычных узлов */}
@@ -2201,7 +2204,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
-                const jr = Math.min(10, Math.max(5, 7 + (view.scale - 0.4) * 6));
+                const jr = Math.min(7, Math.max(4, 5 + (view.scale - 0.4) * 4));
                 return (
                   <g>
                     <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />
