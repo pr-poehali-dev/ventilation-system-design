@@ -103,19 +103,18 @@ function angleFactor(c: FanCurve, angle?: number): number {
 }
 
 /**
- * Напор вентилятора H(|Q|) в Па.
- * Вентилятор нагнетает по направлению a→b ребра.
- * При fanReverse=true нагнетает в направлении b→a (знак напора отрицательный).
- * Q передаётся как e.Q (может быть отрицательным, берём |Q| для H(Q)).
+ * Модуль напора вентилятора H(|Q|) ≥ 0, в Па.
+ * Всегда возвращает неотрицательное значение — как в методе Кросса.
+ * Знак (направление нагнетания) учитывается ОТДЕЛЬНО в формуле невязки
+ * через fan_dir = fanReverse ? -1 : +1.
  */
 function fanH(e: Edge, Q: number): number {
   if (!e.hasFan || e.fanStopped) return 0;
 
-  const sign = e.fanReverse ? -1 : 1;
-  const N    = Math.max(1, e.fanParallel ?? 1);
+  const N = Math.max(1, e.fanParallel ?? 1);
 
   if (e.fanMode === "constant") {
-    return sign * Math.max(0, e.fanH0 * e.fanRhoFactor);
+    return Math.max(0, e.fanH0 * e.fanRhoFactor);
   }
 
   if (e.fanMode === "curve" && e.fanCurve) {
@@ -127,13 +126,13 @@ function fanH(e: Edge, Q: number): number {
     if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
       const qMax = (e.reverseQMax ?? c.qMax) * k;
       if (Qn > qMax) return 0;
-      return sign * Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
+      return Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
     }
 
     // Прямая характеристика (или реверс без отдельной кривой)
     const af = angleFactor(c, e.fanBladeAngle);
     if (Qn > c.qMax) return 0;
-    return sign * Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
   return 0;
@@ -535,33 +534,29 @@ export function solveNetwork(
   }
   const Q0 = Math.max(0.1, estimateQ0(edges, Rtree));
 
-  // Знак начального Q для вентилятора:
-  // fanReverse=true → вентилятор нагнетает в направлении b→a ребра,
-  // значит e.Q должен быть отрицательным (ток идёт b→a).
-  const fanSignedQ0 = (edges.find(e => e.hasFan && !e.fanStopped)?.fanReverse ?? false)
-    ? -Q0 : Q0;
-  log.push(`Q₀=${Q0.toFixed(2)} м³/с${fanSignedQ0 < 0 ? " (реверс → Q₀<0)" : ""}`);
+  // Знак начального Q — идентично методу Кросса:
+  // sign_init = -1 если главный вентилятор работает на реверс, иначе +1.
+  // ВСЕ хорды (и ветви дерева через Кирхгоф-1) получают Q0 * sign_init.
+  const mainFan = edges.find(e => e.hasFan && !e.fanStopped);
+  const sign_init = (mainFan?.fanReverse ?? false) ? -1 : 1;
+  const q_chord   = Q0 * sign_init;
+  log.push(`Q₀=${Q0.toFixed(2)} м³/с, sign_init=${sign_init}`);
 
-  // Инициализация: хордам |Q0| (направление a→b), дерево — из Кирхгофа-1
-  // Шаг 1: хорды получают |Q0| (вентилятор-хорда получит знаковый Q ниже)
+  // Инициализация: все хорды получают q_chord (со знаком), дерево — из Кирхгофа-1
   edges.forEach((e, i) => {
     if (!treeSet.has(i)) {
-      e.Q = Q0;  // хорды без знака (вентилятор поправим ниже)
+      e.Q = q_chord;  // все хорды с учётом sign_init
     } else {
-      e.Q = 0;   // ветви дерева сначала в 0
+      e.Q = 0;        // ветви дерева сначала в 0
     }
   });
 
-  // Шаг 2: вентилятор получает знаковый Q0 с учётом реверса
-  edges.forEach(e => {
-    if (e.hasFan) e.Q = fanSignedQ0;
+  // Вентилятор в дереве тоже получает q_chord
+  edges.forEach((e, i) => {
+    if (e.hasFan && treeSet.has(i)) e.Q = q_chord;
   });
 
-  // Шаг 3: bottom-up пересчёт ветвей дерева из хорд (Кирхгоф-1)
-  // Это даёт физически согласованную начальную точку.
-  // Вентилятор трактуется как источник с расходом fanSignedQ0:
-  //   fanSignedQ0 > 0 → ток a→b: отток из a, приток в b
-  //   fanSignedQ0 < 0 → ток b→a: приток в a, отток из b
+  // Bottom-up пересчёт ветвей дерева из хорд (Кирхгоф-1)
   {
     const initBal = new Map<string, number>();
     for (const n of nodeList) initBal.set(n, 0);
@@ -570,8 +565,8 @@ export function solveNetwork(
     for (let i = 0; i < edges.length; i++) {
       if (treeSet.has(i) && !edges[i].hasFan) continue;
       const e = edges[i];
-      initBal.set(e.a, (initBal.get(e.a) ?? 0) - e.Q);  // отток из a
-      initBal.set(e.b, (initBal.get(e.b) ?? 0) + e.Q);  // приток в b
+      initBal.set(e.a, (initBal.get(e.a) ?? 0) - e.Q);
+      initBal.set(e.b, (initBal.get(e.b) ?? 0) + e.Q);
     }
 
     for (let idx = bfsOrder.length - 1; idx >= 1; idx--) {
@@ -579,7 +574,7 @@ export function solveNetwork(
       const p  = parent.get(v);
       if (!p) continue;
       const e  = edges[p.edgeIdx];
-      if (e.hasFan) continue;   // вентилятор в дереве уже имеет fanSignedQ0
+      if (e.hasFan) continue;
       const bal = initBal.get(v) ?? 0;
       if (e.b === v) {
         e.Q = -bal;
@@ -641,14 +636,15 @@ export function solveNetwork(
         // Qd > 0 → ток совпадает с a→b → num -= H * (+1)
         // Qd < 0 → ток против a→b   → num -= H * (-1)
         if (e.hasFan) {
-          // H = fanH(e, e.Q) — знаковый напор:
-          //   прямой режим (e.Q > 0): H > 0 — нагнетание a→b
-          //   реверс     (e.Q < 0): H < 0 — нагнетание b→a
-          // Вклад в невязку контура: вентилятор снижает потери давления в своём направлении.
-          // Классическая формула МКР: num -= H * dir
-          // Это эквивалентно: потеря давления ребра = R*Q*|Q| - H (при обходе a→b, dir=+1)
-          const H = fanH(e, e.Q);
-          num -= H * dir;
+          // Идентично методу Кросса: fan_H возвращает |H| >= 0,
+          // знак направления нагнетания задаётся fan_dir:
+          //   fan_dir = +1: нагнетание a→b (прямой режим)
+          //   fan_dir = -1: нагнетание b→a (реверс)
+          // Вклад: num -= fan_dir * H * dir
+          // (dir = направление обхода контура по этому ребру)
+          const H       = fanH(e, e.Q);                    // |H| >= 0
+          const fan_dir = e.fanReverse ? -1 : 1;
+          num -= fan_dir * H * dir;
           den += fanDH(e, e.Q);
         }
 
@@ -810,10 +806,10 @@ export function solveNetwork(
     let fanShaft    = 0;
 
     if (b.hasFan) {
-      const H = fanH(e, e.Q);   // знаковый: <0 при реверсе
-      fanPressure = H;
+      const Habs    = fanH(e, e.Q);               // |H| >= 0
+      const fan_dir = b.fanReverse ? -1 : 1;
+      fanPressure   = fan_dir * Habs;             // знаковый напор для отображения
       if (b.fanMode === "curve" && e.fanCurve) {
-        // КПД считаем по расходу через вентилятор (e.Q), а не по Q ветви
         const Qfan = Math.abs(e.Q);
         const etaBase = fanEfficiency(e.fanCurve, Qfan);
         if (b.fanReverse) {
@@ -822,12 +818,10 @@ export function solveNetwork(
         } else {
           fanEff = etaBase;
         }
-        fanShaft = fanShaftPower(Math.abs(H), Qfan, fanEff);
+        fanShaft = fanShaftPower(Habs, Qfan, fanEff);
       }
-      // Q показываем с отрицательным знаком при реверсе (поток идёт против направления ветви)
-      const Qdisplay = b.fanReverse ? -Math.abs(e.Q) : Math.abs(e.Q);
       const revStr = b.fanReverse ? " [РЕВЕРС]" : "";
-      log.push(`Вент. ${b.id}${revStr}: Q=${Qdisplay.toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
+      log.push(`Вент. ${b.id}${revStr}: Q=${e.Q.toFixed(2)} м³/с, H=${fanPressure.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
     }
 
     return recalcBranchAero({
@@ -851,7 +845,9 @@ export function solveNetwork(
     for (const { edgeIdx, other } of adj.get(u)!) {
       if (pVis.has(other) || !treeSet.has(edgeIdx)) continue;
       const e  = edges[edgeIdx];
-      const H  = fanH(e, e.Q);
+      const Habs    = fanH(e, e.Q);                   // |H| >= 0
+      const fan_dir = e.fanReverse ? -1 : 1;
+      const H       = fan_dir * Habs;                 // знаковый: > 0 нагнетание a→b
       // ΔP = R·Q·|Q| − H (потеря давления от a к b с учётом вентилятора)
       const dP = e.R * e.Q * Math.abs(e.Q) - H;
       const Pu = pressure.get(u)!;
