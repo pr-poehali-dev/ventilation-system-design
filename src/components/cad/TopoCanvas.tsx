@@ -1719,7 +1719,7 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={sym.id}
-              style={{ cursor: tool === "select" ? (draggingSymbolId === sym.id ? "grabbing" : "pointer") : undefined }}
+              style={{ cursor: tool === "select" ? (draggingSymbolId === sym.id ? "grabbing" : "default") : undefined }}
               onContextMenu={(e) => {
                 if (tool !== "select") return;
                 e.preventDefault();
