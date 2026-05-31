@@ -229,6 +229,28 @@ export function calcFireMode(
 
     const hazard = calcHazardLevel(coConc, co2Conc, smokeDensity, fireTemp);
 
+    // Вносим задымление в ВЫХОДНОЙ узел очага
+    const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
+    const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
+    const nc = getNC(outNodeId);
+    nc.smokedQ += airQ;
+    nc.wCO += coConc * airQ;
+    nc.wCO2 += co2Conc * airQ;
+    nc.wSmoke += smokeDensity * airQ;
+    nc.wTemp += fireTemp * airQ;
+
+    // Время прихода дыма к ВХОДНОМУ узлу очага = 0 (очаг горит с t=0)
+    if (!nodeArrivalTime.has(inNodeId)) nodeArrivalTime.set(inNodeId, 0);
+
+    // Время прохода дыма ЧЕРЕЗ ветвь-очаг: скорость = Q/S, время = L / v → мин
+    const smokeSpeed = airQ > 0 && (fb.area ?? 0) > 0 ? airQ / fb.area : 0.5;
+    const transitMin = (fb.length ?? 0) > 0 && smokeSpeed > 0 ? fb.length / smokeSpeed / 60 : 0;
+    const outTime = transitMin; // от начала пожара
+    if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > outTime) {
+      nodeArrivalTime.set(outNodeId, outTime);
+    }
+
+    // smokeArrivalTime очага = 0 (горит сразу)
     resultMap.set(fb.id, {
       branchId: fb.id,
       airTempOut: Math.round(fireTemp * 10) / 10,
@@ -240,33 +262,11 @@ export function calcFireMode(
       visibility: Math.round(visibility * 10) / 10,
       hazardLevel: hazard,
       flowDelta: Math.round(flowDelta * 100) / 100,
+      smokeArrivalTime: 0,
     });
     if (willReverse) reversedBranches.add(fb.id);
 
     log.push(`Ветвь ${fb.id}: Q_пожара=${Q_MW} МВт, T=${Math.round(fireTemp)}°C, h_t=${Math.round(thermalDep)} Па, CO=${coConc.toFixed(3)}%, вид.=${Math.round(visibility)} м${willReverse ? " ⚠️ ОПРОКИДЫВАНИЕ" : ""}`);
-
-    // Вносим задымление в ВЫХОДНОЙ узел очага
-    // Выходной узел = куда идёт поток из этой ветви
-    const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
-    const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
-    const nc = getNC(outNodeId);
-    nc.smokedQ += airQ;
-    nc.wCO += coConc * airQ;
-    nc.wCO2 += co2Conc * airQ;
-    nc.wSmoke += smokeDensity * airQ;
-    nc.wTemp += fireTemp * airQ;
-
-    // Время прихода дыма: время в узле-источнике + время прохода по ветви
-    const inTime = nodeArrivalTime.get(inNodeId) ?? 0;
-    // Скорость дыма = скорость воздуха в ветви (м/с), время = длина / скорость → секунды → минуты
-    const smokeSpeed = airQ > 0 && fb.area > 0 ? airQ / fb.area : 0.5;
-    const transitMin = fb.length > 0 && smokeSpeed > 0 ? (fb.length / smokeSpeed) / 60 : 0;
-    const outTime = inTime + transitMin;
-    if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > outTime) {
-      nodeArrivalTime.set(outNodeId, outTime);
-    }
-
-    resultMap.set(fb.id, { ...resultMap.get(fb.id)!, smokeArrivalTime: Math.round(inTime * 10) / 10 });
   }
 
   // ── Шаг 3: BFS распространения по потоку ──────────────────────────────────

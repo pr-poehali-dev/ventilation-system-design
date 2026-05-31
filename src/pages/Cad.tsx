@@ -551,7 +551,10 @@ export default function CadPage() {
   const [fireCalcDone, setFireCalcDone] = useState(false);
   const [showSmoke, setShowSmoke] = useState(false);
   // Текущий момент времени на шкале задымления (минуты)
-  const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(0);
+  const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(1);
+  // Максимум шкалы (мин) и шаг — задаётся пользователем
+  const [smokeMaxTime, setSmokeMaxTime] = useState(60);
+  const [smokeTimeStep, setSmokeTimeStep] = useState(1);
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
@@ -2277,7 +2280,10 @@ export default function CadPage() {
                 setFireResult(result);
                 setFireCalcDone(true);
                 setShowSmoke(true);
-                setSmokeTimeMinutes(result.maxSmokeTime);
+                // Устанавливаем максимум шкалы = расчётный максимум (но не менее 60 мин)
+                const initMax = Math.max(60, Math.ceil(result.maxSmokeTime));
+                setSmokeMaxTime(initMax);
+                setSmokeTimeMinutes(Math.min(initMax, smokeTimeMinutes));
                 addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
               }}
@@ -5024,36 +5030,72 @@ export default function CadPage() {
             {showSmoke && fireCalcDone && fireResult && (
               <div style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
-                background: "rgba(30,10,10,0.88)", borderTop: "1px solid #7f1d1d",
-                padding: "6px 14px 7px", display: "flex", alignItems: "center",
-                gap: 10, zIndex: 60, backdropFilter: "blur(4px)",
+                background: "rgba(20,5,5,0.93)", borderTop: "2px solid #7f1d1d",
+                padding: "5px 12px 6px", display: "flex", alignItems: "center",
+                gap: 8, zIndex: 60, backdropFilter: "blur(4px)",
               }}>
+                {/* Иконка + подпись */}
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#fca5a5", whiteSpace: "nowrap" }}>
                   🔥 Задымление
                 </span>
-                <span style={{ fontSize: 11, color: "#fca5a5", whiteSpace: "nowrap", minWidth: 52 }}>
-                  0 мин
-                </span>
-                <div style={{ flex: 1, position: "relative" }}>
-                  <input
-                    type="range"
-                    min={0}
-                    max={fireResult.maxSmokeTime}
-                    step={0.5}
-                    value={smokeTimeMinutes}
-                    onChange={e => setSmokeTimeMinutes(Number(e.target.value))}
-                    style={{ width: "100%", accentColor: "#dc2626", cursor: "pointer" }}
-                  />
-                </div>
-                <span style={{ fontSize: 11, color: "#fca5a5", whiteSpace: "nowrap", minWidth: 52, textAlign: "right" }}>
-                  {fireResult.maxSmokeTime} мин
-                </span>
+
+                {/* Метка начала */}
+                <span style={{ fontSize: 11, color: "#f87171", whiteSpace: "nowrap" }}>1 мин</span>
+
+                {/* Слайдер времени */}
+                <input
+                  type="range"
+                  min={1}
+                  max={smokeMaxTime}
+                  step={smokeTimeStep}
+                  value={smokeTimeMinutes}
+                  onChange={e => setSmokeTimeMinutes(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: "#ef4444", cursor: "pointer", minWidth: 80 }}
+                />
+
+                {/* Метка конца */}
+                <span style={{ fontSize: 11, color: "#f87171", whiteSpace: "nowrap" }}>{smokeMaxTime} мин</span>
+
+                {/* Текущее время — крупно */}
                 <span style={{
-                  fontSize: 12, fontWeight: 700, color: "#fff",
-                  background: "#b91c1c", borderRadius: 5, padding: "2px 10px", whiteSpace: "nowrap",
+                  fontSize: 12, fontWeight: 700, color: "#fff", background: "#b91c1c",
+                  borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
                 }}>
-                  T = {smokeTimeMinutes.toFixed(1)} мин
+                  T = {smokeTimeMinutes} мин
                 </span>
+
+                <div style={{ width: 1, background: "#7f1d1d", alignSelf: "stretch", margin: "0 2px" }} />
+
+                {/* Настройка максимума */}
+                <span style={{ fontSize: 10, color: "#fca5a5", whiteSpace: "nowrap" }}>Макс:</span>
+                <input
+                  type="number" min={1} max={600} step={1}
+                  value={smokeMaxTime}
+                  onChange={e => {
+                    const v = Math.max(1, Math.min(600, Number(e.target.value)));
+                    setSmokeMaxTime(v);
+                    if (smokeTimeMinutes > v) setSmokeTimeMinutes(v);
+                  }}
+                  style={{
+                    width: 48, fontSize: 11, background: "#3b0000", color: "#fca5a5",
+                    border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 4px", textAlign: "center",
+                  }}
+                />
+                <span style={{ fontSize: 10, color: "#fca5a5" }}>мин</span>
+
+                {/* Настройка шага */}
+                <span style={{ fontSize: 10, color: "#fca5a5", whiteSpace: "nowrap" }}>Шаг:</span>
+                <select
+                  value={smokeTimeStep}
+                  onChange={e => setSmokeTimeStep(Number(e.target.value))}
+                  style={{
+                    fontSize: 11, background: "#3b0000", color: "#fca5a5",
+                    border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 2px",
+                  }}>
+                  {[1, 2, 5, 10, 15, 30, 60].map(s => (
+                    <option key={s} value={s}>{s} мин</option>
+                  ))}
+                </select>
               </div>
             )}
           </div>
