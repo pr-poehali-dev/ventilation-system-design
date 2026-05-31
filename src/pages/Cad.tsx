@@ -549,6 +549,9 @@ export default function CadPage() {
   // ─── Результат расчёта пожара ───────────────────────────────────────
   const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
   const [fireCalcDone, setFireCalcDone] = useState(false);
+  const [showSmoke, setShowSmoke] = useState(false);
+  // Текущий момент времени на шкале задымления (минуты)
+  const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(0);
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
@@ -2273,6 +2276,8 @@ export default function CadPage() {
                 }));
                 setFireResult(result);
                 setFireCalcDone(true);
+                setShowSmoke(true);
+                setSmokeTimeMinutes(result.maxSmokeTime);
                 addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
               }}
@@ -2284,11 +2289,12 @@ export default function CadPage() {
               <div className="text-[10px] leading-tight mt-0.5 text-center"><div>Расчёт</div><div>пожара</div></div>
             </button>
             <RibbonBigBtn
-              icon="Eye"
-              label="Показать"
+              icon={showSmoke ? "EyeOff" : "Eye"}
+              label={showSmoke ? "Скрыть" : "Показать"}
               sublabel="задымление"
               disabled={!fireCalcDone}
-              onClick={() => { setFireCalcDone(v => v); }}
+              active={showSmoke}
+              onClick={() => setShowSmoke(v => !v)}
             />
             <RibbonBigBtn
               icon="X"
@@ -4660,9 +4666,11 @@ export default function CadPage() {
                 setPositionPlaceMode(false);
               }}
               branchFireColors={(() => {
-                if (!fireCalcDone || !fireResult) return undefined;
+                if (!showSmoke || !fireCalcDone || !fireResult) return undefined;
                 const map = new Map<string, string>();
                 fireResult.branches.forEach((fr, bid) => {
+                  // Показываем только ветви, задымление до которых дошло к текущему моменту времени
+                  if (fr.smokeArrivalTime > smokeTimeMinutes) return;
                   const col = fr.hazardLevel === "lethal"  ? "#7f1d1d"
                             : fr.hazardLevel === "danger"  ? "#dc2626"
                             : fr.hazardLevel === "warning" ? "#f59e0b"
@@ -5009,6 +5017,43 @@ export default function CadPage() {
                 {leaderDrawMode
                   ? "✛ Кликните на схеме для размещения конца выноски  [Esc — отмена]"
                   : "✛ Отпустите для фиксации выноски"}
+              </div>
+            )}
+
+            {/* ─── Временная шкала задымления ─────────────────────── */}
+            {showSmoke && fireCalcDone && fireResult && (
+              <div style={{
+                position: "absolute", bottom: 0, left: 0, right: 0,
+                background: "rgba(30,10,10,0.88)", borderTop: "1px solid #7f1d1d",
+                padding: "6px 14px 7px", display: "flex", alignItems: "center",
+                gap: 10, zIndex: 60, backdropFilter: "blur(4px)",
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#fca5a5", whiteSpace: "nowrap" }}>
+                  🔥 Задымление
+                </span>
+                <span style={{ fontSize: 11, color: "#fca5a5", whiteSpace: "nowrap", minWidth: 52 }}>
+                  0 мин
+                </span>
+                <div style={{ flex: 1, position: "relative" }}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={fireResult.maxSmokeTime}
+                    step={0.5}
+                    value={smokeTimeMinutes}
+                    onChange={e => setSmokeTimeMinutes(Number(e.target.value))}
+                    style={{ width: "100%", accentColor: "#dc2626", cursor: "pointer" }}
+                  />
+                </div>
+                <span style={{ fontSize: 11, color: "#fca5a5", whiteSpace: "nowrap", minWidth: 52, textAlign: "right" }}>
+                  {fireResult.maxSmokeTime} мин
+                </span>
+                <span style={{
+                  fontSize: 12, fontWeight: 700, color: "#fff",
+                  background: "#b91c1c", borderRadius: 5, padding: "2px 10px", whiteSpace: "nowrap",
+                }}>
+                  T = {smokeTimeMinutes.toFixed(1)} мин
+                </span>
               </div>
             )}
           </div>

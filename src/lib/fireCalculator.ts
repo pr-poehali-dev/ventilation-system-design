@@ -63,6 +63,8 @@ export interface FireBranchResult {
   hazardLevel: "safe" | "warning" | "danger" | "lethal";
   // Изменение расхода воздуха из-за тепловой депрессии (м³/с)
   flowDelta?: number;
+  // Время прихода задымления от очага до ветви (минуты)
+  smokeArrivalTime: number;
 }
 
 export interface FireCalculationResult {
@@ -71,6 +73,8 @@ export interface FireCalculationResult {
   branches: Map<string, FireBranchResult>;
   reversedBranches: Set<string>;
   log: string[];
+  // Максимальное время распространения задымления (минуты)
+  maxSmokeTime: number;
 }
 
 // ─── Физические формулы ───────────────────────────────────────────────────────
@@ -188,6 +192,8 @@ export function calcFireMode(
     wTemp: number;
   }
   const nodeContribs = new Map<string, NodeContrib>();
+  // Время прихода задымления в каждый узел (минуты от начала пожара)
+  const nodeArrivalTime = new Map<string, number>();
 
   const getNC = (nid: string): NodeContrib => {
     if (!nodeContribs.has(nid)) nodeContribs.set(nid, { smokedQ: 0, freshQ: 0, wCO: 0, wCO2: 0, wSmoke: 0, wTemp: 0 });
@@ -242,12 +248,25 @@ export function calcFireMode(
     // Вносим задымление в ВЫХОДНОЙ узел очага
     // Выходной узел = куда идёт поток из этой ветви
     const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
+    const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
     const nc = getNC(outNodeId);
     nc.smokedQ += airQ;
     nc.wCO += coConc * airQ;
     nc.wCO2 += co2Conc * airQ;
     nc.wSmoke += smokeDensity * airQ;
     nc.wTemp += fireTemp * airQ;
+
+    // Время прихода дыма: время в узле-источнике + время прохода по ветви
+    const inTime = nodeArrivalTime.get(inNodeId) ?? 0;
+    // Скорость дыма = скорость воздуха в ветви (м/с), время = длина / скорость → секунды → минуты
+    const smokeSpeed = airQ > 0 && fb.area > 0 ? airQ / fb.area : 0.5;
+    const transitMin = fb.length > 0 && smokeSpeed > 0 ? (fb.length / smokeSpeed) / 60 : 0;
+    const outTime = inTime + transitMin;
+    if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > outTime) {
+      nodeArrivalTime.set(outNodeId, outTime);
+    }
+
+    resultMap.set(fb.id, { ...resultMap.get(fb.id)!, smokeArrivalTime: Math.round(inTime * 10) / 10 });
   }
 
   // ── Шаг 3: BFS распространения по потоку ──────────────────────────────────
@@ -315,6 +334,18 @@ export function calcFireMode(
       }
 
       const hazard = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
+
+      // Время прихода дыма в эту ветвь = время в её входном узле
+      const branchArrivalTime = nodeArrivalTime.get(inNodeId) ?? 0;
+      // Время прохода по ветви
+      const bSmokeSpeed = Math.abs(flow) > 0 && b.area > 0 ? Math.abs(flow) / b.area : 0.5;
+      const bTransitMin = b.length > 0 && bSmokeSpeed > 0 ? (b.length / bSmokeSpeed) / 60 : 0;
+      const bOutTime = branchArrivalTime + bTransitMin;
+      // Обновляем время прихода в выходной узел
+      if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > bOutTime) {
+        nodeArrivalTime.set(outNodeId, bOutTime);
+      }
+
       resultMap.set(b.id, {
         branchId: b.id,
         airTempOut: Math.round(tempOut * 10) / 10,
@@ -325,6 +356,7 @@ export function calcFireMode(
         smokeDensity: Math.round(smokeOut * 100) / 100,
         visibility: Math.round(visOut * 10) / 10,
         hazardLevel: hazard,
+        smokeArrivalTime: Math.round(branchArrivalTime * 10) / 10,
       });
 
       // Вносим задымлённый поток в выходной узел
@@ -352,12 +384,20 @@ export function calcFireMode(
   const firstFire = fireBranches[0];
   const firstResult = resultMap.get(firstFire.id)!;
 
+  // Максимальное время распространения по всем задымлённым ветвям
+  let maxSmokeTime = 0;
+  resultMap.forEach(fr => {
+    if (fr.smokeArrivalTime > maxSmokeTime) maxSmokeTime = fr.smokeArrivalTime;
+  });
+  maxSmokeTime = Math.ceil(maxSmokeTime) || 60;
+
   return {
     fireTemp: firstResult.airTempOut,
     fireThermalDep: firstResult.thermalDepression,
     branches: resultMap,
     reversedBranches,
     log,
+    maxSmokeTime,
   };
 }
 
