@@ -42,6 +42,7 @@ interface Edge {
   R:              number;
   Q:              number;
   hasFan:         boolean;
+  fanType:        "ГВУ" | "ВВУ" | "ВМП";   // тип вентилятора
   fanMode:        "constant" | "curve";
   fanH0:          number;      // Па (не масштабированный на rho!)
   fanCurve?:      FanCurve;
@@ -103,19 +104,18 @@ function angleFactor(c: FanCurve, angle?: number): number {
 }
 
 /**
- * Напор вентилятора H(|Q|) в Па.
- * Вентилятор нагнетает по направлению a→b ребра.
- * При fanReverse=true нагнетает в направлении b→a (знак напора отрицательный).
- * Q передаётся как e.Q (может быть отрицательным, берём |Q| для H(Q)).
+ * Модуль напора вентилятора H(|Q|) ≥ 0, в Па.
+ * Всегда возвращает неотрицательное значение — как в методе Кросса.
+ * Знак (направление нагнетания) учитывается ОТДЕЛЬНО в формуле невязки
+ * через fan_dir = fanReverse ? -1 : +1.
  */
 function fanH(e: Edge, Q: number): number {
   if (!e.hasFan || e.fanStopped) return 0;
 
-  const sign = e.fanReverse ? -1 : 1;
-  const N    = Math.max(1, e.fanParallel ?? 1);
+  const N = Math.max(1, e.fanParallel ?? 1);
 
   if (e.fanMode === "constant") {
-    return sign * Math.max(0, e.fanH0 * e.fanRhoFactor);
+    return Math.max(0, e.fanH0 * e.fanRhoFactor);
   }
 
   if (e.fanMode === "curve" && e.fanCurve) {
@@ -127,13 +127,13 @@ function fanH(e: Edge, Q: number): number {
     if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
       const qMax = (e.reverseQMax ?? c.qMax) * k;
       if (Qn > qMax) return 0;
-      return sign * Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
+      return Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
     }
 
     // Прямая характеристика (или реверс без отдельной кривой)
     const af = angleFactor(c, e.fanBladeAngle);
     if (Qn > c.qMax) return 0;
-    return sign * Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
   return 0;
@@ -154,31 +154,39 @@ function fanDH(e: Edge, Q: number): number {
   return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor) / N;
 }
 
-/** Оценка рабочей точки вентилятора методом бисекции H_вент(Q) = R_сети·Q². */
+/**
+ * Оценка рабочей точки вентилятора методом бисекции H_вент(Q) = R_сети·Q².
+ * Работаем с |H| и |Q| — знак реверса учтём при инициализации отдельно.
+ */
 function estimateQ0(edges: Edge[], Rtotal: number): number {
-  const fan = edges.find(e => e.hasFan && !e.fanStopped);
+  // Берём главный вентилятор (ГВУ/ВВУ) для оценки рабочей точки.
+  // ВМП не должен влиять на глобальную оценку Q₀ сети.
+  const fan = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
+           ?? edges.find(e => e.hasFan && !e.fanStopped);
   if (!fan) return 5;
 
-  const H0 = fanH(fan, 0);  // максимальный напор (при Q=0)
+  // |H0| при Q=0 — всегда положительный (независимо от fanReverse)
+  const H0abs = Math.abs(fanH(fan, 0));
 
   if (fan.fanMode === "constant") {
-    if (H0 > 0 && Rtotal > 0) return Math.sqrt(H0 / Rtotal);
+    if (H0abs > 0 && Rtotal > 0) return Math.sqrt(H0abs / Rtotal);
     return 5;
   }
 
   if (fan.fanMode === "curve" && fan.fanCurve) {
-    const c   = fan.fanCurve;
-    const k   = (fan.fanRpm && c.rpmNominal > 0) ? fan.fanRpm / c.rpmNominal : 1;
+    const c = fan.fanCurve;
+    const k = (fan.fanRpm && c.rpmNominal > 0) ? fan.fanRpm / c.rpmNominal : 1;
     // При реверсе с отдельной кривой — используем её диапазон расходов
     const qMaxSrc = (fan.fanReverse && fan.reverseQMax !== undefined) ? fan.reverseQMax : c.qMax;
     const qHi = qMaxSrc * k;
     if (Rtotal <= 0) return (c.qMin + qMaxSrc) / 2 * k;
 
+    // Бисекция: |H_вент(q)| = R·q² — всегда работаем с положительными величинами
     let lo = 0, hi = qHi;
     for (let i = 0; i < 80; i++) {
-      const q  = (lo + hi) / 2;
-      const Hf = fanH(fan, q);
-      const Hn = Rtotal * q * q;
+      const q   = (lo + hi) / 2;
+      const Hf  = Math.abs(fanH(fan, q));   // |H| > 0 независимо от реверса
+      const Hn  = Rtotal * q * q;
       if (Math.abs(Hf - Hn) < 0.05) return Math.max(0.1, q);
       if (Hf > Hn) lo = q; else hi = q;
     }
@@ -368,6 +376,7 @@ export function solveNetwork(
       + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) : 0)),
       Q:             0,
       hasFan:        b.hasFan,
+      fanType:       b.fanType ?? "ГВУ",
       fanMode:       b.fanMode,
       // FIX: fanH0 хранить в Па (не умножать на rho здесь — fanH() применяет rhoFactor)
       fanH0:         b.fanPressure,
@@ -528,31 +537,38 @@ export function solveNetwork(
     // Вентилятор в дереве: суммируем все рёбра дерева
     Rtree = edges.filter((_, i) => treeSet.has(i)).reduce((s, e) => s + e.R, 0);
   }
-  const Q0    = Math.max(0.1, estimateQ0(edges, Rtree));
-  log.push(`Q₀ = ${Q0.toFixed(2)} м³/с`);
+  const Q0 = Math.max(0.1, estimateQ0(edges, Rtree));
 
-  // Инициализация: хордам Q0, дерево пересчитываем из Кирхгофа-1
-  // Шаг 1: ставим хордам Q0 (направление a→b)
+  // Знак начального Q — идентично методу Кросса (строки 797-804 backend/airflow/index.py):
+  // sign_init определяется ТОЛЬКО по главному вентилятору (ГВУ или ВВУ).
+  // ВМП НЕ учитывается — его направление определяется физикой итераций.
+  // Это критично: если ВМП попадёт первым в edges.find(), sign_init будет неверным
+  // и весь начальный поток получит неправильное направление.
+  const mainFan = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"));
+  const sign_init = (mainFan?.fanReverse ?? false) ? -1 : 1;
+  const q_chord   = Q0 * sign_init;
+  log.push(`Q₀=${Q0.toFixed(2)} м³/с, sign_init=${sign_init}`);
+
+  // Инициализация: все хорды получают q_chord (со знаком), дерево — из Кирхгофа-1
   edges.forEach((e, i) => {
     if (!treeSet.has(i)) {
-      e.Q = Q0;   // хорда (включая вентилятор-хорду)
+      e.Q = q_chord;  // все хорды с учётом sign_init
     } else {
-      e.Q = 0;    // ветви дерева сначала в 0
+      e.Q = 0;        // ветви дерева сначала в 0
     }
   });
 
-  // Шаг 2: если вентилятор в дереве — задаём ему Q0
-  edges.forEach(e => {
-    if (e.hasFan) e.Q = Q0;
+  // Вентилятор в дереве тоже получает q_chord
+  edges.forEach((e, i) => {
+    if (e.hasFan && treeSet.has(i)) e.Q = q_chord;
   });
 
-  // Шаг 3: bottom-up пересчёт ветвей дерева из хорд (Кирхгоф-1)
-  // Это даёт физически согласованную начальную точку
+  // Bottom-up пересчёт ветвей дерева из хорд (Кирхгоф-1)
   {
     const initBal = new Map<string, number>();
     for (const n of nodeList) initBal.set(n, 0);
 
-    // Вклад хорд (и вентилятора-хорды) в балансы
+    // Вклад хорд (и вентилятора дерева) в балансы: e.Q > 0 = ток a→b
     for (let i = 0; i < edges.length; i++) {
       if (treeSet.has(i) && !edges[i].hasFan) continue;
       const e = edges[i];
@@ -565,7 +581,7 @@ export function solveNetwork(
       const p  = parent.get(v);
       if (!p) continue;
       const e  = edges[p.edgeIdx];
-      if (e.hasFan) continue;   // вентилятор в дереве уже имеет Q0
+      if (e.hasFan) continue;
       const bal = initBal.get(v) ?? 0;
       if (e.b === v) {
         e.Q = -bal;
@@ -602,8 +618,11 @@ export function solveNetwork(
   let maxDeltaH = Infinity;
   let iter      = 0;
 
-  // Адаптивное демпфирование: начинаем с малого шага, увеличиваем при сходимости
-  let relaxation = 0.5;
+  // При реверсе ГВУ/ВВУ стартуем с relaxation=1.0 — нужно быстро перевернуть поток.
+  // При прямом режиме 0.7 обеспечивает устойчивость. ВМП не влияет на relaxation.
+  const hasReverse = edges.some(e => e.hasFan && e.fanReverse && !e.fanStopped
+    && (e.fanType === "ГВУ" || e.fanType === "ВВУ"));
+  let relaxation = hasReverse ? 1.0 : 0.7;
 
   for (; iter < maxIter; iter++) {
     maxDeltaQ = 0;
@@ -625,8 +644,15 @@ export function solveNetwork(
         // Qd > 0 → ток совпадает с a→b → num -= H * (+1)
         // Qd < 0 → ток против a→b   → num -= H * (-1)
         if (e.hasFan) {
-          const H = fanH(e, e.Q);      // ≥ 0 при прямом направлении, ≤ 0 при реверсе
-          num -= H * Math.sign(Qd || 1);
+          // Идентично методу Кросса: fan_H возвращает |H| >= 0,
+          // знак направления нагнетания задаётся fan_dir:
+          //   fan_dir = +1: нагнетание a→b (прямой режим)
+          //   fan_dir = -1: нагнетание b→a (реверс)
+          // Вклад: num -= fan_dir * H * dir
+          // (dir = направление обхода контура по этому ребру)
+          const H       = fanH(e, e.Q);                    // |H| >= 0
+          const fan_dir = e.fanReverse ? -1 : 1;
+          num -= fan_dir * H * dir;
           den += fanDH(e, e.Q);
         }
 
@@ -635,11 +661,15 @@ export function solveNetwork(
 
       if (den < 1e-12) continue;
 
-      // Демпфирование: ограничиваем поправку долей от текущего Q в контуре
-      // чтобы не допустить смены знака за один шаг
+      // Поправка расхода: δQ = -ΔH / (2·Σ R·|Q|)
+      // ВАЖНО: НЕ ограничиваем смену знака Q — при реверсе вентилятора итерации
+      // обязаны перевернуть поток (Q меняет знак). Жёсткое ограничение dQmax
+      // запирало Q около нуля и алгоритм считал что сошёлся при неправильном ответе.
+      // Допустимое ограничение — не более 2*Qscale за шаг (защита от взрыва, но
+      // достаточно для смены знака).
       const dQraw  = -num / den;
       const Qscale = contour.reduce((mx, { edgeIdx }) => Math.max(mx, Math.abs(edges[edgeIdx].Q)), 0.1);
-      const dQmax  = Qscale * 0.8;   // не более 80% от текущего расхода за шаг
+      const dQmax  = Qscale * 2.0;   // разрешаем смену знака (ранее было 0.8 — блокировало реверс)
       const dQ     = relaxation * Math.max(-dQmax, Math.min(dQmax, dQraw));
 
       if (Math.abs(num) > maxDeltaH) maxDeltaH = Math.abs(num);
@@ -688,11 +718,20 @@ export function solveNetwork(
       }
     }
 
-    // Адаптивно повышаем relaxation по мере сходимости
-    if (iter > 50 && maxDeltaH < 50) relaxation = Math.min(1.0, relaxation + 0.01);
+    // Адаптивный relaxation: при реверсе держим 1.0 пока поток не стабилизируется,
+    // при прямом — плавно повышаем с 0.7 до 1.0 по мере сходимости
+    if (!hasReverse && iter > 30 && maxDeltaH < 100) {
+      relaxation = Math.min(1.0, relaxation + 0.01);
+    }
 
-    // ШАГ 6. Критерий остановки
-    if (maxDeltaH < eps1 || maxDeltaQ < eps2) { iter++; break; }
+    // ШАГ 6. Критерий остановки:
+    // При реверсе останавливаемся ТОЛЬКО по давлению (maxDeltaH) — критерий по δQ
+    // ненадёжен, т.к. может выполниться когда Q застрял около нуля, не развернувшись.
+    if (hasReverse) {
+      if (maxDeltaH < eps1) { iter++; break; }
+    } else {
+      if (maxDeltaH < eps1 || maxDeltaQ < eps2) { iter++; break; }
+    }
   }
 
   log.push(`Итерации: ${iter}, max|ΔH|=${maxDeltaH.toFixed(3)} Па, max|δQ|=${maxDeltaQ.toFixed(4)} м³/с`);
@@ -775,10 +814,10 @@ export function solveNetwork(
     let fanShaft    = 0;
 
     if (b.hasFan) {
-      const H = fanH(e, e.Q);   // знаковый: <0 при реверсе
-      fanPressure = H;
+      const Habs    = fanH(e, e.Q);               // |H| >= 0
+      const fan_dir = b.fanReverse ? -1 : 1;
+      fanPressure   = fan_dir * Habs;             // знаковый напор для отображения
       if (b.fanMode === "curve" && e.fanCurve) {
-        // КПД считаем по расходу через вентилятор (e.Q), а не по Q ветви
         const Qfan = Math.abs(e.Q);
         const etaBase = fanEfficiency(e.fanCurve, Qfan);
         if (b.fanReverse) {
@@ -787,12 +826,10 @@ export function solveNetwork(
         } else {
           fanEff = etaBase;
         }
-        fanShaft = fanShaftPower(Math.abs(H), Qfan, fanEff);
+        fanShaft = fanShaftPower(Habs, Qfan, fanEff);
       }
-      // Q показываем с отрицательным знаком при реверсе (поток идёт против направления ветви)
-      const Qdisplay = b.fanReverse ? -Math.abs(e.Q) : Math.abs(e.Q);
       const revStr = b.fanReverse ? " [РЕВЕРС]" : "";
-      log.push(`Вент. ${b.id}${revStr}: Q=${Qdisplay.toFixed(2)} м³/с, H=${H.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
+      log.push(`Вент. ${b.id}${revStr}: Q=${e.Q.toFixed(2)} м³/с, H=${fanPressure.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
     }
 
     return recalcBranchAero({
@@ -816,7 +853,9 @@ export function solveNetwork(
     for (const { edgeIdx, other } of adj.get(u)!) {
       if (pVis.has(other) || !treeSet.has(edgeIdx)) continue;
       const e  = edges[edgeIdx];
-      const H  = fanH(e, e.Q);
+      const Habs    = fanH(e, e.Q);                   // |H| >= 0
+      const fan_dir = e.fanReverse ? -1 : 1;
+      const H       = fan_dir * Habs;                 // знаковый: > 0 нагнетание a→b
       // ΔP = R·Q·|Q| − H (потеря давления от a к b с учётом вентилятора)
       const dP = e.R * e.Q * Math.abs(e.Q) - H;
       const Pu = pressure.get(u)!;
