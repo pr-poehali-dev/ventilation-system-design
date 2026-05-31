@@ -1127,7 +1127,6 @@ export default function TopoCanvas(props: Props) {
 
   const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
     : draggingNode ? "grabbing"
-    : draggingSymbolId ? "grabbing"
     : pendingSymbolTypeId ? "copy"
     : tool === "node" ? "crosshair"
     : tool === "symbol" ? "copy"
@@ -1719,7 +1718,7 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={sym.id}
-              style={{ cursor: tool === "select" ? (draggingSymbolId === sym.id ? "grabbing" : "default") : undefined }}
+              style={{ cursor: "default" }}
               onContextMenu={(e) => {
                 if (tool !== "select") return;
                 e.preventDefault();
