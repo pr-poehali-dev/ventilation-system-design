@@ -1719,17 +1719,7 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={sym.id}
-              style={{ cursor: tool === "select" ? (draggingSymbolId === sym.id ? "grabbing" : "move") : undefined }}
-              onClick={(e) => {
-                if (tool !== "select") return;
-                e.stopPropagation();
-                if (isSel) {
-                  // Повторный клик по выбранному символу — deselect
-                  onSelectSymbol?.(null);
-                } else {
-                  onSymbolClick?.(sym.id);
-                }
-              }}
+              style={{ cursor: tool === "select" ? (draggingSymbolId === sym.id ? "grabbing" : "pointer") : undefined }}
               onContextMenu={(e) => {
                 if (tool !== "select") return;
                 e.preventDefault();
@@ -1755,32 +1745,27 @@ export default function TopoCanvas(props: Props) {
               onMouseDown={(e) => {
                 if (e.button !== 0 || tool !== "select") return;
                 e.stopPropagation();
-                e.preventDefault(); // предотвращаем браузерный drag-and-drop
 
                 const startX = e.clientX, startY = e.clientY;
-
-                // Выбираем символ при mousedown (до отпускания)
-                onSelectSymbol?.(sym.id);
+                let didDrag = false;
                 setDraggingSymbolId(sym.id);
 
                 if (sym.branchId && hasBranchPts) {
-                  // Захватываем координаты узлов ветви в момент начала drag
                   const snapFsx = fsx, snapFsy = fsy, snapTsx = tsx2, snapTsy = tsy2;
                   const brLen2 = (snapTsx - snapFsx) ** 2 + (snapTsy - snapFsy) ** 2;
                   const origOx = sym.offsetX ?? 0;
                   const origOy = sym.offsetY ?? 0;
-                  // Берём rect SVG — он стабилен в течение drag
                   const svgEl = (e.currentTarget as SVGElement).closest("svg")!;
 
                   const onMove = (me: MouseEvent) => {
+                    if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+                    didDrag = true;
                     me.preventDefault();
                     const dx = me.clientX - startX;
                     const dy = me.clientY - startY;
                     if (me.ctrlKey || me.altKey) {
-                      // Ctrl/Alt+drag = поперечное смещение символа от ветви
                       onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
                     } else {
-                      // Обычный drag = перемещение вдоль ветви
                       if (brLen2 < 1) return;
                       const svgRect = svgEl.getBoundingClientRect();
                       const mx = me.clientX - svgRect.left;
@@ -1794,13 +1779,22 @@ export default function TopoCanvas(props: Props) {
                     window.removeEventListener("mousemove", onMove);
                     window.removeEventListener("mouseup", onUp);
                     setDraggingSymbolId(null);
+                    if (!didDrag) {
+                      // клик без перетаскивания — выбор / снятие выбора
+                      if (isSel) {
+                        onSelectSymbol?.(null);
+                      } else {
+                        onSymbolClick?.(sym.id);
+                      }
+                    }
                   };
                   window.addEventListener("mousemove", onMove);
                   window.addEventListener("mouseup", onUp);
                 } else if (!sym.branchId) {
-                  // Свободный символ — обычный drag в мировых координатах
                   const origX = sym.x, origY = sym.y;
                   const onMove = (me: MouseEvent) => {
+                    if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+                    didDrag = true;
                     me.preventDefault();
                     const dx = (me.clientX - startX) / view.scale;
                     const dy = -(me.clientY - startY) / view.scale;
@@ -1810,14 +1804,25 @@ export default function TopoCanvas(props: Props) {
                     window.removeEventListener("mousemove", onMove);
                     window.removeEventListener("mouseup", onUp);
                     setDraggingSymbolId(null);
+                    if (!didDrag) {
+                      if (isSel) {
+                        onSelectSymbol?.(null);
+                      } else {
+                        onSymbolClick?.(sym.id);
+                      }
+                    }
                   };
                   window.addEventListener("mousemove", onMove);
                   window.addEventListener("mouseup", onUp);
                 } else {
-                  // Символ без точек ветви — просто снимаем dragging по mouseup
                   const onUp = () => {
                     window.removeEventListener("mouseup", onUp);
                     setDraggingSymbolId(null);
+                    if (isSel) {
+                      onSelectSymbol?.(null);
+                    } else {
+                      onSymbolClick?.(sym.id);
+                    }
                   };
                   window.addEventListener("mouseup", onUp);
                 }
