@@ -1827,15 +1827,15 @@ export default function TopoCanvas(props: Props) {
                   window.addEventListener("mouseup", onUp);
                 }
               }}>
-              {/* Прозрачный hitbox — ловит все события мыши по всей зоне символа */}
-              <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
-                fill="transparent" stroke="none" />
-              {/* Рамка выделения (без кнопок — управление в панели свойств) */}
+              {/* Прозрачный hitbox — ПЕРВЫМ в DOM, но накрываем сверху повторным rect в конце */}
+              {/* Рамка выделения */}
               {isSel && (
                 <circle cx={px} cy={py} r={SZ / 2 + 4}
-                  fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />
+                  fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2"
+                  style={{ pointerEvents: "none" }} />
               )}
-              {/* SVG-символ */}
+              {/* SVG-символ (pointerEvents=none — события только через hitbox) */}
+              <g style={{ pointerEvents: "none" }}>
               {(() => {
                 const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
                 if (isBulkhead && sym.branchId && hasBranchPts) {
@@ -2078,6 +2078,10 @@ export default function TopoCanvas(props: Props) {
                   </text>
                 );
               })()}
+              </g>{/* конец pointerEvents="none" */}
+              {/* Hitbox поверх всего символа — гарантированно ловит события мыши */}
+              <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
+                fill="transparent" stroke="none" />
 
               {/* ── Индикаторы перемычки на схеме ────────────────────── */}
               {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && (() => {
@@ -2702,5 +2706,5 @@ function hitBranchR(sx: number, sy: number,
 function hitBranch(sx: number, sy: number,
   projNodesMap: Map<string, ProjNodeEntry>,
   branches: TopoBranch[]): string | null {
-  return hitBranchR(sx, sy, projNodesMap, branches, 5);
+  return hitBranchR(sx, sy, projNodesMap, branches, 8);
 }
