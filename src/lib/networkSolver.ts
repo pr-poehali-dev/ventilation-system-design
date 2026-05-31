@@ -42,6 +42,7 @@ interface Edge {
   R:              number;
   Q:              number;
   hasFan:         boolean;
+  fanType:        "ГВУ" | "ВВУ" | "ВМП";   // тип вентилятора
   fanMode:        "constant" | "curve";
   fanH0:          number;      // Па (не масштабированный на rho!)
   fanCurve?:      FanCurve;
@@ -158,7 +159,10 @@ function fanDH(e: Edge, Q: number): number {
  * Работаем с |H| и |Q| — знак реверса учтём при инициализации отдельно.
  */
 function estimateQ0(edges: Edge[], Rtotal: number): number {
-  const fan = edges.find(e => e.hasFan && !e.fanStopped);
+  // Берём главный вентилятор (ГВУ/ВВУ) для оценки рабочей точки.
+  // ВМП не должен влиять на глобальную оценку Q₀ сети.
+  const fan = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
+           ?? edges.find(e => e.hasFan && !e.fanStopped);
   if (!fan) return 5;
 
   // |H0| при Q=0 — всегда положительный (независимо от fanReverse)
@@ -372,6 +376,7 @@ export function solveNetwork(
       + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) : 0)),
       Q:             0,
       hasFan:        b.hasFan,
+      fanType:       b.fanType ?? "ГВУ",
       fanMode:       b.fanMode,
       // FIX: fanH0 хранить в Па (не умножать на rho здесь — fanH() применяет rhoFactor)
       fanH0:         b.fanPressure,
@@ -534,10 +539,12 @@ export function solveNetwork(
   }
   const Q0 = Math.max(0.1, estimateQ0(edges, Rtree));
 
-  // Знак начального Q — идентично методу Кросса:
-  // sign_init = -1 если главный вентилятор работает на реверс, иначе +1.
-  // ВСЕ хорды (и ветви дерева через Кирхгоф-1) получают Q0 * sign_init.
-  const mainFan = edges.find(e => e.hasFan && !e.fanStopped);
+  // Знак начального Q — идентично методу Кросса (строки 797-804 backend/airflow/index.py):
+  // sign_init определяется ТОЛЬКО по главному вентилятору (ГВУ или ВВУ).
+  // ВМП НЕ учитывается — его направление определяется физикой итераций.
+  // Это критично: если ВМП попадёт первым в edges.find(), sign_init будет неверным
+  // и весь начальный поток получит неправильное направление.
+  const mainFan = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"));
   const sign_init = (mainFan?.fanReverse ?? false) ? -1 : 1;
   const q_chord   = Q0 * sign_init;
   log.push(`Q₀=${Q0.toFixed(2)} м³/с, sign_init=${sign_init}`);
@@ -611,9 +618,10 @@ export function solveNetwork(
   let maxDeltaH = Infinity;
   let iter      = 0;
 
-  // При реверсе стартуем с relaxation=1.0 — нам нужно быстро перевернуть поток.
-  // При прямом режиме 0.7 обеспечивает устойчивость без лишних итераций.
-  const hasReverse = edges.some(e => e.hasFan && e.fanReverse && !e.fanStopped);
+  // При реверсе ГВУ/ВВУ стартуем с relaxation=1.0 — нужно быстро перевернуть поток.
+  // При прямом режиме 0.7 обеспечивает устойчивость. ВМП не влияет на relaxation.
+  const hasReverse = edges.some(e => e.hasFan && e.fanReverse && !e.fanStopped
+    && (e.fanType === "ГВУ" || e.fanType === "ВВУ"));
   let relaxation = hasReverse ? 1.0 : 0.7;
 
   for (; iter < maxIter; iter++) {
