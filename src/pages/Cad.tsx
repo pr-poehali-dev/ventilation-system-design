@@ -32,8 +32,9 @@ import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type B
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
+import { calcFireMode, COMBUSTIBLES, type FireCalculationResult } from "@/lib/fireCalculator";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
@@ -544,6 +545,10 @@ export default function CadPage() {
   const handleNodeMove = (id: string, x: number, y: number, z?: number) => {
     updateNode(id, z !== undefined ? { x, y, z } : { x, y });
   };
+
+  // ─── Результат расчёта пожара ───────────────────────────────────────
+  const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
+  const [fireCalcDone, setFireCalcDone] = useState(false);
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
@@ -2211,8 +2216,108 @@ export default function CadPage() {
       </div>
       )}
 
+      {/* ═══ RIBBON CONTENT: АВАРИИ ════════════════════════════════════════ */}
+      {activeRibbon === "involve" && (
+      <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5 overflow-x-auto"
+        style={{ background: "linear-gradient(180deg,#fff5f5,#fce8e8)", borderBottom: "1px solid #fca5a5" }}>
+
+        {/* ── Группа: Очаг пожара ── */}
+        <RibbonGroup label="Очаг пожара">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn
+              icon="Flame"
+              label="Установить"
+              sublabel="очаг пожара"
+              onClick={() => { handlePickSymbol("fire_source"); setActiveRibbon("involve"); }}
+              style={{ background: schemaSymbols.some(s => s.typeId === "fire_source") ? "#fee2e2" : undefined,
+                       borderColor: schemaSymbols.some(s => s.typeId === "fire_source") ? "#fca5a5" : undefined }}
+            />
+            <RibbonBigBtn
+              icon="Trash2"
+              label="Убрать"
+              sublabel="очаги пожара"
+              disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
+              onClick={() => {
+                schemaSymbols.filter(s => FIRE_SYMBOL_IDS.has(s.typeId)).forEach(s => {
+                  if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 });
+                  removeSymbol(s.id);
+                });
+                setFireResult(null);
+                setFireCalcDone(false);
+              }}
+            />
+          </div>
+        </RibbonGroup>
+
+        {/* ── Группа: Расчёт ── */}
+        <RibbonGroup label="Расчёт">
+          <div className="flex items-stretch gap-1">
+            <button
+              onClick={() => {
+                if (!solveResult) {
+                  alert("Сначала выполните расчёт вентиляционной сети (F9)");
+                  return;
+                }
+                const result = calcFireMode(branches, nodes, 20);
+                // Записываем вычисленные параметры обратно в ветви
+                setBranches(prev => prev.map(b => {
+                  const fr = result.branches.get(b.id);
+                  if (!fr) return b;
+                  return { ...b,
+                    fireComputedTemp: fr.airTempOut,
+                    fireComputedNatDep: fr.thermalDepression,
+                    fireComputedSmokeDens: fr.smokeDensity,
+                    fireComputedCO: fr.coConc,
+                    fireComputedCO2: fr.co2Conc,
+                  };
+                }));
+                setFireResult(result);
+                setFireCalcDone(true);
+                addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
+                result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
+              }}
+              disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
+              className="flex flex-col items-center justify-center px-3 py-1 rounded border min-w-[64px] disabled:opacity-40"
+              style={{ background: "#dc2626", color: "white", border: "1px solid #b91c1c", cursor: "pointer" }}
+              title="Расчёт распространения задымления и тепловой депрессии">
+              <Icon name="Flame" size={22} />
+              <div className="text-[10px] leading-tight mt-0.5 text-center"><div>Расчёт</div><div>пожара</div></div>
+            </button>
+            <RibbonBigBtn
+              icon="Eye"
+              label="Показать"
+              sublabel="задымление"
+              disabled={!fireCalcDone}
+              onClick={() => { setFireCalcDone(v => v); }}
+            />
+            <RibbonBigBtn
+              icon="X"
+              label="Сбросить"
+              sublabel="результаты"
+              disabled={!fireCalcDone}
+              onClick={() => { setFireResult(null); setFireCalcDone(false); setBranches(prev => prev.map(b => ({ ...b, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 }))); }}
+            />
+          </div>
+        </RibbonGroup>
+
+        {/* ── Группа: Статус ── */}
+        {fireCalcDone && fireResult && (
+          <RibbonGroup label="Результат расчёта">
+            <div className="flex flex-col justify-center px-2 text-[10px] min-w-[140px]">
+              <div className="font-semibold text-red-700">🔥 T очага: {fireResult.fireTemp.toFixed(1)} °C</div>
+              <div className="text-orange-700">h_t = {fireResult.fireThermalDep.toFixed(1)} Па</div>
+              <div className="text-gray-700">Ветвей в дыму: {fireResult.branches.size}</div>
+              {fireResult.reversedBranches.size > 0 && (
+                <div className="text-red-600 font-semibold">⚠️ Опрокидывание: {fireResult.reversedBranches.size} вет.</div>
+              )}
+            </div>
+          </RibbonGroup>
+        )}
+      </div>
+      )}
+
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
-      {activeRibbon !== "general" && (
+      {activeRibbon !== "general" && activeRibbon !== "involve" && (
       <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5 overflow-x-auto"
         style={{ background: "linear-gradient(180deg,#fafafa,#ececec)", borderBottom: "1px solid #b8b8b8" }}>
 
@@ -2708,6 +2813,7 @@ export default function CadPage() {
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "coords", label: "Координаты" },
+                ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
               ] as { id: SideTab; label: string }[])
           ).map((t) => (
             <button key={t.id}
@@ -2965,6 +3071,120 @@ export default function CadPage() {
                 allNodeResults={waterNetwork.nodeResults}
               />
             )}
+
+            {/* ═══ ВКЛАДКА: ПОЖАР (аварийный режим) ══════════════════════ */}
+            {activeSide === "accidents" && !selectedNode && selectedBranch && (() => {
+              const b = selectedBranch;
+              const fr = fireResult?.branches.get(b.id);
+              const fireSymId = schemaSymbols.find(s => FIRE_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+              const SH = "#fef2f2"; const SB = "1px solid #fecaca";
+              const Row = ({ label, value, bold }: { label: string; value: string; bold?: boolean }) => (
+                <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                  <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>{label}</span>
+                  <span className={`text-[11px] text-right flex-1 ${bold ? "font-bold text-red-700" : "text-gray-800"}`}>{value}</span>
+                </div>
+              );
+              return (
+                <div className="flex flex-col h-full overflow-y-auto" style={{ fontSize: 11 }}>
+                  {/* Заголовок */}
+                  <div className="flex items-center justify-between px-2 py-1" style={{ background: "#dc2626", color: "white" }}>
+                    <span className="font-semibold text-[12px]">🔥 Очаг пожара — ветвь {b.id}</span>
+                    {fireSymId && (
+                      <button onClick={() => {
+                        removeSymbol(fireSymId.id);
+                        updateBranch(b.id, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 });
+                        setFireResult(null); setFireCalcDone(false);
+                      }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
+                        Убрать
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Параметры очага */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Параметры очага пожара</div>
+
+                  <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                    <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Задаётся:</span>
+                    <select value={b.fireMode ?? "heat"} onChange={e => updateBranch(b.id, { fireMode: e.target.value as "heat" | "temp" })}
+                      className="flex-1 text-[11px] px-1" style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                      <option value="heat">Мощностью (МВт)</option>
+                      <option value="temp">Температурой (°C)</option>
+                    </select>
+                  </div>
+
+                  {(b.fireMode ?? "heat") === "heat" && (
+                    <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Мощность пожара, МВт:</span>
+                      <input type="number" step="0.5" min="0.1" max="100"
+                        value={b.fireHeatRelease ?? 5}
+                        onChange={e => updateBranch(b.id, { fireHeatRelease: parseFloat(e.target.value) || 5 })}
+                        className="flex-1 text-[11px] text-right px-1"
+                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                    </div>
+                  )}
+                  {(b.fireMode ?? "heat") === "temp" && (
+                    <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Температура очага, °C:</span>
+                      <input type="number" step="10" min="50" max="1200"
+                        value={b.fireTemperature ?? 300}
+                        onChange={e => updateBranch(b.id, { fireTemperature: parseFloat(e.target.value) || 300 })}
+                        className="flex-1 text-[11px] text-right px-1"
+                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                    </div>
+                  )}
+
+                  <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                    <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Горючий материал:</span>
+                    <select value={b.fireCombustible ?? "coal"} onChange={e => updateBranch(b.id, { fireCombustible: e.target.value })}
+                      className="flex-1 text-[11px] px-1" style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                      {COMBUSTIBLES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Контекст из сетевого расчёта */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Вентиляционный режим (из расчёта)</div>
+                  <Row label="Расход воздуха, м³/с:" value={b.flow > 0 ? `${Math.abs(b.flow).toFixed(2)}` : "— (не рассчитан)"} />
+                  <Row label="Скорость воздуха, м/с:" value={b.velocity > 0 ? `${b.velocity.toFixed(2)}` : "—"} />
+                  <Row label="Угол наклона ветви, °:" value={`${(b.angle ?? 0).toFixed(1)}`} />
+                  <Row label="Длина ветви, м:" value={`${b.length.toFixed(1)}`} />
+
+                  {/* Результаты расчёта пожара */}
+                  {fr && (
+                    <>
+                      <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Результаты расчёта пожара</div>
+                      <Row label="Температура продуктов, °C:" value={`${fr.airTempOut.toFixed(1)}`} bold />
+                      <Row label="Тепловая депрессия, Па:" value={`${fr.thermalDepression.toFixed(1)}`} bold />
+                      <Row label="Концентрация CO, %:" value={`${fr.coConc.toFixed(3)}`} bold={fr.coConc > 0.02} />
+                      <Row label="Концентрация CO₂, %:" value={`${fr.co2Conc.toFixed(2)}`} bold={fr.co2Conc > 1} />
+                      <Row label="Опт. плотность дыма, м⁻¹:" value={`${fr.smokeDensity.toFixed(2)}`} />
+                      <Row label="Видимость в дыму, м:" value={`${fr.visibility.toFixed(1)}`} bold={fr.visibility < 5} />
+                      <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Опасность:</span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded" style={{
+                          background: fr.hazardLevel === "lethal" ? "#7f1d1d" : fr.hazardLevel === "danger" ? "#dc2626" : fr.hazardLevel === "warning" ? "#f59e0b" : "#16a34a",
+                          color: "white",
+                        }}>
+                          {fr.hazardLevel === "lethal" ? "💀 Смертельная" : fr.hazardLevel === "danger" ? "🔴 Опасная" : fr.hazardLevel === "warning" ? "⚠️ Предупреждение" : "✅ Безопасно"}
+                        </span>
+                      </div>
+                      {fr.willReverse && (
+                        <div className="px-2 py-2 mx-1 my-1 text-[11px] font-semibold rounded" style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626" }}>
+                          ⚠️ Опрокидывание струи! Тепловая депрессия пожара превышает аэродинамическую. Нисходящее проветривание неустойчиво.
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {!fr && fireCalcDone && (
+                    <div className="px-2 py-2 text-[11px] text-gray-500">Ветвь не затронута задымлением</div>
+                  )}
+                  {!fireCalcDone && (
+                    <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "#fffbeb", border: "1px solid #fcd34d", margin: 4, borderRadius: 4 }}>
+                      Нажмите «Расчёт пожара» на вкладке Аварии для получения результатов
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ═══ ВКЛАДКИ ВЕТВИ (Топология / Вентилятор / Трубы: вода / Конвейер) ══ */}
             {(["topology","fan","waterpipes","conveyor","params"].includes(activeSide)) && !selectedNode && selectedBranch && (
@@ -4335,6 +4555,15 @@ export default function CadPage() {
                     fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
                   });
                 }
+                // Сброс очага пожара при удалении символа
+                if (sym && FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  updateBranch(sym.branchId, {
+                    hasFire: false,
+                    fireComputedTemp: 0, fireComputedNatDep: 0,
+                    fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0,
+                  });
+                  setFireResult(null); setFireCalcDone(false);
+                }
                 // Сброс редуктора при удалении символа клапана
                 if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   updateBranch(sym.branchId, {
@@ -4354,6 +4583,14 @@ export default function CadPage() {
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(sym.branchId);
                   setActiveSide("fan");
+                } else if (sym && FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  // Клик на очаг пожара — открываем вкладку Аварии
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
+                  setSelectedSymbolId(symId);
+                  setActiveSide("accidents");
+                  setActiveRibbon("involve");
                 } else if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   // Клик на редукционный клапан — открываем вкладку Трубы с настройками
                   setSelectedBranchId(sym.branchId);
@@ -4399,6 +4636,18 @@ export default function CadPage() {
                 setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz, placed: true } : p));
                 setPositionPlaceMode(false);
               }}
+              branchFireColors={(() => {
+                if (!fireCalcDone || !fireResult) return undefined;
+                const map = new Map<string, string>();
+                fireResult.branches.forEach((fr, bid) => {
+                  const col = fr.hazardLevel === "lethal"  ? "#7f1d1d"
+                            : fr.hazardLevel === "danger"  ? "#dc2626"
+                            : fr.hazardLevel === "warning" ? "#f59e0b"
+                            : null;
+                  if (col) map.set(bid, col);
+                });
+                return map.size > 0 ? map : undefined;
+              })()}
               branchBindMode={posBranchBindMode}
               branchPositionColors={(() => {
                 if (!posBranchBindMode || !selectedPositionId) return undefined;
@@ -4424,6 +4673,31 @@ export default function CadPage() {
                       setSelectedNodeId(null);
                       setActiveSide("fan");
                       setFanSymbolBranchId(branchId);
+                    }
+                  } else if (FIRE_SYMBOL_IDS.has(typeId) && branchId) {
+                    // Очаг пожара — одна ветвь = один очаг
+                    const alreadyHasFire = schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId) && s.branchId === branchId);
+                    if (!alreadyHasFire) {
+                      const newSym: SchemaSymbol = {
+                        id: `SYM_FIRE_${Date.now()}`,
+                        typeId, x, y, branchId, t: 0.5,
+                      };
+                      setSchemaSymbols(prev => [...prev, newSym]);
+                      updateBranch(branchId, {
+                        hasFire: true,
+                        fireHeatRelease: 5,
+                        fireMode: "heat",
+                        fireTemperature: 300,
+                        fireCombustible: "coal",
+                      });
+                      setSelectedSymbolId(newSym.id);
+                      setSelectedBranchId(branchId);
+                      setSelectedNodeId(null);
+                      setFanSymbolBranchId(null);
+                      setFireResult(null);
+                      setFireCalcDone(false);
+                      setActiveSide("accidents");
+                      setActiveRibbon("involve");
                     }
                   } else if (REDUCER_SYMBOL_IDS.has(typeId) && branchId) {
                     // Редукционный клапан — привязываем к ветви водопровода

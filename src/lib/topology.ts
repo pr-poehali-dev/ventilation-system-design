@@ -155,6 +155,20 @@ export interface TopoBranch {
   wpReducerModel: string;          // ID модели из справочника pressureReducingValves
   wpReducerOutPressure: number;    // МПа — настроенное выходное давление
   wpReducerMaxFlow: number;        // м³/ч — макс. расход (для ручного режима)
+
+  // ─── Пожар (вентиляционный расчёт аварийного режима) ────────────────
+  hasFire: boolean;                // в ветви установлен очаг пожара
+  fireHeatRelease: number;         // МВт — тепловыделение (мощность пожара Q)
+  fireMode: "heat" | "temp";       // задаётся: мощностью или температурой
+  fireTemperature: number;         // °C — если задаётся температурой напрямую
+  fireCombustible: string;         // вид горючего (уголь, масло, дерево, кабель)
+  fireStartTime: number;           // мин — время начала от старта расчёта
+  // Вычисленные результаты расчёта пожара
+  fireComputedTemp: number;        // °C — вычисленная температура продуктов горения
+  fireComputedNatDep: number;      // Па — тепловая депрессия пожара
+  fireComputedSmokeDens: number;   // м⁻¹ — оптическая плотность дыма на выходе
+  fireComputedCO: number;          // % — концентрация CO на выходе ветви
+  fireComputedCO2: number;         // % — концентрация CO₂ на выходе ветви
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
@@ -330,6 +344,18 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpReducerModel: "kppr_50",
     wpReducerOutPressure: 0.5,
     wpReducerMaxFlow: 25,
+    // Пожар
+    hasFire: false,
+    fireHeatRelease: 5,
+    fireMode: "heat",
+    fireTemperature: 300,
+    fireCombustible: "coal",
+    fireStartTime: 0,
+    fireComputedTemp: 0,
+    fireComputedNatDep: 0,
+    fireComputedSmokeDens: 0,
+    fireComputedCO: 0,
+    fireComputedCO2: 0,
     ...partial,
   };
 }

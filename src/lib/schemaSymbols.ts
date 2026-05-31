@@ -529,6 +529,10 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "elec_substation",name: "Участковая подстанция",                       group: "Электроснабжение",
     svgContent: `<rect x="6" y="6" width="36" height="28" fill="none" stroke="#333" stroke-width="1.5"/>` },
 
+  // ─── ПОЖАР (расчётный очаг) ──────────────────────────────────────────
+  { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
+    svgContent: `<ellipse cx="24" cy="32" rx="12" ry="5" fill="#ff6b35" opacity="0.4"/><path d="M24,8 C22,14 17,16 18,22 C18,27 22,29 24,30 C26,29 30,27 30,22 C31,16 26,14 24,8Z" fill="#ff5722" stroke="none"/><path d="M24,14 C23,18 20,20 21,24 C21,27 23,28 24,29 C25,28 27,27 27,24 C28,20 25,18 24,14Z" fill="#ffd600" stroke="none"/><path d="M21,22 C21,25 22,27 24,28 C26,27 27,25 27,22 C27,20 25,19 24,19 C23,19 21,20 21,22Z" fill="white" opacity="0.7" stroke="none"/>` },
+
   // ─── УЗЛЫ ─────────────────────────────────────────────────────────────
   { id: "node_normal", name: "Узел (сопряжение)",    group: "Узлы",
     svgContent: `<circle cx="20" cy="20" r="8" fill="#c8a882" stroke="#1f2937" stroke-width="1.5"/><text x="31" y="24" font-size="10" fill="#1f2937" font-weight="600">001</text>` },
@@ -554,6 +558,11 @@ export const WINDOW_BULKHEAD_IDS = new Set([
 // ID редукционных клапанов водопровода ППЗ
 export const REDUCER_SYMBOL_IDS = new Set([
   "valve_reduce",
+]);
+
+// ID символов очага пожара (аварийный режим)
+export const FIRE_SYMBOL_IDS = new Set([
+  "fire_source",
 ]);
 
 // ID всех перемычек для группировки в выпадающем списке

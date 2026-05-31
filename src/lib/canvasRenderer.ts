@@ -56,6 +56,8 @@ export interface CanvasRenderOptions {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig: UnitsConfig;
   waterNodeResults?: Map<string, WaterNodeResult>;
+  /** Карта branchId → цвет задымления (результат расчёта пожара) */
+  branchFireColors?: Map<string, string>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -156,7 +158,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
-    horizonMap, infoConfig, unitsConfig, waterNodeResults,
+    horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
@@ -230,6 +232,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const ux = segLen > 0 ? dx / segLen : 0;
     const uy = segLen > 0 ? dy / segLen : 0;
     const angle = Math.atan2(dy, dx);
+
+    // Подсветка задымления (пожар) — широкая полупрозрачная аура
+    const fireCol = branchFireColors?.get(b.id);
+    if (fireCol) {
+      ctx.save();
+      ctx.strokeStyle = fireCol;
+      ctx.lineWidth = w + 10;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.45;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.restore();
+    }
 
     // Подсветка hover
     if (hoverBranchId === b.id) {

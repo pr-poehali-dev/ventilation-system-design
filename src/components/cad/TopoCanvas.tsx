@@ -146,6 +146,8 @@ interface Props {
   branchPositionColors?: Map<string, { color: string; bound: boolean }>;
   /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
+  /** Карта branchId → цвет задымления (результат расчёта пожара) */
+  branchFireColors?: Map<string, string>;
 }
 
 export type FlowDisplayMode =
@@ -192,6 +194,7 @@ export default function TopoCanvas(props: Props) {
     branchBindMode = false,
     branchPositionColors,
     waterNodeResults,
+    branchFireColors,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -1177,6 +1180,7 @@ export default function TopoCanvas(props: Props) {
           infoConfig={infoConfig}
           unitsConfig={unitsConfig}
           waterNodeResults={waterNodeResults}
+          branchFireColors={branchFireColors}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -1376,9 +1380,16 @@ export default function TopoCanvas(props: Props) {
 
           // ── Подсветка в F3-режиме привязки ────────────────────────────────
           const posBindInfo = branchPositionColors?.get(b.id);
+          // ── Подсветка задымления от пожара ────────────────────────────────
+          const fireColor = branchFireColors?.get(b.id);
 
           return (
             <g key={b.id}>
+              {/* Подсветка задымления (пожар) — широкая полупрозрачная аура */}
+              {fireColor && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={fireColor} strokeWidth={w + 10} strokeLinecap="round" opacity="0.45" />
+              )}
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
