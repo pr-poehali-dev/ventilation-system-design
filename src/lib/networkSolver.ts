@@ -616,10 +616,8 @@ export function solveNetwork(
   let maxDeltaH = Infinity;
   let iter      = 0;
 
-  // При реверсе стартуем с relaxation=1.0 — нам нужно быстро перевернуть поток.
-  // При прямом режиме 0.7 обеспечивает устойчивость без лишних итераций.
-  const hasReverse = edges.some(e => e.hasFan && e.fanReverse && !e.fanStopped);
-  let relaxation = hasReverse ? 1.0 : 0.7;
+  // Адаптивное демпфирование: начинаем с малого шага, увеличиваем при сходимости
+  let relaxation = 0.5;
 
   for (; iter < maxIter; iter++) {
     maxDeltaQ = 0;
@@ -657,15 +655,11 @@ export function solveNetwork(
 
       if (den < 1e-12) continue;
 
-      // Поправка расхода: δQ = -ΔH / (2·Σ R·|Q|)
-      // ВАЖНО: НЕ ограничиваем смену знака Q — при реверсе вентилятора итерации
-      // обязаны перевернуть поток (Q меняет знак). Жёсткое ограничение dQmax
-      // запирало Q около нуля и алгоритм считал что сошёлся при неправильном ответе.
-      // Допустимое ограничение — не более 2*Qscale за шаг (защита от взрыва, но
-      // достаточно для смены знака).
+      // Демпфирование: ограничиваем поправку долей от текущего Q в контуре
+      // чтобы не допустить смены знака за один шаг
       const dQraw  = -num / den;
       const Qscale = contour.reduce((mx, { edgeIdx }) => Math.max(mx, Math.abs(edges[edgeIdx].Q)), 0.1);
-      const dQmax  = Qscale * 2.0;   // разрешаем смену знака (ранее было 0.8 — блокировало реверс)
+      const dQmax  = Qscale * 0.8;   // не более 80% от текущего расхода за шаг
       const dQ     = relaxation * Math.max(-dQmax, Math.min(dQmax, dQraw));
 
       if (Math.abs(num) > maxDeltaH) maxDeltaH = Math.abs(num);
@@ -714,20 +708,11 @@ export function solveNetwork(
       }
     }
 
-    // Адаптивный relaxation: при реверсе держим 1.0 пока поток не стабилизируется,
-    // при прямом — плавно повышаем с 0.7 до 1.0 по мере сходимости
-    if (!hasReverse && iter > 30 && maxDeltaH < 100) {
-      relaxation = Math.min(1.0, relaxation + 0.01);
-    }
+    // Адаптивно повышаем relaxation по мере сходимости
+    if (iter > 50 && maxDeltaH < 50) relaxation = Math.min(1.0, relaxation + 0.01);
 
-    // ШАГ 6. Критерий остановки:
-    // При реверсе останавливаемся ТОЛЬКО по давлению (maxDeltaH) — критерий по δQ
-    // ненадёжен, т.к. может выполниться когда Q застрял около нуля, не развернувшись.
-    if (hasReverse) {
-      if (maxDeltaH < eps1) { iter++; break; }
-    } else {
-      if (maxDeltaH < eps1 || maxDeltaQ < eps2) { iter++; break; }
-    }
+    // ШАГ 6. Критерий остановки
+    if (maxDeltaH < eps1 || maxDeltaQ < eps2) { iter++; break; }
   }
 
   log.push(`Итерации: ${iter}, max|ΔH|=${maxDeltaH.toFixed(3)} Па, max|δQ|=${maxDeltaQ.toFixed(4)} м³/с`);
