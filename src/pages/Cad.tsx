@@ -3007,6 +3007,16 @@ export default function CadPage() {
                 unitsConfig={unitsConfig}
                 nodes={nodes}
                 waterBranchResult={waterNetwork.branchResults.get(selectedBranch.id)}
+                onRemoveReducer={selectedBranch.wpHasReducer ? () => {
+                  const sym = schemaSymbols.find(s => REDUCER_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
+                  if (sym) removeSymbol(sym.id);
+                  updateBranch(selectedBranch.id, {
+                    wpHasReducer: false,
+                    wpReducerModel: "kppr_50",
+                    wpReducerOutPressure: 0.5,
+                    wpReducerMaxFlow: 25,
+                  });
+                } : undefined}
               />
             )}
 

@@ -42,6 +42,8 @@ interface BranchPropsPanelProps {
   nodes?: TopoNode[];
   /** Результат гидравлического расчёта водопровода для этой ветви */
   waterBranchResult?: WaterBranchResult;
+  /** Удалить УО редукционного клапана и сбросить флаг на ветви */
+  onRemoveReducer?: () => void;
 }
 
 const SH = "#e8eef8";
@@ -224,7 +226,7 @@ function fmtR(rKmu: number, minDecimals = 4): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -1445,7 +1447,19 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 const outTarget = branch.wpReducerOutPressure ?? 0.5;
                 return (
                   <>
-                    <SectionHeader title="Редукционный клапан" />
+                    <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
+                      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+                      <span>Редукционный клапан</span>
+                      {onRemoveReducer && (
+                        <button
+                          onClick={onRemoveReducer}
+                          className="text-[10px] px-1.5 py-0.5 rounded"
+                          style={{ background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
+                          title="Удалить редукционный клапан">
+                          Удалить клапан
+                        </button>
+                      )}
+                    </div>
 
                     {/* Модель */}
                     <InlineLabel label="Модель:">

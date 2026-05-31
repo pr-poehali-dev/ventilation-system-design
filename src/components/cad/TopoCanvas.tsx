@@ -2369,9 +2369,12 @@ export default function TopoCanvas(props: Props) {
       {/* ── Оверлей УО поверх canvas (видим всегда, интерактивен) ───────── */}
       {useCanvas && (
         <svg
-          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none" }}
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none", cursor: cursorStyle }}
           width={size.w} height={size.h}
           onMouseDown={(e) => { if ((e.target as SVGElement).closest("g[data-sym]")) return; onMouseDownCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>); }}
+          onMouseMove={(e) => onMouseMoveCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
+          onMouseUp={(e) => onMouseUpCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
+          onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
           {schemaSymbols.map(sym => {
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
