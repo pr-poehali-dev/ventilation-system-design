@@ -2303,12 +2303,16 @@ export default function CadPage() {
         {/* ── Группа: Статус ── */}
         {fireCalcDone && fireResult && (
           <RibbonGroup label="Результат расчёта">
-            <div className="flex flex-col justify-center px-2 text-[10px] min-w-[140px]">
+            <div className="flex flex-col justify-center px-2 text-[10px] min-w-[160px] gap-0.5">
               <div className="font-semibold text-red-700">🔥 T очага: {fireResult.fireTemp.toFixed(1)} °C</div>
               <div className="text-orange-700">h_t = {fireResult.fireThermalDep.toFixed(1)} Па</div>
-              <div className="text-gray-700">Ветвей в дыму: {fireResult.branches.size}</div>
-              {fireResult.reversedBranches.size > 0 && (
-                <div className="text-red-600 font-semibold">⚠️ Опрокидывание: {fireResult.reversedBranches.size} вет.</div>
+              <div className="text-gray-700">Задымлено ветвей: {fireResult.branches.size}</div>
+              {fireResult.reversedBranches.size > 0 ? (
+                <div className="font-semibold px-1 rounded" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}>
+                  ⚠️ Опрокидывание: {fireResult.reversedBranches.size} вет.
+                </div>
+              ) : (
+                <div className="text-green-700">✓ Струя устойчива</div>
               )}
             </div>
           </RibbonGroup>
@@ -3142,24 +3146,43 @@ export default function CadPage() {
                   </div>
 
                   {/* Контекст из сетевого расчёта */}
-                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Вентиляционный режим (из расчёта)</div>
-                  <Row label="Расход воздуха, м³/с:" value={b.flow > 0 ? `${Math.abs(b.flow).toFixed(2)}` : "— (не рассчитан)"} />
+                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Вентиляционный режим (из расчёта сети)</div>
+                  <Row label="Расход воздуха Q, м³/с:" value={Math.abs(b.flow) > 0.001 ? `${Math.abs(b.flow).toFixed(2)}` : "— (не рассчитан)"} />
                   <Row label="Скорость воздуха, м/с:" value={b.velocity > 0 ? `${b.velocity.toFixed(2)}` : "—"} />
-                  <Row label="Угол наклона ветви, °:" value={`${(b.angle ?? 0).toFixed(1)}`} />
+                  <Row label="Депрессия ветви ΔP, Па:" value={b.dP ? `${Math.abs(b.dP).toFixed(1)}` : "—"} />
+                  <Row label="Угол наклона, °:" value={`${(b.angle ?? 0).toFixed(1)}`} />
                   <Row label="Длина ветви, м:" value={`${b.length.toFixed(1)}`} />
+                  {Math.abs(b.flow) < 0.001 && (
+                    <div className="px-2 py-1 mx-1 my-1 text-[10px] rounded" style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+                      Сначала выполните расчёт вентиляционной сети (F9), затем запустите расчёт пожара
+                    </div>
+                  )}
 
                   {/* Результаты расчёта пожара */}
                   {fr && (
                     <>
                       <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Результаты расчёта пожара</div>
                       <Row label="Температура продуктов, °C:" value={`${fr.airTempOut.toFixed(1)}`} bold />
-                      <Row label="Тепловая депрессия, Па:" value={`${fr.thermalDepression.toFixed(1)}`} bold />
+                      <Row label="Тепловая депрессия h_t, Па:" value={`${fr.thermalDepression.toFixed(1)}`} bold={Math.abs(fr.thermalDepression) > 10} />
+                      {(fr.flowDelta ?? 0) !== 0 && (
+                        <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${fr.flowDelta!.toFixed(2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
+                      )}
                       <Row label="Концентрация CO, %:" value={`${fr.coConc.toFixed(3)}`} bold={fr.coConc > 0.02} />
                       <Row label="Концентрация CO₂, %:" value={`${fr.co2Conc.toFixed(2)}`} bold={fr.co2Conc > 1} />
                       <Row label="Опт. плотность дыма, м⁻¹:" value={`${fr.smokeDensity.toFixed(2)}`} />
                       <Row label="Видимость в дыму, м:" value={`${fr.visibility.toFixed(1)}`} bold={fr.visibility < 5} />
                       <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
-                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Опасность:</span>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Устойчивость струи:</span>
+                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{
+                          background: fr.willReverse ? "#fef2f2" : "#f0fdf4",
+                          color: fr.willReverse ? "#dc2626" : "#16a34a",
+                          border: `1px solid ${fr.willReverse ? "#fca5a5" : "#86efac"}`,
+                        }}>
+                          {fr.willReverse ? "⚠️ Опрокидывание" : "✓ Устойчива"}
+                        </span>
+                      </div>
+                      <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Опасность для людей:</span>
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded" style={{
                           background: fr.hazardLevel === "lethal" ? "#7f1d1d" : fr.hazardLevel === "danger" ? "#dc2626" : fr.hazardLevel === "warning" ? "#f59e0b" : "#16a34a",
                           color: "white",
@@ -3168,8 +3191,8 @@ export default function CadPage() {
                         </span>
                       </div>
                       {fr.willReverse && (
-                        <div className="px-2 py-2 mx-1 my-1 text-[11px] font-semibold rounded" style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626" }}>
-                          ⚠️ Опрокидывание струи! Тепловая депрессия пожара превышает аэродинамическую. Нисходящее проветривание неустойчиво.
+                        <div className="px-2 py-2 mx-1 my-1 text-[10px] rounded" style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626" }}>
+                          <strong>Опрокидывание!</strong> Тепловая депрессия пожара ({Math.abs(fr.thermalDepression).toFixed(0)} Па) превышает аэродинамическую депрессию ветви ({Math.abs(b.dP ?? 0).toFixed(0)} Па). Нисходящее проветривание неустойчиво — направление потока изменится.
                         </div>
                       )}
                     </>
