@@ -279,6 +279,7 @@ export default function TopoCanvas(props: Props) {
   // Зум: ref для синхронного применения без батчинга
   const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
+  const [draggingSymbolId, setDraggingSymbolId] = useState<string | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
@@ -1125,6 +1126,8 @@ export default function TopoCanvas(props: Props) {
   if (!useCanvas) canvasExportRef.current = null;
 
   const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
+    : draggingNode ? "grabbing"
+    : draggingSymbolId ? "grabbing"
     : pendingSymbolTypeId ? "copy"
     : tool === "node" ? "crosshair"
     : tool === "symbol" ? "copy"
@@ -1716,12 +1719,16 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={sym.id}
-              style={{ cursor: tool === "select" ? "move" : undefined }}
+              style={{ cursor: tool === "select" ? (draggingSymbolId === sym.id ? "grabbing" : "move") : undefined }}
               onClick={(e) => {
                 if (tool !== "select") return;
                 e.stopPropagation();
-                onSelectSymbol?.(isSel ? null : sym.id);
-                onSymbolClick?.(sym.id);
+                if (isSel) {
+                  // Повторный клик по выбранному символу — deselect
+                  onSelectSymbol?.(null);
+                } else {
+                  onSymbolClick?.(sym.id);
+                }
               }}
               onContextMenu={(e) => {
                 if (tool !== "select") return;
@@ -1754,6 +1761,7 @@ export default function TopoCanvas(props: Props) {
 
                 // Выбираем символ при mousedown (до отпускания)
                 onSelectSymbol?.(sym.id);
+                setDraggingSymbolId(sym.id);
 
                 if (sym.branchId && hasBranchPts) {
                   // Захватываем координаты узлов ветви в момент начала drag
@@ -1785,6 +1793,7 @@ export default function TopoCanvas(props: Props) {
                   const onUp = () => {
                     window.removeEventListener("mousemove", onMove);
                     window.removeEventListener("mouseup", onUp);
+                    setDraggingSymbolId(null);
                   };
                   window.addEventListener("mousemove", onMove);
                   window.addEventListener("mouseup", onUp);
@@ -1800,8 +1809,16 @@ export default function TopoCanvas(props: Props) {
                   const onUp = () => {
                     window.removeEventListener("mousemove", onMove);
                     window.removeEventListener("mouseup", onUp);
+                    setDraggingSymbolId(null);
                   };
                   window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                } else {
+                  // Символ без точек ветви — просто снимаем dragging по mouseup
+                  const onUp = () => {
+                    window.removeEventListener("mouseup", onUp);
+                    setDraggingSymbolId(null);
+                  };
                   window.addEventListener("mouseup", onUp);
                 }
               }}>
