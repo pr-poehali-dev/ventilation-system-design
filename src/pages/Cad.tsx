@@ -230,37 +230,31 @@ export default function CadPage() {
   const handleSolveRef = useRef<(() => void) | null>(null);
 
   const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
-    // При переключении fanReverse — физически разворачиваем ветвь (fromId ↔ toId).
-    // МКР всегда работает с fanReverse=false: вентилятор нагнетает в направлении fromId→toId.
-    if ("fanReverse" in patch) {
-      setBranches((prev) => prev.map((b) => {
-        if (b.id !== id) return b;
-        const newReverse = patch.fanReverse ?? false;
-        // Меняем fromId ↔ toId только если состояние реально меняется
-        if (newReverse !== (b.fanReverse ?? false)) {
-          return { ...b, ...patch, fromId: b.toId, toId: b.fromId };
-        }
-        return { ...b, ...patch };
-      }));
-      setSchemaSymbols((prev) => prev.map((s) =>
-        s.typeId === "fan" && s.branchId === id
-          ? { ...s, airDirection: patch.fanReverse ? "reverse" : "forward" }
-          : s
-      ));
-      setTimeout(() => handleSolveRef.current?.(), 100);
-      return;
-    }
-
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
 
     // Синхронизируем УО перемычки при изменении hasBulkhead
     if ("hasBulkhead" in patch) {
       if (!patch.hasBulkhead) {
+        // При снятии флага — удаляем ВСЕ символы перемычки с этой ветви
         setSchemaSymbols(prev => prev.filter(s => !(BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === id)));
       }
+      // При установке hasBulkhead=true символ уже добавляется через onSymbolPlace — не дублируем
+    }
+
+    // Синхронизируем airDirection на символе вентилятора при изменении fanReverse
+    if ("fanReverse" in patch) {
+      setSchemaSymbols((prev) => prev.map((s) =>
+        s.typeId === "fan" && s.branchId === id
+          ? { ...s, airDirection: patch.fanReverse ? "reverse" : "forward" }
+          : s
+      ));
+      // При переключении реверса — всегда перезапускаем расчёт сети,
+      // чтобы стрелки на схеме корректно отобразили новое направление потока.
+      setTimeout(() => handleSolveRef.current?.(), 100);
     }
 
     // Аналог disable_fan(): при остановке/запуске вентилятора — автопересчёт сети.
+    // Это позволяет сразу увидеть критическую ситуацию (сеть не проветривается).
     if ("fanStopped" in patch) {
       setTimeout(() => handleSolveRef.current?.(), 100);
     }
