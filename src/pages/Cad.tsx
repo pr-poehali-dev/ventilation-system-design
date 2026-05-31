@@ -4354,6 +4354,13 @@ export default function CadPage() {
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(sym.branchId);
                   setActiveSide("fan");
+                } else if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  // Клик на редукционный клапан — открываем вкладку Трубы с настройками
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
+                  setSelectedSymbolId(symId);
+                  setActiveSide("waterpipes");
                 } else {
                   // Для не-вентиляторных символов — снять выбор ветви/узла, показать панель символа
                   setSelectedBranchId(null);
@@ -4439,7 +4446,8 @@ export default function CadPage() {
                     setSelectedSymbolId(newSym.id);
                     setSelectedBranchId(branchId);
                     setSelectedNodeId(null);
-                    setActiveSide("params");
+                    setFanSymbolBranchId(null);
+                    setActiveSide("waterpipes");
                   } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
                     // Каждый символ перемычки хранит свои параметры независимо (bk* поля)
                     const br = branches.find(b => b.id === branchId);
