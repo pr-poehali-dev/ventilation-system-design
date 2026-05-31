@@ -2430,7 +2430,6 @@ export default function CadPage() {
         <RibbonGroup label="Действия с объектами">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="MousePointer2" label="Выделить" sublabel="объект" />
-            <RibbonBigBtn icon="Filter" label="Наложить" sublabel="фильтр" />
             <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие" />
             <RibbonBigBtn icon="Trash2" label="Удалить" sublabel="" />
             <RibbonBigBtn icon="ChevronUp" label="Переместить" sublabel="вверх" />
