@@ -1953,31 +1953,31 @@ export default function TopoCanvas(props: Props) {
                 if (sym.typeId === "valve_reduce" && hasBranchPts) {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brLen = Math.hypot(brDx, brDy);
-                  // единичный вектор вдоль ветви
                   const ax = brLen > 0 ? brDx / brLen : 1, ay = brLen > 0 ? brDy / brLen : 0;
-                  // единичный вектор поперёк ветви (перпендикуляр, повёрнут на 90° по часовой)
-                  const nx = ay, ny = -ax;
-                  const HS = SZ * 0.42; // полуширина квадрата вдоль трубы
-                  const HT = SZ * 0.38; // полувысота квадрата поперёк трубы
-                  // углы квадрата
-                  const q = (da: number, dn: number) => `${px + ax*da + nx*dn},${py + ay*da + ny*dn}`;
-                  const lw = Math.max(1, SZ * 0.07);
+                  // нормаль — совпадает с canvasRenderer (nx=-ddy/segL, ny=ddx/segL)
+                  const nx = -ay, ny = ax;
+                  // ширина ветви — из самой ветви или дефолт
+                  const brObj = branches.find(b => b.id === sym.branchId);
+                  const bw = (brObj?.lineWidth && brObj.lineWidth > 0) ? brObj.lineWidth : branchWidth;
+                  // смещение трубы от оси — ровно как в canvasRenderer: bw * 0.38
+                  const pipeOff = bw * 0.38;
+                  // центр клапана лежит на линии трубы
+                  const cpx = px + nx * pipeOff;
+                  const cpy = py + ny * pipeOff;
+                  // размер клапана: пропорционален ширине ветви × масштаб вида
+                  const valveSZ = Math.max(4, bw * view.scale * 4);
+                  const HS = valveSZ * 0.55;
+                  const HT = valveSZ * 0.45;
+                  const lw = Math.max(0.5, bw * view.scale * 0.35);
+                  const q = (da: number, dn: number) => `${cpx + ax*da + nx*dn},${cpy + ay*da + ny*dn}`;
                   return (
                     <g pointerEvents="none">
-                      {/* Линии трубы (вдоль ветви до/после квадрата) */}
-                      <line x1={px - ax*HS*2.2} y1={py - ay*HS*2.2} x2={px - ax*HS} y2={py - ay*HS}
-                        stroke="#1e3a8a" strokeWidth={lw} />
-                      <line x1={px + ax*HS} y1={py + ay*HS} x2={px + ax*HS*2.2} y2={py + ay*HS*2.2}
-                        stroke="#1e3a8a" strokeWidth={lw} />
-                      {/* Белая подложка поверх синей линии трубы */}
                       <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`}
                         fill="white" stroke="none" />
-                      {/* Квадрат */}
                       <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`}
-                        fill="white" stroke="#1e3a8a" strokeWidth={lw} />
-                      {/* Треугольник — вершина смотрит поперёк (по nx,ny направлению) */}
-                      <polygon points={`${q(-HS*0.65,-HT*0.6)} ${q(HS*0.65,-HT*0.6)} ${q(0,HT*0.65)}`}
-                        fill="#1e3a8a" />
+                        fill="white" stroke="#1d4ed8" strokeWidth={lw} />
+                      <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`}
+                        fill="#1d4ed8" />
                     </g>
                   );
                 }
@@ -2413,6 +2413,19 @@ export default function TopoCanvas(props: Props) {
             const HX = px - SZ / 2;
             const HY = py - SZ / 2 - 4;
 
+            // Для valve_reduce — вычисляем реальный центр на линии трубы
+            let vcpx = px, vcpy = py, vSZ = SZ;
+            if (sym.typeId === "valve_reduce" && hasBranchPts) {
+              const vDx = tsx2 - fsx, vDy = tsy2 - fsy;
+              const vLen = Math.hypot(vDx, vDy);
+              const vnx = vLen > 0 ? -vDy / vLen : 0, vny = vLen > 0 ? vDx / vLen : 0;
+              const vbObj = branches.find(b => b.id === sym.branchId);
+              const vbw = (vbObj?.lineWidth && vbObj.lineWidth > 0) ? vbObj.lineWidth : branchWidth;
+              vcpx = px + vnx * vbw * 0.38;
+              vcpy = py + vny * vbw * 0.38;
+              vSZ = Math.max(4, vbw * view.scale * 4) * 1.2;
+            }
+
             return (
               <g key={sym.id} data-sym={sym.id}
                 style={{ cursor: tool === "select" ? "move" : undefined }}
@@ -2451,25 +2464,29 @@ export default function TopoCanvas(props: Props) {
                     window.addEventListener("mouseup", onUp);
                   }
                 }}>
-                {/* hitbox */}
-                <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8} fill="transparent" stroke="none" />
-                {isSel && <circle cx={px} cy={py} r={SZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
+                {/* hitbox — для valve_reduce сдвинут к линии трубы */}
+                <rect x={vcpx - vSZ / 2 - 4} y={vcpy - vSZ / 2 - 4} width={vSZ + 8} height={vSZ + 8} fill="transparent" stroke="none" />
+                {isSel && <circle cx={vcpx} cy={vcpy} r={vSZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
                 {/* valve_reduce: рисуем примитивами — квадрат вдоль ветви, треугольник поперёк */}
                 {sym.typeId === "valve_reduce" && hasBranchPts ? (() => {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brLen = Math.hypot(brDx, brDy);
                   const ax = brLen > 0 ? brDx / brLen : 1, ay = brLen > 0 ? brDy / brLen : 0;
-                  const nx = ay, ny = -ax; // перпендикуляр
-                  const HS = SZ * 0.42, HT = SZ * 0.38;
-                  const q = (da: number, dn: number) => `${px + ax*da + nx*dn},${py + ay*da + ny*dn}`;
-                  const lw = Math.max(1, SZ * 0.07);
+                  const nx = -ay, ny = ax; // нормаль как в canvasRenderer
+                  const brObj = branches.find(b => b.id === sym.branchId);
+                  const bw = (brObj?.lineWidth && brObj.lineWidth > 0) ? brObj.lineWidth : branchWidth;
+                  const pipeOff = bw * 0.38;
+                  const cpx = px + nx * pipeOff;
+                  const cpy = py + ny * pipeOff;
+                  const valveSZ = Math.max(4, bw * view.scale * 4);
+                  const HS = valveSZ * 0.55, HT = valveSZ * 0.45;
+                  const lw = Math.max(0.5, bw * view.scale * 0.35);
+                  const q = (da: number, dn: number) => `${cpx + ax*da + nx*dn},${cpy + ay*da + ny*dn}`;
                   return (
                     <g pointerEvents="none">
-                      <line x1={px - ax*HS*2.2} y1={py - ay*HS*2.2} x2={px - ax*HS} y2={py - ay*HS} stroke="#1e3a8a" strokeWidth={lw} />
-                      <line x1={px + ax*HS} y1={py + ay*HS} x2={px + ax*HS*2.2} y2={py + ay*HS*2.2} stroke="#1e3a8a" strokeWidth={lw} />
                       <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="none" />
-                      <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="#1e3a8a" strokeWidth={lw} />
-                      <polygon points={`${q(-HS*0.65,-HT*0.6)} ${q(HS*0.65,-HT*0.6)} ${q(0,HT*0.65)}`} fill="#1e3a8a" />
+                      <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="#1d4ed8" strokeWidth={lw} />
+                      <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`} fill="#1d4ed8" />
                     </g>
                   );
                 })() : (
