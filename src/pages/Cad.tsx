@@ -2455,10 +2455,11 @@ export default function CadPage() {
                 }
 
                 // ── Финальный расчёт характеристик пожара по сошедшимся расходам ──
-                // Подставляем итоговые Q и пересчитываем мощность (Техника) ещё раз
+                // Подставляем итоговые Q и пересчитываем мощность (Техника) ещё раз.
+                // originalFlow = исходный расход ДО итераций (для обнаружения опрокидывания).
                 const branchesForFire = branches.map(b => {
                   const finalQ = currentFlows.get(b.id) ?? b.flow;
-                  const bUpdated = { ...b, flow: finalQ };
+                  const bUpdated = { ...b, flow: finalQ, originalFlow: b.flow };
                   if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return bUpdated;
                   const masses: [number, number, number] = [
                     b.fireVehicleMassRubber ?? 1200,
@@ -3509,11 +3510,11 @@ export default function CadPage() {
                       <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                         <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Устойчивость струи:</span>
                         <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{
-                          background: fr.willReverse ? "#fef2f2" : "#f0fdf4",
-                          color: fr.willReverse ? "#dc2626" : "#16a34a",
-                          border: `1px solid ${fr.willReverse ? "#fca5a5" : "#86efac"}`,
+                          background: fr.actuallyReversed ? "#450a0a" : fr.willReverse ? "#fef2f2" : "#f0fdf4",
+                          color: fr.actuallyReversed ? "#fef2f2" : fr.willReverse ? "#dc2626" : "#16a34a",
+                          border: `1px solid ${fr.actuallyReversed ? "#7f1d1d" : fr.willReverse ? "#fca5a5" : "#86efac"}`,
                         }}>
-                          {fr.willReverse ? "⚠️ Опрокидывание" : "✓ Устойчива"}
+                          {fr.actuallyReversed ? "🔄 Опрокинута" : fr.willReverse ? "⚠️ Риск опрокидывания" : "✓ Устойчива"}
                         </span>
                       </div>
                       <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
@@ -3525,9 +3526,19 @@ export default function CadPage() {
                           {fr.hazardLevel === "lethal" ? "💀 Смертельная" : fr.hazardLevel === "danger" ? "🔴 Опасная" : fr.hazardLevel === "warning" ? "⚠️ Предупреждение" : "✅ Безопасно"}
                         </span>
                       </div>
-                      {fr.willReverse && (
+                      {fr.actuallyReversed && (
+                        <div className="px-2 py-2 mx-1 my-1 text-[11px] rounded" style={{ background: "#450a0a", border: "1px solid #7f1d1d", color: "#fecaca" }}>
+                          <div className="font-bold mb-1" style={{ color: "#fca5a5", fontSize: 12 }}>🔄 Опрокидывание подтверждено расчётом</div>
+                          <div style={{ lineHeight: 1.6 }}>
+                            Поток изменил направление: Q = <strong>{(b.flow ?? 0).toFixed(2)} м³/с</strong><br/>
+                            Тепловая депрессия пожара: <strong>{Math.abs(fr.thermalDepression).toFixed(0)} Па</strong><br/>
+                            Нисходящее проветривание опрокинуто — продукты горения распространяются в обратном направлении.
+                          </div>
+                        </div>
+                      )}
+                      {!fr.actuallyReversed && fr.willReverse && (
                         <div className="px-2 py-2 mx-1 my-1 text-[10px] rounded" style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626" }}>
-                          <strong>Опрокидывание!</strong> Тепловая депрессия пожара ({Math.abs(fr.thermalDepression).toFixed(0)} Па) превышает аэродинамическую депрессию ветви ({Math.abs(b.dP ?? 0).toFixed(0)} Па). Нисходящее проветривание неустойчиво — направление потока изменится.
+                          <strong>Риск опрокидывания!</strong> Тепловая депрессия пожара ({Math.abs(fr.thermalDepression).toFixed(0)} Па) близка к аэродинамической депрессии ветви. При увеличении мощности пожара возможна смена направления потока.
                         </div>
                       )}
                     </>

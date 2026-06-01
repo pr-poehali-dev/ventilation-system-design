@@ -155,6 +155,9 @@ export interface FireBranchResult {
   airTempOut: number;
   thermalDepression: number;
   willReverse: boolean;
+  // Реальное опрокидывание: знак flow изменился после итеративного расчёта
+  // (в отличие от willReverse — это факт, а не оценка)
+  actuallyReversed: boolean;
   coConc: number;
   co2Conc: number;
   smokeDensity: number;
@@ -356,12 +359,22 @@ export function calcFireMode(
       nodeArrivalTime.set(outNodeId, outTime);
     }
 
+    // Реальное опрокидывание: знак flow изменился после итеративного расчёта.
+    // Сравниваем fb.flow (после итераций) с fb.originalFlow (до пожара).
+    // Если originalFlow не задан — fallback на статическую оценку willReverse.
+    const origFlow = (fb as TopoBranch & { originalFlow?: number }).originalFlow;
+    const actuallyReversed = origFlow !== undefined
+      ? (Math.sign(origFlow || 1) !== Math.sign(fb.flow ?? origFlow || 1))
+        && Math.abs(fb.flow ?? 0) > 0.05   // не считаем шум за опрокидывание
+      : willReverse;
+
     // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
     resultMap.set(fb.id, {
       branchId: fb.id,
       airTempOut: Math.round(fireTemp * 10) / 10,
       thermalDepression: Math.round(thermalDep * 10) / 10,
       willReverse,
+      actuallyReversed,
       coConc: Math.round(coConc * 1000) / 1000,
       co2Conc: Math.round(co2Conc * 100) / 100,
       smokeDensity: Math.round(smokeDensity * 100) / 100,
@@ -370,9 +383,9 @@ export function calcFireMode(
       flowDelta: Math.round(flowDelta * 100) / 100,
       smokeArrivalTime: 0,
     });
-    if (willReverse) reversedBranches.add(fb.id);
+    if (willReverse || actuallyReversed) reversedBranches.add(fb.id);
 
-    log.push(`Ветвь ${fb.id}: Q_пожара=${Q_MW} МВт, T=${Math.round(fireTemp)}°C, h_t=${Math.round(thermalDep)} Па, CO=${coConc.toFixed(3)}%, вид.=${Math.round(visibility)} м${willReverse ? " ⚠️ ОПРОКИДЫВАНИЕ" : ""}`);
+    log.push(`Ветвь ${fb.id}: Q_пожара=${Q_MW} МВт, T=${Math.round(fireTemp)}°C, h_t=${Math.round(thermalDep)} Па, CO=${coConc.toFixed(3)}%, вид.=${Math.round(visibility)} м${actuallyReversed ? " 🔄 ОПРОКИНУТА (расчёт)" : willReverse ? " ⚠️ РИСК ОПРОКИДЫВАНИЯ" : ""}`);
   }
 
   // ── Шаг 3: Строим карту inNodeId→ветви для быстрого поиска downstream ─────
@@ -450,6 +463,7 @@ export function calcFireMode(
         airTempOut:       Math.round(tempOut  * 10)  / 10,
         thermalDepression: 0,
         willReverse:      false,
+        actuallyReversed: false,
         coConc:           Math.round(coOut    * 1000) / 1000,
         co2Conc:          Math.round(co2Out   * 100)  / 100,
         smokeDensity:     Math.round(smokeOut * 100)  / 100,
