@@ -2776,21 +2776,7 @@ export default function CadPage() {
         {/* ── Группа: Действия с объектами ── */}
         <RibbonGroup label="Действия с объектами">
           <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="MousePointer2" label="Выделить" sublabel="объект" />
             <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие" />
-          </div>
-        </RibbonGroup>
-
-        {/* ── Группа: Виды (2D/3D) ── */}
-        <RibbonGroup label="Вид сети">
-          <div className="flex items-stretch gap-1">
-            <button onClick={() => setTool(tool === "rotate" ? "select" : "rotate")}
-              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-purple-100 hover:border-purple-400 border border-transparent rounded min-w-[58px]"
-              title="Вращение камеры (правая кнопка мыши также вращает)"
-              style={{ background: tool === "rotate" ? "#ede9fe" : undefined }}>
-              <Icon name="RotateCw" size={20} className="text-purple-600" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">Вращать</div>
-            </button>
           </div>
         </RibbonGroup>
 
