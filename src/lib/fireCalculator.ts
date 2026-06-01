@@ -446,10 +446,12 @@ export function calcFireMode(
 
       // Время прихода дыма к входу этой ветви
       const arrivalAtIn = nodeArrivalTime.get(smokedNodeId) ?? 0;
-      const speed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
-        ? Math.abs(flow) / b.area : 0.5;
+      const rawSpeed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
+        ? Math.abs(flow) / b.area : 0;
+      // Минимальная скорость дыма — 0.3 м/с (конвекция/диффузия при слабом потоке)
+      const speed = Math.max(rawSpeed, 0.3);
       const transitMin = (b.length ?? 0) > 0 ? b.length / speed / 60 : 0;
-      const arrivalAtOut = arrivalAtIn + transitMin;
+      const arrivalAtOut = Math.min(600, arrivalAtIn + transitMin);
 
       // Обновляем время прихода в выходной узел (кратчайший путь)
       const prev = nodeArrivalTime.get(outNodeId);
@@ -457,13 +459,19 @@ export function calcFireMode(
         nodeArrivalTime.set(outNodeId, arrivalAtOut);
       }
 
+      // Реальное опрокидывание: знак расхода изменился по сравнению с исходным
+      const bOrigFlow = (b as TopoBranch & { originalFlow?: number }).originalFlow;
+      const bActuallyReversed = bOrigFlow !== undefined
+        ? (Math.sign(bOrigFlow || 1) !== Math.sign(flow || 1)) && Math.abs(flow) > 0.01
+        : false;
+
       // Результат по ветви
       resultMap.set(b.id, {
         branchId: b.id,
         airTempOut:       Math.round(tempOut  * 10)  / 10,
         thermalDepression: 0,
         willReverse:      false,
-        actuallyReversed: false,
+        actuallyReversed: bActuallyReversed,
         coConc:           Math.round(coOut    * 1000) / 1000,
         co2Conc:          Math.round(co2Out   * 100)  / 100,
         smokeDensity:     Math.round(smokeOut * 100)  / 100,
@@ -499,7 +507,7 @@ export function calcFireMode(
   nodeArrivalTime.forEach(t => { if (t > maxSmokeTime) maxSmokeTime = t; });
   // Также проверяем smokeArrivalTime ветвей
   resultMap.forEach(fr => { if (fr.smokeArrivalTime > maxSmokeTime) maxSmokeTime = fr.smokeArrivalTime; });
-  maxSmokeTime = Math.ceil(maxSmokeTime) || 60;
+  maxSmokeTime = Math.min(600, Math.ceil(maxSmokeTime)) || 60;
 
   return {
     fireTemp: firstResult.airTempOut,
