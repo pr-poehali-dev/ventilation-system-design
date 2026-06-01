@@ -162,8 +162,12 @@ export interface TopoBranch {
   fireHeatRelease: number;         // МВт — тепловыделение (мощность пожара Q)
   fireMode: "heat" | "temp";       // задаётся: мощностью или температурой
   fireTemperature: number;         // °C — если задаётся температурой напрямую
-  fireCombustible: string;         // вид горючего (уголь, масло, дерево, кабель)
+  fireCombustible: string;         // вид горючего (уголь, масло, дерево, кабель, vehicle=техника)
   fireStartTime: number;           // мин — время начала от старта расчёта
+  // Параметры для горючего материала «Техника» (3 составляющих)
+  fireVehicleMassRubber: number;   // кг — масса резины
+  fireVehicleMassDiesel: number;   // кг — масса дизельного топлива
+  fireVehicleMassOil: number;      // кг — масса масла
   // Вычисленные результаты расчёта пожара
   fireComputedTemp: number;        // °C — вычисленная температура продуктов горения
   fireComputedNatDep: number;      // Па — тепловая депрессия пожара
@@ -353,6 +357,9 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireTemperature: 300,
     fireCombustible: "coal",
     fireStartTime: 0,
+    fireVehicleMassRubber: 1200,
+    fireVehicleMassDiesel: 400,
+    fireVehicleMassOil: 200,
     fireComputedTemp: 0,
     fireComputedNatDep: 0,
     fireComputedSmokeDens: 0,

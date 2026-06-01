@@ -34,7 +34,7 @@ import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberD
 import PrintDialog from "@/components/cad/PrintDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
-import { calcFireMode, COMBUSTIBLES, type FireCalculationResult } from "@/lib/fireCalculator";
+import { calcFireMode, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
@@ -2267,7 +2267,18 @@ export default function CadPage() {
                   alert("Сначала выполните расчёт вентиляционной сети (F9)");
                   return;
                 }
-                const result = calcFireMode(branches, nodes, 20);
+                // Для очагов типа «Техника» автоматически пересчитываем мощность из масс материалов
+                const branchesForFire = branches.map(b => {
+                  if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return b;
+                  const masses: [number, number, number] = [
+                    b.fireVehicleMassRubber ?? 1200,
+                    b.fireVehicleMassDiesel ?? 400,
+                    b.fireVehicleMassOil    ?? 200,
+                  ];
+                  const vfr = calcVehicleFire(masses, Math.abs(b.flow ?? 0));
+                  return vfr.power_MW > 0 ? { ...b, fireHeatRelease: vfr.power_MW, fireMode: "heat" as const } : b;
+                });
+                const result = calcFireMode(branchesForFire, nodes, 20);
                 // Записываем вычисленные параметры обратно в ветви
                 setBranches(prev => prev.map(b => {
                   const fr = result.branches.get(b.id);
@@ -3160,6 +3171,122 @@ export default function CadPage() {
                       {COMBUSTIBLES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
+
+                  {/* ── Техника: ввод масс материалов ── */}
+                  {(b.fireCombustible ?? "coal") === "vehicle" && (() => {
+                    const masses: [number, number, number] = [
+                      b.fireVehicleMassRubber ?? 1200,
+                      b.fireVehicleMassDiesel ?? 400,
+                      b.fireVehicleMassOil    ?? 200,
+                    ];
+                    const airQ = Math.abs(b.flow ?? 0);
+                    const vfr: VehicleFireResult = calcVehicleFire(masses, airQ);
+                    return (
+                      <>
+                        {/* Заголовок блока ввода */}
+                        <div className="px-1 py-0.5 text-[10px] font-semibold mt-0.5" style={{ background: "#fff7ed", borderBottom: "1px solid #fed7aa", color: "#c2410c" }}>
+                          Исходные данные — состав техники
+                        </div>
+
+                        {/* Таблица ввода масс */}
+                        <div className="px-1 pt-1 pb-0.5">
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                            <thead>
+                              <tr style={{ background: "#f5f5f5" }}>
+                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "left", fontWeight: 600 }}>Материал</th>
+                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>Масса, кг</th>
+                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>ρ, кг/м³</th>
+                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>Q⁻, МДж/кг</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {VEHICLE_MATERIALS.map((mat, i) => {
+                                const fieldKey = (["fireVehicleMassRubber", "fireVehicleMassDiesel", "fireVehicleMassOil"] as const)[i];
+                                const val = masses[i];
+                                return (
+                                  <tr key={mat.name} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px" }}>{mat.name}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "1px 2px" }}>
+                                      <input
+                                        type="number" min="0" step="50"
+                                        value={val}
+                                        onChange={e => updateBranch(b.id, { [fieldKey]: parseFloat(e.target.value) || 0 })}
+                                        style={{ width: "100%", border: "none", outline: "none", textAlign: "right", fontSize: 10, background: val > 0 ? "#d1fae5" : "#fff", padding: "1px 3px" }}
+                                      />
+                                    </td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#6b7280" }}>{mat.density}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#6b7280" }}>{mat.heatValue}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Результаты расчёта мощности */}
+                        {vfr.power_MW > 0 && (
+                          <>
+                            <div className="px-1 py-0.5 text-[10px] font-semibold mt-0.5" style={{ background: "#fff7ed", borderBottom: "1px solid #fed7aa", color: "#c2410c" }}>
+                              Расчёт мощности пожара техники
+                            </div>
+
+                            {/* Таблица промежуточных результатов */}
+                            <div className="px-1 pt-0.5 pb-0.5">
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                                <thead>
+                                  <tr style={{ background: "#f5f5f5" }}>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "left", fontWeight: 600 }}>Материал</th>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: 600 }}>F, м²</th>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: 600 }}>N, МДж</th>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: 600 }}>τ, ч</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {vfr.materials.map((m, i) => (
+                                    <tr key={m.name} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px" }}>{m.name}</td>
+                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center" }}>{m.surface_m2.toFixed(3)}</td>
+                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center" }}>{m.energy_MJ.toFixed(0)}</td>
+                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: Math.max(...vfr.materials.map(x => x.burnTime_h)) === m.burnTime_h ? 700 : 400 }}>
+                                        {m.burnTime_h.toFixed(3)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Итоговые результаты */}
+                            <div className="px-1 pb-0.5">
+                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                                <thead>
+                                  <tr style={{ background: "#fef3c7" }}>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Мощность, МВт</th>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Расход, м³/с</th>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Δt, °C</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "#b91c1c" }}>{vfr.power_MW.toFixed(2)}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#15803d" }}>{airQ > 0 ? airQ.toFixed(1) : "—"}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? vfr.deltaT_C.toFixed(1) : "—"}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                              <div className="flex items-center gap-3 mt-0.5 px-0.5">
+                                <span style={{ fontSize: 10, color: "#6b7280" }}>Время горения:</span>
+                                <span style={{ fontSize: 10, fontWeight: 700 }}>{vfr.burnTime_h.toFixed(2)} ч</span>
+                                <span style={{ fontSize: 10, color: "#6b7280" }}>или</span>
+                                <span style={{ fontSize: 10, fontWeight: 700 }}>{vfr.burnTime_min.toFixed(1)} мин</span>
+                              </div>
+                            </div>
+                            {/* Мощность автоматически подставляется в расчёт пожара при нажатии кнопки «Расчёт» */}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* Контекст из сетевого расчёта */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Вентиляционный режим (из расчёта сети)</div>

@@ -35,8 +35,106 @@ export const COMBUSTIBLES: CombustibleProps[] = [
   { id: "cable",   name: "Кабель",            coYield: 0.10, co2Yield: 1.8,  smokeYield: 0.12,  heatValue: 18, spreadRate: 0.3 },
   { id: "oil",     name: "Масло/горючее",     coYield: 0.06, co2Yield: 3.1,  smokeYield: 0.08,  heatValue: 42, spreadRate: 2.0 },
   { id: "conveyor",name: "Конвейерная лента", coYield: 0.08, co2Yield: 2.0,  smokeYield: 0.10,  heatValue: 20, spreadRate: 0.8 },
+  { id: "vehicle", name: "Техника",           coYield: 0.07, co2Yield: 2.5,  smokeYield: 0.09,  heatValue: 38, spreadRate: 1.5 },
   { id: "custom",  name: "Произвольный",      coYield: 0.05, co2Yield: 2.0,  smokeYield: 0.05,  heatValue: 25, spreadRate: 1.0 },
 ];
+
+// ─── Параметры составляющих материалов техники ────────────────────────────────
+export interface VehicleMaterial {
+  name: string;           // название материала
+  density: number;        // кг/м³ — плотность
+  burnRate: number;       // кг/(м²·с) — скорость выгорания (ψ)
+  heatValue: number;      // МДж/кг — низшая теплота сгорания
+}
+
+export const VEHICLE_MATERIALS: VehicleMaterial[] = [
+  { name: "Резина",  density: 1200, burnRate: 0.020, heatValue: 33.5 },
+  { name: "Дизель",  density: 830,  burnRate: 0.043, heatValue: 42.6 },
+  { name: "Масло",   density: 900,  burnRate: 0.043, heatValue: 41.8 },
+];
+
+export interface VehicleMatItem {
+  name: string;
+  mass_kg: number;
+  volume_m3: number;
+  radius_m: number;
+  surface_m2: number;
+  energy_MJ: number;
+  burnTime_h: number;
+}
+
+export interface VehicleFireResult {
+  power_MW: number;         // МВт — мощность пожара Q
+  burnTime_h: number;       // ч — время горения
+  burnTime_min: number;     // мин — время горения
+  deltaT_C: number;         // °C — расчётная температура горения
+  materials: VehicleMatItem[];
+  airFlow_m3s: number;      // м³/с — расход воздуха (из расчёта сети)
+}
+
+/**
+ * Расчёт мощности пожара техники по 8 шагам (методика ВНИМИ/ИГД).
+ * Материалы: резина, дизель, масло — с заданными массами.
+ *
+ * @param masses  - массы [резина, дизель, масло] в кг
+ * @param airFlow - расход воздуха в выработке, м³/с
+ */
+export function calcVehicleFire(
+  masses: [number, number, number],
+  airFlow: number,
+): VehicleFireResult {
+  const mats = VEHICLE_MATERIALS;
+
+  // Шаг 1: Объём материала (используем максимальную плотность как нормировку)
+  const rhoMax = Math.max(...mats.map(m => m.density));
+
+  const items: VehicleMatItem[] = [];
+  for (let i = 0; i < mats.length; i++) {
+    const mat  = mats[i];
+    const mass = masses[i];
+    if (mass <= 0) continue;
+
+    // Шаг 1
+    const volume = mass / rhoMax;
+    // Шаг 2: радиус эквивалентного шара
+    const radius = Math.pow((3 * volume) / (4 * Math.PI), 1 / 3);
+    // Шаг 3: поверхность горения (поверхность шара)
+    const surface = 4 * Math.PI * radius * radius;
+    // Шаг 4: запас тепловой энергии (МДж)
+    const energy = mass * mat.heatValue;
+    // Шаг 5: время выгорания (ч)
+    const burnTime = mass / (surface * mat.burnRate * 3600);
+
+    items.push({ name: mat.name, mass_kg: mass, volume_m3: volume, radius_m: radius, surface_m2: surface, energy_MJ: energy, burnTime_h: burnTime });
+  }
+
+  if (items.length === 0) {
+    return { power_MW: 0, burnTime_h: 0, burnTime_min: 0, deltaT_C: 0, materials: [], airFlow_m3s: airFlow };
+  }
+
+  // Шаг 6: суммарная энергия и максимальное время выгорания → мощность
+  const totalEnergy_MJ = items.reduce((s, it) => s + it.energy_MJ, 0);
+  const maxBurnTime_h  = Math.max(...items.map(it => it.burnTime_h));
+  const power_MW       = totalEnergy_MJ / (maxBurnTime_h * 3600);
+
+  // Шаг 7: время горения всей техники
+  const burnTime_h   = totalEnergy_MJ / (power_MW * 3600);
+  const burnTime_min = burnTime_h * 60;
+
+  // Шаг 8: расчётная температура горения
+  const deltaT_C = airFlow > 0
+    ? (power_MW * 1e6) / (airFlow * 1.25 * 1005)
+    : 0;
+
+  return {
+    power_MW,
+    burnTime_h,
+    burnTime_min,
+    deltaT_C,
+    materials: items,
+    airFlow_m3s: airFlow,
+  };
+}
 
 export function getCombustible(id: string): CombustibleProps {
   return COMBUSTIBLES.find(c => c.id === id) ?? COMBUSTIBLES[COMBUSTIBLES.length - 1];
