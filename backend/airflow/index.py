@@ -85,14 +85,17 @@ def fan_H(e, Q):
     mode = e.get("fanMode", "constant")
     if mode == "curve":
         q_one = abs(Q) / N
+        # useReverseCurve выставляется при предобработке реверса (ребро уже
+        # развёрнуто, fanReverse снят). fanReverse — для совместимости.
+        use_rev = (e.get("fanReverse") or e.get("useReverseCurve")) and e.get("reverseH0") is not None
         if q_one <= 0:
             # При Q=0 возвращаем h0 (статический напор), а не 0 —
             # иначе бисекция рабочей точки не найдёт корень.
-            if e.get("fanReverse") and e.get("reverseH0") is not None:
+            if use_rev:
                 return max(0.0, float(e.get("reverseH0", 0)))
             return max(0.0, float(e.get("h0", 0)))
         # При реверсе — используем отдельную характеристику если передана
-        if e.get("fanReverse") and e.get("reverseH0") is not None:
+        if use_rev:
             q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
             if q_one > q_max_rev:
                 return 0.0
@@ -141,7 +144,7 @@ def fan_H_display(e, Q):
     q_one = abs(Q) / N
     if q_one <= 0:
         return 0.0
-    if e.get("fanReverse") and e.get("reverseH0") is not None:
+    if (e.get("fanReverse") or e.get("useReverseCurve")) and e.get("reverseH0") is not None:
         rh0 = float(e.get("reverseH0", 0))
         rh1 = float(e.get("reverseH1", 0))
         rh2 = float(e.get("reverseH2", 0))
@@ -164,7 +167,7 @@ def fan_dH(e, Q):
         N = max(1, int(e.get("fanParallel", 1) or 1))
         q_one = abs(Q) / N
         # При реверсе с отдельной кривой — используем её коэффициенты
-        if e.get("fanReverse") and e.get("reverseH0") is not None:
+        if (e.get("fanReverse") or e.get("useReverseCurve")) and e.get("reverseH0") is not None:
             dh_one = float(e.get("reverseH1", 0)) + 2.0 * float(e.get("reverseH2", 0)) * q_one
         else:
             dh_one = float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one
@@ -263,6 +266,40 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
             "naturalDraft": h_nat,
         })
     return edges, atm
+
+
+def preprocess_reverse_fans(edges, log):
+    """
+    ПРЕДОБРАБОТКА РЕВЕРСА ГВУ/ВВУ (Вариант 1) — реверс = РАЗВОРОТ ребра.
+    Единая логика для методов Кросса и МКР (и идентична МКР на фронтенде
+    src/lib/networkSolver.ts), чтобы все расчёты давали один результат.
+
+    При fanReverse у ГВУ/ВВУ:
+      • физически разворачиваем ребро: a↔b (и инвертируем знак естественной тяги)
+      • снимаем fanReverse → вентилятор считается ПРЯМЫМ (fan_dir=+1)
+      • выставляем useReverseCurve=True → fan_H берёт реверсивную P–Q как прямую
+      • запоминаем wasReversed для возврата знака Q и ориентации на выходе
+
+    Так синхронизация дерева согласована с направлением нагнетания, поток
+    разворачивается естественно — как при ручном развороте ветви.
+    ВМП не трогаем: их направление определяет физика сети.
+    """
+    for e in edges:
+        if not e.get("hasFan") or e.get("fanStopped") or not e.get("fanReverse"):
+            continue
+        if e.get("fanType", "ГВУ") not in ("ГВУ", "ВВУ"):
+            continue
+        e["a"], e["b"] = e["b"], e["a"]
+        if e.get("naturalDraft"):
+            e["naturalDraft"] = -e["naturalDraft"]
+        e["fanReverse"] = False
+        if (e.get("fanMode") == "curve" and e.get("reverseH0") is not None
+                and e.get("reverseH1") is not None and e.get("reverseH2") is not None):
+            e["useReverseCurve"] = True
+        e["wasReversed"] = True
+        log.append(f"Реверс {e['id']} ({e.get('fanType')}): развёрнут как ребро, "
+                   f"подключена реверсивная характеристика")
+    return edges
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -412,7 +449,8 @@ def check_reverse(edges, Q_result, normal_flows, diag):
     должен быть не менее 60% от прямого режима.
     Проверяем только ветви с ненулевым прямым расходом.
     """
-    has_reverse = any(e.get("fanReverse") for e in edges)
+    # wasReversed — флаг после предобработки (fanReverse снят, ребро развёрнуто).
+    has_reverse = any(e.get("fanReverse") or e.get("wasReversed") for e in edges)
     if not has_reverse or not normal_flows:
         return
 
@@ -544,6 +582,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                      "message": "Только один узел связан с атмосферой. Для циркуляции воздуха нужно "
                                 "минимум 2 выхода на поверхность (например, два ствола)."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
+    # ══ ПРЕДОБРАБОТКА РЕВЕРСА ГВУ/ВВУ (Вариант 1) — реверс = РАЗВОРОТ ребра ══
+    preprocess_reverse_fans(edges, log)
 
     # ── Диагностика вентиляторов ─────────────────────────────────────────
     fans        = [e for e in edges if e["hasFan"]]
@@ -740,7 +781,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         # Берём qMax главного вентилятора как верхнюю границу
         q_max_main = 0.0
         for e in main_fans:
-            qmx = float(e.get("reverseQMax" if e.get("fanReverse") and e.get("reverseH0") is not None
+            qmx = float(e.get("reverseQMax" if (e.get("fanReverse") or e.get("useReverseCurve")) and e.get("reverseH0") is not None
                               else "qMax", 0))
             if qmx > q_max_main:
                 q_max_main = qmx
@@ -1240,15 +1281,29 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 diag.append({"level": "warning", "category": "fan_overload",
                              "message": f"Ветвь {e['id']}: Q={abs(q):.2f} м³/с превышает qMax={q_max:.1f} м³/с — вентилятор вышел за паспортную зону"})
 
+        # ── Возврат ориентации для развёрнутых рёбер (предобработка реверса) ──
+        # При wasReversed ребро было развёрнуто (a↔b) для расчёта. На выходе
+        # возвращаем результат в ИСХОДНОЙ ориентации fromId→toId: инвертируем
+        # знак Q и меняем местами узлы. Тогда фронтенд (оба метода) видит
+        # отрицательный Q = обратный поток относительно исходной ветви.
+        if e.get("wasReversed"):
+            q_out  = -q
+            node_a = e["b"]
+            node_b = e["a"]
+        else:
+            q_out  = q
+            node_a = e["a"]
+            node_b = e["b"]
+
         # flowDir: направление реального потока (a→b при Q>0, b→a при Q<0)
         # actualQ: модуль расхода (всегда положительный) — для отображения
-        flow_dir = "a->b" if q >= 0 else "b->a"
-        out.append({"id": e["id"], "Q": round(q, 4), "H": round(H, 3),
+        flow_dir = "a->b" if q_out >= 0 else "b->a"
+        out.append({"id": e["id"], "Q": round(q_out, 4), "H": round(H, 3),
                     "Hfan": round(Hv, 3), "velocity": round(vel, 3),
                     "isDead": is_dead,
-                    "actualQ": round(abs(q), 4),
+                    "actualQ": round(abs(q_out), 4),
                     "flowDir": flow_dir,
-                    "fromNode": e["a"], "toNode": e["b"]})
+                    "fromNode": node_a, "toNode": node_b})
 
     # Реверс: после унификации build_graph рёбра больше не разворачиваются,
     # поэтому отрицательный Q автоматически означает обратное направление
@@ -1304,11 +1359,13 @@ def _mkr_fan_H(e, Q):
     mode = e.get("fanMode", "constant")
     if mode == "curve":
         q_one = abs(Q) / N
+        # useReverseCurve — флаг после предобработки реверса (ребро развёрнуто).
+        use_rev = (e.get("fanReverse") or e.get("useReverseCurve")) and e.get("reverseH0") is not None
         if q_one <= 0:
-            if e.get("fanReverse") and e.get("reverseH0") is not None:
+            if use_rev:
                 return max(0.0, float(e.get("reverseH0", 0)))
             return max(0.0, float(e.get("h0", 0)))
-        if e.get("fanReverse") and e.get("reverseH0") is not None:
+        if use_rev:
             q_max = float(e.get("reverseQMax", e.get("qMax", 1e9)))
             if q_one > q_max:
                 return 0.0
@@ -1342,7 +1399,7 @@ def _mkr_fan_dH(e, Q):
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
     q_one = abs(Q) / N
-    if e.get("fanReverse") and e.get("reverseH0") is not None:
+    if (e.get("fanReverse") or e.get("useReverseCurve")) and e.get("reverseH0") is not None:
         dh = abs(float(e.get("reverseH1", 0)) + 2.0 * float(e.get("reverseH2", 0)) * q_one)
     else:
         dh = abs(float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one)
@@ -1454,7 +1511,7 @@ def _estimate_q0_mkr(edges, r_total):
     fan = max(fans, key=fan_h0)
     mode = fan.get("fanMode", "constant")
     if mode == "curve":
-        is_rev = fan.get("fanReverse") and fan.get("reverseH0") is not None
+        is_rev = (fan.get("fanReverse") or fan.get("useReverseCurve")) and fan.get("reverseH0") is not None
         q_hi = float(fan.get("reverseQMax", fan.get("qMax", 90.0))) if is_rev else float(fan.get("qMax", 90.0))
         if r_total <= 0:
             return q_hi * 0.5
@@ -1509,6 +1566,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет узлов, связанных с атмосферой."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
+    # ══ ПРЕДОБРАБОТКА РЕВЕРСА ГВУ/ВВУ (Вариант 1) — реверс = РАЗВОРОТ ребра ══
+    # Та же логика, что и в методе Кросса — единый результат обоих методов.
+    preprocess_reverse_fans(edges, log)
 
     fans        = [e for e in edges if e["hasFan"]]
     active_fans = [e for e in fans if not e.get("fanStopped")]
