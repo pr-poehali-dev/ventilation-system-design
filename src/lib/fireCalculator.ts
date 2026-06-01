@@ -167,6 +167,8 @@ export interface FireBranchResult {
   flowDelta?: number;
   // Время прихода задымления от очага до ветви (минуты)
   smokeArrivalTime: number;
+  // Скорость воздуха в ветви после расчёта пожара (м/с), мин. 0.3 для отображения fillTime
+  airSpeed: number;
 }
 
 export interface FireCalculationResult {
@@ -382,6 +384,7 @@ export function calcFireMode(
       hazardLevel: hazard,
       flowDelta: Math.round(flowDelta * 100) / 100,
       smokeArrivalTime: 0,
+      airSpeed: Math.max(smokeSpeed, 0.3),
     });
     if (willReverse || actuallyReversed) reversedBranches.add(fb.id);
 
@@ -465,6 +468,8 @@ export function calcFireMode(
         ? (Math.sign(bOrigFlow || 1) !== Math.sign(flow || 1)) && Math.abs(flow) > 0.01
         : false;
 
+      if (bActuallyReversed) reversedBranches.add(b.id);
+
       // Результат по ветви
       resultMap.set(b.id, {
         branchId: b.id,
@@ -478,6 +483,7 @@ export function calcFireMode(
         visibility:       Math.round(visOut   * 10)   / 10,
         hazardLevel:      hazard,
         smokeArrivalTime: Math.round(arrivalAtIn * 10) / 10,
+        airSpeed:         Math.round(speed * 100) / 100,
       });
 
       // Выходной узел получает задымление — добавляем в очередь если новый

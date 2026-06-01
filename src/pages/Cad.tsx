@@ -3483,11 +3483,10 @@ export default function CadPage() {
                         if (b.hasFire) {
                           return <Row label="Время задымления:" value="Очаг пожара (0 мин)" bold />;
                         }
-                        const airQ = Math.abs(b.flow ?? 0);
-                        const speed = airQ > 0 && b.area > 0 ? airQ / b.area : 0;
+                        const speed = fr.airSpeed ?? 0;
                         const arrT = fr.smokeArrivalTime;
                         const transitMin = speed > 0 && b.length > 0 ? b.length / speed / 60 : 0;
-                        const fillT = arrT + transitMin;
+                        const fillT = Math.min(600, arrT + transitMin);
                         return (
                           <>
                             <Row
