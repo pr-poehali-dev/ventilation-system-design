@@ -34,7 +34,7 @@ import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberD
 import PrintDialog from "@/components/cad/PrintDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
-import { calcFireMode, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
@@ -1289,6 +1289,127 @@ export default function CadPage() {
     e.preventDefault();
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Вспомогательный расчёт сети для итеративного учёта тепловой депрессии
+  // пожара. Принимает branches с заполненным полем fireThermalDepression (Па)
+  // и возвращает Map<branchId, Q> — расходы после пересчёта.
+  // Используется исключительно внутри обработчика кнопки «Расчёт пожара».
+  // ─────────────────────────────────────────────────────────────────────────
+  const solveFireIteration = async (
+    branchesWithFire: typeof branches,
+    surfaceTempVal: number,
+  ): Promise<Map<string, number>> => {
+    const curve_map = new Map(branchesWithFire.map(b => {
+      const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
+      const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
+      let af = 1.0;
+      if (curve?.bladeAngles && curve.bladeAngles.length >= 2) {
+        const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
+        const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
+        af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
+      }
+      return [b.id, { curve, k, af }];
+    }));
+
+    const reqBody = {
+      method: calcMode,
+      nodes: nodes.map(n => ({
+        id: n.id,
+        isAtm: n.atmosphereLink,
+        z: n.z ?? 0,
+        airTemp: n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal),
+      })),
+      surfaceTemp: surfaceTempVal,
+      branches: branchesWithFire.map(b => {
+        const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
+        const fromNode = nodes.find(n => n.id === b.fromId);
+        const toNode   = nodes.find(n => n.id === b.toId);
+        const tFrom = fromNode ? (fromNode.atmosphereLink ? surfaceTempVal : (fromNode.airTemp ?? surfaceTempVal)) : surfaceTempVal;
+        const tTo   = toNode   ? (toNode.atmosphereLink   ? surfaceTempVal : (toNode.airTemp   ?? surfaceTempVal)) : surfaceTempVal;
+        const tAvg  = (tFrom + tTo) / 2;
+        const rho   = 353.0 / (273.0 + Math.max(-30, Math.min(100, tAvg)));
+        const bkSyms = schemaSymbols.filter(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+        const rBulkheads = bkSyms.reduce((sum, s) => {
+          const mode = s.bkResMode ?? "project";
+          let r = 0;
+          if (mode === "manual") {
+            r = (s.bkManualR ?? 0) * 1e3;
+          } else if (mode === "survey") {
+            const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
+            r = q > 0 ? dp / (q * q) : 0;
+          } else {
+            const sw = s.bkWindowArea ?? 0;
+            const branchArea = b.area ?? 0;
+            const isFullyOpen = (OPEN_DOOR_IDS.has(s.typeId) && sw <= 0.001)
+              || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
+            if (isFullyOpen) {
+              r = 0;
+            } else if (sw > 0.001) {
+              const mu = 0.65;
+              r = rho / (2 * mu * mu * sw * sw);
+            } else {
+              const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
+                : (s.bkAirPerm
+                  ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
+                  ?? b.bulkheadAirPerm ?? 0);
+              const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+              r = kAir > 0 ? 1 / (kAir * kAir) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
+            }
+          }
+          return sum + r;
+        }, 0);
+        const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
+          ? (b.fanCrossingR ?? 0) : 0;
+        return {
+          id: b.id,
+          fromId: b.fromId,
+          toId: b.toId,
+          R: b.resistance + rBulkheads + fanCrossingR,
+          area: b.area,
+          angle: b.angle ?? 0,
+          hasFan: b.hasFan,
+          fanType: b.fanType ?? "ГВУ",
+          fanMode: b.fanMode,
+          fanPressure: b.fanPressure,
+          fanInstall:  b.fanInstall ?? "Внутри перемычки",
+          fanCrossingR: b.fanCrossingR ?? 0,
+          fanReverse:  b.fanReverse ?? false,
+          fanStopped:  b.fanStopped ?? false,
+          fanParallel: Math.max(1, b.fanParallel ?? 1),
+          // Тепловая депрессия пожара передаётся в backend как отдельное поле
+          fireThermalDepression: b.fireThermalDepression ?? 0,
+          ...(curve ? {
+            h0: curve.h0 * af * k * k,
+            h1: curve.h1 * k,
+            h2: curve.h2,
+            qMax: curve.qMax * af * k,
+            qMin: curve.qMin * af * k,
+            ...(curve.reverseH0 !== undefined ? {
+              reverseH0:  curve.reverseH0 * k * k,
+              reverseH1:  curve.reverseH1! * k,
+              reverseH2:  curve.reverseH2!,
+              reverseQMax: (curve.reverseQMax ?? curve.qMax) * k,
+              reverseEfficiencyFactor: curve.reverseEfficiencyFactor,
+            } : {}),
+          } : {}),
+        };
+      }),
+      options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
+    };
+
+    const resp = await fetch(AIRFLOW_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reqBody),
+    });
+    if (!resp.ok) return new Map();
+    const data = await resp.json();
+    if (data.error) return new Map();
+    const flowMap = new Map<string, number>();
+    (data.branches as { id: string; Q: number }[]).forEach(rb => flowMap.set(rb.id, rb.Q));
+    return flowMap;
+  };
+
   // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
@@ -2262,23 +2383,99 @@ export default function CadPage() {
         <RibbonGroup label="Расчёт">
           <div className="flex items-stretch gap-1">
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (!solveResult) {
                   alert("Сначала выполните расчёт вентиляционной сети (F9)");
                   return;
                 }
-                // Для очагов типа «Техника» автоматически пересчитываем мощность из масс материалов
+
+                // ── Итеративный учёт тепловой депрессии пожара ────────────────
+                // Алгоритм (Аэросеть / Вентиляция-2):
+                //   Итерация 1: берём расходы из штатного расчёта сети
+                //   → считаем T_пр и h_t для каждого очага
+                //   → пересчитываем сеть с h_t как naturalDraft в ветви-очаге
+                //   Итерация 2–3: уточняем T_пр по новым расходам, повторяем
+                //   Критерий: max|ΔQ| < 0.1 м³/с или 3 итерации
+                // ──────────────────────────────────────────────────────────────
+                const FIRE_ITERS   = 3;    // макс. итераций
+                const FIRE_Q_TOL   = 0.1;  // м³/с — допуск сходимости
+                const AMBIENT_TEMP = surfaceTemp;
+
+                // Текущие расходы (начинаем с результатов штатного расчёта)
+                let currentFlows = new Map<string, number>(
+                  branches.map(b => [b.id, b.flow ?? 0])
+                );
+
+                addLog("info", "🔥 Итеративный расчёт аварийного режима (учёт тепловой депрессии)...");
+
+                for (let iter = 0; iter < FIRE_ITERS; iter++) {
+                  // Шаг A: подставить актуальные расходы в ветви
+                  let branchesIter = branches.map(b => ({
+                    ...b,
+                    flow: currentFlows.get(b.id) ?? b.flow,
+                  }));
+
+                  // Шаг B: Техника — пересчитать мощность по актуальному расходу
+                  branchesIter = branchesIter.map(b => {
+                    if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return b;
+                    const masses: [number, number, number] = [
+                      b.fireVehicleMassRubber ?? 1200,
+                      b.fireVehicleMassDiesel ?? 400,
+                      b.fireVehicleMassOil    ?? 200,
+                    ];
+                    const vfr = calcVehicleFire(masses, Math.abs(b.flow ?? 0));
+                    return vfr.power_MW > 0 ? { ...b, fireHeatRelease: vfr.power_MW, fireMode: "heat" as const } : b;
+                  });
+
+                  // Шаг C: вычислить T_пр и h_t для каждого очага
+                  const branchesWithHt = branchesIter.map(b => {
+                    if (!b.hasFire) return b;
+                    const Q_MW  = b.fireMode === "heat" ? b.fireHeatRelease : 0;
+                    const airQ  = Math.abs(b.flow ?? 0);
+                    const T_pr  = b.fireMode === "temp"
+                      ? b.fireTemperature
+                      : calcFireTemp(Q_MW, airQ, AMBIENT_TEMP);
+                    const h_t   = calcThermalDepression(T_pr, AMBIENT_TEMP, b.length, b.angle ?? 0);
+                    return { ...b, fireThermalDepression: h_t };
+                  });
+
+                  // Шаг D: пересчитать сеть с h_t
+                  const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP);
+                  if (newFlows.size === 0) break; // ошибка сети — прерываем
+
+                  // Шаг E: проверка сходимости
+                  let maxDQ = 0;
+                  newFlows.forEach((q, id) => {
+                    maxDQ = Math.max(maxDQ, Math.abs(q - (currentFlows.get(id) ?? 0)));
+                  });
+                  addLog("info", `  Итерация ${iter + 1}: max|ΔQ|=${maxDQ.toFixed(3)} м³/с`);
+
+                  currentFlows = newFlows;
+                  if (maxDQ < FIRE_Q_TOL) break;
+                }
+
+                // ── Финальный расчёт характеристик пожара по сошедшимся расходам ──
+                // Подставляем итоговые Q и пересчитываем мощность (Техника) ещё раз
                 const branchesForFire = branches.map(b => {
-                  if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return b;
+                  const finalQ = currentFlows.get(b.id) ?? b.flow;
+                  const bUpdated = { ...b, flow: finalQ };
+                  if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return bUpdated;
                   const masses: [number, number, number] = [
                     b.fireVehicleMassRubber ?? 1200,
                     b.fireVehicleMassDiesel ?? 400,
                     b.fireVehicleMassOil    ?? 200,
                   ];
-                  const vfr = calcVehicleFire(masses, Math.abs(b.flow ?? 0));
-                  return vfr.power_MW > 0 ? { ...b, fireHeatRelease: vfr.power_MW, fireMode: "heat" as const } : b;
+                  const vfr = calcVehicleFire(masses, Math.abs(finalQ ?? 0));
+                  return vfr.power_MW > 0 ? { ...bUpdated, fireHeatRelease: vfr.power_MW, fireMode: "heat" as const } : bUpdated;
                 });
-                const result = calcFireMode(branchesForFire, nodes, 20);
+
+                // Обновляем flow в state из итеративного расчёта
+                setBranches(prev => prev.map(b => {
+                  const q = currentFlows.get(b.id);
+                  return q !== undefined ? { ...b, flow: q } : b;
+                }));
+
+                const result = calcFireMode(branchesForFire, nodes, AMBIENT_TEMP);
                 // Записываем вычисленные параметры обратно в ветви
                 setBranches(prev => prev.map(b => {
                   const fr = result.branches.get(b.id);

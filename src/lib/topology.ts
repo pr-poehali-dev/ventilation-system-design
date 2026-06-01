@@ -174,6 +174,8 @@ export interface TopoBranch {
   fireComputedSmokeDens: number;   // м⁻¹ — оптическая плотность дыма на выходе
   fireComputedCO: number;          // % — концентрация CO на выходе ветви
   fireComputedCO2: number;         // % — концентрация CO₂ на выходе ветви
+  // Рабочее поле итеративного расчёта (не сохраняется): h_t для текущей итерации
+  fireThermalDepression?: number;  // Па — тепловая депрессия пожара (передаётся в solver)
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───

@@ -231,6 +231,13 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
         tt  = node_temp.get(orig_to,   surface_temp)
         h_nat = natural_draft_h(fz, tz, ft, tt)
 
+        # Тепловая депрессия пожара (Па): добавляется к естественной тяге.
+        # Передаётся фронтендом при итеративном расчёте аварийного режима.
+        # Знак учитывает ориентацию выработки и направление нагнетания:
+        #   + восходящая выработка → пожар усиливает тягу (как доп. вентилятор)
+        #   − нисходящая           → пожар тормозит / опрокидывает поток
+        h_fire = float(b.get("fireThermalDepression", 0) or 0)
+
         edges.append({
             "id":          b["id"],
             "a":           node_a,
@@ -259,8 +266,8 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
             "isLeakage":   bool(b.get("isLeakage", False)),
             "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
             "angle":       abs(float(b.get("angle", 0) or 0)),
-            # Естественная тяга (Па): H_nat = ρ·g·Δz
-            "naturalDraft": h_nat,
+            # Естественная тяга (Па) + тепловая депрессия пожара (Па)
+            "naturalDraft": h_nat + h_fire,
         })
     return edges, atm
 
