@@ -3229,14 +3229,14 @@ export default function CadPage() {
                                   <tr style={{ background: "#fef3c7" }}>
                                     <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Мощность, МВт</th>
                                     <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Расход, м³/с</th>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Δt, °C</th>
+                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>t прод., °C</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   <tr>
                                     <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "#b91c1c" }}>{vfr.power_MW.toFixed(2)}</td>
                                     <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#15803d" }}>{airQ > 0 ? airQ.toFixed(1) : "—"}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? vfr.deltaT_C.toFixed(1) : "—"}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? (vfr.deltaT_C + 20).toFixed(1) : "—"}</td>
                                   </tr>
                                 </tbody>
                               </table>
@@ -4836,6 +4836,8 @@ export default function CadPage() {
                   if (!branch) return;
 
                   if (branch.hasFire) {
+                    // При t=0 дыма ещё нет — пожар только начался
+                    if (smokeTimeMinutes <= 0) return;
                     // Очаг: дым идёт от места установки (fireT) до выходного конца
                     // Направление потока определяет какой конец — выходной
                     const fT = branch.fireT ?? 0.5;
@@ -4846,7 +4848,8 @@ export default function CadPage() {
                   }
 
                   // Обычная ветвь: дым входит с момента smokeArrivalTime
-                  if (fr.smokeArrivalTime > smokeTimeMinutes) return;
+                  // При t=0 или если задымление ещё не дошло — не показываем
+                  if (smokeTimeMinutes <= 0 || fr.smokeArrivalTime >= smokeTimeMinutes) return;
 
                   // Сколько минут дым уже идёт по этой ветви
                   const elapsedInBranch = smokeTimeMinutes - fr.smokeArrivalTime;

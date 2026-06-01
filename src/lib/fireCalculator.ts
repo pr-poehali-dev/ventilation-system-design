@@ -121,10 +121,11 @@ export function calcVehicleFire(
   const burnTime_h   = totalEnergy_MJ / (power_MW * 3600);
   const burnTime_min = burnTime_h * 60;
 
-  // Шаг 8: расчётная температура горения
-  const deltaT_C = airFlow > 0
-    ? (power_MW * 1e6) / (airFlow * 1.25 * 1005)
-    : 0;
+  // Шаг 8: расчётная температура горения — используем ту же формулу что и calcFireTemp,
+  // чтобы результат совпадал с «Температурой продуктов» в панели.
+  // deltaT_C — прирост температуры (не абсолютная), для отображения в таблице.
+  const fireAbsTemp = calcFireTemp(power_MW, airFlow);   // °C абсолютная (20 + ΔT)
+  const deltaT_C = airFlow > 0 ? fireAbsTemp - 20 : 0;  // °C прирост, для таблицы
 
   return {
     power_MW,
