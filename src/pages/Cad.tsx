@@ -2778,52 +2778,12 @@ export default function CadPage() {
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="MousePointer2" label="Выделить" sublabel="объект" />
             <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие" />
-            <RibbonBigBtn icon="Trash2" label="Удалить" sublabel="" />
-            <RibbonBigBtn icon="ChevronUp" label="Переместить" sublabel="вверх" />
-            <RibbonBigBtn icon="ChevronDown" label="Переместить" sublabel="вниз" />
-            <RibbonBigBtn icon="FileEdit" label="Редактировать" sublabel="" />
-            <RibbonBigBtn icon="Maximize2" label="Увеличить" sublabel="" />
-            <RibbonBigBtn icon="Minimize2" label="Уменьшить" sublabel="" />
-          </div>
-        </RibbonGroup>
-
-        {/* ── Группа: Буфер обмена ── */}
-        <RibbonGroup label="Буфер обмена">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="ClipboardPaste" label="Вставить" sublabel="" disabled />
-            <RibbonBigBtn icon="Scissors" label="Вырезать" sublabel="" />
-            <RibbonBigBtn icon="Copy" label="Копировать" sublabel="" />
           </div>
         </RibbonGroup>
 
         {/* ── Группа: Виды (2D/3D) ── */}
         <RibbonGroup label="Вид сети">
           <div className="flex items-stretch gap-1">
-            <button onClick={() => { setPreset("plan"); setTimeout(() => setFitToScreenNonce(Date.now()), 80); }}
-              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
-              style={{ background: !viewInfo.is3D ? "#dbeafe" : undefined, borderColor: !viewInfo.is3D ? "#93c5fd" : undefined }}
-              title="План — вид сверху (XY) + вписать в экран">
-              <Icon name="Square" size={20} className="text-blue-600" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">План</div>
-            </button>
-            <button onClick={() => setPreset("front")}
-              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
-              title="Фронт — вид спереди (XZ)">
-              <Icon name="RectangleHorizontal" size={20} className="text-blue-600" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">Фронт</div>
-            </button>
-            <button onClick={() => setPreset("left")}
-              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded min-w-[58px]"
-              title="Профиль — вид сбоку (YZ)">
-              <Icon name="RectangleVertical" size={20} className="text-blue-600" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">Профиль</div>
-            </button>
-            <button onClick={() => setPreset("isoSE")}
-              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-purple-100 hover:border-purple-400 border border-transparent rounded min-w-[58px]"
-              title="Изометрия Юго-Восток (3D)">
-              <Icon name="Box" size={20} className="text-purple-600" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">3D Изо</div>
-            </button>
             <button onClick={() => setTool(tool === "rotate" ? "select" : "rotate")}
               className="flex flex-col items-center justify-center px-2 py-1 hover:bg-purple-100 hover:border-purple-400 border border-transparent rounded min-w-[58px]"
               title="Вращение камеры (правая кнопка мыши также вращает)"
@@ -2985,21 +2945,6 @@ export default function CadPage() {
                 </div>
               )}
             </div>
-
-            {/* Сброс демо */}
-            <button onClick={() => {
-              setBranches(DEMO_BRANCHES);
-              setNodes(DEMO_NODES);
-              setSolveResult(null);
-              setSchemaSymbols([{ id: "SYM_FAN_7", typeId: "fan", x: 0, y: 0, branchId: "7", t: 0.5, airDirection: "forward" }]);
-              setSelectedBranchId(null);
-              setSelectedNodeId(null);
-            }}
-              className="flex flex-col items-center justify-center px-2 py-1 hover:bg-gray-100 hover:border-gray-300 border border-transparent rounded min-w-[48px]"
-              title="Сбросить демо-сеть">
-              <Icon name="RotateCcw" size={18} className="text-gray-500" />
-              <div className="text-[9px] leading-tight mt-0.5 text-center text-gray-500">Демо</div>
-            </button>
 
             {/* Результат */}
             {solveResult && (
