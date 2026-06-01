@@ -4680,8 +4680,8 @@ export default function CadPage() {
                   const col = fr.hazardLevel === "lethal"  ? "#7f1d1d"
                             : fr.hazardLevel === "danger"  ? "#dc2626"
                             : fr.hazardLevel === "warning" ? "#f59e0b"
-                            : null;
-                  if (col) map.set(bid, col);
+                            : "#9ca3af"; // safe — светло-серый: дым есть, но концентрация слабая
+                  map.set(bid, col);
                 });
                 return map.size > 0 ? map : undefined;
               })()}
@@ -4696,7 +4696,7 @@ export default function CadPage() {
                 });
                 return map;
               })()}
-              onSymbolPlace={(typeId, x, y, branchId) => {
+              onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {
                   setSquadDialog({ typeId, x, y, branchId });
                   setSquadCount("5");
@@ -4715,13 +4715,15 @@ export default function CadPage() {
                     // Очаг пожара — одна ветвь = один очаг
                     const alreadyHasFire = schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId) && s.branchId === branchId);
                     if (!alreadyHasFire) {
+                      const fireT = t ?? 0.5;
                       const newSym: SchemaSymbol = {
                         id: `SYM_FIRE_${Date.now()}`,
-                        typeId, x, y, branchId, t: 0.5,
+                        typeId, x, y, branchId, t: fireT,
                       };
                       setSchemaSymbols(prev => [...prev, newSym]);
                       updateBranch(branchId, {
                         hasFire: true,
+                        fireT: fireT,
                         fireHeatRelease: 5,
                         fireMode: "heat",
                         fireTemperature: 300,

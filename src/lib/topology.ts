@@ -158,6 +158,7 @@ export interface TopoBranch {
 
   // ─── Пожар (вентиляционный расчёт аварийного режима) ────────────────
   hasFire: boolean;                // в ветви установлен очаг пожара
+  fireT: number;                   // позиция очага вдоль ветви 0..1 (0=fromId, 1=toId)
   fireHeatRelease: number;         // МВт — тепловыделение (мощность пожара Q)
   fireMode: "heat" | "temp";       // задаётся: мощностью или температурой
   fireTemperature: number;         // °C — если задаётся температурой напрямую
@@ -346,6 +347,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpReducerMaxFlow: 25,
     // Пожар
     hasFire: false,
+    fireT: 0.5,              // позиция очага вдоль ветви 0..1 (0=fromId, 1=toId)
     fireHeatRelease: 5,
     fireMode: "heat",
     fireTemperature: 300,

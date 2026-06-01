@@ -239,18 +239,25 @@ export function calcFireMode(
     nc.wSmoke += smokeDensity * airQ;
     nc.wTemp += fireTemp * airQ;
 
-    // Время прихода дыма к ВХОДНОМУ узлу очага = 0 (очаг горит с t=0)
-    if (!nodeArrivalTime.has(inNodeId)) nodeArrivalTime.set(inNodeId, 0);
-
-    // Время прохода дыма ЧЕРЕЗ ветвь-очаг: скорость = Q/S, время = L / v → мин
+    // Позиция очага вдоль ветви: 0=fromId, 1=toId
+    // Если поток идёт от fromId→toId (flow>=0), очаг находится на расстоянии fireT*length от входа
+    // Время от очага до выходного узла = (1 - fireT) * length / speed
+    const fireT = (fb.fireT ?? 0.5);
+    // Доля ветви ОТ очага ДО выходного узла
+    const fracToOut = (fb.flow ?? 0) >= 0 ? (1 - fireT) : fireT;
     const smokeSpeed = airQ > 0 && (fb.area ?? 0) > 0 ? airQ / fb.area : 0.5;
-    const transitMin = (fb.length ?? 0) > 0 && smokeSpeed > 0 ? fb.length / smokeSpeed / 60 : 0;
-    const outTime = transitMin; // от начала пожара
+    const outTime = (fb.length ?? 0) > 0 && smokeSpeed > 0
+      ? (fb.length * fracToOut) / smokeSpeed / 60
+      : 0;
+
+    // Входной узел очага помечаем как "уже прошли" (дым туда не идёт назад)
+    if (!nodeArrivalTime.has(inNodeId)) nodeArrivalTime.set(inNodeId, 0);
+    // Выходной узел получает дым через outTime минут от начала пожара
     if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > outTime) {
       nodeArrivalTime.set(outNodeId, outTime);
     }
 
-    // smokeArrivalTime очага = 0 (горит сразу)
+    // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
     resultMap.set(fb.id, {
       branchId: fb.id,
       airTempOut: Math.round(fireTemp * 10) / 10,

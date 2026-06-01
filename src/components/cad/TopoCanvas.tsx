@@ -120,8 +120,8 @@ interface Props {
   onSymbolDelete?: (id: string) => void;
   /** Активный тип символа для инструмента "symbol" */
   activeSymbolTypeId?: string | null;
-  /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь) */
-  onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null) => void;
+  /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь). t — позиция 0..1 вдоль ветви */
+  onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null, t?: number) => void;
   /** Тип символа в режиме "ожидания привязки" (после копирования/дублирования) */
   pendingSymbolTypeId?: string | null;
   /** Разместить ожидающий символ: t — позиция 0..1 вдоль ветви, null = свободно */
@@ -814,10 +814,10 @@ export default function TopoCanvas(props: Props) {
           const C = to.sx - from.sx, D = to.sy - from.sy;
           const A = sx - from.sx,   B = sy - from.sy;
           const lenSq = C * C + D * D;
-          const t = lenSq > 0 ? Math.max(0.05, Math.min(0.95, (A * C + B * D) / lenSq)) : 0.5;
+          const t = lenSq > 0 ? Math.max(0.02, Math.min(0.98, (A * C + B * D) / lenSq)) : 0.5;
           const wx = fromN.x + (toN.x - fromN.x) * t;
           const wy = fromN.y + (toN.y - fromN.y) * t;
-          onSymbolPlace(activeSymbolTypeId, wx, wy, hitB);
+          onSymbolPlace(activeSymbolTypeId, wx, wy, hitB, t);
         }
       } else {
         // Клик на пустом месте — в мировых координатах
