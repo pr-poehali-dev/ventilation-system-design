@@ -2401,10 +2401,13 @@ export default function CadPage() {
                 const FIRE_Q_TOL   = 0.1;  // м³/с — допуск сходимости
                 const AMBIENT_TEMP = surfaceTemp;
 
-                // Текущие расходы (начинаем с результатов штатного расчёта)
-                let currentFlows = new Map<string, number>(
+                // Исходные расходы ДО пожара — сохраняем для обнаружения опрокидывания
+                const originalFlows = new Map<string, number>(
                   branches.map(b => [b.id, b.flow ?? 0])
                 );
+
+                // Текущие расходы (начинаем с результатов штатного расчёта)
+                let currentFlows = new Map<string, number>(originalFlows);
 
                 addLog("info", "🔥 Итеративный расчёт аварийного режима (учёт тепловой депрессии)...");
 
@@ -2459,7 +2462,8 @@ export default function CadPage() {
                 // originalFlow = исходный расход ДО итераций (для обнаружения опрокидывания).
                 const branchesForFire = branches.map(b => {
                   const finalQ = currentFlows.get(b.id) ?? b.flow;
-                  const bUpdated = { ...b, flow: finalQ, originalFlow: b.flow };
+                  // originalFlow — расход ДО пожара (до итераций), для детектирования опрокидывания
+                  const bUpdated = { ...b, flow: finalQ, originalFlow: originalFlows.get(b.id) ?? b.flow };
                   if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return bUpdated;
                   const masses: [number, number, number] = [
                     b.fireVehicleMassRubber ?? 1200,
@@ -2492,8 +2496,8 @@ export default function CadPage() {
                 setFireResult(result);
                 setFireCalcDone(true);
                 setShowSmoke(true);
-                // Устанавливаем максимум шкалы = расчётный максимум (но не менее 60 мин)
-                const initMax = Math.max(60, Math.ceil(result.maxSmokeTime));
+                // Устанавливаем максимум шкалы: не менее 60 и не более 600 мин
+                const initMax = Math.min(600, Math.max(60, Math.ceil(result.maxSmokeTime)));
                 setSmokeMaxTime(initMax);
                 // Ставим ползунок на максимум — сразу видно всё задымление
                 setSmokeTimeMinutes(initMax);
