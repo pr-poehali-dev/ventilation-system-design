@@ -222,6 +222,34 @@ export default function CadPage() {
     }
   }, [selectedBranchId, selectedBranch?.hasFan]);
 
+  // Синхронизация расчётной мощности техники → fireHeatRelease и температуры → fireTemperature
+  useEffect(() => {
+    const b = selectedBranch;
+    if (!b?.hasFire || (b.fireCombustible ?? "vehicle") !== "vehicle") return;
+    const masses: [number, number, number] = [b.fireVehicleMassRubber ?? 1200, b.fireVehicleMassDiesel ?? 400, b.fireVehicleMassOil ?? 200];
+    const airQ = Math.abs(b.flow ?? 0);
+    const vfr = calcVehicleFire(masses, airQ);
+    if (vfr.power_MW <= 0) return;
+    const roundedPower = Math.round(vfr.power_MW * 100) / 100;
+    if (Math.abs((b.fireHeatRelease ?? 5) - roundedPower) > 0.01) {
+      updateBranch(b.id, { fireHeatRelease: roundedPower });
+    }
+    if ((b.fireMode ?? "heat") === "temp" && airQ > 0) {
+      const calcTemp = Math.round(vfr.deltaT_C + 20);
+      if (Math.abs((b.fireTemperature ?? 300) - calcTemp) > 1) {
+        updateBranch(b.id, { fireTemperature: calcTemp });
+      }
+    }
+  }, [
+    selectedBranchId,
+    selectedBranch?.fireCombustible,
+    selectedBranch?.fireVehicleMassRubber,
+    selectedBranch?.fireVehicleMassDiesel,
+    selectedBranch?.fireVehicleMassOil,
+    selectedBranch?.fireMode,
+    selectedBranch?.flow,
+  ]);
+
   const updateNode = (id: string, patch: Partial<TopoNode>) => {
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
   };
