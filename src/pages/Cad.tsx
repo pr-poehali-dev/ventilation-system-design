@@ -551,7 +551,7 @@ export default function CadPage() {
   const [fireCalcDone, setFireCalcDone] = useState(false);
   const [showSmoke, setShowSmoke] = useState(false);
   // Текущий момент времени на шкале задымления (минуты)
-  const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(1);
+  const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(0);
   // Максимум шкалы (мин) и шаг — задаётся пользователем
   const [smokeMaxTime, setSmokeMaxTime] = useState(60);
   const [smokeTimeStep, setSmokeTimeStep] = useState(1);
@@ -3195,8 +3195,6 @@ export default function CadPage() {
                               <tr style={{ background: "#f5f5f5" }}>
                                 <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "left", fontWeight: 600 }}>Материал</th>
                                 <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>Масса, кг</th>
-                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>ρ, кг/м³</th>
-                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>Q⁻, МДж/кг</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3214,8 +3212,6 @@ export default function CadPage() {
                                         style={{ width: "100%", border: "none", outline: "none", textAlign: "right", fontSize: 10, background: val > 0 ? "#d1fae5" : "#fff", padding: "1px 3px" }}
                                       />
                                     </td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#6b7280" }}>{mat.density}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#6b7280" }}>{mat.heatValue}</td>
                                   </tr>
                                 );
                               })}
@@ -3226,36 +3222,6 @@ export default function CadPage() {
                         {/* Результаты расчёта мощности */}
                         {vfr.power_MW > 0 && (
                           <>
-                            <div className="px-1 py-0.5 text-[10px] font-semibold mt-0.5" style={{ background: "#fff7ed", borderBottom: "1px solid #fed7aa", color: "#c2410c" }}>
-                              Расчёт мощности пожара техники
-                            </div>
-
-                            {/* Таблица промежуточных результатов */}
-                            <div className="px-1 pt-0.5 pb-0.5">
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
-                                <thead>
-                                  <tr style={{ background: "#f5f5f5" }}>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "left", fontWeight: 600 }}>Материал</th>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: 600 }}>F, м²</th>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: 600 }}>N, МДж</th>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: 600 }}>τ, ч</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {vfr.materials.map((m, i) => (
-                                    <tr key={m.name} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px" }}>{m.name}</td>
-                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center" }}>{m.surface_m2.toFixed(3)}</td>
-                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center" }}>{m.energy_MJ.toFixed(0)}</td>
-                                      <td style={{ border: "1px solid #d1d5db", padding: "2px 3px", textAlign: "center", fontWeight: Math.max(...vfr.materials.map(x => x.burnTime_h)) === m.burnTime_h ? 700 : 400 }}>
-                                        {m.burnTime_h.toFixed(3)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-
                             {/* Итоговые результаты */}
                             <div className="px-1 pb-0.5">
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
@@ -5269,7 +5235,7 @@ export default function CadPage() {
                       setSmokeAnimating(false);
                     } else {
                       // Если дошли до конца — сбрасываем на начало
-                      setSmokeTimeMinutes(prev => prev >= smokeMaxTime ? 1 : prev);
+                      setSmokeTimeMinutes(prev => prev >= smokeMaxTime ? 0 : prev);
                       setSmokeAnimating(true);
                       smokeAnimRef.current = setInterval(() => {
                         setSmokeTimeMinutes(prev => {
@@ -5301,7 +5267,7 @@ export default function CadPage() {
                     if (smokeAnimRef.current) clearInterval(smokeAnimRef.current);
                     smokeAnimRef.current = null;
                     setSmokeAnimating(false);
-                    setSmokeTimeMinutes(1);
+                    setSmokeTimeMinutes(0);
                   }}
                   title="Сначала"
                   style={{
@@ -5313,12 +5279,12 @@ export default function CadPage() {
                 </button>
 
                 {/* Метка начала */}
-                <span style={{ fontSize: 11, color: "#f87171", whiteSpace: "nowrap" }}>1 мин</span>
+                <span style={{ fontSize: 11, color: "#f87171", whiteSpace: "nowrap" }}>0 мин</span>
 
                 {/* Слайдер времени */}
                 <input
                   type="range"
-                  min={1}
+                  min={0}
                   max={smokeMaxTime}
                   step={smokeTimeStep}
                   value={smokeTimeMinutes}
