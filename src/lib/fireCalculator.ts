@@ -343,22 +343,26 @@ export function calcFireMode(
     nc.wSmoke += smokeDensity * airQ;
     nc.wTemp += fireTemp * airQ;
 
-    // Позиция очага вдоль ветви: 0=fromId, 1=toId
-    // Если поток идёт от fromId→toId (flow>=0), очаг находится на расстоянии fireT*length от входа
-    // Время от очага до выходного узла = (1 - fireT) * length / speed
+    // Позиция очага вдоль ветви: fireT=0 → у fromId, fireT=1 → у toId
     const fireT = (fb.fireT ?? 0.5);
-    // Доля ветви ОТ очага ДО выходного узла
-    const fracToOut = (fb.flow ?? 0) >= 0 ? (1 - fireT) : fireT;
-    const smokeSpeed = airQ > 0 && (fb.area ?? 0) > 0 ? airQ / fb.area : 0.5;
-    const outTime = (fb.length ?? 0) > 0 && smokeSpeed > 0
-      ? (fb.length * fracToOut) / smokeSpeed / 60
-      : 0;
+    const smokeSpeed = Math.max(airQ > 0 && (fb.area ?? 0) > 0 ? airQ / fb.area : 0.5, 0.3);
+    const branchLen = fb.length ?? 0;
 
-    // Входной узел очага помечаем как "уже прошли" (дым туда не идёт назад)
-    if (!nodeArrivalTime.has(inNodeId)) nodeArrivalTime.set(inNodeId, 0);
-    // Выходной узел получает дым через outTime минут от начала пожара
+    // Время от очага до ВЫХОДНОГО узла (по направлению потока)
+    const fracToOut = (fb.flow ?? 0) >= 0 ? (1 - fireT) : fireT;
+    const outTime = branchLen > 0 ? (branchLen * fracToOut) / smokeSpeed / 60 : 0;
+
+    // Время от очага до ВХОДНОГО узла (против направления потока — при опрокидывании/диффузии)
+    // Дым всегда распространяется от точки очага в ОБЕ стороны
+    const fracToIn = 1 - fracToOut;
+    const inTime = branchLen > 0 ? (branchLen * fracToIn) / smokeSpeed / 60 : 0;
+
+    // Оба узла очага получают задымление (выходной — быстрее, входной — через inTime)
     if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > outTime) {
       nodeArrivalTime.set(outNodeId, outTime);
+    }
+    if (!nodeArrivalTime.has(inNodeId) || nodeArrivalTime.get(inNodeId)! > inTime) {
+      nodeArrivalTime.set(inNodeId, inTime);
     }
 
     // Реальное опрокидывание: знак flow изменился после итеративного расчёта.
@@ -409,17 +413,22 @@ export function calcFireMode(
   interface SmokeParams { coC: number; co2C: number; smokeC: number; tempC: number; }
   const smokeAtNode = new Map<string, SmokeParams>();
 
-  // Инициализация: выходные узлы очагов
+  // Инициализация: оба узла каждого очага получают задымление для BFS
+  // outNodeId — основное направление, inNodeId — обратное (диффузия / опрокидывание)
   for (const fb of fireBranches) {
-    const nc = nodeContribs.get((fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId);
-    if (!nc || nc.smokedQ < 0.0001) continue;
     const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
-    smokeAtNode.set(outNodeId, {
+    const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
+    const nc = nodeContribs.get(outNodeId);
+    if (!nc || nc.smokedQ < 0.0001) continue;
+    const sp: SmokeParams = {
       coC:    nc.wCO    / nc.smokedQ,
       co2C:   nc.wCO2   / nc.smokedQ,
       smokeC: nc.wSmoke / nc.smokedQ,
       tempC:  nc.wTemp  / nc.smokedQ,
-    });
+    };
+    smokeAtNode.set(outNodeId, sp);
+    // Входной узел тоже получает задымление (дым от очага распространяется в обе стороны)
+    if (!smokeAtNode.has(inNodeId)) smokeAtNode.set(inNodeId, sp);
   }
 
   // BFS по очереди задымлённых узлов

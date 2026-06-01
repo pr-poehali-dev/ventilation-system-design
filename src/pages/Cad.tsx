@@ -5047,15 +5047,9 @@ export default function CadPage() {
 
                   if (branch.hasFire) {
                     if (smokeTimeMinutes <= 0) return;
-                    // Очаг: дым от точки очага до выходного конца
-                    // Используем fr.airSpeed (расход после итераций пожара)
-                    const fT = branch.fireT ?? 0.5;
-                    // Направление — по знаку flow из итерационного расчёта
-                    // fr.airSpeed > 0 означает что поток идёт в штатном направлении
-                    const flowDir = (branch.flow ?? 0) >= 0 ? 1 : -1;
-                    const fromT = flowDir >= 0 ? fT : 0;
-                    const toT   = flowDir >= 0 ? 1  : fT;
-                    map.set(bid, { color: hazardCol(fr.hazardLevel), fromT, toT });
+                    // Очаг: дым заполняет ВСЮ ветвь (от очага в обе стороны)
+                    // Это корректно — очаг горит с t=0, дым есть по всей длине ветви
+                    map.set(bid, { color: hazardCol(fr.hazardLevel), fromT: 0, toT: 1 });
                     return;
                   }
 
