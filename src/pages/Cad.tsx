@@ -3187,6 +3187,35 @@ export default function CadPage() {
                       <Row label="Концентрация CO₂, %:" value={`${fr.co2Conc.toFixed(2)}`} bold={fr.co2Conc > 1} />
                       <Row label="Опт. плотность дыма, м⁻¹:" value={`${fr.smokeDensity.toFixed(2)}`} />
                       <Row label="Видимость в дыму, м:" value={`${fr.visibility.toFixed(1)}`} bold={fr.visibility < 5} />
+                      {/* Время задымления */}
+                      {(() => {
+                        if (b.hasFire) {
+                          return <Row label="Время задымления:" value="Очаг пожара (0 мин)" bold />;
+                        }
+                        const airQ = Math.abs(b.flow ?? 0);
+                        const speed = airQ > 0 && b.area > 0 ? airQ / b.area : 0;
+                        const arrT = fr.smokeArrivalTime;
+                        const transitMin = speed > 0 && b.length > 0 ? b.length / speed / 60 : 0;
+                        const fillT = arrT + transitMin;
+                        return (
+                          <>
+                            <Row
+                              label="Дым входит через:"
+                              value={arrT === 0 ? "сразу" : `${arrT.toFixed(1)} мин`}
+                              bold={arrT < 5}
+                            />
+                            <Row
+                              label="Ветвь заполнится через:"
+                              value={speed > 0 ? `${fillT.toFixed(1)} мин` : "—"}
+                              bold={fillT < 10}
+                            />
+                            <Row
+                              label="Скорость воздуха, м/с:"
+                              value={speed > 0 ? speed.toFixed(2) : "—"}
+                            />
+                          </>
+                        );
+                      })()}
                       <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                         <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Устойчивость струи:</span>
                         <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{
