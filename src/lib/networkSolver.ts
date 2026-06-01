@@ -58,11 +58,6 @@ interface Edge {
   reverseH2?:         number;
   reverseQMax?:       number;
   reverseEffFactor?:  number;     // множитель КПД в реверсе
-  // ── Вариант 1: реверс ГВУ/ВВУ реализован как РАЗВОРОТ ребра (a↔b) ──
-  // useReverseCurve=true → fanH использует реверсивную P–Q как прямую (fan_dir=+1),
-  // т.к. ребро уже физически развёрнуто. wasReversed нужно для возврата знака Q.
-  useReverseCurve?:   boolean;    // считать вентилятор по реверсивной кривой, но как прямой
-  wasReversed?:       boolean;    // ребро было развёрнуто (a↔b) при предобработке реверса
 }
 
 interface ContourEdge {
@@ -128,10 +123,8 @@ function fanH(e: Edge, Q: number): number {
     const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
     const Qn = Math.abs(Q) / N / Math.max(0.001, k);
 
-    // При реверсе — используем реверсную P–Q характеристику если она есть в каталоге.
-    // useReverseCurve выставляется при предобработке (ребро уже развёрнуто, fanReverse снят),
-    // fanReverse — для совместимости со старым путём (если разворот не делался).
-    if ((e.fanReverse || e.useReverseCurve) && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+    // При реверсе — используем реверсную P–Q характеристику если она есть в каталоге
+    if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
       const qMax = (e.reverseQMax ?? c.qMax) * k;
       if (Qn > qMax) return 0;
       return Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
@@ -154,7 +147,7 @@ function fanDH(e: Edge, Q: number): number {
   const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
   const Qn = Math.abs(Q) / N / Math.max(0.001, k);
   // При реверсе с отдельной кривой — используем её коэффициенты
-  if ((e.fanReverse || e.useReverseCurve) && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+  if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
     return Math.abs((e.reverseH1 + 2 * e.reverseH2 * Qn) * k * e.fanRhoFactor) / N;
   }
   // dH/dQ_total = dH/dQ_one * (1/N) — цепное правило
@@ -184,7 +177,7 @@ function estimateQ0(edges: Edge[], Rtotal: number): number {
     const c = fan.fanCurve;
     const k = (fan.fanRpm && c.rpmNominal > 0) ? fan.fanRpm / c.rpmNominal : 1;
     // При реверсе с отдельной кривой — используем её диапазон расходов
-    const qMaxSrc = ((fan.fanReverse || fan.useReverseCurve) && fan.reverseQMax !== undefined) ? fan.reverseQMax : c.qMax;
+    const qMaxSrc = (fan.fanReverse && fan.reverseQMax !== undefined) ? fan.reverseQMax : c.qMax;
     const qHi = qMaxSrc * k;
     if (Rtotal <= 0) return (c.qMin + qMaxSrc) / 2 * k;
 
@@ -415,43 +408,6 @@ export function solveNetwork(
       branches: brCalc, nodes: nodesIn, log: ["Нет ветвей"],
       cyclesCount: 0, diagnostics: [],
     };
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // ПРЕДОБРАБОТКА РЕВЕРСА ГВУ/ВВУ (Вариант 1) — реверс = РАЗВОРОТ ребра.
-  //
-  // Проблема: при fanReverse=true знак напора входит только в невязку контура,
-  // но синхронизация Q ветвей дерева (bottom-up Кирхгоф-1) перезатирает знак Q
-  // вентилятора-в-дереве, и итерации застревают на неверном решении.
-  //
-  // Решение (подтверждено физикой и поведением ручного разворота ветви):
-  //   • физически разворачиваем ребро ГВУ/ВВУ: a↔b
-  //   • снимаем fanReverse → вентилятор считается ПРЯМЫМ (fan_dir=+1)
-  //   • выставляем useReverseCurve=true → fanH берёт реверсивную P–Q как прямую
-  //     (нагнетание по реверсивной характеристике для текущего угла лопаток)
-  //   • запоминаем wasReversed для возврата знака Q и пометки «реверс» на выходе
-  //
-  // Результат: весь солвер работает в «прямом» режиме, синхронизация дерева
-  // согласована с направлением нагнетания. Идентично ручному развороту ветви.
-  // ──────────────────────────────────────────────────────────────────────────
-  for (const e of edges) {
-    if (!e.hasFan || e.fanStopped || !e.fanReverse) continue;
-    // Разворачиваем только ГВУ/ВВУ (главное проветривание). ВМП оставляем как есть —
-    // их направление определяется физикой сети, разворот ребра не нужен.
-    if (e.fanType !== "ГВУ" && e.fanType !== "ВВУ") continue;
-
-    // 1) Разворот ориентации ребра
-    const tmp = e.a; e.a = e.b; e.b = tmp;
-    // 2) Снимаем флаг реверса — теперь вентилятор «прямой» по развёрнутому ребру
-    e.fanReverse = false;
-    // 3) Если есть реверсивная кривая — используем её как прямую характеристику
-    if (e.fanMode === "curve" && e.reverseH0 !== undefined
-        && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
-      e.useReverseCurve = true;
-    }
-    // 4) Запоминаем разворот для возврата знака Q на выходе
-    e.wasReversed = true;
-    log.push(`Реверс ${e.id} (${e.fanType}): развёрнут как ребро, подключена реверсивная характеристика`);
   }
 
   // Проверка: GND должен быть подключён минимум к 2 рёбрам (степень ≥ 2).
@@ -939,7 +895,7 @@ export function solveNetwork(
     const k    = (e.fanRpm && e.fanCurve.rpmNominal > 0) ? e.fanRpm / e.fanCurve.rpmNominal : 1;
     const Q    = Math.abs(e.Q);
     const qMin = e.fanCurve.qMin * k;
-    const qMax = ((e.fanReverse || e.useReverseCurve) && e.reverseQMax) ? e.reverseQMax * k : e.fanCurve.qMax * k;
+    const qMax = (e.fanReverse && e.reverseQMax) ? e.reverseQMax * k : e.fanCurve.qMax * k;
     if (Q < qMin * 0.9)
       diag.push({ level: "warning", category: "fan", message: `${e.id}: помпаж Q=${Q.toFixed(1)} < Qmin=${qMin.toFixed(1)}`, objectId: e.id });
     else if (Q > qMax * 0.97)
