@@ -2438,7 +2438,13 @@ export default function CadPage() {
                     const T_pr  = b.fireMode === "temp"
                       ? b.fireTemperature
                       : calcFireTemp(Q_MW, airQ, AMBIENT_TEMP);
-                    const h_t   = calcThermalDepression(T_pr, AMBIENT_TEMP, b.length, b.angle ?? 0);
+                    // Знак угла: определяем из высот узлов (to выше from → +, to ниже → −)
+                    // b.angle всегда ≥ 0, поэтому берём знак из dz узлов
+                    const fromNode = nodes.find(n => n.id === b.fromId);
+                    const toNode   = nodes.find(n => n.id === b.toId);
+                    const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
+                    const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1);
+                    const h_t = calcThermalDepression(T_pr, AMBIENT_TEMP, b.length, signedAngle);
                     return { ...b, fireThermalDepression: h_t };
                   });
 

@@ -373,7 +373,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
 }
 
 // Угол наклона ветви в градусах (-90..+90) из координат узлов
-// +90 — вертикально вверх, -90 — вертикально вниз, 0 — горизонтально
+// +90 — вертикально вверх (to выше from), -90 — вертикально вниз (to ниже from), 0 — горизонтально
+// Знак критичен для расчёта тепловой депрессии пожара: нисходящая = отрицательный угол
 export function calcBranchAngle(from: TopoNode, to: TopoNode): number {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -381,7 +382,8 @@ export function calcBranchAngle(from: TopoNode, to: TopoNode): number {
   const horizLen = Math.sqrt(dx * dx + dy * dy);
   const len3d = Math.sqrt(horizLen * horizLen + dz * dz);
   if (len3d < 0.001) return 0;
-  return Math.round(Math.asin(Math.abs(dz) / len3d) * (180 / Math.PI) * 10) / 10;
+  // Знак угла = знак dz: to выше from → +, to ниже from → −
+  return Math.round(Math.asin(dz / len3d) * (180 / Math.PI) * 10) / 10;
 }
 
 // Длина ветви в 3D пространстве по координатам узлов

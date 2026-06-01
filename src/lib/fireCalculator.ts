@@ -313,15 +313,22 @@ export function calcFireMode(
       ? fb.fireTemperature
       : calcFireTemp(Q_MW, airQ, ambientTemp_C);
 
-    // Тепловая депрессия
-    const thermalDep = calcThermalDepression(fireTemp, ambientTemp_C, fb.length, fb.angle ?? 0);
+    // Знаковый угол: определяем из высот узлов (to выше from → +, to ниже → −)
+    // fb.angle может быть без знака (старые данные), поэтому используем dz узлов
+    const fromNode = nodes.find(n => n.id === fb.fromId);
+    const toNode   = nodes.find(n => n.id === fb.toId);
+    const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
+    const signedAngle = Math.abs(fb.angle ?? 0) * (dz !== 0 ? Math.sign(dz) : Math.sign(fb.angle ?? 0) || 1);
+
+    // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание)
+    const thermalDep = calcThermalDepression(fireTemp, ambientTemp_C, fb.length, signedAngle);
 
     // Концентрации
     const comb = getCombustible(fb.fireCombustible ?? "coal");
     const { coConc, co2Conc, smokeDensity, visibility } = calcGasConcentrations(Q_MW, airQ, comb);
 
-    // Опрокидывание: нисходящая ветвь, тепловая депрессия > аэродинамической депрессии ветви
-    const isDescending = (fb.angle ?? 0) < -1;
+    // Опрокидывание: нисходящая ветвь (signedAngle < 0), тепловая депрессия > аэродинамической
+    const isDescending = signedAngle < -1;
     const willReverse = isDescending && Math.abs(thermalDep) > Math.abs(fb.dP ?? 0) * 0.5;
 
     // Оценка изменения расхода из-за тепловой депрессии
