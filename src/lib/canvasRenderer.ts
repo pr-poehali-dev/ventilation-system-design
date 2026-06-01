@@ -189,6 +189,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   }).sort((a, b) => a.depth - b.depth);
 
   // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
+
   for (const { b, from, to } of sorted) {
     if (!from || !to) continue;
 
@@ -234,19 +235,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const angle = Math.atan2(dy, dx);
 
     // Подсветка задымления (пожар) — широкая полупрозрачная аура, только от fromT до toT
+    // fromT/toT задаются в координатах "по направлению потока" (0=вход дыма, 1=выход)
     const fireSeg = branchFireColors?.get(b.id);
     if (fireSeg) {
       const { color: fireCol, fromT, toT } = fireSeg;
-      // Вычисляем экранные координаты начала и конца задымлённого сегмента
-      const fsx = from.sx + (to.sx - from.sx) * fromT;
-      const fsy = from.sy + (to.sy - from.sy) * fromT;
-      const tsx = from.sx + (to.sx - from.sx) * toT;
-      const tsy = from.sy + (to.sy - from.sy) * toT;
+      // Учитываем направление потока: если reversed — входной конец = to, выходной = from
+      // sxA/syA — это начало по направлению потока (уже вычислено выше)
+      const fsx = sxA + (sxB - sxA) * fromT;
+      const fsy = syA + (syB - syA) * fromT;
+      const tsx = sxA + (sxB - sxA) * toT;
+      const tsy = syA + (syB - syA) * toT;
       ctx.save();
       ctx.strokeStyle = fireCol;
-      ctx.lineWidth = w + 10;
+      ctx.lineWidth = Math.max(w + 14, 8);
       ctx.lineCap = "round";
-      ctx.globalAlpha = 0.45;
+      ctx.globalAlpha = 0.7;
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
       ctx.restore();

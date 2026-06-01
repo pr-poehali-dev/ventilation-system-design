@@ -1383,15 +1383,23 @@ export default function TopoCanvas(props: Props) {
           // ── Подсветка в F3-режиме привязки ────────────────────────────────
           const posBindInfo = branchPositionColors?.get(b.id);
           // ── Подсветка задымления от пожара ────────────────────────────────
-          const fireColor = branchFireColors?.get(b.id);
+          const fireSeg = branchFireColors?.get(b.id);
 
           return (
             <g key={b.id}>
-              {/* Подсветка задымления (пожар) — широкая полупрозрачная аура */}
-              {fireColor && (
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke={fireColor} strokeWidth={w + 10} strokeLinecap="round" opacity="0.45" />
-              )}
+              {/* Подсветка задымления (пожар) — сегмент от fromT до toT по направлению потока */}
+              {fireSeg && (() => {
+                const { color: fireCol, fromT, toT } = fireSeg;
+                // sxA/syA — начало по направлению потока (с учётом reversed)
+                const fsx = sxA + (sxB - sxA) * fromT;
+                const fsy = syA + (syB - syA) * fromT;
+                const tsx = sxA + (sxB - sxA) * toT;
+                const tsy = syA + (syB - syA) * toT;
+                return (
+                  <line x1={fsx} y1={fsy} x2={tsx} y2={tsy}
+                    stroke={fireCol} strokeWidth={Math.max(w + 14, 8)} strokeLinecap="round" opacity="0.7" />
+                );
+              })()}
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}

@@ -4735,7 +4735,7 @@ export default function CadPage() {
                   level === "lethal"  ? "#7f1d1d"
                 : level === "danger"  ? "#dc2626"
                 : level === "warning" ? "#f59e0b"
-                : "#9ca3af";
+                : "#a16207"; // safe — тёмно-жёлтый, задымление слабое но видимое
 
                 // Ветви-очаги: задымление от точки fireT до конца по направлению потока
                 fireResult.branches.forEach((fr, bid) => {
@@ -4772,6 +4772,7 @@ export default function CadPage() {
                   // toT = smokedFrac (сколько успело пройти)
                   map.set(bid, { color: hazardCol(fr.hazardLevel), fromT: 0, toT: smokedFrac });
                 });
+
 
                 return map.size > 0 ? map : undefined;
               })()}
