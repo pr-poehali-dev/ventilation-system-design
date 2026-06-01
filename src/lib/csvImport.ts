@@ -256,7 +256,7 @@ function buildResult(
       y: Math.round(rn.y * 10) / 10,
       z: Math.round(rn.z * 10) / 10,
       number: origNum,
-      name: rn.id.includes("-") ? rn.id.slice(-8) : rn.id,
+      name: "",
       atmosphereLink: rn.isAtm,
     }));
   }

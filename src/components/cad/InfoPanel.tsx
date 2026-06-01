@@ -218,8 +218,8 @@ export default function InfoPanel({
                         style={{ color: "#1a3a6b", minWidth: 24 }}>
                         {node.number}
                       </span>
-                      <span className="text-[10px] text-gray-500 truncate">
-                        {node.name || `(${node.x}, ${node.y})`}
+                      <span className="text-[10px] text-gray-400 truncate font-mono">
+                        {node.x}, {node.y}
                       </span>
                     </label>
                     {onSelectNode && (
