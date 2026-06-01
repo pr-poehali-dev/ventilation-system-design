@@ -486,9 +486,17 @@ export function calcFireMode(
         airSpeed:         Math.round(speed * 100) / 100,
       });
 
-      // Выходной узел получает задымление — добавляем в очередь если новый
+      // Выходной узел получает задымление
+      // Если узел ещё не посещён — добавляем в очередь
+      // Если уже посещён, но пришёл более быстрый путь — обновляем и добавляем снова (Dijkstra-like)
+      const prevArrival = nodeArrivalTime.get(outNodeId);
       if (!visitedNodes.has(outNodeId)) {
         visitedNodes.add(outNodeId);
+        smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
+        nodeArrivalTime.set(outNodeId, arrivalAtOut);
+        bfsQueue.push(outNodeId);
+      } else if (prevArrival !== undefined && arrivalAtOut < prevArrival) {
+        // Более быстрый путь — обновляем параметры и повторно обходим
         smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
         nodeArrivalTime.set(outNodeId, arrivalAtOut);
         bfsQueue.push(outNodeId);

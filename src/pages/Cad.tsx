@@ -5041,42 +5041,38 @@ export default function CadPage() {
                 : level === "warning" ? "#f59e0b"
                 : "#a16207"; // safe — тёмно-жёлтый, задымление слабое но видимое
 
-                // Ветви-очаги: задымление от точки fireT до конца по направлению потока
                 fireResult.branches.forEach((fr, bid) => {
                   const branch = branches.find(b => b.id === bid);
                   if (!branch) return;
 
                   if (branch.hasFire) {
-                    // При t=0 дыма ещё нет — пожар только начался
                     if (smokeTimeMinutes <= 0) return;
-                    // Очаг: дым идёт от места установки (fireT) до выходного конца
-                    // Направление потока определяет какой конец — выходной
+                    // Очаг: дым от точки очага до выходного конца
+                    // Используем fr.airSpeed (расход после итераций пожара)
                     const fT = branch.fireT ?? 0.5;
-                    const fromT = (branch.flow ?? 0) >= 0 ? fT : 0;
-                    const toT   = (branch.flow ?? 0) >= 0 ? 1  : fT;
+                    // Направление — по знаку flow из итерационного расчёта
+                    // fr.airSpeed > 0 означает что поток идёт в штатном направлении
+                    const flowDir = (branch.flow ?? 0) >= 0 ? 1 : -1;
+                    const fromT = flowDir >= 0 ? fT : 0;
+                    const toT   = flowDir >= 0 ? 1  : fT;
                     map.set(bid, { color: hazardCol(fr.hazardLevel), fromT, toT });
                     return;
                   }
 
-                  // Обычная ветвь: дым входит с момента smokeArrivalTime
-                  // При t=0 или если задымление ещё не дошло — не показываем
-                  if (smokeTimeMinutes <= 0 || fr.smokeArrivalTime >= smokeTimeMinutes) return;
+                  // Обычная ветвь: дым входит начиная с smokeArrivalTime
+                  if (smokeTimeMinutes <= 0 || fr.smokeArrivalTime > smokeTimeMinutes) return;
 
                   // Сколько минут дым уже идёт по этой ветви
                   const elapsedInBranch = smokeTimeMinutes - fr.smokeArrivalTime;
 
-                  // Скорость воздуха в ветви (м/с) = Q / S
-                  const airQ = Math.abs(branch.flow ?? 0);
-                  const speed = airQ > 0 && branch.area > 0 ? airQ / branch.area : 0.5;
-                  // Длина ветви, пройденная дымом за elapsed мин
-                  const smokedLen = elapsedInBranch * 60 * speed; // метры
-                  // Доля ветви, пройденная дымом (0..1)
+                  // Берём скорость из результата расчёта пожара (уже с min 0.3 м/с)
+                  const speed = fr.airSpeed > 0 ? fr.airSpeed : 0.3;
+                  // Длина ветви, пройденная дымом за elapsedInBranch минут
+                  const smokedLen = elapsedInBranch * 60 * speed;
                   const smokedFrac = branch.length > 0
                     ? Math.min(1, smokedLen / branch.length)
                     : 1;
 
-                  // fromT всегда 0 (дым входит с начала ветви по направлению потока)
-                  // toT = smokedFrac (сколько успело пройти)
                   map.set(bid, { color: hazardCol(fr.hazardLevel), fromT: 0, toT: smokedFrac });
                 });
 
