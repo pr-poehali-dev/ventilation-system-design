@@ -5055,7 +5055,7 @@ export default function CadPage() {
                         fireHeatRelease: 5,
                         fireMode: "heat",
                         fireTemperature: 300,
-                        fireCombustible: "coal",
+                        fireCombustible: "vehicle",
                       });
                       setSelectedSymbolId(newSym.id);
                       lastBranchTab.current = "accidents"; // чтобы useEffect не перебил вкладку

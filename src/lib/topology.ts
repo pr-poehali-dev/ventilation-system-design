@@ -358,7 +358,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireHeatRelease: 5,
     fireMode: "heat",
     fireTemperature: 300,
-    fireCombustible: "coal",
+    fireCombustible: "vehicle",
     fireStartTime: 0,
     fireVehicleMassRubber: 1200,
     fireVehicleMassDiesel: 400,
