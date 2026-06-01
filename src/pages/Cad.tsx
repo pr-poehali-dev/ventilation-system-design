@@ -423,7 +423,10 @@ export default function CadPage() {
     if (nodeMap.size > 0) {
       setNodes((prev) => prev.map((n) => {
         const newId = nodeMap.get(n.id) ?? n.id;
-        return { ...n, id: newId, number: newId, name: n.name?.startsWith("Узел ") || !n.name ? `Узел ${newId}` : n.name };
+        const oldId = n.id;
+        // Сбрасываем name если: нет имени, начинается с "Узел ", или совпадает со старым id (технический id из импорта)
+        const isAutoName = !n.name || n.name.startsWith("Узел ") || n.name === oldId;
+        return { ...n, id: newId, number: newId, name: isAutoName ? `Узел ${newId}` : n.name };
       }));
     }
 
