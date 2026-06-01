@@ -2286,7 +2286,8 @@ export default function CadPage() {
                 // Устанавливаем максимум шкалы = расчётный максимум (но не менее 60 мин)
                 const initMax = Math.max(60, Math.ceil(result.maxSmokeTime));
                 setSmokeMaxTime(initMax);
-                setSmokeTimeMinutes(Math.min(initMax, smokeTimeMinutes));
+                // Ставим ползунок на максимум — сразу видно всё задымление
+                setSmokeTimeMinutes(initMax);
                 addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
               }}
