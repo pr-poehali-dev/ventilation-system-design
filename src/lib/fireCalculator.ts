@@ -362,10 +362,10 @@ export function calcFireMode(
     // Реальное опрокидывание: знак flow изменился после итеративного расчёта.
     // Сравниваем fb.flow (после итераций) с fb.originalFlow (до пожара).
     // Если originalFlow не задан — fallback на статическую оценку willReverse.
-    const origFlow = (fb as TopoBranch & { originalFlow?: number }).originalFlow;
+    const origFlow = fb.originalFlow;
+    const flowNow  = fb.flow ?? 0;
     const actuallyReversed = origFlow !== undefined
-      ? (Math.sign(origFlow || 1) !== Math.sign(fb.flow ?? origFlow || 1))
-        && Math.abs(fb.flow ?? 0) > 0.05   // не считаем шум за опрокидывание
+      ? (Math.sign(origFlow || 1) !== Math.sign(flowNow || 1)) && Math.abs(flowNow) > 0.05
       : willReverse;
 
     // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
