@@ -57,7 +57,7 @@ interface CanvasLayerProps {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
   waterNodeResults?: Map<string, WaterNodeResult>;
-  branchFireColors?: Map<string, string>;
+  branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
 
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;

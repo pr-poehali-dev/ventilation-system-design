@@ -56,8 +56,8 @@ export interface CanvasRenderOptions {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig: UnitsConfig;
   waterNodeResults?: Map<string, WaterNodeResult>;
-  /** Карта branchId → цвет задымления (результат расчёта пожара) */
-  branchFireColors?: Map<string, string>;
+  /** Карта branchId → сегмент задымления {color, fromT, toT} (0..1 вдоль ветви) */
+  branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -233,16 +233,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const uy = segLen > 0 ? dy / segLen : 0;
     const angle = Math.atan2(dy, dx);
 
-    // Подсветка задымления (пожар) — широкая полупрозрачная аура
-    const fireCol = branchFireColors?.get(b.id);
-    if (fireCol) {
+    // Подсветка задымления (пожар) — широкая полупрозрачная аура, только от fromT до toT
+    const fireSeg = branchFireColors?.get(b.id);
+    if (fireSeg) {
+      const { color: fireCol, fromT, toT } = fireSeg;
+      // Вычисляем экранные координаты начала и конца задымлённого сегмента
+      const fsx = from.sx + (to.sx - from.sx) * fromT;
+      const fsy = from.sy + (to.sy - from.sy) * fromT;
+      const tsx = from.sx + (to.sx - from.sx) * toT;
+      const tsy = from.sy + (to.sy - from.sy) * toT;
       ctx.save();
       ctx.strokeStyle = fireCol;
       ctx.lineWidth = w + 10;
       ctx.lineCap = "round";
       ctx.globalAlpha = 0.45;
       ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
       ctx.restore();
     }
 

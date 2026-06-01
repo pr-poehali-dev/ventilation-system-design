@@ -146,8 +146,8 @@ interface Props {
   branchPositionColors?: Map<string, { color: string; bound: boolean }>;
   /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
-  /** Карта branchId → цвет задымления (результат расчёта пожара) */
-  branchFireColors?: Map<string, string>;
+  /** Карта branchId → сегмент задымления {color, fromT, toT} */
+  branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
 }
 
 export type FlowDisplayMode =
