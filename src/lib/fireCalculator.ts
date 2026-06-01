@@ -289,86 +289,71 @@ export function calcFireMode(
     outNc.freshQ += Math.abs(flow);
   }
 
-  // ── Шаг 4: BFS распространения задымления ─────────────────────────────────
-  // Алгоритм: очередь узлов, у которых появилось задымление.
-  // Для каждого задымлённого узла обходим все ветви, которые из него выходят.
+  // ── Шаг 4: Распространение задымления — итеративный обход ────────────────
+  // Алгоритм: повторяем проходы по всем ветвям пока есть изменения.
+  // Каждый проход обрабатывает ветвь если её входной узел уже содержит дым.
+  // Количество проходов = диаметр графа (обычно < 20 для шахтных сетей).
 
-  // Начальная очередь — все выходные узлы очагов пожара
-  const smokedNodes = new Set<string>();
-  for (const fb of fireBranches) {
-    const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
-    smokedNodes.add(outNodeId);
-  }
+  const processedBranchSmoke = new Set<string>(); // ветви уже внёсшие дым в outNode
+  const MAX_PASSES = Math.min(branches.length + 5, 200);
 
-  // Итеративно распространяем дым: пока есть новые задымлённые узлы
-  const MAX_ITER = branches.length * 2 + 10;
-  let iter = 0;
-  let frontier = new Set<string>(smokedNodes);
-
-  while (frontier.size > 0 && iter++ < MAX_ITER) {
-    const nextFrontier = new Set<string>();
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let anyNew = false;
 
     for (const b of branches) {
       if (fireBranchIds.has(b.id)) continue;
+      if (processedBranchSmoke.has(b.id)) continue; // уже обработана
       const flow = b.flow ?? 0;
-      if (Math.abs(flow) < 0.01) continue;
+      if (Math.abs(flow) < 0.001) continue;
 
       const inNodeId  = flow >= 0 ? b.fromId : b.toId;
       const outNodeId = flow >= 0 ? b.toId   : b.fromId;
 
-      // Обрабатываем ветвь, если её входной узел задымлён
-      if (!smokedNodes.has(inNodeId)) continue;
-
+      // Проверяем: есть ли задымление во входном узле?
       const nc = nodeContribs.get(inNodeId);
-      if (!nc || nc.smokedQ < 0.001) continue;
+      if (!nc || nc.smokedQ < 0.0001) continue; // входной узел ещё не задымлён
 
-      const totalIn = nc.smokedQ + nc.freshQ;
-      if (totalIn < 0.001) continue;
+      const totalIn = nc.smokedQ + (nc.freshQ ?? 0);
+      if (totalIn < 0.0001) continue;
 
-      // Взвешенная концентрация с учётом разбавления свежим воздухом
+      // Концентрация с учётом разбавления свежим воздухом
       const mixFactor = nc.smokedQ / totalIn;
       const coIn    = (nc.wCO    / nc.smokedQ) * mixFactor;
       const co2In   = (nc.wCO2   / nc.smokedQ) * mixFactor;
       const smokeIn = (nc.wSmoke / nc.smokedQ) * mixFactor;
       const tempIn  = ambientTemp_C + ((nc.wTemp / nc.smokedQ) - ambientTemp_C) * mixFactor;
 
-      // Небольшое затухание вдоль длины (оседание, охлаждение)
-      const lengthFactor = Math.max(0.3, Math.exp(-b.length * 0.001));
+      // Минимальное затухание вдоль ветви
+      const lengthFactor = Math.max(0.5, Math.exp(-b.length * 0.0005));
       const coOut    = coIn    * lengthFactor;
       const smokeOut = smokeIn * lengthFactor;
       const co2Out   = Math.max(0.04, co2In * lengthFactor);
-      const tempOut  = ambientTemp_C + (tempIn - ambientTemp_C) * Math.exp(-b.length * 0.002);
+      const tempOut  = ambientTemp_C + (tempIn - ambientTemp_C) * Math.exp(-b.length * 0.001);
       const visOut   = smokeOut > 0 ? Math.min(100, 3 / smokeOut) : 100;
-
-      // Слабый порог — не останавливаем распространение преждевременно
-      if (coOut < 0.0001 && smokeOut < 0.001) continue;
 
       const hazard = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
 
-      // Время прихода дыма к ВХОДУ этой ветви
+      // Время прихода дыма к входу ветви = время в входном узле
       const branchArrivalTime = nodeArrivalTime.get(inNodeId) ?? 0;
-      // Скорость движения дыма = скорость воздуха = Q / S
-      const bSmokeSpeed = Math.abs(flow) > 0 && b.area > 0 ? Math.abs(flow) / b.area : 0.5;
-      // Время прохода дыма через всю ветвь до выходного узла (мин)
-      const bTransitMin = b.length > 0 && bSmokeSpeed > 0 ? b.length / bSmokeSpeed / 60 : 0;
+      // Скорость дыма = скорость воздуха = Q/S
+      const bSmokeSpeed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
+        ? Math.abs(flow) / b.area
+        : 0.5;
+      // Время прохода дыма через всю ветвь до выходного узла
+      const bTransitMin = (b.length ?? 0) > 0 && bSmokeSpeed > 0
+        ? b.length / bSmokeSpeed / 60
+        : 0;
       const bOutTime = branchArrivalTime + bTransitMin;
 
-      // Обновляем время прихода в выходной узел
+      // Обновляем время прихода в выходной узел (берём минимум — кратчайший путь)
       const prevOut = nodeArrivalTime.get(outNodeId);
       if (prevOut === undefined || bOutTime < prevOut) {
         nodeArrivalTime.set(outNodeId, bOutTime);
-        nextFrontier.add(outNodeId);
       }
 
-      // Если выходной узел ещё не был задымлён — добавляем
-      if (!smokedNodes.has(outNodeId)) {
-        smokedNodes.add(outNodeId);
-        nextFrontier.add(outNodeId);
-      }
-
-      // Записываем результат по ветви (smokeArrivalTime = когда дым вошёл в ветвь)
+      // Сохраняем результат для ветви
       const existing = resultMap.get(b.id);
-      if (!existing || branchArrivalTime < existing.smokeArrivalTime) {
+      if (!existing || branchArrivalTime < (existing.smokeArrivalTime ?? Infinity)) {
         resultMap.set(b.id, {
           branchId: b.id,
           airTempOut: Math.round(tempOut * 10) / 10,
@@ -383,18 +368,23 @@ export function calcFireMode(
         });
       }
 
-      // Вносим задымлённый поток в выходной узел (если ещё не было)
+      // Вносим задымлённый поток в выходной узел
       const outNc = getNC(outNodeId);
-      // Убираем ранее добавленный свежий поток этой ветви — теперь она несёт дым
-      outNc.freshQ = Math.max(0, outNc.freshQ - Math.abs(flow));
+      // Если этот узел ещё не получал дым — убираем его свежий поток из preregister
+      if (outNc.smokedQ < 0.0001) {
+        outNc.freshQ = Math.max(0, (outNc.freshQ ?? 0) - Math.abs(flow));
+      }
       outNc.smokedQ += Math.abs(flow);
       outNc.wCO    += coOut    * Math.abs(flow);
       outNc.wCO2   += co2Out   * Math.abs(flow);
       outNc.wSmoke += smokeOut * Math.abs(flow);
       outNc.wTemp  += tempOut  * Math.abs(flow);
+
+      processedBranchSmoke.add(b.id);
+      anyNew = true;
     }
 
-    frontier = nextFrontier;
+    if (!anyNew) break; // нет новых задымлённых ветвей — остановка
   }
 
   // ── Итоговая статистика ───────────────────────────────────────────────────

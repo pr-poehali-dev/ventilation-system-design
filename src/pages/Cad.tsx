@@ -3242,9 +3242,31 @@ export default function CadPage() {
                       )}
                     </>
                   )}
-                  {!fr && fireCalcDone && (
-                    <div className="px-2 py-2 text-[11px] text-gray-500">Ветвь не затронута задымлением</div>
-                  )}
+                  {!fr && fireCalcDone && (() => {
+                    // Показываем потенциальное время задымления для незатронутых ветвей
+                    const airQ = Math.abs(b.flow ?? 0);
+                    const speed = airQ > 0 && b.area > 0 ? airQ / b.area : 0;
+                    return (
+                      <div style={{ margin: 4 }}>
+                        <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 3, color: "#15803d" }}>
+                          ✅ Ветвь не затронута задымлением
+                        </div>
+                        {speed > 0 && b.length > 0 && (
+                          <div className="mt-1 px-2 py-1.5 text-[10px]" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 3, color: "#475569" }}>
+                            <div className="font-semibold mb-0.5 text-[11px]">Справочно (если дым войдёт):</div>
+                            <div className="flex justify-between">
+                              <span>Скорость воздуха:</span>
+                              <span className="font-medium">{speed.toFixed(2)} м/с</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Время заполнения:</span>
+                              <span className="font-medium">{(b.length / speed / 60).toFixed(1)} мин</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {!fireCalcDone && (
                     <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "#fffbeb", border: "1px solid #fcd34d", margin: 4, borderRadius: 4 }}>
                       Нажмите «Расчёт пожара» на вкладке Аварии для получения результатов
