@@ -555,6 +555,9 @@ export default function CadPage() {
   // Максимум шкалы (мин) и шаг — задаётся пользователем
   const [smokeMaxTime, setSmokeMaxTime] = useState(60);
   const [smokeTimeStep, setSmokeTimeStep] = useState(1);
+  // Анимация воспроизведения шкалы
+  const [smokeAnimating, setSmokeAnimating] = useState(false);
+  const smokeAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ─── Результат расчёта сети ─────────────────────────────────────────
   const [solveResult, setSolveResult] = useState<SolveResult | null>(null);
@@ -5041,6 +5044,59 @@ export default function CadPage() {
                   🔥 Задымление
                 </span>
 
+                {/* Кнопка Воспроизведение / Пауза */}
+                <button
+                  onClick={() => {
+                    if (smokeAnimating) {
+                      // Пауза
+                      if (smokeAnimRef.current) clearInterval(smokeAnimRef.current);
+                      smokeAnimRef.current = null;
+                      setSmokeAnimating(false);
+                    } else {
+                      // Если дошли до конца — сбрасываем на начало
+                      setSmokeTimeMinutes(prev => prev >= smokeMaxTime ? 1 : prev);
+                      setSmokeAnimating(true);
+                      smokeAnimRef.current = setInterval(() => {
+                        setSmokeTimeMinutes(prev => {
+                          const next = prev + smokeTimeStep;
+                          if (next >= smokeMaxTime) {
+                            if (smokeAnimRef.current) clearInterval(smokeAnimRef.current);
+                            smokeAnimRef.current = null;
+                            setSmokeAnimating(false);
+                            return smokeMaxTime;
+                          }
+                          return next;
+                        });
+                      }, 800);
+                    }
+                  }}
+                  title={smokeAnimating ? "Пауза" : "Воспроизведение"}
+                  style={{
+                    background: smokeAnimating ? "#7f1d1d" : "#dc2626",
+                    border: "1px solid #991b1b", borderRadius: 4, color: "#fff",
+                    fontSize: 11, fontWeight: 700, padding: "2px 10px", cursor: "pointer",
+                    whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4,
+                  }}>
+                  {smokeAnimating ? "⏸ Пауза" : "▶ Воспроизведение"}
+                </button>
+
+                {/* Кнопка сброс */}
+                <button
+                  onClick={() => {
+                    if (smokeAnimRef.current) clearInterval(smokeAnimRef.current);
+                    smokeAnimRef.current = null;
+                    setSmokeAnimating(false);
+                    setSmokeTimeMinutes(1);
+                  }}
+                  title="Сначала"
+                  style={{
+                    background: "#3b0000", border: "1px solid #7f1d1d", borderRadius: 4,
+                    color: "#fca5a5", fontSize: 11, padding: "2px 7px", cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}>
+                  ⏮
+                </button>
+
                 {/* Метка начала */}
                 <span style={{ fontSize: 11, color: "#f87171", whiteSpace: "nowrap" }}>1 мин</span>
 
@@ -5051,7 +5107,12 @@ export default function CadPage() {
                   max={smokeMaxTime}
                   step={smokeTimeStep}
                   value={smokeTimeMinutes}
-                  onChange={e => setSmokeTimeMinutes(Number(e.target.value))}
+                  onChange={e => {
+                    if (smokeAnimRef.current) clearInterval(smokeAnimRef.current);
+                    smokeAnimRef.current = null;
+                    setSmokeAnimating(false);
+                    setSmokeTimeMinutes(Number(e.target.value));
+                  }}
                   style={{ flex: 1, accentColor: "#ef4444", cursor: "pointer", minWidth: 80 }}
                 />
 
