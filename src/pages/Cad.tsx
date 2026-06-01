@@ -5058,6 +5058,7 @@ export default function CadPage() {
                         fireCombustible: "coal",
                       });
                       setSelectedSymbolId(newSym.id);
+                      lastBranchTab.current = "accidents"; // чтобы useEffect не перебил вкладку
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
                       setFanSymbolBranchId(null);
