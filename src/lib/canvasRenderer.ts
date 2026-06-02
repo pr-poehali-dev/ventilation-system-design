@@ -484,23 +484,23 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.restore();
   }
 
-  // ─── СТЫКИ СКРЫТЫХ УЗЛОВ: закрашенный круг цвета ветви ──────────────────
-  // Когда узел скрыт, между торцами ветвей остаётся щель — заполняем её кружком
+  // ─── СТЫКИ СКРЫТЫХ УЗЛОВ: border + fill кружок ──────────────────────────
+  // Когда узел скрыт, торцы линий (включая тёмную обводку) не сходятся — заполняем стык
   {
-    // Собираем: для каждого скрытого узла — цвет и ширину первой примыкающей ветви
-    const hiddenNodePaint = new Map<string, { sx: number; sy: number; color: string; r: number }>();
+    type HiddenPaint = { sx: number; sy: number; fillColor: string; rFill: number; borderColor: string; rBorder: number };
+    const hiddenNodePaint = new Map<string, HiddenPaint>();
     for (const { b, from, to } of sorted) {
       if (!from || !to) continue;
       const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-      const w  = thinLines ? 1 : (selectedBranchId === b.id || selectedBranchIds.has(b.id) ? bw + 1 : bw);
+      const isSel = selectedBranchId === b.id || selectedBranchIds.has(b.id);
+      const w  = thinLines ? 1 : (isSel ? bw + 1 : bw);
       const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
-      const totalW = thinLines ? 1 : w + (lodBorder ? Math.max(0, bb) * 2 : 0);
+      const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
       const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
       const Q  = Math.abs(b.flow);
       const V  = b.velocity;
       const overV = V > b.vMax;
-      const isSel = selectedBranchId === b.id || selectedBranchIds.has(b.id);
-      const branchColor = isSel ? "#2563eb"
+      const fillColor = isSel ? "#2563eb"
         : b.isLeakage ? "#f97316"
         : overV       ? "#dc2626"
         : (colorByHorizon && horizonColor) ? horizonColor
@@ -510,15 +510,31 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       for (const [nodeId, pn] of [[ b.fromId, from ], [ b.toId, to ]] as [string, typeof from][]) {
         const nd = pn.node;
         if (nd.visible === false && !hiddenNodePaint.has(nodeId)) {
-          hiddenNodePaint.set(nodeId, { sx: pn.sx, sy: pn.sy, color: branchColor, r: totalW / 2 });
+          hiddenNodePaint.set(nodeId, {
+            sx: pn.sx, sy: pn.sy,
+            fillColor,
+            rFill: Math.max(w / 2, 1),
+            borderColor: "#1f2937",
+            rBorder: Math.max((w + bwBorder * 2) / 2, 1),
+          });
         }
       }
     }
-    for (const { sx, sy, color, r } of hiddenNodePaint.values()) {
+    for (const { sx, sy, fillColor, rFill, borderColor, rBorder } of hiddenNodePaint.values()) {
       ctx.save();
+      // border-кружок (тёмный, полная ширина с обводкой)
+      if (rBorder > rFill) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, rBorder, 0, Math.PI * 2);
+        ctx.fillStyle = borderColor;
+        ctx.globalAlpha = 0.85;
+        ctx.fill();
+      }
+      // fill-кружок (цвет ветви, перекрывает border)
+      ctx.globalAlpha = 1;
       ctx.beginPath();
-      ctx.arc(sx, sy, Math.max(r, 1), 0, Math.PI * 2);
-      ctx.fillStyle = color;
+      ctx.arc(sx, sy, rFill, 0, Math.PI * 2);
+      ctx.fillStyle = fillColor;
       ctx.fill();
       ctx.restore();
     }
