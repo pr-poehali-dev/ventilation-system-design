@@ -5739,10 +5739,9 @@ export default function CadPage() {
               })()}
               branchExplosionColors={(() => {
                 if (!showExplosionZones || !explosionCalcDone || !explosionResult) return undefined;
-                // Если ползунок на нуле — ничего не показываем
                 if (blastWaveRadius <= 0) return undefined;
                 const map = new Map<string, { color: string; hazardLevel: string }>();
-                // Цвет по зоне поражения
+
                 const zoneColor = (deltaP: number) => {
                   if (deltaP >= 100) return { color: "#7c1010", hazardLevel: "lethal" };
                   if (deltaP >= 50)  return { color: "#dc2626", hazardLevel: "heavy" };
@@ -5750,34 +5749,52 @@ export default function CadPage() {
                   if (deltaP >= 10)  return { color: "#fbbf24", hazardLevel: "light" };
                   return { color: "#22c55e", hazardLevel: "safe" };
                 };
-                // Собираем источники взрыва с их координатами
-                const sources: { node: typeof nodes[0]; maxP: number }[] = [];
+
+                // Собираем источники с реальными 3D координатами середины ветви-эпицентра
+                type Pt3 = { x: number; y: number; z: number };
+                const sources: Pt3[] = [];
                 branches.forEach(src => {
                   if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
-                  const srcNode = nodes.find(n => n.id === src.fromId);
-                  if (srcNode) sources.push({ node: srcNode, maxP: src.explosionComputedMaxP });
+                  const fN = nodes.find(n => n.id === src.fromId);
+                  const tN = nodes.find(n => n.id === src.toId);
+                  if (!fN || !tN) return;
+                  // Точка установки символа взрыва (t=0.5 по умолчанию)
+                  const t = src.explosionT ?? 0.5;
+                  sources.push({
+                    x: fN.x + (tN.x - fN.x) * t,
+                    y: fN.y + (tN.y - fN.y) * t,
+                    z: fN.z + (tN.z - fN.z) * t,
+                  });
                 });
                 if (sources.length === 0) return undefined;
-                // Для каждой ветви — ищем ближайший источник и рассчитываем давление
+
+                // Минимальное расстояние от точки до отрезка в 3D
+                const distPointToSegment = (p: Pt3, a: Pt3, b: Pt3): number => {
+                  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+                  const len2 = abx * abx + aby * aby + abz * abz;
+                  if (len2 < 1e-10) return Math.sqrt((p.x-a.x)**2+(p.y-a.y)**2+(p.z-a.z)**2);
+                  const t = Math.max(0, Math.min(1,
+                    ((p.x-a.x)*abx + (p.y-a.y)*aby + (p.z-a.z)*abz) / len2
+                  ));
+                  const cx = a.x + t*abx, cy = a.y + t*aby, cz = a.z + t*abz;
+                  return Math.sqrt((p.x-cx)**2+(p.y-cy)**2+(p.z-cz)**2);
+                };
+
                 branches.forEach(b => {
-                  const bNode = nodes.find(n => n.id === b.fromId);
-                  if (!bNode) return;
-                  // Минимальное расстояние до любого источника
+                  const fN = nodes.find(n => n.id === b.fromId);
+                  const tN = nodes.find(n => n.id === b.toId);
+                  if (!fN || !tN) return;
+                  // Минимальное расстояние от любого источника до ближайшей точки ветви
                   let minDist = Infinity;
-                  sources.forEach(({ node: srcNode }) => {
-                    const dist = Math.sqrt(
-                      (bNode.x - srcNode.x) ** 2 +
-                      (bNode.y - srcNode.y) ** 2 +
-                      (bNode.z - srcNode.z) ** 2
-                    );
-                    if (dist < minDist) minDist = dist;
+                  sources.forEach(src => {
+                    const d = distPointToSegment(src, fN, tN);
+                    if (d < minDist) minDist = d;
                   });
-                  // Волна ещё не дошла до этой ветви
                   if (minDist > blastWaveRadius) return;
-                  // Давление на этом расстоянии
                   const dp = explosionResult.pressureAtDistance(minDist);
                   if (dp >= 5) map.set(b.id, zoneColor(dp));
                 });
+
                 return map.size > 0 ? map : undefined;
               })()}
               branchBindMode={posBranchBindMode}

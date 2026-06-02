@@ -1445,6 +1445,8 @@ export default function TopoCanvas(props: Props) {
           const posBindInfo = branchPositionColors?.get(b.id);
           // ── Подсветка задымления от пожара ────────────────────────────────
           const fireSeg = branchFireColors?.get(b.id);
+          // ── Подсветка зон взрыва ───────────────────────────────────────────
+          const expSeg = branchExplosionColors?.get(b.id);
 
           return (
             <g key={b.id}>
@@ -1461,6 +1463,15 @@ export default function TopoCanvas(props: Props) {
                     stroke={fireCol} strokeWidth={Math.max(w + 14, 8)} strokeLinecap="round" opacity="0.7" />
                 );
               })()}
+              {/* Подсветка взрыва — штриховая аура по всей ветви */}
+              {expSeg && (<>
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={expSeg.color} strokeWidth={Math.max(w + 20, 12)} strokeLinecap="round"
+                  opacity="0.55" strokeDasharray="10 6" />
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={expSeg.color} strokeWidth={Math.max(w + 8, 6)} strokeLinecap="round"
+                  opacity="0.3" />
+              </>)}
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
