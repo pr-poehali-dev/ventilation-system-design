@@ -1041,9 +1041,10 @@ export default function CadPage() {
     // ── Создаём SchemaSymbol для перемычек ──
     const makeBulkheadSymbols = (branches: typeof result.branches, existing: typeof schemaSymbols) => {
       const syms: typeof schemaSymbols = [];
+      let notFound = 0;
       for (const bk of result.bulkheads ?? []) {
         const br = branches.find(b => b.id === bk.branchId);
-        if (!br) continue;
+        if (!br) { notFound++; continue; }
         if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === bk.branchId)) continue;
         syms.push({
           id: `SYM_BK_${Date.now()}_${bk.branchId}`,
@@ -1057,6 +1058,7 @@ export default function CadPage() {
           bkBulkheadR: bk.rKmu * 1000,
         });
       }
+      if (notFound > 0) console.warn(`[BulkheadImport] ${notFound} перемычек не нашли ветвь. Пример bk.branchId="${result.bulkheads?.[0]?.branchId}", ветвь[0].id="${branches[0]?.id}"`);
       return syms;
     };
 

@@ -120,12 +120,12 @@ interface RawBranch {
 
 // UUID или число — валидный ID строки данных
 function isDataId(s: string): boolean {
-  const t = s.trim().replace(/"/g, "");
+  const t = s.trim().replace(/"/g, "").replace(/^\{|\}$/g, "").trim();
   return /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(t) || /^\d+$/.test(t);
 }
 
 function cleanId(s: string): string {
-  return s.trim().replace(/"/g, "");
+  return s.trim().replace(/"/g, "").replace(/^\{|\}$/g, "").trim();
 }
 
 function parseNodesFile(lines: string[], sep: string): RawNode[] {
@@ -479,20 +479,34 @@ function buildResult(
     warnings.push("⚠ Ветви не созданы — возможно ID узлов не совпадают.");
 
   // Транслируем исходные ID выработок → сгенерированные ID ветвей для всех типов
+  // Используем нормализованный lookup (lowercase + trim) для устойчивости к регистру/пробелам
+  const normalizedMap: Record<string, string> = {};
+  for (const [origId, newId] of Object.entries(branchOriginalIdMap)) {
+    normalizedMap[origId.toLowerCase().trim()] = newId;
+  }
+  const lookupBranchId = (id: string) =>
+    branchOriginalIdMap[id]
+    ?? normalizedMap[id.toLowerCase().trim()]
+    ?? id;
+
   const fans: RawFan[] = rawFans.map(f => ({
     ...f,
-    branchId: branchOriginalIdMap[f.branchId] ?? f.branchId,
+    branchId: lookupBranchId(f.branchId),
   }));
   const bulkheads: RawBulkhead[] = rawBulkheads.map(bk => ({
     ...bk,
-    branchId: branchOriginalIdMap[bk.branchId] ?? bk.branchId,
+    branchId: lookupBranchId(bk.branchId),
   }));
   const positions: RawPosition[] = rawPositions.map(p => ({
     ...p,
-    branchIds: p.branchIds.map(bid => branchOriginalIdMap[bid] ?? bid),
+    branchIds: p.branchIds.map(bid => lookupBranchId(bid)),
   }));
 
-  if (bulkheads.length > 0) debug.push(`Перемычек после маппинга: ${bulkheads.length}`);
+  if (bulkheads.length > 0) {
+    const mapped = bulkheads.filter(bk => bk.branchId.startsWith("B"));
+    debug.push(`Перемычек: ${bulkheads.length}, смаппировано на ветви: ${mapped.length}`);
+    if (mapped.length === 0) debug.push(`! Маппинг не сработал. Пример branchId: "${rawBulkheads[0]?.branchId}", ключи map: "${Object.keys(branchOriginalIdMap).slice(0,2).join('", "')}"`);
+  }
   if (positions.length > 0) debug.push(`Позиций после маппинга: ${positions.length}`);
 
   return {
