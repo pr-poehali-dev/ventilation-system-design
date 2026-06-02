@@ -232,89 +232,60 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle };
   };
 
-  // ── ПРОХОД 1: только border (обводка) всех ветвей ─────────────────────────
-  // Рисуем border отдельным проходом ДО всех fill, чтобы fill соседних ветвей
-  // перекрывал торцы border — схема выглядит цельной без разрывов в узлах
+  // ── Единый цикл ветвей ────────────────────────────────────────────────────
+  // Border рисуется с destination-over — уходит ПОД уже нарисованные fill,
+  // поэтому fill соседних ветвей всегда перекрывает border текущей.
+  // Это обеспечивает цельность схемы без разрывов в узлах.
   for (const { b, from, to } of sorted) {
     const p = branchParams(b, from, to);
-    if (!p || p.bwBorder === 0) continue;
-    // Пожар — аура под border
+    if (!p) continue;
+    const { isSel, isDead, isLeakage, Q, V, overV,
+      sxA, syA, sxB, syB, midX, midY, color, w, bwBorder,
+      flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;
+
+    // Пожар — широкая аура
     const fireSeg = branchFireColors?.get(b.id);
     if (fireSeg) {
       const { color: fireCol, fromT, toT } = fireSeg;
-      const fsx = p.sxA + (p.sxB - p.sxA) * fromT;
-      const fsy = p.syA + (p.syB - p.syA) * fromT;
-      const tsx = p.sxA + (p.sxB - p.sxA) * toT;
-      const tsy = p.syA + (p.syB - p.syA) * toT;
+      const fsx = sxA + (sxB - sxA) * fromT;
+      const fsy = syA + (syB - syA) * fromT;
+      const tsx = sxA + (sxB - sxA) * toT;
+      const tsy = syA + (syB - syA) * toT;
       ctx.save();
       ctx.strokeStyle = fireCol;
-      ctx.lineWidth = Math.max(p.w + 14, 8);
+      ctx.lineWidth = Math.max(w + 14, 8);
       ctx.lineCap = "round";
       ctx.globalAlpha = 0.7;
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
       ctx.restore();
     }
+
     // Подсветка hover
     if (hoverBranchId === b.id) {
       ctx.save();
       ctx.strokeStyle = "#f59e0b";
-      ctx.lineWidth = p.w + 8;
+      ctx.lineWidth = w + 8;
       ctx.lineCap = "round";
       ctx.globalAlpha = 0.35;
       ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
       ctx.restore();
     }
-    // Border
-    ctx.save();
-    ctx.strokeStyle = "#1f2937";
-    ctx.lineWidth = p.w + p.bwBorder * 2;
-    ctx.lineCap = "round";
-    ctx.globalAlpha = 0.85;
-    ctx.setLineDash(p.isLeakage ? [6, 4] : []);
-    ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-    ctx.restore();
-  }
 
-  // ── ПРОХОД 2: fill + декор всех ветвей ────────────────────────────────────
-  for (const { b, from, to } of sorted) {
-    const p = branchParams(b, from, to);
-    if (!p) continue;
-    const { isSel, isDead, isLeakage, Q, V, overV,
-      sxA, syA, sxB, syB, midX, midY, color, w,
-      flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;
-
-    // Пожар — аура (только если нет border, иначе уже нарисована в проходе 1)
-    if (p.bwBorder === 0) {
-      const fireSeg = branchFireColors?.get(b.id);
-      if (fireSeg) {
-        const { color: fireCol, fromT, toT } = fireSeg;
-        const fsx = sxA + (sxB - sxA) * fromT;
-        const fsy = syA + (syB - syA) * fromT;
-        const tsx = sxA + (sxB - sxA) * toT;
-        const tsy = syA + (syB - syA) * toT;
-        ctx.save();
-        ctx.strokeStyle = fireCol;
-        ctx.lineWidth = Math.max(w + 14, 8);
-        ctx.lineCap = "round";
-        ctx.globalAlpha = 0.7;
-        ctx.setLineDash([]);
-        ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
-        ctx.restore();
-      }
-      // Подсветка hover (только если нет border)
-      if (hoverBranchId === b.id) {
-        ctx.save();
-        ctx.strokeStyle = "#f59e0b";
-        ctx.lineWidth = w + 8;
-        ctx.lineCap = "round";
-        ctx.globalAlpha = 0.35;
-        ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-        ctx.restore();
-      }
+    // Border — рисуем с destination-over чтобы уходил ПОД уже нарисованные fill
+    if (bwBorder > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.strokeStyle = "#1f2937";
+      ctx.lineWidth = w + bwBorder * 2;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash(isLeakage ? [6, 4] : []);
+      ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
+      ctx.restore();
     }
 
-    // Основная линия
+    // Основная линия (fill)
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = w;
