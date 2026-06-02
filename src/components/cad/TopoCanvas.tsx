@@ -153,6 +153,8 @@ interface Props {
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
+  /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
+  branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
   colorMode?: "none" | "flowQ";
   /** Минимальное значение шкалы расхода, м³/с */
@@ -208,6 +210,7 @@ export default function TopoCanvas(props: Props) {
     branchPositionColors,
     waterNodeResults,
     branchFireColors,
+    branchExplosionColors,
     colorMode = "none",
     flowColorMin = 0,
     flowColorMax = 75,
@@ -1200,6 +1203,7 @@ export default function TopoCanvas(props: Props) {
           unitsConfig={unitsConfig}
           waterNodeResults={waterNodeResults}
           branchFireColors={branchFireColors}
+          branchExplosionColors={branchExplosionColors}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}

@@ -612,6 +612,7 @@ export default function CadPage() {
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
+  const [showExplosionZones, setShowExplosionZones] = useState(false);
   const [showSmoke, setShowSmoke] = useState(false);
   // Текущий момент времени на шкале задымления (минуты)
   const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(0);
@@ -2835,6 +2836,7 @@ export default function CadPage() {
                 if (results.length > 0) {
                   setExplosionResult(results[results.length - 1]);
                   setExplosionCalcDone(true);
+                  setShowExplosionZones(true);
                   addLog("info", `💥 Расчёт взрыва завершён. Q_тнт = ${results[0].q_tnt_kg} кг ТНТ, ΔP_max = ${results[0].maxDeltaP_kPa} кПа`);
                   results.forEach(r => r.log.forEach(l => addLog("info", l)));
                   results.forEach(r => r.warnings.forEach(w => addLog("warn", w)));
@@ -2848,6 +2850,14 @@ export default function CadPage() {
               <div className="text-[10px] leading-tight mt-0.5 text-center"><div>Расчёт</div><div>взрыва</div></div>
             </button>
             <RibbonBigBtn
+              icon={showExplosionZones ? "EyeOff" : "Eye"}
+              label={showExplosionZones ? "Скрыть" : "Показать"}
+              sublabel="зоны взрыва"
+              disabled={!explosionCalcDone}
+              active={showExplosionZones}
+              onClick={() => setShowExplosionZones(v => !v)}
+            />
+            <RibbonBigBtn
               icon="X"
               label="Сбросить"
               sublabel="результаты"
@@ -2855,6 +2865,7 @@ export default function CadPage() {
               onClick={() => {
                 setExplosionResult(null);
                 setExplosionCalcDone(false);
+                setShowExplosionZones(false);
                 setBranches(prev => prev.map(b => ({ ...b, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 })));
               }}
             />
@@ -5711,6 +5722,39 @@ export default function CadPage() {
 
                 return map.size > 0 ? map : undefined;
               })()}
+              branchExplosionColors={(() => {
+                if (!showExplosionZones || !explosionCalcDone) return undefined;
+                const map = new Map<string, { color: string; hazardLevel: string }>();
+                // Цвет по зоне поражения
+                const zoneColor = (deltaP: number) => {
+                  if (deltaP >= 100) return { color: "#7c1010", hazardLevel: "lethal" };
+                  if (deltaP >= 50)  return { color: "#dc2626", hazardLevel: "heavy" };
+                  if (deltaP >= 30)  return { color: "#f97316", hazardLevel: "medium" };
+                  if (deltaP >= 10)  return { color: "#fbbf24", hazardLevel: "light" };
+                  return { color: "#22c55e", hazardLevel: "safe" };
+                };
+                branches.forEach(b => {
+                  if (!b.hasExplosion || b.explosionComputedMaxP <= 0) return;
+                  // Ветвь-источник: покрашиваем по максимальному давлению
+                  map.set(b.id, zoneColor(b.explosionComputedMaxP));
+                });
+                // Соседние ветви — по расстоянию от источника
+                // Для простоты: красим ветви в радиусе зон поражения
+                branches.forEach(src => {
+                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
+                  const srcNode = src.fromId ? nodes.find(n => n.id === src.fromId) : null;
+                  if (!srcNode) return;
+                  branches.forEach(b => {
+                    if (map.has(b.id)) return;
+                    const bNode = nodes.find(n => n.id === b.fromId);
+                    if (!bNode) return;
+                    const dist = Math.sqrt((bNode.x - srcNode.x) ** 2 + (bNode.y - srcNode.y) ** 2 + (bNode.z - srcNode.z) ** 2);
+                    const dp = explosionResult?.pressureAtDistance(dist) ?? 0;
+                    if (dp >= 10) map.set(b.id, zoneColor(dp));
+                  });
+                });
+                return map.size > 0 ? map : undefined;
+              })()}
               branchBindMode={posBranchBindMode}
               branchPositionColors={(() => {
                 if (!posBranchBindMode || !selectedPositionId) return undefined;
@@ -5854,6 +5898,30 @@ export default function CadPage() {
                 }
               }}
             />
+
+            {/* ── Легенда зон взрыва ─────────────────────────────────── */}
+            {showExplosionZones && explosionCalcDone && (
+              <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 20, background: "rgba(0,0,0,0.78)", borderRadius: 8, padding: "8px 12px", color: "white", fontSize: 11, minWidth: 190, pointerEvents: "none", border: "1px solid rgba(245,158,11,0.4)" }}>
+                <div style={{ fontWeight: 700, marginBottom: 6, color: "#fbbf24", fontSize: 12 }}>💥 Зоны поражения взрывом</div>
+                {[
+                  { color: "#7c1010", label: "Летальная (ΔP > 100 кПа)" },
+                  { color: "#dc2626", label: "Тяжёлые (ΔP 50–100 кПа)" },
+                  { color: "#f97316", label: "Средние (ΔP 30–50 кПа)" },
+                  { color: "#fbbf24", label: "Лёгкие (ΔP 10–30 кПа)" },
+                  { color: "#22c55e", label: "Безопасно (ΔP < 10 кПа)" },
+                ].map(({ color, label }) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                    <div style={{ width: 28, height: 6, background: color, borderRadius: 3, opacity: 0.9, flexShrink: 0 }} />
+                    <span style={{ color: "#e5e7eb" }}>{label}</span>
+                  </div>
+                ))}
+                {explosionResult && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.15)", color: "#fde68a", fontSize: 10 }}>
+                    Q_тнт = {explosionResult.q_tnt_kg} кг · D = {explosionResult.waveFrontSpeed_ms} м/с
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {

@@ -58,6 +58,8 @@ export interface CanvasRenderOptions {
   waterNodeResults?: Map<string, WaterNodeResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} (0..1 вдоль ветви) */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
+  /** Карта branchId → зона поражения взрывом {hazardLevel} */
+  branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -158,7 +160,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
-    horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors,
+    horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
@@ -255,6 +257,23 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
       ctx.restore();
     }
+    // Взрыв — аура под border (штриховая, более широкая)
+    const expSeg = branchExplosionColors?.get(b.id);
+    if (expSeg) {
+      ctx.save();
+      ctx.strokeStyle = expSeg.color;
+      ctx.lineWidth = Math.max(p.w + 20, 12);
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.55;
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
+      // Второй слой — более тонкий, непрерывный
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = Math.max(p.w + 8, 6);
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
+      ctx.restore();
+    }
     // Подсветка hover
     if (hoverBranchId === b.id) {
       ctx.save();
@@ -300,6 +319,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.globalAlpha = 0.7;
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
+        ctx.restore();
+      }
+      // Взрыв — аура (только если нет border)
+      const expSeg2 = branchExplosionColors?.get(b.id);
+      if (expSeg2) {
+        ctx.save();
+        ctx.strokeStyle = expSeg2.color;
+        ctx.lineWidth = Math.max(w + 20, 12);
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.55;
+        ctx.setLineDash([10, 6]);
+        ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(w + 8, 6);
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
         ctx.restore();
       }
       // Подсветка hover (только если нет border)
