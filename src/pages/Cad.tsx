@@ -178,21 +178,23 @@ export default function CadPage() {
   const [branchesRaw, setBranches] = useState<TopoBranch[]>(DEMO_BRANCHES);
 
   // ─── История изменений (undo) ───────────────────────────────────────────
-  const historyRef = useRef<Array<{ nodes: TopoNode[]; branches: TopoBranch[] }>>([]);
+  const historyRef = useRef<Array<{ nodes: TopoNode[]; branches: TopoBranch[]; symbols: SchemaSymbol[] }>>([]);
   const nodesRef   = useRef(nodes);
   const branchesRef = useRef(branchesRaw);
+  const symbolsRef  = useRef<SchemaSymbol[]>([]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { branchesRef.current = branchesRaw; }, [branchesRaw]);
 
   const pushHistory = () => {
     historyRef.current = [...historyRef.current.slice(-49),
-      { nodes: nodesRef.current, branches: branchesRef.current }];
+      { nodes: nodesRef.current, branches: branchesRef.current, symbols: symbolsRef.current }];
   };
   const handleUndo = () => {
     const snap = historyRef.current.pop();
     if (!snap) return;
     setNodes(snap.nodes);
     setBranches(snap.branches);
+    setSchemaSymbols(snap.symbols);
   };
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -774,6 +776,7 @@ export default function CadPage() {
     { id: "SYM_FAN_4",   typeId: "fan",        x: 0, y: 0, branchId: "4", t: 0.5, airDirection: "forward" },
     { id: "SYM_COPRA_1", typeId: "copra_tower", x: 0, y: 0, branchId: "1", t: 0.2, label: "Надшахтное здание ЮВС" },
   ]);
+  useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
   // Режим «ожидания привязки»: символ из буфера ждёт клика на ветвь
@@ -1924,6 +1927,7 @@ export default function CadPage() {
 
   const handleDeleteSelected = () => {
     if (selectedSymbolId) {
+      pushHistory();
       const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
       if (sym?.typeId === "fan" && sym.branchId) {
         updateBranch(sym.branchId, {
@@ -1931,7 +1935,25 @@ export default function CadPage() {
           fanStopped: false, fanReverse: false, fanRpm: 0,
           fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
           fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
-        });
+        }, false);
+      }
+      // При удалении перемычки — сбрасываем флаг hasBulkhead и параметры ветви,
+      // чтобы расчёт учёл отсутствие сопротивления (воздух пойдёт свободно)
+      if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+        // Проверяем: нет ли других символов перемычки на той же ветви
+        const otherBulkheadsOnBranch = schemaSymbols.filter(
+          s => s.id !== sym.id && BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === sym.branchId
+        );
+        if (otherBulkheadsOnBranch.length === 0) {
+          updateBranch(sym.branchId, {
+            hasBulkhead: false,
+            bulkheadR: 0,
+            bulkheadAirPerm: 0,
+            bulkheadManualR: 0,
+            bulkheadSurveyQ: 0,
+            bulkheadSurveyDP: 0,
+          }, false);
+        }
       }
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
@@ -5103,12 +5125,14 @@ export default function CadPage() {
               schemaSymbols={schemaSymbols}
               selectedSymbolId={selectedSymbolId}
               onSelectSymbol={setSelectedSymbolId}
+              onSymbolDragStart={() => pushHistory()}
               onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
               onSymbolMoveAlongBranch={(id, t) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, t } : s))}
               onSymbolOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, offsetX: ox, offsetY: oy } : s))}
               onSymbolIndOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, indOffsetX: ox, indOffsetY: oy } : s))}
               onSymbolScale={(id, delta) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, scale: Math.max(0.4, Math.min(4, (s.scale ?? 1) + delta)) } : s))}
               onSymbolDelete={(id) => {
+                pushHistory();
                 const sym = schemaSymbols.find(s => s.id === id);
                 if (sym?.typeId === "fan" && sym.branchId) {
                   updateBranch(sym.branchId, {
@@ -5116,7 +5140,20 @@ export default function CadPage() {
                     fanStopped: false, fanReverse: false, fanRpm: 0,
                     fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
                     fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
-                  });
+                  }, false);
+                }
+                // Сброс перемычки при удалении символа
+                if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  const otherBulkheads = schemaSymbols.filter(
+                    s => s.id !== id && BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === sym.branchId
+                  );
+                  if (otherBulkheads.length === 0) {
+                    updateBranch(sym.branchId, {
+                      hasBulkhead: false,
+                      bulkheadR: 0, bulkheadAirPerm: 0,
+                      bulkheadManualR: 0, bulkheadSurveyQ: 0, bulkheadSurveyDP: 0,
+                    }, false);
+                  }
                 }
                 // Сброс очага пожара при удалении символа
                 if (sym && FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
@@ -5124,7 +5161,7 @@ export default function CadPage() {
                     hasFire: false,
                     fireComputedTemp: 0, fireComputedNatDep: 0,
                     fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0,
-                  });
+                  }, false);
                   setFireResult(null); setFireCalcDone(false);
                 }
                 // Сброс редуктора при удалении символа клапана
@@ -5134,7 +5171,7 @@ export default function CadPage() {
                     wpReducerModel: "kppr_50",
                     wpReducerOutPressure: 0.5,
                     wpReducerMaxFlow: 25,
-                  });
+                  }, false);
                 }
                 removeSymbol(id);
                 setSelectedSymbolId(null);

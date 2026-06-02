@@ -115,6 +115,8 @@ interface Props {
   onSymbolOffset?: (id: string, ox: number, oy: number) => void;
   /** Смещение бейджа индикаторов (px offset) */
   onSymbolIndOffset?: (id: string, ox: number, oy: number) => void;
+  /** Начало перемещения символа (для сохранения истории undo) */
+  onSymbolDragStart?: (id: string) => void;
   /** Клик на символ (для открытия свойств) */
   onSymbolClick?: (id: string) => void;
   /** Масштаб символа (delta: +0.2 или -0.2) */
@@ -190,7 +192,7 @@ export default function TopoCanvas(props: Props) {
     selectedNodeIds, onNodeMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
-    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolClick,
+    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolDragStart, onSymbolClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
     pendingSymbolTypeId, onPendingSymbolPlace,
@@ -1816,6 +1818,7 @@ export default function TopoCanvas(props: Props) {
 
                   const onMove = (me: MouseEvent) => {
                     if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+                    if (!didDrag) onSymbolDragStart?.(sym.id);
                     didDrag = true;
                     me.preventDefault();
                     const dx = me.clientX - startX;
@@ -1851,6 +1854,7 @@ export default function TopoCanvas(props: Props) {
                   const origX = sym.x, origY = sym.y;
                   const onMove = (me: MouseEvent) => {
                     if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+                    if (!didDrag) onSymbolDragStart?.(sym.id);
                     didDrag = true;
                     me.preventDefault();
                     const dx = (me.clientX - startX) / view.scale;
