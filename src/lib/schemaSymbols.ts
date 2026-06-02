@@ -390,6 +390,13 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
     svgContent: `<ellipse cx="24" cy="32" rx="12" ry="5" fill="#ff6b35" opacity="0.4"/><path d="M24,8 C22,14 17,16 18,22 C18,27 22,29 24,30 C26,29 30,27 30,22 C31,16 26,14 24,8Z" fill="#ff5722" stroke="none"/><path d="M24,14 C23,18 20,20 21,24 C21,27 23,28 24,29 C25,28 27,27 27,24 C28,20 25,18 24,14Z" fill="#ffd600" stroke="none"/><path d="M21,22 C21,25 22,27 24,28 C26,27 27,25 27,22 C27,20 25,19 24,19 C23,19 21,20 21,22Z" fill="white" opacity="0.7" stroke="none"/>` },
 
+  // ─── ВЗРЫВ (расчётный источник) ──────────────────────────────────────
+  { id: "explosion_source", name: "Источник взрыва",  group: "Аварийный режим",
+    svgContent: `<circle cx="24" cy="20" r="9" fill="#fbbf24" stroke="#92400e" stroke-width="1.2" opacity="0.95"/>
+<path d="M24,4 L26,14 L36,8 L28,16 L38,18 L28,20 L36,30 L26,24 L24,36 L22,24 L12,30 L20,20 L10,18 L20,16 L12,8 L22,14 Z" fill="#ef4444" stroke="#7f1d1d" stroke-width="0.8" stroke-linejoin="round"/>
+<circle cx="24" cy="20" r="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
+<circle cx="24" cy="20" r="2.5" fill="white" opacity="0.9"/>` },
+
   // ─── УЗЛЫ ─────────────────────────────────────────────────────────────
   { id: "node_normal", name: "Узел (сопряжение)",    group: "Узлы",
     svgContent: `<circle cx="20" cy="20" r="8" fill="#c8a882" stroke="#1f2937" stroke-width="1.5"/><text x="31" y="24" font-size="10" fill="#1f2937" font-weight="600">001</text>` },
@@ -420,6 +427,11 @@ export const REDUCER_SYMBOL_IDS = new Set([
 // ID символов очага пожара (аварийный режим)
 export const FIRE_SYMBOL_IDS = new Set([
   "fire_source",
+]);
+
+// ID символов источника взрыва (аварийный режим)
+export const EXPLOSION_SYMBOL_IDS = new Set([
+  "explosion_source",
 ]);
 
 // ID всех перемычек для группировки в выпадающем списке

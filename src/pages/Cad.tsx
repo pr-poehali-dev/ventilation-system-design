@@ -34,9 +34,10 @@ import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type B
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import FUNC2URL from "../../backend/func2url.json";
@@ -90,7 +91,7 @@ export interface SchemaSymbol {
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast";
 
 interface Excavation {
   id: string;
@@ -608,6 +609,9 @@ export default function CadPage() {
   // ─── Результат расчёта пожара ───────────────────────────────────────
   const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
   const [fireCalcDone, setFireCalcDone] = useState(false);
+  // ─── Результат расчёта взрыва ──────────────────────────────────────
+  const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
+  const [explosionCalcDone, setExplosionCalcDone] = useState(false);
   const [showSmoke, setShowSmoke] = useState(false);
   // Текущий момент времени на шкале задымления (минуты)
   const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(0);
@@ -2602,6 +2606,34 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
+        {/* ── Группа: Взрыв ── */}
+        <RibbonGroup label="Взрыв">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn
+              icon="Zap"
+              label="Установить"
+              sublabel="место взрыва"
+              onClick={() => { handlePickSymbol("explosion_source"); setActiveRibbon("involve"); }}
+              style={{ background: schemaSymbols.some(s => s.typeId === "explosion_source") ? "#fef3c7" : undefined,
+                       borderColor: schemaSymbols.some(s => s.typeId === "explosion_source") ? "#fcd34d" : undefined }}
+            />
+            <RibbonBigBtn
+              icon="Trash2"
+              label="Убрать"
+              sublabel="взрывы"
+              disabled={!schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId))}
+              onClick={() => {
+                schemaSymbols.filter(s => EXPLOSION_SYMBOL_IDS.has(s.typeId)).forEach(s => {
+                  if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
+                  removeSymbol(s.id);
+                });
+                setExplosionResult(null);
+                setExplosionCalcDone(false);
+              }}
+            />
+          </div>
+        </RibbonGroup>
+
         {/* ── Группа: Расчёт ── */}
         <RibbonGroup label="Расчёт">
           <div className="flex items-stretch gap-1">
@@ -2757,6 +2789,89 @@ export default function CadPage() {
             />
           </div>
         </RibbonGroup>
+
+        {/* ── Группа: Расчёт взрыва ── */}
+        <RibbonGroup label="Расчёт взрыва">
+          <div className="flex items-stretch gap-1">
+            <button
+              onClick={() => {
+                const expBranches = branches.filter(b => b.hasExplosion);
+                if (expBranches.length === 0) {
+                  alert("Сначала установите место взрыва на ветви (кнопка «Установить место взрыва»)");
+                  return;
+                }
+                const results: ExplosionResult[] = [];
+                const updatedBranches = branches.map(b => {
+                  if (!b.hasExplosion) return b;
+                  const br = branches.find(br2 => br2.id === b.id);
+                  const area = br?.area ?? 12;
+                  const length = br?.length ?? 100;
+                  const res = calcExplosion({
+                    method: (b.explosionMethod ?? "gas_dynamics") as ExplosionMethod,
+                    sourceType: (b.explosionSourceType ?? "gas") as ExplosionSourceType,
+                    gasId: b.explosionGasId ?? "methane",
+                    gasVolume_m3: b.explosionGasVolume ?? 100,
+                    gasConcentration: b.explosionGasConcentration ?? 9.5,
+                    explosiveId: b.explosionExplosiveId ?? "ammonit",
+                    explosiveMass_kg: b.explosionExplosiveMass ?? 10,
+                    excavationArea_m2: area,
+                    excavationLength_m: length,
+                    ambientPressure_kPa: 101.3,
+                    considerWalls: b.explosionConsiderWalls ?? true,
+                  });
+                  results.push(res);
+                  return {
+                    ...b,
+                    explosionComputedQtnt: res.q_tnt_kg,
+                    explosionComputedMaxP: res.maxDeltaP_kPa,
+                    explosionComputedWaveSpeed: res.waveFrontSpeed_ms,
+                    explosionComputedR_lethal: res.zones[0]?.radius_m ?? 0,
+                    explosionComputedR_heavy: res.zones[1]?.radius_m ?? 0,
+                    explosionComputedR_medium: res.zones[2]?.radius_m ?? 0,
+                    explosionComputedR_light: res.zones[3]?.radius_m ?? 0,
+                  };
+                });
+                setBranches(updatedBranches);
+                if (results.length > 0) {
+                  setExplosionResult(results[results.length - 1]);
+                  setExplosionCalcDone(true);
+                  addLog("info", `💥 Расчёт взрыва завершён. Q_тнт = ${results[0].q_tnt_kg} кг ТНТ, ΔP_max = ${results[0].maxDeltaP_kPa} кПа`);
+                  results.forEach(r => r.log.forEach(l => addLog("info", l)));
+                  results.forEach(r => r.warnings.forEach(w => addLog("warn", w)));
+                }
+              }}
+              disabled={!schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId))}
+              className="flex flex-col items-center justify-center px-3 py-1 rounded border min-w-[64px] disabled:opacity-40"
+              style={{ background: "#f59e0b", color: "white", border: "1px solid #d97706", cursor: "pointer" }}
+              title="Расчёт параметров воздушной ударной волны">
+              <Icon name="Zap" size={22} />
+              <div className="text-[10px] leading-tight mt-0.5 text-center"><div>Расчёт</div><div>взрыва</div></div>
+            </button>
+            <RibbonBigBtn
+              icon="X"
+              label="Сбросить"
+              sublabel="результаты"
+              disabled={!explosionCalcDone}
+              onClick={() => {
+                setExplosionResult(null);
+                setExplosionCalcDone(false);
+                setBranches(prev => prev.map(b => ({ ...b, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 })));
+              }}
+            />
+          </div>
+        </RibbonGroup>
+
+        {/* ── Статус взрыва ── */}
+        {explosionCalcDone && explosionResult && (
+          <RibbonGroup label="Результат взрыва">
+            <div className="flex flex-col justify-center px-2 text-[10px] min-w-[160px] gap-0.5">
+              <div className="font-semibold text-amber-700">💥 Q_тнт: {explosionResult.q_tnt_kg} кг</div>
+              <div className="text-orange-700">ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
+              <div className="text-gray-700">D = {explosionResult.waveFrontSpeed_ms} м/с</div>
+              <div className="text-red-700">R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
+            </div>
+          </RibbonGroup>
+        )}
 
         {/* ── Группа: Статус ── */}
         {fireCalcDone && fireResult && (
@@ -3209,6 +3324,7 @@ export default function CadPage() {
                 { id: "conveyor", label: "Конвейер" },
                 { id: "coords", label: "Координаты" },
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
+                ...(selectedBranch?.hasExplosion ? [{ id: "blast" as SideTab, label: "💥 Взрыв" }] : []),
               ] as { id: SideTab; label: string }[])
           ).map((t) => (
             <button key={t.id}
@@ -3274,6 +3390,7 @@ export default function CadPage() {
               {activeSide === "vent" && "Аэродинамика"}
               {activeSide === "thermo" && "Теплофизические параметры"}
               {activeSide === "accidents" && "Аварийные режимы"}
+              {activeSide === "blast" && "Место взрыва"}
               {activeSide === "areas" && "Учёт по участкам"}
               {activeSide === "indicators" && "Индикаторы"}
               {activeSide === "coords" && "Координаты"}
@@ -3739,6 +3856,174 @@ export default function CadPage() {
                   {!fireCalcDone && (
                     <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "#fffbeb", border: "1px solid #fcd34d", margin: 4, borderRadius: 4 }}>
                       Нажмите «Расчёт пожара» на вкладке Аварии для получения результатов
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ═══ ВКЛАДКА: ВЗРЫВ (аварийный режим) ════════════════════════ */}
+            {activeSide === "blast" && !selectedNode && selectedBranch && (() => {
+              const b = selectedBranch;
+              const expSymId = schemaSymbols.find(s => EXPLOSION_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+              const SH = "#fffbeb"; const SB = "1px solid #fde68a";
+              const Row = ({ label, value, bold, color }: { label: string; value: string; bold?: boolean; color?: string }) => (
+                <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <span className="text-[11px] text-gray-500 flex-shrink-0" style={{ width: 148 }}>{label}</span>
+                  <span className={`text-[11px] text-right flex-1 ${bold ? "font-bold" : ""}`} style={{ color: color ?? (bold ? "#b45309" : "#1f2937") }}>{value}</span>
+                </div>
+              );
+              return (
+                <div className="flex flex-col h-full overflow-y-auto" style={{ fontSize: 11 }}>
+
+                  {/* Заголовок */}
+                  <div className="flex items-center justify-between px-2 py-1.5" style={{ background: "#f59e0b", color: "white" }}>
+                    <span className="font-semibold text-[12px]">💥 Источник взрыва — ветвь {b.id}</span>
+                    {expSymId && (
+                      <button onClick={() => {
+                        removeSymbol(expSymId.id);
+                        updateBranch(b.id, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
+                        setExplosionResult(null); setExplosionCalcDone(false);
+                      }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
+                        Убрать
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Методика */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "#92400e" }}>Алгоритм расчёта</div>
+                  <div className="flex flex-col gap-0.5 px-2 py-1.5" style={{ borderBottom: SB }}>
+                    <label className="flex items-start gap-1.5 cursor-pointer">
+                      <input type="radio" name={`expl_method_${b.id}`} value="gas_dynamics"
+                        checked={(b.explosionMethod ?? "gas_dynamics") === "gas_dynamics"}
+                        onChange={() => updateBranch(b.id, { explosionMethod: "gas_dynamics" })}
+                        className="mt-0.5 flex-shrink-0" />
+                      <span className="text-[10px] text-gray-700 leading-tight">Методика газодинамического расчёта параметров воздушных ударных волн при взрывах газа и пыли</span>
+                    </label>
+                    <label className="flex items-start gap-1.5 cursor-pointer">
+                      <input type="radio" name={`expl_method_${b.id}`} value="fnip_494"
+                        checked={(b.explosionMethod ?? "gas_dynamics") === "fnip_494"}
+                        onChange={() => updateBranch(b.id, { explosionMethod: "fnip_494" })}
+                        className="mt-0.5 flex-shrink-0" />
+                      <span className="text-[10px] text-gray-700 leading-tight">ФНиП №494 (Правила безопасности при производстве, хранении и применении ВМ)</span>
+                    </label>
+                  </div>
+
+                  {/* Настройки */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "#92400e" }}>Настройки</div>
+                  <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <input type="checkbox" id={`exp_walls_${b.id}`}
+                      checked={b.explosionConsiderWalls ?? true}
+                      onChange={e => updateBranch(b.id, { explosionConsiderWalls: e.target.checked })} />
+                    <label htmlFor={`exp_walls_${b.id}`} className="text-[11px] text-gray-700 cursor-pointer">Учитывать отражение от стенок выработки</label>
+                  </div>
+
+                  {/* Способ задания */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "#92400e" }}>Задание энергии взрыва</div>
+                  <div className="flex items-center px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Способ:</span>
+                    <select value={b.explosionSourceType ?? "gas"}
+                      onChange={e => updateBranch(b.id, { explosionSourceType: e.target.value as ExplosionSourceType })}
+                      className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }}>
+                      <option value="gas">По газу</option>
+                      <option value="mass">По массе вещества</option>
+                    </select>
+                  </div>
+
+                  {/* По газу */}
+                  {(b.explosionSourceType ?? "gas") === "gas" && (<>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Горючий газ:</span>
+                      <select value={b.explosionGasId ?? "methane"}
+                        onChange={e => updateBranch(b.id, { explosionGasId: e.target.value })}
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }}>
+                        {GAS_TYPES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Объём смеси, м³:</span>
+                      <input type="number" step="10" min="1"
+                        value={b.explosionGasVolume ?? 100}
+                        onChange={e => updateBranch(b.id, { explosionGasVolume: parseFloat(e.target.value) || 100 })}
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }} />
+                    </div>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Концентрация, %:</span>
+                      <input type="number" step="0.5" min="0" max="100"
+                        value={b.explosionGasConcentration ?? 9.5}
+                        onChange={e => updateBranch(b.id, { explosionGasConcentration: parseFloat(e.target.value) || 9.5 })}
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }} />
+                    </div>
+                    {(() => {
+                      const gas = GAS_TYPES.find(g => g.id === (b.explosionGasId ?? "methane"));
+                      if (!gas) return null;
+                      const conc = b.explosionGasConcentration ?? 9.5;
+                      const inRange = conc >= gas.lowerLimit && conc <= gas.upperLimit;
+                      return (
+                        <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: inRange ? "#f0fdf4" : "#fef9c3", border: `1px solid ${inRange ? "#bbf7d0" : "#fde047"}`, color: inRange ? "#166534" : "#713f12" }}>
+                          НПВ: {gas.lowerLimit}% · ВПВ: {gas.upperLimit}% · Стехиом.: {gas.stoichConc}%
+                          {!inRange && " ⚠ Концентрация вне диапазона взрываемости"}
+                        </div>
+                      );
+                    })()}
+                  </>)}
+
+                  {/* По массе */}
+                  {(b.explosionSourceType ?? "gas") === "mass" && (<>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Взрывчатое вещество:</span>
+                      <select value={b.explosionExplosiveId ?? "ammonit"}
+                        onChange={e => updateBranch(b.id, { explosionExplosiveId: e.target.value })}
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }}>
+                        {EXPLOSIVE_TYPES.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Масса ВВ, кг:</span>
+                      <input type="number" step="1" min="0.1"
+                        value={b.explosionExplosiveMass ?? 10}
+                        onChange={e => updateBranch(b.id, { explosionExplosiveMass: parseFloat(e.target.value) || 10 })}
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }} />
+                    </div>
+                    {(() => {
+                      const expl = EXPLOSIVE_TYPES.find(ex => ex.id === (b.explosionExplosiveId ?? "ammonit"));
+                      if (!expl) return null;
+                      return (
+                        <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#713f12" }}>
+                          k_тнт = {expl.tntEq} · Q_уд = {expl.qSpec} кДж/кг
+                        </div>
+                      );
+                    })()}
+                  </>)}
+
+                  {/* Результаты */}
+                  {explosionCalcDone && b.explosionComputedQtnt > 0 && (<>
+                    <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#92400e" }}>Результаты расчёта</div>
+                    <Row label="Тротиловый эквивалент:" value={`${b.explosionComputedQtnt} кг ТНТ`} bold />
+                    <Row label="Давление в эпицентре:" value={`${b.explosionComputedMaxP} кПа`} bold color="#dc2626" />
+                    <Row label="Скорость фронта волны:" value={`${b.explosionComputedWaveSpeed} м/с`} />
+                    <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "#92400e", marginTop: 4 }}>Зоны поражения</div>
+                    {[
+                      { label: "💀 Летальная (>100 кПа):", r: b.explosionComputedR_lethal, color: "#7c1010" },
+                      { label: "🔴 Тяжёлые (>50 кПа):",   r: b.explosionComputedR_heavy,  color: "#dc2626" },
+                      { label: "🟠 Средние (>30 кПа):",    r: b.explosionComputedR_medium, color: "#f97316" },
+                      { label: "🟡 Лёгкие (>10 кПа):",     r: b.explosionComputedR_light,  color: "#ca8a04" },
+                    ].map(({ label, r, color }) => (
+                      <div key={label} className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>{label}</span>
+                        <span className="text-[11px] font-bold text-right flex-1" style={{ color }}>{r > 0 ? `${r} м` : "—"}</span>
+                      </div>
+                    ))}
+                    {explosionResult?.warnings && explosionResult.warnings.length > 0 && (
+                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#713f12" }}>
+                        {explosionResult.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                      </div>
+                    )}
+                  </>)}
+
+                  {!explosionCalcDone && (
+                    <div className="mx-2 my-2 px-2 py-2 text-[11px] rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
+                      Нажмите «Расчёт взрыва» на вкладке Аварии для получения результатов
                     </div>
                   )}
                 </div>
@@ -5292,6 +5577,17 @@ export default function CadPage() {
                   }, false);
                   setFireResult(null); setFireCalcDone(false);
                 }
+                // Сброс взрыва при удалении символа
+                if (sym && EXPLOSION_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  updateBranch(sym.branchId, {
+                    hasExplosion: false,
+                    explosionComputedQtnt: 0, explosionComputedMaxP: 0,
+                    explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0,
+                    explosionComputedR_heavy: 0, explosionComputedR_medium: 0,
+                    explosionComputedR_light: 0, explosionComputedDeltaP: 0,
+                  }, false);
+                  setExplosionResult(null); setExplosionCalcDone(false);
+                }
                 // Сброс редуктора при удалении символа клапана
                 if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   updateBranch(sym.branchId, {
@@ -5318,6 +5614,14 @@ export default function CadPage() {
                   setFanSymbolBranchId(null);
                   setSelectedSymbolId(symId);
                   setActiveSide("accidents");
+                  setActiveRibbon("involve");
+                } else if (sym && EXPLOSION_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  // Клик на символ взрыва — открываем вкладку Взрыв
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
+                  setSelectedSymbolId(symId);
+                  setActiveSide("blast");
                   setActiveRibbon("involve");
                 } else if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   // Клик на редукционный клапан — открываем вкладку Трубы с настройками
@@ -5459,6 +5763,38 @@ export default function CadPage() {
                       setFireResult(null);
                       setFireCalcDone(false);
                       setActiveSide("accidents");
+                      setActiveRibbon("involve");
+                    }
+                  } else if (EXPLOSION_SYMBOL_IDS.has(typeId) && branchId) {
+                    // Источник взрыва — одна ветвь = один источник
+                    const alreadyHasExplosion = schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId) && s.branchId === branchId);
+                    if (!alreadyHasExplosion) {
+                      const expT = t ?? 0.5;
+                      const newSym: SchemaSymbol = {
+                        id: `SYM_EXPL_${Date.now()}`,
+                        typeId, x, y, branchId, t: expT,
+                      };
+                      setSchemaSymbols(prev => [...prev, newSym]);
+                      updateBranch(branchId, {
+                        hasExplosion: true,
+                        explosionT: expT,
+                        explosionMethod: "gas_dynamics",
+                        explosionSourceType: "gas",
+                        explosionGasId: "methane",
+                        explosionGasVolume: 100,
+                        explosionGasConcentration: 9.5,
+                        explosionExplosiveId: "ammonit",
+                        explosionExplosiveMass: 10,
+                        explosionConsiderWalls: true,
+                      });
+                      setSelectedSymbolId(newSym.id);
+                      lastBranchTab.current = "blast";
+                      setSelectedBranchId(branchId);
+                      setSelectedNodeId(null);
+                      setFanSymbolBranchId(null);
+                      setExplosionResult(null);
+                      setExplosionCalcDone(false);
+                      setActiveSide("blast");
                       setActiveRibbon("involve");
                     }
                   } else if (REDUCER_SYMBOL_IDS.has(typeId) && branchId) {

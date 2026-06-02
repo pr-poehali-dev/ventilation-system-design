@@ -177,6 +177,30 @@ export interface TopoBranch {
   // Рабочие поля итеративного расчёта (не сохраняются в файл)
   fireThermalDepression?: number;  // Па — тепловая депрессия пожара (передаётся в solver)
   originalFlow?: number;           // м³/с — расход до итераций (для обнаружения опрокидывания)
+
+  // ─── Взрыв (расчёт параметров воздушных ударных волн) ───────────────
+  hasExplosion: boolean;                   // в ветви установлен источник взрыва
+  explosionT: number;                      // позиция источника вдоль ветви 0..1
+  explosionMethod: "gas_dynamics" | "fnip_494"; // методика расчёта
+  explosionSourceType: "gas" | "mass";     // способ задания: по газу или по массе ВВ
+  // По газу
+  explosionGasId: string;                  // ID газа из GAS_TYPES
+  explosionGasVolume: number;              // м³ — объём взрывоопасной смеси
+  explosionGasConcentration: number;       // % — концентрация газа
+  // По массе ВВ
+  explosionExplosiveId: string;            // ID ВВ из EXPLOSIVE_TYPES
+  explosionExplosiveMass: number;          // кг — масса ВВ
+  // Настройки
+  explosionConsiderWalls: boolean;         // учитывать отражение от стенок
+  // Вычисленные результаты
+  explosionComputedQtnt: number;           // кг ТНТ — тротиловый эквивалент
+  explosionComputedMaxP: number;           // кПа — давление в эпицентре
+  explosionComputedWaveSpeed: number;      // м/с — скорость фронта
+  explosionComputedR_lethal: number;       // м — радиус летальной зоны
+  explosionComputedR_heavy: number;        // м — радиус тяжёлых поражений
+  explosionComputedR_medium: number;       // м — радиус средних поражений
+  explosionComputedR_light: number;        // м — радиус лёгких поражений
+  explosionComputedDeltaP: number;         // кПа — давление в данной ветви (от расстояния)
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
@@ -368,6 +392,25 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireComputedSmokeDens: 0,
     fireComputedCO: 0,
     fireComputedCO2: 0,
+    // Взрыв
+    hasExplosion: false,
+    explosionT: 0.5,
+    explosionMethod: "gas_dynamics",
+    explosionSourceType: "gas",
+    explosionGasId: "methane",
+    explosionGasVolume: 100,
+    explosionGasConcentration: 9.5,
+    explosionExplosiveId: "ammonit",
+    explosionExplosiveMass: 10,
+    explosionConsiderWalls: true,
+    explosionComputedQtnt: 0,
+    explosionComputedMaxP: 0,
+    explosionComputedWaveSpeed: 0,
+    explosionComputedR_lethal: 0,
+    explosionComputedR_heavy: 0,
+    explosionComputedR_medium: 0,
+    explosionComputedR_light: 0,
+    explosionComputedDeltaP: 0,
     ...partial,
   };
 }
