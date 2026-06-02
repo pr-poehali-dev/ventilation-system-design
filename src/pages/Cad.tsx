@@ -5747,52 +5747,90 @@ export default function CadPage() {
                   if (deltaP >= 50)  return { color: "#dc2626", hazardLevel: "heavy" };
                   if (deltaP >= 30)  return { color: "#f97316", hazardLevel: "medium" };
                   if (deltaP >= 10)  return { color: "#fbbf24", hazardLevel: "light" };
+                  // Безопасно — всё равно окрашиваем, чтобы не было «белых пятен»
                   return { color: "#22c55e", hazardLevel: "safe" };
                 };
 
-                // Собираем источники с реальными 3D координатами середины ветви-эпицентра
-                type Pt3 = { x: number; y: number; z: number };
-                const sources: Pt3[] = [];
+                // Источники: координата точки взрыва на ветви
+                const sourceNodeIds = new Set<string>();
                 branches.forEach(src => {
                   if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
-                  const fN = nodes.find(n => n.id === src.fromId);
-                  const tN = nodes.find(n => n.id === src.toId);
-                  if (!fN || !tN) return;
-                  // Точка установки символа взрыва (t=0.5 по умолчанию)
-                  const t = src.explosionT ?? 0.5;
-                  sources.push({
-                    x: fN.x + (tN.x - fN.x) * t,
-                    y: fN.y + (tN.y - fN.y) * t,
-                    z: fN.z + (tN.z - fN.z) * t,
-                  });
+                  sourceNodeIds.add(src.fromId);
+                  sourceNodeIds.add(src.toId);
                 });
-                if (sources.length === 0) return undefined;
+                if (sourceNodeIds.size === 0) return undefined;
 
-                // Минимальное расстояние от точки до отрезка в 3D
-                const distPointToSegment = (p: Pt3, a: Pt3, b: Pt3): number => {
-                  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
-                  const len2 = abx * abx + aby * aby + abz * abz;
-                  if (len2 < 1e-10) return Math.sqrt((p.x-a.x)**2+(p.y-a.y)**2+(p.z-a.z)**2);
-                  const t = Math.max(0, Math.min(1,
-                    ((p.x-a.x)*abx + (p.y-a.y)*aby + (p.z-a.z)*abz) / len2
-                  ));
-                  const cx = a.x + t*abx, cy = a.y + t*aby, cz = a.z + t*abz;
-                  return Math.sqrt((p.x-cx)**2+(p.y-cy)**2+(p.z-cz)**2);
-                };
-
-                branches.forEach(b => {
+                // Длина ветви по координатам узлов (3D)
+                const branchLen = (b: typeof branches[0]): number => {
                   const fN = nodes.find(n => n.id === b.fromId);
                   const tN = nodes.find(n => n.id === b.toId);
-                  if (!fN || !tN) return;
-                  // Минимальное расстояние от любого источника до ближайшей точки ветви
-                  let minDist = Infinity;
-                  sources.forEach(src => {
-                    const d = distPointToSegment(src, fN, tN);
-                    if (d < minDist) minDist = d;
-                  });
-                  if (minDist > blastWaveRadius) return;
-                  const dp = explosionResult.pressureAtDistance(minDist);
-                  if (dp >= 5) map.set(b.id, zoneColor(dp));
+                  if (!fN || !tN) return b.length > 0 ? b.length : 0;
+                  return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
+                };
+
+                // Дейкстра по сети выработок: dist[nodeId] = расстояние по сети от источника
+                // Волна распространяется ПО ВЫРАБОТКАМ, а не сквозь породу
+                const distNode = new Map<string, number>();
+                const pq: Array<{ id: string; d: number }> = [];
+
+                // Начальные расстояния от узлов ветви-источника
+                // Учитываем что символ взрыва стоит на позиции t вдоль ветви
+                branches.forEach(src => {
+                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
+                  const len = branchLen(src);
+                  const t = src.explosionT ?? 0.5;
+                  const dFrom = len * t;       // расстояние от точки взрыва до fromId
+                  const dTo   = len * (1 - t); // расстояние от точки взрыва до toId
+                  const upd = (nid: string, d: number) => {
+                    if (!distNode.has(nid) || distNode.get(nid)! > d) {
+                      distNode.set(nid, d);
+                      pq.push({ id: nid, d });
+                    }
+                  };
+                  upd(src.fromId, dFrom);
+                  upd(src.toId,   dTo);
+                });
+
+                // Граф смежности: nodeId → [{nodeId, branchLen, branchId}]
+                type Edge = { to: string; len: number; branchId: string };
+                const adj = new Map<string, Edge[]>();
+                branches.forEach(b => {
+                  const len = branchLen(b);
+                  if (!adj.has(b.fromId)) adj.set(b.fromId, []);
+                  if (!adj.has(b.toId))   adj.set(b.toId,   []);
+                  adj.get(b.fromId)!.push({ to: b.toId,   len, branchId: b.id });
+                  adj.get(b.toId)!.push  ({ to: b.fromId, len, branchId: b.id });
+                });
+
+                // Простой Дейкстра (без приоритетной очереди — сеть небольшая)
+                pq.sort((a, b) => a.d - b.d);
+                const visited = new Set<string>();
+                while (pq.length > 0) {
+                  pq.sort((a, b) => a.d - b.d);
+                  const { id: cur, d: curD } = pq.shift()!;
+                  if (visited.has(cur)) continue;
+                  visited.add(cur);
+                  const edges = adj.get(cur) ?? [];
+                  for (const e of edges) {
+                    const nd = curD + e.len;
+                    if (nd > blastWaveRadius) continue; // волна не дошла
+                    if (!distNode.has(e.to) || distNode.get(e.to)! > nd) {
+                      distNode.set(e.to, nd);
+                      pq.push({ id: e.to, d: nd });
+                    }
+                  }
+                }
+
+                // Окрашиваем ветви: ветвь попадает в зону если хотя бы один её узел достигнут волной
+                branches.forEach(b => {
+                  const dFrom = distNode.get(b.fromId);
+                  const dTo   = distNode.get(b.toId);
+                  // Ни один узел не достигнут — волна не дошла
+                  if (dFrom === undefined && dTo === undefined) return;
+                  // Минимальное расстояние по сети до ближайшей точки ветви
+                  const minD = Math.min(dFrom ?? Infinity, dTo ?? Infinity);
+                  const dp = explosionResult.pressureAtDistance(minD);
+                  map.set(b.id, zoneColor(dp));
                 });
 
                 return map.size > 0 ? map : undefined;
