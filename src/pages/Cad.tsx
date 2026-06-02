@@ -1686,7 +1686,7 @@ export default function CadPage() {
     }
   };
 
-  const handleSolve = () => { void handleSolveLocal(); };
+  const handleSolve = () => { setColorMode("flowQ"); void handleSolveLocal(); };
   // Подключаем ref чтобы updateBranch мог вызвать расчёт (нужен прямой режим перед реверсом)
   handleSolveRef.current = handleSolve;
 
