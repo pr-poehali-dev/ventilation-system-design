@@ -1340,13 +1340,20 @@ export default function TopoCanvas(props: Props) {
           const V = b.velocity;
           const overV = V > b.vMax;
           // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
-          // Градиент по расходу воздуха: белый → насыщенный цвет (режим flowQ)
+          // Градиент по расходу воздуха: белый (мин) → насыщенный цвет (макс)
           const flowQColor = (q: number): string => {
-            const t = Math.min(1, Math.max(0, (q - flowColorMin) / Math.max(1, flowColorMax - flowColorMin)));
-            const r255 = Math.round(255 - t * (flowColorHue === "red" ? 255 : flowColorHue === "blue" ? 200 : 220));
-            const g255 = Math.round(255 - t * (flowColorHue === "red" ? 220 : flowColorHue === "blue" ? 180 : 30));
-            const b255 = Math.round(255 - t * (flowColorHue === "red" ? 220 : flowColorHue === "blue" ? 0 : 220));
-            return `rgb(${r255},${g255},${b255})`;
+            const t = Math.min(1, Math.max(0, (q - flowColorMin) / Math.max(0.001, flowColorMax - flowColorMin)));
+            // Целевые RGB для максимума шкалы
+            const targets: Record<string, [number, number, number]> = {
+              red:   [220, 38, 38],   // #dc2626
+              blue:  [37, 99, 235],   // #2563eb
+              green: [22, 163, 74],   // #16a34a
+            };
+            const [tr, tg, tb] = targets[flowColorHue] ?? targets.red;
+            const r = Math.round(255 + (tr - 255) * t);
+            const g = Math.round(255 + (tg - 255) * t);
+            const b = Math.round(255 + (tb - 255) * t);
+            return `rgb(${r},${g},${b})`;
           };
           // Градиент по скорости: 0 м/с=серый → 3=синий → 8=зелёный → 15=жёлтый → 25+=красный
           const velocityColor = (v: number): string => {

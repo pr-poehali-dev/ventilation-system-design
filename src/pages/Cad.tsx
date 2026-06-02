@@ -3058,14 +3058,16 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
                   else if (e.target.value === "search") setActiveSide("search");
                   else if (e.target.value === "positions") setActiveSide("positions");
-                  else setActiveSide("general");
+                  else if (e.target.value === "flowQ") { setActiveSide("flowQ"); setColorMode("flowQ"); }
+                  else { setActiveSide("general"); }
                 }}>
                 <option value="props">Свойства</option>
+                <option value="flowQ">Расход воздуха</option>
                 <option value="positions">Позиции</option>
                 <option value="search">Поиск</option>
                 <option value="horizons">Горизонты</option>
@@ -3090,6 +3092,7 @@ export default function CadPage() {
               {activeSide === "measure" && "Замеры"}
               {activeSide === "pipes" && "Трубопроводы"}
               {activeSide === "positions" && "Позиции"}
+              {activeSide === "flowQ" && "Расход воздуха"}
             </span>
             <div className="flex items-center gap-1">
               {activeSide === "params" && selectedNode && (
@@ -4502,6 +4505,105 @@ export default function CadPage() {
                 onRemoveLeader={(posId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null } : p))}
               />
             )}
+
+            {/* ═══ ВКЛАДКА: РАСХОД ВОЗДУХА ════════════════════════════ */}
+            {activeSide === "flowQ" && (() => {
+              const BAR_H = 320;
+              const hueStops: Record<string, [string, string]> = {
+                red:   ["#ffffff", "#dc2626"],
+                blue:  ["#ffffff", "#2563eb"],
+                green: ["#ffffff", "#16a34a"],
+              };
+              const [stopLo, stopHi] = hueStops[flowColorHue];
+              const tickCount = 6;
+              const ticks = Array.from({ length: tickCount }, (_, i) => {
+                const frac = i / (tickCount - 1);
+                const val = flowColorMin + frac * (flowColorMax - flowColorMin);
+                return { val, frac };
+              });
+              return (
+                <div className="flex flex-col h-full">
+                  {/* Переключатель вкл/выкл */}
+                  <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <button
+                      onClick={() => setColorMode(colorMode === "flowQ" ? "none" : "flowQ")}
+                      className="h-6 px-3 rounded text-[11px] font-semibold"
+                      style={{
+                        background: colorMode === "flowQ" ? "#dc2626" : "#f3f4f6",
+                        color: colorMode === "flowQ" ? "white" : "#374151",
+                        border: "1px solid " + (colorMode === "flowQ" ? "#b91c1c" : "#d1d5db"),
+                      }}>
+                      {colorMode === "flowQ" ? "Заливка ВКЛ" : "Заливка ВЫКЛ"}
+                    </button>
+                    <span className="text-[10px] text-gray-400">После расчёта F9</span>
+                  </div>
+
+                  {/* Шкала + настройки */}
+                  <div className="flex gap-3 px-3 pt-3 flex-1">
+                    {/* Вертикальная полоса */}
+                    <div className="flex flex-col items-end" style={{ flexShrink: 0 }}>
+                      <div style={{
+                        width: 22, height: BAR_H,
+                        background: `linear-gradient(to bottom, ${stopHi}, ${stopLo})`,
+                        border: "1px solid #d1d5db", borderRadius: 4,
+                      }} />
+                    </div>
+
+                    {/* Подписи делений */}
+                    <div style={{ position: "relative", height: BAR_H, width: 70, flexShrink: 0 }}>
+                      {ticks.slice().reverse().map(({ val, frac }) => (
+                        <div key={val} style={{
+                          position: "absolute",
+                          top: (1 - frac) * BAR_H - 7,
+                          left: 0, display: "flex", alignItems: "center", gap: 4,
+                        }}>
+                          <div style={{ width: 5, height: 1, background: "#9ca3af" }} />
+                          <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap" }}>
+                            {val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)} м³/с
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Настройки шкалы */}
+                  <div className="px-3 py-3" style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <div className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wide">Настройки шкалы</div>
+
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Мин, м³/с</span>
+                      <input type="number" min="0" step="5" value={flowColorMin}
+                        onChange={e => setFlowColorMin(Number(e.target.value))}
+                        className="flex-1 text-[11px] text-right px-1"
+                        style={{ border: "1px solid #d1d5db", borderRadius: 3, height: 22, outline: "none" }} />
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Макс, м³/с</span>
+                      <input type="number" min="1" step="5" value={flowColorMax}
+                        onChange={e => setFlowColorMax(Number(e.target.value))}
+                        className="flex-1 text-[11px] text-right px-1"
+                        style={{ border: "1px solid #d1d5db", borderRadius: 3, height: 22, outline: "none" }} />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Цвет</span>
+                      <div className="flex gap-1">
+                        {(["red", "blue", "green"] as const).map(h => (
+                          <button key={h} onClick={() => setFlowColorHue(h)}
+                            title={h === "red" ? "Красный" : h === "blue" ? "Синий" : "Зелёный"}
+                            style={{
+                              width: 22, height: 22, borderRadius: 4,
+                              border: flowColorHue === h ? "2px solid #111" : "1px solid #d1d5db",
+                              background: h === "red" ? "#dc2626" : h === "blue" ? "#2563eb" : "#16a34a",
+                              cursor: "pointer",
+                            }} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -5175,82 +5277,6 @@ export default function CadPage() {
                 }
               }}
             />
-
-            {/* ── Colorbar: шкала расхода воздуха ──────────────────── */}
-            {colorMode === "flowQ" && (() => {
-              const BAR_H = 400;
-              const stops = flowColorHue === "red"
-                ? ["rgb(255,255,255)", "rgb(255,35,35)"]
-                : flowColorHue === "blue"
-                ? ["rgb(255,255,255)", "rgb(55,75,255)"]
-                : ["rgb(255,255,255)", "rgb(35,200,35)"];
-              const tickCount = 6;
-              const ticks = Array.from({ length: tickCount }, (_, i) => {
-                const frac = i / (tickCount - 1);
-                const val = flowColorMin + frac * (flowColorMax - flowColorMin);
-                const y = BAR_H * (1 - frac);
-                return { val, y };
-              });
-              return (
-                <div style={{
-                  position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
-                  zIndex: 50, display: "flex", flexDirection: "row", alignItems: "stretch",
-                  gap: 0, pointerEvents: "none",
-                  background: "rgba(255,255,255,0.92)", border: "1px solid #c8c8c8",
-                  borderRadius: 6, boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                  padding: "10px 8px 10px 6px",
-                }}>
-                  {/* Вертикальная полоса градиента */}
-                  <div style={{
-                    width: 18, height: BAR_H,
-                    background: `linear-gradient(to top, ${stops[0]}, ${stops[1]})`,
-                    border: "1px solid #d1d5db", borderRadius: 3, flexShrink: 0,
-                  }} />
-                  {/* Подписи */}
-                  <div style={{ position: "relative", width: 52, height: BAR_H, marginLeft: 4 }}>
-                    {ticks.map(({ val, y }) => (
-                      <div key={val} style={{
-                        position: "absolute", top: y - 8, left: 0, width: "100%",
-                        display: "flex", alignItems: "center", gap: 3,
-                      }}>
-                        <div style={{ width: 6, height: 1, background: "#9ca3af", flexShrink: 0 }} />
-                        <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap", fontWeight: 500 }}>
-                          {val % 1 === 0 ? val : val.toFixed(1)} м³/с
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* ── Панель настройки шкалы (при активном colorMode) ────── */}
-            {colorMode === "flowQ" && (
-              <div style={{
-                position: "absolute", left: 12, bottom: 12, zIndex: 50,
-                background: "rgba(255,255,255,0.95)", border: "1px solid #d1d5db",
-                borderRadius: 6, padding: "6px 10px", boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-                display: "flex", alignItems: "center", gap: 8, fontSize: 11,
-              }}>
-                <span style={{ color: "#6b7280", fontWeight: 600 }}>Шкала, м³/с:</span>
-                <input type="number" min="0" step="5" value={flowColorMin}
-                  onChange={e => setFlowColorMin(Number(e.target.value))}
-                  style={{ width: 48, border: "1px solid #d1d5db", borderRadius: 3, padding: "1px 4px", fontSize: 11, textAlign: "right" }} />
-                <span style={{ color: "#9ca3af" }}>—</span>
-                <input type="number" min="1" step="5" value={flowColorMax}
-                  onChange={e => setFlowColorMax(Number(e.target.value))}
-                  style={{ width: 48, border: "1px solid #d1d5db", borderRadius: 3, padding: "1px 4px", fontSize: 11, textAlign: "right" }} />
-                <span style={{ color: "#6b7280", fontWeight: 600 }}>Цвет:</span>
-                {(["red", "blue", "green"] as const).map(h => (
-                  <button key={h} onClick={() => setFlowColorHue(h)}
-                    style={{
-                      width: 18, height: 18, borderRadius: 3, border: flowColorHue === h ? "2px solid #374151" : "1px solid #d1d5db",
-                      background: h === "red" ? "#ef4444" : h === "blue" ? "#3b82f6" : "#22c55e",
-                      cursor: "pointer", flexShrink: 0,
-                    }} />
-                ))}
-              </div>
-            )}
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {
