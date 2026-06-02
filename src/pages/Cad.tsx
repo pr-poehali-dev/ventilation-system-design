@@ -175,6 +175,24 @@ export default function CadPage() {
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
   const [branchesRaw, setBranches] = useState<TopoBranch[]>(DEMO_BRANCHES);
+
+  // ─── История изменений (undo) ───────────────────────────────────────────
+  const historyRef = useRef<Array<{ nodes: TopoNode[]; branches: TopoBranch[] }>>([]);
+  const nodesRef   = useRef(nodes);
+  const branchesRef = useRef(branchesRaw);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { branchesRef.current = branchesRaw; }, [branchesRaw]);
+
+  const pushHistory = () => {
+    historyRef.current = [...historyRef.current.slice(-49),
+      { nodes: nodesRef.current, branches: branchesRef.current }];
+  };
+  const handleUndo = () => {
+    const snap = historyRef.current.pop();
+    if (!snap) return;
+    setNodes(snap.nodes);
+    setBranches(snap.branches);
+  };
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [tool, setTool] = useState<CadTool>("select");
@@ -250,14 +268,16 @@ export default function CadPage() {
     selectedBranch?.flow,
   ]);
 
-  const updateNode = (id: string, patch: Partial<TopoNode>) => {
+  const updateNode = (id: string, patch: Partial<TopoNode>, saveHistory = true) => {
+    if (saveHistory) pushHistory();
     setNodes((prev) => prev.map((n) => n.id === id ? { ...n, ...patch } : n));
   };
 
   // Ref для вызова расчёта из updateBranch (handleSolveLocal объявлен позже)
   const handleSolveRef = useRef<(() => void) | null>(null);
 
-  const updateBranch = (id: string, patch: Partial<TopoBranch>) => {
+  const updateBranch = (id: string, patch: Partial<TopoBranch>, saveHistory = true) => {
+    if (saveHistory) pushHistory();
     setBranches((prev) => prev.map((b) => b.id === id ? { ...b, ...patch } : b));
 
     // Синхронизируем УО перемычки при изменении hasBulkhead
@@ -488,6 +508,7 @@ export default function CadPage() {
   // Создаёт узел в указанной мировой точке. Если активен горизонт —
   // навязывает его Z и horizonId. Возвращает ID созданного узла.
   const handleNodeAdd = (x: number, y: number, z: number): string => {
+    pushHistory();
     const newId = nextNodeId();
     const finalZ = activeHorizon ? activeHorizon.z : z;
     const node = makeNode(newId, {
@@ -503,6 +524,7 @@ export default function CadPage() {
   };
 
   const handleBranchAdd = (fromId: string, toId: string): string => {
+    pushHistory();
     const id = nextBranchId();
     // Если активен горизонт — навешиваем привязку на ветвь
     const horizonId = activeHorizon ? activeHorizon.id : "";
@@ -521,6 +543,7 @@ export default function CadPage() {
   // Параметры старой ветви (тип, сечение, поверхность, горизонт, флаг вентилятора)
   // переносятся на оба сегмента.
   const handleSplitBranchAt = (branchId: string, x: number, y: number, z: number): string => {
+    pushHistory();
     const old = branchesRaw.find((b) => b.id === branchId);
     if (!old) return "";
     const fromN = nodes.find((n) => n.id === old.fromId);
@@ -1701,6 +1724,11 @@ export default function CadPage() {
       const isEditing = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
         && active !== document.body;
 
+      if (e.ctrlKey && (e.key === "z" || e.key === "я" || e.key === "Я")) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
       if (e.ctrlKey && (e.key === "s" || e.key === "ы" || e.key === "Ы")) {
         e.preventDefault();
         handleSave();
@@ -1877,6 +1905,7 @@ export default function CadPage() {
 
   // Удаляет узел без объединения
   const doDeleteNode = (nodeId: string) => {
+    pushHistory();
     setBranches(p => p.filter(b => b.fromId !== nodeId && b.toId !== nodeId));
     setNodes(p => p.filter(n => n.id !== nodeId));
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
@@ -1906,6 +1935,7 @@ export default function CadPage() {
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
     } else if (selectedBranchId) {
+      pushHistory();
       setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
       setSelectedBranchId(null);
     } else if (selectedNodeId) {
@@ -1918,6 +1948,7 @@ export default function CadPage() {
   };
 
   const handleDeleteBranch = (id: string) => {
+    pushHistory();
     setBranches((p) => p.filter((b) => b.id !== id));
     if (selectedBranchId === id) setSelectedBranchId(null);
   };
@@ -1926,6 +1957,7 @@ export default function CadPage() {
   // каждая ветвь получает свой клон-узел на том же месте, исходный узел удаляется.
   // Ветви при этом НЕ удаляются — они перепривязываются к новым узлам.
   const handleSplitNodeConnections = (id: string) => {
+    pushHistory();
     const srcNode = nodes.find((n) => n.id === id);
     if (!srcNode) return;
     const connected = branchesRaw.filter((b) => b.fromId === id || b.toId === id);
@@ -1970,6 +2002,7 @@ export default function CadPage() {
   // остальные узлы удаляются.
   const handleMergeNodes = (nodeIds: string[]) => {
     if (nodeIds.length < 2) return;
+    pushHistory();
     const [mainId, ...rest] = nodeIds;
     const restSet = new Set(rest);
     setBranches((prev) => prev.map((b) => ({
@@ -1986,6 +2019,7 @@ export default function CadPage() {
   const handleAlignNodes = (axis: "x" | "y", mode: "min" | "max" | "avg") => {
     const ids = selectedNodeIds.size >= 2 ? [...selectedNodeIds] : [];
     if (ids.length < 2) return;
+    pushHistory();
     const selNodes = nodes.filter((n) => ids.includes(n.id));
     const vals = selNodes.map((n) => axis === "x" ? n.x : n.y);
     const target = mode === "min" ? Math.min(...vals) : mode === "max" ? Math.max(...vals) : vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -2005,6 +2039,7 @@ export default function CadPage() {
   };
 
   const handleReverseBranch = (id: string) => {
+    pushHistory();
     setBranches((p) => p.map((b) => b.id === id ? { ...b, fromId: b.toId, toId: b.fromId } : b));
   };
 
@@ -2810,7 +2845,9 @@ export default function CadPage() {
         {/* ── Группа: Действия с объектами ── */}
         <RibbonGroup label="Действия с объектами">
           <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие" />
+            <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие"
+              onClick={handleUndo}
+              disabled={historyRef.current.length === 0} />
           </div>
         </RibbonGroup>
 
