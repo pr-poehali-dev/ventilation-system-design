@@ -1316,7 +1316,31 @@ export default function TopoCanvas(props: Props) {
           const lodArrows    = view.scale >= 0.15;  // стрелки потока
           const lodLabels    = view.scale >= 0.04;  // метки с цифрами
           const lodBorder    = view.scale >= 0.10;  // обводка линий
-          return branchesSorted.map(({ branch: b }) => {
+          // ── ПРОХОД 1: только border всех ветвей ──────────────────────────
+          // Рисуем все обводки сначала, чтобы fill соседних ветвей перекрывал
+          // торцы border — схема выглядит цельной без разрывов в узлах
+          const borderPass = branchesSorted.map(({ branch: b }) => {
+            const from = projNodesMap.get(b.fromId);
+            const to   = projNodesMap.get(b.toId);
+            if (!from || !to) return null;
+            const isSel = selectedBranchId === b.id || (selectedBranchIds?.has(b.id) ?? false);
+            const isLeakage = b.isLeakage ?? false;
+            const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+            const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
+            const baseW = isSel ? bw + 1 : bw;
+            const w = thinLines ? 1 : baseW;
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+            if (borderW === 0) return null;
+            return (
+              <line key={`border-${b.id}`}
+                x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                stroke="#1f2937" strokeWidth={w + borderW * 2}
+                strokeLinecap="round" opacity="0.85"
+                strokeDasharray={isLeakage ? "6 4" : undefined} />
+            );
+          });
+          // ── ПРОХОД 2: fill + декор всех ветвей ───────────────────────────
+          const fillPass = branchesSorted.map(({ branch: b }) => {
           const from = projNodesMap.get(b.fromId);
           const to = projNodesMap.get(b.toId);
           if (!from || !to) return null;
@@ -1442,12 +1466,6 @@ export default function TopoCanvas(props: Props) {
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                   stroke="#888" strokeWidth={w + 3} strokeLinecap="round" opacity="0.15"
                   strokeDasharray="6,4" />
-              )}
-              {/* Контурная обводка (рисуется ПОД основной линией, шире на 2*borderW) */}
-              {borderW > 0 && (
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke="#1f2937" strokeWidth={w + borderW * 2}
-                  strokeLinecap="round" opacity="0.85" />
               )}
               {/* Подложка — статичная линия (всегда от fromId к toId, цвет = тип) */}
               <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
@@ -1644,6 +1662,7 @@ export default function TopoCanvas(props: Props) {
             </g>
           );
         });
+          return <>{borderPass}{fillPass}</>;
         })()}
 
         {/* Превью создания ветви */}
