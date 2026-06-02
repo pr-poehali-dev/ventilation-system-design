@@ -189,10 +189,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   }).sort((a, b) => a.depth - b.depth);
 
   // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
-
-  for (const { b, from, to } of sorted) {
-    if (!from || !to) continue;
-
+  // Вспомогательная функция вычисления параметров ветви
+  const branchParams = (b: typeof sorted[0]["b"], from: typeof sorted[0]["from"], to: typeof sorted[0]["to"]) => {
+    if (!from || !to) return null;
     const isSel     = selectedBranchId === b.id || selectedBranchIds.has(b.id);
     const isMulti   = selectedBranchIds.has(b.id);
     const isDead    = b.isDead ?? false;
@@ -200,7 +199,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const Q  = Math.abs(b.flow);
     const V  = b.velocity;
     const overV = V > b.vMax;
-
     const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && b.flow >= 0;
     const reversed = b.flow < 0 || fanReverseOverride;
     const sxA = reversed ? to.sx : from.sx;
@@ -209,7 +207,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const syB = reversed ? from.sy : to.sy;
     const midX = (from.sx + to.sx) / 2;
     const midY = (from.sy + to.sy) / 2;
-
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
@@ -217,65 +214,104 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : (colorByHorizon && horizonColor) ? horizonColor
       : Q > 0    ? velocityColor(V)
       : "#ffffff";
-
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
     const baseW = isSel ? bw + 1 : bw;
     const w = thinLines ? 1 : baseW;
     const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
-
     const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
     const showDashes   = flowVisible && (flowDisplay === "flow"     || flowDisplay === "both");
     const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
-
     const dx = sxB - sxA, dy = syB - syA;
     const segLen = Math.hypot(dx, dy);
     const ux = segLen > 0 ? dx / segLen : 0;
     const uy = segLen > 0 ? dy / segLen : 0;
     const angle = Math.atan2(dy, dx);
+    return { isSel, isMulti, isDead, isLeakage, Q, V, overV, reversed,
+      sxA, syA, sxB, syB, midX, midY, color, w, bwBorder, bw,
+      flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle };
+  };
 
-    // Подсветка задымления (пожар) — широкая полупрозрачная аура, только от fromT до toT
-    // fromT/toT задаются в координатах "по направлению потока" (0=вход дыма, 1=выход)
+  // ── ПРОХОД 1: только border (обводка) всех ветвей ─────────────────────────
+  // Рисуем border отдельным проходом ДО всех fill, чтобы fill соседних ветвей
+  // перекрывал торцы border — схема выглядит цельной без разрывов в узлах
+  for (const { b, from, to } of sorted) {
+    const p = branchParams(b, from, to);
+    if (!p || p.bwBorder === 0) continue;
+    // Пожар — аура под border
     const fireSeg = branchFireColors?.get(b.id);
     if (fireSeg) {
       const { color: fireCol, fromT, toT } = fireSeg;
-      // Учитываем направление потока: если reversed — входной конец = to, выходной = from
-      // sxA/syA — это начало по направлению потока (уже вычислено выше)
-      const fsx = sxA + (sxB - sxA) * fromT;
-      const fsy = syA + (syB - syA) * fromT;
-      const tsx = sxA + (sxB - sxA) * toT;
-      const tsy = syA + (syB - syA) * toT;
+      const fsx = p.sxA + (p.sxB - p.sxA) * fromT;
+      const fsy = p.syA + (p.syB - p.syA) * fromT;
+      const tsx = p.sxA + (p.sxB - p.sxA) * toT;
+      const tsy = p.syA + (p.syB - p.syA) * toT;
       ctx.save();
       ctx.strokeStyle = fireCol;
-      ctx.lineWidth = Math.max(w + 14, 8);
+      ctx.lineWidth = Math.max(p.w + 14, 8);
       ctx.lineCap = "round";
       ctx.globalAlpha = 0.7;
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
       ctx.restore();
     }
-
     // Подсветка hover
     if (hoverBranchId === b.id) {
       ctx.save();
       ctx.strokeStyle = "#f59e0b";
-      ctx.lineWidth = w + 8;
+      ctx.lineWidth = p.w + 8;
       ctx.lineCap = "round";
       ctx.globalAlpha = 0.35;
-      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
       ctx.restore();
     }
+    // Border
+    ctx.save();
+    ctx.strokeStyle = "#1f2937";
+    ctx.lineWidth = p.w + p.bwBorder * 2;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.85;
+    ctx.setLineDash(p.isLeakage ? [6, 4] : []);
+    ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
+    ctx.restore();
+  }
 
-    // Обводка
-    if (bwBorder > 0) {
-      ctx.save();
-      ctx.strokeStyle = "#1f2937";
-      ctx.lineWidth = w + bwBorder * 2;
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 0.85;
-      ctx.setLineDash(isLeakage ? [6, 4] : []);
-      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
-      ctx.restore();
+  // ── ПРОХОД 2: fill + декор всех ветвей ────────────────────────────────────
+  for (const { b, from, to } of sorted) {
+    const p = branchParams(b, from, to);
+    if (!p) continue;
+    const { isSel, isDead, isLeakage, Q, V, overV,
+      sxA, syA, sxB, syB, midX, midY, color, w,
+      flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;
+
+    // Пожар — аура (только если нет border, иначе уже нарисована в проходе 1)
+    if (p.bwBorder === 0) {
+      const fireSeg = branchFireColors?.get(b.id);
+      if (fireSeg) {
+        const { color: fireCol, fromT, toT } = fireSeg;
+        const fsx = sxA + (sxB - sxA) * fromT;
+        const fsy = syA + (syB - syA) * fromT;
+        const tsx = sxA + (sxB - sxA) * toT;
+        const tsy = syA + (syB - syA) * toT;
+        ctx.save();
+        ctx.strokeStyle = fireCol;
+        ctx.lineWidth = Math.max(w + 14, 8);
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.7;
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
+        ctx.restore();
+      }
+      // Подсветка hover (только если нет border)
+      if (hoverBranchId === b.id) {
+        ctx.save();
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = w + 8;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
+        ctx.restore();
+      }
     }
 
     // Основная линия
@@ -285,7 +321,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.lineCap = "round";
     ctx.globalAlpha = flowVisible ? 0.55 : 1;
     ctx.setLineDash(isLeakage ? [6, 4] : []);
-    ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
     ctx.restore();
 
     // Бегущий пунктир
@@ -482,62 +518,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // Маркер wpHasReducer убран — отображается через УО-символ valve_reduce (оверлей)
     }
     ctx.restore();
-  }
-
-  // ─── СТЫКИ СКРЫТЫХ УЗЛОВ: border + fill кружок ──────────────────────────
-  // Когда узел скрыт, торцы линий (включая тёмную обводку) не сходятся — заполняем стык
-  {
-    type HiddenPaint = { sx: number; sy: number; fillColor: string; rFill: number; borderColor: string; rBorder: number };
-    const hiddenNodePaint = new Map<string, HiddenPaint>();
-    for (const { b, from, to } of sorted) {
-      if (!from || !to) continue;
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-      const isSel = selectedBranchId === b.id || selectedBranchIds.has(b.id);
-      const w  = thinLines ? 1 : (isSel ? bw + 1 : bw);
-      const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
-      const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
-      const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
-      const Q  = Math.abs(b.flow);
-      const V  = b.velocity;
-      const overV = V > b.vMax;
-      const fillColor = isSel ? "#2563eb"
-        : b.isLeakage ? "#f97316"
-        : overV       ? "#dc2626"
-        : (colorByHorizon && horizonColor) ? horizonColor
-        : Q > 0 ? velocityColor(V)
-        : "#ffffff";
-
-      for (const [nodeId, pn] of [[ b.fromId, from ], [ b.toId, to ]] as [string, typeof from][]) {
-        const nd = pn.node;
-        if (nd.visible === false && !hiddenNodePaint.has(nodeId)) {
-          hiddenNodePaint.set(nodeId, {
-            sx: pn.sx, sy: pn.sy,
-            fillColor,
-            rFill: Math.max(w / 2, 1),
-            borderColor: "#1f2937",
-            rBorder: Math.max((w + bwBorder * 2) / 2, 1),
-          });
-        }
-      }
-    }
-    for (const { sx, sy, fillColor, rFill, borderColor, rBorder } of hiddenNodePaint.values()) {
-      ctx.save();
-      // border-кружок (тёмный, полная ширина с обводкой)
-      if (rBorder > rFill) {
-        ctx.beginPath();
-        ctx.arc(sx, sy, rBorder, 0, Math.PI * 2);
-        ctx.fillStyle = borderColor;
-        ctx.globalAlpha = 0.85;
-        ctx.fill();
-      }
-      // fill-кружок (цвет ветви, перекрывает border)
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.arc(sx, sy, rFill, 0, Math.PI * 2);
-      ctx.fillStyle = fillColor;
-      ctx.fill();
-      ctx.restore();
-    }
   }
 
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
