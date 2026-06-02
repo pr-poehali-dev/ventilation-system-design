@@ -358,46 +358,62 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   // Определяем "осевые" слои — оси ветвей (LINE для топологии).
   // Приоритет распознавания:
   // 1. *_c / *_axis / *ось — суффикс АэроСети
-  // 2. Слои содержащие слова: ветви, ветвь, branch, rib — Вентиляция 2.0
-  // 3. Если есть CIRCLE-узлы — берём LINE слой где сегментов = N*(N-1)/2 (по числу ветвей)
-  // 4. Fallback: слой с наименьшим числом сегментов (оси), но не декоративные
+  // 2. Слои содержащие слова: ветви, ветвь, branch, rib, tunnel — Вентиляция 2.0
+  // 3. Слои содержащие "aeroset", "aero", "выработ", "горн" — прямые имена АэроСети
+  // 4. Если есть CIRCLE-узлы — берём LINE слой с наибольшим процентом попаданий в CIRCLE
+  // 5. Если всего один слой — берём его (все сегменты — оси)
+  // 6. Fallback: исключаем декоративные слои (*_dim, *_hatch, *_border, dimensions, hatch)
+  //    и берём слой с наибольшим числом сегментов
   let axisLayers = allLayers.filter(l =>
     /_c$/i.test(l) || /\baxis\b/i.test(l) || /ось/i.test(l)
   );
   if (axisLayers.length === 0) {
-    // Вентиляция 2.0: слои с названием "ветви", "branch" и т.п.
     axisLayers = allLayers.filter(l =>
-      /ветв/i.test(l) || /branch/i.test(l) || /\brib\b/i.test(l) || /edge/i.test(l)
+      /ветв/i.test(l) || /branch/i.test(l) || /\brib\b/i.test(l) || /edge/i.test(l) || /tunnel/i.test(l)
+    );
+  }
+  if (axisLayers.length === 0) {
+    axisLayers = allLayers.filter(l =>
+      /aeroset|aero_/i.test(l) || /выработ/i.test(l) || /горн.*выраб/i.test(l)
     );
   }
   if (axisLayers.length === 0 && circles.length > 0) {
-    // Если есть CIRCLE-узлы: ищем слой где LINE соединяют пары CIRCLE.
-    // Используем сырые DXF-координаты (без toM/toWorld — они ещё не объявлены).
-    // Радиус поиска: max(radius * 3, 5) в DXF-единицах.
+    // Есть CIRCLE-узлы: ищем слой с наибольшим % сегментов, соединяющих пары CIRCLE
     const hitsByLayer = new Map<string, number>();
+    const totalByLayer = new Map<string, number>();
     for (const s of segments) {
-      const hit1 = circles.some(c => {
-        const r = Math.max(c.r * 3, 5);
-        return Math.sqrt((s.x1-c.cx)**2 + (s.y1-c.cy)**2 + (s.z1-c.cz)**2) < r;
-      });
-      const hit2 = circles.some(c => {
-        const r = Math.max(c.r * 3, 5);
-        return Math.sqrt((s.x2-c.cx)**2 + (s.y2-c.cy)**2 + (s.z2-c.cz)**2) < r;
-      });
+      totalByLayer.set(s.layer, (totalByLayer.get(s.layer) ?? 0) + 1);
+      const r1 = Math.max(...circles.map(c => c.r)) * 4 || 50;
+      const hit1 = circles.some(c => Math.sqrt((s.x1-c.cx)**2+(s.y1-c.cy)**2+(s.z1-c.cz)**2) < r1);
+      const hit2 = circles.some(c => Math.sqrt((s.x2-c.cx)**2+(s.y2-c.cy)**2+(s.z2-c.cz)**2) < r1);
       if (hit1 && hit2) hitsByLayer.set(s.layer, (hitsByLayer.get(s.layer) ?? 0) + 1);
     }
     if (hitsByLayer.size > 0) {
-      const best = [...hitsByLayer.entries()].sort((a, b2) => b2[1] - a[1]);
-      axisLayers = [best[0][0]];
-      debugLines.push(`Осевой слой по попаданиям в CIRCLE: ${best.map(([l,n]) => `${l}:${n}`).join(", ")}`);
+      const best = [...hitsByLayer.entries()]
+        .map(([l, hits]) => ({ l, ratio: hits / (totalByLayer.get(l) ?? 1) }))
+        .sort((a, b2) => b2.ratio - a.ratio);
+      if (best[0].ratio > 0.3) {
+        axisLayers = [best[0].l];
+        debugLines.push(`Осевой слой по CIRCLE: ${best[0].l} (попаданий ${(best[0].ratio*100).toFixed(0)}%)`);
+      }
     }
   }
+  if (axisLayers.length === 0 && allLayers.length === 1) {
+    // Единственный слой — все сегменты являются осями
+    axisLayers = allLayers;
+    debugLines.push(`Единственный слой: берём все сегменты как оси`);
+  }
   if (axisLayers.length === 0) {
-    // Последний fallback: слой с наименьшим числом сегментов (но >0)
-    const minLayer = [...cntByLayer.entries()]
-      .filter(([, c]) => c > 0)
-      .sort((a, b2) => a[1] - b2[1]);
-    if (minLayer.length > 0) axisLayers = [minLayer[0][0]];
+    // Последний fallback: исключаем декоративные слои, берём слой с наибольшим числом сегментов
+    const decorRe = /dim|hatch|border|штрих|размер|рамк|text|текст|mtext|defpoint/i;
+    const nonDecorLayers = [...cntByLayer.entries()].filter(([l]) => !decorRe.test(l));
+    const candidates = (nonDecorLayers.length > 0 ? nonDecorLayers : [...cntByLayer.entries()])
+      .sort((a, b2) => b2[1] - a[1]);
+    if (candidates.length > 0) {
+      // Берём слой с наибольшим числом сегментов (оси выработок обычно самый большой слой)
+      axisLayers = [candidates[0][0]];
+      debugLines.push(`Fallback осевой слой (наибольший): ${candidates[0][0]}:${candidates[0][1]}`);
+    }
   }
 
   const topoSegments = axisLayers.length > 0

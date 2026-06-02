@@ -28,6 +28,8 @@ import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
+import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
+import { type VentsimImportResult } from "@/lib/ventsimImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
@@ -989,6 +991,23 @@ export default function CadPage() {
   const [showExcelImport, setShowExcelImport] = useState(false);
   const [showCombinedImport, setShowCombinedImport] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
+  const [showVentsimImport, setShowVentsimImport] = useState(false);
+
+  const handleVentsimImport = (result: VentsimImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      setSelectedNodeId(null); setSelectedBranchId(null);
+    } else {
+      setNodes(prev => [...prev, ...result.nodes]);
+      setBranches(prev => [...prev, ...result.branches]);
+      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+    }
+    setImportNonce(n => n + 1);
+    setShowVentsimImport(false);
+    setActiveRibbon("home");
+  };
 
   const handleCsvImport = (result: CsvImportResult, mode: "replace" | "append") => {
     // ── Применяем вентиляторы к ветвям ──
@@ -2309,6 +2328,7 @@ export default function CadPage() {
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Добавить схему из файла</div>
                     {[
                       { icon: "FileText" as const,    label: "CSV из АэроСети",                 ext: "рекомендуется",  action: "csv-aero" },
+                      { icon: "FileText" as const,    label: "CSV из Ventsim",                  ext: "Ventsim 5/6",    action: "csv-ventsim" },
                       { icon: "FileJson" as const,    label: "Добавить схему из файла",        ext: ".vproj / .json", action: "json" },
                       { icon: "Code" as const,        label: "Добавить схему из XML",           ext: ".xml",           action: "xml"  },
                       { icon: "Pencil" as const,      label: "Добавить схему из DXF",           ext: ".dxf",           action: "dxf"  },
@@ -2321,6 +2341,9 @@ export default function CadPage() {
                         onClick={() => {
                           if (item.action === "csv-aero") {
                             setShowCsvImport(true);
+                            setActiveRibbon("home");
+                          } else if (item.action === "csv-ventsim") {
+                            setShowVentsimImport(true);
                             setActiveRibbon("home");
                           } else if (item.action === "dxf") {
                             setShowDxfImport(true);
@@ -2340,17 +2363,18 @@ export default function CadPage() {
                         }}>
                         <div className="w-8 h-8 flex items-center justify-center rounded border group-hover:border-green-400"
                           style={{
-                            background: item.action === "csv-aero" ? "#dcfce7" : item.action === "combined" ? "#ede9fe" : item.action === "dxf" ? "#dbeafe" : "#fff",
-                            borderColor: item.action === "csv-aero" ? "#86efac" : item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "#d1d5db",
+                            background: item.action === "csv-aero" ? "#dcfce7" : item.action === "csv-ventsim" ? "#fef9c3" : item.action === "combined" ? "#ede9fe" : item.action === "dxf" ? "#dbeafe" : "#fff",
+                            borderColor: item.action === "csv-aero" ? "#86efac" : item.action === "csv-ventsim" ? "#fde047" : item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "#d1d5db",
                           }}>
                           <Icon name={item.icon} size={18} />
                         </div>
                         <div>
-                          <div className="text-[12px] font-medium" style={{ color: item.action === "csv-aero" ? "#15803d" : item.action === "combined" ? "#5b21b6" : "#1f2937" }}>
+                          <div className="text-[12px] font-medium" style={{ color: item.action === "csv-aero" ? "#15803d" : item.action === "csv-ventsim" ? "#854d0e" : item.action === "combined" ? "#5b21b6" : "#1f2937" }}>
                             {item.label}
                           </div>
                           <div className="text-[10px] text-gray-400">
                             {item.action === "csv-aero" ? "✓ X,Y,Z координаты + все параметры в одном файле"
+                            : item.action === "csv-ventsim" ? "✓ Branch Report → Export to CSV"
                             : item.action === "combined" ? "✓ DXF координаты + Excel параметры и глубины"
                             : item.action === "dxf" ? "✓ НаноКАД, АэроСеть, AutoCAD"
                             : item.ext}
@@ -6050,6 +6074,14 @@ export default function CadPage() {
       <CsvImportDialog
         onImport={handleCsvImport}
         onClose={() => setShowCsvImport(false)}
+      />
+    )}
+
+    {/* ═══ CSV ИМПОРТ (Ventsim) ════════════════════════════════════════════ */}
+    {showVentsimImport && (
+      <VentsimImportDialog
+        onImport={handleVentsimImport}
+        onClose={() => setShowVentsimImport(false)}
       />
     )}
 
