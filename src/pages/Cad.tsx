@@ -2840,19 +2840,86 @@ export default function CadPage() {
                     explosionComputedR_light: res.zones[3]?.radius_m ?? 0,
                   };
                 });
-                setBranches(updatedBranches);
+                // ── Определяем разрушенные перемычки по зонам поражения ──────────
+                // Дейкстра по сети для расчёта расстояния по выработкам от источника
+                type Pt3 = { x: number; y: number; z: number };
+                const expSources: Pt3[] = [];
+                updatedBranches.forEach(src => {
+                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
+                  const fN = nodes.find(n => n.id === src.fromId);
+                  const tN = nodes.find(n => n.id === src.toId);
+                  if (!fN || !tN) return;
+                  const t = src.explosionT ?? 0.5;
+                  expSources.push({ x: fN.x+(tN.x-fN.x)*t, y: fN.y+(tN.y-fN.y)*t, z: fN.z+(tN.z-fN.z)*t });
+                });
+
+                // Расстояние по сети (Дейкстра)
+                const bLen = (b: typeof branches[0]) => {
+                  const fN = nodes.find(n => n.id === b.fromId);
+                  const tN = nodes.find(n => n.id === b.toId);
+                  if (!fN || !tN) return b.length > 0 ? b.length : 1;
+                  return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
+                };
+                const netDist = new Map<string, number>();
+                const pq2: Array<{id: string; d: number}> = [];
+                updatedBranches.forEach(src => {
+                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
+                  const len = bLen(src); const t = src.explosionT ?? 0.5;
+                  [[src.fromId, len*t],[src.toId, len*(1-t)]].forEach(([nid, d]) => {
+                    const cur = netDist.get(nid as string) ?? Infinity;
+                    if ((d as number) < cur) { netDist.set(nid as string, d as number); pq2.push({id: nid as string, d: d as number}); }
+                  });
+                });
+                const adjMap = new Map<string, Array<{to: string; len: number}>>();
+                updatedBranches.forEach(b => {
+                  const len = bLen(b);
+                  if (!adjMap.has(b.fromId)) adjMap.set(b.fromId, []);
+                  if (!adjMap.has(b.toId))   adjMap.set(b.toId, []);
+                  adjMap.get(b.fromId)!.push({to: b.toId, len});
+                  adjMap.get(b.toId)!.push({to: b.fromId, len});
+                });
+                const vis2 = new Set<string>();
+                while (pq2.length > 0) {
+                  pq2.sort((a,b) => a.d - b.d);
+                  const {id: cur, d: curD} = pq2.shift()!;
+                  if (vis2.has(cur)) continue; vis2.add(cur);
+                  for (const e of (adjMap.get(cur) ?? [])) {
+                    const nd = curD + e.len;
+                    if (nd < (netDist.get(e.to) ?? Infinity)) { netDist.set(e.to, nd); pq2.push({id: e.to, d: nd}); }
+                  }
+                }
+
+                // Помечаем перемычки разрушенными если ΔP > failurePressure
+                const finalBranches = updatedBranches.map(b => {
+                  if (!b.hasBulkhead) return {...b, bulkheadDestroyedByExplosion: false};
+                  const fp = b.bulkheadFailurePressure; // МПа
+                  if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
+                  const dFrom = netDist.get(b.fromId) ?? Infinity;
+                  const dTo   = netDist.get(b.toId) ?? Infinity;
+                  const minD  = Math.min(dFrom, dTo);
+                  if (minD === Infinity || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
+                  const dp_kPa = results[0].pressureAtDistance(minD);
+                  const dp_MPa = dp_kPa / 1000;
+                  const destroyed = dp_MPa >= fp;
+                  return {...b, bulkheadDestroyedByExplosion: destroyed};
+                });
+
+                setBranches(finalBranches);
                 if (results.length > 0) {
                   const lastRes = results[results.length - 1];
                   setExplosionResult(lastRes);
                   setExplosionCalcDone(true);
                   setShowExplosionZones(true);
-                  // Устанавливаем максимум шкалы = радиус безопасной зоны (последняя зона)
                   const safeRadius = lastRes.zones[lastRes.zones.length - 1]?.radius_m ?? 500;
                   const maxR = Math.max(100, Math.ceil(safeRadius / 50) * 50);
                   setBlastMaxRadius(maxR);
                   setBlastRadiusStep(maxR <= 200 ? 5 : maxR <= 500 ? 10 : 25);
-                  setBlastWaveRadius(maxR); // сразу показываем все зоны
+                  setBlastWaveRadius(maxR);
+                  const destroyed = finalBranches.filter(b => b.bulkheadDestroyedByExplosion);
                   addLog("info", `💥 Расчёт взрыва завершён. Q_тнт = ${lastRes.q_tnt_kg} кг ТНТ, ΔP_max = ${lastRes.maxDeltaP_kPa} кПа`);
+                  if (destroyed.length > 0) {
+                    addLog("warn", `⚠ Разрушено перемычек: ${destroyed.length} (${destroyed.map(b => b.id).join(", ")})`);
+                  }
                   results.forEach(r => r.log.forEach(l => addLog("info", l)));
                   results.forEach(r => r.warnings.forEach(w => addLog("warn", w)));
                 }
@@ -2873,6 +2940,13 @@ export default function CadPage() {
               onClick={() => setShowExplosionZones(v => !v)}
             />
             <RibbonBigBtn
+              icon="RefreshCw"
+              label="Снять"
+              sublabel="разрушения"
+              disabled={!branches.some(b => b.bulkheadDestroyedByExplosion)}
+              onClick={() => setBranches(prev => prev.map(b => ({ ...b, bulkheadDestroyedByExplosion: false })))}
+            />
+            <RibbonBigBtn
               icon="X"
               label="Сбросить"
               sublabel="результаты"
@@ -2881,7 +2955,7 @@ export default function CadPage() {
                 setExplosionResult(null);
                 setExplosionCalcDone(false);
                 setShowExplosionZones(false);
-                setBranches(prev => prev.map(b => ({ ...b, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 })));
+                setBranches(prev => prev.map(b => ({ ...b, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0, bulkheadDestroyedByExplosion: false })));
               }}
             />
           </div>
@@ -4046,6 +4120,33 @@ export default function CadPage() {
                       </div>
                     )}
                   </>)}
+
+                  {/* Разрушенные перемычки */}
+                  {explosionCalcDone && (() => {
+                    const destroyedBranches = branches.filter(br =>
+                      br.bulkheadDestroyedByExplosion && br.hasBulkhead
+                    );
+                    if (destroyedBranches.length === 0) return null;
+                    return (<>
+                      <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: "#fee2e2", borderBottom: "1px solid #fca5a5", color: "#991b1b" }}>
+                        ⚡ Разрушенные перемычки ({destroyedBranches.length})
+                      </div>
+                      {destroyedBranches.map(br => (
+                        <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "#fff5f5" }}>
+                          <span className="text-[10px] mr-1">🔴</span>
+                          <span className="text-[11px] text-gray-700 flex-1 truncate">
+                            {br.bulkheadName || br.id}
+                          </span>
+                          <span className="text-[10px] text-red-600 ml-1 flex-shrink-0">
+                            {br.bulkheadFailurePressure} МПа
+                          </span>
+                        </div>
+                      ))}
+                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b" }}>
+                        Разрушенные перемычки обозначены ⊗ на схеме. Вентиляционный режим изменится — пересчитайте сеть (F9).
+                      </div>
+                    </>);
+                  })()}
 
                   {!explosionCalcDone && (
                     <div className="mx-2 my-2 px-2 py-2 text-[11px] rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>

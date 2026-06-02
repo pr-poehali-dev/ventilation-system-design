@@ -255,6 +255,24 @@ export default function SchemaSymbolsOverlay({
               </g>
             )}
 
+            {/* ⚡ Маркер разрушенной перемычки */}
+            {isBulkhead && hasBranchPts && (() => {
+              const br = branches.find(b => b.id === sym.branchId);
+              if (!br?.bulkheadDestroyedByExplosion) return null;
+              const cx = px, cy = py;
+              const r = Math.max(6, SZ * 0.55);
+              const lw = Math.max(2, SZ * 0.18);
+              return (
+                <g>
+                  <circle cx={cx} cy={cy} r={r + 3} fill="#fef08a" opacity={0.85} stroke="#ca8a04" strokeWidth={1} />
+                  <line x1={cx - r * 0.65} y1={cy - r * 0.65} x2={cx + r * 0.65} y2={cy + r * 0.65}
+                    stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+                  <line x1={cx + r * 0.65} y1={cy - r * 0.65} x2={cx - r * 0.65} y2={cy + r * 0.65}
+                    stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+                </g>
+              );
+            })()}
+
             {/* Стрелка направления вентилятора */}
             {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts
               && (sym.showFanArrow ?? true) && (() => {

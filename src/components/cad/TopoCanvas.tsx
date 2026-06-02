@@ -2112,6 +2112,26 @@ export default function TopoCanvas(props: Props) {
                     stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
                 </g>
               )}
+              {/* ⚡ Маркер разрушенной перемычки (взрыв) */}
+              {BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts && (() => {
+                const br = branches.find(b => b.id === sym.branchId);
+                if (!br?.bulkheadDestroyedByExplosion) return null;
+                // Рисуем поверх перемычки: красный крест + жёлтый круг-предупреждение
+                const cx = px, cy = py;
+                const r = Math.max(6, SZ * 0.55);
+                const lw = Math.max(2, SZ * 0.18);
+                return (
+                  <g>
+                    {/* Жёлтая подложка */}
+                    <circle cx={cx} cy={cy} r={r + 3} fill="#fef08a" opacity={0.85} stroke="#ca8a04" strokeWidth={1} />
+                    {/* Красный крест — знак разрушения */}
+                    <line x1={cx - r * 0.65} y1={cy - r * 0.65} x2={cx + r * 0.65} y2={cy + r * 0.65}
+                      stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+                    <line x1={cx + r * 0.65} y1={cy - r * 0.65} x2={cx - r * 0.65} y2={cy + r * 0.65}
+                      stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+                  </g>
+                );
+              })()}
               {/* Маленькая чёрная стрелка направления воздуха — выходит из
                   границы окружности вентилятора. Можно отключить в свойствах. */}
               {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts
