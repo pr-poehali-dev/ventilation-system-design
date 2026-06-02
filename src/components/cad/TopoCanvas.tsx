@@ -148,6 +148,14 @@ interface Props {
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
+  /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
+  colorMode?: "none" | "flowQ";
+  /** Минимальное значение шкалы расхода, м³/с */
+  flowColorMin?: number;
+  /** Максимальное значение шкалы расхода, м³/с */
+  flowColorMax?: number;
+  /** Цветовая гамма шкалы расхода */
+  flowColorHue?: "red" | "blue" | "green";
 }
 
 export type FlowDisplayMode =
@@ -195,6 +203,10 @@ export default function TopoCanvas(props: Props) {
     branchPositionColors,
     waterNodeResults,
     branchFireColors,
+    colorMode = "none",
+    flowColorMin = 0,
+    flowColorMax = 75,
+    flowColorHue = "red",
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -1328,6 +1340,14 @@ export default function TopoCanvas(props: Props) {
           const V = b.velocity;
           const overV = V > b.vMax;
           // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
+          // Градиент по расходу воздуха: белый → насыщенный цвет (режим flowQ)
+          const flowQColor = (q: number): string => {
+            const t = Math.min(1, Math.max(0, (q - flowColorMin) / Math.max(1, flowColorMax - flowColorMin)));
+            const r255 = Math.round(255 - t * (flowColorHue === "red" ? 255 : flowColorHue === "blue" ? 200 : 220));
+            const g255 = Math.round(255 - t * (flowColorHue === "red" ? 220 : flowColorHue === "blue" ? 180 : 30));
+            const b255 = Math.round(255 - t * (flowColorHue === "red" ? 220 : flowColorHue === "blue" ? 0 : 220));
+            return `rgb(${r255},${g255},${b255})`;
+          };
           // Градиент по скорости: 0 м/с=серый → 3=синий → 8=зелёный → 15=жёлтый → 25+=красный
           const velocityColor = (v: number): string => {
             if (v <= 0) return "#9ca3af";
@@ -1355,6 +1375,7 @@ export default function TopoCanvas(props: Props) {
             : isLeakage ? "#f97316"
             : overV ? "#dc2626"
             : (colorByHorizon && horizonColor) ? horizonColor
+            : colorMode === "flowQ" ? flowQColor(Math.abs(Q))
             : Q > 0 ? velocityColor(V)
             : "#ffffff";
 

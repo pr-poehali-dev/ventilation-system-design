@@ -622,6 +622,12 @@ export default function CadPage() {
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
+  // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха
+  const [colorMode, setColorMode] = useState<"none" | "flowQ">("none");
+  // Настройки шкалы расхода (мин/макс, цвет)
+  const [flowColorMin, setFlowColorMin] = useState(0);
+  const [flowColorMax, setFlowColorMax] = useState(75);
+  const [flowColorHue, setFlowColorHue] = useState<"red" | "blue" | "green">("red");
 
   // Активная рабочая плоскость для построения в 3D
   // null = автоматически по ракурсу; иначе фиксированная пользователем
@@ -4532,6 +4538,19 @@ export default function CadPage() {
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
+            {/* ── Режим цветовой заливки ── */}
+            <select
+              value={colorMode}
+              onChange={e => setColorMode(e.target.value as "none" | "flowQ")}
+              className="h-6 text-[11px] px-1 rounded"
+              style={{ border: "1px solid #d0d0d0", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
+              title="Режим цветовой заливки ветвей">
+              <option value="none">— Заливка выкл</option>
+              <option value="flowQ">Расход воздуха</option>
+            </select>
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+
             {/* ── Анимация потока (toggle) ── */}
             <button
               onClick={() => setFlowDisplay(d => d === "off" ? "flow" : "off")}
@@ -4833,6 +4852,10 @@ export default function CadPage() {
               viewPreset={viewPreset}
               onViewChange={setViewInfo}
               flowDisplay={flowDisplay}
+              colorMode={colorMode}
+              flowColorMin={flowColorMin}
+              flowColorMax={flowColorMax}
+              flowColorHue={flowColorHue}
               workPlane={workPlane}
               horizons={horizons}
               branchWidth={branchWidth}
@@ -5152,6 +5175,82 @@ export default function CadPage() {
                 }
               }}
             />
+
+            {/* ── Colorbar: шкала расхода воздуха ──────────────────── */}
+            {colorMode === "flowQ" && (() => {
+              const BAR_H = 400;
+              const stops = flowColorHue === "red"
+                ? ["rgb(255,255,255)", "rgb(255,35,35)"]
+                : flowColorHue === "blue"
+                ? ["rgb(255,255,255)", "rgb(55,75,255)"]
+                : ["rgb(255,255,255)", "rgb(35,200,35)"];
+              const tickCount = 6;
+              const ticks = Array.from({ length: tickCount }, (_, i) => {
+                const frac = i / (tickCount - 1);
+                const val = flowColorMin + frac * (flowColorMax - flowColorMin);
+                const y = BAR_H * (1 - frac);
+                return { val, y };
+              });
+              return (
+                <div style={{
+                  position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                  zIndex: 50, display: "flex", flexDirection: "row", alignItems: "stretch",
+                  gap: 0, pointerEvents: "none",
+                  background: "rgba(255,255,255,0.92)", border: "1px solid #c8c8c8",
+                  borderRadius: 6, boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                  padding: "10px 8px 10px 6px",
+                }}>
+                  {/* Вертикальная полоса градиента */}
+                  <div style={{
+                    width: 18, height: BAR_H,
+                    background: `linear-gradient(to top, ${stops[0]}, ${stops[1]})`,
+                    border: "1px solid #d1d5db", borderRadius: 3, flexShrink: 0,
+                  }} />
+                  {/* Подписи */}
+                  <div style={{ position: "relative", width: 52, height: BAR_H, marginLeft: 4 }}>
+                    {ticks.map(({ val, y }) => (
+                      <div key={val} style={{
+                        position: "absolute", top: y - 8, left: 0, width: "100%",
+                        display: "flex", alignItems: "center", gap: 3,
+                      }}>
+                        <div style={{ width: 6, height: 1, background: "#9ca3af", flexShrink: 0 }} />
+                        <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap", fontWeight: 500 }}>
+                          {val % 1 === 0 ? val : val.toFixed(1)} м³/с
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Панель настройки шкалы (при активном colorMode) ────── */}
+            {colorMode === "flowQ" && (
+              <div style={{
+                position: "absolute", left: 12, bottom: 12, zIndex: 50,
+                background: "rgba(255,255,255,0.95)", border: "1px solid #d1d5db",
+                borderRadius: 6, padding: "6px 10px", boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+                display: "flex", alignItems: "center", gap: 8, fontSize: 11,
+              }}>
+                <span style={{ color: "#6b7280", fontWeight: 600 }}>Шкала, м³/с:</span>
+                <input type="number" min="0" step="5" value={flowColorMin}
+                  onChange={e => setFlowColorMin(Number(e.target.value))}
+                  style={{ width: 48, border: "1px solid #d1d5db", borderRadius: 3, padding: "1px 4px", fontSize: 11, textAlign: "right" }} />
+                <span style={{ color: "#9ca3af" }}>—</span>
+                <input type="number" min="1" step="5" value={flowColorMax}
+                  onChange={e => setFlowColorMax(Number(e.target.value))}
+                  style={{ width: 48, border: "1px solid #d1d5db", borderRadius: 3, padding: "1px 4px", fontSize: 11, textAlign: "right" }} />
+                <span style={{ color: "#6b7280", fontWeight: 600 }}>Цвет:</span>
+                {(["red", "blue", "green"] as const).map(h => (
+                  <button key={h} onClick={() => setFlowColorHue(h)}
+                    style={{
+                      width: 18, height: 18, borderRadius: 3, border: flowColorHue === h ? "2px solid #374151" : "1px solid #d1d5db",
+                      background: h === "red" ? "#ef4444" : h === "blue" ? "#3b82f6" : "#22c55e",
+                      cursor: "pointer", flexShrink: 0,
+                    }} />
+                ))}
+              </div>
+            )}
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && (() => {
