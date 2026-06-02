@@ -2150,36 +2150,39 @@ export default function TopoCanvas(props: Props) {
                 const uFlowInd = getUnit(unitsConfig, "flow");
                 if (sym.indDescription && sym.description) lines.push(sym.description);
                 if (sym.indResistance) {
-                  // Вычисляем R перемычки из параметров символа (sym.bk*),
-                  // чтобы отображать актуальное значение независимо от bulkheadR ветви.
+                  // Вычисляем R в базовых единицах (Мюрг) из параметров символа.
+                  // bkManualR хранится в кМюрг → *1000 = Мюрг (базовая единица)
+                  // rNsm8 (Н·с²/м⁸) → / 1e6 = Мюрг
+                  // bkBulkheadR / br.bulkheadR хранятся в Мюрг
                   const mode = sym.bkResMode ?? "project";
-                  let rMkyurg = 0;
+                  let rBase = 0; // в Мюрг (базовых единицах)
                   if (mode === "manual") {
-                    rMkyurg = sym.bkManualR ?? 0;
+                    rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
                   } else if (mode === "survey") {
                     const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
                     const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                    rMkyurg = rNsm8 / 10;
+                    rBase = rNsm8 / 1e6; // Н·с²/м⁸ → Мюрг
                   } else {
-                    // project: используем bkBulkheadR или bkAirPerm
+                    // project: используем bkAirPerm или bkBulkheadR
                     const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                     if (kAir > 0) {
                       const rNsm8 = 1 / (kAir * kAir);
-                      rMkyurg = rNsm8 / 10;
+                      rBase = rNsm8 / 1e6; // Н·с²/м⁸ → Мюрг
                     } else {
-                      rMkyurg = (sym.bkBulkheadR ?? br.bulkheadR ?? 0);
+                      rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
                     }
                   }
-                  // Fallback: если bk* не заполнены — берём из ветви
-                  if (rMkyurg === 0 && br.bulkheadR > 0) rMkyurg = br.bulkheadR;
-                  if (rMkyurg === 0) rMkyurg = br.resistance / 1e7;
-                  lines.push(`R=${uResInd.fromBase(rMkyurg).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
+                  // Fallback: если sym.bk* не заполнены
+                  if (rBase === 0 && br.bulkheadR > 0) rBase = br.bulkheadR;
+                  if (rBase === 0) rBase = br.resistance / 1e6; // Н·с²/м⁸ → Мюрг
+                  lines.push(`R=${uResInd.fromBase(rBase).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
                 }
                 if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);
                 if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
-                const baseFontPx = sym.indFontSize ? sym.indFontSize * sc : 9 * sc * symScale;
+                // indFontSize задан в мировых единицах (метрах), независимо от масштаба УО
+                const baseFontPx = sym.indFontSize ? sym.indFontSize * sc : 9 * sc;
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;

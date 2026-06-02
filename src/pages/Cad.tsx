@@ -4000,20 +4000,27 @@ export default function CadPage() {
 
                       {/* Значения для справки */}
                       {brForSym && (sym.indResistance || sym.indDeltaP || sym.indLeakage) && (() => {
-                        // Вычисляем R из sym.bk* (те же данные что в панели настройки)
+                        // Вычисляем R в кМюрг из sym.bk* (те же данные что в панели настройки)
+                        // bkManualR хранится в кМюрг — отображаем напрямую
+                        // rNsm8 / 1e6 = Мюрг, / 1e3 = кМюрг
                         const mode = sym.bkResMode ?? "project";
                         let rMkyurg = 0;
                         if (mode === "manual") {
-                          rMkyurg = sym.bkManualR ?? 0;
+                          rMkyurg = sym.bkManualR ?? 0; // уже в кМюрг
                         } else if (mode === "survey") {
                           const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                          rMkyurg = sq > 0 ? (dp / (sq * sq)) / 10 : 0;
+                          const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
+                          rMkyurg = rNsm8 / 1e9; // Н·с²/м⁸ → кМюрг (/1e6 Мюрг, /1e3 кМюрг)
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
-                          if (kAir > 0) { rMkyurg = 1 / (kAir * kAir) / 10; }
-                          else { rMkyurg = sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0; }
+                          if (kAir > 0) {
+                            const rNsm8 = 1 / (kAir * kAir);
+                            rMkyurg = rNsm8 / 1e9; // Н·с²/м⁸ → кМюрг
+                          } else {
+                            rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1e3; // Мюрг → кМюрг
+                          }
                         }
-                        if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR;
+                        if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR / 1e3;
                         return (
                           <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
                             style={{ background: "#f0f4ff", border: "1px solid #c8d8f0" }}>
