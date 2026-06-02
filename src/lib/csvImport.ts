@@ -476,12 +476,15 @@ function buildResult(
   if (rawBranches.length > 0 && branches.length === 0)
     warnings.push("⚠ Ветви не созданы — возможно ID узлов не совпадают.");
 
-  // Транслируем исходные ID выработок в перемычках в сгенерированные ID ветвей
+  // Транслируем исходные ID выработок → сгенерированные ID ветвей для всех типов
+  const fans: RawFan[] = rawFans.map(f => ({
+    ...f,
+    branchId: branchOriginalIdMap[f.branchId] ?? f.branchId,
+  }));
   const bulkheads: RawBulkhead[] = rawBulkheads.map(bk => ({
     ...bk,
     branchId: branchOriginalIdMap[bk.branchId] ?? bk.branchId,
   }));
-  // Транслируем ID выработок в позициях
   const positions: RawPosition[] = rawPositions.map(p => ({
     ...p,
     branchIds: p.branchIds.map(bid => branchOriginalIdMap[bid] ?? bid),
@@ -491,8 +494,8 @@ function buildResult(
   if (positions.length > 0) debug.push(`Позиций после маппинга: ${positions.length}`);
 
   return {
-    nodes: resultNodes, branches, fans: rawFans, bulkheads, positions, branchOriginalIdMap, warnings,
-    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: rawFans.length, bulkheads: bulkheads.length, positions: positions.length },
+    nodes: resultNodes, branches, fans, bulkheads, positions, branchOriginalIdMap, warnings,
+    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: fans.length, bulkheads: bulkheads.length, positions: positions.length },
     debug: debug.join("\n"),
   };
 }
