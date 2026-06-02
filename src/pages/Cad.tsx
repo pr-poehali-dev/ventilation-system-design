@@ -613,6 +613,14 @@ export default function CadPage() {
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
   const [showExplosionZones, setShowExplosionZones] = useState(false);
+  // Текущее расстояние фронта волны на шкале (метры)
+  const [blastWaveRadius, setBlastWaveRadius] = useState(0);
+  // Максимум шкалы (м) — радиус безопасной зоны
+  const [blastMaxRadius, setBlastMaxRadius] = useState(500);
+  const [blastRadiusStep, setBlastRadiusStep] = useState(10);
+  // Анимация распространения волны
+  const [blastAnimating, setBlastAnimating] = useState(false);
+  const blastAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showSmoke, setShowSmoke] = useState(false);
   // Текущий момент времени на шкале задымления (минуты)
   const [smokeTimeMinutes, setSmokeTimeMinutes] = useState(0);
@@ -2834,10 +2842,17 @@ export default function CadPage() {
                 });
                 setBranches(updatedBranches);
                 if (results.length > 0) {
-                  setExplosionResult(results[results.length - 1]);
+                  const lastRes = results[results.length - 1];
+                  setExplosionResult(lastRes);
                   setExplosionCalcDone(true);
                   setShowExplosionZones(true);
-                  addLog("info", `💥 Расчёт взрыва завершён. Q_тнт = ${results[0].q_tnt_kg} кг ТНТ, ΔP_max = ${results[0].maxDeltaP_kPa} кПа`);
+                  // Устанавливаем максимум шкалы = радиус безопасной зоны (последняя зона)
+                  const safeRadius = lastRes.zones[lastRes.zones.length - 1]?.radius_m ?? 500;
+                  const maxR = Math.max(100, Math.ceil(safeRadius / 50) * 50);
+                  setBlastMaxRadius(maxR);
+                  setBlastRadiusStep(maxR <= 200 ? 5 : maxR <= 500 ? 10 : 25);
+                  setBlastWaveRadius(maxR); // сразу показываем все зоны
+                  addLog("info", `💥 Расчёт взрыва завершён. Q_тнт = ${lastRes.q_tnt_kg} кг ТНТ, ΔP_max = ${lastRes.maxDeltaP_kPa} кПа`);
                   results.forEach(r => r.log.forEach(l => addLog("info", l)));
                   results.forEach(r => r.warnings.forEach(w => addLog("warn", w)));
                 }
@@ -5723,7 +5738,9 @@ export default function CadPage() {
                 return map.size > 0 ? map : undefined;
               })()}
               branchExplosionColors={(() => {
-                if (!showExplosionZones || !explosionCalcDone) return undefined;
+                if (!showExplosionZones || !explosionCalcDone || !explosionResult) return undefined;
+                // Если ползунок на нуле — ничего не показываем
+                if (blastWaveRadius <= 0) return undefined;
                 const map = new Map<string, { color: string; hazardLevel: string }>();
                 // Цвет по зоне поражения
                 const zoneColor = (deltaP: number) => {
@@ -5733,25 +5750,33 @@ export default function CadPage() {
                   if (deltaP >= 10)  return { color: "#fbbf24", hazardLevel: "light" };
                   return { color: "#22c55e", hazardLevel: "safe" };
                 };
-                branches.forEach(b => {
-                  if (!b.hasExplosion || b.explosionComputedMaxP <= 0) return;
-                  // Ветвь-источник: покрашиваем по максимальному давлению
-                  map.set(b.id, zoneColor(b.explosionComputedMaxP));
-                });
-                // Соседние ветви — по расстоянию от источника
-                // Для простоты: красим ветви в радиусе зон поражения
+                // Собираем источники взрыва с их координатами
+                const sources: { node: typeof nodes[0]; maxP: number }[] = [];
                 branches.forEach(src => {
                   if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
-                  const srcNode = src.fromId ? nodes.find(n => n.id === src.fromId) : null;
-                  if (!srcNode) return;
-                  branches.forEach(b => {
-                    if (map.has(b.id)) return;
-                    const bNode = nodes.find(n => n.id === b.fromId);
-                    if (!bNode) return;
-                    const dist = Math.sqrt((bNode.x - srcNode.x) ** 2 + (bNode.y - srcNode.y) ** 2 + (bNode.z - srcNode.z) ** 2);
-                    const dp = explosionResult?.pressureAtDistance(dist) ?? 0;
-                    if (dp >= 10) map.set(b.id, zoneColor(dp));
+                  const srcNode = nodes.find(n => n.id === src.fromId);
+                  if (srcNode) sources.push({ node: srcNode, maxP: src.explosionComputedMaxP });
+                });
+                if (sources.length === 0) return undefined;
+                // Для каждой ветви — ищем ближайший источник и рассчитываем давление
+                branches.forEach(b => {
+                  const bNode = nodes.find(n => n.id === b.fromId);
+                  if (!bNode) return;
+                  // Минимальное расстояние до любого источника
+                  let minDist = Infinity;
+                  sources.forEach(({ node: srcNode }) => {
+                    const dist = Math.sqrt(
+                      (bNode.x - srcNode.x) ** 2 +
+                      (bNode.y - srcNode.y) ** 2 +
+                      (bNode.z - srcNode.z) ** 2
+                    );
+                    if (dist < minDist) minDist = dist;
                   });
+                  // Волна ещё не дошла до этой ветви
+                  if (minDist > blastWaveRadius) return;
+                  // Давление на этом расстоянии
+                  const dp = explosionResult.pressureAtDistance(minDist);
+                  if (dp >= 5) map.set(b.id, zoneColor(dp));
                 });
                 return map.size > 0 ? map : undefined;
               })()}
@@ -6152,6 +6177,139 @@ export default function CadPage() {
                 {leaderDrawMode
                   ? "✛ Кликните на схеме для размещения конца выноски  [Esc — отмена]"
                   : "✛ Отпустите для фиксации выноски"}
+              </div>
+            )}
+
+            {/* ─── Шкала распространения взрывной волны ────────────── */}
+            {showExplosionZones && explosionCalcDone && explosionResult && (
+              <div style={{
+                position: "absolute", bottom: 0, left: 0, right: 0,
+                background: "rgba(10,8,0,0.93)", borderTop: "2px solid #b45309",
+                padding: "5px 12px 6px", display: "flex", alignItems: "center",
+                gap: 8, zIndex: 60, backdropFilter: "blur(4px)",
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#fde68a", whiteSpace: "nowrap" }}>
+                  💥 Волна взрыва
+                </span>
+
+                {/* Кнопка Воспроизведение / Пауза */}
+                <button
+                  onClick={() => {
+                    if (blastAnimating) {
+                      if (blastAnimRef.current) clearInterval(blastAnimRef.current);
+                      blastAnimRef.current = null;
+                      setBlastAnimating(false);
+                    } else {
+                      setBlastWaveRadius(prev => prev >= blastMaxRadius ? 0 : prev);
+                      setBlastAnimating(true);
+                      blastAnimRef.current = setInterval(() => {
+                        setBlastWaveRadius(prev => {
+                          const next = prev + blastRadiusStep;
+                          if (next >= blastMaxRadius) {
+                            if (blastAnimRef.current) clearInterval(blastAnimRef.current);
+                            blastAnimRef.current = null;
+                            setBlastAnimating(false);
+                            return blastMaxRadius;
+                          }
+                          return next;
+                        });
+                      }, 120);
+                    }
+                  }}
+                  title={blastAnimating ? "Пауза" : "Воспроизведение"}
+                  style={{
+                    background: blastAnimating ? "#92400e" : "#f59e0b",
+                    border: "1px solid #b45309", borderRadius: 4, color: "#fff",
+                    fontSize: 11, fontWeight: 700, padding: "2px 10px", cursor: "pointer",
+                    whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4,
+                  }}>
+                  {blastAnimating ? "⏸ Пауза" : "▶ Воспроизведение"}
+                </button>
+
+                {/* Сброс */}
+                <button
+                  onClick={() => {
+                    if (blastAnimRef.current) clearInterval(blastAnimRef.current);
+                    blastAnimRef.current = null;
+                    setBlastAnimating(false);
+                    setBlastWaveRadius(0);
+                  }}
+                  style={{
+                    background: "#1c1202", border: "1px solid #b45309", borderRadius: 4,
+                    color: "#fde68a", fontSize: 11, padding: "2px 7px", cursor: "pointer",
+                  }}>
+                  ⏮
+                </button>
+
+                <span style={{ fontSize: 11, color: "#fcd34d", whiteSpace: "nowrap" }}>0 м</span>
+
+                {/* Градиентная полоска */}
+                <div style={{ position: "relative", flex: 1, minWidth: 80 }}>
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 4, background: "linear-gradient(to right, #7c1010, #dc2626, #f97316, #fbbf24, #22c55e)", opacity: 0.35, pointerEvents: "none" }} />
+                  <input
+                    type="range" min={0} max={blastMaxRadius} step={blastRadiusStep}
+                    value={blastWaveRadius}
+                    onChange={e => {
+                      if (blastAnimRef.current) clearInterval(blastAnimRef.current);
+                      blastAnimRef.current = null;
+                      setBlastAnimating(false);
+                      setBlastWaveRadius(Number(e.target.value));
+                    }}
+                    style={{ width: "100%", accentColor: "#f59e0b", cursor: "pointer", position: "relative", zIndex: 1, background: "transparent" }}
+                  />
+                </div>
+
+                <span style={{ fontSize: 11, color: "#fcd34d", whiteSpace: "nowrap" }}>{blastMaxRadius} м</span>
+
+                {/* Текущий радиус */}
+                <span style={{
+                  fontSize: 12, fontWeight: 700, color: "#fff", background: "#92400e",
+                  borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
+                }}>
+                  R = {blastWaveRadius} м
+                </span>
+
+                {/* Давление на текущем радиусе */}
+                {blastWaveRadius > 0 && (
+                  <span style={{
+                    fontSize: 11, color: "#fde68a", background: "rgba(255,255,255,0.07)",
+                    borderRadius: 4, padding: "1px 7px", whiteSpace: "nowrap", border: "1px solid #b45309",
+                  }}>
+                    ΔP = {explosionResult.pressureAtDistance(blastWaveRadius).toFixed(1)} кПа
+                  </span>
+                )}
+
+                <div style={{ width: 1, background: "#b45309", alignSelf: "stretch", margin: "0 2px" }} />
+
+                {/* Настройки */}
+                <span style={{ fontSize: 10, color: "#fde68a", whiteSpace: "nowrap" }}>Макс:</span>
+                <input
+                  type="number" min={10} max={5000} step={10}
+                  value={blastMaxRadius}
+                  onChange={e => {
+                    const v = Math.max(10, Math.min(5000, Number(e.target.value)));
+                    setBlastMaxRadius(v);
+                    if (blastWaveRadius > v) setBlastWaveRadius(v);
+                  }}
+                  style={{
+                    width: 52, fontSize: 11, background: "#1c1202", color: "#fde68a",
+                    border: "1px solid #b45309", borderRadius: 3, padding: "1px 4px", textAlign: "center",
+                  }}
+                />
+                <span style={{ fontSize: 10, color: "#fde68a" }}>м</span>
+
+                <span style={{ fontSize: 10, color: "#fde68a", whiteSpace: "nowrap" }}>Шаг:</span>
+                <select
+                  value={blastRadiusStep}
+                  onChange={e => setBlastRadiusStep(Number(e.target.value))}
+                  style={{
+                    fontSize: 11, background: "#1c1202", color: "#fde68a",
+                    border: "1px solid #b45309", borderRadius: 3, padding: "1px 2px",
+                  }}>
+                  {[1, 2, 5, 10, 25, 50, 100].map(s => (
+                    <option key={s} value={s}>{s} м</option>
+                  ))}
+                </select>
               </div>
             )}
 
