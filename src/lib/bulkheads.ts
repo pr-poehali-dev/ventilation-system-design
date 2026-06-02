@@ -230,10 +230,10 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     id: "solid_wood",
     name: "Перемычка глухая (деревянная)",
     type: "solid",
-    airPermeability: 0.01065,
-    rMin: 8_818, rMax: 8_818,
+    airPermeability: 0.00308,
+    rMin: 105_414, rMax: 105_414,
     failurePressure: 0.01,
-    note: "A=0,01065 м²/(с·√Па)",
+    note: "A=0,00308 м²/(с·√Па)",
     color: "#558b2f",
   },
   {
