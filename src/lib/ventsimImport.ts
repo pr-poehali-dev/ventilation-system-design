@@ -1,13 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Импорт CSV из Ventsim
+// Импорт CSV из Ventsim Design 5/6
 //
-// Ventsim экспортирует один CSV-файл с топологией и параметрами:
-//   Branch; From; To; Name; Length(m); Area(m2); Perimeter(m); Resistance;
-//   Airflow(m3/s); FanPressure(Pa); FanName; ...
+// Ventsim экспортирует данные в двух вариантах:
 //
-// Узлы строятся автоматически из множества уникальных From/To.
-// Координаты X/Y/Z обычно не экспортируются — узлы раскладываются
-// в автоматическую сетку для отображения.
+// Вариант A — с текстовым заголовком (Branch Report):
+//   Branch,From,To,Name,Length,Area,Perimeter,Resistance,Airflow,...
+//   1,2,3,Tunnel A,150.5,14.2,15.3,0.05,45.2,...
+//
+// Вариант B — числовой формат (прямой экспорт .csv):
+//   Первая строка — настройки модели (одинаковые числа, много нулей)
+//   Следующие строки — данные ветвей:
+//   From,To,Xfrom,Yfrom,Zfrom,Xto,Yto,Zto,Length,FrictionFactor,Area,Perimeter,...
+//   Признак строки данных: первые два числа разные (From≠To) и нет большого кол-ва нулей подряд
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
@@ -24,7 +28,10 @@ export interface VentsimImportResult {
 
 function parseNum(s: string | undefined): number {
   if (!s) return 0;
-  const n = parseFloat(s.replace(",", ".").replace(/\s/g, "").trim());
+  // Поддержка как "0,05" (европейский) так и "0.05" (английский)
+  // Но только если запятая разделяет дробную часть (одна запятая в числе)
+  const t = s.replace(/\s/g, "").replace(/"/g, "").trim();
+  const n = parseFloat(t.replace(",", "."));
   return isNaN(n) ? 0 : n;
 }
 
@@ -32,25 +39,111 @@ function cleanStr(s: string | undefined): string {
   return (s ?? "").replace(/"/g, "").trim();
 }
 
-function detectSep(line: string): "," | ";" | "\t" {
-  const counts = { ",": 0, ";": 0, "\t": 0 };
-  for (const ch of line) if (ch in counts) counts[ch as keyof typeof counts]++;
-  if (counts[";"] >= counts[","] && counts[";"] >= counts["\t"]) return ";";
-  if (counts["\t"] >= counts[","]) return "\t";
+function detectSep(lines: string[]): "," | ";" | "\t" {
+  // Берём несколько строк для анализа
+  const sample = lines.slice(0, 5).join("\n");
+  let commas = 0, semis = 0, tabs = 0;
+  for (const ch of sample) {
+    if (ch === ",") commas++;
+    else if (ch === ";") semis++;
+    else if (ch === "\t") tabs++;
+  }
+  if (semis > commas * 0.5 && semis > tabs) return ";";
+  if (tabs > commas * 0.5) return "\t";
   return ",";
 }
 
-/** Авто-раскладка узлов в сетку (если нет координат из CSV) */
+/** Авто-раскладка узлов в сетку (если нет координат) */
 function autoLayout(nodeIds: string[]): Map<string, { x: number; y: number }> {
   const layout = new Map<string, { x: number; y: number }>();
   const cols = Math.ceil(Math.sqrt(nodeIds.length));
   nodeIds.forEach((id, i) => {
     layout.set(id, {
-      x: Math.round((i % cols) * 120),
-      y: Math.round(Math.floor(i / cols) * 120),
+      x: Math.round((i % cols) * 150),
+      y: Math.round(Math.floor(i / cols) * 150),
     });
   });
   return layout;
+}
+
+// ── Определение формата ───────────────────────────────────────────────────────
+
+interface ColMap {
+  id: number; from: number; to: number; name: number;
+  length: number; area: number; perimeter: number; resistance: number;
+  flow: number; fanPressure: number; fanName: number;
+  xFrom: number; yFrom: number; zFrom: number;
+  xTo: number; yTo: number; zTo: number;
+  headerRow: number;
+  format: "text-header" | "numeric";
+}
+
+/**
+ * Ventsim числовой формат ветви:
+ * [0]From  [1]To  [2]Xfrom  [3]Yfrom  [4]Zfrom  [5]Xto  [6]Yto  [7]Zto
+ * [8]Length  [9]FrictionFactor(μ)  [10]Area  [11]Perimeter
+ * [12]HydDiam  [13]Roughness  [14]Resistance(kmu)  [15]Airflow(m3/s)
+ * [16]Velocity  [17]Pressure(Pa)  [18]FanPressure(Pa)  [19]FanName  ...
+ */
+const VENTSIM_NUMERIC: Omit<ColMap, "headerRow" | "format"> = {
+  id: -1, from: 0, to: 1,
+  xFrom: 2, yFrom: 3, zFrom: 4,
+  xTo: 5, yTo: 6, zTo: 7,
+  length: 8,
+  area: 10, perimeter: 11,
+  resistance: 14,
+  flow: 15,
+  fanPressure: 18, fanName: 19,
+  name: -1,
+};
+
+function detectFormat(rows: string[][]): ColMap {
+  // Ищем строку-заголовок (до 15 строк)
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
+    const row = rows[i].map(c => c.toLowerCase().trim());
+    const ci = (pat: RegExp) => row.findIndex(c => pat.test(c));
+
+    const fromC = ci(/^from$|^from\s*node|^node\s*from|^from_node|^начал|^нач\s*верш/);
+    const toC   = ci(/^to$|^to\s*node|^node\s*to|^to_node|^конеч|^кон\s*верш/);
+    if (fromC >= 0 && toC >= 0) {
+      return {
+        headerRow: i,
+        format: "text-header",
+        id:         ci(/^branch$|^branch\s*id|^id$|^#$|^no\.$|^номер|^branch\s*no/),
+        from: fromC, to: toC,
+        name:       ci(/^name$|^branch\s*name|^description|^назван/),
+        length:     ci(/^length|длина|^len\b/),
+        area:       ci(/^area|^cross.?sect|сечен|площадь/),
+        perimeter:  ci(/^perim|периметр/),
+        resistance: ci(/^resist|сопрот|^r\b/),
+        flow:       ci(/^airflow|^flow|расход|^q\b/),
+        fanPressure:ci(/fan.*press|fan.*dep|^fan\s*p\b|^pressure\b.*fan|^fan\s*pressure/),
+        fanName:    ci(/fan.*name|fan\s*id|^fan$/),
+        xFrom:      ci(/x.*from|from.*x|^x1$|xstart/),
+        yFrom:      ci(/y.*from|from.*y|^y1$|ystart/),
+        zFrom:      ci(/z.*from|from.*z|^z1$|zstart|elev.*from|from.*elev/),
+        xTo:        ci(/x.*to\b|to.*x|^x2$|xend/),
+        yTo:        ci(/y.*to\b|to.*y|^y2$|yend/),
+        zTo:        ci(/z.*to\b|to.*z|^z2$|zend|elev.*to|to.*elev/),
+      };
+    }
+  }
+
+  // Текстового заголовка нет — ищем первую строку с данными ветви (числовой формат)
+  // Признак строки данных Ventsim: cols[0] ≠ cols[1] (From ≠ To) и оба — небольшие целые числа
+  let dataStart = 0;
+  for (let i = 0; i < Math.min(20, rows.length); i++) {
+    const cols = rows[i];
+    if (cols.length < 10) continue;
+    const from = parseFloat(cols[0]);
+    const to   = parseFloat(cols[1]);
+    if (!isNaN(from) && !isNaN(to) && from !== to && Number.isInteger(from) && Number.isInteger(to) && from > 0 && to > 0) {
+      dataStart = i;
+      break;
+    }
+  }
+
+  return { ...VENTSIM_NUMERIC, headerRow: dataStart - 1, format: "numeric" };
 }
 
 // ── Главная функция ───────────────────────────────────────────────────────────
@@ -69,66 +162,20 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
     return { nodes: [], branches: [], warnings: ["Файл пустой."], stats: { nodes: 0, branches: 0, fans: 0 }, debug: "" };
   }
 
-  // Определяем разделитель по первым строкам
-  const sep = detectSep(rawLines.slice(0, 3).join("\n"));
+  const sep = detectSep(rawLines);
   debug.push(`Строк: ${rawLines.length}, разделитель: "${sep}"`);
 
-  // Разбиваем все строки в ячейки
   const rows = rawLines.map(l => l.split(sep).map(c => cleanStr(c)));
 
-  // Ищем строку-заголовок — там должны быть узнаваемые колонки
-  let headerRow = -1;
-  const colIdx = {
-    id: -1, from: -1, to: -1, name: -1,
-    length: -1, area: -1, perimeter: -1, resistance: -1,
-    flow: -1, fanPressure: -1, fanName: -1,
-    x1: -1, y1: -1, z1: -1, x2: -1, y2: -1, z2: -1,
-    xFrom: -1, yFrom: -1, zFrom: -1, xTo: -1, yTo: -1, zTo: -1,
-  };
+  const colMap = detectFormat(rows);
+  debug.push(`Формат: ${colMap.format}, данные с строки: ${colMap.headerRow + 1}`);
+  debug.push(`Колонки: from=${colMap.from} to=${colMap.to} len=${colMap.length} area=${colMap.area} R=${colMap.resistance} Q=${colMap.flow}`);
 
-  for (let i = 0; i < Math.min(10, rows.length); i++) {
-    const row = rows[i].map(c => c.toLowerCase());
-    const ci = (pat: RegExp) => row.findIndex(c => pat.test(c));
-
-    // Должна быть хотя бы одна из ключевых колонок
-    const fromC = ci(/^from$|^from node|^node from|^начал|^от$|^вершина нач|from_id/);
-    const toC   = ci(/^to$|^to node|^node to|^конеч|^до$|^вершина кон|to_id/);
-    if (fromC < 0 || toC < 0) continue;
-
-    headerRow = i;
-    colIdx.id         = ci(/^branch$|^branch id|^id$|^номер|^№|branch_id|^ветвь|^branch num/);
-    colIdx.from       = fromC;
-    colIdx.to         = toC;
-    colIdx.name       = ci(/^name$|^description|^назван|^наимен|branch name/);
-    colIdx.length     = ci(/length|длина|len\b/);
-    colIdx.area       = ci(/area|сечен|площадь|cross.?sect/);
-    colIdx.perimeter  = ci(/perim|периметр/);
-    colIdx.resistance = ci(/resist|сопрот|r\b$/);
-    colIdx.flow       = ci(/airflow|flow|расход|q\b/);
-    colIdx.fanPressure= ci(/fan.*press|fan.*dep|напор|депресс|fan p\b|pressure.*fan/);
-    colIdx.fanName    = ci(/fan.*name|вентилят.*назв|fan id/);
-    // Координаты концов ветви (если есть)
-    colIdx.xFrom      = ci(/x.*from|from.*x|x1\b|xstart/);
-    colIdx.yFrom      = ci(/y.*from|from.*y|y1\b|ystart/);
-    colIdx.zFrom      = ci(/z.*from|from.*z|z1\b|zstart|elev.*from|from.*elev/);
-    colIdx.xTo        = ci(/x.*to\b|to.*x|x2\b|xend/);
-    colIdx.yTo        = ci(/y.*to\b|to.*y|y2\b|yend/);
-    colIdx.zTo        = ci(/z.*to\b|to.*z|z2\b|zend|elev.*to|to.*elev/);
-
-    debug.push(`Заголовок на строке ${i}: from=${colIdx.from} to=${colIdx.to} len=${colIdx.length} area=${colIdx.area} R=${colIdx.resistance} Q=${colIdx.flow}`);
-    break;
+  if (colMap.format === "text-header") {
+    debug.push(`Текстовый заголовок: ${rows[colMap.headerRow].join(" | ").slice(0, 120)}`);
   }
 
-  if (headerRow < 0) {
-    // Нет явного заголовка — пробуем угадать по первой строке данных
-    warnings.push("Заголовок колонок не найден. Пробуем формат: ID;From;To;Name;Length;Area;Perimeter;R;Q");
-    colIdx.id = 0; colIdx.from = 1; colIdx.to = 2; colIdx.name = 3;
-    colIdx.length = 4; colIdx.area = 5; colIdx.perimeter = 6;
-    colIdx.resistance = 7; colIdx.flow = 8;
-    headerRow = -1;
-  }
-
-  // Собираем данные
+  // ── Собираем ветви ────────────────────────────────────────────────────────
   interface RawBr {
     id: string; from: string; to: string; name: string;
     length: number; area: number; perimeter: number;
@@ -137,52 +184,73 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
     xFrom: number; yFrom: number; zFrom: number;
     xTo: number; yTo: number; zTo: number;
   }
+
   const rawBranches: RawBr[] = [];
   const nodeCoords = new Map<string, { x: number; y: number; z: number }>();
 
-  for (let i = headerRow + 1; i < rows.length; i++) {
+  for (let i = colMap.headerRow + 1; i < rows.length; i++) {
     const cols = rows[i];
-    if (cols.length < 3) continue;
+    if (cols.length < 2) continue;
 
-    const fromId = cleanStr(cols[colIdx.from]);
-    const toId   = cleanStr(cols[colIdx.to]);
-    if (!fromId || !toId || fromId === toId) continue;
-    // Пропускаем строки где from/to — не идентификаторы (заголовочные дубли)
-    if (/from|to|node|вершин/i.test(fromId)) continue;
+    const fromRaw = cols[colMap.from] ?? "";
+    const toRaw   = cols[colMap.to]   ?? "";
 
-    const brId = colIdx.id >= 0 ? cleanStr(cols[colIdx.id]) : String(rawBranches.length + 1);
+    const fromId = cleanStr(fromRaw);
+    const toId   = cleanStr(toRaw);
 
-    const xFrom = colIdx.xFrom >= 0 ? parseNum(cols[colIdx.xFrom]) : 0;
-    const yFrom = colIdx.yFrom >= 0 ? parseNum(cols[colIdx.yFrom]) : 0;
-    const zFrom = colIdx.zFrom >= 0 ? parseNum(cols[colIdx.zFrom]) : 0;
-    const xTo   = colIdx.xTo   >= 0 ? parseNum(cols[colIdx.xTo])   : 0;
-    const yTo   = colIdx.yTo   >= 0 ? parseNum(cols[colIdx.yTo])   : 0;
-    const zTo   = colIdx.zTo   >= 0 ? parseNum(cols[colIdx.zTo])   : 0;
+    if (!fromId || !toId) continue;
 
-    // Сохраняем координаты узлов (первое встреченное значение)
+    // В числовом формате From и To — числа, пропускаем строки где они одинаковые
+    // (конфигурационные строки)
+    if (fromId === toId) continue;
+
+    // Пропускаем строки-заголовки (содержат слова вместо чисел)
+    if (/^[a-zA-Zа-яА-Я_\s]{3,}$/.test(fromId) && isNaN(Number(fromId))) continue;
+
+    const xFrom = colMap.xFrom >= 0 ? parseNum(cols[colMap.xFrom]) : 0;
+    const yFrom = colMap.yFrom >= 0 ? parseNum(cols[colMap.yFrom]) : 0;
+    const zFrom = colMap.zFrom >= 0 ? parseNum(cols[colMap.zFrom]) : 0;
+    const xTo   = colMap.xTo   >= 0 ? parseNum(cols[colMap.xTo])   : 0;
+    const yTo   = colMap.yTo   >= 0 ? parseNum(cols[colMap.yTo])   : 0;
+    const zTo   = colMap.zTo   >= 0 ? parseNum(cols[colMap.zTo])   : 0;
+
     if (!nodeCoords.has(fromId)) nodeCoords.set(fromId, { x: xFrom, y: yFrom, z: zFrom });
     if (!nodeCoords.has(toId))   nodeCoords.set(toId,   { x: xTo,   y: yTo,   z: zTo   });
 
+    const brId = colMap.id >= 0 ? cleanStr(cols[colMap.id]) : String(rawBranches.length + 1);
+
+    // Сопротивление: Ventsim числовой формат хранит в кМюрг (×10⁻³ Нс²/м⁸)
+    // Текстовый формат может быть в разных единицах — определяем по величине
+    const rRaw = colMap.resistance >= 0 ? parseNum(cols[colMap.resistance]) : 0;
+    // Если значение очень маленькое (< 0.0001) — скорее всего в Нс²/м⁸ (SI), делим на 9.81
+    // Если в диапазоне 0.001–1000 — уже кМюрг
+    const rKmu = rRaw;
+
     rawBranches.push({
-      id: brId, from: fromId, to: toId,
-      name: colIdx.name >= 0 ? cleanStr(cols[colIdx.name]) : "",
-      length:     colIdx.length     >= 0 ? parseNum(cols[colIdx.length])     : 0,
-      area:       colIdx.area       >= 0 ? parseNum(cols[colIdx.area])       : 0,
-      perimeter:  colIdx.perimeter  >= 0 ? parseNum(cols[colIdx.perimeter])  : 0,
-      resistance: colIdx.resistance >= 0 ? parseNum(cols[colIdx.resistance]) : 0,
-      flow:       colIdx.flow       >= 0 ? parseNum(cols[colIdx.flow])       : 0,
-      fanPressure:colIdx.fanPressure >= 0 ? parseNum(cols[colIdx.fanPressure]): 0,
-      fanName:    colIdx.fanName    >= 0 ? cleanStr(cols[colIdx.fanName])    : "",
+      id: brId,
+      from: fromId,
+      to: toId,
+      name: colMap.name >= 0 ? cleanStr(cols[colMap.name]) : "",
+      length:     colMap.length     >= 0 ? parseNum(cols[colMap.length])     : 0,
+      area:       colMap.area       >= 0 ? parseNum(cols[colMap.area])       : 0,
+      perimeter:  colMap.perimeter  >= 0 ? parseNum(cols[colMap.perimeter])  : 0,
+      resistance: rKmu,
+      flow:       colMap.flow       >= 0 ? parseNum(cols[colMap.flow])       : 0,
+      fanPressure:colMap.fanPressure >= 0 ? parseNum(cols[colMap.fanPressure]): 0,
+      fanName:    colMap.fanName    >= 0 ? cleanStr(cols[colMap.fanName])    : "",
       xFrom, yFrom, zFrom, xTo, yTo, zTo,
     });
   }
 
-  debug.push(`Строк данных: ${rawBranches.length}`);
+  debug.push(`Строк данных ветвей: ${rawBranches.length}`);
 
   if (rawBranches.length === 0) {
+    // Дополнительная диагностика
+    debug.push(`Первые 3 строки:`);
+    rows.slice(0, 3).forEach((r, i) => debug.push(`  [${i}]: ${r.slice(0, 8).join(" | ")}`));
     return {
       nodes: [], branches: [],
-      warnings: [...warnings, "Не найдено ни одной ветви. Проверьте формат файла Ventsim."],
+      warnings: [...warnings, "Не найдено ветвей. Возможно файл не является экспортом Ventsim или имеет нестандартный формат. Включите лог парсера для диагностики."],
       stats: { nodes: 0, branches: 0, fans: 0 },
       debug: debug.join("\n"),
     };
@@ -190,35 +258,40 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
 
   // ── Строим узлы ────────────────────────────────────────────────────────────
   const allNodeIds = [...new Set(rawBranches.flatMap(b => [b.from, b.to]))];
+  debug.push(`Уникальных узлов: ${allNodeIds.length}`);
 
-  // Определяем: есть ли реальные координаты
-  const hasRealCoords = [...nodeCoords.values()].some(c => c.x !== 0 || c.y !== 0);
+  // Масштабирование координат: Ventsim может хранить в мм
+  const allCoords = [...nodeCoords.values()];
+  const maxCoord = Math.max(...allCoords.flatMap(c => [Math.abs(c.x), Math.abs(c.y)]));
+  let coordScale = 1;
+  if (maxCoord > 100000) { coordScale = 0.001; warnings.push("Координаты в мм → переведены в м."); }
+  else if (maxCoord > 10000) { coordScale = 0.01; warnings.push("Координаты в см → переведены в м."); }
+  debug.push(`maxCoord=${maxCoord.toFixed(0)}, coordScale=${coordScale}`);
+
+  const hasRealCoords = allCoords.some(c => c.x !== 0 || c.y !== 0);
   const coordLayout: Map<string, { x: number; y: number }> = hasRealCoords
     ? new Map(allNodeIds.map(id => {
         const c = nodeCoords.get(id) ?? { x: 0, y: 0, z: 0 };
-        return [id, { x: c.x, y: c.y }];
+        return [id, { x: c.x * coordScale, y: c.y * coordScale }];
       }))
     : autoLayout(allNodeIds);
 
   if (!hasRealCoords) {
-    warnings.push("Координаты X/Y узлов не найдены — узлы расставлены автоматически. Уточните схему вручную.");
+    warnings.push("Координаты X/Y узлов не найдены — узлы расставлены автоматически.");
   }
-
-  debug.push(`Уникальных узлов: ${allNodeIds.length}, hasRealCoords: ${hasRealCoords}`);
 
   const ts = Date.now();
   const nodeMap = new Map<string, TopoNode>();
   for (const nid of allNodeIds) {
     const coord = coordLayout.get(nid) ?? { x: 0, y: 0 };
-    const z = nodeCoords.get(nid)?.z ?? 0;
-    const node = makeNode(`NV${ts}_${nid}`, {
+    const z = (nodeCoords.get(nid)?.z ?? 0) * coordScale;
+    nodeMap.set(nid, makeNode(`NV${ts}_${nid}`, {
       x: Math.round(coord.x * 10) / 10,
       y: Math.round(coord.y * 10) / 10,
       z: Math.round(z * 10) / 10,
       number: nid,
       name: nid,
-    });
-    nodeMap.set(nid, node);
+    }));
   }
 
   // ── Строим ветви ───────────────────────────────────────────────────────────
@@ -231,28 +304,33 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
     const toNode   = nodeMap.get(rb.to);
     if (!fromNode || !toNode) continue;
 
-    const area = rb.area;
-    const perim = rb.perimeter;
-    const dh = area > 0 && perim > 0 ? Math.round(4 * area / perim * 1000) / 1000 : 0;
+    const area   = rb.area;
+    const perim  = rb.perimeter;
+    const dh     = area > 0 && perim > 0 ? Math.round(4 * area / perim * 1000) / 1000 : 0;
 
-    // Длина из данных или из координат
+    // Длина: из данных или из координат
     let length = rb.length;
     if (length <= 0 && hasRealCoords) {
-      const dx = rb.xTo - rb.xFrom, dy = rb.yTo - rb.yFrom, dz = rb.zTo - rb.zFrom;
+      const dx = (rb.xTo - rb.xFrom) * coordScale;
+      const dy = (rb.yTo - rb.yFrom) * coordScale;
+      const dz = (rb.zTo - rb.zFrom) * coordScale;
       length = Math.round(Math.sqrt(dx*dx + dy*dy + dz*dz) * 10) / 10;
     }
 
-    // Угол наклона
+    // Угол наклона из координат
     let angle = 0;
     if (length > 0 && hasRealCoords) {
-      const dz = Math.abs(rb.zTo - rb.zFrom);
-      angle = Math.round(Math.asin(Math.min(1, dz / length)) * 180 / Math.PI * 10) / 10;
+      const dz = Math.abs((rb.zTo - rb.zFrom) * coordScale);
+      angle = Math.round(Math.asin(Math.min(1, dz / Math.max(length, 0.01))) * 180 / Math.PI * 10) / 10;
     }
 
-    // Сопротивление Ventsim экспортирует в Н·с²/м⁸ (SI)
-    // Переводим в кМюрг (делим на 9.81×1000 = 9810)
-    // Если значение очень маленькое (< 0.001) — уже в кМюрг или другие единицы
-    const rSi = rb.resistance;
+    // Сопротивление в кМюрг → Н·с²/м⁸ (manualR хранится в кМюрг, resistance в Н·с²/м⁸)
+    // Но в makeBranch manualR принимает Н·с²/м⁸, а потом resistance = manualR
+    // Ventsim: R в кМюрг (×10⁻³ Нс²/м⁸) → ×1000 = Нс²/м⁸... нет, это не так.
+    // Вентсим хранит R в нс²/м⁸ (SI). 1 кМюрг = 9.81 × 10⁻³ кН·с²/м⁸ = 9.81 Нс²/м⁸
+    // Но при экспорте Ventsim пишет сопротивление в своих единицах (обычно Н/м³·с²)
+    // Из строки: колонка 14 = 1E-11 и т.д. — очень маленькие числа, значит в СИ (Нс²/м⁸)
+    const rSi = rb.resistance; // Нс²/м⁸
     const importedR = rSi > 0 ? rSi : 0;
 
     const hasFan = rb.fanPressure > 0 || rb.fanName.length > 0;
@@ -264,6 +342,7 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
       length: length > 0 ? length : 0,
       manualLength: rb.length > 0,
       angle,
+      manualAngle: false,
       area: area > 0 ? area : 0,
       perimeter: perim > 0 ? perim : 0,
       dh: dh > 0 ? dh : 0,
@@ -294,13 +373,21 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
 /** Определяет, похож ли CSV-файл на экспорт Ventsim */
 export function isVentsimCsv(filename: string, firstLines: string): boolean {
   const fn = filename.toLowerCase();
-  if (/ventsim|ventsym|vent_sim/.test(fn)) return true;
+  if (/ventsim|ventsym|vent_sim|vs\d/.test(fn)) return true;
+
+  const lines = firstLines.split("\n").filter(l => l.trim().length > 0);
+  if (lines.length < 2) return false;
 
   const content = firstLines.toLowerCase();
-  // Ventsim обычно содержит эти колонки в заголовке
+  // Текстовый формат: заголовок с from/to
   const hasFrom = /\bfrom\b|\bfrom node/.test(content);
   const hasTo   = /\bto\b|\bto node/.test(content);
-  const hasLen  = /length|длин/.test(content);
-  const hasR    = /resist|сопрот/.test(content);
-  return hasFrom && hasTo && (hasLen || hasR);
+  if (hasFrom && hasTo) return true;
+
+  // Числовой формат: несколько строк с >15 числовых колонок
+  const numericLines = lines.filter(l => {
+    const parts = l.split(/[,;\t]/);
+    return parts.length >= 15 && parts.filter(p => !isNaN(parseFloat(p.trim()))).length >= 12;
+  });
+  return numericLines.length >= 2;
 }

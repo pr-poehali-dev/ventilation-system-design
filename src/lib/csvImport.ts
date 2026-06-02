@@ -88,21 +88,23 @@ export function detectFileType(filename: string, firstLines: string): CsvFileTyp
     .filter(l => l.includes(";") || l.includes(","))
     .slice(0, 3).join(" ").toLowerCase();
 
+  // Специфичные типы — проверяем ПЕРВЫМИ, чтобы не спутать с excavations
+  // (файлы fans/bulkheads тоже содержат "выработки" в заголовке → иначе детект сбивается)
+  if (/напор|депресс|fan.*id|вентилят|источник тяг|pressure.*fan|fan.*pressure/i.test(allHeaders)) return "fans";
+  if (/перемычк|bulkhead|тип перемычк/i.test(allHeaders)) return "bulkheads";
+  if (/тип позиции|position type/i.test(allHeaders)) return "positions";
   // nodes: содержит "вершина" + "атмосфера" или "высотная отметка"
   if (/атмосфера|atmosphere/i.test(allHeaders) || /высотн.*отметк/i.test(allHeaders)) return "nodes";
   if (/идентификатор вершин/i.test(allHeaders) && !/начальн|выработ/i.test(allHeaders)) return "nodes";
   if (/начальн|конечн|выработ|excavat|начал.*верш|ид.*выраб/i.test(allHeaders)) return "excavations";
-  if (/тип позиции|position type/i.test(allHeaders)) return "positions";
-  if (/перемычк|bulkhead|тип перемычк/i.test(allHeaders)) return "bulkheads";
-  if (/напор|fan.*id|вентилят|источник тяг/i.test(allHeaders)) return "fans";
 
-  // Fallback по имени файла
+  // Fallback по имени файла (приоритет: специфичные → общие)
   const fn = filename.toLowerCase();
+  if (/fan|вентилят|source|тяг/.test(fn)) return "fans";
+  if (/bulkhead|перемычк|jumper/.test(fn)) return "bulkheads";
+  if (/position|позиц/.test(fn)) return "positions";
   if (/node|вершин|узл/.test(fn)) return "nodes";
   if (/excavat|выработ|tunnel/.test(fn)) return "excavations";
-  if (/position|позиц/.test(fn)) return "positions";
-  if (/bulkhead|перемычк|jumper/.test(fn)) return "bulkheads";
-  if (/fan|вентилят|source|тяг/.test(fn)) return "fans";
 
   return "unknown";
 }
