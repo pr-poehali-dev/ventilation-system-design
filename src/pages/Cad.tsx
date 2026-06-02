@@ -4538,31 +4538,30 @@ export default function CadPage() {
                     <span className="text-[10px] text-gray-400">После расчёта F9</span>
                   </div>
 
-                  {/* Шкала + настройки */}
-                  <div className="flex gap-3 px-3 pt-3 flex-1">
-                    {/* Вертикальная полоса */}
-                    <div className="flex flex-col items-end" style={{ flexShrink: 0 }}>
+                  {/* Шкала — по центру панели */}
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="flex gap-3">
+                      {/* Вертикальная полоса */}
                       <div style={{
                         width: 22, height: BAR_H,
                         background: `linear-gradient(to bottom, ${stopHi}, ${stopLo})`,
-                        border: "1px solid #d1d5db", borderRadius: 4,
+                        border: "1px solid #d1d5db", borderRadius: 4, flexShrink: 0,
                       }} />
-                    </div>
-
-                    {/* Подписи делений */}
-                    <div style={{ position: "relative", height: BAR_H, width: 70, flexShrink: 0 }}>
-                      {ticks.slice().reverse().map(({ val, frac }) => (
-                        <div key={val} style={{
-                          position: "absolute",
-                          top: (1 - frac) * BAR_H - 7,
-                          left: 0, display: "flex", alignItems: "center", gap: 4,
-                        }}>
-                          <div style={{ width: 5, height: 1, background: "#9ca3af" }} />
-                          <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap" }}>
-                            {val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)} м³/с
-                          </span>
-                        </div>
-                      ))}
+                      {/* Подписи делений */}
+                      <div style={{ position: "relative", height: BAR_H, width: 72, flexShrink: 0 }}>
+                        {ticks.slice().reverse().map(({ val, frac }) => (
+                          <div key={val} style={{
+                            position: "absolute",
+                            top: (1 - frac) * BAR_H - 7,
+                            left: 0, display: "flex", alignItems: "center", gap: 4,
+                          }}>
+                            <div style={{ width: 5, height: 1, background: "#9ca3af" }} />
+                            <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap" }}>
+                              {val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)} м³/с
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
