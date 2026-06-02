@@ -21,7 +21,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import PositionsPanel from "@/components/cad/PositionsPanel";
-import { type Position } from "@/lib/positions";
+import { type Position, makePosition } from "@/lib/positions";
 import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
 import { type ExcelImportResult } from "@/lib/excelImport";
 import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
@@ -991,31 +991,102 @@ export default function CadPage() {
   const [showCsvImport, setShowCsvImport] = useState(false);
 
   const handleCsvImport = (result: CsvImportResult, mode: "replace" | "append") => {
-    // Применяем параметры вентиляторов сразу к ветвям
+    // ── Применяем вентиляторы к ветвям ──
     const applyFans = (branches: typeof result.branches) => {
       if (!result.fans || result.fans.length === 0) return branches;
       return branches.map(b => {
-        const fan = result.fans.find(f => result.branchOriginalIdMap?.[f.branchId] === b.id);
+        const fan = result.fans.find(f => f.branchId === b.id);
         if (!fan) return b;
         return { ...b, hasFan: true, fanMode: "constant" as const, fanName: fan.name, fanPressure: fan.pressure };
       });
     };
+
+    // ── Применяем перемычки к ветвям (hasBulkhead + bulkheadR) ──
+    const applyBulkheads = (branches: typeof result.branches) => {
+      if (!result.bulkheads || result.bulkheads.length === 0) return branches;
+      return branches.map(b => {
+        const bk = result.bulkheads.find(bk => bk.branchId === b.id);
+        if (!bk) return b;
+        return {
+          ...b,
+          hasBulkhead: true,
+          bulkheadName: bk.typeName,
+          bulkheadR: bk.rKmu * 1000,       // кМюрг → Мюрг (базовая единица)
+          bulkheadManualR: bk.rKmu,
+          bulkheadResMode: "manual" as const,
+          bulkheadAirPerm: bk.airPerm,
+        };
+      });
+    };
+
+    // ── Создаём SchemaSymbol для перемычек ──
+    const makeBulkheadSymbols = (branches: typeof result.branches, existing: typeof schemaSymbols) => {
+      const syms: typeof schemaSymbols = [];
+      for (const bk of result.bulkheads ?? []) {
+        const br = branches.find(b => b.id === bk.branchId);
+        if (!br) continue;
+        if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === bk.branchId)) continue;
+        syms.push({
+          id: `SYM_BK_${Date.now()}_${bk.branchId}`,
+          typeId: "bulkhead",
+          x: 0, y: 0,
+          branchId: bk.branchId,
+          t: 0.5,
+          bkResMode: "manual" as const,
+          bkManualR: bk.rKmu,
+          bkAirPerm: bk.airPerm,
+          bkBulkheadR: bk.rKmu * 1000,
+        });
+      }
+      return syms;
+    };
+
+    // ── Создаём объекты Position из импорта ──
+    const makeImportedPositions = (existingPositions: Position[]) => {
+      const newPositions: Position[] = [];
+      let nextNum = (existingPositions.length > 0
+        ? Math.max(...existingPositions.map(p => p.number)) + 1
+        : 1);
+      for (const rp of result.positions ?? []) {
+        newPositions.push(makePosition({
+          id: `POS_CSV_${rp.id}_${Date.now()}`,
+          number: rp.number || nextNum++,
+          name: rp.name,
+          x: rp.x,
+          y: rp.y,
+          z: rp.z,
+          placed: rp.x !== 0 || rp.y !== 0,
+          branchIds: rp.branchIds,
+          positionType: (rp.positionType?.toLowerCase().includes("реверс") ? "reverse" : "normal") as "normal" | "reverse",
+        }));
+      }
+      return newPositions;
+    };
+
     if (mode === "replace") {
-      const finalBranches = applyFans(result.branches);
+      const withBulkheads = applyBulkheads(result.branches);
+      const finalBranches = applyFans(withBulkheads);
       setNodes(result.nodes);
       setBranches(finalBranches);
-      setSchemaSymbols(ensureFanSymbols(finalBranches, []));
+      const fanSyms = ensureFanSymbols(finalBranches, []);
+      const bkSyms  = makeBulkheadSymbols(finalBranches, fanSyms);
+      setSchemaSymbols([...fanSyms, ...bkSyms]);
+      setPositions(makeImportedPositions([]));
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => {
-        const merged = [...prev, ...applyFans(result.branches)];
-        return merged;
+        const withBulkheads = applyBulkheads(result.branches);
+        return [...prev, ...applyFans(withBulkheads)];
       });
       setSchemaSymbols(prev => {
-        const newFans = applyFans(result.branches);
-        return [...prev, ...ensureFanSymbols(newFans, prev)];
+        const withBulkheads = applyBulkheads(result.branches);
+        const withFans = applyFans(withBulkheads);
+        const fanSyms = ensureFanSymbols(withFans, prev);
+        const bkSyms  = makeBulkheadSymbols(withFans, [...prev, ...fanSyms]);
+        return [...prev, ...fanSyms, ...bkSyms];
       });
+      setPositions(prev => [...prev, ...makeImportedPositions(prev)]);
     }
     setImportNonce(n => n + 1);
     setShowCsvImport(false);

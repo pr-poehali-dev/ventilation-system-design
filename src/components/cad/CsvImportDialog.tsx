@@ -177,12 +177,14 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
 
           {result && (
             <div className="space-y-3">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: "Узлов",    value: result.stats.nodes,      hi: result.stats.nodes > 0 },
-                  { label: "Ветвей",   value: result.stats.branches,   hi: result.stats.branches > 0 },
-                  { label: "С Z≠0",   value: result.stats.nodesWithZ, hi: result.stats.nodesWithZ > 0 },
-                  { label: "Вент-ров", value: result.stats.fans ?? 0,  hi: (result.stats.fans ?? 0) > 0 },
+                  { label: "Узлов",      value: result.stats.nodes,                   hi: result.stats.nodes > 0 },
+                  { label: "Ветвей",     value: result.stats.branches,                hi: result.stats.branches > 0 },
+                  { label: "С Z≠0",     value: result.stats.nodesWithZ,              hi: result.stats.nodesWithZ > 0 },
+                  { label: "Вент-ров",   value: result.stats.fans ?? 0,               hi: (result.stats.fans ?? 0) > 0 },
+                  { label: "Перемычек",  value: result.stats.bulkheads ?? 0,          hi: (result.stats.bulkheads ?? 0) > 0 },
+                  { label: "Позиций",    value: result.stats.positions ?? 0,          hi: (result.stats.positions ?? 0) > 0 },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
                     style={{ background: s.hi ? "#dcfce7" : "#f9f9f9", borderColor: s.hi ? "#86efac" : "#e0e0e0" }}>

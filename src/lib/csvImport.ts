@@ -20,14 +20,35 @@ export interface RawFan {
   flow: number;        // расход, м³/с
 }
 
+export interface RawBulkhead {
+  branchId: string;        // ID выработки из АэроСети
+  typeName: string;        // название типа перемычки
+  rKmu: number;            // сопротивление, кМюрг
+  airPerm: number;         // воздухопроницаемость, м²/(с·√Па)
+}
+
+export interface RawPosition {
+  id: string;              // исходный ID из АэроСети
+  number: number;          // номер позиции
+  name: string;            // название
+  positionType: string;    // тип: безреверсивная / реверсивная
+  accidentType: string;    // вид аварии
+  x: number;               // мировые координаты X
+  y: number;               // Y
+  z: number;               // Z
+  branchIds: string[];     // ID привязанных выработок (из АэроСети)
+}
+
 export interface CsvImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   fans: RawFan[];
+  bulkheads: RawBulkhead[];
+  positions: RawPosition[];
   /** Маппинг: оригинальный ID выработки из АэроСети → сгенерированный ID ветви */
   branchOriginalIdMap: Record<string, string>;
   warnings: string[];
-  stats: { nodes: number; branches: number; nodesWithZ: number; fans: number };
+  stats: { nodes: number; branches: number; nodesWithZ: number; fans: number; bulkheads: number; positions: number };
   debug: string;
 }
 
@@ -229,12 +250,110 @@ function parseFansFile(lines: string[], sep: string): RawFan[] {
   return result;
 }
 
+function parseBulkheadsFile(lines: string[], sep: string): RawBulkhead[] {
+  const result: RawBulkhead[] = [];
+  let headerFound = false;
+  const colIdx = { branchId: 0, typeName: 1, rKmu: 2, airPerm: 3 };
+
+  for (const line of lines) {
+    const cols = splitRow(line, sep).map(c => c.replace(/"/g, "").trim());
+    if (cols.length < 2) continue;
+
+    if (!isDataId(cols[0])) {
+      if (!headerFound) {
+        const ci = (pat: RegExp) => cols.findIndex(c => pat.test(c.toLowerCase()));
+        const brC  = ci(/выработ|branch|ид.*выраб|id.*excav/);
+        const tyC  = ci(/тип.*перем|назван|name|тип/);
+        const rC   = ci(/сопротивл|resist|кмюрг|кмю/);
+        const apC  = ci(/воздухо|air.*perm|утечк/);
+        if (brC >= 0) colIdx.branchId = brC;
+        if (tyC >= 0) colIdx.typeName = tyC;
+        if (rC  >= 0) colIdx.rKmu = rC;
+        if (apC >= 0) colIdx.airPerm = apC;
+        headerFound = true;
+      }
+      continue;
+    }
+
+    const branchId = cleanId(cols[colIdx.branchId] ?? "");
+    if (!branchId) continue;
+    result.push({
+      branchId,
+      typeName: cols[colIdx.typeName] ?? "",
+      rKmu: parseNumSci(cols[colIdx.rKmu]),
+      airPerm: parseNumSci(cols[colIdx.airPerm]),
+    });
+  }
+  return result;
+}
+
+function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
+  const result: RawPosition[] = [];
+  let headerFound = false;
+  const colIdx = { id: 0, number: 1, name: 2, posType: 3, accType: 4, x: 5, y: 6, z: 7, branches: 8 };
+
+  for (const line of lines) {
+    const cols = splitRow(line, sep).map(c => c.replace(/"/g, "").trim());
+    if (cols.length < 2) continue;
+
+    if (!isDataId(cols[0])) {
+      if (!headerFound) {
+        const ci = (pat: RegExp) => cols.findIndex(c => pat.test(c.toLowerCase()));
+        const idC  = ci(/^ид|^id/);
+        const nmC  = ci(/номер|number|num|№/);
+        const naC  = ci(/назван|name/);
+        const ptC  = ci(/тип позиц|position type|тип/);
+        const atC  = ci(/авари|accident/);
+        const xC   = ci(/^x$|коорд.*x|x.*коорд/);
+        const yC   = ci(/^y$|коорд.*y|y.*коорд/);
+        const zC   = ci(/^z$|высот|отметк|z.*коорд/);
+        const brC  = ci(/выработ|branch|список/);
+        if (idC  >= 0) colIdx.id = idC;
+        if (nmC  >= 0) colIdx.number = nmC;
+        if (naC  >= 0) colIdx.name = naC;
+        if (ptC  >= 0) colIdx.posType = ptC;
+        if (atC  >= 0) colIdx.accType = atC;
+        if (xC   >= 0) colIdx.x = xC;
+        if (yC   >= 0) colIdx.y = yC;
+        if (zC   >= 0) colIdx.z = zC;
+        if (brC  >= 0) colIdx.branches = brC;
+        headerFound = true;
+      }
+      continue;
+    }
+
+    const id = cleanId(cols[colIdx.id] ?? "");
+    if (!id) continue;
+    // Список выработок может быть через запятую или пробел в одной ячейке
+    const branchRaw = cols[colIdx.branches] ?? "";
+    const branchIds = branchRaw
+      .split(/[,\s]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    result.push({
+      id,
+      number: Math.round(parseNum(cols[colIdx.number])) || 0,
+      name: cols[colIdx.name] ?? "",
+      positionType: cols[colIdx.posType] ?? "",
+      accidentType: cols[colIdx.accType] ?? "",
+      x: parseNum(cols[colIdx.x]),
+      y: parseNum(cols[colIdx.y]),
+      z: parseNum(cols[colIdx.z]),
+      branchIds,
+    });
+  }
+  return result;
+}
+
 // ── Сборка результата ─────────────────────────────────────────────────────────
 
 function buildResult(
   rawNodes: RawNode[],
   rawBranches: RawBranch[],
   rawFans: RawFan[],
+  rawBulkheads: RawBulkhead[],
+  rawPositions: RawPosition[],
   warnings: string[],
   debug: string[],
   resistanceUnit: "kmu" | "si" = "kmu"
@@ -357,9 +476,23 @@ function buildResult(
   if (rawBranches.length > 0 && branches.length === 0)
     warnings.push("⚠ Ветви не созданы — возможно ID узлов не совпадают.");
 
+  // Транслируем исходные ID выработок в перемычках в сгенерированные ID ветвей
+  const bulkheads: RawBulkhead[] = rawBulkheads.map(bk => ({
+    ...bk,
+    branchId: branchOriginalIdMap[bk.branchId] ?? bk.branchId,
+  }));
+  // Транслируем ID выработок в позициях
+  const positions: RawPosition[] = rawPositions.map(p => ({
+    ...p,
+    branchIds: p.branchIds.map(bid => branchOriginalIdMap[bid] ?? bid),
+  }));
+
+  if (bulkheads.length > 0) debug.push(`Перемычек после маппинга: ${bulkheads.length}`);
+  if (positions.length > 0) debug.push(`Позиций после маппинга: ${positions.length}`);
+
   return {
-    nodes: resultNodes, branches, fans: rawFans, branchOriginalIdMap, warnings,
-    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: rawFans.length },
+    nodes: resultNodes, branches, fans: rawFans, bulkheads, positions, branchOriginalIdMap, warnings,
+    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: rawFans.length, bulkheads: bulkheads.length, positions: positions.length },
     debug: debug.join("\n"),
   };
 }
@@ -401,6 +534,8 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
   const allRawNodes: RawNode[] = [];
   const allRawBranches: RawBranch[] = [];
   const allRawFans: RawFan[] = [];
+  const allRawBulkheads: RawBulkhead[] = [];
+  const allRawPositions: RawPosition[] = [];
 
   for (const file of files) {
     const lines = normalizeLines(file.content);
@@ -420,7 +555,6 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
       debug.push(`  Выработок: ${branches.length}`);
       allRawBranches.push(...branches);
     } else if (fileType === "unknown") {
-      // Пробуем оба парсера
       const nodes = parseNodesFile(lines, sep);
       const branches = parseExcavationsFile(lines, sep);
       if (nodes.length > branches.length) {
@@ -436,15 +570,24 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
       const fans = parseFansFile(lines, sep);
       debug.push(`  Вентиляторов: ${fans.length}`);
       allRawFans.push(...fans);
+    } else if (fileType === "bulkheads") {
+      const bulkheads = parseBulkheadsFile(lines, sep);
+      debug.push(`  Перемычек: ${bulkheads.length}`);
+      allRawBulkheads.push(...bulkheads);
+    } else if (fileType === "positions") {
+      const positions = parsePositionsFile(lines, sep);
+      debug.push(`  Позиций: ${positions.length}`);
+      allRawPositions.push(...positions);
     }
-    // bulkheads, positions — пока пропускаем
   }
 
   if (allRawNodes.length === 0 && allRawBranches.length === 0) {
     return {
-      nodes: [], branches: [], fans: allRawFans, branchOriginalIdMap: {},
+      nodes: [], branches: [], fans: allRawFans,
+      bulkheads: allRawBulkheads, positions: allRawPositions,
+      branchOriginalIdMap: {},
       warnings: ["Файлы не содержат данных. Убедитесь что выбраны *-nodes.csv и *-excavations.csv из АэроСети."],
-      stats: { nodes: 0, branches: 0, nodesWithZ: 0, fans: allRawFans.length },
+      stats: { nodes: 0, branches: 0, nodesWithZ: 0, fans: allRawFans.length, bulkheads: allRawBulkheads.length, positions: allRawPositions.length },
       debug: debug.join("\n"),
     };
   }
@@ -460,7 +603,7 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
     rUnit = requestedUnit;
   }
 
-  return buildResult(allRawNodes, allRawBranches, allRawFans, warnings, debug, rUnit);
+  return buildResult(allRawNodes, allRawBranches, allRawFans, allRawBulkheads, allRawPositions, warnings, debug, rUnit);
 }
 
 // ── Обратная совместимость: один файл ────────────────────────────────────────
