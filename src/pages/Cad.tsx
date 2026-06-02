@@ -1038,6 +1038,35 @@ export default function CadPage() {
       });
     };
 
+    // ── Определяем typeId перемычки по названию из CSV ──
+    const guessBulkheadTypeId = (typeName: string): string => {
+      const t = typeName.toLowerCase().trim();
+      // Определяем конструкцию
+      const isDoor     = /двер|door/.test(t);
+      const isAuto     = /авто|auto/.test(t);
+      const isOpen     = /откр|open/.test(t);
+      const isWindow   = /окн|window|win/.test(t);
+      const isLattice  = /решёт|решет|lattic|lat/.test(t);
+      const isProem    = /проём|проем|proem/.test(t);
+      const isBarrier  = /барьер|barrier/.test(t);
+      const isFireDoor = /противопож|пожар|fire/.test(t);
+      // Определяем материал
+      const isConcrete = /бетон|concrete|conc/.test(t);
+      const isWood     = /дерев|деревян|wood/.test(t);
+      const isBrick    = /кирпич|brick/.test(t);
+      const isMetal    = /металл|metal/.test(t);
+      const mat = isConcrete ? "conc" : isWood ? "wood" : isBrick ? "brick" : isMetal ? "metal" : "base";
+      if (isFireDoor) return "fire_door_pp";
+      if (isBarrier)  return "barrier";
+      if (isAuto)     return `auto_${mat}`;
+      if (isOpen)     return `open_${mat}`;
+      if (isWindow)   return `win_${mat}`;
+      if (isLattice)  return `lat_${mat}`;
+      if (isProem)    return `proem_${mat}`;
+      if (isDoor)     return `door_${mat}`;
+      return `bk_${mat}`;
+    };
+
     // ── Создаём SchemaSymbol для перемычек ──
     const makeBulkheadSymbols = (branches: typeof result.branches, existing: typeof schemaSymbols) => {
       const syms: typeof schemaSymbols = [];
@@ -1046,9 +1075,10 @@ export default function CadPage() {
         const br = branches.find(b => b.id === bk.branchId);
         if (!br) { notFound++; continue; }
         if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === bk.branchId)) continue;
+        const typeId = guessBulkheadTypeId(bk.typeName);
         syms.push({
           id: `SYM_BK_${Date.now()}_${bk.branchId}`,
-          typeId: "bulkhead",
+          typeId,
           x: 0, y: 0,
           branchId: bk.branchId,
           t: 0.5,
@@ -1056,6 +1086,7 @@ export default function CadPage() {
           bkManualR: bk.rKmu,
           bkAirPerm: bk.airPerm,
           bkBulkheadR: bk.rKmu * 1000,
+          bkBulkheadName: bk.typeName,
         });
       }
       if (notFound > 0) console.warn(`[BulkheadImport] ${notFound} перемычек не нашли ветвь. Пример bk.branchId="${result.bulkheads?.[0]?.branchId}", ветвь[0].id="${branches[0]?.id}"`);
