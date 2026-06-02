@@ -99,7 +99,10 @@ interface Props {
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number }[];
+  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
+    indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;
+    bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
+  }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */
@@ -2147,14 +2150,37 @@ export default function TopoCanvas(props: Props) {
                 const uFlowInd = getUnit(unitsConfig, "flow");
                 if (sym.indDescription && sym.description) lines.push(sym.description);
                 if (sym.indResistance) {
-                  const rVal = br.bulkheadR > 0 ? br.bulkheadR : br.resistance / 1e6;
-                  lines.push(`R=${uResInd.fromBase(rVal).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
+                  // Вычисляем R перемычки из параметров символа (sym.bk*),
+                  // чтобы отображать актуальное значение независимо от bulkheadR ветви.
+                  const mode = sym.bkResMode ?? "project";
+                  let rMkyurg = 0;
+                  if (mode === "manual") {
+                    rMkyurg = sym.bkManualR ?? 0;
+                  } else if (mode === "survey") {
+                    const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
+                    const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
+                    rMkyurg = rNsm8 / 10;
+                  } else {
+                    // project: используем bkBulkheadR или bkAirPerm
+                    const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
+                    if (kAir > 0) {
+                      const rNsm8 = 1 / (kAir * kAir);
+                      rMkyurg = rNsm8 / 10;
+                    } else {
+                      rMkyurg = (sym.bkBulkheadR ?? br.bulkheadR ?? 0);
+                    }
+                  }
+                  // Fallback: если bk* не заполнены — берём из ветви
+                  if (rMkyurg === 0 && br.bulkheadR > 0) rMkyurg = br.bulkheadR;
+                  if (rMkyurg === 0) rMkyurg = br.resistance / 1e7;
+                  lines.push(`R=${uResInd.fromBase(rMkyurg).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
                 }
                 if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);
                 if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
-                const fSize = Math.max(6, Math.round(9 * sc * symScale));
+                const baseFontPx = sym.indFontSize ? sym.indFontSize * sc : 9 * sc * symScale;
+                const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
                 const boxH = lines.length * lineH + 6;

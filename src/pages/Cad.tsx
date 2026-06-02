@@ -73,6 +73,7 @@ export interface SchemaSymbol {
   indLeakage?: boolean;      // показывать утечки на перемычке
   indOffsetX?: number;       // смещение бейджа индикаторов (px экрана) по X
   indOffsetY?: number;       // смещение бейджа индикаторов (px экрана) по Y
+  indFontSize?: number;      // размер шрифта индикаторов (мм мировых единиц)
   // ─── Индивидуальные параметры перемычки (хранятся в символе, не в ветви) ──
   bkResMode?: "project" | "survey" | "manual";
   bkWindowArea?: number;     // S окна/проёма, м²
@@ -3979,32 +3980,64 @@ export default function CadPage() {
                         </label>
                       ))}
 
-                      {/* Значения для справки */}
-                      {brForSym && (sym.indResistance || sym.indDeltaP || sym.indLeakage) && (
-                        <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
-                          style={{ background: "#f0f4ff", border: "1px solid #c8d8f0" }}>
-                          {sym.indResistance && (
-                            <div className="text-gray-600">
-                              <span className="text-gray-400">R перемычки: </span>
-                              {brForSym.bulkheadR > 0
-                                ? `${brForSym.bulkheadR.toFixed(2)} Мюрг`
-                                : `${(brForSym.resistance / 1e6).toFixed(3)} Мюрг`}
-                            </div>
-                          )}
-                          {sym.indDeltaP && (
-                            <div className="text-gray-600">
-                              <span className="text-gray-400">ΔP: </span>
-                              {brForSym.dP > 0 ? `${Math.abs(brForSym.dP).toFixed(1)} Па` : "—"}
-                            </div>
-                          )}
-                          {sym.indLeakage && (
-                            <div className="text-gray-600">
-                              <span className="text-gray-400">Q через перемычку: </span>
-                              {brForSym.flow !== 0 ? `${Math.abs(brForSym.flow).toFixed(2)} м³/с` : "—"}
-                            </div>
-                          )}
+                      {/* Настройки текста индикаторов */}
+                      {(sym.indDescription || sym.indResistance || sym.indDeltaP || sym.indLeakage) && (
+                        <div className="mt-2">
+                          <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 uppercase tracking-wide">
+                            Настройки
+                          </div>
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <span className="text-gray-500 w-20 flex-shrink-0">Размер</span>
+                            <input type="number" min={1} max={50} step={0.5}
+                              value={sym.indFontSize ?? 9}
+                              onChange={(e) => updSym({ indFontSize: Math.max(1, Math.min(50, Number(e.target.value) || 9)) })}
+                              className="w-16 border border-gray-300 rounded px-1 text-right"
+                              style={{ fontSize: 11 }} />
+                            <span className="text-gray-400">м</span>
+                          </div>
                         </div>
                       )}
+
+                      {/* Значения для справки */}
+                      {brForSym && (sym.indResistance || sym.indDeltaP || sym.indLeakage) && (() => {
+                        // Вычисляем R из sym.bk* (те же данные что в панели настройки)
+                        const mode = sym.bkResMode ?? "project";
+                        let rMkyurg = 0;
+                        if (mode === "manual") {
+                          rMkyurg = sym.bkManualR ?? 0;
+                        } else if (mode === "survey") {
+                          const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
+                          rMkyurg = sq > 0 ? (dp / (sq * sq)) / 10 : 0;
+                        } else {
+                          const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
+                          if (kAir > 0) { rMkyurg = 1 / (kAir * kAir) / 10; }
+                          else { rMkyurg = sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0; }
+                        }
+                        if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR;
+                        return (
+                          <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
+                            style={{ background: "#f0f4ff", border: "1px solid #c8d8f0" }}>
+                            {sym.indResistance && (
+                              <div className="text-gray-600">
+                                <span className="text-gray-400">R перемычки: </span>
+                                {rMkyurg > 0 ? `${rMkyurg.toFixed(4)} кМюрг` : "—"}
+                              </div>
+                            )}
+                            {sym.indDeltaP && (
+                              <div className="text-gray-600">
+                                <span className="text-gray-400">ΔP: </span>
+                                {brForSym.dP !== 0 ? `${Math.abs(brForSym.dP).toFixed(1)} Па` : "—"}
+                              </div>
+                            )}
+                            {sym.indLeakage && (
+                              <div className="text-gray-600">
+                                <span className="text-gray-400">Q через перемычку: </span>
+                                {brForSym.flow !== 0 ? `${Math.abs(brForSym.flow).toFixed(2)} м³/с` : "—"}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
