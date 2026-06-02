@@ -39,8 +39,9 @@ export async function drawSymbolsToCanvas(
   unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG,
 ): Promise<void> {
   for (const sym of symbols) {
+    const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
     const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
-    if (!lt) continue;
+    if (!lt && !isBulkheadSym) continue;
 
     let basePx = 0, basePy = 0;
     let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;

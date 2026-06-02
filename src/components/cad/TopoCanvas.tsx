@@ -1722,8 +1722,10 @@ export default function TopoCanvas(props: Props) {
 
         {/* ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ──────────────────────────── */}
         {!useCanvas && schemaSymbols.map(sym => {
+          const isBulkheadEarly = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
-          if (!lt) return null;
+          // Перемычки рисуются геометрически — не требуют lt из LEGEND_TYPES
+          if (!lt && !isBulkheadEarly) return null;
           // Если УО привязано к ветви скрытого горизонта — скрываем его вместе с ветвью
           if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
 
@@ -2076,6 +2078,7 @@ export default function TopoCanvas(props: Props) {
                   );
                 }
                 // Остальные символы — через SVG viewBox без поворота
+                if (!lt) return null;
                 return (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible"

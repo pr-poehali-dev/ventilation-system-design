@@ -29,8 +29,10 @@ export default function SchemaSymbolsOverlay({
       viewBox={`0 0 ${width} ${height}`}
     >
       {symbols.map(sym => {
+        const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
         const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
-        if (!lt) return null;
+        // Перемычки рисуются геометрически (не через SVG из LEGEND_TYPES) — не требуют lt
+        if (!lt && !isBulkheadSym) return null;
 
         let basePx = 0, basePy = 0;
         let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
@@ -73,7 +75,7 @@ export default function SchemaSymbolsOverlay({
         const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
 
-        const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+        const isBulkhead = isBulkheadSym;
 
         const renderBulkhead = () => {
           if (!isBulkhead || !sym.branchId || !hasBranchPts) return null;
@@ -236,11 +238,11 @@ export default function SchemaSymbolsOverlay({
           <g key={sym.id}>
             {/* Символ */}
             {isBulkhead && hasBranchPts ? renderBulkhead() : (
-              <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
+              lt ? <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"
                 opacity={isFanStopped ? 0.35 : 1}
                 style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
-                dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                dangerouslySetInnerHTML={{ __html: lt.svgContent }} /> : null
             )}
 
             {/* Крестик на остановленном вентиляторе */}
