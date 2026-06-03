@@ -5557,6 +5557,8 @@ export default function CadPage() {
             onClick={(e) => {
               // Клик на пустое место — снять выбор позиции
               if (!leaderDrawMode) {
+                // В режиме привязки ветвей не сбрасываем позицию при кликах по схеме
+                if (posBranchBindMode) return;
                 // e.target — сам div-контейнер или TopoCanvas, не маркер позиции
                 setSelectedPositionId(null);
                 return;

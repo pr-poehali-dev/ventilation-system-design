@@ -1154,6 +1154,7 @@ export default function TopoCanvas(props: Props) {
 
   const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
     : draggingNode ? "grabbing"
+    : branchBindMode ? "pointer"
     : pendingSymbolTypeId ? "copy"
     : tool === "node" ? "crosshair"
     : tool === "symbol" ? "copy"
