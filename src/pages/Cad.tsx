@@ -4265,7 +4265,7 @@ export default function CadPage() {
                       {destroyedBranches.map(br => {
                         const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === br.id);
                         const fp = bkSym?.bkFailurePressure ?? br.bulkheadFailurePressure;
-                        const name = bkSym?.bkBulkheadName ?? br.bulkheadName || br.id;
+                        const name = (bkSym?.bkBulkheadName ?? br.bulkheadName) || br.id;
                         return (
                           <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "#fff5f5" }}>
                             <span className="text-[10px] mr-1">🔴</span>
