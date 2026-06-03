@@ -1452,6 +1452,7 @@ export default function TopoCanvas(props: Props) {
             : (colorByHorizon && horizonColor) ? horizonColor
             : colorMode === "flowQ" ? flowQColor(Math.abs(Q))
             : posInnerColors ? (posInnerColEarly ?? "#ffffff")
+            : colorMode === "none" ? "#ffffff"
             : Q > 0 ? velocityColor(V)
             : "#ffffff";
 
