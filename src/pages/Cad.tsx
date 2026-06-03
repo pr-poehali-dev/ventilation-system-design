@@ -31,6 +31,7 @@ import { type CsvImportResult } from "@/lib/csvImport";
 import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
+import { BULKHEAD_CATALOG, airPermToR } from "@/lib/bulkheads";
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
@@ -173,7 +174,18 @@ export default function CadPage() {
   const [mineFans, setMineFans] = useState<MineFanExport[]>([
     { catalogId: "VOD-18", name: "ВО-18/12АВР", diameter: 1.8, rpmMin: 600, rpmMax: 1500 },
   ]);
-  const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>([]);
+  const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>(() =>
+    BULKHEAD_CATALOG.map(item => ({
+      id: `mb_${item.id}`,
+      name: item.name,
+      type: item.type,
+      airPermeability: item.airPermeability,
+      rMkyurg: airPermToR(item.airPermeability),
+      failurePressure: item.failurePressure,
+      note: item.note,
+      color: item.color,
+    }))
+  );
   const [mineTypes, setMineTypes] = useState<BranchType[]>([]);
 
   // ─── Топология ─────────────────────────────────────────────────────────
@@ -1413,7 +1425,23 @@ export default function CadPage() {
     const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
     if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
-    if (data.mineBulkheads) setMineBulkheads(data.mineBulkheads as MineBulkheadExport[]);
+    {
+      const loaded = data.mineBulkheads as MineBulkheadExport[] | undefined;
+      if (loaded && loaded.length > 0) {
+        setMineBulkheads(loaded);
+      } else {
+        setMineBulkheads(BULKHEAD_CATALOG.map(item => ({
+          id: `mb_${item.id}`,
+          name: item.name,
+          type: item.type,
+          airPermeability: item.airPermeability,
+          rMkyurg: airPermToR(item.airPermeability),
+          failurePressure: item.failurePressure,
+          note: item.note,
+          color: item.color,
+        })));
+      }
+    }
     if (data.mineTypes) setMineTypes(data.mineTypes as BranchType[]);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
     if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
