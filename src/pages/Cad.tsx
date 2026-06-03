@@ -1726,7 +1726,7 @@ export default function CadPage() {
             // добавляем её R напрямую из полей ветви
             const rBranchBulkhead = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
               const mode = b.bulkheadResMode ?? "project";
-              if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3;
+              if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3; // кМюрг → единицы resistance
               if (mode === "survey") {
                 const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
                 return q > 0 ? dp / (q * q) : 0;

@@ -356,7 +356,7 @@ export function solveNetwork(
       b:             toGnd(b.toId),
       R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => {
         const mode = b.bulkheadResMode ?? "project";
-        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1000; // кМюрг → Мюрг
+        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3; // кМюрг → единицы resistance
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0;
           const dp = b.bulkheadSurveyDP ?? 0;

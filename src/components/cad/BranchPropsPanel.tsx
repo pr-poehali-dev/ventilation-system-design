@@ -1271,7 +1271,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         }
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);
-                        if (rBulk === 0 || Q === 0) return branch.dP ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
@@ -1311,7 +1311,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const rBulk = q > 0 ? dp / (q * q) : 0;
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);
-                        if (rBulk === 0 || Q === 0) return branch.dP ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
@@ -1334,11 +1334,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        // R перемычки в Мюрг (bulkheadManualR хранится в кМюрг → × 1000)
+                        // bulkheadManualR в кМюрг, resistance в тех же единицах × 1e3 = Па·с²/м⁶ → ΔP в Па
                         const rBulk = (branch.bulkheadManualR ?? 0) * 1e3;
                         const Q = branch.flow ?? 0;
                         const dp = rBulk * Q * Math.abs(Q);
-                        if (rBulk === 0 || Q === 0) return branch.dP ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
                         return `${u.fromBase(dp).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
