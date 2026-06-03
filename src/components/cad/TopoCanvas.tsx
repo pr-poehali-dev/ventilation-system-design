@@ -1020,7 +1020,7 @@ export default function TopoCanvas(props: Props) {
       if (!wp) return;
       // Делим Z обратно на zScale (proj работает с z*zScale, нам нужны мировые метры)
       const zWorld = (zScale && zScale !== 1) ? wp.z / zScale : wp.z;
-      onNodeMove(draggingNode.id, Math.round(wp.x), Math.round(wp.y), Math.round(zWorld));
+      onNodeMove(draggingNode.id, wp.x, wp.y, zWorld);
       return;
     }
     if (draggingCorner && onHorizonImageBoundsChange) {
