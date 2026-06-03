@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
-  type TopoNode, type TopoBranch, type Horizon, type ViewPreset,
+  type TopoNode, type TopoBranch, type Horizon,
   DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane,
 } from "@/lib/topology";
@@ -1262,8 +1262,6 @@ export default function CadPage() {
     flowDisplay,
     zScale,
     view: savedViewState ?? undefined,
-    activeHorizonId,
-    viewPresetName: viewPreset?.name ?? "plan",
   });
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
@@ -1458,7 +1456,6 @@ export default function CadPage() {
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
     if (data.zScale !== undefined) setZScale(data.zScale as number);
-    if (data.activeHorizonId !== undefined) setActiveHorizonId(data.activeHorizonId as string);
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
@@ -1466,16 +1463,7 @@ export default function CadPage() {
     if (data.view) {
       const v = data.view as { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
       setSavedViewToRestore(v);
-      // Восстанавливаем пресет вида (план/фронт/профиль/3D) без fit-to-screen
-      if (data.viewPresetName) {
-        setViewPreset({ name: data.viewPresetName as ViewPreset, nonce: Date.now() });
-      }
     } else {
-      if (data.viewPresetName) {
-        setViewPreset({ name: data.viewPresetName as ViewPreset, nonce: Date.now() });
-      } else {
-        setViewPreset({ name: "plan", nonce: Date.now() });
-      }
       setImportNonce((n) => n + 1);
     }
     setActiveRibbon("home");

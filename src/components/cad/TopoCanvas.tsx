@@ -539,8 +539,6 @@ export default function TopoCanvas(props: Props) {
     if (!fitAfterPresetRef.current) return;
     fitAfterPresetRef.current = false;
     if (nodes.length === 0 || size.w < 50 || size.h < 50) return;
-    // Если view восстановлен из файла — не перезаписываем масштаб и offset
-    if (restoredViewNonce.current && (Date.now() - restoredViewNonce.current) < 2000) return;
     const tmpProj: ProjOptions = {
       scale: 1, offsetX: 0, offsetY: 0,
       azimuth: view.azimuth, elevation: view.elevation, zScale,
