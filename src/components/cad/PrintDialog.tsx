@@ -6,6 +6,7 @@ import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
+import { type Position } from "@/lib/positions";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 
 interface PrintDialogProps {
@@ -26,6 +27,11 @@ interface PrintDialogProps {
   unitsConfig?: UnitsConfig;
   zScale?: number;
   getSvgRaw?: () => string;
+  colorMode?: "none" | "flowQ";
+  posInnerColors?: Map<string, string>;
+  posOuterColors?: Map<string, string>;
+  positions?: Position[];
+  showPositions?: boolean;
 }
 
 type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0" | "custom";
@@ -77,6 +83,11 @@ export default function PrintDialog({
   unitsConfig = DEFAULT_UNITS_CONFIG,
   zScale = 1,
   getSvgRaw,
+  colorMode = "none",
+  posInnerColors,
+  posOuterColors,
+  positions = [],
+  showPositions = true,
 }: PrintDialogProps) {
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
@@ -983,6 +994,11 @@ body{background:white;font-family:Arial,sans-serif}
                         flowDisplay={flowDisplay}
                         infoConfig={infoConfig}
                         unitsConfig={unitsConfig}
+                        colorMode={colorMode}
+                        posInnerColors={posInnerColors}
+                        posOuterColors={posOuterColors}
+                        positions={positions}
+                        showPositions={showPositions}
                       />
                     </div>
 

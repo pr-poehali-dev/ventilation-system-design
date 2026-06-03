@@ -7,6 +7,7 @@ import { renderCanvas, type ProjNode, type FlowDisplayMode } from "@/lib/canvasR
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
+import { type Position } from "@/lib/positions";
 import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
 
 export interface PrintPreviewCanvasHandle {
@@ -36,6 +37,11 @@ interface Props {
   flowDisplay?: FlowDisplayMode;
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
+  colorMode?: "none" | "flowQ";
+  posInnerColors?: Map<string, string>;
+  posOuterColors?: Map<string, string>;
+  positions?: Position[];
+  showPositions?: boolean;
 }
 
 const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function PrintPreviewCanvas({
@@ -50,6 +56,11 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   flowDisplay = "off",
   infoConfig = null,
   unitsConfig = DEFAULT_UNITS_CONFIG,
+  colorMode = "none",
+  posInnerColors,
+  posOuterColors,
+  positions = [],
+  showPositions = true,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -126,7 +137,6 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
     renderCanvas({
       ctx, width, height,
       nodes, branches, horizons, horizonMap,
@@ -144,17 +154,25 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       animOffset: 0,
       infoConfig,
       unitsConfig,
+      colorMode,
+      posInnerColors,
+      posOuterColors,
+      printMode: true,
     });
   }, [nodes, branches, horizons, horizonMap, visibleBranches,
       projNodes, projNodesMap, proj, activeView,
       is3D, zScale, width, height,
       branchWidth, branchBorder, thinLines, colorByHorizon,
-      flowDisplay, infoConfig, unitsConfig]);
+      flowDisplay, infoConfig, unitsConfig,
+      colorMode, posInnerColors, posOuterColors]);
 
   useImperativeHandle(ref, () => ({
     getFitView: () => fitView,
     toDataURL: () => canvasRef.current?.toDataURL("image/png") ?? "",
   }), [fitView]);
+
+  // SVG-проекция позиций для печати
+  const projOpts = useMemo<ProjOptions>(() => activeView, [activeView]);
 
   return (
     <div style={{ position: "relative", width, height, flexShrink: 0 }}>
@@ -174,6 +192,28 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           width={width}
           height={height}
         />
+      )}
+      {/* Маркеры позиций (ПЛА) */}
+      {showPositions && positions.length > 0 && (
+        <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
+          {positions.map(pos => {
+            const sx = pos.x != null ? (() => {
+              const p = project3D({ x: pos.x, y: pos.y, z: (pos.z ?? 0) * zScale }, projOpts);
+              return { sx: p.sx, sy: p.sy };
+            })() : null;
+            if (!sx) return null;
+            const r = 18;
+            return (
+              <g key={pos.id} transform={`translate(${sx.sx},${sx.sy})`}>
+                <circle r={r} fill={pos.color} stroke={pos.borderColor ?? "#1f2937"} strokeWidth={2} opacity={0.92} />
+                <text textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700}
+                  fill={pos.textColor ?? "#000000"} style={{ userSelect: "none" }}>
+                  {pos.number}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
       )}
     </div>
   );

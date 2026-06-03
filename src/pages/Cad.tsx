@@ -7020,6 +7020,19 @@ export default function CadPage() {
         unitsConfig={unitsConfig}
         zScale={zScale}
         getSvgRaw={() => getSvgRef.current?.() ?? ""}
+        colorMode={colorMode}
+        posInnerColors={posColorInner && positions.length > 0 ? (() => {
+          const m = new Map<string, string>();
+          positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));
+          return m.size > 0 ? m : undefined;
+        })() : undefined}
+        posOuterColors={posColorOuter && positions.length > 0 ? (() => {
+          const m = new Map<string, string>();
+          positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));
+          return m.size > 0 ? m : undefined;
+        })() : undefined}
+        positions={positions}
+        showPositions={showPositions}
       />
     )}
 

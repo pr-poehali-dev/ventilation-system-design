@@ -60,6 +60,14 @@ export interface CanvasRenderOptions {
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /** Карта branchId → зона поражения взрывом {hazardLevel} */
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  /** Режим цвета: none = по скорости, flowQ = по расходу */
+  colorMode?: "none" | "flowQ";
+  /** Карта branchId → цвет позиции внутри (ПЛА) */
+  posInnerColors?: Map<string, string>;
+  /** Карта branchId → цвет позиции снаружи (ПЛА) */
+  posOuterColors?: Map<string, string>;
+  /** Режим печати: белый фон без сетки */
+  printMode?: boolean;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -161,6 +169,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
+    colorMode = "none", posInnerColors, posOuterColors, printMode = false,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
@@ -174,7 +183,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   const lodNodes    = sc >= 0.03;
 
   // ─── Фон / сетка ──────────────────────────────────────────────────────────
-  if (is3D) {
+  if (printMode) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+  } else if (is3D) {
     ctx.fillStyle = "#f5f5f4";
     ctx.fillRect(0, 0, width, height);
     drawGrid3D(ctx, proj);
@@ -210,10 +222,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const midX = (from.sx + to.sx) / 2;
     const midY = (from.sy + to.sy) / 2;
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
+    const posInnerCol = posInnerColors?.get(b.id);
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
       : (colorByHorizon && horizonColor) ? horizonColor
+      : colorMode === "flowQ" ? (Q > 0 ? velocityColor(V) : "#ffffff")
+      : posInnerColors ? (posInnerCol ?? "#ffffff")
+      : colorMode === "none" ? "#ffffff"
       : Q > 0    ? velocityColor(V)
       : "#ffffff";
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
@@ -233,6 +249,24 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       sxA, syA, sxB, syB, midX, midY, color, w, bwBorder, bw,
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle };
   };
+
+  // ── ПРОХОД 0: ПЛА цвет снаружи — под border и fill ───────────────────────
+  if (posOuterColors) {
+    for (const { b, from, to } of sorted) {
+      const p = branchParams(b, from, to);
+      if (!p) continue;
+      const col = posOuterColors.get(b.id);
+      if (!col) continue;
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = p.w + p.bwBorder * 2 + 6;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.7;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
+      ctx.restore();
+    }
+  }
 
   // ── ПРОХОД 1: только border (обводка) всех ветвей ─────────────────────────
   // Рисуем border отдельным проходом ДО всех fill, чтобы fill соседних ветвей
