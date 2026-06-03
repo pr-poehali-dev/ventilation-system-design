@@ -5112,31 +5112,9 @@ export default function CadPage() {
                                       {hasPl && pl.visible ? "ВКЛ" : "ВЫКЛ"}
                                     </span>
                                   </button>
-                                  {/* Настройки слоя (если включён) */}
+                                  {/* Минимальные настройки слоя (если включён) */}
                                   {hasPl && pl.visible && (
                                     <div className="px-2 pb-2 pt-1 space-y-1" style={{ borderTop: "1px solid #ede9fe" }}>
-                                      {[
-                                        { label: "Заголовок", key: "title" as const },
-                                        { label: "Масштаб", key: "scale" as const },
-                                        { label: "Организация", key: "orgName" as const },
-                                        { label: "Должность", key: "approverTitle" as const },
-                                        { label: "ФИО", key: "approverName" as const },
-                                        { label: "Год", key: "year" as const },
-                                        { label: "Период", key: "period" as const },
-                                        { label: "Разработал", key: "developer" as const },
-                                        { label: "Проверил", key: "checker" as const },
-                                        { label: "Лист №", key: "sheetNum" as const },
-                                        { label: "Всего листов", key: "sheetTotal" as const },
-                                      ].map(({ label, key }) => (
-                                        <div key={key} className="flex items-center gap-1">
-                                          <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 72 }}>{label}</span>
-                                          <input
-                                            className="cad-input flex-1 min-w-0"
-                                            value={pl[key]}
-                                            onChange={(e) => updatePl({ [key]: e.target.value })}
-                                          />
-                                        </div>
-                                      ))}
                                       <div className="flex gap-2 pt-0.5">
                                         <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
                                         <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
