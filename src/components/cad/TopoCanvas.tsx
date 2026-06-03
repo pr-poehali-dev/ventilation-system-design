@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   type TopoNode, type TopoBranch, type ProjOptions, type ViewPreset, type WorkPlane,
-  type Horizon,
+  type Horizon, type PaperFormat,
+  PAPER_SIZES_MM,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
@@ -90,6 +91,10 @@ interface Props {
   editingHorizonImageId?: string | null;
   /** Колбэк изменения углов подложки горизонта (после drag). */
   onHorizonImageBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
+  /** ID горизонта, у которого редактируются bounds слоя печати (тащить рамку/углы). */
+  editingPrintLayerId?: string | null;
+  /** Колбэк изменения bounds слоя печати горизонта. */
+  onPrintLayerBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
   /** Контекстное меню по правой кнопке на узле (id узла, экранные координаты). */
   onNodeContextMenu?: (id: string, screenX: number, screenY: number) => void;
   /** Контекстное меню по правой кнопке на ветви (id ветви, экранные координаты). */
@@ -195,6 +200,7 @@ export default function TopoCanvas(props: Props) {
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId,
     editingHorizonImageId, onHorizonImageBoundsChange,
+    editingPrintLayerId, onPrintLayerBoundsChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
     selectedNodeIds, onNodeMultiSelect,
@@ -317,6 +323,10 @@ export default function TopoCanvas(props: Props) {
   // Перетаскивание угла подложки горизонта: какой именно угол тащим.
   const [draggingCorner, setDraggingCorner] = useState<
     { horizonId: string; corner: "tl" | "tr" | "bl" | "br" } | null
+  >(null);
+  // Перетаскивание рамки слоя печати: corner = угол, "move" = всё тело рамки.
+  const [draggingPrintCorner, setDraggingPrintCorner] = useState<
+    { horizonId: string; corner: "tl" | "tr" | "bl" | "br" | "move"; startWx: number; startWy: number; startBounds: { x1: number; y1: number; x2: number; y2: number } } | null
   >(null);
 
   // При смене инструмента сбрасываем «начало ветви» — иначе возникнут призрачные сегменты.
@@ -1052,6 +1062,36 @@ export default function TopoCanvas(props: Props) {
       }
       onHorizonImageBoundsChange(draggingCorner.horizonId, b);
     }
+    // ── Перетаскивание рамки/угла слоя печати ──────────────────────────────
+    if (draggingPrintCorner && onPrintLayerBoundsChange) {
+      const hz = horizons?.find((hh) => hh.id === draggingPrintCorner.horizonId);
+      if (!hz || !hz.printLayer) return;
+      const plane: WorkPlane = { axis: "z", value: hz.z };
+      const wp = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
+      if (!wp) return;
+      const sb = draggingPrintCorner.startBounds;
+      const fmt = hz.printLayer.paperFormat ?? "A3";
+      const ori = hz.printLayer.orientation ?? "landscape";
+      const mm = PAPER_SIZES_MM[fmt as PaperFormat];
+      const aspect = ori === "landscape" ? mm.w / mm.h : mm.h / mm.w;
+      if (draggingPrintCorner.corner === "move") {
+        const dx = wp.x - draggingPrintCorner.startWx;
+        const dy = wp.y - draggingPrintCorner.startWy;
+        onPrintLayerBoundsChange(hz.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
+      } else {
+        const b = { ...sb };
+        const w0 = sb.x2 - sb.x1;
+        const h0 = sb.y2 - sb.y1;
+        switch (draggingPrintCorner.corner) {
+          case "br": { const w = wp.x - sb.x1; const nw = Math.max(50, w); b.x2 = sb.x1 + nw; b.y1 = sb.y2 - nw / aspect; break; }
+          case "bl": { const w = sb.x2 - wp.x; const nw = Math.max(50, w); b.x1 = sb.x2 - nw; b.y1 = sb.y2 - nw / aspect; break; }
+          case "tr": { const w = wp.x - sb.x1; const nw = Math.max(50, w); b.x2 = sb.x1 + nw; b.y2 = sb.y1 + nw / aspect; break; }
+          case "tl": { const w = sb.x2 - wp.x; const nw = Math.max(50, w); b.x1 = sb.x2 - nw; b.y2 = sb.y1 + nw / aspect; break; }
+        }
+        void w0; void h0;
+        onPrintLayerBoundsChange(hz.id, b);
+      }
+    }
   };
 
   const onMouseUp = () => {
@@ -1059,6 +1099,7 @@ export default function TopoCanvas(props: Props) {
     setRotStart(null);
     setDraggingNode(null);
     setDraggingCorner(null);
+    setDraggingPrintCorner(null);
   };
 
   // Зум через колёсико полностью обрабатывается нативным listener выше.
@@ -1153,6 +1194,127 @@ export default function TopoCanvas(props: Props) {
   };
 
   // Вертикальные направляющие — убраны (создавали сотни пунктирных линий при 3D-виде CSV-схем)
+
+  // ─── Рендер шаблонов слоя печати горизонтов ──────────────────────────────
+  const renderPrintLayers = () => (horizons ?? []).map((h) => {
+    if (!h.printLayer?.visible) return null;
+    const pl = h.printLayer;
+    const fmt = (pl.paperFormat ?? "A3") as PaperFormat;
+    const ori = pl.orientation ?? "landscape";
+    const mm = PAPER_SIZES_MM[fmt];
+    const aspect = ori === "landscape" ? mm.w / mm.h : mm.h / mm.w;
+    const isEditing = editingPrintLayerId === h.id;
+
+    // Вычисляем bounds в мировых координатах
+    let wb: { x1: number; y1: number; x2: number; y2: number };
+    if (pl.bounds) {
+      wb = pl.bounds;
+    } else {
+      const hNodeIds = new Set<string>();
+      branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
+      const hNodes = nodes.filter(n => hNodeIds.has(n.id));
+      if (hNodes.length === 0) return null;
+      const wxs = hNodes.map(n => n.x);
+      const wys = hNodes.map(n => n.y);
+      const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
+      const wmy = Math.min(...wys), wMy = Math.max(...wys);
+      const ww = wMx - wmx, wh = wMy - wmy;
+      const pad = Math.max(ww, wh) * 0.12 + 10;
+      const cx = (wmx + wMx) / 2, cy = (wmy + wMy) / 2;
+      const fitW = ww + pad * 2;
+      const fitH = wh + pad * 2;
+      let rw2 = fitW, rh2 = fitW / aspect;
+      if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
+      wb = { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 };
+    }
+
+    const pTL = project3D({ x: wb.x1, y: wb.y2, z: h.z }, proj);
+    const pTR = project3D({ x: wb.x2, y: wb.y2, z: h.z }, proj);
+    const pBL = project3D({ x: wb.x1, y: wb.y1, z: h.z }, proj);
+    const pBR = project3D({ x: wb.x2, y: wb.y1, z: h.z }, proj);
+    const rx = Math.min(pTL.sx, pBL.sx);
+    const ry = Math.min(pTL.sy, pTR.sy);
+    const rw = Math.max(pTR.sx, pBR.sx) - rx;
+    const rh = Math.max(pBL.sy, pBR.sy) - ry;
+    const inset = Math.max(4, Math.min(rw, rh) * 0.015);
+    const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
+
+    return (
+      <g key={`printlayer-${h.id}`}>
+        {/* Белая подложка */}
+        <rect x={rx} y={ry} width={rw} height={rh} fill="white"
+          style={{ cursor: isEditing ? "move" : "default" }}
+          onMouseDown={isEditing ? (e) => {
+            e.stopPropagation();
+            const plane: WorkPlane = { axis: "z", value: h.z };
+            const svgEl = (e.target as SVGElement).closest("svg");
+            if (!svgEl) return;
+            const rect = svgEl.getBoundingClientRect();
+            const csx = e.clientX - rect.left;
+            const csy = e.clientY - rect.top;
+            const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
+            if (!wp) return;
+            setDraggingPrintCorner({ horizonId: h.id, corner: "move", startWx: wp.x, startWy: wp.y, startBounds: wb });
+          } : undefined}
+        />
+        {/* Внешняя рамка */}
+        <rect x={rx} y={ry} width={rw} height={rh}
+          fill="none" stroke="#1a1a1a" strokeWidth={2}
+          style={{ pointerEvents: "none" }} />
+        {/* Внутренняя рамка */}
+        <rect x={rx + inset} y={ry + inset}
+          width={rw - inset * 2} height={rh - inset * 2}
+          fill="none" stroke="#1a1a1a" strokeWidth={0.8}
+          style={{ pointerEvents: "none" }} />
+        {/* Метка формата */}
+        <text x={rx + inset + 4} y={ry + inset + titleFontSize * 0.8}
+          fontSize={titleFontSize * 0.75} fontFamily="Arial, sans-serif"
+          fill="#9ca3af" style={{ pointerEvents: "none" }}>
+          {fmt} {ori === "landscape" ? "альбом" : "книжная"}
+        </text>
+        {/* Заголовок */}
+        {pl.title && (
+          <text x={rx + rw / 2} y={ry + inset + titleFontSize + 4}
+            textAnchor="middle" dominantBaseline="hanging"
+            fontSize={titleFontSize}
+            fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111"
+            style={{ pointerEvents: "none" }}>
+            {pl.title}
+          </text>
+        )}
+        {/* Цветная рамка-подсветка в режиме редактирования */}
+        {isEditing && (
+          <rect x={rx - 1} y={ry - 1} width={rw + 2} height={rh + 2}
+            fill="none" stroke="#7c3aed" strokeWidth={2} strokeDasharray="8 4"
+            style={{ pointerEvents: "none" }} />
+        )}
+        {/* Ручки угловые */}
+        {isEditing && ([
+          { key: "tl" as const, sx: pTL.sx, sy: pTL.sy, cur: "nw-resize" },
+          { key: "tr" as const, sx: pTR.sx, sy: pTR.sy, cur: "ne-resize" },
+          { key: "bl" as const, sx: pBL.sx, sy: pBL.sy, cur: "sw-resize" },
+          { key: "br" as const, sx: pBR.sx, sy: pBR.sy, cur: "se-resize" },
+        ].map(c => (
+          <g key={c.key} style={{ cursor: c.cur }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              const plane: WorkPlane = { axis: "z", value: h.z };
+              const svgEl = (e.target as SVGElement).closest("svg");
+              if (!svgEl) return;
+              const rect = svgEl.getBoundingClientRect();
+              const csx = e.clientX - rect.left;
+              const csy = e.clientY - rect.top;
+              const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
+              if (!wp) return;
+              setDraggingPrintCorner({ horizonId: h.id, corner: c.key, startWx: wp.x, startWy: wp.y, startBounds: wb });
+            }}>
+            <circle cx={c.sx} cy={c.sy} r={8} fill="white" stroke="#7c3aed" strokeWidth={2} />
+            <circle cx={c.sx} cy={c.sy} r={3} fill="#7c3aed" />
+          </g>
+        )))}
+      </g>
+    );
+  });
 
   // ─── Автопереключение SVG ↔ Canvas ────────────────────────────────────────
   const useCanvas = visibleBranches.length > CANVAS_THRESHOLD;
@@ -1265,58 +1427,7 @@ export default function TopoCanvas(props: Props) {
         {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
 
         {/* ── ШАБЛОНЫ ПЕЧАТИ ГОРИЗОНТОВ ──────────────────────────────────── */}
-        {/* Белая подложка с рамкой. Bbox = все узлы горизонта + отступ 10% */}
-        {(horizons ?? []).map((h) => {
-          if (!h.printLayer?.visible) return null;
-          // Собираем узлы горизонта (ветви с horizonId === h.id)
-          const hNodeIds = new Set<string>();
-          branches.forEach(b => {
-            if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); }
-          });
-          const hNodes = nodes.filter(n => hNodeIds.has(n.id));
-          if (hNodes.length === 0) return null;
-          // BBox в экранных координатах
-          const pts = hNodes.map(n => project3D({ x: n.x, y: n.y, z: n.z }, proj));
-          const minSx = Math.min(...pts.map(p => p.sx));
-          const maxSx = Math.max(...pts.map(p => p.sx));
-          const minSy = Math.min(...pts.map(p => p.sy));
-          const maxSy = Math.max(...pts.map(p => p.sy));
-          const padX = Math.max(40, (maxSx - minSx) * 0.12);
-          const padY = Math.max(40, (maxSy - minSy) * 0.12);
-          const rx = minSx - padX;
-          const ry = minSy - padY;
-          const rw = maxSx - minSx + padX * 2;
-          const rh = maxSy - minSy + padY * 2;
-          const sw = Math.max(1, view.scale * 0.8); // толщина рамки
-          return (
-            <g key={`printlayer-${h.id}`} style={{ pointerEvents: "none" }}>
-              {/* Белая подложка */}
-              <rect x={rx} y={ry} width={rw} height={rh} fill="white" />
-              {/* Внешняя рамка */}
-              <rect x={rx} y={ry} width={rw} height={rh}
-                fill="none" stroke="#1a1a1a" strokeWidth={sw * 1.8} />
-              {/* Внутренняя рамка (отступ ~5мм в мировых) */}
-              {(() => {
-                const inset = Math.max(6, padX * 0.25);
-                return (
-                  <rect x={rx + inset} y={ry + inset}
-                    width={rw - inset * 2} height={rh - inset * 2}
-                    fill="none" stroke="#1a1a1a" strokeWidth={sw * 0.7} />
-                );
-              })()}
-              {/* Заголовок */}
-              {h.printLayer.title && (
-                <text
-                  x={rx + rw / 2} y={ry + padY * 0.55}
-                  textAnchor="middle" dominantBaseline="middle"
-                  fontSize={Math.max(8, padY * 0.32)}
-                  fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
-                  {h.printLayer.title}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        {renderPrintLayers()}
 
         {/* ── ПОДЛОЖКИ ГОРИЗОНТОВ (PNG/JPG) ─────────────────────────────── */}
         {/* Рисуются ПОД ветвями. Видимость подложки = h.image.visible && h.visible */}
@@ -2751,6 +2862,8 @@ export default function TopoCanvas(props: Props) {
               </g>
             );
           })}
+          {/* Шаблоны слоя печати — поверх УО */}
+          {renderPrintLayers()}
         </svg>
       )}
 

@@ -219,6 +219,18 @@ export interface HorizonImage {
   visible: boolean;
 }
 
+/** Форматы бумаги для слоя печати */
+export type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0";
+
+/** Соотношения сторон форматов (ширина/высота в мм) */
+export const PAPER_SIZES_MM: Record<PaperFormat, { w: number; h: number }> = {
+  A4: { w: 297, h: 210 },
+  A3: { w: 420, h: 297 },
+  A2: { w: 594, h: 420 },
+  A1: { w: 841, h: 594 },
+  A0: { w: 1189, h: 841 },
+};
+
 /** Конфигурация слоя печати горизонта (УО + штамп + оглавление) */
 export interface HorizonPrintLayer {
   /** Слой видим в предпросмотре/при печати */
@@ -249,6 +261,12 @@ export interface HorizonPrintLayer {
   showLegend: boolean;
   /** Показывать штамп */
   showStamp: boolean;
+  /** Формат бумаги */
+  paperFormat: PaperFormat;
+  /** Ориентация: landscape = альбом, portrait = книжная */
+  orientation: "landscape" | "portrait";
+  /** Положение и размер подложки в мировых координатах (м). null = автовычисление из bbox горизонта */
+  bounds?: { x1: number; y1: number; x2: number; y2: number };
 }
 
 export interface Horizon {

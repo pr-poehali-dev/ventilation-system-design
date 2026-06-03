@@ -351,6 +351,8 @@ export default function CadPage() {
   const [activeHorizonId, setActiveHorizonId] = useState<string>("");
   // ID горизонта, у которого пользователь редактирует подложку (тащит углы).
   const [editingHorizonImageId, setEditingHorizonImageId] = useState<string | null>(null);
+  // ID горизонта, у которого пользователь редактирует bounds слоя печати (тащит рамку).
+  const [editingPrintLayerId, setEditingPrintLayerId] = useState<string | null>(null);
   const activeHorizon = horizons.find((h) => h.id === activeHorizonId) ?? null;
   const updateHorizon = (id: string, patch: Partial<Horizon>) =>
     setHorizons((p) => p.map((h) => h.id === id ? { ...h, ...patch } : h));
@@ -370,6 +372,15 @@ export default function CadPage() {
     setHorizons((p) => p.map((h) => {
       if (h.id !== id || !h.image) return h;
       return { ...h, image: { ...h.image, bounds } };
+    }));
+  };
+
+  const setPrintLayerBounds = (
+    id: string, bounds: { x1: number; y1: number; x2: number; y2: number },
+  ) => {
+    setHorizons((p) => p.map((h) => {
+      if (h.id !== id || !h.printLayer) return h;
+      return { ...h, printLayer: { ...h.printLayer, bounds } };
     }));
   };
 
@@ -5089,6 +5100,7 @@ export default function CadPage() {
                                   approverName: "", year: String(new Date().getFullYear()),
                                   period: "", developer: "", checker: "",
                                   sheetNum: "1", sheetTotal: "1", showLegend: true, showStamp: true,
+                                  paperFormat: "A3", orientation: "landscape",
                                   ...patch,
                                 }});
                               return (
@@ -5112,16 +5124,52 @@ export default function CadPage() {
                                       {hasPl && pl.visible ? "ВКЛ" : "ВЫКЛ"}
                                     </span>
                                   </button>
-                                  {/* Минимальные настройки слоя (если включён) */}
+                                  {/* Настройки слоя (если включён) */}
                                   {hasPl && pl.visible && (
-                                    <div className="px-2 pb-2 pt-1 space-y-1" style={{ borderTop: "1px solid #ede9fe" }}>
-                                      <div className="flex gap-2 pt-0.5">
+                                    <div className="px-2 pb-2 pt-1 space-y-1.5" style={{ borderTop: "1px solid #ede9fe" }}>
+                                      {/* Формат бумаги */}
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 52 }}>Формат</span>
+                                        <select className="cad-input flex-1 min-w-0 text-[11px]"
+                                          value={pl.paperFormat ?? "A3"}
+                                          onChange={(e) => updatePl({ paperFormat: e.target.value as import("@/lib/topology").PaperFormat, bounds: undefined })}>
+                                          {(["A4","A3","A2","A1","A0"] as const).map(f => (
+                                            <option key={f} value={f}>{f}</option>
+                                          ))}
+                                        </select>
+                                        <select className="cad-input" style={{ width: 68 }}
+                                          value={pl.orientation ?? "landscape"}
+                                          onChange={(e) => updatePl({ orientation: e.target.value as "landscape"|"portrait", bounds: undefined })}>
+                                          <option value="landscape">Альбом</option>
+                                          <option value="portrait">Книжная</option>
+                                        </select>
+                                      </div>
+                                      {/* УО / Штамп */}
+                                      <div className="flex gap-2">
                                         <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
                                         <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
                                       </div>
+                                      {/* Кнопка редактирования рамки */}
+                                      <button
+                                        className="w-full px-2 py-1 text-[11px] border rounded"
+                                        style={{
+                                          background: editingPrintLayerId === h.id ? "#7c3aed" : "white",
+                                          color: editingPrintLayerId === h.id ? "white" : "#374151",
+                                          borderColor: editingPrintLayerId === h.id ? "#6d28d9" : "#d1d5db",
+                                        }}
+                                        onClick={() => setEditingPrintLayerId(editingPrintLayerId === h.id ? null : h.id)}>
+                                        {editingPrintLayerId === h.id ? "✓ Готово" : "✎ Изменить рамку"}
+                                      </button>
+                                      {/* Сброс рамки — автоподстройка под горизонт */}
+                                      {pl.bounds && (
+                                        <button className="w-full px-2 py-1 text-[11px] border border-gray-200 text-gray-600 rounded hover:bg-gray-50"
+                                          onClick={() => updatePl({ bounds: undefined })}>
+                                          ↺ Авто по горизонту
+                                        </button>
+                                      )}
                                       <button
                                         className="w-full px-2 py-1 text-[11px] border border-red-200 text-red-600 rounded hover:bg-red-50"
-                                        onClick={() => updateHorizon(h.id, { printLayer: undefined })}>
+                                        onClick={() => { updateHorizon(h.id, { printLayer: undefined }); setEditingPrintLayerId(null); }}>
                                         Удалить слой
                                       </button>
                                     </div>
@@ -5795,6 +5843,8 @@ export default function CadPage() {
               onViewStateChange={setSavedViewState}
               editingHorizonImageId={editingHorizonImageId}
               onHorizonImageBoundsChange={setHorizonImageBounds}
+              editingPrintLayerId={editingPrintLayerId}
+              onPrintLayerBoundsChange={setPrintLayerBounds}
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
