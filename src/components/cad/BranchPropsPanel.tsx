@@ -1258,7 +1258,22 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
                     <InlineLabel label="ΔP:">
-                      <ComputedInput value={branch.dP != null ? (() => { const u = getUnit(unitsConfig, "pressure"); return `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}`; })() : "—"} />
+                      <ComputedInput value={(() => {
+                        const u = getUnit(unitsConfig, "pressure");
+                        // Вычисляем R перемычки по той же логике что в расчёте
+                        let rBulk = 0;
+                        if (branch.bulkheadManualAirPerm && (branch.bulkheadCustomAirPerm ?? 0) > 0) {
+                          rBulk = 1 / (branch.bulkheadCustomAirPerm! * branch.bulkheadCustomAirPerm!);
+                        } else if ((branch.bulkheadAirPerm ?? 0) > 0) {
+                          rBulk = 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm);
+                        } else {
+                          rBulk = branch.bulkheadR ?? 0;
+                        }
+                        const Q = branch.flow ?? 0;
+                        const dpCalc = rBulk * Q * Math.abs(Q);
+                        if (rBulk === 0 || Q === 0) return branch.dP ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
+                      })()} />
                     </InlineLabel>
                     {(branch.bulkheadFailurePressure ?? 0) > 0 && (
                       <InlineLabel label="P разр.:">
@@ -1289,7 +1304,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
                     <InlineLabel label="ΔP:">
-                      <ComputedInput value={branch.dP != null ? (() => { const u = getUnit(unitsConfig, "pressure"); return `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}`; })() : "—"} />
+                      <ComputedInput value={(() => {
+                        const u = getUnit(unitsConfig, "pressure");
+                        const q = branch.bulkheadSurveyQ ?? 0;
+                        const dp = branch.bulkheadSurveyDP ?? 0;
+                        const rBulk = q > 0 ? dp / (q * q) : 0;
+                        const Q = branch.flow ?? 0;
+                        const dpCalc = rBulk * Q * Math.abs(Q);
+                        if (rBulk === 0 || Q === 0) return branch.dP ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
+                      })()} />
                     </InlineLabel>
                   </>
                 )}
@@ -1297,7 +1321,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 {/* Режим: Вручную */}
                 {(branch.bulkheadResMode ?? "project") === "manual" && (
                   <>
-                    <InlineLabel label="R:">
+                    <InlineLabel label="R (кМюрг):">
                       <EditInput
                         type="number" step="0.0001"
                         value={branch.bulkheadManualR ?? 0}
@@ -1308,7 +1332,15 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
                     </div>
                     <InlineLabel label="ΔP:">
-                      <ComputedInput value={branch.dP != null ? (() => { const u = getUnit(unitsConfig, "pressure"); return `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}`; })() : "—"} />
+                      <ComputedInput value={(() => {
+                        const u = getUnit(unitsConfig, "pressure");
+                        // R перемычки в Мюрг (bulkheadManualR хранится в кМюрг → × 1000)
+                        const rBulk = (branch.bulkheadManualR ?? 0) * 1e3;
+                        const Q = branch.flow ?? 0;
+                        const dp = rBulk * Q * Math.abs(Q);
+                        if (rBulk === 0 || Q === 0) return branch.dP ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        return `${u.fromBase(dp).toFixed(u.decimals)} ${u.symbol}`;
+                      })()} />
                     </InlineLabel>
                   </>
                 )}
