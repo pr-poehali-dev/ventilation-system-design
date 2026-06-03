@@ -4,6 +4,7 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type TopoNode } from "@/lib/topology";
+import { type Position } from "@/lib/positions";
 
 interface CheckRowProps {
   label: string;
@@ -70,16 +71,25 @@ interface InfoPanelProps {
   onNodeVisibilityChange?: (id: string, visible: boolean) => void;
   onAllNodesVisibility?: (visible: boolean) => void;
   onSelectNode?: (id: string) => void;
+  positions?: Position[];
+  onPositionVisibilityChange?: (id: string, visible: boolean) => void;
+  onPositionBranchesVisibilityChange?: (id: string, branchesVisible: boolean) => void;
+  onAllPositionsVisibility?: (visible: boolean, branchesVisible: boolean) => void;
 }
 
 export default function InfoPanel({
   config, onChange,
   nodes = [], selectedNodeId,
   onNodeVisibilityChange, onAllNodesVisibility, onSelectNode,
+  positions = [],
+  onPositionVisibilityChange,
+  onPositionBranchesVisibilityChange,
+  onAllPositionsVisibility,
 }: InfoPanelProps) {
   const [nodesOpen, setNodesOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [nodeVisOpen, setNodeVisOpen] = useState(false);
+  const [posVisOpen, setPosVisOpen] = useState(true);
   const [preset, setPreset] = useState(0);
 
   const applyPreset = (idx: number) => {
@@ -169,6 +179,102 @@ export default function InfoPanel({
             <CheckRow label="Q CO в начале (Q CO нач.), м³/с" checked={config.branchQCOStart} onChange={set("branchQCOStart")} />
             <CheckRow label="Q CO в конце (Q CO кон.), м³/с" checked={config.branchQCOEnd} onChange={set("branchQCOEnd")} />
           </div>
+        )}
+
+        {/* ─── Позиции ПЛА ─── */}
+        {positions.length > 0 && onPositionVisibilityChange && (
+          <>
+            <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
+              style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
+              <button onClick={() => setPosVisOpen((v) => !v)}
+                className="flex items-center gap-1 flex-1 text-left">
+                <Icon name={posVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
+                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
+                  Позиции ПЛА
+                </span>
+              </button>
+              {onAllPositionsVisibility && (
+                <div className="flex gap-1 flex-shrink-0">
+                  <button onClick={() => onAllPositionsVisibility(true, true)}
+                    className="text-[10px] px-1 rounded hover:bg-green-100 text-green-700 border border-green-300">
+                    вкл
+                  </button>
+                  <button onClick={() => onAllPositionsVisibility(false, false)}
+                    className="text-[10px] px-1 rounded hover:bg-red-50 text-red-600 border border-red-200">
+                    выкл
+                  </button>
+                </div>
+              )}
+            </div>
+            {posVisOpen && (
+              <div>
+                {positions.map((pos) => {
+                  const posVis = pos.visible !== false;
+                  const brVis = pos.branchesVisible !== false;
+                  const hasBranches = pos.branchIds.length > 0;
+                  return (
+                    <div key={pos.id}
+                      style={{
+                        borderBottom: "1px solid #f0f0f0",
+                        background: posVis ? "transparent" : "#fafafa",
+                        paddingTop: 2, paddingBottom: 2,
+                      }}>
+                      {/* Строка позиции */}
+                      <div className="flex items-center gap-1.5 hover:bg-blue-50 select-none"
+                        style={{ paddingLeft: 8, paddingRight: 4 }}>
+                        <input
+                          type="checkbox"
+                          checked={posVis}
+                          onChange={(e) => onPositionVisibilityChange!(pos.id, e.target.checked)}
+                          className="w-3 h-3 flex-shrink-0"
+                          style={{ accentColor: pos.color }}
+                        />
+                        {/* Цветовой кружок */}
+                        <div className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
+                          style={{
+                            width: 16, height: 16,
+                            background: posVis ? pos.color : "#ccc",
+                            border: `1.5px solid ${posVis ? pos.borderColor : "#bbb"}`,
+                            color: "#fff", fontSize: 8,
+                            opacity: posVis ? 1 : 0.5,
+                          }}>
+                          {pos.number}
+                        </div>
+                        <span className="text-[11px] flex-1 truncate"
+                          style={{ color: posVis ? "#1a3a6b" : "#aaa", fontWeight: 500 }}
+                          title={pos.name || `Позиция ${pos.number}`}>
+                          {pos.name || `Позиция ${pos.number}`}
+                        </span>
+                        {pos.accidentType && pos.accidentType !== "Нет" && (
+                          <span className="text-[9px] flex-shrink-0 px-1 rounded"
+                            style={{ background: "#f3f4f6", color: "#6b7280" }}>
+                            {pos.accidentType}
+                          </span>
+                        )}
+                      </div>
+                      {/* Строка ветвей (если есть привязанные) */}
+                      {hasBranches && onPositionBranchesVisibilityChange && (
+                        <div className="flex items-center gap-1.5 hover:bg-purple-50 select-none"
+                          style={{ paddingLeft: 24, paddingRight: 4, paddingTop: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={brVis}
+                            onChange={(e) => onPositionBranchesVisibilityChange!(pos.id, e.target.checked)}
+                            className="w-3 h-3 flex-shrink-0"
+                            style={{ accentColor: "#7c3aed" }}
+                          />
+                          <Icon name="GitBranch" size={10} />
+                          <span className="text-[10px]" style={{ color: brVis ? "#374151" : "#aaa" }}>
+                            Ветви ({pos.branchIds.length})
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
 
         {/* ─── Видимость узлов (как в Аэросети) ─── */}

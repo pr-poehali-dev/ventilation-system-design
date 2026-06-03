@@ -6178,6 +6178,7 @@ export default function CadPage() {
                 if (!posColorInner || positions.length === 0) return undefined;
                 const map = new Map<string, string>();
                 positions.forEach(pos => {
+                  if (pos.branchesVisible === false) return;
                   pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
                 });
                 return map.size > 0 ? map : undefined;
@@ -6186,6 +6187,7 @@ export default function CadPage() {
                 if (!posColorOuter || positions.length === 0) return undefined;
                 const map = new Map<string, string>();
                 positions.forEach(pos => {
+                  if (pos.branchesVisible === false) return;
                   pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
                 });
                 return map.size > 0 ? map : undefined;
@@ -6397,6 +6399,7 @@ export default function CadPage() {
 
                   {/* ── Выноски ── */}
                   {positions.map((pos) => {
+                    if (pos.visible === false) return null;
                     const pz = pos.z ?? 0;
                     const pm = proj(pos.x, pos.y, pz);
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
@@ -6494,6 +6497,7 @@ export default function CadPage() {
 
                   {/* ── Маркеры позиций ── */}
                   {positions.map((pos) => {
+                    if (pos.visible === false) return null;
                     const { sx, sy } = proj(pos.x, pos.y, pos.z ?? 0);
                     const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
@@ -6881,6 +6885,16 @@ export default function CadPage() {
                   onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
                   onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
                   onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
+                  positions={positions}
+                  onPositionVisibilityChange={(id, visible) =>
+                    setPositions((p) => p.map((pos) => pos.id === id ? { ...pos, visible } : pos))
+                  }
+                  onPositionBranchesVisibilityChange={(id, branchesVisible) =>
+                    setPositions((p) => p.map((pos) => pos.id === id ? { ...pos, branchesVisible } : pos))
+                  }
+                  onAllPositionsVisibility={(visible, branchesVisible) =>
+                    setPositions((p) => p.map((pos) => ({ ...pos, visible, branchesVisible })))
+                  }
                 />
               </div>
 

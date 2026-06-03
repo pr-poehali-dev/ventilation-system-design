@@ -33,6 +33,9 @@ export interface Position {
   // Привязка конца выноски к ветви (как УО): branchId + t (0..1 вдоль ветви)
   leaderBranchId: string | null;
   leaderT: number | null;
+  // ─── Видимость (управляется из панели информации) ────────
+  visible?: boolean;         // видимость маркера на схеме (true по умолчанию)
+  branchesVisible?: boolean; // видимость привязанных ветвей (true по умолчанию)
 }
 
 export function makePosition(partial?: Partial<Position>): Position {
