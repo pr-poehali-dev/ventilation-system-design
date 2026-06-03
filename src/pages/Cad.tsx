@@ -5641,6 +5641,7 @@ export default function CadPage() {
               onRegisterCanvasEl={(el) => { liveCanvasRef.current = el; }}
               onRegisterSvgEl={(el) => { liveSvgRef.current = el; }}
               restoreView={savedViewToRestore}
+              onRestoreViewDone={() => setSavedViewToRestore(null)}
               onViewStateChange={setSavedViewState}
               editingHorizonImageId={editingHorizonImageId}
               onHorizonImageBoundsChange={setHorizonImageBounds}

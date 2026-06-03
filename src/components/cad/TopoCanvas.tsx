@@ -82,6 +82,8 @@ interface Props {
   focusBranchId?: string | null;
   /** Восстановить конкретный вид (при открытии файла с сохранённым view) */
   restoreView?: { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number } | null;
+  /** Колбэк: view успешно восстановлен из файла — родитель должен обнулить restoreView */
+  onRestoreViewDone?: () => void;
   /** Колбэк: сообщать наружу текущий полный вид (для сохранения в файл) */
   onViewStateChange?: (v: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number }) => void;
   /** ID горизонта, у которого можно редактировать подложку (тащить углы). */
@@ -198,7 +200,7 @@ export default function TopoCanvas(props: Props) {
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
     pendingSymbolTypeId, onPendingSymbolPlace,
-    restoreView, onViewStateChange,
+    restoreView, onRestoreViewDone, onViewStateChange,
     unitsConfig = DEFAULT_UNITS_CONFIG,
     onBranchLabelOffset,
     onRegisterGetSvg,
@@ -315,8 +317,11 @@ export default function TopoCanvas(props: Props) {
   useEffect(() => { setBranchFrom(null); }, [tool]);
 
   // ─── ВОССТАНОВЛЕНИЕ СОХРАНЁННОГО ВИДА ───────────────────────────────
+  // restoredViewNonce: когда view восстановлен из файла — блокируем fitToScreen
+  const restoredViewNonce = useRef<number>(0);
   useEffect(() => {
     if (!restoreView) return;
+    restoredViewNonce.current = Date.now();
     setView((v) => ({
       scale: restoreView.scale ?? v.scale,
       offsetX: restoreView.offsetX ?? v.offsetX,
@@ -324,8 +329,8 @@ export default function TopoCanvas(props: Props) {
       azimuth: restoreView.azimuth ?? v.azimuth,
       elevation: restoreView.elevation ?? v.elevation,
     }));
-     
-  }, [restoreView]);
+    onRestoreViewDone?.();
+  }, [restoreView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Синхронизируем viewRef — всегда актуальное значение для нативных listeners
   useEffect(() => { viewRef.current = view; });
@@ -359,6 +364,8 @@ export default function TopoCanvas(props: Props) {
     if (!fitToScreenNonce) return;
     if (nodes.length === 0) return;
     if (size.w < 50 || size.h < 50) return;
+    // Если view был восстановлен из файла менее 2 секунд назад — не перезаписываем
+    if (restoredViewNonce.current && (Date.now() - restoredViewNonce.current) < 2000) return;
     // Проецируем узлы при масштабе 1 и offset(0,0) — получаем "мировые экранные" координаты
     const tmpProj: ProjOptions = {
       scale: 1, offsetX: 0, offsetY: 0,
