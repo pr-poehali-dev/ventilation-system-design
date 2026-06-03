@@ -5197,8 +5197,7 @@ export default function CadPage() {
                       Скрыть все
                     </button>
                   </div>
-                  <CadCheckbox checked={colorByHorizon} onChange={setColorByHorizon}
-                    label="Окрашивать ветви по цвету горизонта" />
+
                 </FrameGroup>
               </div>
             )}
