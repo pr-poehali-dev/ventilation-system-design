@@ -74,6 +74,7 @@ export default function SchemaSymbolsOverlay({
 
         const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
+        const isDestroyed = isBulkheadSym && (brForSym?.bulkheadDestroyedByExplosion ?? false);
 
         const isBulkhead = isBulkheadSym;
 
@@ -83,14 +84,16 @@ export default function SchemaSymbolsOverlay({
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
           const tid = sym.typeId;
 
-          const fill  = tid.includes("concrete") ? "#4caf50"
+          const fill  = isDestroyed ? "#ff4444"
+            : tid.includes("concrete") ? "#4caf50"
             : tid.includes("wood")     ? "#ffd600"
             : tid.includes("brick")    ? "#ff9800"
             : tid.includes("metal")    ? "#9c27b0"
             : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
             : (tid === "barrier")      ? "#555"
             : "white";
-          const stroke = tid.includes("concrete") ? "#1b5e20"
+          const stroke = isDestroyed ? "#8b0000"
+            : tid.includes("concrete") ? "#1b5e20"
             : tid.includes("wood")     ? "#e65100"
             : tid.includes("brick")    ? "#bf360c"
             : tid.includes("metal")    ? "#4a148c"
@@ -256,19 +259,46 @@ export default function SchemaSymbolsOverlay({
             )}
 
             {/* ⚡ Маркер разрушенной перемычки */}
-            {isBulkhead && hasBranchPts && (() => {
-              const br = branches.find(b => b.id === sym.branchId);
-              if (!br?.bulkheadDestroyedByExplosion) return null;
+            {isDestroyed && hasBranchPts && (() => {
+              const br = brForSym;
               const cx = px, cy = py;
-              const r = Math.max(6, SZ * 0.55);
-              const lw = Math.max(2, SZ * 0.18);
+              const r = Math.max(8, SZ * 0.7);
+              const lw = Math.max(2.5, SZ * 0.22);
+              // Угол ветви для ориентации «разрыва»
+              const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+              const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+              const fp = br?.bulkheadFailurePressure;
+              const fpText = fp && fp > 0 ? `${fp} МПа` : null;
               return (
                 <g>
-                  <circle cx={cx} cy={cy} r={r + 3} fill="#fef08a" opacity={0.85} stroke="#ca8a04" strokeWidth={1} />
-                  <line x1={cx - r * 0.65} y1={cy - r * 0.65} x2={cx + r * 0.65} y2={cy + r * 0.65}
-                    stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
-                  <line x1={cx + r * 0.65} y1={cy - r * 0.65} x2={cx - r * 0.65} y2={cy + r * 0.65}
-                    stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+                  {/* Красное свечение вокруг — «взрыв» */}
+                  <circle cx={cx} cy={cy} r={r + 8} fill="#ef4444" opacity={0.18} />
+                  <circle cx={cx} cy={cy} r={r + 4} fill="#ef4444" opacity={0.28} />
+                  {/* Основной круг: жёлто-красный */}
+                  <circle cx={cx} cy={cy} r={r}
+                    fill="#fef08a" stroke="#dc2626" strokeWidth={Math.max(2, lw * 0.6)} opacity={0.95} />
+                  {/* Зубчатый разрыв вдоль оси ветви (zigzag) */}
+                  <g transform={`translate(${cx},${cy}) rotate(${brAngle})`}>
+                    <polyline
+                      points={`${-r * 0.9},0 ${-r * 0.45},${-r * 0.35} ${0},${r * 0.35} ${r * 0.45},${-r * 0.35} ${r * 0.9},0`}
+                      fill="none" stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" strokeLinejoin="round" />
+                  </g>
+                  {/* Подпись «РАЗР.» над маркером */}
+                  <text x={cx} y={cy - r - 5}
+                    textAnchor="middle" fontSize={Math.max(8, SZ * 0.38)}
+                    fontWeight="bold" fontFamily="sans-serif"
+                    fill="#dc2626" stroke="white" strokeWidth={2} paintOrder="stroke">
+                    РАЗР.
+                  </text>
+                  {/* Давление разрушения под маркером */}
+                  {fpText && (
+                    <text x={cx} y={cy + r + Math.max(10, SZ * 0.45)}
+                      textAnchor="middle" fontSize={Math.max(7, SZ * 0.3)}
+                      fontFamily="sans-serif" fill="#7f1d1d"
+                      stroke="white" strokeWidth={1.5} paintOrder="stroke">
+                      {fpText}
+                    </text>
+                  )}
                 </g>
               );
             })()}
