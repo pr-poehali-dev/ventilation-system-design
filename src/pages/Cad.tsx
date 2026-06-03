@@ -686,8 +686,8 @@ export default function CadPage() {
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
-  // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха
-  const [colorMode, setColorMode] = useState<"none" | "flowQ">("none");
+  // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха, horizon = по цвету горизонта
+  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "horizon">("none");
   // Настройки шкалы расхода (мин/макс, цвет)
   const [flowColorMin, setFlowColorMin] = useState(0);
   const [flowColorMax, setFlowColorMax] = useState(75);
@@ -1471,7 +1471,7 @@ export default function CadPage() {
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
-    if (data.colorByHorizon !== undefined) setColorByHorizon(data.colorByHorizon as boolean);
+    if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); if (data.colorByHorizon) setColorMode("horizon"); }
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
     if (data.zScale !== undefined) setZScale(data.zScale as number);
@@ -5503,12 +5503,13 @@ export default function CadPage() {
             {/* ── Режим цветовой заливки ── */}
             <select
               value={colorMode}
-              onChange={e => setColorMode(e.target.value as "none" | "flowQ")}
+              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "horizon")}
               className="h-6 text-[11px] px-1 rounded"
               style={{ border: "1px solid #d0d0d0", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
               title="Режим цветовой заливки ветвей">
               <option value="none">— Заливка выкл</option>
               <option value="flowQ">Расход воздуха</option>
+              <option value="horizon">Цвет горизонта</option>
             </select>
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
@@ -5825,7 +5826,7 @@ export default function CadPage() {
               branchWidth={branchWidth}
               branchBorder={branchBorder}
               thinLines={thinLines}
-              colorByHorizon={colorByHorizon}
+              colorByHorizon={colorMode === "horizon"}
               showFlowArrows={showFlowArrows}
               scaleOverride={viewScale}
               onScaleChange={setViewScale}
