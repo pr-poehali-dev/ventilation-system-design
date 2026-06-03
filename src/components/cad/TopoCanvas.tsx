@@ -1339,6 +1339,26 @@ export default function TopoCanvas(props: Props) {
           const lodArrows    = view.scale >= 0.15;  // стрелки потока
           const lodLabels    = view.scale >= 0.04;  // метки с цифрами
           const lodBorder    = view.scale >= 0.10;  // обводка линий
+          // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
+          // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
+          const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {
+            const from = projNodesMap.get(b.fromId);
+            const to   = projNodesMap.get(b.toId);
+            if (!from || !to) return null;
+            const col = posOuterColors.get(b.id);
+            if (!col) return null;
+            const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+            const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
+            const w = thinLines ? 1 : bw;
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+            return (
+              <line key={`posOuter-${b.id}`}
+                x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                stroke={col} strokeWidth={w + borderW * 2 + 6}
+                strokeLinecap="round" opacity="0.7" />
+            );
+          }) : null;
+
           // ── ПРОХОД 1: только border всех ветвей ──────────────────────────
           // Рисуем все обводки сначала, чтобы fill соседних ветвей перекрывал
           // торцы border — схема выглядит цельной без разрывов в узлах
@@ -1425,11 +1445,13 @@ export default function TopoCanvas(props: Props) {
           const isDead = b.isDead ?? false;
           const isLeakage = b.isLeakage ?? false;
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
+          const posInnerColEarly = posInnerColors?.get(b.id);
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
             : isLeakage ? "#f97316"
             : overV ? "#dc2626"
             : (colorByHorizon && horizonColor) ? horizonColor
             : colorMode === "flowQ" ? flowQColor(Math.abs(Q))
+            : posInnerColors ? (posInnerColEarly ?? "#ffffff")
             : Q > 0 ? velocityColor(V)
             : "#ffffff";
 
@@ -1457,9 +1479,6 @@ export default function TopoCanvas(props: Props) {
 
           // ── Подсветка в F3-режиме привязки ────────────────────────────────
           const posBindInfo = branchPositionColors?.get(b.id);
-          // ── ПЛА: цвет позиции по ветви ────────────────────────────────────
-          const posInnerCol = posInnerColors?.get(b.id);
-          const posOuterCol = posOuterColors?.get(b.id);
           // ── Подсветка задымления от пожара ────────────────────────────────
           const fireSeg = branchFireColors?.get(b.id);
           // ── Подсветка зон взрыва ───────────────────────────────────────────
@@ -1494,16 +1513,7 @@ export default function TopoCanvas(props: Props) {
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                   stroke="#f59e0b" strokeWidth={w + 8} strokeLinecap="round" opacity="0.35" />
               )}
-              {/* ПЛА: окраска снаружи выработки */}
-              {posOuterCol && (
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke={posOuterCol} strokeWidth={w + 10} strokeLinecap="round" opacity="0.5" />
-              )}
-              {/* ПЛА: окраска внутри выработки */}
-              {posInnerCol && (
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke={posInnerCol} strokeWidth={Math.max(w - 2, 1)} strokeLinecap="round" opacity="0.75" />
-              )}
+
               {/* Подсветка F3-режима: привязанные ярко, непривязанные тускло */}
               {branchBindMode && posBindInfo && posBindInfo.bound && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
@@ -1709,7 +1719,7 @@ export default function TopoCanvas(props: Props) {
             </g>
           );
         });
-          return <>{borderPass}{fillPass}</>;
+          return <>{posOuterPass}{borderPass}{fillPass}</>;
         })()}
 
         {/* Превью создания ветви */}
