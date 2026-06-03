@@ -1722,13 +1722,31 @@ export default function CadPage() {
               }
               return sum + r;
             }, 0);
+            // Если перемычка задана через вкладку "Перемычка" ветви (без символа на схеме) —
+            // добавляем её R напрямую из полей ветви
+            const rBranchBulkhead = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
+              const mode = b.bulkheadResMode ?? "project";
+              if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3;
+              if (mode === "survey") {
+                const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
+                return q > 0 ? dp / (q * q) : 0;
+              }
+              // project: воздухопроницаемость вручную
+              if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
+                return 1 / (b.bulkheadCustomAirPerm! * b.bulkheadCustomAirPerm!);
+              // project: воздухопроницаемость из справочника
+              if ((b.bulkheadAirPerm ?? 0) > 0)
+                return 1 / (b.bulkheadAirPerm * b.bulkheadAirPerm);
+              // fallback: справочный R (хранится в Мюрг)
+              return b.bulkheadR ?? 0;
+            })() : 0;
             const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
               ? (b.fanCrossingR ?? 0) : 0;
             return {
               id: b.id,
               fromId: b.fromId,
               toId: b.toId,
-              R: b.resistance + rBulkheads + fanCrossingR,
+              R: b.resistance + rBulkheads + rBranchBulkhead + fanCrossingR,
               area: b.area,
               angle: b.angle ?? 0,
               hasFan: b.hasFan,

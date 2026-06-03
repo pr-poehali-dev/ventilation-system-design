@@ -828,13 +828,16 @@ export function solveNetwork(
       log.push(`Вент. ${b.id}${revStr}: Q=${e.Q.toFixed(2)} м³/с, H=${fanPressure.toFixed(0)} Па, η=${(fanEff * 100).toFixed(0)}%`);
     }
 
-    return recalcBranchAero({
+    const brRecalc = recalcBranchAero({
       ...b,
       flow:          Q,
       fanPressure,
       fanEfficiency: fanEff,
       fanShaftPower: fanShaft,
     });
+    // Пересчитываем dP с полным R ребра (включает R перемычки, вентилятора и т.д.)
+    const fullDp = e.R * Q * Math.abs(Q) - (b.hasFan ? fanH(e, Math.abs(Q)) * (b.fanReverse ? -1 : 1) : 0);
+    return { ...brRecalc, dP: Math.round(fullDp * 10) / 10 };
   });
 
   // ──────────────────────────────────────────────────────────────────────────
