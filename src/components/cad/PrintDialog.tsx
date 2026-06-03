@@ -123,6 +123,58 @@ export default function PrintDialog({
   // Контекстное меню по ПКМ на листе
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; tileIdx: number } | null>(null);
 
+  // ─── Drag & Resize окна ─────────────────────────────────────────────
+  const [winPos, setWinPos] = useState<{ x: number; y: number } | null>(null);
+  const [winSize, setWinSize] = useState<{ w: number; h: number }>({ w: 1060, h: Math.min(window.innerHeight * 0.96, 860) });
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; dir: string } | null>(null);
+  const winRef = useRef<HTMLDivElement>(null);
+
+  const getWinPos = () => {
+    if (winPos) return winPos;
+    return {
+      x: Math.max(0, (window.innerWidth  - winSize.w) / 2),
+      y: Math.max(0, (window.innerHeight - winSize.h) / 2),
+    };
+  };
+
+  const onTitleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    const pos = getWinPos();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const nx = dragRef.current.origX + ev.clientX - dragRef.current.startX;
+      const ny = dragRef.current.origY + ev.clientY - dragRef.current.startY;
+      setWinPos({ x: Math.max(0, Math.min(window.innerWidth - 200, nx)), y: Math.max(0, Math.min(window.innerHeight - 60, ny)) });
+    };
+    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const onResizeMouseDown = (e: React.MouseEvent, dir: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: winSize.w, origH: winSize.h, dir };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const dx = ev.clientX - resizeRef.current.startX;
+      const dy = ev.clientY - resizeRef.current.startY;
+      const { origW, origH, dir: d } = resizeRef.current;
+      let nw = origW, nh = origH;
+      if (d.includes("e")) nw = Math.max(600, origW + dx);
+      if (d.includes("s")) nh = Math.max(400, origH + dy);
+      if (d.includes("w")) nw = Math.max(600, origW - dx);
+      if (d.includes("n")) nh = Math.max(400, origH - dy);
+      setWinSize({ w: nw, h: nh });
+    };
+    const onUp = () => { resizeRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const handleTileContextMenu = useCallback((e: React.MouseEvent, tileIdx: number) => {
     e.preventDefault();
     setCtxMenu({ x: e.clientX, y: e.clientY, tileIdx });
@@ -586,15 +638,33 @@ body{background:white;font-family:Arial,sans-serif}
   };
 
   // ─── JSX ─────────────────────────────────────────────────────────────
+  const pos = getWinPos();
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.55)" }}>
-      <div className="bg-white flex flex-col shadow-2xl border border-gray-400"
-        style={{ width: 1060, maxHeight: "96vh", fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 12, borderRadius: 2 }}>
+    <div className="fixed inset-0 z-[9999]" style={{ pointerEvents: "none" }}>
+      <div ref={winRef} className="bg-white flex flex-col shadow-2xl border border-gray-400"
+        style={{
+          position: "absolute",
+          left: pos.x, top: pos.y,
+          width: winSize.w, height: winSize.h,
+          fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 12, borderRadius: 2,
+          pointerEvents: "auto",
+          userSelect: dragRef.current || resizeRef.current ? "none" : undefined,
+        }}>
 
-        {/* Заголовок */}
+        {/* Resize-ручки */}
+        {(["e","s","se"] as const).map(dir => (
+          <div key={dir} onMouseDown={e => onResizeMouseDown(e, dir)} style={{
+            position: "absolute", zIndex: 10,
+            ...(dir === "e"  ? { right: 0, top: 4, bottom: 4, width: 5, cursor: "ew-resize" } : {}),
+            ...(dir === "s"  ? { bottom: 0, left: 4, right: 4, height: 5, cursor: "ns-resize" } : {}),
+            ...(dir === "se" ? { right: 0, bottom: 0, width: 10, height: 10, cursor: "nwse-resize" } : {}),
+          }} />
+        ))}
+
+        {/* Заголовок — drag-зона */}
         <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
-          style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)" }}>
+          style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)", cursor: "move", borderRadius: "2px 2px 0 0" }}
+          onMouseDown={onTitleMouseDown}>
           <div className="flex items-center gap-2">
             <Icon name="Printer" size={14} className="text-white opacity-90" />
             <span className="font-bold text-white text-[13px]">{projectName} — Просмотр</span>
