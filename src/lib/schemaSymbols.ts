@@ -140,6 +140,7 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "auto_wood",  name: "Дверь вентиляционная автоматическая деревянная",     group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: autoDoor("#ffd600", "#f57f17") },
   { id: "auto_brick", name: "Дверь вентиляционная автоматическая кирпичная",      group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: autoDoor("#ff9800", "#e65100") },
   { id: "auto_metal", name: "Дверь вентиляционная автоматическая металлическая",  group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: autoDoor("#9c27b0", "#6a1b9a") },
+  { id: "sail",       name: "Парус вентиляционный",                               group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: `<line x1="22" y1="4" x2="22" y2="36" stroke="#ff6f00" stroke-width="2" stroke-linecap="round"/><path d="M22,10 Q38,14 38,20 Q38,26 22,30" fill="none" stroke="#ff6f00" stroke-width="2" stroke-linecap="round"/>` },
 
   // ─── ПЕРЕМЫЧКИ С ВЕНТ. ОКНОМ (все материалы) ─────────────────────────
   { id: "open_base",  name: "Дверь вентиляционная открытая",               group: "Вентиляция", subgroup: "С вент. окном",
