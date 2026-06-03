@@ -1262,6 +1262,7 @@ export default function CadPage() {
     flowDisplay,
     zScale,
     view: savedViewState ?? undefined,
+    positions,
   });
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
@@ -1456,6 +1457,8 @@ export default function CadPage() {
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
     if (data.zScale !== undefined) setZScale(data.zScale as number);
+    if (data.positions) setPositions(data.positions as Position[]);
+    else setPositions([]);
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
