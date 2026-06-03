@@ -2955,9 +2955,13 @@ export default function CadPage() {
                 }
 
                 // Помечаем перемычки разрушенными если ΔP > failurePressure
+                // fp берём из символа (bkFailurePressure) или из ветви как fallback
                 const finalBranches = updatedBranches.map(b => {
                   if (!b.hasBulkhead) return {...b, bulkheadDestroyedByExplosion: false};
-                  const fp = b.bulkheadFailurePressure; // МПа
+                  const bkSym = symbolsRef.current.find(s =>
+                    BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id
+                  );
+                  const fp = (bkSym?.bkFailurePressure ?? b.bulkheadFailurePressure) || 0; // МПа
                   if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
                   const dFrom = netDist.get(b.fromId) ?? Infinity;
                   const dTo   = netDist.get(b.toId) ?? Infinity;
@@ -4258,22 +4262,51 @@ export default function CadPage() {
                       <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: "#fee2e2", borderBottom: "1px solid #fca5a5", color: "#991b1b" }}>
                         ⚡ Разрушенные перемычки ({destroyedBranches.length})
                       </div>
-                      {destroyedBranches.map(br => (
-                        <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "#fff5f5" }}>
-                          <span className="text-[10px] mr-1">🔴</span>
-                          <span className="text-[11px] text-gray-700 flex-1 truncate">
-                            {br.bulkheadName || br.id}
-                          </span>
-                          <span className="text-[10px] text-red-600 ml-1 flex-shrink-0">
-                            {br.bulkheadFailurePressure} МПа
-                          </span>
-                        </div>
-                      ))}
+                      {destroyedBranches.map(br => {
+                        const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === br.id);
+                        const fp = bkSym?.bkFailurePressure ?? br.bulkheadFailurePressure;
+                        const name = bkSym?.bkBulkheadName ?? br.bulkheadName || br.id;
+                        return (
+                          <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "#fff5f5" }}>
+                            <span className="text-[10px] mr-1">🔴</span>
+                            <span className="text-[11px] text-gray-700 flex-1 truncate">{name}</span>
+                            {fp > 0 && (
+                              <span className="text-[10px] text-red-600 ml-1 flex-shrink-0">{fp} МПа</span>
+                            )}
+                          </div>
+                        );
+                      })}
                       <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b" }}>
-                        Разрушенные перемычки обозначены ⊗ на схеме. Вентиляционный режим изменится — пересчитайте сеть (F9).
+                        Разрушенные перемычки окрашены красным и отмечены «РАЗР.» на схеме. Пересчитайте сеть (F9).
                       </div>
                     </>);
                   })()}
+
+                  {/* Легенда обозначений перемычек */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-2" style={{ background: "#f5f5f5", borderBottom: "1px solid #e0e0e0", color: "#374151" }}>
+                    Обозначения на схеме
+                  </div>
+                  <div className="px-2 py-1.5 text-[10px] space-y-1" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                    <div className="flex items-center gap-2">
+                      <svg width="22" height="18" viewBox="-11 -9 22 18">
+                        <rect x="-3" y="-7" width="6" height="14" fill="white" stroke="#1a1a1a" strokeWidth="1" />
+                      </svg>
+                      <span style={{ color: "#374151" }}>Перемычка — цела</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <svg width="22" height="18" viewBox="-11 -9 22 18">
+                        <rect x="-3" y="-7" width="6" height="14" fill="#ff4444" stroke="#8b0000" strokeWidth="1" />
+                      </svg>
+                      <span style={{ color: "#dc2626", fontWeight: 600 }}>Перемычка — разрушена</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <svg width="22" height="18" viewBox="-11 -9 22 18">
+                        <circle cx="0" cy="0" r="7" fill="#fef08a" stroke="#dc2626" strokeWidth="1.5" />
+                        <polyline points="-6,0 -3,-2.5 0,2.5 3,-2.5 6,0" fill="none" stroke="#dc2626" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span style={{ color: "#7f1d1d" }}>Маркер разрушения + давление разрушения (МПа)</span>
+                    </div>
+                  </div>
 
                   {!explosionCalcDone && (
                     <div className="mx-2 my-2 px-2 py-2 text-[11px] rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
@@ -4529,6 +4562,13 @@ export default function CadPage() {
                                         bkBulkheadR: sel?.rMkyurg ?? 0,
                                         bkFailurePressure: sel?.failurePressure ?? 0,
                                       });
+                                      // Синхронизируем failurePressure и name в ветвь
+                                      if (sym.branchId) {
+                                        updateBranch(sym.branchId, {
+                                          bulkheadFailurePressure: sel?.failurePressure ?? 0,
+                                          bulkheadName: sel?.name ?? "",
+                                        });
+                                      }
                                     }}
                                     className="flex-1 text-[11px] px-1"
                                     style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
