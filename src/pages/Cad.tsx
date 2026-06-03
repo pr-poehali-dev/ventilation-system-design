@@ -3247,7 +3247,7 @@ export default function CadPage() {
         })()}
 
         {/* ── Группа: Действия с объектами ── */}
-        <RibbonGroup label="Действия с объектами">
+        <RibbonGroup label="Действия">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие"
               onClick={handleUndo}
@@ -3314,7 +3314,7 @@ export default function CadPage() {
         )}
 
         {/* ── Группа: ПЛА ── */}
-        <RibbonGroup label="План ликвидации аварии">
+        <RibbonGroup label="ПЛА">
           <div className="relative flex flex-col h-full justify-center">
             <button
               onClick={() => setShowPlaPanel(v => !v)}
@@ -3403,22 +3403,7 @@ export default function CadPage() {
               </div>
             </button>
 
-            {/* Переключатель метода */}
-            <div className="flex flex-col justify-center gap-0.5 border-l border-gray-200 pl-1">
-              <div className="text-[9px] text-gray-400 leading-tight mb-0.5">Метод:</div>
-              {(["cross", "mkr"] as const).map(m => (
-                <button key={m}
-                  onClick={() => setCalcMode(m)}
-                  className="text-[10px] px-1.5 py-0.5 rounded leading-tight text-left font-medium"
-                  style={{
-                    background: calcMode === m ? "#1d4ed8" : "transparent",
-                    color: calcMode === m ? "white" : "#374151",
-                    border: calcMode === m ? "1px solid #1e40af" : "1px solid #d1d5db",
-                  }}>
-                  {m === "cross" ? "Кросс" : "МКР"}
-                </button>
-              ))}
-            </div>
+
 
             {/* Кнопка параметров */}
             <div className="relative flex flex-col justify-center border-l border-gray-200 pl-1">
