@@ -1189,7 +1189,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const dp = branch.bulkheadSurveyDP ?? 0;
                         rMkyurg = q > 0 ? dp / (q * q) : 0;
                       } else {
-                        rMkyurg = (branch.bulkheadR ?? 0) * 1e6;
+                        rMkyurg = branch.bulkheadAirPerm > 0
+                          ? 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm)
+                          : (branch.bulkheadR ?? 0);
                       }
                       if (rMkyurg === 0) return `— ${uRes.symbol}`;
                       return `${uRes.fromBase(rMkyurg).toFixed(uRes.decimals)} ${uRes.symbol}`;
@@ -1247,7 +1249,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                               onChange={v => onUpdate({ bulkheadCustomAirPerm: parseFloat(v) || 0 })}
                             />
                           ) : (
-                            <ComputedInput value={branch.bulkheadAirPerm ? `${branch.bulkheadAirPerm.toFixed(4)} м²/(с·√Па)` : "—"} />
+                            <ComputedInput value={branch.bulkheadAirPerm ? `${branch.bulkheadAirPerm.toPrecision(4)} м²/(с·√Па)` : "—"} />
                           )}
                         </InlineLabel>
                       </>
