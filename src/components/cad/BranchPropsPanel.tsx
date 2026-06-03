@@ -36,6 +36,8 @@ interface BranchPropsPanelProps {
   onOpenTypesLibrary?: () => void;
   /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
   bulkheadSymTypeId?: string;
+  /** Синхронизировать изменения режима/R перемычки из вкладки ветви в символ на схеме */
+  onUpdateBulkheadSym?: (patch: Record<string, unknown>) => void;
   /** Конфигурация единиц измерения */
   unitsConfig?: UnitsConfig;
   /** Все узлы — для отображения коротких имён начального/конечного */
@@ -226,7 +228,7 @@ function fmtR(rKmu: number, minDecimals = 4): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -1203,7 +1205,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 <InlineLabel label="Задается:">
                   <select
                     value={branch.bulkheadResMode ?? "project"}
-                    onChange={e => onUpdate({ bulkheadResMode: e.target.value as "project" | "survey" | "manual" })}
+                    onChange={e => {
+                      const mode = e.target.value as "project" | "survey" | "manual";
+                      onUpdate({ bulkheadResMode: mode });
+                      onUpdateBulkheadSym?.({ bkResMode: mode });
+                    }}
                     className="w-full text-[11px] px-1"
                     style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
                     <option value="project">Проектными данными</option>
@@ -1290,14 +1296,22 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <EditInput
                         type="number" step="0.1"
                         value={branch.bulkheadSurveyQ ?? 0}
-                        onChange={v => onUpdate({ bulkheadSurveyQ: parseFloat(v) || 0 })}
+                        onChange={v => {
+                          const val = parseFloat(v) || 0;
+                          onUpdate({ bulkheadSurveyQ: val });
+                          onUpdateBulkheadSym?.({ bkSurveyQ: val });
+                        }}
                       />
                     </InlineLabel>
                     <InlineLabel label="Падение Р:">
                       <EditInput
                         type="number" step="1"
                         value={branch.bulkheadSurveyDP ?? 0}
-                        onChange={v => onUpdate({ bulkheadSurveyDP: parseFloat(v) || 0 })}
+                        onChange={v => {
+                          const val = parseFloat(v) || 0;
+                          onUpdate({ bulkheadSurveyDP: val });
+                          onUpdateBulkheadSym?.({ bkSurveyDP: val });
+                        }}
                       />
                     </InlineLabel>
                     <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
@@ -1325,7 +1339,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       <EditInput
                         type="number" step="0.0001"
                         value={branch.bulkheadManualR ?? 0}
-                        onChange={v => onUpdate({ bulkheadManualR: parseFloat(v) || 0 })}
+                        onChange={v => {
+                          const val = parseFloat(v) || 0;
+                          onUpdate({ bulkheadManualR: val });
+                          onUpdateBulkheadSym?.({ bkManualR: val });
+                        }}
                       />
                     </InlineLabel>
                     <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
@@ -1334,7 +1352,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        // bulkheadManualR в кМюрг, resistance в тех же единицах × 1e3 = Па·с²/м⁶ → ΔP в Па
                         const rBulk = (branch.bulkheadManualR ?? 0) * 1e3;
                         const Q = branch.flow ?? 0;
                         const dp = rBulk * Q * Math.abs(Q);

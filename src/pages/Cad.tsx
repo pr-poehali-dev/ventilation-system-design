@@ -4312,6 +4312,13 @@ export default function CadPage() {
                   const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   return bkSym?.typeId;
                 })()}
+                onUpdateBulkheadSym={(patch) => {
+                  setSchemaSymbols(prev => prev.map(s =>
+                    BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id
+                      ? { ...s, ...patch }
+                      : s
+                  ));
+                }}
                 unitsConfig={unitsConfig}
                 nodes={nodes}
                 waterBranchResult={waterNetwork.branchResults.get(selectedBranch.id)}
