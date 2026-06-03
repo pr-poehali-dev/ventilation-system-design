@@ -91,9 +91,6 @@ export interface SchemaSymbol {
   bkBulkheadName?: string;
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
-  // ─── Видимость ─────────────────────────────────────────
-  visible?: boolean;         // видимость самого УО на схеме (true по умолчанию)
-  branchVisible?: boolean;   // видимость привязанной ветви (true по умолчанию)
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast";
 
@@ -869,7 +866,7 @@ export default function CadPage() {
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
-  const [rightTab, setRightTab] = useState<"info" | "positions">("info");
+  const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
   // ─── ЛЕВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (свойства/параметры) ────────────────────
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
@@ -6874,117 +6871,37 @@ export default function CadPage() {
               </button>
             </div>
 
-            {/* Вкладки */}
-            <div className="flex border-b border-gray-300 flex-shrink-0" style={{ background: "#f5f5f5" }}>
-              {(["info", "positions"] as const).map((tab) => (
-                <button key={tab} onClick={() => setRightTab(tab)}
-                  className="flex-1 h-7 text-[11px] font-medium transition-colors"
-                  style={{
-                    background: rightTab === tab ? "#ffffff" : "transparent",
-                    borderBottom: rightTab === tab ? "2px solid #2563eb" : "2px solid transparent",
-                    color: rightTab === tab ? "#2563eb" : "#555",
-                    fontWeight: rightTab === tab ? 600 : 400,
-                  }}>
-                  {tab === "info" ? "Информация" : "Позиции"}
-                </button>
-              ))}
-            </div>
-
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* ── Вкладка: Информация ── */}
-              {rightTab === "info" && (
-                <>
-                  <div className="flex-1 overflow-hidden">
-                    <InfoPanel
-                      config={infoConfig}
-                      onChange={updateInfoConfig}
-                      nodes={nodes}
-                      selectedNodeId={selectedNodeId}
-                      onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
-                      onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
-                      onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
-                    />
-                  </div>
-                  {/* Масштаб Z */}
-                  <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
-                      <button onClick={() => setZScale(1)}
-                        className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
-                        Сброс
-                      </button>
-                    </div>
-                    <input type="range" min="0.1" max="10" step="0.1"
-                      value={zScale}
-                      onChange={(e) => setZScale(parseFloat(e.target.value))}
-                      className="w-full"
-                      style={{ accentColor: "#2563eb" }} />
-                    <div className="flex justify-between text-[10px] text-gray-400">
-                      <span>0.1×</span><span>5×</span><span>10×</span>
-                    </div>
-                  </div>
-                </>
-              )}
+              <div className="flex-1 overflow-hidden">
+                <InfoPanel
+                  config={infoConfig}
+                  onChange={updateInfoConfig}
+                  nodes={nodes}
+                  selectedNodeId={selectedNodeId}
+                  onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
+                  onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
+                  onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
+                />
+              </div>
 
-              {/* ── Вкладка: Позиции ── */}
-              {rightTab === "positions" && (
-                <div className="flex-1 overflow-y-auto text-xs" style={{ background: "#f5f5f5" }}>
-                  {schemaSymbols.length === 0 ? (
-                    <div className="px-3 py-4 text-gray-400 text-[11px] text-center">Нет позиций на схеме</div>
-                  ) : (
-                    <>
-                      {/* Кнопки «вкл все / выкл все» */}
-                      <div className="flex gap-1 px-2 py-1.5 border-b border-gray-200" style={{ background: "#eef2f8" }}>
-                        <span className="text-[10px] font-semibold text-gray-500 flex-1 flex items-center">Все позиции</span>
-                        <button onClick={() => setSchemaSymbols(p => p.map(s => ({ ...s, visible: true, branchVisible: true })))}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 text-green-700 hover:bg-green-50">вкл</button>
-                        <button onClick={() => setSchemaSymbols(p => p.map(s => ({ ...s, visible: false, branchVisible: false })))}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-red-200 text-red-600 hover:bg-red-50">выкл</button>
-                      </div>
-
-                      {schemaSymbols.map((sym) => {
-                        const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
-                        const symVisible = sym.visible !== false;
-                        const brVisible = sym.branchVisible !== false;
-                        const name = sym.label || lt?.name || sym.typeId;
-                        const hasBranch = !!sym.branchId;
-                        return (
-                          <div key={sym.id}
-                            className="border-b border-gray-200 px-2 py-1.5"
-                            style={{ background: symVisible ? "white" : "#f9f9f9" }}>
-                            {/* Строка УО */}
-                            <div className="flex items-center gap-1.5">
-                              <input type="checkbox" checked={symVisible}
-                                onChange={(e) => setSchemaSymbols(p => p.map(s => s.id === sym.id ? { ...s, visible: e.target.checked } : s))}
-                                className="w-3 h-3 flex-shrink-0" style={{ accentColor: "#2563eb" }} />
-                              {/* Мини-превью SVG */}
-                              {lt && (
-                                <svg width="20" height="17" viewBox="0 0 48 40" className="flex-shrink-0 opacity-80"
-                                  dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                              )}
-                              <span className="flex-1 text-[11px] truncate" style={{ color: symVisible ? "#1a3a6b" : "#aaa", fontWeight: 500 }}
-                                title={name}>{name}</span>
-                              <span className="text-[9px] text-gray-400 flex-shrink-0">{lt?.group ?? "—"}</span>
-                            </div>
-                            {/* Строка ветви (если привязана) */}
-                            {hasBranch && (
-                              <div className="flex items-center gap-1.5 mt-0.5 pl-4">
-                                <input type="checkbox" checked={brVisible}
-                                  onChange={(e) => setSchemaSymbols(p => p.map(s => s.id === sym.id ? { ...s, branchVisible: e.target.checked } : s))}
-                                  className="w-3 h-3 flex-shrink-0" style={{ accentColor: "#6366f1" }} />
-                                <Icon name="GitBranch" size={10} />
-                                <span className="text-[10px]" style={{ color: brVisible ? "#374151" : "#aaa" }}>
-                                  Ветвь {sym.branchId}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
+              {/* Масштаб Z */}
+              <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
+                  <button onClick={() => setZScale(1)}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
+                    Сброс
+                  </button>
                 </div>
-              )}
+                <input type="range" min="0.1" max="10" step="0.1"
+                  value={zScale}
+                  onChange={(e) => setZScale(parseFloat(e.target.value))}
+                  className="w-full"
+                  style={{ accentColor: "#2563eb" }} />
+                <div className="flex justify-between text-[10px] text-gray-400">
+                  <span>0.1×</span><span>5×</span><span>10×</span>
+                </div>
+              </div>
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}

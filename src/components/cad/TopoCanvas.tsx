@@ -109,7 +109,6 @@ interface Props {
   schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
     indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;
     bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
-    visible?: boolean; branchVisible?: boolean;
   }[];
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
@@ -259,30 +258,23 @@ export default function TopoCanvas(props: Props) {
     return m;
   }, [horizons]);
 
-  // ID ветвей, скрытых через панель Позиций (branchVisible === false)
-  const symbolHiddenBranchIds = useMemo(() => new Set(
-    (schemaSymbols ?? []).filter(s => s.branchId && s.branchVisible === false).map(s => s.branchId as string)
-  ), [schemaSymbols]);
-
-  // Видимые ветви: если горизонт привязан и скрыт — фильтруем; также скрытые через позиции
+  // Видимые ветви: если горизонт привязан и скрыт — фильтруем
   const visibleBranches = useMemo(() => branches.filter((b) => {
-    if (symbolHiddenBranchIds.has(b.id)) return false;
     if (!b.horizonId) return true;
     const h = horizonMap.get(b.horizonId);
     return !h || h.visible;
-  }), [branches, horizonMap, symbolHiddenBranchIds]);
+  }), [branches, horizonMap]);
 
-  // Множество ID скрытых ветвей (по горизонту или по позициям) — для фильтрации узлов и УО
+  // Множество ID скрытых ветвей (по горизонту) — для фильтрации узлов и УО
   const hiddenBranchIds = useMemo(() => new Set(
     branches
       .filter((b) => {
-        if (symbolHiddenBranchIds.has(b.id)) return true;
         if (!b.horizonId) return false;
         const h = horizonMap.get(b.horizonId);
         return h && !h.visible;
       })
       .map((b) => b.id)
-  ), [branches, horizonMap, symbolHiddenBranchIds]);
+  ), [branches, horizonMap]);
 
   // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам.
   const hiddenNodeIds = useMemo(() => new Set(
@@ -1952,8 +1944,6 @@ export default function TopoCanvas(props: Props) {
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           // Перемычки рисуются геометрически — не требуют lt из LEGEND_TYPES
           if (!lt && !isBulkheadEarly) return null;
-          // Если УО явно скрыто через панель Позиций
-          if (sym.visible === false) return null;
           // Если УО привязано к ветви скрытого горизонта — скрываем его вместе с ветвью
           if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
 
