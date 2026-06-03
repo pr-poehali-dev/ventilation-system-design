@@ -723,6 +723,13 @@ export default function CadPage() {
   const [posBranchBindMode, setPosBranchBindMode] = useState(false);
   // Показывать выноски позиций (И/B)
   const [showPosLeaders, setShowPosLeaders] = useState(false);
+  // ПЛА: видимость позиций на схеме
+  const [showPositions, setShowPositions] = useState(true);
+  // ПЛА: окраска ветвей цветом позиции (внутри/снаружи)
+  const [posColorInner, setPosColorInner] = useState(false);
+  const [posColorOuter, setPosColorOuter] = useState(false);
+  // Dropdown ПЛА открыт/закрыт
+  const [showPlaPanel, setShowPlaPanel] = useState(false);
 
   // Nonce для импорта DXF — когда меняется, переключаем вид + fitToScreen
   const [importNonce, setImportNonce] = useState(0);
@@ -3305,6 +3312,83 @@ export default function CadPage() {
             </div>
           </RibbonGroup>
         )}
+
+        {/* ── Группа: ПЛА ── */}
+        <RibbonGroup label="План ликвидации аварии">
+          <div className="relative flex flex-col h-full justify-center">
+            <button
+              onClick={() => setShowPlaPanel(v => !v)}
+              title="План ликвидации аварии — настройки отображения позиций"
+              style={{
+                width: 58, height: 62,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+                borderRadius: 4,
+                border: showPlaPanel ? "1.5px solid #2563eb" : (showPositions || posColorInner || posColorOuter) ? "1.5px solid #7c3aed" : "1px solid #c8c8c8",
+                background: showPlaPanel ? "#dbeafe" : (showPositions || posColorInner || posColorOuter) ? "#f5f3ff" : "white",
+                cursor: "pointer", padding: 0, flexShrink: 0,
+              }}>
+              <Icon name="MapPin" size={22} style={{ color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#374151" }} />
+              <div style={{ fontSize: 9, lineHeight: "1.1", textAlign: "center", color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#374151", fontWeight: 500 }}>
+                <div>План</div><div>ликв.</div><div>аварии</div>
+              </div>
+              <Icon name="ChevronDown" size={10} style={{ color: "#6b7280", marginTop: -2 }} />
+            </button>
+
+            {showPlaPanel && (
+              <div
+                style={{
+                  position: "fixed", zIndex: 9999,
+                  top: 160, left: "auto",
+                  background: "white", border: "1px solid #d1d5db",
+                  borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+                  minWidth: 220, padding: "8px 0",
+                  fontSize: 12, color: "#1a1a1a",
+                }}
+                onMouseDown={e => e.stopPropagation()}
+              >
+                <div style={{ padding: "3px 12px 5px", fontSize: 10, fontWeight: 700, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Отображение
+                </div>
+
+                {/* Позиции */}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", cursor: "pointer" }}
+                  className="hover:bg-blue-50">
+                  <input type="checkbox" checked={showPositions} onChange={e => setShowPositions(e.target.checked)}
+                    style={{ width: 13, height: 13, accentColor: "#7c3aed", cursor: "pointer" }} />
+                  <span>Позиции</span>
+                </label>
+
+                <div style={{ margin: "4px 12px", borderTop: "1px solid #f0f0f0" }} />
+                <div style={{ padding: "3px 12px 5px", fontSize: 10, fontWeight: 700, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Окраска ветвей
+                </div>
+
+                {/* Цвет позиции внутри */}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", cursor: "pointer" }}
+                  className="hover:bg-blue-50">
+                  <input type="checkbox" checked={posColorInner} onChange={e => setPosColorInner(e.target.checked)}
+                    style={{ width: 13, height: 13, accentColor: "#7c3aed", cursor: "pointer" }} />
+                  <span>Цвет позиции внутри</span>
+                </label>
+
+                {/* Цвет позиции снаружи */}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px", cursor: "pointer" }}
+                  className="hover:bg-blue-50">
+                  <input type="checkbox" checked={posColorOuter} onChange={e => setPosColorOuter(e.target.checked)}
+                    style={{ width: 13, height: 13, accentColor: "#7c3aed", cursor: "pointer" }} />
+                  <span>Цвет позиции снаружи</span>
+                </label>
+
+                <div style={{ margin: "4px 12px", borderTop: "1px solid #f0f0f0" }} />
+                <button onClick={() => setShowPlaPanel(false)}
+                  style={{ display: "block", width: "calc(100% - 24px)", margin: "2px 12px 4px", padding: "3px 0",
+                    fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textAlign: "center" }}>
+                  Закрыть
+                </button>
+              </div>
+            )}
+          </div>
+        </RibbonGroup>
 
         {/* ── Группа: Расчёт сети ── */}
         <RibbonGroup label="Расчёт сети">
@@ -5981,6 +6065,22 @@ export default function CadPage() {
                 });
                 return map;
               })()}
+              posInnerColors={(() => {
+                if (!posColorInner || positions.length === 0) return undefined;
+                const map = new Map<string, string>();
+                positions.forEach(pos => {
+                  pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
+                });
+                return map.size > 0 ? map : undefined;
+              })()}
+              posOuterColors={(() => {
+                if (!posColorOuter || positions.length === 0) return undefined;
+                const map = new Map<string, string>();
+                positions.forEach(pos => {
+                  pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
+                });
+                return map.size > 0 ? map : undefined;
+              })()}
               onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {
                   setSquadDialog({ typeId, x, y, branchId });
@@ -6139,7 +6239,7 @@ export default function CadPage() {
             )}
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
-            {positions.length > 0 && (() => {
+            {positions.length > 0 && showPositions && (() => {
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
               // zScale применяем к z-оси, как это делает TopoCanvas

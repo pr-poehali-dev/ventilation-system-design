@@ -151,6 +151,10 @@ interface Props {
   branchBindMode?: boolean;
   /** Карта branchId → цвет позиции (для подсветки привязанных ветвей в F3) */
   branchPositionColors?: Map<string, { color: string; bound: boolean }>;
+  /** Карта branchId → color для окраски ветвей цветом позиции ВНУТРИ (ПЛА) */
+  posInnerColors?: Map<string, string>;
+  /** Карта branchId → color для окраски ветвей цветом позиции СНАРУЖИ (ПЛА) */
+  posOuterColors?: Map<string, string>;
   /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
@@ -210,6 +214,8 @@ export default function TopoCanvas(props: Props) {
     onPositionPlace,
     branchBindMode = false,
     branchPositionColors,
+    posInnerColors,
+    posOuterColors,
     waterNodeResults,
     branchFireColors,
     branchExplosionColors,
@@ -1451,6 +1457,9 @@ export default function TopoCanvas(props: Props) {
 
           // ── Подсветка в F3-режиме привязки ────────────────────────────────
           const posBindInfo = branchPositionColors?.get(b.id);
+          // ── ПЛА: цвет позиции по ветви ────────────────────────────────────
+          const posInnerCol = posInnerColors?.get(b.id);
+          const posOuterCol = posOuterColors?.get(b.id);
           // ── Подсветка задымления от пожара ────────────────────────────────
           const fireSeg = branchFireColors?.get(b.id);
           // ── Подсветка зон взрыва ───────────────────────────────────────────
@@ -1484,6 +1493,16 @@ export default function TopoCanvas(props: Props) {
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                   stroke="#f59e0b" strokeWidth={w + 8} strokeLinecap="round" opacity="0.35" />
+              )}
+              {/* ПЛА: окраска снаружи выработки */}
+              {posOuterCol && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={posOuterCol} strokeWidth={w + 10} strokeLinecap="round" opacity="0.5" />
+              )}
+              {/* ПЛА: окраска внутри выработки */}
+              {posInnerCol && (
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={posInnerCol} strokeWidth={Math.max(w - 2, 1)} strokeLinecap="round" opacity="0.75" />
               )}
               {/* Подсветка F3-режима: привязанные ярко, непривязанные тускло */}
               {branchBindMode && posBindInfo && posBindInfo.bound && (
