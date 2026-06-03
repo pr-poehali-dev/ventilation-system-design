@@ -5078,6 +5078,79 @@ export default function CadPage() {
                                 Загрузить план
                               </label>
                             )}
+                            {/* ── Слой печати горизонта ── */}
+                            {(() => {
+                              const pl = h.printLayer;
+                              const hasPl = !!pl;
+                              const updatePl = (patch: Partial<import("@/lib/topology").HorizonPrintLayer>) =>
+                                updateHorizon(h.id, { printLayer: pl ? { ...pl, ...patch } : {
+                                  visible: true, title: `Вентиляционный план горизонта ${h.z}м.`,
+                                  scale: "1:2000", orgName: "", approverTitle: "Главный инженер ЮПР",
+                                  approverName: "", year: String(new Date().getFullYear()),
+                                  period: "", developer: "", checker: "",
+                                  sheetNum: "1", sheetTotal: "1", showLegend: true, showStamp: true,
+                                  ...patch,
+                                }});
+                              return (
+                                <div className="mt-1 border border-dashed rounded" style={{ borderColor: hasPl && pl.visible ? "#7c3aed" : "#d1d5db" }}>
+                                  {/* Заголовок-переключатель */}
+                                  <button
+                                    className="w-full flex items-center justify-between gap-1 px-2 py-1 text-[11px] rounded"
+                                    style={{ background: hasPl && pl.visible ? "#f5f3ff" : "transparent", color: hasPl && pl.visible ? "#7c3aed" : "#6b7280" }}
+                                    onClick={() => {
+                                      if (!hasPl) {
+                                        updatePl({ visible: true });
+                                      } else {
+                                        updatePl({ visible: !pl.visible });
+                                      }
+                                    }}>
+                                    <span className="flex items-center gap-1">
+                                      <Icon name="Printer" size={10} className="flex-shrink-0" />
+                                      Слой печати
+                                    </span>
+                                    <span style={{ fontSize: 9, opacity: 0.7 }}>
+                                      {hasPl && pl.visible ? "ВКЛ" : "ВЫКЛ"}
+                                    </span>
+                                  </button>
+                                  {/* Настройки слоя (если включён) */}
+                                  {hasPl && pl.visible && (
+                                    <div className="px-2 pb-2 pt-1 space-y-1" style={{ borderTop: "1px solid #ede9fe" }}>
+                                      {[
+                                        { label: "Заголовок", key: "title" as const },
+                                        { label: "Масштаб", key: "scale" as const },
+                                        { label: "Организация", key: "orgName" as const },
+                                        { label: "Должность", key: "approverTitle" as const },
+                                        { label: "ФИО", key: "approverName" as const },
+                                        { label: "Год", key: "year" as const },
+                                        { label: "Период", key: "period" as const },
+                                        { label: "Разработал", key: "developer" as const },
+                                        { label: "Проверил", key: "checker" as const },
+                                        { label: "Лист №", key: "sheetNum" as const },
+                                        { label: "Всего листов", key: "sheetTotal" as const },
+                                      ].map(({ label, key }) => (
+                                        <div key={key} className="flex items-center gap-1">
+                                          <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 72 }}>{label}</span>
+                                          <input
+                                            className="cad-input flex-1 min-w-0"
+                                            value={pl[key]}
+                                            onChange={(e) => updatePl({ [key]: e.target.value })}
+                                          />
+                                        </div>
+                                      ))}
+                                      <div className="flex gap-2 pt-0.5">
+                                        <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
+                                        <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
+                                      </div>
+                                      <button
+                                        className="w-full px-2 py-1 text-[11px] border border-red-200 text-red-600 rounded hover:bg-red-50"
+                                        onClick={() => updateHorizon(h.id, { printLayer: undefined })}>
+                                        Удалить слой
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

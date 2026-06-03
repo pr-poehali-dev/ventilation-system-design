@@ -219,6 +219,38 @@ export interface HorizonImage {
   visible: boolean;
 }
 
+/** Конфигурация слоя печати горизонта (УО + штамп + оглавление) */
+export interface HorizonPrintLayer {
+  /** Слой видим в предпросмотре/при печати */
+  visible: boolean;
+  /** Заголовок чертежа (напр. "Вентиляционный план горизонта 290м.") */
+  title: string;
+  /** Масштаб (напр. "1:2000") */
+  scale: string;
+  /** Название организации для штампа */
+  orgName: string;
+  /** Должность утверждающего */
+  approverTitle: string;
+  /** ФИО утверждающего */
+  approverName: string;
+  /** Год */
+  year: string;
+  /** Период действия (напр. "II-е полугодие 2025 года") */
+  period: string;
+  /** Разработал */
+  developer: string;
+  /** Проверил */
+  checker: string;
+  /** Номер листа */
+  sheetNum: string;
+  /** Всего листов */
+  sheetTotal: string;
+  /** Показывать условные обозначения */
+  showLegend: boolean;
+  /** Показывать штамп */
+  showStamp: boolean;
+}
+
 export interface Horizon {
   id: string;
   name: string;
@@ -226,6 +258,7 @@ export interface Horizon {
   color: string;    // HEX цвет (#RRGGBB)
   visible: boolean; // отображать ли ветви этого горизонта на схеме
   image?: HorizonImage; // подложка-картинка (опционально)
+  printLayer?: HorizonPrintLayer; // слой печати (опционально)
 }
 
 export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {
