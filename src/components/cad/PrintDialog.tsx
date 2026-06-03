@@ -126,7 +126,7 @@ export default function PrintDialog({
   // ─── Drag & Resize окна ─────────────────────────────────────────────
   const [winPos, setWinPos] = useState<{ x: number; y: number } | null>(null);
   const [winSize, setWinSize] = useState<{ w: number; h: number }>({ w: 1060, h: Math.min(window.innerHeight * 0.96, 860) });
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const winDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; dir: string } | null>(null);
   const winRef = useRef<HTMLDivElement>(null);
 
@@ -142,14 +142,14 @@ export default function PrintDialog({
     if ((e.target as HTMLElement).closest("button")) return;
     e.preventDefault();
     const pos = getWinPos();
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
+    winDragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
     const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current) return;
-      const nx = dragRef.current.origX + ev.clientX - dragRef.current.startX;
-      const ny = dragRef.current.origY + ev.clientY - dragRef.current.startY;
+      if (!winDragRef.current) return;
+      const nx = winDragRef.current.origX + ev.clientX - winDragRef.current.startX;
+      const ny = winDragRef.current.origY + ev.clientY - winDragRef.current.startY;
       setWinPos({ x: Math.max(0, Math.min(window.innerWidth - 200, nx)), y: Math.max(0, Math.min(window.innerHeight - 60, ny)) });
     };
-    const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    const onUp = () => { winDragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
@@ -648,7 +648,7 @@ body{background:white;font-family:Arial,sans-serif}
           width: winSize.w, height: winSize.h,
           fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 12, borderRadius: 2,
           pointerEvents: "auto",
-          userSelect: dragRef.current || resizeRef.current ? "none" : undefined,
+          userSelect: winDragRef.current || resizeRef.current ? "none" : undefined,
         }}>
 
         {/* Resize-ручки */}
