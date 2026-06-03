@@ -1264,6 +1264,60 @@ export default function TopoCanvas(props: Props) {
 
         {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
 
+        {/* ── ШАБЛОНЫ ПЕЧАТИ ГОРИЗОНТОВ ──────────────────────────────────── */}
+        {/* Белая подложка с рамкой. Bbox = все узлы горизонта + отступ 10% */}
+        {(horizons ?? []).map((h) => {
+          if (!h.printLayer?.visible) return null;
+          // Собираем узлы горизонта (ветви с horizonId === h.id)
+          const hNodeIds = new Set<string>();
+          branches.forEach(b => {
+            if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); }
+          });
+          const hNodes = nodes.filter(n => hNodeIds.has(n.id));
+          if (hNodes.length === 0) return null;
+          // BBox в экранных координатах
+          const pts = hNodes.map(n => project3D({ x: n.x, y: n.y, z: n.z }, proj));
+          const minSx = Math.min(...pts.map(p => p.sx));
+          const maxSx = Math.max(...pts.map(p => p.sx));
+          const minSy = Math.min(...pts.map(p => p.sy));
+          const maxSy = Math.max(...pts.map(p => p.sy));
+          const padX = Math.max(40, (maxSx - minSx) * 0.12);
+          const padY = Math.max(40, (maxSy - minSy) * 0.12);
+          const rx = minSx - padX;
+          const ry = minSy - padY;
+          const rw = maxSx - minSx + padX * 2;
+          const rh = maxSy - minSy + padY * 2;
+          const sw = Math.max(1, view.scale * 0.8); // толщина рамки
+          return (
+            <g key={`printlayer-${h.id}`} style={{ pointerEvents: "none" }}>
+              {/* Белая подложка */}
+              <rect x={rx} y={ry} width={rw} height={rh} fill="white" />
+              {/* Внешняя рамка */}
+              <rect x={rx} y={ry} width={rw} height={rh}
+                fill="none" stroke="#1a1a1a" strokeWidth={sw * 1.8} />
+              {/* Внутренняя рамка (отступ ~5мм в мировых) */}
+              {(() => {
+                const inset = Math.max(6, padX * 0.25);
+                return (
+                  <rect x={rx + inset} y={ry + inset}
+                    width={rw - inset * 2} height={rh - inset * 2}
+                    fill="none" stroke="#1a1a1a" strokeWidth={sw * 0.7} />
+                );
+              })()}
+              {/* Заголовок */}
+              {h.printLayer.title && (
+                <text
+                  x={rx + rw / 2} y={ry + padY * 0.55}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={Math.max(8, padY * 0.32)}
+                  fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
+                  {h.printLayer.title}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
         {/* ── ПОДЛОЖКИ ГОРИЗОНТОВ (PNG/JPG) ─────────────────────────────── */}
         {/* Рисуются ПОД ветвями. Видимость подложки = h.image.visible && h.visible */}
         {(horizons ?? []).map((h) => {
