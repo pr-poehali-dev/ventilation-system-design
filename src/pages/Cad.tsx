@@ -875,6 +875,7 @@ export default function CadPage() {
   const [printDialogOpenExport, setPrintDialogOpenExport] = useState<boolean>(false);
   const getSvgRef = useRef<(() => string) | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
   const liveSvgRef = useRef<SVGSVGElement | null>(null);
 
   // Захватывает схему и открывает диалог печати
@@ -5885,7 +5886,10 @@ export default function CadPage() {
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}
               onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
-              onRegisterCanvasEl={(el) => { liveCanvasRef.current = el; }}
+              onRegisterCanvasEl={(el) => {
+                liveCanvasRef.current = el;
+                if (el) setCanvasSize({ w: el.clientWidth || el.width, h: el.clientHeight || el.height });
+              }}
               onRegisterSvgEl={(el) => { liveSvgRef.current = el; }}
               restoreView={savedViewToRestore}
               onRestoreViewDone={() => setSavedViewToRestore(null)}
@@ -7175,6 +7179,7 @@ export default function CadPage() {
         horizons={horizons}
         schemaSymbols={schemaSymbols}
         viewState={savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
+        canvasSize={canvasSize}
         branchWidth={branchWidth}
         branchBorder={branchBorder}
         thinLines={thinLines}

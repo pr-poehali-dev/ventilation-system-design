@@ -17,6 +17,8 @@ interface PrintDialogProps {
   branches: TopoBranch[];
   horizons: Horizon[];
   viewState: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
+  /** Размер рабочего canvas (логические px) — для точной конвертации offset */
+  canvasSize?: { w: number; h: number };
   // Параметры отображения — как настроено в рабочей области
   schemaSymbols?: SchemaSymbol[];
   branchWidth?: number;
@@ -78,7 +80,7 @@ const ih = { height: 22 } as React.CSSProperties;
 
 export default function PrintDialog({
   onClose, projectName = "Проект",
-  nodes, branches, horizons, viewState,
+  nodes, branches, horizons, viewState, canvasSize,
   schemaSymbols = [],
   branchWidth = 2, branchBorder = 0.4,
   thinLines = false, colorByHorizon = false,
@@ -285,6 +287,69 @@ export default function PrintDialog({
       onExportDialogOpened?.();
     }
   }, [initialOpenExport, onExportDialogOpened]);
+
+  // Инициализация вида из текущего состояния рабочей области при первом открытии.
+  // Задача: предпросмотр должен показывать ту же часть схемы что видна на экране.
+  //
+  // Системы координат:
+  //   Экран:    scale_scr [px/unit], offset_scr [px] — в логических пикселях экрана
+  //   150dpi:   scale_150 [px/unit], offset_150 [px] — в 150dpi пикселях
+  //
+  // Связь: 1 мм = scale_scr/unit_per_mm на экране; 1 мм = 150/25.4 px в 150dpi.
+  // Коэффициент пересчёта масштаба: k = (150/25.4) / (scale_per_mm_screen)
+  // Но scale_per_mm_screen неизвестен напрямую — зависит от размера canvas и bbox.
+  //
+  // Используем canvasSize (если передан) для точного перевода.
+  // Принцип: схема должна отображаться пропорционально на 150dpi-странице,
+  // воспроизводя то же соотношение "позиция в viewport / размер viewport".
+  const viewInitDone = useRef(false);
+  useEffect(() => {
+    if (viewInitDone.current) return;
+    if (nodes.length === 0) return;
+
+    // Вычисляем bbox при scale=1
+    const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
+      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+      const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
+      if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
+      if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
+    }
+    const bw = maxX - minX || 1;
+    const bh = maxY - minY || 1;
+
+    // Параметры дефолтной страницы (A3 альбом, поля 5мм) — совпадают с useState
+    const DPI = 150;
+    const mmToPx150 = (mm: number) => mm * DPI / 25.4;
+    const defPaperW = 420; const defPaperH = 297; const defMargin = 5;
+    const workW = mmToPx150(defPaperW - defMargin * 2);
+    const workH = mmToPx150(defPaperH - defMargin * 2);
+    const pad = mmToPx150(defMargin);
+    const fitSc = Math.min((workW - pad * 2) / bw, (workH - pad * 2) / bh);
+
+    if (canvasSize && canvasSize.w > 0 && canvasSize.h > 0) {
+      // Точный перевод через canvasSize:
+      // На экране: схема занимает [offsetX + minX*scale .. offsetX + maxX*scale] в px
+      // На 150dpi: хотим то же пропорциональное расположение
+      //   printScale = screenScale * (150dpi_pageW / screenW) * (screenW / workAreaW)
+      //   Упрощённо: printScale = screenScale * (workW / canvasSize.w)
+      const scRatio = workW / canvasSize.w;
+      const sc150 = viewState.scale * scRatio;
+      const userSc = sc150 / fitSc;
+      // Offset: сохраняем то же положение начала координат
+      const off150X = viewState.offsetX * scRatio;
+      const off150Y = viewState.offsetY * scRatio;
+      setUserScale(userSc);
+      setUserOffsetX(off150X);
+      setUserOffsetY(off150Y);
+    } else {
+      // Fallback без canvasSize: просто fit-in-page (100%)
+      // userScale = null → auto-fit, ничего не меняем
+    }
+    viewInitDone.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Размеры бумаги ───────────────────────────────────────────────────
   const paper = useMemo(() => {
