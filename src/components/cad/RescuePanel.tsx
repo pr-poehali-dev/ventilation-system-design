@@ -36,7 +36,7 @@ interface Props {
   onPickedStartChange: (id: string) => void;
   onPickedTargetChange: (id: string) => void;
   // Маршрут для подсветки на схеме
-  onRouteChange: (branchIds: Set<string>, nodeIds: Set<string>) => void;
+  onRouteChange: (branchIds: Set<string>, nodeIds: Set<string>, branchDirs: Map<string, boolean>) => void;
 }
 
 const OP_LABELS: Record<RescueOperationType, string> = {
@@ -460,7 +460,7 @@ export default function RescuePanel({
       ...res.segmentsBack.map(s => s.branchId),
     ]);
     const nodeIds = new Set([startNodeId, targetNodeId]);
-    onRouteChange(branchIds, nodeIds);
+    onRouteChange(branchIds, nodeIds, res.branchDirs);
   }
 
   const Label = ({ children }: { children: React.ReactNode }) => (

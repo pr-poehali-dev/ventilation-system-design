@@ -72,6 +72,8 @@ export interface RescueResult {
 
   ok: boolean;                     // можно ли выполнить операцию с данным ИДА
   warnings: string[];
+  /** Направление движения по каждой ветви маршрута: true = fromId→toId */
+  branchDirs: Map<string, boolean>;
 }
 
 // ─── Нормативные скорости движения ────────────────────────────────────────────
@@ -285,6 +287,12 @@ export function calcRescue(
   const segments = buildSegments(pathEdges, false);
   const segmentsBack = buildSegments([...pathEdges].reverse().map(e => ({ ...e, forward: !e.forward })), false);
 
+  // Карта направлений для подсветки на схеме: branchId → forward (true = fromId→toId)
+  const branchDirs = new Map<string, boolean>();
+  for (const edge of pathEdges) {
+    branchDirs.set(edge.branchId, edge.forward);
+  }
+
   // ── Суммируем ──────────────────────────────────────────────────────────────
   const totalTimeForward  = segments.reduce((s, seg) => s + seg.time_min, 0);
   const totalTimeBack     = segmentsBack.reduce((s, seg) => s + seg.time_min, 0);
@@ -339,5 +347,6 @@ export function calcRescue(
     idaO2InSmoke,
     ok,
     warnings,
+    branchDirs,
   };
 }

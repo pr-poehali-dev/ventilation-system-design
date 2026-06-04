@@ -638,6 +638,7 @@ export default function CadPage() {
   const [rescueStartNodeId, setRescueStartNodeId] = useState("");
   const [rescueTargetNodeId, setRescueTargetNodeId] = useState("");
   const [rescuePathBranchIds, setRescuePathBranchIds] = useState<Set<string>>(new Set());
+  const [rescuePathBranchDirs, setRescuePathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
@@ -5467,9 +5468,10 @@ export default function CadPage() {
                 pickedTargetId={rescueTargetNodeId}
                 onPickedStartChange={setRescueStartNodeId}
                 onPickedTargetChange={setRescueTargetNodeId}
-                onRouteChange={(bIds, nIds) => {
+                onRouteChange={(bIds, nIds, bDirs) => {
                   setRescuePathBranchIds(bIds);
                   setRescuePathNodeIds(nIds);
+                  setRescuePathBranchDirs(bDirs);
                 }}
               />
             )}
@@ -6241,6 +6243,7 @@ export default function CadPage() {
                 return map.size > 0 ? map : undefined;
               })()}
               rescuePathBranchIds={rescuePathBranchIds.size > 0 ? rescuePathBranchIds : undefined}
+              rescuePathBranchDirs={rescuePathBranchDirs.size > 0 ? rescuePathBranchDirs : undefined}
               rescuePathNodeIds={rescuePathNodeIds.size > 0 ? rescuePathNodeIds : undefined}
               rescuePickMode={rescuePickMode}
               onRescueNodePick={(nodeId) => {

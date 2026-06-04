@@ -168,6 +168,8 @@ interface Props {
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */
   rescuePathBranchIds?: Set<string>;
+  /** Направление движения по ветви маршрута: true = fromId→toId, false = toId→fromId */
+  rescuePathBranchDirs?: Map<string, boolean>;
   /** ID узлов маршрута горноспасателей (старт/финиш) — подсвечиваются */
   rescuePathNodeIds?: Set<string>;
   /** Callback при клике по узлу в режиме pick (rescuePickMode) */
@@ -234,6 +236,7 @@ export default function TopoCanvas(props: Props) {
     branchFireColors,
     branchExplosionColors,
     rescuePathBranchIds,
+    rescuePathBranchDirs,
     rescuePathNodeIds,
     onRescueNodePick,
     rescuePickMode,
@@ -1694,15 +1697,55 @@ export default function TopoCanvas(props: Props) {
                   stroke={expSeg.color} strokeWidth={Math.max(w + 8, 6)} strokeLinecap="round"
                   opacity="0.3" />
               </>)}
-              {/* Подсветка маршрута горноспасателей */}
-              {rescuePathBranchIds?.has(b.id) && (<>
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke="#16a34a" strokeWidth={Math.max(w + 10, 7)} strokeLinecap="round"
-                  opacity="0.45" />
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke="#4ade80" strokeWidth={Math.max(w + 4, 4)} strokeLinecap="round"
-                  opacity="0.85" strokeDasharray="12 5" />
-              </>)}
+              {/* Подсветка маршрута горноспасателей + стрелки направления */}
+              {rescuePathBranchIds?.has(b.id) && (() => {
+                // Направление движения горноспасателей по этой ветви
+                const forward = rescuePathBranchDirs?.get(b.id) ?? true;
+                const rAxA = forward ? from.sx : to.sx;
+                const rAyA = forward ? from.sy : to.sy;
+                const rAxB = forward ? to.sx   : from.sx;
+                const rAyB = forward ? to.sy   : from.sy;
+                const rdx = rAxB - rAxA;
+                const rdy = rAyB - rAyA;
+                const rLen = Math.hypot(rdx, rdy);
+                const angle = Math.atan2(rdy, rdx) * 180 / Math.PI;
+                // Стрелки: шаг 90px, минимум 1
+                const arrowStep = 90;
+                const arrowCount = rLen > arrowStep ? Math.floor(rLen / arrowStep) : 1;
+                return (
+                  <>
+                    {/* Зелёная аура */}
+                    <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                      stroke="#16a34a" strokeWidth={Math.max(w + 10, 7)} strokeLinecap="round"
+                      opacity="0.4" />
+                    {/* Зелёная штриховая линия */}
+                    <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                      stroke="#4ade80" strokeWidth={Math.max(w + 3, 3)} strokeLinecap="round"
+                      opacity="0.9" strokeDasharray="14 6" />
+                    {/* Стрелки горноспасателей */}
+                    {rLen > 20 && Array.from({ length: arrowCount }, (_, i) => {
+                      const t0 = (i + 1) / (arrowCount + 1);
+                      const cx = rAxA + rdx * t0;
+                      const cy = rAyA + rdy * t0;
+                      const al = Math.min(22, Math.max(14, w * 3.5));
+                      const hw = al / 2;
+                      return (
+                        <g key={`rescue-arrow-${i}`} transform={`translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`}>
+                          {/* Хвостик */}
+                          <line x1={-hw} y1={0} x2={hw - 5} y2={0}
+                            stroke="white" strokeWidth="2.5" strokeLinecap="round" opacity="0.95" />
+                          <line x1={-hw} y1={0} x2={hw - 5} y2={0}
+                            stroke="#15803d" strokeWidth="1.5" strokeLinecap="round" opacity="0.9" />
+                          {/* Наконечник */}
+                          <polygon points={`${hw - 7},-5 ${hw},0 ${hw - 7},5`}
+                            fill="white" stroke="#15803d" strokeWidth="1"
+                            strokeLinejoin="round" opacity="0.95" />
+                        </g>
+                      );
+                    })}
+                  </>
+                );
+              })()}
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
