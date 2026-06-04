@@ -16,12 +16,27 @@ interface BranchLite {
   fireComputedSmokeDens?: number;
   fireComputedCO?: number;
   flow?: number;
+  hasBulkhead?: boolean;
+  bulkheadR?: number;
+  isLeakage?: boolean;
+  resistance?: number;
 }
+
+export type RescuePickMode = "start" | "target" | null;
 
 interface Props {
   nodes: NodeLite[];
   branches: BranchLite[];
   fireCalcDone: boolean;
+  // Pick-mode: выбор узла кликом на схеме
+  pickMode: RescuePickMode;
+  onPickModeChange: (mode: RescuePickMode) => void;
+  pickedStartId: string;
+  pickedTargetId: string;
+  onPickedStartChange: (id: string) => void;
+  onPickedTargetChange: (id: string) => void;
+  // Маршрут для подсветки на схеме
+  onRouteChange: (branchIds: Set<string>, nodeIds: Set<string>) => void;
 }
 
 const OP_LABELS: Record<RescueOperationType, string> = {
@@ -384,7 +399,13 @@ function exportToCSV(result: RescueResult) {
 
 // ─── Основной экспорт: панель параметров ────────────────────────────────────
 
-export default function RescuePanel({ nodes, branches, fireCalcDone }: Props) {
+export default function RescuePanel({
+  nodes, branches, fireCalcDone,
+  pickMode, onPickModeChange, onNodePicked,
+  pickedStartId, pickedTargetId,
+  onPickedStartChange, onPickedTargetChange,
+  onRouteChange,
+}: Props) {
   const [operationType, setOperationType] = useState<RescueOperationType>("scout_and_transport");
   const [useAirTemp, setUseAirTemp] = useState(false);
   const [useIdaTime, setUseIdaTime] = useState(true);
@@ -395,11 +416,12 @@ export default function RescuePanel({ nodes, branches, fireCalcDone }: Props) {
   const [oxygenConsumption, setOxygenConsumption] = useState(1.4);
   const [oxygenVolume, setOxygenVolume] = useState(400);
 
-  const [startNodeId, setStartNodeId] = useState<string>("");
-  const [targetNodeId, setTargetNodeId] = useState<string>("");
   const [result, setResult] = useState<RescueResult | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [showResultLink, setShowResultLink] = useState(false);
+
+  const startNodeId = pickedStartId;
+  const targetNodeId = pickedTargetId;
 
   const nodeOptions = useMemo(() => {
     return nodes.map(n => ({
@@ -407,6 +429,12 @@ export default function RescuePanel({ nodes, branches, fireCalcDone }: Props) {
       label: n.name ? `${n.name}` : n.number ? `Узел ${n.number}` : n.id.slice(0, 8),
     }));
   }, [nodes]);
+
+  const nodeName = (id: string) => {
+    const n = nodes.find(n2 => n2.id === id);
+    if (!n) return id.slice(0, 8);
+    return n.name || (n.number ? `Узел ${n.number}` : id.slice(0, 8));
+  };
 
   function handleCalc() {
     if (!startNodeId || !targetNodeId) {
@@ -426,6 +454,13 @@ export default function RescuePanel({ nodes, branches, fireCalcDone }: Props) {
     setResult(res);
     setShowDialog(true);
     setShowResultLink(true);
+    // передаём маршрут для подсветки на схеме
+    const branchIds = new Set([
+      ...res.segments.map(s => s.branchId),
+      ...res.segmentsBack.map(s => s.branchId),
+    ]);
+    const nodeIds = new Set([startNodeId, targetNodeId]);
+    onRouteChange(branchIds, nodeIds);
   }
 
   const Label = ({ children }: { children: React.ReactNode }) => (
@@ -438,15 +473,36 @@ export default function RescuePanel({ nodes, branches, fireCalcDone }: Props) {
     </label>
   );
 
+  // Кнопка выбора узла кликом на схеме
+  const PickBtn = ({ mode, label }: { mode: "start" | "target"; label: string }) => (
+    <button
+      onClick={() => onPickModeChange(pickMode === mode ? null : mode)}
+      title={`Кликните на узел схемы для выбора: ${label}`}
+      className={`h-6 px-1.5 rounded border text-[10px] flex items-center gap-0.5 flex-shrink-0 ${
+        pickMode === mode
+          ? "bg-green-600 text-white border-green-700"
+          : "bg-white text-gray-600 border-gray-300 hover:border-green-500"
+      }`}>
+      <Icon name="MousePointer2" size={10} />
+      {pickMode === mode ? "Кликни узел" : "Выбрать"}
+    </button>
+  );
+
   return (
     <div className="flex flex-col gap-0 text-[11px] overflow-y-auto h-full px-2 py-2">
       <div className="font-semibold text-[12px] text-blue-900 mb-2 flex items-center gap-1">
         <Icon name="ShieldCheck" size={14} /> Расчёт горноспасателей
       </div>
 
+      {pickMode && (
+        <div className="text-[10px] bg-green-50 border border-green-300 rounded p-1.5 mb-2 text-green-800 font-medium">
+          ↖ Кликните на узел схемы для выбора {pickMode === "start" ? "начального узла (база ВГСЧ)" : "целевого узла (место аварии)"}
+        </div>
+      )}
+
       {!fireCalcDone && (
         <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-1.5 mb-2">
-          ⚠ Расчёт пожара не выполнен. Зоны задымления не учитываются — горноспасатели будут идти в «чистом» воздухе.
+          ⚠ Расчёт пожара не выполнен. Зоны задымления не учитываются.
         </div>
       )}
 
@@ -464,20 +520,32 @@ export default function RescuePanel({ nodes, branches, fireCalcDone }: Props) {
         ))}
       </div>
 
-      {/* Маршрут */}
+      {/* Маршрут — выбор узлов (select + кнопка pick) */}
       <Label>Начальный узел (база ВГСЧ):</Label>
-      <select value={startNodeId} onChange={e => setStartNodeId(e.target.value)}
-        className="w-full rounded border border-gray-300 text-[11px] px-1 py-0.5 bg-white">
-        <option value="">— выберите узел —</option>
-        {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
-      </select>
+      <div className="flex gap-1">
+        <select value={startNodeId} onChange={e => onPickedStartChange(e.target.value)}
+          className="flex-1 min-w-0 rounded border border-gray-300 text-[11px] px-1 py-0.5 bg-white">
+          <option value="">— выберите —</option>
+          {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+        </select>
+        <PickBtn mode="start" label="начального узла" />
+      </div>
+      {startNodeId && (
+        <div className="text-[10px] text-green-700 ml-1 mt-0.5">✓ {nodeName(startNodeId)}</div>
+      )}
 
       <Label>Целевой узел (место аварии):</Label>
-      <select value={targetNodeId} onChange={e => setTargetNodeId(e.target.value)}
-        className="w-full rounded border border-gray-300 text-[11px] px-1 py-0.5 bg-white">
-        <option value="">— выберите узел —</option>
-        {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
-      </select>
+      <div className="flex gap-1">
+        <select value={targetNodeId} onChange={e => onPickedTargetChange(e.target.value)}
+          className="flex-1 min-w-0 rounded border border-gray-300 text-[11px] px-1 py-0.5 bg-white">
+          <option value="">— выберите —</option>
+          {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+        </select>
+        <PickBtn mode="target" label="целевого узла" />
+      </div>
+      {targetNodeId && (
+        <div className="text-[10px] text-green-700 ml-1 mt-0.5">✓ {nodeName(targetNodeId)}</div>
+      )}
 
       {/* Параметры расчёта */}
       <div className="border-t border-gray-200 mt-2 pt-1">

@@ -166,6 +166,14 @@ interface Props {
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */
+  rescuePathBranchIds?: Set<string>;
+  /** ID узлов маршрута горноспасателей (старт/финиш) — подсвечиваются */
+  rescuePathNodeIds?: Set<string>;
+  /** Callback при клике по узлу в режиме pick (rescuePickMode) */
+  onRescueNodePick?: (nodeId: string) => void;
+  /** Режим выбора узла для горноспасателей: "start" | "target" | null */
+  rescuePickMode?: "start" | "target" | null;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
   colorMode?: "none" | "flowQ";
   /** Минимальное значение шкалы расхода, м³/с */
@@ -225,6 +233,10 @@ export default function TopoCanvas(props: Props) {
     waterNodeResults,
     branchFireColors,
     branchExplosionColors,
+    rescuePathBranchIds,
+    rescuePathNodeIds,
+    onRescueNodePick,
+    rescuePickMode,
     colorMode = "none",
     flowColorMin = 0,
     flowColorMax = 75,
@@ -815,6 +827,13 @@ export default function TopoCanvas(props: Props) {
     const hitN = hitNode(sx, sy, projNodes);
     const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, branches) : null;
 
+    // ─── РЕЖИМ ВЫБОРА УЗЛА ДЛЯ ГОРНОСПАСАТЕЛЕЙ (pick-mode) ────────────
+    if (rescuePickMode && onRescueNodePick && hitN && e.button === 0) {
+      onRescueNodePick(hitN);
+      e.stopPropagation();
+      return;
+    }
+
     // ─── РЕЖИМ ПРИВЯЗКИ ВЕТВЕЙ К ПОЗИЦИИ (F3) ──────────────────────────
     if (branchBindMode && hitB) {
       onSelectBranch(hitB);
@@ -1322,6 +1341,7 @@ export default function TopoCanvas(props: Props) {
 
   const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
     : draggingNode ? "grabbing"
+    : rescuePickMode ? "cell"
     : branchBindMode ? "pointer"
     : pendingSymbolTypeId ? "copy"
     : tool === "node" ? "crosshair"
@@ -1673,6 +1693,15 @@ export default function TopoCanvas(props: Props) {
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                   stroke={expSeg.color} strokeWidth={Math.max(w + 8, 6)} strokeLinecap="round"
                   opacity="0.3" />
+              </>)}
+              {/* Подсветка маршрута горноспасателей */}
+              {rescuePathBranchIds?.has(b.id) && (<>
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#16a34a" strokeWidth={Math.max(w + 10, 7)} strokeLinecap="round"
+                  opacity="0.45" />
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#4ade80" strokeWidth={Math.max(w + 4, 4)} strokeLinecap="round"
+                  opacity="0.85" strokeDasharray="12 5" />
               </>)}
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
@@ -2526,6 +2555,7 @@ export default function TopoCanvas(props: Props) {
           const isSel = selectedNodeId === node.id || (selectedNodeIds?.has(node.id) ?? false);
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
+          const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
           // Фиксированный размер в px — не зависит от масштаба схемы
           const r = isSel ? 4 : 2.5;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
@@ -2537,6 +2567,10 @@ export default function TopoCanvas(props: Props) {
           const IS = Math.min(16, Math.max(7, 10 + (view.scale - 0.4) * 8));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
+              {/* Кольцо маршрута горноспасателей */}
+              {isRescuePath && (
+                <circle r={r + 7} fill="#16a34a" stroke="#15803d" strokeWidth="1.5" opacity="0.85" />
+              )}
               {/* Кольцо выделения — только для обычных узлов */}
               {(isSel || isBranchFrom) && !hasFire && (
                 <circle r={r + 4} fill="none" stroke={ringColor} strokeWidth="1.5"

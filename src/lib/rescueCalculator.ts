@@ -132,6 +132,12 @@ export interface TopoBranchLite {
   fireComputedSmokeDens?: number;
   fireComputedCO?: number;
   flow?: number;
+  // Перемычки
+  hasBulkhead?: boolean;
+  bulkheadR?: number;         // Мюрг — сопротивление перемычки
+  bulkheadAirPerm?: number;   // м²/(с·√Па) — воздухопроницаемость
+  isLeakage?: boolean;        // утечка (не проходима для людей)
+  resistance?: number;        // Н·с²/м⁸ аэродинамическое сопротивление ветви
 }
 
 export function calcRescue(
@@ -146,10 +152,20 @@ export function calcRescue(
   // ── Дейкстра по обходу наименьшего времени ────────────────────────────────
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   // Строим граф: nodeId → список {toId, branchId, forward(true/false)}
+  // Перемычки (hasBulkhead) и утечки (isLeakage) непроходимы для людей — исключаем
   type Edge = { toId: string; branchId: string; forward: boolean };
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
+    // Ветвь с перемычкой непроходима (люди через перемычку не идут)
+    if (b.hasBulkhead) {
+      warnings.push(`Перемычка на ветви ${b.id} — ветвь исключена из маршрута`);
+      continue;
+    }
+    // Утечки (перетечки) — непроходимы
+    if (b.isLeakage) continue;
+    // Ветви с нулевой длиной пропускаем
+    if ((b.length ?? 0) <= 0) continue;
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
     adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
   }

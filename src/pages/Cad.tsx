@@ -633,6 +633,12 @@ export default function CadPage() {
   // ─── Результат расчёта пожара ───────────────────────────────────────
   const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
   const [fireCalcDone, setFireCalcDone] = useState(false);
+  // ─── Горноспасатели ────────────────────────────────────────────────
+  const [rescuePickMode, setRescuePickMode] = useState<"start" | "target" | null>(null);
+  const [rescueStartNodeId, setRescueStartNodeId] = useState("");
+  const [rescueTargetNodeId, setRescueTargetNodeId] = useState("");
+  const [rescuePathBranchIds, setRescuePathBranchIds] = useState<Set<string>>(new Set());
+  const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
@@ -5455,6 +5461,16 @@ export default function CadPage() {
                 nodes={nodes}
                 branches={branches}
                 fireCalcDone={fireCalcDone}
+                pickMode={rescuePickMode}
+                onPickModeChange={setRescuePickMode}
+                pickedStartId={rescueStartNodeId}
+                pickedTargetId={rescueTargetNodeId}
+                onPickedStartChange={setRescueStartNodeId}
+                onPickedTargetChange={setRescueTargetNodeId}
+                onRouteChange={(bIds, nIds) => {
+                  setRescuePathBranchIds(bIds);
+                  setRescuePathNodeIds(nIds);
+                }}
               />
             )}
 
@@ -6224,6 +6240,18 @@ export default function CadPage() {
                 });
                 return map.size > 0 ? map : undefined;
               })()}
+              rescuePathBranchIds={rescuePathBranchIds.size > 0 ? rescuePathBranchIds : undefined}
+              rescuePathNodeIds={rescuePathNodeIds.size > 0 ? rescuePathNodeIds : undefined}
+              rescuePickMode={rescuePickMode}
+              onRescueNodePick={(nodeId) => {
+                if (rescuePickMode === "start") {
+                  setRescueStartNodeId(nodeId);
+                  setRescuePickMode("target");
+                } else if (rescuePickMode === "target") {
+                  setRescueTargetNodeId(nodeId);
+                  setRescuePickMode(null);
+                }
+              }}
               onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {
                   setSquadDialog({ typeId, x, y, branchId });
