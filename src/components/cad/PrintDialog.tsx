@@ -389,34 +389,75 @@ export default function PrintDialog({
   const totalPages = tiles.list.length;
 
   // ─── Рендер одного тайла ─────────────────────────────────────────────
-  // Тайл (col, row): сдвигаем offsetX на col*pageW → видна нужная часть схемы
+  // Рендерит полный лист (paper.w × paper.h) при заданном DPI.
+  // Схема позиционируется с учётом полей (marginLeft/Top) и тайлового сдвига.
+  // dpi — итоговое разрешение в точках на дюйм.
   const renderTileToCanvas = useCallback(async (
-    outW: number, outH: number,
-    col: number, row: number,
-    dpiMult: number,  // 1 = 150dpi, >1 = повышенное разрешение
+    col: number,
+    row: number,
+    dpi: number,
   ): Promise<string> => {
+    const mmToPx = (mm: number) => Math.round(mm * dpi / 25.4);
+
+    // Canvas = полный лист
+    const canvasW = mmToPx(paper.w);
+    const canvasH = mmToPx(paper.h);
+
+    // Ограничение: браузеры обычно не поддерживают canvas > 16384px
+    const MAX_PX = 16384;
+    const safeW = Math.min(canvasW, MAX_PX);
+    const safeH = Math.min(canvasH, MAX_PX);
+    // Если пришлось уменьшить — пересчитываем DPI
+    const effectiveDpi = dpi * Math.min(safeW / canvasW, safeH / canvasH);
+    const mmToPxE = (mm: number) => Math.round(mm * effectiveDpi / 25.4);
+
     const oc = document.createElement("canvas");
-    oc.width = Math.round(outW * dpiMult); oc.height = Math.round(outH * dpiMult);
+    oc.width = mmToPxE(paper.w);
+    oc.height = mmToPxE(paper.h);
     const ctx = oc.getContext("2d");
     if (!ctx) return "";
 
     const { sc, offsetX, offsetY, isScene3D, horizonMap, pageW, pageH } = baseView;
-    const scaledSc   = sc   * dpiMult;
-    const scaledOffX = (offsetX - col * pageW) * dpiMult;
-    const scaledOffY = (offsetY - row * pageH) * dpiMult;
 
-    const sv = { scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
-      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    // Масштаб: базовый sc при 150dpi → пересчёт на effectiveDpi
+    const BASE_DPI = 150;
+    const dpiRatio = effectiveDpi / BASE_DPI;
+
+    // Схема в координатах полного листа при effectiveDpi:
+    // offsetX/Y — позиция в рабочей области (150dpi).
+    // Добавляем поля и тайловый сдвиг, масштабируем на dpiRatio.
+    const marginLeftPx  = mmToPxE(marginLeft);
+    const marginTopPx   = mmToPxE(marginTop);
+
+    const scaledSc   = sc * dpiRatio;
+    const scaledOffX = marginLeftPx  + (offsetX - col * pageW) * dpiRatio;
+    const scaledOffY = marginTopPx   + (offsetY - row * pageH) * dpiRatio;
+
+    const sv = {
+      scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
+      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
+    };
     const visibleBranches = branches.filter(b => {
       if (!b.horizonId) return true;
       const h = horizonMap.get(b.horizonId);
       return !h || h.visible;
     });
-    const projNodes = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0 }));
+    const projNodes = nodes.map(n => ({
+      node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
+    }));
     const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, oc.width, oc.height);
+
+    // Клиппинг по рабочей области (без полей и штампа)
+    const workW = mmToPxE(workArea.w);
+    const workH = mmToPxE(workArea.h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(marginLeftPx, marginTopPx, workW, workH);
+    ctx.clip();
+
     renderCanvas({
       ctx, width: oc.width, height: oc.height,
       nodes, branches, horizons, horizonMap,
@@ -432,28 +473,32 @@ export default function PrintDialog({
       printMode: true,
       colorMode, posInnerColors, posOuterColors,
     });
+    ctx.restore();
+
     if (schemaSymbols.length > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(marginLeftPx, marginTopPx, workW, workH);
+      ctx.clip();
       await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
+      ctx.restore();
     }
     return oc.toDataURL("image/png");
-  }, [baseView, nodes, branches, horizons, schemaSymbols, viewState, zScale,
+  }, [baseView, paper, workArea, marginLeft, marginTop,
+      nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
       colorMode, posInnerColors, posOuterColors]);
 
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
-    const DPI = 150;
-    const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
-    const printW = mmToPx(workArea.w);
-    const printH = mmToPx(workArea.h);
+    const PRINT_DPI = 300;
     const total = totalPages * copies;
 
-    // Рендерим все тайлы в 300dpi (dpiMult=2)
     const tilesList = reverseOrder ? [...tiles.list].reverse() : tiles.list;
     const pngPages: string[] = [];
     for (const t of tilesList) {
-      pngPages.push(await renderTileToCanvas(printW, printH, t.col, t.row, 2));
+      pngPages.push(await renderTileToCanvas(t.col, t.row, PRINT_DPI));
     }
 
     const makeStamp = (idx: number, total2: number) => showStamp ? `
@@ -471,16 +516,14 @@ export default function PrintDialog({
         <tr><td colspan="5"></td></tr>
       </table>` : "";
 
+    // Canvas теперь = полный лист, img растягивается на весь лист без padding
     const pageHtmls: string[] = [];
     let pageNum = 0;
     for (let copy = 0; copy < copies; copy++) {
       for (const png of pngPages) {
         pageNum++;
         pageHtmls.push(`<div class="page">
-  ${showFrame ? '<div class="frame"></div>' : ''}
-  <div class="schema-wrap">
-    <img src="${png}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" />
-  </div>
+  <img src="${png}" class="page-img" />
   ${makeStamp(pageNum, total)}
   ${showPageNumbers ? `<div class="page-num">${pageNum} / ${total}</div>` : ''}
 </div>`);
@@ -493,11 +536,9 @@ export default function PrintDialog({
 @page{size:${paper.w}mm ${paper.h}mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:white;font-family:Arial,sans-serif}
-.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;page-break-after:always;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;background:white}
+.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;page-break-after:always;overflow:hidden;background:white}
 .page:last-child{page-break-after:auto}
-.frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom+(showStamp?56:0)}mm;border:1px solid #000;pointer-events:none}
-.schema-wrap{width:100%;height:calc(100% - ${showStamp?56:0}mm);overflow:hidden;background:white}
-.schema-wrap img{background:white;display:block}
+.page-img{position:absolute;top:0;left:0;width:${paper.w}mm;height:${paper.h}mm;display:block}
 .stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
 .stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
 .col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
@@ -515,7 +556,7 @@ body{background:white;font-family:Arial,sans-serif}
     win.document.open();
     win.document.write(html);
     win.document.close();
-  }, [paper, workArea, marginTop, marginBottom, marginLeft, marginRight, showStamp, showFrame,
+  }, [paper, marginTop, marginBottom, marginRight, showStamp,
       showPageNumbers, copies, reverseOrder, drawingTitle, drawingNumber, engineer, approvedBy,
       organization, printDate, tiles, totalPages, renderTileToCanvas]);
 
@@ -524,12 +565,8 @@ body{background:white;font-family:Arial,sans-serif}
     closeCtxMenu();
     const tile = tiles.list[tileIdx];
     if (!tile) return;
-    const DPI = 150;
-    const mmToPx = (mm: number) => mm * DPI / 25.4;
-    const printW = mmToPx(workArea.w);
-    const printH = mmToPx(workArea.h);
-    const png = await renderTileToCanvas(printW, printH, tile.col, tile.row, 2);
     const pageNum = tileIdx + 1;
+    const png = await renderTileToCanvas(tile.col, tile.row, 300);
     const stampHtml = showStamp ? `
       <table class="stamp" cellpadding="0" cellspacing="0">
         <tr><td colspan="5"></td>
@@ -550,10 +587,8 @@ body{background:white;font-family:Arial,sans-serif}
 @page{size:${paper.w}mm ${paper.h}mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:white;font-family:Arial,sans-serif}
-.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;background:white}
-.frame{position:absolute;top:${marginTop}mm;left:${marginLeft}mm;right:${marginRight}mm;bottom:${marginBottom + (showStamp ? 56 : 0)}mm;border:1px solid #000;pointer-events:none}
-.schema-wrap{width:100%;height:calc(100% - ${showStamp ? 56 : 0}mm);overflow:hidden;background:white}
-.schema-wrap img{background:white;display:block}
+.page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;background:white}
+.page-img{position:absolute;top:0;left:0;width:${paper.w}mm;height:${paper.h}mm;display:block}
 .stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
 .stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
 .col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
@@ -564,8 +599,7 @@ body{background:white;font-family:Arial,sans-serif}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
 <div class="page">
-  ${showFrame ? '<div class="frame"></div>' : ''}
-  <div class="schema-wrap"><img src="${png}" style="width:${workArea.w}mm;height:${workArea.h}mm;display:block;" /></div>
+  <img src="${png}" class="page-img" />
   ${stampHtml}
   ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
 </div>
@@ -574,8 +608,8 @@ body{background:white;font-family:Arial,sans-serif}
     const win = window.open("", "_blank", "width=1400,height=900");
     if (!win) { alert("Разрешите всплывающие окна"); return; }
     win.document.open(); win.document.write(html); win.document.close();
-  }, [tiles, workArea, paper, marginTop, marginBottom, marginLeft, marginRight,
-      showStamp, showFrame, showPageNumbers, drawingTitle, drawingNumber,
+  }, [tiles, paper, marginBottom, marginRight,
+      showStamp, showPageNumbers, drawingTitle, drawingNumber,
       engineer, approvedBy, organization, printDate, renderTileToCanvas, closeCtxMenu]);
 
   // ─── Экспорт ─────────────────────────────────────────────────────────
@@ -594,17 +628,10 @@ body{background:white;font-family:Arial,sans-serif}
       setShowExportDialog(false);
       return;
     }
-    // PDF и растровые форматы — единый путь рендера через renderTileToCanvas
+    // PDF и растровые форматы
     setPdfExporting(true);
     try {
       const DPI = exportDpi;
-      // Базовый размер тайла при 150dpi
-      const BASE_DPI = 150;
-      const mmToPx = (mm: number) => Math.round(mm * BASE_DPI / 25.4);
-      const baseTileW = mmToPx(workArea.w);
-      const baseTileH = mmToPx(workArea.h);
-      // Коэффициент масштаба: итоговый DPI / базовый
-      const dpiMult = Math.max(0.5, DPI / BASE_DPI);
       const tilesList = tiles.list;
 
       if (exportFormat === "pdf") {
@@ -618,24 +645,15 @@ body{background:white;font-family:Arial,sans-serif}
 
         for (let i = 0; i < tilesList.length; i++) {
           const t = tilesList[i];
-          const pngSrc = await renderTileToCanvas(baseTileW, baseTileH, t.col, t.row, dpiMult);
+          // canvas = полный лист при DPI — вставляем на весь лист (0,0)
+          const pngSrc = await renderTileToCanvas(t.col, t.row, DPI);
           if (!pngSrc) continue;
           if (i > 0) pdf.addPage([paper.w, paper.h], isLandscape ? "landscape" : "portrait");
-          // Рамка страницы
-          if (showFrame) {
-            pdf.setDrawColor(0, 0, 0);
-            pdf.setLineWidth(0.3);
-            pdf.rect(marginLeft, marginTop, workArea.w, workArea.h + (showStamp ? 56 : 0));
-          }
-          // Схема — точно в рабочую область листа
-          pdf.addImage(pngSrc, "PNG", marginLeft, marginTop, workArea.w, workArea.h, undefined, "MEDIUM");
-          // Штамп (таблица)
+          pdf.addImage(pngSrc, "PNG", 0, 0, paper.w, paper.h, undefined, "MEDIUM");
+          // Штамп поверх изображения (текст)
           if (showStamp && drawingTitle) {
             const sy = paper.h - marginBottom - 55;
-            pdf.setFontSize(8);
-            pdf.setTextColor(0);
-            pdf.setDrawColor(0);
-            pdf.setLineWidth(0.2);
+            pdf.setFontSize(8); pdf.setTextColor(0); pdf.setDrawColor(0); pdf.setLineWidth(0.2);
             pdf.rect(marginLeft, sy, 185, 55);
             pdf.setFontSize(11);
             pdf.text(drawingTitle, marginLeft + 120, sy + 28, { align: "center", maxWidth: 63 });
@@ -645,11 +663,10 @@ body{background:white;font-family:Arial,sans-serif}
             pdf.text(`Орг.: ${organization || ""}`, marginLeft + 2, sy + 26);
             pdf.text(printDate || new Date().toLocaleDateString("ru"), marginLeft + 2, sy + 34);
           }
-          // Номер листа
           if (showPageNumbers) {
-            pdf.setFontSize(8);
-            pdf.setTextColor(80);
-            pdf.text(`${i + 1} / ${tilesList.length}`, paper.w - marginRight - 2, paper.h - marginBottom - (showStamp ? 58 : 2), { align: "right" });
+            pdf.setFontSize(8); pdf.setTextColor(80);
+            pdf.text(`${i + 1} / ${tilesList.length}`, paper.w - marginRight - 2,
+              paper.h - marginBottom - (showStamp ? 58 : 2), { align: "right" });
           }
         }
         pdf.save(`${projectName}.pdf`);
@@ -657,9 +674,9 @@ body{background:white;font-family:Arial,sans-serif}
         return;
       }
 
-      // Растровые форматы (PNG, JPG, BMP, TIFF) — рендерим первый тайл
+      // Растровые форматы (PNG, JPG, BMP, TIFF) — первый тайл
       const { colMin, rowMin } = tiles;
-      const pngSrc = await renderTileToCanvas(baseTileW, baseTileH, colMin, rowMin, dpiMult);
+      const pngSrc = await renderTileToCanvas(colMin, rowMin, DPI);
       if (!pngSrc) { alert("Ошибка рендера"); return; }
 
       if (exportFormat === "png") {
@@ -669,7 +686,7 @@ body{background:white;font-family:Arial,sans-serif}
         return;
       }
 
-      // JPG / BMP / TIFF — перерисовываем с белым фоном
+      // JPG / BMP / TIFF — с белым фоном
       const img = new Image();
       await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = pngSrc; });
       const oc2 = document.createElement("canvas");
@@ -688,9 +705,9 @@ body{background:white;font-family:Arial,sans-serif}
       setPdfExporting(false);
     }
   }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw,
-      renderTileToCanvas, tiles, workArea, paper, showFrame, showStamp,
-      marginLeft, marginRight, marginTop, marginBottom,
-      drawingTitle, engineer, approvedBy, organization, printDate, showPageNumbers]);
+      renderTileToCanvas, tiles, paper, showStamp, showPageNumbers,
+      marginLeft, marginRight, marginBottom,
+      drawingTitle, engineer, approvedBy, organization, printDate]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
@@ -1006,14 +1023,16 @@ body{background:white;font-family:Arial,sans-serif}
             }}>
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
-                // Размеры canvas в превью-пикселях (рабочая область без полей)
-                const canvasW    = Math.max(1, Math.round(px(workArea.w)));
-                const canvasH    = Math.max(1, Math.round(px(workArea.h)));
-                // Коэффициент: сколько превью-px в одном печатном px (150dpi)
-                const prevToPage = canvasW / baseView.pageW;
+                // Коэффициент: превью-px / печатный-px (150dpi).
+                // Теперь canvas = полный лист prevW×prevH, поэтому масштабируем от полного листа.
+                const BASE_DPI = 150;
+                const paperWpx = paper.w * BASE_DPI / 25.4;
+                const prevToPage = prevW / paperWpx;
                 const prevSc     = baseView.sc * prevToPage;
-                const prevOffX   = (baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
-                const prevOffY   = (baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
+                const marginLeftPx150 = marginLeft * BASE_DPI / 25.4;
+                const marginTopPx150  = marginTop  * BASE_DPI / 25.4;
+                const prevOffX = (marginLeftPx150 + baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
+                const prevOffY = (marginTopPx150  + baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
                 return (
                   <div key={`${tile.col}-${tile.row}`}
                     onContextMenu={e => handleTileContextMenu(e, idx)}
@@ -1053,8 +1072,8 @@ body{background:white;font-family:Arial,sans-serif}
                         zScale={zScale}
                         is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
                         scale={prevSc}
-                        offsetX={prevOffX + px(marginLeft)}
-                        offsetY={prevOffY + px(marginTop)}
+                        offsetX={prevOffX}
+                        offsetY={prevOffY}
                         width={prevW}
                         height={prevH}
                         branchWidth={branchWidth}
