@@ -1182,7 +1182,7 @@ body{background:white;font-family:Arial,sans-serif}
       {/* Диалог экспорта */}
       {showExportDialog && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.6)" }}>
+          style={{ background: "rgba(0,0,0,0.6)", pointerEvents: "auto" }}>
           <div className="bg-white rounded shadow-2xl border border-gray-400"
             style={{ width: 400, fontFamily: "Tahoma, Segoe UI, Arial, sans-serif" }}>
 
