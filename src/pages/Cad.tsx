@@ -5551,7 +5551,7 @@ export default function CadPage() {
             <ToolBtn icon="Plus" label="Узел" active={tool === "node"} onClick={() => setTool("node")} />
             <ToolBtn icon="GitBranch" label="Ветвь" active={tool === "branch"} onClick={() => setTool("branch")} />
             <ToolBtn icon="Move" label="Панорама" active={tool === "pan"} onClick={() => setTool("pan")} />
-            <ToolBtn icon="RotateCw" label="Вращать 3D" active={tool === "rotate"} onClick={() => setTool("rotate")} />
+            <ToolBtn icon="RotateCw" label="Вращать" active={tool === "rotate"} onClick={() => setTool("rotate")} />
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
             <ToolBtn icon="Trash2" label="Удалить" disabled={!selectedNodeId && !selectedBranchId}
               onClick={handleDeleteSelected} />
@@ -5596,52 +5596,11 @@ export default function CadPage() {
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
-            {/* ── Расчёт воздухораспределения (F9) ── */}
-            <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-              <button onClick={handleSolve} disabled={vcSolving}
-                className="h-6 px-2 flex items-center gap-1 text-[11px]"
-                style={{ background: vcSolving ? "#6b7280" : "#16a34a", color: "white" }}
-                title={`Расчёт (F9) — метод: ${calcMode === "cross" ? "Кросс" : "МКР"}`}>
-                {vcSolving
-                  ? <><Icon name="Loader" size={11} className="animate-spin" /> Считаю...</>
-                  : <><Icon name="Play" size={11} /> Расчёт <span className="opacity-80 text-[10px]">F9</span></>}
-              </button>
-              <button
-                onClick={() => setCalcMode(calcMode === "cross" ? "mkr" : "cross")}
-                className="h-6 px-2 text-[11px] border-l border-gray-400 font-medium"
-                style={{
-                  background: calcMode === "mkr" ? "#1d4ed8" : "#f3f4f6",
-                  color: calcMode === "mkr" ? "white" : "#374151",
-                }}
-                title={calcMode === "cross" ? "Метод Кросса — нажмите для переключения на МКР" : "МКР — нажмите для переключения на Кросс"}>
-                {calcMode === "cross" ? "Кросс" : "МКР"}
-              </button>
-            </div>
             {vcError && (
               <span className="text-[10px] text-red-600 max-w-[160px] truncate" title={vcError}>
                 ⚠ {vcError}
               </span>
             )}
-            <button onClick={() => setShowFlowArrows((v) => !v)}
-              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
-              style={{
-                background: showFlowArrows ? "#dc2626" : "white",
-                color: showFlowArrows ? "white" : "#1f1f1f",
-                border: "1px solid " + (showFlowArrows ? "#b91c1c" : "#d0d0d0"),
-              }}
-              title="Показать стрелки направления свежей струи">
-              <Icon name="ArrowRight" size={11} /> Стрелки
-            </button>
-            <button onClick={() => setThinLines((v) => !v)}
-              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
-              style={{
-                background: thinLines ? "#2563eb" : "white",
-                color: thinLines ? "white" : "#1f1f1f",
-                border: "1px solid " + (thinLines ? "#1d4ed8" : "#d0d0d0"),
-              }}
-              title="Тонкие линии 1px вкл/откл (F6)">
-              <Icon name="Minus" size={11} /> Тонкие <span className="opacity-80 text-[10px]">F6</span>
-            </button>
 
             {/* ── Реверс вентилятора (только если выбрана ветвь с вентилятором) ── */}
             {selectedBranch?.hasFan && (
@@ -5663,28 +5622,6 @@ export default function CadPage() {
                     : <><Icon name="ArrowRight" size={11} /> Прямой</>}
                 </button>
               </>
-            )}
-
-            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
-
-            {/* ── Рабочая плоскость для построения ── */}
-            <span className="text-[11px] text-gray-700"
-              title="Плоскость, в которой создаются и перемещаются узлы">Плоск:</span>
-            <div className="flex border border-gray-300 rounded overflow-hidden">
-              <FlowBtn label="Авто" active={workPlane === null}
-                onClick={() => setWorkPlane(null)} hint="Подбирается по ракурсу автоматически" />
-              <FlowBtn label="XY" active={workPlane?.axis === "z"}
-                onClick={() => setWorkPlane({ axis: "z", value: zLevel })} hint={`Горизонтальная (Z = ${zLevel} м)`} />
-              <FlowBtn label="XZ" active={workPlane?.axis === "y"}
-                onClick={() => setWorkPlane({ axis: "y", value: 0 })} hint="Вертикальная (Y = 0 м)" />
-              <FlowBtn label="YZ" active={workPlane?.axis === "x"}
-                onClick={() => setWorkPlane({ axis: "x", value: 0 })} hint="Вертикальная (X = 0 м)" />
-            </div>
-            {workPlane && (
-              <input type="number" value={workPlane.value} step={50}
-                onChange={(e) => setWorkPlane({ ...workPlane, value: Number(e.target.value) })}
-                className="cad-input text-[11px] py-0 w-16"
-                title={`Значение по оси ${workPlane.axis.toUpperCase()} (м)`} />
             )}
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
