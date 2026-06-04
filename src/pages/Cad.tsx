@@ -872,6 +872,7 @@ export default function CadPage() {
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
   const [printPreviewUrl, setPrintPreviewUrl] = useState<string>("");
+  const [printDialogOpenExport, setPrintDialogOpenExport] = useState<boolean>(false);
   const getSvgRef = useRef<(() => string) | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const liveSvgRef = useRef<SVGSVGElement | null>(null);
@@ -2596,6 +2597,16 @@ export default function CadPage() {
                       <div>
                         <div className="text-[12px] font-medium text-gray-700">Экспорт в JSON (.vproj)</div>
                         <div className="text-[10px] text-gray-400">Полный формат проекта</div>
+                      </div>
+                    </button>
+                    <button onClick={() => { setActiveRibbon("home"); openPrintDialog(); setPrintDialogOpenExport(true); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-red-50 border border-gray-200 group mb-1">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "#fff0f0" }}>
+                        <Icon name="FileText" size={16} className="text-red-600" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Экспорт в PDF</div>
+                        <div className="text-[10px] text-gray-400">Графический план — слой печати, высокое качество</div>
                       </div>
                     </button>
                   </>
@@ -7186,6 +7197,8 @@ export default function CadPage() {
         })() : undefined}
         positions={positions}
         showPositions={showPositions}
+        initialOpenExport={printDialogOpenExport}
+        onExportDialogOpened={() => setPrintDialogOpenExport(false)}
       />
     )}
 

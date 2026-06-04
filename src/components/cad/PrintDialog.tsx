@@ -8,6 +8,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
+import { jsPDF } from "jspdf";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -32,6 +33,8 @@ interface PrintDialogProps {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
+  initialOpenExport?: boolean;
+  onExportDialogOpened?: () => void;
 }
 
 type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0" | "custom";
@@ -88,6 +91,8 @@ export default function PrintDialog({
   posOuterColors,
   positions = [],
   showPositions = true,
+  initialOpenExport = false,
+  onExportDialogOpened,
 }: PrintDialogProps) {
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
@@ -270,6 +275,16 @@ export default function PrintDialog({
   const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf">("png");
   const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
+  const [pdfExporting, setPdfExporting] = useState(false);
+
+  // Автооткрытие диалога экспорта PDF если вызван из меню Файл → Экспорт
+  useEffect(() => {
+    if (initialOpenExport) {
+      setExportFormat("pdf");
+      setShowExportDialog(true);
+      onExportDialogOpened?.();
+    }
+  }, [initialOpenExport, onExportDialogOpened]);
 
   // ─── Размеры бумаги ───────────────────────────────────────────────────
   const paper = useMemo(() => {
@@ -586,7 +601,46 @@ body{background:white;font-family:Arial,sans-serif}
       return;
     }
     if (exportFormat === "pdf") {
-      await handlePrint();
+      setPdfExporting(true);
+      try {
+        const DPI = exportDpi;
+        const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
+        const tilesList = tiles.list;
+        const tileW = mmToPx(workArea.w);
+        const tileH = mmToPx(workArea.h);
+        const dpiMult = DPI / 150;
+
+        const isLandscape = paper.w > paper.h;
+        const pdf = new jsPDF({
+          orientation: isLandscape ? "landscape" : "portrait",
+          unit: "mm",
+          format: [paper.w, paper.h],
+        });
+
+        for (let i = 0; i < tilesList.length; i++) {
+          const t = tilesList[i];
+          const pngSrc = await renderTileToCanvas(tileW, tileH, t.col, t.row, dpiMult);
+          if (!pngSrc) continue;
+          if (i > 0) pdf.addPage([paper.w, paper.h], isLandscape ? "landscape" : "portrait");
+          // Рисуем рамку страницы
+          if (showFrame) {
+            pdf.setDrawColor(0);
+            pdf.setLineWidth(0.5);
+            pdf.rect(marginLeft, marginTop, workArea.w, workArea.h + (showStamp ? 56 : 0));
+          }
+          // Вставляем изображение схемы
+          pdf.addImage(pngSrc, "PNG", marginLeft, marginTop, workArea.w, workArea.h, undefined, "FAST");
+          // Заголовок
+          if (drawingTitle) {
+            pdf.setFontSize(10);
+            pdf.setTextColor(0);
+            pdf.text(drawingTitle, paper.w / 2, marginTop - 3, { align: "center" });
+          }
+        }
+        pdf.save(`${projectName}.pdf`);
+      } finally {
+        setPdfExporting(false);
+      }
       setShowExportDialog(false);
       return;
     }
@@ -620,7 +674,8 @@ body{background:white;font-family:Arial,sans-serif}
     a.download = `${projectName}.${exportFormat}`;
     a.click();
     setShowExportDialog(false);
-  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, handlePrint, renderToCanvas, prevW, prevH]);
+  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, handlePrint, renderToCanvas, prevW, prevH,
+      renderTileToCanvas, tiles, workArea, paper, showFrame, showStamp, marginLeft, marginTop, drawingTitle]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
@@ -1146,11 +1201,11 @@ body{background:white;font-family:Arial,sans-serif}
                   {exportFormat === "bmp"  && "BMP — без сжатия"}
                   {exportFormat === "tiff" && "TIFF — для полиграфии"}
                   {exportFormat === "svg"  && "SVG — векторный формат"}
-                  {exportFormat === "pdf"  && "PDF — через диалог печати"}
+                  {exportFormat === "pdf"  && "PDF — векторный документ с высоким DPI, все страницы"}
                 </div>
               </div>
 
-              {!["svg","pdf"].includes(exportFormat) && (
+              {!["svg"].includes(exportFormat) && (
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Разрешение (DPI):</div>
                   <div className="flex gap-2 mb-2">
@@ -1188,14 +1243,16 @@ body{background:white;font-family:Arial,sans-serif}
             </div>
 
             <div className="flex gap-2 px-5 pb-5 justify-end">
-              <button onClick={handleExport}
-                className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600"
+              <button onClick={handleExport} disabled={pdfExporting}
+                className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60 disabled:cursor-wait"
                 style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
-                <Icon name="Download" size={13} className="inline mr-1.5" />
-                Скачать {exportFormat.toUpperCase()}
+                {pdfExporting
+                  ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />Генерация PDF...</>
+                  : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat.toUpperCase()}</>
+                }
               </button>
-              <button onClick={() => setShowExportDialog(false)}
-                className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
+              <button onClick={() => setShowExportDialog(false)} disabled={pdfExporting}
+                className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700 disabled:opacity-60">
                 Отмена
               </button>
             </div>
