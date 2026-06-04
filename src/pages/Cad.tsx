@@ -1529,7 +1529,7 @@ export default function CadPage() {
   // (автопереключение правого таба при выборе объекта убрано — пользователь выбирает вкладку вручную)
 
   // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
-  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(330);
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(390);
   const leftDragRef = useRef<{ startX: number; startW: number } | null>(null);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
