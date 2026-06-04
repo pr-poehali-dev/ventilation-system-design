@@ -1510,6 +1510,15 @@ export default function CadPage() {
     setActiveRibbon("home");
   };
 
+  // ─── РАСКРЫТЫЕ НАСТРОЙКИ ГОРИЗОНТОВ (план + слой печати) ───────────
+  const [expandedHorizons, setExpandedHorizons] = useState<Set<string>>(new Set());
+  const toggleHorizonExpand = (id: string) =>
+    setExpandedHorizons(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) { n.delete(id); } else { n.add(id); }
+      return n;
+    });
+
   // ─── КОНТЕКСТНОЕ МЕНЮ ───────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<{
     kind: "node" | "branch" | "canvas";
@@ -5093,8 +5102,23 @@ export default function CadPage() {
                               <Icon name="Trash2" size={11} className="text-gray-600" />
                             </button>
                           </div>
+                          {/* ── Кнопка раскрытия настроек ── */}
+                          <button
+                            onClick={() => toggleHorizonExpand(h.id)}
+                            className="w-full flex items-center gap-1 px-2 py-0.5 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                            style={{ borderTop: "1px solid #e5e7eb" }}>
+                            <Icon name={expandedHorizons.has(h.id) ? "ChevronUp" : "ChevronDown"} size={10} className="flex-shrink-0" />
+                            <span>{expandedHorizons.has(h.id) ? "Скрыть настройки" : "Настройки (план, печать)"}</span>
+                            {h.image && !expandedHorizons.has(h.id) && (
+                              <span className="ml-auto text-blue-400" title="Загружен план">●</span>
+                            )}
+                            {h.printLayer?.visible && !expandedHorizons.has(h.id) && (
+                              <span className="ml-1 text-purple-400" title="Слой печати активен">●</span>
+                            )}
+                          </button>
                           {/* ── Подложка плана (внутри строки горизонта) ── */}
-                          <div className="px-1 pb-1 pt-0" style={{ borderTop: "1px solid #e5e7eb" }}>
+                          {expandedHorizons.has(h.id) && (
+                          <div className="px-1 pb-1 pt-0">
                             {h.image ? (
                               <div className="space-y-1 pt-1">
                                 <div className="flex items-center gap-1">
@@ -5237,6 +5261,7 @@ export default function CadPage() {
                               );
                             })()}
                           </div>
+                          )}
                         </div>
                       );
                     })}
