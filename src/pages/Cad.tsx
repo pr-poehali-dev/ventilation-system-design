@@ -41,6 +41,7 @@ import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICL
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
+import RescuePanel from "@/components/cad/RescuePanel";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL = (FUNC2URL as Record<string, string>)["airflow"];
@@ -92,7 +93,7 @@ export interface SchemaSymbol {
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue";
 
 interface Excavation {
   id: string;
@@ -3063,6 +3064,19 @@ export default function CadPage() {
           </RibbonGroup>
         )}
 
+        {/* ── Группа: Горноспасатели ── */}
+        <RibbonGroup label="Горноспасатели">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn
+              icon="ShieldCheck"
+              label="Расчёт"
+              sublabel="горноспасателей"
+              active={activeSide === "rescue"}
+              onClick={() => setActiveSide("rescue")}
+            />
+          </div>
+        </RibbonGroup>
+
         {/* ── Группа: Статус ── */}
         {fireCalcDone && fireResult && (
           <RibbonGroup label="Результат расчёта">
@@ -3650,6 +3664,7 @@ export default function CadPage() {
               {activeSide === "pipes" && "Трубопроводы"}
               {activeSide === "positions" && "Позиции"}
               {activeSide === "flowQ" && "Расход воздуха"}
+              {activeSide === "rescue" && "Расчёт горноспасателей"}
             </span>
             <div className="flex items-center gap-1">
               {activeSide === "params" && selectedNode && (
@@ -5431,6 +5446,15 @@ export default function CadPage() {
                 leaderDrawMode={leaderDrawMode}
                 onStartLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }}
                 onRemoveLeader={(posId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null } : p))}
+              />
+            )}
+
+            {/* ═══ РАСЧЁТ ГОРНОСПАСАТЕЛЕЙ ══════════════════════════════ */}
+            {activeSide === "rescue" && (
+              <RescuePanel
+                nodes={nodes}
+                branches={branches}
+                fireCalcDone={fireCalcDone}
               />
             )}
 
