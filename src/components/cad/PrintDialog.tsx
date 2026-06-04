@@ -429,23 +429,17 @@ export default function PrintDialog({
       thinLines, colorByHorizon,
       showFlowArrows: false, flowDisplay,
       animOffset: 0, infoConfig, unitsConfig,
+      printMode: true,
+      colorMode, posInnerColors, posOuterColors,
     });
     if (schemaSymbols.length > 0) {
       await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
     }
     return oc.toDataURL("image/png");
   }, [baseView, nodes, branches, horizons, schemaSymbols, viewState, zScale,
-      branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig]);
+      branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
+      colorMode, posInnerColors, posOuterColors]);
 
-  // ─── Рендер схемы в offscreen canvas для экспорта (первый тайл) ──────
-  const renderToCanvas = useCallback(async (outW: number, outH: number): Promise<string> => {
-    const { colMin, rowMin } = tiles;
-    const DPI = 150;
-    const mmToPx = (mm: number) => mm * DPI / 25.4;
-    const tileW = mmToPx(workArea.w);
-    const dpiMult = outW / tileW;
-    return renderTileToCanvas(tileW, mmToPx(workArea.h), colMin, rowMin, dpiMult);
-  }, [renderTileToCanvas, tiles, workArea]);
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
@@ -600,82 +594,103 @@ body{background:white;font-family:Arial,sans-serif}
       setShowExportDialog(false);
       return;
     }
-    if (exportFormat === "pdf") {
-      setPdfExporting(true);
-      try {
-        const DPI = exportDpi;
-        const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
-        const tilesList = tiles.list;
-        const tileW = mmToPx(workArea.w);
-        const tileH = mmToPx(workArea.h);
-        const dpiMult = DPI / 150;
+    // PDF и растровые форматы — единый путь рендера через renderTileToCanvas
+    setPdfExporting(true);
+    try {
+      const DPI = exportDpi;
+      // Базовый размер тайла при 150dpi
+      const BASE_DPI = 150;
+      const mmToPx = (mm: number) => Math.round(mm * BASE_DPI / 25.4);
+      const baseTileW = mmToPx(workArea.w);
+      const baseTileH = mmToPx(workArea.h);
+      // Коэффициент масштаба: итоговый DPI / базовый
+      const dpiMult = Math.max(0.5, DPI / BASE_DPI);
+      const tilesList = tiles.list;
 
+      if (exportFormat === "pdf") {
         const isLandscape = paper.w > paper.h;
         const pdf = new jsPDF({
           orientation: isLandscape ? "landscape" : "portrait",
           unit: "mm",
           format: [paper.w, paper.h],
+          compress: true,
         });
 
         for (let i = 0; i < tilesList.length; i++) {
           const t = tilesList[i];
-          const pngSrc = await renderTileToCanvas(tileW, tileH, t.col, t.row, dpiMult);
+          const pngSrc = await renderTileToCanvas(baseTileW, baseTileH, t.col, t.row, dpiMult);
           if (!pngSrc) continue;
           if (i > 0) pdf.addPage([paper.w, paper.h], isLandscape ? "landscape" : "portrait");
-          // Рисуем рамку страницы
+          // Рамка страницы
           if (showFrame) {
-            pdf.setDrawColor(0);
-            pdf.setLineWidth(0.5);
+            pdf.setDrawColor(0, 0, 0);
+            pdf.setLineWidth(0.3);
             pdf.rect(marginLeft, marginTop, workArea.w, workArea.h + (showStamp ? 56 : 0));
           }
-          // Вставляем изображение схемы
-          pdf.addImage(pngSrc, "PNG", marginLeft, marginTop, workArea.w, workArea.h, undefined, "FAST");
-          // Заголовок
-          if (drawingTitle) {
-            pdf.setFontSize(10);
+          // Схема — точно в рабочую область листа
+          pdf.addImage(pngSrc, "PNG", marginLeft, marginTop, workArea.w, workArea.h, undefined, "MEDIUM");
+          // Штамп (таблица)
+          if (showStamp && drawingTitle) {
+            const sy = paper.h - marginBottom - 55;
+            pdf.setFontSize(8);
             pdf.setTextColor(0);
-            pdf.text(drawingTitle, paper.w / 2, marginTop - 3, { align: "center" });
+            pdf.setDrawColor(0);
+            pdf.setLineWidth(0.2);
+            pdf.rect(marginLeft, sy, 185, 55);
+            pdf.setFontSize(11);
+            pdf.text(drawingTitle, marginLeft + 120, sy + 28, { align: "center", maxWidth: 63 });
+            pdf.setFontSize(7);
+            pdf.text(`Разраб.: ${engineer || ""}`, marginLeft + 2, sy + 10);
+            pdf.text(`Пров.: ${approvedBy || ""}`, marginLeft + 2, sy + 18);
+            pdf.text(`Орг.: ${organization || ""}`, marginLeft + 2, sy + 26);
+            pdf.text(printDate || new Date().toLocaleDateString("ru"), marginLeft + 2, sy + 34);
+          }
+          // Номер листа
+          if (showPageNumbers) {
+            pdf.setFontSize(8);
+            pdf.setTextColor(80);
+            pdf.text(`${i + 1} / ${tilesList.length}`, paper.w - marginRight - 2, paper.h - marginBottom - (showStamp ? 58 : 2), { align: "right" });
           }
         }
         pdf.save(`${projectName}.pdf`);
-      } finally {
-        setPdfExporting(false);
+        setShowExportDialog(false);
+        return;
       }
-      setShowExportDialog(false);
-      return;
-    }
 
-    // Растровые форматы — рендерим напрямую
-    const scale2 = exportDpi / 96;
-    const outW = Math.round(prevW * scale2);
-    const outH = Math.round(prevH * scale2);
-    const pngSrc = await renderToCanvas(outW, outH);
-    if (!pngSrc) { alert("Ошибка рендера"); return; }
+      // Растровые форматы (PNG, JPG, BMP, TIFF) — рендерим первый тайл
+      const { colMin, rowMin } = tiles;
+      const pngSrc = await renderTileToCanvas(baseTileW, baseTileH, colMin, rowMin, dpiMult);
+      if (!pngSrc) { alert("Ошибка рендера"); return; }
 
-    if (exportFormat === "png") {
+      if (exportFormat === "png") {
+        const a = document.createElement("a");
+        a.href = pngSrc; a.download = `${projectName}.png`; a.click();
+        setShowExportDialog(false);
+        return;
+      }
+
+      // JPG / BMP / TIFF — перерисовываем с белым фоном
+      const img = new Image();
+      await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = pngSrc; });
+      const oc2 = document.createElement("canvas");
+      oc2.width = img.width; oc2.height = img.height;
+      const ctx2 = oc2.getContext("2d")!;
+      ctx2.fillStyle = "#ffffff"; ctx2.fillRect(0, 0, oc2.width, oc2.height);
+      ctx2.drawImage(img, 0, 0);
+      const mime: Record<string, string> = { jpg: "image/jpeg", bmp: "image/bmp", tiff: "image/tiff" };
+      const q = exportFormat === "jpg" ? exportQuality / 100 : undefined;
       const a = document.createElement("a");
-      a.href = pngSrc; a.download = `${projectName}.png`; a.click();
+      a.href = oc2.toDataURL(mime[exportFormat] ?? "image/png", q);
+      a.download = `${projectName}.${exportFormat}`;
+      a.click();
       setShowExportDialog(false);
-      return;
+    } finally {
+      setPdfExporting(false);
     }
-
-    // Для jpg/bmp/tiff — перерисовываем через canvas
-    const img = new Image();
-    await new Promise<void>(res => { img.onload = () => res(); img.onerror = () => res(); img.src = pngSrc; });
-    const oc = document.createElement("canvas");
-    oc.width = outW; oc.height = outH;
-    const ctx = oc.getContext("2d")!;
-    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, outW, outH);
-    ctx.drawImage(img, 0, 0);
-    const mime: Record<string, string> = { jpg: "image/jpeg", bmp: "image/bmp", tiff: "image/tiff" };
-    const q = exportFormat === "jpg" ? exportQuality / 100 : undefined;
-    const a = document.createElement("a");
-    a.href = oc.toDataURL(mime[exportFormat] ?? "image/png", q);
-    a.download = `${projectName}.${exportFormat}`;
-    a.click();
-    setShowExportDialog(false);
-  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, handlePrint, renderToCanvas, prevW, prevH,
-      renderTileToCanvas, tiles, workArea, paper, showFrame, showStamp, marginLeft, marginTop, drawingTitle]);
+  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw,
+      renderTileToCanvas, tiles, workArea, paper, showFrame, showStamp,
+      marginLeft, marginRight, marginTop, marginBottom,
+      drawingTitle, engineer, approvedBy, organization, printDate, showPageNumbers]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
