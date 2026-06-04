@@ -17,6 +17,8 @@ interface BranchLite {
   fireComputedCO?: number;
   flow?: number;
   hasBulkhead?: boolean;
+  bulkheadId?: string;
+  bulkheadName?: string;
   bulkheadR?: number;
   isLeakage?: boolean;
   resistance?: number;

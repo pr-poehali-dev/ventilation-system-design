@@ -5460,7 +5460,12 @@ export default function CadPage() {
             {activeSide === "rescue" && (
               <RescuePanel
                 nodes={nodes}
-                branches={branches}
+                branches={branches.map(b => {
+                  // Если bulkheadId не задан на ветви — берём typeId символа перемычки на этой ветви
+                  if (!b.hasBulkhead || b.bulkheadId) return b;
+                  const sym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+                  return sym ? { ...b, bulkheadId: sym.typeId, bulkheadName: sym.typeId } : b;
+                })}
                 fireCalcDone={fireCalcDone}
                 pickMode={rescuePickMode}
                 onPickModeChange={setRescuePickMode}

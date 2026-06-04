@@ -136,10 +136,45 @@ export interface TopoBranchLite {
   flow?: number;
   // Перемычки
   hasBulkhead?: boolean;
+  bulkheadId?: string;        // ID типа из справочника (door_auto, solid_concrete, sail…)
+  bulkheadName?: string;      // название для предупреждений
   bulkheadR?: number;         // Мюрг — сопротивление перемычки
   bulkheadAirPerm?: number;   // м²/(с·√Па) — воздухопроницаемость
   isLeakage?: boolean;        // утечка (не проходима для людей)
   resistance?: number;        // Н·с²/м⁸ аэродинамическое сопротивление ветви
+}
+
+/**
+ * Определяет проходимость перемычки для горноспасателей.
+ * Глухие (solid) и водоподпорные (water) — непроходимы.
+ * Двери (door), паруса (sail), регуляторы (regulator) — проходимы.
+ * Пользовательские (custom) — считаются проходимыми (нет данных).
+ *
+ * Логика по bulkheadId: если ID начинается с "solid_", "bk_", "water_dam",
+ * "bulkhead" (без "window") или "barrier" — непроходима.
+ */
+export function isBulkheadPassable(bulkheadId?: string): boolean {
+  if (!bulkheadId) return false; // нет ID — перемычка неизвестного типа, исключаем
+  const id = bulkheadId.toLowerCase();
+  // Глухие перемычки — непроходимы
+  if (id.startsWith("solid_") || id.startsWith("bk_")) return false;
+  if (id === "bulkhead" || id === "bulkhead_concrete" || id === "bulkhead_wood"
+    || id === "bulkhead_brick" || id === "bulkhead_metal") return false;
+  // Водоподпорные — непроходимы
+  if (id.startsWith("water_dam") || id.startsWith("water_")) return false;
+  // Барьерные и огнестойкие заглушки — непроходимы
+  if (id === "bulkhead_barrier" || id === "barrier") return false;
+  // Парус — проходим
+  if (id === "sail") return true;
+  // Двери вентиляционные (закрытые, автоматические, открытые, с окном, решётчатые) — проходимы
+  if (id.startsWith("door_") || id.startsWith("auto_") || id.startsWith("open_")
+    || id.startsWith("win_") || id.startsWith("lat_") || id.startsWith("proem_")) return true;
+  // Регуляторы/шиберы — проходимы
+  if (id.startsWith("regulator_") || id === "regulator") return true;
+  // Пожарная дверь — проходима
+  if (id === "fire_door" || id === "fire_door_pp") return true;
+  // Остальные — считаем непроходимыми (безопасный fallback)
+  return false;
 }
 
 export function calcRescue(
@@ -159,15 +194,21 @@ export function calcRescue(
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
-    // Ветвь с перемычкой непроходима (люди через перемычку не идут)
-    if (b.hasBulkhead) {
-      warnings.push(`Перемычка на ветви ${b.id} — ветвь исключена из маршрута`);
-      continue;
-    }
     // Утечки (перетечки) — непроходимы
     if (b.isLeakage) continue;
     // Ветви с нулевой длиной пропускаем
     if ((b.length ?? 0) <= 0) continue;
+
+    // Ветвь с перемычкой — проверяем тип
+    if (b.hasBulkhead) {
+      const passable = isBulkheadPassable(b.bulkheadId);
+      if (!passable) {
+        // Глухая/водоподпорная — исключаем из маршрута (тихо, без предупреждений)
+        continue;
+      }
+      // Проходимая перемычка (дверь, парус, регулятор) — включаем в маршрут
+    }
+
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
     adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
   }
