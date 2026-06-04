@@ -5037,10 +5037,19 @@ export default function CadPage() {
                 </FrameGroup>
 
                 <FrameGroup title="Список горизонтов">
-                  <div className="text-[10px] text-gray-600 leading-tight pb-1">
-                    Группировка ветвей по высотным отметкам.
-                    Скрытие горизонта прячет все его ветви на схеме.
-                    Радио — выбор активного горизонта.
+                  <div className="flex gap-1 mb-2">
+                    <button onClick={addHorizon}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1">
+                      <Icon name="Plus" size={11} /> Добавить горизонт
+                    </button>
+                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: true })))}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
+                      Показать все
+                    </button>
+                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: false })))}
+                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
+                      Скрыть все
+                    </button>
                   </div>
                   <div className="space-y-1">
                     {horizons.map((h) => {
@@ -5232,24 +5241,6 @@ export default function CadPage() {
                       );
                     })}
                   </div>
-                  <button onClick={addHorizon}
-                    className="mt-2 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center gap-1">
-                    <Icon name="Plus" size={11} /> Добавить горизонт
-                  </button>
-                </FrameGroup>
-
-                <FrameGroup title="Быстрые действия">
-                  <div className="flex gap-1">
-                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: true })))}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
-                      Показать все
-                    </button>
-                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: false })))}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
-                      Скрыть все
-                    </button>
-                  </div>
-
                 </FrameGroup>
               </div>
             )}
