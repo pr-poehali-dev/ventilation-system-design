@@ -89,7 +89,7 @@ export default function InfoPanel({
   const [nodesOpen, setNodesOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [nodeVisOpen, setNodeVisOpen] = useState(false);
-  const [posVisOpen, setPosVisOpen] = useState(true);
+  const [posVisOpen, setPosVisOpen] = useState(false);
   const [preset, setPreset] = useState(0);
 
   const applyPreset = (idx: number) => {
