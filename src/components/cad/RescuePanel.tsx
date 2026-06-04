@@ -24,7 +24,8 @@ interface BranchLite {
   resistance?: number;
 }
 
-export type RescuePickMode = "start" | "target" | null;
+/** null = выкл, "start" = выбор старта, "target" = выбор цели, "wp:N" = выбор вайпоинта #N */
+export type RescuePickMode = "start" | "target" | `wp:${number}` | null;
 
 interface Props {
   nodes: NodeLite[];
@@ -33,6 +34,8 @@ interface Props {
   // Pick-mode: выбор узла кликом на схеме
   pickMode: RescuePickMode;
   onPickModeChange: (mode: RescuePickMode) => void;
+  /** Регистрирует обработчик pick-клика: Cad.tsx запоминает fn и вызывает её при клике */
+  onRegisterPickHandler: (fn: (nodeId: string) => void) => void;
   pickedStartId: string;
   pickedTargetId: string;
   onPickedStartChange: (id: string) => void;
@@ -166,29 +169,42 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
               <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">Сег.</th>
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">Длина, м</th>
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">Угол, °</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">Зона</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">V, м/мин</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">t, мин</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">O₂, л</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">Σt, мин</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">ΣO₂, л</th>
+              {/* Фактическая зона */}
+              <th className="border border-gray-200 px-1 py-0.5 text-center font-medium" style={{ background: "#f0fdf4" }}>Зона</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>V, м/мин</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>t, мин</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>O₂, л</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>Σt, мин</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>ΣO₂, л</th>
+              {/* Слабое задымление */}
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>t слаб.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>O₂ слаб.</th>
+              {/* Густое задымление */}
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>t густ.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>O₂ густ.</th>
             </tr>
           </thead>
           <tbody>
             {segments.map((s, i) => (
               <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                <td className="border border-gray-200 px-1 py-0.5 max-w-[160px] truncate" title={s.branchName}>{s.branchName}</td>
+                <td className="border border-gray-200 px-1 py-0.5 max-w-[160px] truncate" title={s.branchName}>
+                  {s.branchLabel || s.branchName}
+                </td>
                 <td className="border border-gray-200 px-1 py-0.5 text-center">{s.segmentNumber}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right">{Math.round(s.length)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right">{s.angle.toFixed(0)}°</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-center">
+                <td className="border border-gray-200 px-1 py-0.5 text-center" style={{ background: "#f0fdf4" }}>
                   <ZoneBadge zone={s.zone} />
                 </td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right">{s.speed_mpm}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right">{s.time_min.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right">{s.o2_liters.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium">{s.cumulTime.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium">{s.cumulO2.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.speed_mpm}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.time_min.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.o2_liters.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>{s.cumulTime.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>{s.cumulO2.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fff7ed" }}>{s.time_smoky_low.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fff7ed" }}>{s.o2_smoky_low.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fef2f2" }}>{s.time_smoky_high.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fef2f2" }}>{s.o2_smoky_high.toFixed(1)}</td>
               </tr>
             ))}
           </tbody>
@@ -202,6 +218,18 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
                 {segments.reduce((s, seg) => s + seg.o2_liters, 0).toFixed(1)}
               </td>
               <td colSpan={2} />
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fff7ed" }}>
+                {segments.reduce((s, seg) => s + seg.time_smoky_low, 0).toFixed(1)}
+              </td>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fff7ed" }}>
+                {segments.reduce((s, seg) => s + seg.o2_smoky_low, 0).toFixed(1)}
+              </td>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fef2f2" }}>
+                {segments.reduce((s, seg) => s + seg.time_smoky_high, 0).toFixed(1)}
+              </td>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fef2f2" }}>
+                {segments.reduce((s, seg) => s + seg.o2_smoky_high, 0).toFixed(1)}
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -284,6 +312,36 @@ function RescueResultDialog({
             </div>
           </div>
 
+          {/* Расчёты по зонам задымления */}
+          <div className="border rounded overflow-hidden">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr style={{ background: "#f3f4f6" }}>
+                  <th className="px-2 py-1 text-left font-medium text-gray-600">Зона задымления</th>
+                  <th className="px-2 py-1 text-right font-medium text-gray-600">Время, мин</th>
+                  <th className="px-2 py-1 text-right font-medium text-gray-600">O₂, л</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ background: "#f0fdf4" }}>
+                  <td className="px-2 py-1 text-green-800 font-medium">Фактическое (расчёт пожара)</td>
+                  <td className="px-2 py-1 text-right font-semibold">{result.totalTime.toFixed(1)}</td>
+                  <td className="px-2 py-1 text-right font-semibold">{result.totalO2.toFixed(1)}</td>
+                </tr>
+                <tr style={{ background: "#fff7ed" }}>
+                  <td className="px-2 py-1 text-orange-700">Слабое задымление (видимость 5–10 м)</td>
+                  <td className="px-2 py-1 text-right">{result.totalTime_smoky_low.toFixed(1)}</td>
+                  <td className="px-2 py-1 text-right">{result.totalO2_smoky_low.toFixed(1)}</td>
+                </tr>
+                <tr style={{ background: "#fef2f2" }}>
+                  <td className="px-2 py-1 text-red-700">Густое задымление (видимость &lt;5 м)</td>
+                  <td className="px-2 py-1 text-right">{result.totalTime_smoky_high.toFixed(1)}</td>
+                  <td className="px-2 py-1 text-right">{result.totalO2_smoky_high.toFixed(1)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           {/* Предупреждения */}
           {result.warnings.length > 0 && (
             <div className="border border-red-200 bg-red-50 rounded p-2">
@@ -361,37 +419,73 @@ function RescueResultDialog({
   );
 }
 
+function zoneLabel(zone: "clean" | "smoky_low" | "smoky_high") {
+  if (zone === "clean") return "Чистая";
+  if (zone === "smoky_low") return "Задымл. 5-10 м";
+  return "Задымл. <5 м";
+}
+
 function exportToCSV(result: RescueResult) {
   const rows: string[][] = [];
   const op = OP_LABELS[result.operationType];
+
   rows.push([`График времени движения горноспасателей — ${op}`]);
   rows.push([]);
-  rows.push(["Итого:", "", "Время хода, мин", result.totalTime.toFixed(1), "Кислород, л", result.totalO2.toFixed(1)]);
+
+  // Итоги по зонам задымления
+  rows.push(["Итого:", "", "Зона задымления", "Время хода, мин", "Кислород, л"]);
+  rows.push(["", "", "Фактическая (расчёт пожара)", result.totalTime.toFixed(1), result.totalO2.toFixed(1)]);
+  rows.push(["", "", "Слабое задымление (видим. 5-10 м)", result.totalTime_smoky_low.toFixed(1), result.totalO2_smoky_low.toFixed(1)]);
+  rows.push(["", "", "Густое задымление (видим. <5 м)", result.totalTime_smoky_high.toFixed(1), result.totalO2_smoky_high.toFixed(1)]);
+  rows.push([]);
   rows.push(["Туда, мин", result.totalTimeForward.toFixed(1), "Помощь, мин", result.careTime.toFixed(1), "Обратно, мин", result.totalTimeBack.toFixed(1)]);
   rows.push([]);
+
+  const header = [
+    "Выработка", "Сегм.", "Длина, м", "Угол, °",
+    // Фактическая зона
+    "Зона (факт.)", "V факт., м/мин", "t факт., мин", "O2 факт., л", "Σt факт., мин", "ΣO2 факт., л",
+    // Слабое задымление
+    "V слаб., м/мин", "t слаб., мин", "O2 слаб., л",
+    // Густое задымление
+    "V густ., м/мин", "t густ., мин", "O2 густ., л",
+  ];
+
+  const segRow = (s: RescueSegment) => [
+    s.branchName, String(s.segmentNumber), String(Math.round(s.length)), s.angle.toFixed(0),
+    zoneLabel(s.zone), String(s.speed_mpm), s.time_min.toFixed(2), s.o2_liters.toFixed(2),
+    s.cumulTime.toFixed(2), s.cumulO2.toFixed(2),
+    String(s.speed_smoky_low), s.time_smoky_low.toFixed(2), s.o2_smoky_low.toFixed(2),
+    String(s.speed_smoky_high), s.time_smoky_high.toFixed(2), s.o2_smoky_high.toFixed(2),
+  ];
+
   rows.push(["=== МАРШРУТ ТУДА ==="]);
-  rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "O2, л", "Σt, мин", "ΣO2, л"]);
-  for (const s of result.segments) {
-    rows.push([
-      s.branchName, String(s.segmentNumber), String(Math.round(s.length)),
-      s.angle.toFixed(0), s.zone === "clean" ? "Чистая" : s.zone === "smoky_low" ? "Задымл.5-10" : "Задымл.<5",
-      String(s.speed_mpm), s.time_min.toFixed(1), s.o2_liters.toFixed(1),
-      s.cumulTime.toFixed(1), s.cumulO2.toFixed(1),
-    ]);
-  }
+  rows.push(header);
+  for (const s of result.segments) rows.push(segRow(s));
+  // Итоговая строка туда
+  rows.push([
+    "ИТОГО ТУДА", "", String(Math.round(result.segments.reduce((a, s) => a + s.length, 0))), "",
+    "", "", result.totalTimeForward.toFixed(2), result.totalO2Forward.toFixed(2), "", "",
+    "", result.segments.reduce((a, s) => a + s.time_smoky_low, 0).toFixed(2),
+    result.segments.reduce((a, s) => a + s.o2_smoky_low, 0).toFixed(2),
+    "", result.segments.reduce((a, s) => a + s.time_smoky_high, 0).toFixed(2),
+    result.segments.reduce((a, s) => a + s.o2_smoky_high, 0).toFixed(2),
+  ]);
+
   rows.push([]);
   rows.push(["=== МАРШРУТ ОБРАТНО ==="]);
-  rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "O2, л", "Σt, мин", "ΣO2, л"]);
-  for (const s of result.segmentsBack) {
-    rows.push([
-      s.branchName, String(s.segmentNumber), String(Math.round(s.length)),
-      s.angle.toFixed(0), s.zone === "clean" ? "Чистая" : s.zone === "smoky_low" ? "Задымл.5-10" : "Задымл.<5",
-      String(s.speed_mpm), s.time_min.toFixed(1), s.o2_liters.toFixed(1),
-      s.cumulTime.toFixed(1), s.cumulO2.toFixed(1),
-    ]);
-  }
+  rows.push(header);
+  for (const s of result.segmentsBack) rows.push(segRow(s));
+  rows.push([
+    "ИТОГО ОБРАТНО", "", String(Math.round(result.segmentsBack.reduce((a, s) => a + s.length, 0))), "",
+    "", "", result.totalTimeBack.toFixed(2), result.totalO2Back.toFixed(2), "", "",
+    "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_low, 0).toFixed(2),
+    result.segmentsBack.reduce((a, s) => a + s.o2_smoky_low, 0).toFixed(2),
+    "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_high, 0).toFixed(2),
+    result.segmentsBack.reduce((a, s) => a + s.o2_smoky_high, 0).toFixed(2),
+  ]);
 
-  const csv = rows.map(r => r.map(c => `"${c}"`).join(";")).join("\n");
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -403,7 +497,7 @@ function exportToCSV(result: RescueResult) {
 
 export default function RescuePanel({
   nodes, branches, fireCalcDone,
-  pickMode, onPickModeChange, onNodePicked,
+  pickMode, onPickModeChange, onRegisterPickHandler,
   pickedStartId, pickedTargetId,
   onPickedStartChange, onPickedTargetChange,
   onRouteChange,
@@ -421,6 +515,30 @@ export default function RescuePanel({
   const [result, setResult] = useState<RescueResult | null>(null);
   const [showDialog, setShowDialog] = useState(false);
   const [showResultLink, setShowResultLink] = useState(false);
+
+  // Промежуточные узлы (вайпоинты)
+  const [useWaypoints, setUseWaypoints] = useState(false);
+  const [waypointIds, setWaypointIds] = useState<string[]>([]);
+
+  // Регистрируем обработчик pick-клика — Cad.tsx запомнит fn и будет её вызывать
+  const pickHandlerRef = React.useRef<(nodeId: string) => void>(() => {});
+  pickHandlerRef.current = (nodeId: string) => {
+    if (pickMode === "start") {
+      onPickedStartChange(nodeId);
+      onPickModeChange("target");
+    } else if (pickMode === "target") {
+      onPickedTargetChange(nodeId);
+      onPickModeChange(null);
+    } else if (pickMode && String(pickMode).startsWith("wp:")) {
+      const idx = Number(String(pickMode).split(":")[1]);
+      setWaypointIds(prev => prev.map((v, i) => i === idx ? nodeId : v));
+      onPickModeChange(null);
+    }
+  };
+  React.useEffect(() => {
+    onRegisterPickHandler((nodeId: string) => pickHandlerRef.current(nodeId));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const startNodeId = pickedStartId;
   const targetNodeId = pickedTargetId;
@@ -447,21 +565,22 @@ export default function RescuePanel({
       alert("Начальный и конечный узлы совпадают");
       return;
     }
+    const activeWaypoints = useWaypoints ? waypointIds.filter(Boolean) : [];
     const params: RescueParams = {
       operationType, useAirTemp, useIdaTime, idaWorkTime,
       provideCare, careTime, useInterpolation,
       oxygenConsumption, oxygenVolume,
+      waypointNodeIds: activeWaypoints,
     };
     const res = calcRescue(nodes, branches, startNodeId, targetNodeId, params);
     setResult(res);
     setShowDialog(true);
     setShowResultLink(true);
-    // передаём маршрут для подсветки на схеме
     const branchIds = new Set([
       ...res.segments.map(s => s.branchId),
       ...res.segmentsBack.map(s => s.branchId),
     ]);
-    const nodeIds = new Set([startNodeId, targetNodeId]);
+    const nodeIds = new Set([startNodeId, targetNodeId, ...activeWaypoints]);
     onRouteChange(branchIds, nodeIds, res.branchDirs);
   }
 
@@ -498,7 +617,10 @@ export default function RescuePanel({
 
       {pickMode && (
         <div className="text-[10px] bg-green-50 border border-green-300 rounded p-1.5 mb-2 text-green-800 font-medium">
-          ↖ Кликните на узел схемы для выбора {pickMode === "start" ? "начального узла (база ВГСЧ)" : "целевого узла (место аварии)"}
+          ↖ Кликните на узел схемы для выбора{" "}
+          {pickMode === "start" ? "начального узла (база ВГСЧ)"
+            : pickMode === "target" ? "целевого узла (место аварии)"
+            : `промежуточного узла #${Number(String(pickMode).split(":")[1]) + 1}`}
         </div>
       )}
 
@@ -535,6 +657,55 @@ export default function RescuePanel({
       {startNodeId && (
         <div className="text-[10px] text-green-700 ml-1 mt-0.5">✓ {nodeName(startNodeId)}</div>
       )}
+
+      {/* Промежуточные узлы */}
+      <div className="mt-2 border-t border-gray-100 pt-1">
+        <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-gray-700 font-medium">
+          <input type="checkbox" checked={useWaypoints} onChange={e => setUseWaypoints(e.target.checked)}
+            className="accent-orange-500" />
+          Маршрут через промежуточные узлы
+        </label>
+        {useWaypoints && (
+          <div className="mt-1 flex flex-col gap-1">
+            {waypointIds.map((wpId, idx) => {
+              const wpPickMode = `wp:${idx}` as `wp:${number}`;
+              const isPickingThis = pickMode === wpPickMode;
+              return (
+                <div key={idx} className="flex gap-1 items-center">
+                  <span className="text-[10px] text-orange-600 font-medium w-4 flex-shrink-0">{idx + 1}</span>
+                  <select value={wpId}
+                    onChange={e => setWaypointIds(prev => prev.map((v, i) => i === idx ? e.target.value : v))}
+                    className="flex-1 min-w-0 rounded border border-orange-300 text-[11px] px-1 py-0.5 bg-orange-50">
+                    <option value="">— выберите узел —</option>
+                    {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                  </select>
+                  <button
+                    onClick={() => onPickModeChange(isPickingThis ? null : wpPickMode)}
+                    title="Кликните на узел схемы"
+                    className={`h-6 px-1.5 rounded border text-[10px] flex items-center gap-0.5 flex-shrink-0 ${
+                      isPickingThis ? "bg-orange-500 text-white border-orange-600" : "bg-white text-gray-600 border-gray-300 hover:border-orange-400"
+                    }`}>
+                    <Icon name="MousePointer2" size={10} />
+                  </button>
+                  <button onClick={() => setWaypointIds(prev => prev.filter((_, i) => i !== idx))}
+                    className="text-red-400 hover:text-red-600 px-0.5 text-[13px] leading-none flex-shrink-0"
+                    title="Удалить">×</button>
+                </div>
+              );
+            })}
+            <button
+              onClick={() => setWaypointIds(prev => [...prev, ""])}
+              className="mt-0.5 text-[10px] text-orange-700 border border-orange-300 rounded px-2 py-0.5 hover:bg-orange-50 flex items-center gap-1">
+              <Icon name="Plus" size={10} /> Добавить промежуточный узел
+            </button>
+            {waypointIds.length > 0 && (
+              <div className="text-[9px] text-gray-400 mt-0.5">
+                Маршрут: Старт → {waypointIds.filter(Boolean).map(id => nodeName(id)).join(" → ")} → Цель
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <Label>Целевой узел (место аварии):</Label>
       <div className="flex gap-1">
@@ -622,12 +793,12 @@ export default function RescuePanel({
           <div className="text-[11px] font-semibold mb-1">
             {result.ok ? "✓ Операция выполнима" : "✗ Превышение ресурса ИДА"}
           </div>
-          <MetricRow label="Время хода" value={`${result.totalTime.toFixed(1)} мин`}
-            sub={`(${result.timeIdaPercent.toFixed(1)}%)`} />
-          <MetricRow label="В зоне задымления" value={`${result.idaTimeInSmoke.toFixed(1)} мин`} />
-          <MetricRow label="Затраты O₂" value={`${result.totalO2.toFixed(1)} л`}
-            sub={`(${result.o2IdaPercent.toFixed(2)}%)`} warn={result.o2IdaPercent > 100} />
-          <MetricRow label="В зоне задымления" value={`${result.idaO2InSmoke.toFixed(1)} л`} />
+          <MetricRow label="Время хода (факт.)" value={`${result.totalTime.toFixed(1)} мин`} />
+          <MetricRow label="Слабое задымление" value={`${result.totalTime_smoky_low.toFixed(1)} мин`} />
+          <MetricRow label="Густое задымление" value={`${result.totalTime_smoky_high.toFixed(1)} мин`} warn={result.totalTime_smoky_high > (result.timeIdaPercent > 0 ? result.totalTime / result.timeIdaPercent * 100 : Infinity)} />
+          <div className="border-t border-gray-200 mt-1 pt-1">
+            <MetricRow label="Затраты O₂ (факт.)" value={`${result.totalO2.toFixed(1)} л`} warn={result.o2IdaPercent > 100} />
+          </div>
         </div>
       )}
 

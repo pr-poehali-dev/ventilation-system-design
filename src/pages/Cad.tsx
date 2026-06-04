@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
@@ -634,9 +634,10 @@ export default function CadPage() {
   const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
   const [fireCalcDone, setFireCalcDone] = useState(false);
   // ─── Горноспасатели ────────────────────────────────────────────────
-  const [rescuePickMode, setRescuePickMode] = useState<"start" | "target" | null>(null);
+  const [rescuePickMode, setRescuePickMode] = useState<import("@/components/cad/RescuePanel").RescuePickMode>(null);
   const [rescueStartNodeId, setRescueStartNodeId] = useState("");
   const [rescueTargetNodeId, setRescueTargetNodeId] = useState("");
+  const rescuePickHandlerRef = React.useRef<((nodeId: string) => void) | null>(null);
   const [rescuePathBranchIds, setRescuePathBranchIds] = useState<Set<string>>(new Set());
   const [rescuePathBranchDirs, setRescuePathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
@@ -5469,6 +5470,7 @@ export default function CadPage() {
                 fireCalcDone={fireCalcDone}
                 pickMode={rescuePickMode}
                 onPickModeChange={setRescuePickMode}
+                onRegisterPickHandler={(fn) => { rescuePickHandlerRef.current = fn; }}
                 pickedStartId={rescueStartNodeId}
                 pickedTargetId={rescueTargetNodeId}
                 onPickedStartChange={setRescueStartNodeId}
@@ -6252,13 +6254,7 @@ export default function CadPage() {
               rescuePathNodeIds={rescuePathNodeIds.size > 0 ? rescuePathNodeIds : undefined}
               rescuePickMode={rescuePickMode}
               onRescueNodePick={(nodeId) => {
-                if (rescuePickMode === "start") {
-                  setRescueStartNodeId(nodeId);
-                  setRescuePickMode("target");
-                } else if (rescuePickMode === "target") {
-                  setRescueTargetNodeId(nodeId);
-                  setRescuePickMode(null);
-                }
+                rescuePickHandlerRef.current?.(nodeId);
               }}
               onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {

@@ -3,6 +3,7 @@
  * Алгоритм: Дейкстра по графу сети с учётом скорости движения,
  * типа атмосферы (пригодная/непригодная по задымлению),
  * затрат кислорода ИДА и оказания помощи пострадавшим.
+ * Поддерживает промежуточные узлы (вайпоинты) для маршрута в обход.
  *
  * Источник методики: РД 15-11-2007, ГОСТ Р 22.0.007, практика Аэросети.
  */
@@ -23,11 +24,16 @@ export interface RescueParams {
   useInterpolation: boolean;
   oxygenConsumption: number;    // л/мин расход O₂
   oxygenVolume: number;         // л объём баллона ИДА
+  /** Промежуточные узлы маршрута (вайпоинты), порядок — от старта к цели */
+  waypointNodeIds?: string[];
 }
 
 export interface RescueSegment {
   branchId: string;
+  /** Название выработки (из поля name ветви, иначе «Узел X → Узел Y») */
   branchName: string;
+  /** Отображаемое имя выработки (только поле name, без узлов) */
+  branchLabel: string;
   segmentNumber: number;
   length: number;           // м
   angle: number;            // °
@@ -37,10 +43,10 @@ export interface RescueSegment {
   // Зоны задымления для каждого участка (из расчёта пожара)
   smokeDensity: number;     // м⁻¹ (0 = чистый воздух)
   coConc: number;           // % концентрация CO
-  visibility: number;       // м видимость (м⁻¹ → м: 2/σ при σ>0, иначе Inf)
+  visibility: number;       // м видимость
 
-  // Результаты расчёта
-  zone: "clean" | "smoky_low" | "smoky_high";  // <5м, 5-10м, >10м видимость
+  // Фактическая зона (по реальному задымлению)
+  zone: "clean" | "smoky_low" | "smoky_high";
   speed_mpm: number;        // м/мин скорость движения
   time_min: number;         // мин время прохождения участка (туда)
   time_back_min: number;    // мин время прохождения обратно
@@ -48,11 +54,22 @@ export interface RescueSegment {
   o2_back_liters: number;   // л затраты кислорода (обратно)
   cumulTime: number;        // мин накопленное время от базы
   cumulO2: number;          // л накопленный O₂
+
+  // Расчёты для альтернативных зон задымления
+  // Слабое задымление (smoky_low): видимость 5-10 м
+  speed_smoky_low: number;
+  time_smoky_low: number;
+  o2_smoky_low: number;
+  // Густое задымление (smoky_high): видимость <5 м
+  speed_smoky_high: number;
+  time_smoky_high: number;
+  o2_smoky_high: number;
 }
 
 export interface RescueResult {
   targetNodeId: string;
   startNodeId: string;
+  waypointNodeIds: string[];
   operationType: RescueOperationType;
   segments: RescueSegment[];       // маршрут туда
   segmentsBack: RescueSegment[];   // маршрут обратно
@@ -70,6 +87,12 @@ export interface RescueResult {
   idaTimeInSmoke: number;          // мин время в задымлённой зоне
   idaO2InSmoke: number;            // л O₂ в задымлённой зоне
 
+  // Суммарное время/O₂ для альтернативных зон задымления
+  totalTime_smoky_low: number;
+  totalTime_smoky_high: number;
+  totalO2_smoky_low: number;
+  totalO2_smoky_high: number;
+
   ok: boolean;                     // можно ли выполнить операцию с данным ИДА
   warnings: string[];
   /** Направление движения по каждой ветви маршрута: true = fromId→toId */
@@ -82,9 +105,8 @@ export interface RescueResult {
 
 function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number): number {
   const a = Math.abs(angleDeg);
-  // Чистый воздух
   if (zone === "clean") {
-    if (a <= 5)  return 54;    // горизонталь ≤5°
+    if (a <= 5)  return 54;
     if (a <= 10) return 46;
     if (a <= 15) return 40;
     if (a <= 20) return 34;
@@ -92,7 +114,6 @@ function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number):
     if (a <= 45) return 18;
     return 16;
   }
-  // Видимость 5-10 м (непригодная атмосфера, видимость ≥5м)
   if (zone === "smoky_low") {
     if (a <= 5)  return 45;
     if (a <= 10) return 39;
@@ -100,7 +121,7 @@ function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number):
     if (a <= 30) return 23;
     return 18;
   }
-  // Видимость <5 м (густое задымление)
+  // smoky_high
   if (a <= 5)  return 31;
   if (a <= 10) return 28;
   if (a <= 20) return 22;
@@ -110,12 +131,11 @@ function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number):
 function getZone(smokeDensity: number): "clean" | "smoky_low" | "smoky_high" {
   if (smokeDensity <= 0.001) return "clean";
   const vis = smokeDensity > 0 ? 2 / smokeDensity : Infinity;
-  if (vis >= 10) return "smoky_low";
-  if (vis >= 5)  return "smoky_low";
+  if (vis >= 5) return "smoky_low";
   return "smoky_high";
 }
 
-// ─── Основная функция расчёта ──────────────────────────────────────────────────
+// ─── Интерфейсы данных ──────────────────────────────────────────────────────
 
 export interface TopoNodeLite {
   id: string;
@@ -134,101 +154,52 @@ export interface TopoBranchLite {
   fireComputedSmokeDens?: number;
   fireComputedCO?: number;
   flow?: number;
-  // Перемычки
   hasBulkhead?: boolean;
-  bulkheadId?: string;        // ID типа из справочника (door_auto, solid_concrete, sail…)
-  bulkheadName?: string;      // название для предупреждений
-  bulkheadR?: number;         // Мюрг — сопротивление перемычки
-  bulkheadAirPerm?: number;   // м²/(с·√Па) — воздухопроницаемость
-  isLeakage?: boolean;        // утечка (не проходима для людей)
-  resistance?: number;        // Н·с²/м⁸ аэродинамическое сопротивление ветви
+  bulkheadId?: string;
+  bulkheadName?: string;
+  bulkheadR?: number;
+  bulkheadAirPerm?: number;
+  isLeakage?: boolean;
+  resistance?: number;
 }
 
 /**
  * Определяет проходимость перемычки для горноспасателей.
  * Глухие (solid) и водоподпорные (water) — непроходимы.
  * Двери (door), паруса (sail), регуляторы (regulator) — проходимы.
- * Пользовательские (custom) — считаются проходимыми (нет данных).
- *
- * Логика по bulkheadId: если ID начинается с "solid_", "bk_", "water_dam",
- * "bulkhead" (без "window") или "barrier" — непроходима.
  */
 export function isBulkheadPassable(bulkheadId?: string): boolean {
-  if (!bulkheadId) return false; // нет ID — перемычка неизвестного типа, исключаем
+  if (!bulkheadId) return false;
   const id = bulkheadId.toLowerCase();
-  // Глухие перемычки — непроходимы
   if (id.startsWith("solid_") || id.startsWith("bk_")) return false;
   if (id === "bulkhead" || id === "bulkhead_concrete" || id === "bulkhead_wood"
     || id === "bulkhead_brick" || id === "bulkhead_metal") return false;
-  // Водоподпорные — непроходимы
   if (id.startsWith("water_dam") || id.startsWith("water_")) return false;
-  // Барьерные и огнестойкие заглушки — непроходимы
   if (id === "bulkhead_barrier" || id === "barrier") return false;
-  // Парус — проходим
   if (id === "sail") return true;
-  // Двери вентиляционные (закрытые, автоматические, открытые, с окном, решётчатые) — проходимы
   if (id.startsWith("door_") || id.startsWith("auto_") || id.startsWith("open_")
     || id.startsWith("win_") || id.startsWith("lat_") || id.startsWith("proem_")) return true;
-  // Регуляторы/шиберы — проходимы
   if (id.startsWith("regulator_") || id === "regulator") return true;
-  // Пожарная дверь — проходима
   if (id === "fire_door" || id === "fire_door_pp") return true;
-  // Остальные — считаем непроходимыми (безопасный fallback)
   return false;
 }
 
-export function calcRescue(
+// ─── Дейкстра: одиночный запуск от одного источника ──────────────────────────
+
+type Edge = { toId: string; branchId: string; forward: boolean };
+
+function buildDijkstra(
   nodes: TopoNodeLite[],
   branches: TopoBranchLite[],
+  adj: Map<string, Edge[]>,
   startNodeId: string,
-  targetNodeId: string,
-  params: RescueParams,
-): RescueResult {
-  const warnings: string[] = [];
-
-  // ── Дейкстра по обходу наименьшего времени ────────────────────────────────
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  // Строим граф: nodeId → список {toId, branchId, forward(true/false)}
-  // Перемычки (hasBulkhead) и утечки (isLeakage) непроходимы для людей — исключаем
-  type Edge = { toId: string; branchId: string; forward: boolean };
-  const adj = new Map<string, Edge[]>();
-  for (const n of nodes) adj.set(n.id, []);
-  for (const b of branches) {
-    // Утечки (перетечки) — непроходимы
-    if (b.isLeakage) continue;
-    // Ветви с нулевой длиной пропускаем
-    if ((b.length ?? 0) <= 0) continue;
-
-    // Ветвь с перемычкой — проверяем тип
-    if (b.hasBulkhead) {
-      const passable = isBulkheadPassable(b.bulkheadId);
-      if (!passable) {
-        // Глухая/водоподпорная — исключаем из маршрута (тихо, без предупреждений)
-        continue;
-      }
-      // Проходимая перемычка (дверь, парус, регулятор) — включаем в маршрут
-    }
-
-    adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
-    adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
-  }
-
-  // Время прохождения ветви в заданном направлении (мин)
-  function edgeTime(b: TopoBranchLite, forward: boolean): number {
-    const smokeDens = b.fireComputedSmokeDens ?? 0;
-    const signedAngle = forward ? (b.angle ?? 0) : -(b.angle ?? 0);
-    const zone = getZone(smokeDens);
-    const speed = getSpeed(zone, signedAngle);
-    return b.length > 0 ? b.length / speed : 0;
-  }
-
+): { dist: Map<string, number>; prev: Map<string, { nodeId: string; branchId: string; forward: boolean } | null> } {
   const dist = new Map<string, number>();
   const prev = new Map<string, { nodeId: string; branchId: string; forward: boolean } | null>();
-  for (const n of nodes) { dist.set(n.id, Infinity); }
+  for (const n of nodes) dist.set(n.id, Infinity);
   dist.set(startNodeId, 0);
   prev.set(startNodeId, null);
 
-  // Simple priority queue (sorted array)
   type PQItem = { nodeId: string; d: number };
   const pq: PQItem[] = [{ nodeId: startNodeId, d: 0 }];
   const visited = new Set<string>();
@@ -241,7 +212,11 @@ export function calcRescue(
     for (const edge of (adj.get(cur) ?? [])) {
       const b = branches.find(b2 => b2.id === edge.branchId);
       if (!b) continue;
-      const t = edgeTime(b, edge.forward);
+      const smokeDens = b.fireComputedSmokeDens ?? 0;
+      const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
+      const zone = getZone(smokeDens);
+      const speed = getSpeed(zone, signedAngle);
+      const t = b.length > 0 ? b.length / speed : 0;
       const nd = curD + t;
       if (nd < (dist.get(edge.toId) ?? Infinity)) {
         dist.set(edge.toId, nd);
@@ -250,40 +225,100 @@ export function calcRescue(
       }
     }
   }
+  return { dist, prev };
+}
 
-  // ── Восстанавливаем путь ───────────────────────────────────────────────────
-  function buildPath(toId: string): Array<{ nodeId: string; branchId: string; forward: boolean }> {
-    const path: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
-    let cur: string | null = toId;
-    while (cur && prev.has(cur) && prev.get(cur) !== null) {
-      const p = prev.get(cur)!;
-      if (!p) break;
-      path.unshift({ nodeId: p.nodeId, branchId: p.branchId, forward: p.forward });
-      cur = p.nodeId;
-    }
-    return path;
+function buildPath(
+  prev: Map<string, { nodeId: string; branchId: string; forward: boolean } | null>,
+  toId: string,
+): Array<{ nodeId: string; branchId: string; forward: boolean }> {
+  const path: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
+  let cur: string | null = toId;
+  while (cur && prev.has(cur) && prev.get(cur) !== null) {
+    const p = prev.get(cur)!;
+    if (!p) break;
+    path.unshift({ nodeId: p.nodeId, branchId: p.branchId, forward: p.forward });
+    cur = p.nodeId;
+  }
+  return path;
+}
+
+// ─── Основная функция расчёта ──────────────────────────────────────────────────
+
+export function calcRescue(
+  nodes: TopoNodeLite[],
+  branches: TopoBranchLite[],
+  startNodeId: string,
+  targetNodeId: string,
+  params: RescueParams,
+): RescueResult {
+  const warnings: string[] = [];
+  const waypointNodeIds = params.waypointNodeIds ?? [];
+
+  // ── Строим граф (аналогично предыдущему) ──────────────────────────────────
+  const adj = new Map<string, Edge[]>();
+  for (const n of nodes) adj.set(n.id, []);
+  for (const b of branches) {
+    if (b.isLeakage) continue;
+    if ((b.length ?? 0) <= 0) continue;
+    if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
+    adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
+    adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
   }
 
-  const pathEdges = buildPath(targetNodeId);
+  // ── Маршрут: старт → [вайпоинты] → цель ──────────────────────────────────
+  const checkpoints = [startNodeId, ...waypointNodeIds, targetNodeId];
+  const allPathEdges: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
+  let routeOk = true;
 
-  // ── Строим массив сегментов ────────────────────────────────────────────────
-  function buildSegments(edges: Array<{ nodeId: string; branchId: string; forward: boolean }>, reverse = false): RescueSegment[] {
+  for (let i = 0; i < checkpoints.length - 1; i++) {
+    const from = checkpoints[i];
+    const to   = checkpoints[i + 1];
+    const { dist, prev } = buildDijkstra(nodes, branches, adj, from);
+    if ((dist.get(to) ?? Infinity) === Infinity) {
+      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети`);
+      routeOk = false;
+      continue;
+    }
+    const segEdges = buildPath(prev, to);
+    allPathEdges.push(...segEdges);
+  }
+
+  // ── Карта ветвей и узлов ──────────────────────────────────────────────────
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const branchMap = new Map(branches.map(b => [b.id, b]));
+
+  // ── Строим сегменты маршрута ──────────────────────────────────────────────
+  function buildSegments(
+    edges: Array<{ nodeId: string; branchId: string; forward: boolean }>,
+  ): RescueSegment[] {
     const result: RescueSegment[] = [];
     let cumTime = 0;
     let cumO2 = 0;
 
     for (let i = 0; i < edges.length; i++) {
       const edge = edges[i];
-      const b = branches.find(b2 => b2.id === edge.branchId);
+      const b = branchMap.get(edge.branchId);
       if (!b) continue;
 
-      const isForward = reverse ? !edge.forward : edge.forward;
+      const isForward = edge.forward;
       const smokeDens = b.fireComputedSmokeDens ?? 0;
       const zone = getZone(smokeDens);
       const signedAngle = isForward ? (b.angle ?? 0) : -(b.angle ?? 0);
-      const speed = getSpeed(zone, signedAngle);
-      const time_min = b.length > 0 ? b.length / speed : 0;
-      const o2_liters = time_min * (params.oxygenConsumption ?? 1.4);
+
+      const speed     = getSpeed(zone, signedAngle);
+      const speed_sl  = getSpeed("smoky_low",  signedAngle);
+      const speed_sh  = getSpeed("smoky_high", signedAngle);
+
+      const time_min      = b.length > 0 ? b.length / speed    : 0;
+      const time_smoky_low  = b.length > 0 ? b.length / speed_sl : 0;
+      const time_smoky_high = b.length > 0 ? b.length / speed_sh : 0;
+
+      const o2c   = params.oxygenConsumption ?? 1.4;
+      const o2_liters      = time_min * o2c;
+      const o2_smoky_low   = time_smoky_low  * o2c;
+      const o2_smoky_high  = time_smoky_high * o2c;
+
       const vis = smokeDens > 0 ? 2 / smokeDens : 999;
 
       const fromNodeId = isForward ? b.fromId : b.toId;
@@ -294,16 +329,23 @@ export function calcRescue(
       cumTime += time_min;
       cumO2   += o2_liters;
 
-      // Время обратного хода по этому же участку
       const speedBack = getSpeed(zone, -signedAngle);
       const time_back = b.length > 0 ? b.length / speedBack : 0;
-      const o2_back   = time_back * (params.oxygenConsumption ?? 1.4);
+      const o2_back   = time_back * o2c;
+
+      // Название выработки: если есть поле name — используем его;
+      // иначе собираем «Узел X → Узел Y»
+      const branchLabel = b.name?.trim() || "";
+      const nodeFrom = fromNode?.name || (fromNode?.number ? `Узел ${fromNode.number}` : fromNodeId);
+      const nodeTo   = toNode?.name   || (toNode?.number   ? `Узел ${toNode.number}`   : toNodeId);
+      const branchName = branchLabel
+        ? `${branchLabel} (${nodeFrom} → ${nodeTo})`
+        : `${nodeFrom} → ${nodeTo}`;
 
       result.push({
         branchId: b.id,
-        branchName: fromNode
-          ? `${fromNode.name || fromNode.number || fromNodeId} → ${toNode?.name || toNode?.number || toNodeId}`
-          : b.id,
+        branchName,
+        branchLabel,
         segmentNumber: i + 1,
         length: b.length,
         angle: signedAngle,
@@ -320,28 +362,33 @@ export function calcRescue(
         o2_back_liters: o2_back,
         cumulTime: cumTime,
         cumulO2: cumO2,
+        speed_smoky_low:  speed_sl,
+        time_smoky_low,
+        o2_smoky_low,
+        speed_smoky_high: speed_sh,
+        time_smoky_high,
+        o2_smoky_high,
       });
     }
     return result;
   }
 
-  const segments = buildSegments(pathEdges, false);
-  const segmentsBack = buildSegments([...pathEdges].reverse().map(e => ({ ...e, forward: !e.forward })), false);
+  const segments = buildSegments(allPathEdges);
+  const backEdges = [...allPathEdges].reverse().map(e => ({ ...e, forward: !e.forward }));
+  const segmentsBack = buildSegments(backEdges);
 
-  // Карта направлений для подсветки на схеме: branchId → forward (true = fromId→toId)
+  // Карта направлений для подсветки
   const branchDirs = new Map<string, boolean>();
-  for (const edge of pathEdges) {
-    branchDirs.set(edge.branchId, edge.forward);
-  }
+  for (const edge of allPathEdges) branchDirs.set(edge.branchId, edge.forward);
 
   // ── Суммируем ──────────────────────────────────────────────────────────────
-  const totalTimeForward  = segments.reduce((s, seg) => s + seg.time_min, 0);
-  const totalTimeBack     = segmentsBack.reduce((s, seg) => s + seg.time_min, 0);
-  const totalO2Forward    = segments.reduce((s, seg) => s + seg.o2_liters, 0);
-  const totalO2Back       = segmentsBack.reduce((s, seg) => s + seg.o2_liters, 0);
+  const totalTimeForward = segments.reduce((s, seg) => s + seg.time_min, 0);
+  const totalTimeBack    = segmentsBack.reduce((s, seg) => s + seg.time_min, 0);
+  const totalO2Forward   = segments.reduce((s, seg) => s + seg.o2_liters, 0);
+  const totalO2Back      = segmentsBack.reduce((s, seg) => s + seg.o2_liters, 0);
   const care = params.provideCare ? (params.careTime ?? 10) : 0;
+  const o2c  = params.oxygenConsumption ?? 1.4;
 
-  // Время в задымлённой атмосфере
   const idaTimeInSmoke = [...segments, ...segmentsBack]
     .filter(s => s.zone !== "clean")
     .reduce((s, seg) => s + seg.time_min, 0);
@@ -350,10 +397,24 @@ export function calcRescue(
     .reduce((s, seg) => s + seg.o2_liters, 0);
 
   const totalTime = totalTimeForward + care + totalTimeBack;
-  const totalO2 = totalO2Forward + care * (params.oxygenConsumption ?? 1.4) + totalO2Back;
+  const totalO2   = totalO2Forward + care * o2c + totalO2Back;
 
-  const idaTimePct  = params.useIdaTime  ? totalTime / (params.idaWorkTime ?? 400) * 100 : 0;
-  const idaO2Pct    = (params.oxygenVolume ?? 400) > 0
+  // Альтернативные зоны (весь маршрут туда + обратно в одной зоне)
+  const fwdSL  = segments.reduce((s, seg) => s + seg.time_smoky_low, 0);
+  const fwdSH  = segments.reduce((s, seg) => s + seg.time_smoky_high, 0);
+  const bckSL  = segmentsBack.reduce((s, seg) => s + seg.time_smoky_low, 0);
+  const bckSH  = segmentsBack.reduce((s, seg) => s + seg.time_smoky_high, 0);
+  const totalTime_smoky_low  = fwdSL + care + bckSL;
+  const totalTime_smoky_high = fwdSH + care + bckSH;
+  const totalO2_smoky_low  = segments.reduce((s, seg) => s + seg.o2_smoky_low, 0)
+    + care * o2c
+    + segmentsBack.reduce((s, seg) => s + seg.o2_smoky_low, 0);
+  const totalO2_smoky_high = segments.reduce((s, seg) => s + seg.o2_smoky_high, 0)
+    + care * o2c
+    + segmentsBack.reduce((s, seg) => s + seg.o2_smoky_high, 0);
+
+  const idaTimePct = params.useIdaTime ? totalTime / (params.idaWorkTime ?? 400) * 100 : 0;
+  const idaO2Pct   = (params.oxygenVolume ?? 400) > 0
     ? totalO2 / (params.oxygenVolume ?? 400) * 100 : 0;
 
   const ok = (!params.useIdaTime || totalTime <= (params.idaWorkTime ?? 400))
@@ -365,13 +426,14 @@ export function calcRescue(
     if (totalO2 > (params.oxygenVolume ?? 400))
       warnings.push(`Расход O₂ ${totalO2.toFixed(1)} л превышает объём ИДА ${params.oxygenVolume} л`);
   }
-  if (dist.get(targetNodeId) === Infinity) {
-    warnings.push("Маршрут до выбранного узла не найден — возможно, граф несвязный");
+  if (!routeOk && segments.length === 0) {
+    warnings.push("Маршрут не построен — проверьте начальный, промежуточные и целевой узлы");
   }
 
   return {
     targetNodeId,
     startNodeId,
+    waypointNodeIds,
     operationType: params.operationType,
     segments,
     segmentsBack,
@@ -386,6 +448,10 @@ export function calcRescue(
     timeIdaPercent: idaTimePct,
     idaTimeInSmoke,
     idaO2InSmoke,
+    totalTime_smoky_low,
+    totalTime_smoky_high,
+    totalO2_smoky_low,
+    totalO2_smoky_high,
     ok,
     warnings,
     branchDirs,

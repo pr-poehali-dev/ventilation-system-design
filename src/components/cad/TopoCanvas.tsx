@@ -174,8 +174,8 @@ interface Props {
   rescuePathNodeIds?: Set<string>;
   /** Callback при клике по узлу в режиме pick (rescuePickMode) */
   onRescueNodePick?: (nodeId: string) => void;
-  /** Режим выбора узла для горноспасателей: "start" | "target" | null */
-  rescuePickMode?: "start" | "target" | null;
+  /** Режим выбора узла для горноспасателей */
+  rescuePickMode?: string | null;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
   colorMode?: "none" | "flowQ";
   /** Минимальное значение шкалы расхода, м³/с */
