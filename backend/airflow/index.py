@@ -1371,10 +1371,15 @@ def _bfs_tree(edges):
         node_set.add(e["b"])
     node_list = list(node_set)
 
+    # Сортируем рёбра каждого узла по R (сначала малое R).
+    # Это гарантирует что ветви с большим R (перемычки) уходят в хорды,
+    # а не в дерево — иначе sync_tree_q перезапишет их Q из баланса.
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"]))
-        adj[e["b"]].append((i, e["a"]))
+        adj[e["a"]].append((i, e["b"], e["R"]))
+        adj[e["b"]].append((i, e["a"], e["R"]))
+    for u in adj:
+        adj[u].sort(key=lambda x: x[2])  # сортировка по R: малое R → в дерево
 
     root = GND if GND in node_set else node_list[0]
     visited  = {root}
@@ -1385,7 +1390,7 @@ def _bfs_tree(edges):
 
     while queue:
         u = queue.popleft()
-        for ei, nb in adj[u]:
+        for ei, nb, _r in adj[u]:
             if nb not in visited:
                 visited.add(nb)
                 parent[nb] = (u, ei)
