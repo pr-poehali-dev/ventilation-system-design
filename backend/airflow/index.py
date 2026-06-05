@@ -78,9 +78,15 @@ def fan_H(e, Q):
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
     При Q > qMax: для curve возвращаем 0 (паспорт закончился); для constant —
     линейно спадаем (защита от Q→∞ в итерациях).
-    Q всегда передаётся как abs(Q) — знак и направление учитываются снаружи через fan_dir.
+
+    Q может быть знаковым: Q > 0 — поток совпадает с направлением действия вентилятора,
+    Q < 0 — поток опрокинут против вентилятора. При опрокидывании H = 0
+    (вентилятор не создаёт напора против потока — как в реальности).
     """
     if not e.get("hasFan") or e.get("fanStopped"):
+        return 0.0
+    # Опрокинутый поток: вентилятор не создаёт напора
+    if Q < 0:
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
@@ -946,10 +952,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
                     fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    # q_fan > 0: поток совпадает с направлением вентилятора → напор есть.
-                    # q_fan < 0: поток опрокинут против вентилятора → Hv = 0.
-                    q_fan = Q[gi] * fan_dir
-                    Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
+                    q_fan = Q[gi] * fan_dir  # Q в направлении действия вентилятора
+                    Hv = fan_H(e, q_fan)     # передаём знаковый Q для fan_H
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
@@ -1214,44 +1218,13 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         if is_dead and not e.get("hasFan"):
             q = 0.0  # тупиковые выработки без вентилятора — Q=0
         elif is_dead and e.get("hasFan"):
-            # Тупиковая ветвь с ВМП: рабочая точка через собственное R ветви.
-            # Бисекция: H_вент(Q) = R·Q² при Q > 0 (модуль расхода).
-            # Для fan_H передаём Q > 0 — функция оперирует модулем.
-            # При fanReverse=True поток физически идёт в обратном направлении:
-            # знак Q инвертируем в конце.
+            # Тупиковая ветвь с ВМП: рабочая точка через собственное R ветви
+            # (трубопровод ВМП), а не через R_net всей сети
             R = e["R"] if e["R"] > 1e-6 else 1e-3
             q_lo = float(e.get("qMin", 0.1))
             q_hi = float(e.get("qMax", 90.0))
-            is_reverse_vmp = bool(e.get("fanReverse", False))
             def f_vmp(qv, _e=e, _R=R):
-                # Используем fan_H_for_vmp: при реверсе берём реверсную характеристику.
-                # Передаём qv > 0 — бисекция по модулю расхода.
-                if _e.get("fanMode", "constant") == "curve":
-                    N = max(1, int(_e.get("fanParallel", 1) or 1))
-                    q_one = qv / N
-                    if is_reverse_vmp and _e.get("reverseH0") is not None:
-                        rh0 = float(_e.get("reverseH0", 0))
-                        rh1 = float(_e.get("reverseH1", 0))
-                        rh2 = float(_e.get("reverseH2", 0))
-                        q_max_rev = float(_e.get("reverseQMax", _e.get("qMax", 1e9)))
-                        Hv = max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one) if q_one <= q_max_rev else 0.0
-                    else:
-                        h0v = float(_e.get("h0", 0))
-                        h1v = float(_e.get("h1", 0))
-                        h2v = float(_e.get("h2", 0))
-                        q_max_f = float(_e.get("qMax", 1e9))
-                        Hv = max(0.0, h0v + h1v * q_one + h2v * q_one * q_one) if q_one <= q_max_f else 0.0
-                else:
-                    fp = float(_e.get("fanPressure", 0))
-                    q_max_f = float(_e.get("qMax", 0))
-                    N = max(1, int(_e.get("fanParallel", 1) or 1))
-                    q_one = qv / N
-                    if q_max_f > 0 and q_one > q_max_f:
-                        decay = max(0.0, 1.0 - (q_one - q_max_f) / (0.1 * q_max_f))
-                        Hv = fp * decay
-                    else:
-                        Hv = fp
-                return Hv - _R * qv * qv
+                return fan_H(_e, qv) - _R * qv * qv
             if f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
                 for _ in range(60):
                     qm = 0.5 * (q_lo + q_hi)
@@ -1263,9 +1236,6 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 q = q_lo
             else:
                 q = q_hi
-            # При реверсе ВМП поток идёт в обратном направлении (b→a)
-            if is_reverse_vmp:
-                q = -q
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
@@ -1793,11 +1763,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 den += 2.0 * R * abs(qd)
 
                 if e.get("hasFan"):
+                    # Напор вентилятора по обходу контура: fan_dir * sign
+                    # (не зависит от знака потока — только от ориентации)
                     fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    # q_fan > 0: поток совпадает с направлением вентилятора → напор есть.
-                    # q_fan < 0: поток опрокинут → вентилятор не создаёт напора (H=0).
-                    q_fan = Q[gi] * fan_dir
-                    H = _mkr_fan_H(e, Q[gi]) if q_fan >= 0 else 0.0
+                    H = _mkr_fan_H(e, Q[gi])
                     num -= fan_dir * H * sign
                     den += _mkr_fan_dH(e, Q[gi])
 
