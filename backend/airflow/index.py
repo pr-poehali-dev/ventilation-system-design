@@ -78,8 +78,15 @@ def fan_H(e, Q):
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
     При Q > qMax: для curve возвращаем 0 (паспорт закончился); для constant —
     линейно спадаем (защита от Q→∞ в итерациях).
+
+    Q может быть знаковым: Q > 0 — поток совпадает с направлением действия вентилятора,
+    Q < 0 — поток опрокинут против вентилятора. При опрокидывании H = 0
+    (вентилятор не создаёт напора против потока — как в реальности).
     """
     if not e.get("hasFan") or e.get("fanStopped"):
+        return 0.0
+    # Опрокинутый поток: вентилятор не создаёт напора
+    if Q < 0:
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
@@ -586,9 +593,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         log.append("Естественная тяга: не учитывается (Δz=0 или одинаковые температуры)")
 
     log.append(f"Метод Кросса: ветвей={len(edges)}, вент={len(fans)}, атм_узлов={len(atm)}")
-    for e in edges:
-        print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f} Hнат={e.get('naturalDraft',0):.1f}"
-              f"{'  ВЕН' if e['hasFan'] else ''}")
 
     # ══ ШАГ 1: Тупиковые ветви — Q=0 ════════════════════════════════════
     dead_end_ids = find_dead_ends(edges)
@@ -902,13 +906,28 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура.
     # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
     max_dq = float("inf")
+    max_dh = float("inf")
     prev_max_dq = float("inf")
     alpha_cur = alpha
     osc_streak = 0   # счётчик осцилляций (для адаптивного снижения alpha)
     it = 0
 
+    # Характерный напор — для относительного допуска ΔH
+    h_char = 0.0
+    for _e in edges:
+        if _e.get("hasFan") and not _e.get("fanStopped"):
+            if _e.get("fanMode") == "curve":
+                h_char = max(h_char, abs(float(_e.get("h0", 0))))
+            else:
+                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
+        h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
+    if h_char <= 0:
+        h_char = 1.0
+    tol_h_abs = float(options.get("tolPressure", 0.1))
+
     for it in range(1, max_iter + 1):
         max_dq = 0.0
+        max_dh = 0.0
 
         for loop in loops_global:
             # Невязка давлений по контуру (Па)
@@ -928,9 +947,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # ориентации вентилятора и направления обхода контура.
                 # fan_dir=+1 (прямой) → напор по a→b; fan_dir=-1 (реверс) → по b→a.
                 # В обходе с sign: реальный вклад = fan_dir * sign.
+                # При опрокинутом потоке (Q[gi] < 0 у прямого вент. или Q[gi] > 0
+                # у реверсного) вентилятор работает против потока: передаём
+                # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
                     fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    Hv = fan_H(e, abs(Q[gi]))
+                    q_fan = Q[gi] * fan_dir  # Q в направлении действия вентилятора
+                    Hv = fan_H(e, q_fan)     # передаём знаковый Q для fan_H
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
@@ -942,6 +965,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
             if sum_2RQ < 1e-12:
                 continue
+
+            if abs(sum_H) > max_dh:
+                max_dh = abs(sum_H)
 
             # Поправка с демпфированием α: δQ = -α·ΔH / Σ(2·R·|Q|)
             dq = alpha_cur * (-sum_H / sum_2RQ)
@@ -961,12 +987,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 if not math.isfinite(Q[gi]):
                     Q[gi] = 0.0
 
-        if max_dq < tol:
+        # Двойной критерий: и δQ, и ΔH должны быть малы.
+        # ΔH-допуск относительный: 0.5% от h_char (≈10 Па при ГВУ 2000 Па).
+        tol_h = max(tol_h_abs, 0.005 * h_char)
+        if max_dq < tol and max_dh < tol_h:
             it += 1
             break
 
-        # Адаптивное демпфирование: если максимальная поправка растёт —
-        # снижаем α (детекция осцилляций как в Аэросеть).
+        # Адаптивное демпфирование: снижаем при росте невязки, восстанавливаем
+        # при монотонном убывании (10%/итерацию, не быстрее стартового alpha).
         if max_dq > prev_max_dq * 0.99:
             osc_streak += 1
             if osc_streak >= 5 and alpha_cur > 0.05:
@@ -974,17 +1003,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 osc_streak = 0
         else:
             osc_streak = 0
+            alpha_cur = min(alpha, alpha_cur * 1.1)  # восстановление к стартовому
         prev_max_dq = max_dq
 
-    converged = max_dq < tol
+    converged = max_dq < tol and max_dh < tol_h
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
-                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с"})
+                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па"})
 
-    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, сошлось={converged}")
-    for i, e in enumerate(edges):
-        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f} {e['a']}→{e['b']}"
-              f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
+    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па, сошлось={converged}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
@@ -1235,7 +1262,10 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 else:
                     q = q_hi
 
-        H    = e["R"] * q * abs(q)
+        # Депрессия: аэродинамические потери (всегда ≥ 0) + вклад естественной тяги.
+        # H_nat со знаком: положительная тяга снижает депрессию (помогает потоку).
+        H_friction = e["R"] * q * q
+        H    = H_friction - e.get("naturalDraft", 0.0) * (1.0 if q >= 0 else -1.0)
         Hv   = fan_H_display(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
