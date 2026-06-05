@@ -7019,7 +7019,7 @@ export default function CadPage() {
                       color: colors[revDiag.level], border: `1px solid ${revDiag.level === "error" ? "#fca5a5" : revDiag.level === "warning" ? "#fcd34d" : "#86efac"}`,
                       cursor: "pointer" }}
                     title={revDiag.message}
-                    onClick={() => setShowDiagnostics(true)}>
+                    onClick={() => {}}>
                     {icons[revDiag.level]} Реверс
                   </span>
                 );
@@ -7028,21 +7028,7 @@ export default function CadPage() {
           ) : (
             <span style={{ color: "#9ca3af" }}>● Расчёт не выполнялся</span>
           )}
-          {solveResult?.diagnostics && solveResult.diagnostics.length > 0 && (() => {
-            const errs = solveResult.diagnostics.filter(d => d.level === "error").length;
-            const warns = solveResult.diagnostics.filter(d => d.level === "warning").length;
-            return (
-              <button
-                onClick={() => setShowDiagnostics(v => !v)}
-                className="ml-1 px-2 py-0.5 rounded text-[11px]"
-                style={{ background: errs > 0 ? "#fee2e2" : "#fef3c7",
-                  color: errs > 0 ? "#b91c1c" : "#92400e",
-                  border: `1px solid ${errs > 0 ? "#fca5a5" : "#fcd34d"}`,
-                  cursor: "pointer" }}>
-                ⚠ Диагностика: {errs} ошибок, {warns} предупр.
-              </button>
-            );
-          })()}
+
           <span className="text-gray-400">|</span>
           <button
             onClick={() => setShowLogPanel(v => !v)}
@@ -7192,102 +7178,7 @@ export default function CadPage() {
       />
     )}
 
-    {/* ═══ ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ════════════════════════════════════ */}
-    {showDiagnostics && solveResult?.diagnostics && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
-        <div className="bg-white rounded shadow-lg flex flex-col"
-          style={{ width: 560, maxHeight: "80vh", border: "1px solid #9ca3af" }}>
-          <div className="flex items-center justify-between px-3 py-2"
-            style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8" }}>
-            <span className="text-[12px] font-semibold text-gray-800">Диагностика расчёта</span>
-            <button onClick={() => setShowDiagnostics(false)}
-              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#6b7280" }}>✕</button>
-          </div>
-          <div className="overflow-auto flex-1 px-2 py-1">
-            {solveResult.diagnostics.length === 0 ? (
-              <div className="text-center text-[11px] text-gray-500 py-4">Проблем не обнаружено ✓</div>
-            ) : (
-              solveResult.diagnostics.map((d, i) => (
-                <div key={i}
-                  onClick={() => {
-                    if (d.objectId) {
-                      const n = nodes.find(nd => nd.id === d.objectId);
-                      const b = branches.find(br => br.id === d.objectId);
-                      if (n) { setSelectedNodeId(n.id); setSelectedBranchId(null); }
-                      else if (b) { setSelectedBranchId(b.id); setSelectedNodeId(null); }
-                    }
-                  }}
-                  className="flex items-start gap-2 px-2 py-1.5 cursor-pointer hover:bg-gray-50"
-                  style={{ borderBottom: "1px solid #f0f0f0" }}>
-                  <span style={{
-                    color: d.level === "error" ? "#dc2626" : d.level === "warning" ? "#d97706" : "#2563eb",
-                    fontSize: 14, lineHeight: "16px", flexShrink: 0,
-                  }}>
-                    {d.level === "error" ? "✕" : d.level === "warning" ? "⚠" : "ℹ"}
-                  </span>
-                  <div className="flex-1 text-[11px]">
-                    <div style={{ color: "#1f2937" }}>{d.message}</div>
-                    <div className="text-[10px] text-gray-400">
-                      {d.category === "node_balance" ? "баланс узла" :
-                       d.category === "branch_flow" ? "поток ветви" :
-                       d.category === "fan" ? "вентилятор" :
-                       d.category === "topology" ? "топология" :
-                       d.category === "convergence" ? "сходимость" : d.category}
-                      {d.objectId && ` · ${d.objectId.substring(0, 24)}`}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          <div className="flex justify-between items-center px-3 py-2" style={{ borderTop: "1px solid #e5e7eb", background: "#f8faff" }}>
-            <span className="text-[10px] text-gray-500">Клик на проблему — выделить объект на схеме</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  // generate_report(): текстовый отчёт по ветвям и вентиляторам
-                  const lines: string[] = [];
-                  lines.push("=== ОТЧЁТ ПО РАСЧЁТУ ВЕНТИЛЯЦИОННОЙ СЕТИ ===");
-                  lines.push(`Дата: ${new Date().toLocaleString("ru")}`);
-                  lines.push(`Итераций: ${solveResult?.iterations ?? 0}, сошлось: ${solveResult?.ok ? "да" : "нет"}`);
-                  lines.push("");
-                  lines.push("--- ВЕТВИ ---");
-                  branches.forEach(b => {
-                    if (b.isDead) return;
-                    lines.push(`${b.id.padEnd(20)} Q=${Math.abs(b.flow).toFixed(2).padStart(7)} м³/с  V=${b.velocity.toFixed(1).padStart(5)} м/с  ΔP=${b.dP.toFixed(0).padStart(6)} Па${b.isLeakage ? "  [УТЕЧКА]" : ""}`);
-                  });
-                  lines.push("");
-                  lines.push("--- ВЕНТИЛЯТОРЫ ---");
-                  branches.filter(b => b.hasFan).forEach(b => {
-                    const mode = b.fanStopped ? "СТОП" : b.fanReverse ? "РЕВЕРС" : "ПРЯМОЙ";
-                    const eta  = (b.fanEfficiency * 100).toFixed(0);
-                    const warn = b.fanReverse && b.fanEfficiency <= 0.05 ? "  ⚠ КПД<5% риск помпажа" : "";
-                    lines.push(`${b.fanName || b.id}  Режим=${mode}  Q=${Math.abs(b.flow).toFixed(2)} м³/с  H=${Math.abs(b.fanPressure).toFixed(0)} Па  КПД=${eta}%  N=${(b.fanShaftPower/1000).toFixed(1)} кВт${warn}`);
-                  });
-                  lines.push("");
-                  lines.push("--- ДИАГНОСТИКА ---");
-                  (solveResult?.diagnostics ?? []).forEach(d => {
-                    const icon = d.level === "error" ? "✕" : d.level === "warning" ? "⚠" : "ℹ";
-                    lines.push(`${icon} ${d.message}`);
-                  });
-                  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-                  const url  = URL.createObjectURL(blob);
-                  const a    = document.createElement("a");
-                  a.href = url; a.download = "ventilation_report.txt"; a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="text-[11px] px-3 py-1 rounded"
-                style={{ background: "#e8eef8", border: "1px solid #c8d4e8", cursor: "pointer", color: "#1e40af" }}>
-                ↓ Экспорт отчёта
-              </button>
-              <button onClick={() => setShowDiagnostics(false)}
-                className="text-[11px] px-3 py-1 rounded"
-                style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer" }}>Закрыть</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
+    {/* ═══ ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА — скрыта ══════════════════════════ */}
 
     {/* ═══ АВТОНУМЕРАЦИЯ ОБЪЕКТОВ ═══════════════════════════════════════ */}
     {showRenumberDialog && (
