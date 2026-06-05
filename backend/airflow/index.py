@@ -1732,7 +1732,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Это исключает невязки Кирхгофа в МКР после каждой итерации.
     tree_branches = {parent_map[v][1] for v in bfs_order if parent_map.get(v)}
 
-    # Характерный напор — нужен до sync_tree_q для ограничения Q перемычек
+    # Характерный напор для допуска сходимости
     h_char = 0.0
     for _e in active_edges_list:
         if _e.get("hasFan") and not _e.get("fanStopped"):
@@ -1743,13 +1743,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
     if h_char <= 0:
         h_char = 1.0
-
-    # Порог «высокоомной» ветви: R в 100× выше медианы сети.
-    # Ветви с R выше этого порога — перемычки. sync_tree_q ограничивает их Q
-    # физическим максимумом sqrt(H_char / R), не перезаписывает произвольно.
-    _r_vals = sorted(_e["R"] for _e in active_edges_list if not _e.get("hasFan") and _e["R"] > 1e-9)
-    _r_median = _r_vals[len(_r_vals) // 2] if _r_vals else 1e-3
-    HIGH_R_THRESHOLD = _r_median * 100.0
 
     def sync_tree_q(Q_arr):
         # Начальный дисбаланс — только от ХОРД (не древесных рёбер)
@@ -1779,17 +1772,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
             # Q в направлении ребра: чтобы баланс в v стал равен 0
             q_new = -b if e["b"] == v else b
-            # Для высокоомных ветвей (перемычки) — ограничиваем Q физическим
-            # максимумом sqrt(H_char / R). Без этого sync_tree_q назначает
-            # перемычке произвольный Q из баланса, игнорируя её сопротивление.
-            if e["R"] >= HIGH_R_THRESHOLD and e["R"] > 1e-6:
-                q_phys_max = math.sqrt(h_char / e["R"]) if h_char > 0 else 0.0
-                if abs(q_new) > q_phys_max:
-                    q_new = math.copysign(q_phys_max, q_new)
-                    # Возвращаем в баланс родителя только фактически протёкшее
-                    b = -q_new if e["b"] == v else q_new
             Q_arr[gi] = q_new
-            # Передаём баланс родителю
+            # Всегда передаём полный дисбаланс узла v вверх по дереву.
+            # Ограничение Q здесь НАРУШАЛО бы 1-й закон Кирхгофа:
+            # остаток "испарялся" и не передавался родителю → дисбаланс.
             bal[p_node] += b
 
     sync_tree_q(Q)
