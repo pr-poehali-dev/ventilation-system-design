@@ -688,20 +688,21 @@ export function solveNetwork(
       const syncBal = new Map<string, number>();
       for (const n of nodeList) syncBal.set(n, 0);
 
-      // Вклад всех хорд в балансы
+      // Вклад всех хорд и вентиляторов дерева в балансы
       for (let i = 0; i < edges.length; i++) {
-        if (treeSet.has(i)) continue;
+        if (treeSet.has(i) && !edges[i].hasFan) continue;
         const e = edges[i];
         syncBal.set(e.a, (syncBal.get(e.a) ?? 0) - e.Q);
         syncBal.set(e.b, (syncBal.get(e.b) ?? 0) + e.Q);
       }
 
-      // bottom-up: пересчёт Q ветвей дерева
+      // bottom-up: пересчёт Q ветвей дерева (вентиляторы пропускаем — их Q фиксировано итерациями МКР)
       for (let idx = bfsOrder.length - 1; idx >= 1; idx--) {
         const v  = bfsOrder[idx];
         const p  = parent.get(v);
         if (!p) continue;
         const e  = edges[p.edgeIdx];
+        if (e.hasFan) continue;
         const pN = p.node;
         const b  = syncBal.get(v) ?? 0;
         if (e.b === v) {
