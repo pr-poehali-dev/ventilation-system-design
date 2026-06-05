@@ -979,9 +979,11 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # у реверсного) вентилятор работает против потока: передаём
                 # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
-                    fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    # q_fan > 0: поток совпадает с направлением вентилятора → напор есть.
-                    # q_fan < 0: поток опрокинут против вентилятора → Hv = 0.
+                    # ВМП не имеет режима реверса: нагнетает всегда в направлении a→b.
+                    # "Разворот ВМП" = разворот ветви (fromId↔toId), а не fanReverse.
+                    # Для ГВУ/ВВУ fanReverse управляет реверсом нормально.
+                    is_vmp = e.get("fanType", "ГВУ") == "ВМП"
+                    fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
                     q_fan = Q[gi] * fan_dir
                     Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
                     sum_H   -= fan_dir * Hv * sign
@@ -1249,25 +1251,17 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             q = 0.0  # тупиковые выработки без вентилятора — Q=0
         elif is_dead and e.get("hasFan"):
             # Тупиковая ветвь с ВМП: рабочая точка H_вент(Q) = R·Q²
-            # Бисекция по модулю расхода (qv > 0).
-            # При fanReverse=True используем реверсную характеристику (reverseH0/H1/H2)
-            # если задана, иначе прямую. В конце инвертируем знак Q (поток b→a).
+            # ВМП всегда нагнетает в направлении a→b (fromId→toId).
+            # Разворот ВМП выполняется через разворот ветви (swap fromId/toId),
+            # поэтому fanReverse для ВМП игнорируем — Q всегда > 0.
             R = e["R"] if e["R"] > 1e-6 else 1e-3
-            is_rev = bool(e.get("fanReverse", False))
             q_lo = float(e.get("qMin", 0.1))
-            q_hi_key = "reverseQMax" if (is_rev and e.get("reverseQMax")) else "qMax"
-            q_hi = float(e.get(q_hi_key, 90.0))
-            def _h_vmp(qv, _e=e, _rev=is_rev):
-                """Напор ВМП при расходе qv > 0 с учётом реверсной характеристики."""
+            q_hi = float(e.get("qMax", 90.0))
+            def _h_vmp(qv, _e=e):
+                """Напор ВМП по прямой характеристике (Q > 0)."""
                 N = max(1, int(_e.get("fanParallel", 1) or 1))
                 q_one = qv / N
                 if _e.get("fanMode", "constant") == "curve":
-                    if _rev and _e.get("reverseH0") is not None:
-                        rh0 = float(_e.get("reverseH0", 0))
-                        rh1 = float(_e.get("reverseH1", 0))
-                        rh2 = float(_e.get("reverseH2", 0))
-                        q_max_r = float(_e.get("reverseQMax", _e.get("qMax", 1e9)))
-                        return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one) if q_one <= q_max_r else 0.0
                     h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
                     q_max_f = float(_e.get("qMax", 1e9))
                     return max(0.0, h0v + h1v * q_one + h2v * q_one * q_one) if q_one <= q_max_f else 0.0
@@ -1289,9 +1283,7 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 q = q_lo
             else:
                 q = q_hi
-            # При реверсе ВМП поток идёт в обратном направлении (b→a)
-            if is_rev:
-                q = -q
+            # Q > 0: поток всегда в направлении a→b (fromId→toId)
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
@@ -1811,9 +1803,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 den += 2.0 * R * abs(qd)
 
                 if e.get("hasFan"):
-                    # Напор вентилятора по обходу контура: fan_dir * sign
-                    # (не зависит от знака потока — только от ориентации)
-                    fan_dir = -1.0 if e.get("fanReverse") else 1.0
+                    # ВМП не имеет режима реверса: нагнетает всегда в направлении a→b.
+                    # "Разворот ВМП" = разворот ветви (fromId↔toId), а не fanReverse.
+                    is_vmp = e.get("fanType", "ГВУ") == "ВМП"
+                    fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
                     H = _mkr_fan_H(e, Q[gi])
                     num -= fan_dir * H * sign
                     den += _mkr_fan_dH(e, Q[gi])

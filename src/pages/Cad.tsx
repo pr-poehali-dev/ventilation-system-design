@@ -2215,7 +2215,19 @@ export default function CadPage() {
 
   const handleReverseBranch = (id: string) => {
     pushHistory();
-    setBranches((p) => p.map((b) => b.id === id ? { ...b, fromId: b.toId, toId: b.fromId } : b));
+    setBranches((p) => p.map((b) => {
+      if (b.id !== id) return b;
+      const isVmp = b.fanType === "ВМП";
+      return {
+        ...b,
+        fromId: b.toId,
+        toId: b.fromId,
+        // Для ГВУ/ВВУ разворот ветви инвертирует fanReverse (направление нагнетания сохраняется физически).
+        // Для ВМП fanReverse не используется — ВМП нагнетает всегда по fromId→toId,
+        // поэтому разворот ветви = разворот направления нагнетания, fanReverse не трогаем.
+        ...(!isVmp && b.hasFan ? { fanReverse: !(b.fanReverse ?? false) } : {}),
+      };
+    }));
   };
 
   const handleCtxAction = (action: string) => {

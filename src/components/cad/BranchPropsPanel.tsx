@@ -726,26 +726,36 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </select>
             </InlineLabel>
 
-            <InlineLabel label="Направление">
-              <button
-                onClick={() => onUpdate({ fanReverse: !(branch.fanReverse ?? false) })}
-                disabled={branch.fanStopped}
-                className="w-full text-[11px] px-2 rounded"
-                style={{
-                  height: 18,
-                  background: branch.fanStopped ? "#f3f4f6" : branch.fanReverse ? "#fee2e2" : "#f0fdf4",
-                  color: branch.fanStopped ? "#9ca3af" : branch.fanReverse ? "#b91c1c" : "#15803d",
-                  border: `1px solid ${branch.fanStopped ? "#d1d5db" : branch.fanReverse ? "#fca5a5" : "#86efac"}`,
-                  cursor: branch.fanStopped ? "not-allowed" : "pointer",
-                  fontWeight: 600,
-                }}>
-                {branch.fanReverse ? "⟵ Реверс (обратный)" : "⟶ Прямой (нормальный)"}
-              </button>
-            </InlineLabel>
-            {branch.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
+            {branch.fanType !== "ВМП" && (
+              <>
+                <InlineLabel label="Направление">
+                  <button
+                    onClick={() => onUpdate({ fanReverse: !(branch.fanReverse ?? false) })}
+                    disabled={branch.fanStopped}
+                    className="w-full text-[11px] px-2 rounded"
+                    style={{
+                      height: 18,
+                      background: branch.fanStopped ? "#f3f4f6" : branch.fanReverse ? "#fee2e2" : "#f0fdf4",
+                      color: branch.fanStopped ? "#9ca3af" : branch.fanReverse ? "#b91c1c" : "#15803d",
+                      border: `1px solid ${branch.fanStopped ? "#d1d5db" : branch.fanReverse ? "#fca5a5" : "#86efac"}`,
+                      cursor: branch.fanStopped ? "not-allowed" : "pointer",
+                      fontWeight: 600,
+                    }}>
+                    {branch.fanReverse ? "⟵ Реверс (обратный)" : "⟶ Прямой (нормальный)"}
+                  </button>
+                </InlineLabel>
+                {branch.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
+                  <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
+                    style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }}>
+                    ⚠ Сначала выполните расчёт в прямом режиме — для проверки норматива ПБ (Q_рев ≥ 60%)
+                  </div>
+                )}
+              </>
+            )}
+            {branch.fanType === "ВМП" && (
               <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-                style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }}>
-                ⚠ Сначала выполните расчёт в прямом режиме — для проверки норматива ПБ (Q_рев ≥ 60%)
+                style={{ background: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}>
+                Для смены направления нагнетания — разверните ветвь (Ctrl+R)
               </div>
             )}
 
@@ -1058,7 +1068,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 ⏹ Вентилятор остановлен — напор H=0, воздух движется по естественной тяге
               </div>
             )}
-            {!branch.fanStopped && branch.fanReverse && (
+            {!branch.fanStopped && branch.fanReverse && branch.fanType !== "ВМП" && (
               <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
                 style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c" }}>
                 {(() => {
@@ -1093,7 +1103,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             })()}
 
             <InlineLabel label="Q выраб., м³/с">
-              <ComputedInput value={branch.fanReverse
+              <ComputedInput value={branch.fanReverse && branch.fanType !== "ВМП"
                 ? numFmt(-Math.abs(branch.flow), 2)
                 : numFmt(Math.abs(branch.flow), 2)} />
             </InlineLabel>
