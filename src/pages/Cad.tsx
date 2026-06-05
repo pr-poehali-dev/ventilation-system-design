@@ -13,7 +13,7 @@ import FanCurveChart from "@/components/cad/FanCurveChart";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
-import { calcWaterNetwork } from "@/lib/waterHydraulics";
+import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
@@ -44,7 +44,9 @@ import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import FUNC2URL from "../../backend/func2url.json";
 
-const AIRFLOW_URL = (FUNC2URL as Record<string, string>)["airflow"];
+const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
+const EXPLOSION_URL    = (FUNC2URL as Record<string, string>)["explosion-calculator"];
+const WATER_URL        = (FUNC2URL as Record<string, string>)["water-hydraulics"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -222,11 +224,23 @@ export default function CadPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
-  // Гидравлический расчёт водопроводной сети ППЗ
-  const waterNetwork = useMemo(
-    () => calcWaterNetwork(nodes, branches),
-    [nodes, branches],
-  );
+  // Гидравлический расчёт водопроводной сети ППЗ (backend)
+  const [waterNetwork, setWaterNetwork] = useState<{ nodeResults: Map<string, WaterNodeResult>; branchResults: Map<string, WaterBranchResult> }>({ nodeResults: new Map(), branchResults: new Map() });
+  useEffect(() => {
+    const hasWater = branches.some(b => b.hasWaterPipe);
+    if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
+    fetch(WATER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodes, branches }),
+    }).then(r => r.json()).then(data => {
+      const nr = new Map<string, WaterNodeResult>();
+      const br = new Map<string, WaterBranchResult>();
+      (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
+      (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
+      setWaterNetwork({ nodeResults: nr, branchResults: br });
+    }).catch(() => {});
+  }, [nodes, branches]);
 
   // Запоминаем последнюю вкладку отдельно для узлов и ветвей
   const lastNodeTab = useRef<SideTab>("params");
@@ -2898,31 +2912,64 @@ export default function CadPage() {
         <RibbonGroup label="Расчёт взрыва">
           <div className="flex items-stretch gap-1">
             <button
-              onClick={() => {
+              onClick={async () => {
                 const expBranches = branches.filter(b => b.hasExplosion);
                 if (expBranches.length === 0) {
                   alert("Сначала установите место взрыва на ветви (кнопка «Установить место взрыва»)");
                   return;
                 }
                 const results: ExplosionResult[] = [];
-                const updatedBranches = branches.map(b => {
+                const updatedBranchesPromises = branches.map(async b => {
                   if (!b.hasExplosion) return b;
-                  const br = branches.find(br2 => br2.id === b.id);
-                  const area = br?.area ?? 12;
-                  const length = br?.length ?? 100;
-                  const res = calcExplosion({
-                    method: (b.explosionMethod ?? "gas_dynamics") as ExplosionMethod,
-                    sourceType: (b.explosionSourceType ?? "gas") as ExplosionSourceType,
-                    gasId: b.explosionGasId ?? "methane",
-                    gasVolume_m3: b.explosionGasVolume ?? 100,
-                    gasConcentration: b.explosionGasConcentration ?? 9.5,
-                    explosiveId: b.explosionExplosiveId ?? "ammonit",
-                    explosiveMass_kg: b.explosionExplosiveMass ?? 10,
-                    excavationArea_m2: area,
-                    excavationLength_m: length,
-                    ambientPressure_kPa: 101.3,
-                    considerWalls: b.explosionConsiderWalls ?? true,
-                  });
+                  const area = b.area ?? 12;
+                  const length = b.length ?? 100;
+                  let res: ExplosionResult;
+                  try {
+                    const resp = await fetch(EXPLOSION_URL, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        method: b.explosionMethod ?? "gas_dynamics",
+                        sourceType: b.explosionSourceType ?? "gas",
+                        gasId: b.explosionGasId ?? "methane",
+                        gasVolume_m3: b.explosionGasVolume ?? 100,
+                        gasConcentration: b.explosionGasConcentration ?? 9.5,
+                        explosiveId: b.explosionExplosiveId ?? "ammonit",
+                        explosiveMass_kg: b.explosionExplosiveMass ?? 10,
+                        excavationArea_m2: area,
+                        excavationLength_m: length,
+                        ambientPressure_kPa: 101.3,
+                        considerWalls: b.explosionConsiderWalls ?? true,
+                      }),
+                    });
+                    const data = await resp.json();
+                    // Восстанавливаем функции pressureAtDistance и impulseAtDistance из pressurePoints
+                    res = {
+                      ...data,
+                      pressureAtDistance: (r: number) => {
+                        const pt = (data.pressurePoints ?? []).find((p: {r_m: number}) => p.r_m === r);
+                        return pt?.deltaP_kPa ?? 0;
+                      },
+                      impulseAtDistance: (r: number) => {
+                        const pt = (data.pressurePoints ?? []).find((p: {r_m: number}) => p.r_m === r);
+                        return pt?.impulse_Pas ?? 0;
+                      },
+                    };
+                  } catch {
+                    res = calcExplosion({
+                      method: (b.explosionMethod ?? "gas_dynamics") as ExplosionMethod,
+                      sourceType: (b.explosionSourceType ?? "gas") as ExplosionSourceType,
+                      gasId: b.explosionGasId ?? "methane",
+                      gasVolume_m3: b.explosionGasVolume ?? 100,
+                      gasConcentration: b.explosionGasConcentration ?? 9.5,
+                      explosiveId: b.explosionExplosiveId ?? "ammonit",
+                      explosiveMass_kg: b.explosionExplosiveMass ?? 10,
+                      excavationArea_m2: area,
+                      excavationLength_m: length,
+                      ambientPressure_kPa: 101.3,
+                      considerWalls: b.explosionConsiderWalls ?? true,
+                    });
+                  }
                   results.push(res);
                   return {
                     ...b,
@@ -2935,6 +2982,7 @@ export default function CadPage() {
                     explosionComputedR_light: res.zones[3]?.radius_m ?? 0,
                   };
                 });
+                const updatedBranches = await Promise.all(updatedBranchesPromises);
                 // ── Определяем разрушенные перемычки по зонам поражения ──────────
                 // Дейкстра по сети для расчёта расстояния по выработкам от источника
                 type Pt3 = { x: number; y: number; z: number };

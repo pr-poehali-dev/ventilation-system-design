@@ -1,0 +1,36 @@
+{
+  "tests": [
+    {
+      "name": "Пустая сеть — нет водопроводных ветвей",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [],
+        "branches": []
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"nodeResults": [], "branchResults": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Простая сеть: резервуар → потребитель",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "N1", "fireNodeType": "reservoir", "fireInitPressure": 0.6, "fireCapacity": 50, "z": 10},
+          {"id": "N2", "fireNodeType": "consumer", "fireHydrantOpen": true, "fireHydrantDiameter": 50, "fireResistanceMode": "project", "z": 0}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "N1", "toId": "N2", "hasWaterPipe": true,
+           "wpDiameter": 100, "length": 100, "wpLengthManual": false,
+           "wpRoughnessMode": "rough", "wpRoughness": 0.5, "wpLocalXi": 0,
+           "wpHasReducer": false}
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6}], "branchResults": [{"branchId": "B1", "flow": 216.581}]},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
