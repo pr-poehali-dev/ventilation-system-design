@@ -1,0 +1,55 @@
+{
+  "tests": [
+    {
+      "name": "Круглое сечение, alpha-режим",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "branches": [
+          {
+            "id": "B1",
+            "shape": "round",
+            "diameter": 3.5,
+            "resistanceMode": "alpha",
+            "alphaCoef": 35,
+            "roughness": 50,
+            "manualR": 0,
+            "localXi": 0,
+            "length": 200,
+            "flow": 15,
+            "rho": 1.2
+          }
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"branches": [{"id": "B1", "area": 9.621, "dh": 3.5}]},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Прямоугольное сечение, roughness-режим",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "branches": [
+          {
+            "id": "B2",
+            "shape": "rect",
+            "width": 4.0,
+            "height": 3.0,
+            "resistanceMode": "roughness",
+            "roughness": 80,
+            "alphaCoef": 60,
+            "manualR": 0,
+            "localXi": 0.5,
+            "length": 150,
+            "flow": 20,
+            "rho": 1.2
+          }
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"branches": [{"id": "B2", "area": 12.0, "perimeter": 14.0}]},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
