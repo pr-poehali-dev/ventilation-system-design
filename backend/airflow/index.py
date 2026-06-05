@@ -78,8 +78,15 @@ def fan_H(e, Q):
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
     При Q > qMax: для curve возвращаем 0 (паспорт закончился); для constant —
     линейно спадаем (защита от Q→∞ в итерациях).
+
+    Q может быть знаковым: Q > 0 — поток совпадает с направлением действия вентилятора,
+    Q < 0 — поток опрокинут против вентилятора. При опрокидывании H = 0
+    (вентилятор не создаёт напора против потока — как в реальности).
     """
     if not e.get("hasFan") or e.get("fanStopped"):
+        return 0.0
+    # Опрокинутый поток: вентилятор не создаёт напора
+    if Q < 0:
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
@@ -586,9 +593,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         log.append("Естественная тяга: не учитывается (Δz=0 или одинаковые температуры)")
 
     log.append(f"Метод Кросса: ветвей={len(edges)}, вент={len(fans)}, атм_узлов={len(atm)}")
-    for e in edges:
-        print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f} Hнат={e.get('naturalDraft',0):.1f}"
-              f"{'  ВЕН' if e['hasFan'] else ''}")
 
     # ══ ШАГ 1: Тупиковые ветви — Q=0 ════════════════════════════════════
     dead_end_ids = find_dead_ends(edges)
@@ -902,13 +906,28 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура.
     # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
     max_dq = float("inf")
+    max_dh = float("inf")
     prev_max_dq = float("inf")
     alpha_cur = alpha
     osc_streak = 0   # счётчик осцилляций (для адаптивного снижения alpha)
     it = 0
 
+    # Характерный напор — для относительного допуска ΔH
+    h_char = 0.0
+    for _e in edges:
+        if _e.get("hasFan") and not _e.get("fanStopped"):
+            if _e.get("fanMode") == "curve":
+                h_char = max(h_char, abs(float(_e.get("h0", 0))))
+            else:
+                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
+        h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
+    if h_char <= 0:
+        h_char = 1.0
+    tol_h_abs = float(options.get("tolPressure", 0.1))
+
     for it in range(1, max_iter + 1):
         max_dq = 0.0
+        max_dh = 0.0
 
         for loop in loops_global:
             # Невязка давлений по контуру (Па)
@@ -928,9 +947,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # ориентации вентилятора и направления обхода контура.
                 # fan_dir=+1 (прямой) → напор по a→b; fan_dir=-1 (реверс) → по b→a.
                 # В обходе с sign: реальный вклад = fan_dir * sign.
+                # При опрокинутом потоке (Q[gi] < 0 у прямого вент. или Q[gi] > 0
+                # у реверсного) вентилятор работает против потока: передаём
+                # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
                     fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    Hv = fan_H(e, abs(Q[gi]))
+                    # q_fan > 0: поток совпадает с направлением вентилятора → напор есть.
+                    # q_fan < 0: поток опрокинут против вентилятора → Hv = 0.
+                    q_fan = Q[gi] * fan_dir
+                    Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
@@ -942,6 +967,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
             if sum_2RQ < 1e-12:
                 continue
+
+            if abs(sum_H) > max_dh:
+                max_dh = abs(sum_H)
 
             # Поправка с демпфированием α: δQ = -α·ΔH / Σ(2·R·|Q|)
             dq = alpha_cur * (-sum_H / sum_2RQ)
@@ -961,12 +989,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 if not math.isfinite(Q[gi]):
                     Q[gi] = 0.0
 
-        if max_dq < tol:
+        # Двойной критерий: и δQ, и ΔH должны быть малы.
+        # ΔH-допуск относительный: 0.5% от h_char (≈10 Па при ГВУ 2000 Па).
+        tol_h = max(tol_h_abs, 0.005 * h_char)
+        if max_dq < tol and max_dh < tol_h:
             it += 1
             break
 
-        # Адаптивное демпфирование: если максимальная поправка растёт —
-        # снижаем α (детекция осцилляций как в Аэросеть).
+        # Адаптивное демпфирование: снижаем при росте невязки, восстанавливаем
+        # при монотонном убывании (10%/итерацию, не быстрее стартового alpha).
         if max_dq > prev_max_dq * 0.99:
             osc_streak += 1
             if osc_streak >= 5 and alpha_cur > 0.05:
@@ -974,17 +1005,15 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 osc_streak = 0
         else:
             osc_streak = 0
+            alpha_cur = min(alpha, alpha_cur * 1.1)  # восстановление к стартовому
         prev_max_dq = max_dq
 
-    converged = max_dq < tol
+    converged = max_dq < tol and max_dh < tol_h
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
-                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с"})
+                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па"})
 
-    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, сошлось={converged}")
-    for i, e in enumerate(edges):
-        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f} {e['a']}→{e['b']}"
-              f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
+    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па, сошлось={converged}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
@@ -1191,13 +1220,36 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         if is_dead and not e.get("hasFan"):
             q = 0.0  # тупиковые выработки без вентилятора — Q=0
         elif is_dead and e.get("hasFan"):
-            # Тупиковая ветвь с ВМП: рабочая точка через собственное R ветви
-            # (трубопровод ВМП), а не через R_net всей сети
+            # Тупиковая ветвь с ВМП: рабочая точка H_вент(Q) = R·Q²
+            # Бисекция по модулю расхода (qv > 0).
+            # При fanReverse=True используем реверсную характеристику (reverseH0/H1/H2)
+            # если задана, иначе прямую. В конце инвертируем знак Q (поток b→a).
             R = e["R"] if e["R"] > 1e-6 else 1e-3
+            is_rev = bool(e.get("fanReverse", False))
             q_lo = float(e.get("qMin", 0.1))
-            q_hi = float(e.get("qMax", 90.0))
-            def f_vmp(qv, _e=e, _R=R):
-                return fan_H(_e, qv) - _R * qv * qv
+            q_hi_key = "reverseQMax" if (is_rev and e.get("reverseQMax")) else "qMax"
+            q_hi = float(e.get(q_hi_key, 90.0))
+            def _h_vmp(qv, _e=e, _rev=is_rev):
+                """Напор ВМП при расходе qv > 0 с учётом реверсной характеристики."""
+                N = max(1, int(_e.get("fanParallel", 1) or 1))
+                q_one = qv / N
+                if _e.get("fanMode", "constant") == "curve":
+                    if _rev and _e.get("reverseH0") is not None:
+                        rh0 = float(_e.get("reverseH0", 0))
+                        rh1 = float(_e.get("reverseH1", 0))
+                        rh2 = float(_e.get("reverseH2", 0))
+                        q_max_r = float(_e.get("reverseQMax", _e.get("qMax", 1e9)))
+                        return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one) if q_one <= q_max_r else 0.0
+                    h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
+                    q_max_f = float(_e.get("qMax", 1e9))
+                    return max(0.0, h0v + h1v * q_one + h2v * q_one * q_one) if q_one <= q_max_f else 0.0
+                fp = float(_e.get("fanPressure", 0))
+                q_max_c = float(_e.get("qMax", 0))
+                if q_max_c > 0 and q_one > q_max_c:
+                    return fp * max(0.0, 1.0 - (q_one - q_max_c) / (0.1 * q_max_c))
+                return fp
+            def f_vmp(qv, _R=R):
+                return _h_vmp(qv) - _R * qv * qv
             if f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
                 for _ in range(60):
                     qm = 0.5 * (q_lo + q_hi)
@@ -1209,6 +1261,9 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 q = q_lo
             else:
                 q = q_hi
+            # При реверсе ВМП поток идёт в обратном направлении (b→a)
+            if is_rev:
+                q = -q
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
@@ -1235,7 +1290,10 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 else:
                     q = q_hi
 
-        H    = e["R"] * q * abs(q)
+        # Депрессия: аэродинамические потери (всегда ≥ 0) + вклад естественной тяги.
+        # H_nat со знаком: положительная тяга снижает депрессию (помогает потоку).
+        H_friction = e["R"] * q * q
+        H    = H_friction - e.get("naturalDraft", 0.0) * (1.0 if q >= 0 else -1.0)
         Hv   = fan_H_display(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
@@ -1371,10 +1429,15 @@ def _bfs_tree(edges):
         node_set.add(e["b"])
     node_list = list(node_set)
 
+    # Сортируем рёбра каждого узла по R (сначала малое R).
+    # Это гарантирует что ветви с большим R (перемычки) уходят в хорды,
+    # а не в дерево — иначе sync_tree_q перезапишет их Q из баланса.
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"]))
-        adj[e["b"]].append((i, e["a"]))
+        adj[e["a"]].append((i, e["b"], e["R"]))
+        adj[e["b"]].append((i, e["a"], e["R"]))
+    for u in adj:
+        adj[u].sort(key=lambda x: x[2])  # сортировка по R: малое R → в дерево
 
     root = GND if GND in node_set else node_list[0]
     visited  = {root}
@@ -1385,7 +1448,7 @@ def _bfs_tree(edges):
 
     while queue:
         u = queue.popleft()
-        for ei, nb in adj[u]:
+        for ei, nb, _r in adj[u]:
             if nb not in visited:
                 visited.add(nb)
                 parent[nb] = (u, ei)
@@ -1566,11 +1629,48 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Q по глобальным индексам
     Q = [0.0] * len(edges)
 
-    # ВМП теперь в dead_end_ids — не участвуют в расчёте.
-    # Их Q вычисляется в make_result через собственную рабочую точку H(Q)=R*Q².
-    r_total = sum(e["R"] for e in active_edges_list if not e.get("hasFan"))
-    if r_total <= 0:
-        r_total = 1e-3
+    # R_net: путь BFS от главного вентилятора до атмосферы (GND).
+    # Используем ту же логику что в Кросс (compute_r_main), чтобы перемычки
+    # с большим R на боковых ветвях не искажали оценку начального Q₀.
+    def _estimate_r_net_mkr():
+        fans = [e for e in active_edges_list if e.get("hasFan") and not e.get("fanStopped")]
+        if not fans:
+            return None
+        def fan_h0(e):
+            return abs(float(e.get("h0", 0))) if e.get("fanMode") == "curve" else abs(float(e.get("fanPressure", 0)))
+        main_fan = max(fans, key=fan_h0)
+        adj = collections.defaultdict(list)
+        for e in active_edges_list:
+            adj[e["a"]].append((e["b"], e["R"]))
+            adj[e["b"]].append((e["a"], e["R"]))
+        start = main_fan["a"] if main_fan["a"] != GND else main_fan["b"]
+        if start == GND:
+            return main_fan["R"]
+        visited = {start}
+        queue = collections.deque([(start, main_fan["R"])])
+        while queue:
+            node, r_sum = queue.popleft()
+            if node == GND:
+                return r_sum
+            for nb, r in adj[node]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, r_sum + r))
+        return None
+
+    r_net = _estimate_r_net_mkr()
+    if r_net and r_net > 1e-6:
+        r_total = r_net
+    else:
+        # Запасной вариант: медиана R (как в Кросс) — исключает выбросы перемычек
+        r_branches = sorted(e["R"] for e in active_edges_list if not e.get("hasFan") and e["R"] > 1e-9)
+        if r_branches:
+            n_tree = max(1, len(tree_set))
+            r_total = r_branches[len(r_branches) // 2] * n_tree
+        else:
+            r_total = 1e-3
+    log.append(f"МКР R_net={r_total:.4f} (путь BFS от вентилятора)")
+
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
@@ -1605,6 +1705,25 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Это исключает невязки Кирхгофа в МКР после каждой итерации.
     tree_branches = {parent_map[v][1] for v in bfs_order if parent_map.get(v)}
 
+    # Характерный напор — нужен до sync_tree_q для ограничения Q перемычек
+    h_char = 0.0
+    for _e in active_edges_list:
+        if _e.get("hasFan") and not _e.get("fanStopped"):
+            if _e.get("fanMode") == "curve":
+                h_char = max(h_char, abs(float(_e.get("h0", 0))))
+            else:
+                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
+        h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
+    if h_char <= 0:
+        h_char = 1.0
+
+    # Порог «высокоомной» ветви: R в 100× выше медианы сети.
+    # Ветви с R выше этого порога — перемычки. sync_tree_q ограничивает их Q
+    # физическим максимумом sqrt(H_char / R), не перезаписывает произвольно.
+    _r_vals = sorted(_e["R"] for _e in active_edges_list if not _e.get("hasFan") and _e["R"] > 1e-9)
+    _r_median = _r_vals[len(_r_vals) // 2] if _r_vals else 1e-3
+    HIGH_R_THRESHOLD = _r_median * 100.0
+
     def sync_tree_q(Q_arr):
         # Начальный дисбаланс — только от ХОРД (не древесных рёбер)
         bal = collections.defaultdict(float)
@@ -1625,10 +1744,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             gi = local_to_global[li]
             b  = bal[v]
             # Q в направлении ребра: чтобы баланс в v стал равен 0
-            if e["b"] == v:
-                Q_arr[gi] = -b
-            else:
-                Q_arr[gi] = b
+            q_new = -b if e["b"] == v else b
+            # Для высокоомных ветвей (перемычки) — ограничиваем Q физическим
+            # максимумом sqrt(H_char / R). Без этого sync_tree_q назначает
+            # перемычке произвольный Q из баланса, игнорируя её сопротивление.
+            if e["R"] >= HIGH_R_THRESHOLD and e["R"] > 1e-6:
+                q_phys_max = math.sqrt(h_char / e["R"]) if h_char > 0 else 0.0
+                if abs(q_new) > q_phys_max:
+                    q_new = math.copysign(q_phys_max, q_new)
+                    # Возвращаем в баланс родителя только фактически протёкшее
+                    b = -q_new if e["b"] == v else q_new
+            Q_arr[gi] = q_new
             # Передаём баланс родителю
             bal[p_node] += b
 
@@ -1644,16 +1770,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     it = 0
     min_iter = 10  # минимум итераций перед проверкой сходимости (больше для шахт)
 
-    # Характерный напор системы — для относительного критерия сходимости.
-    # Как в Вентсим: tol_h_relative = max(абс_tol, 0.001 * H_характерное).
-    h_char = 0.0
-    for e in active_edges_list:
-        if e.get("hasFan") and not e.get("fanStopped"):
-            if e.get("fanMode") == "curve":
-                h_char = max(h_char, abs(float(e.get("h0", 0))))
-            else:
-                h_char = max(h_char, abs(float(e.get("fanPressure", 0))))
-        h_char = max(h_char, abs(e.get("naturalDraft", 0.0)))
     # Относительный допуск: 0.5% от макс. напора в сети (≈ 10 Па для 2000 Па ГВУ)
     tol_h_rel = max(tol_h, 0.005 * h_char)
 
