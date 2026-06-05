@@ -2215,7 +2215,27 @@ export default function CadPage() {
 
   const handleReverseBranch = (id: string) => {
     pushHistory();
-    setBranches((p) => p.map((b) => b.id === id ? { ...b, fromId: b.toId, toId: b.fromId } : b));
+    const branch = branchesRaw.find(b => b.id === id);
+    const newFanReverse = branch?.hasFan ? !(branch.fanReverse ?? false) : undefined;
+    setBranches((p) => p.map((b) => {
+      if (b.id !== id) return b;
+      return {
+        ...b,
+        fromId: b.toId,
+        toId: b.fromId,
+        // При развороте ветви с вентилятором — инвертируем fanReverse,
+        // чтобы вентилятор продолжал нагнетать в том же физическом направлении.
+        ...(b.hasFan ? { fanReverse: !(b.fanReverse ?? false) } : {}),
+      };
+    }));
+    // Синхронизируем airDirection символа вентилятора
+    if (newFanReverse !== undefined) {
+      setSchemaSymbols((prev) => prev.map((s) =>
+        s.typeId === "fan" && s.branchId === id
+          ? { ...s, airDirection: newFanReverse ? "reverse" : "forward" }
+          : s
+      ));
+    }
   };
 
   const handleCtxAction = (action: string) => {
