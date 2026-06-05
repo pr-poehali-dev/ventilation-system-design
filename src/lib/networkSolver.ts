@@ -484,6 +484,48 @@ export function solveNetwork(
     }
   }
 
+  // Принудительно выгоняем активные вентиляторы из дерева в хорды.
+  // Если вентилятор попал в дерево — он не войдёт ни в один контур МКР
+  // и его напор не будет участвовать в итерациях. Решение: перестроить
+  // spanning tree, запрещая брать активные вентиляторы в дерево.
+  const hasTreeFan = edges.some((e, i) => treeSet.has(i) && e.hasFan && !e.fanStopped);
+  if (hasTreeFan) {
+    parent.clear();
+    treeSet.clear();
+    bfsOrder.length = 0;
+    const visited2 = new Set<string>([root]);
+    parent.set(root, null);
+    const bfsQ2 = [root];
+    // Первый проход: строим дерево, пропуская активные вентиляторы
+    while (bfsQ2.length) {
+      const u = bfsQ2.shift()!;
+      bfsOrder.push(u);
+      for (const { edgeIdx, other } of adj.get(u)!) {
+        if (visited2.has(other)) continue;
+        if (edges[edgeIdx].hasFan && !edges[edgeIdx].fanStopped) continue; // вентиляторы — только в хорды
+        visited2.add(other);
+        parent.set(other, { node: u, edgeIdx });
+        treeSet.add(edgeIdx);
+        bfsQ2.push(other);
+      }
+    }
+    // Если какие-то узлы остались непосещёнными (все рёбра — вентиляторы),
+    // достраиваем дерево включая вентиляторы (нет альтернативы)
+    if (visited2.size < nodeList.length) {
+      const bfsQ3 = Array.from(visited2);
+      for (const u of bfsQ3) {
+        for (const { edgeIdx, other } of adj.get(u)!) {
+          if (visited2.has(other)) continue;
+          visited2.add(other);
+          parent.set(other, { node: u, edgeIdx });
+          treeSet.add(edgeIdx);
+          bfsOrder.push(other);
+        }
+      }
+    }
+    log.push(`[fan-to-chord] вентиляторы выгнаны из дерева, перестроен spanning tree`);
+  }
+
   const chords = edges.map((_, i) => i).filter(i => !treeSet.has(i));
   const bfsPos = new Map(bfsOrder.map((n, i) => [n, i]));
 
