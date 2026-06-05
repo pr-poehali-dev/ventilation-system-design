@@ -646,43 +646,71 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     if vmp_pre_q:
         log.append(f"ВМП предрасчёт: {len(vmp_pre_q)} шт, Σ|Q_ВМП|={sum(abs(q) for q in vmp_pre_q.values()):.1f} м³/с")
 
-    # ══ ШАГ 2: Остовное дерево по активным рёбрам (Union-Find) ══════════
-    # Вентиляторы — в дерево в первую очередь
+    # ══ ШАГ 2+3: Единое остовное дерево + независимые контуры ════════════
+    # КРИТИЧНО: активные вентиляторы ВСЕГДА в хордах (не в дереве).
+    # Если вентилятор попадёт в дерево — он не войдёт ни в один контур и
+    # его напор полностью выпадет из итераций (Q определится только из
+    # 1-го закона Кирхгофа, а не из Q-H характеристики).
+    # Алгоритм: сначала строим дерево из НЕ-вентиляторных рёбер (обычный
+    # Union-Find). Затем вентиляторы добавляем — они уже не могут попасть
+    # в дерево (оба конца уже связаны), становятся хордами автоматически.
+    # Исключение: если топология такова, что без вентилятора дерево не
+    # связывает все узлы — берём вентилятор в дерево (нет выбора).
     all_nodes = set()
     for e in active_edges:
         all_nodes.add(e["a"]); all_nodes.add(e["b"])
-    uf = {n: n for n in all_nodes}
+    uf2 = {n: n for n in all_nodes}
 
-    def uf_find(x):
-        while uf[x] != x:
-            uf[x] = uf[uf[x]]; x = uf[x]
+    def uf2_find(x):
+        while uf2[x] != x:
+            uf2[x] = uf2[uf2[x]]; x = uf2[x]
         return x
 
-    def uf_union(x, y):
-        px, py = uf_find(x), uf_find(y)
+    def uf2_union(x, y):
+        px, py = uf2_find(x), uf2_find(y)
         if px == py: return False
-        uf[px] = py; return True
+        uf2[px] = py; return True
 
-    tree_ids  = set()
+    tree_ids = set()
     chord_ids = []
-    for e in sorted(active_edges, key=lambda e: 0 if e["hasFan"] else 1):
-        if uf_union(e["a"], e["b"]):
+    # Первый проход: только НЕ-вентиляторные рёбра
+    for e in active_edges:
+        if e["hasFan"] and not e.get("fanStopped"):
+            continue
+        if uf2_union(e["a"], e["b"]):
             tree_ids.add(e["id"])
+        else:
+            chord_ids.append(e["id"])
+    # Второй проход: вентиляторы — в хорды если граф уже связан,
+    # в дерево только если нужно для связности (fallback)
+    for e in active_edges:
+        if not e["hasFan"] or e.get("fanStopped"):
+            continue
+        if uf2_union(e["a"], e["b"]):
+            # Граф без этого вентилятора не связан — вынуждены взять в дерево
+            tree_ids.add(e["id"])
+            log.append(f"[fan-fallback] вентилятор {e['id']} в дерево (нет альтернативного пути)")
         else:
             chord_ids.append(e["id"])
 
     log.append(f"Дерево={len(tree_ids)}, хорд={len(chord_ids)}")
 
-    # ══ ШАГ 3: Независимые контуры = хорда + путь в дереве ══════════════
-    loops_active = find_spanning_tree_and_loops(active_edges)
+    # ══ ШАГ 3: Независимые контуры на основе ТОГО ЖЕ дерева ══════════════
+    # Передаём active_edges отсортированными: НЕ-вентиляторы первыми,
+    # чтобы find_spanning_tree_and_loops построил тот же spanning tree.
+    active_edges_sorted = sorted(active_edges,
+                                 key=lambda e: (1 if (e["hasFan"] and not e.get("fanStopped")) else 0))
+    loops_active = find_spanning_tree_and_loops(active_edges_sorted)
     if not loops_active:
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет замкнутых контуров — проверьте топологию: нужно минимум 2 выхода на поверхность."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
-    # Конвертируем индексы: active_edges[ai] → edges[gi]
-    loops_global = [[(active_idx[ai], sign) for ai, sign in loop] for loop in loops_active]
-    log.append(f"Контуров={len(loops_global)}")
+    # Конвертируем индексы: active_edges_sorted[ai] → edges[gi]
+    id_to_global_idx = {e["id"]: gi for gi, e in enumerate(edges)}
+    loops_global = [[(id_to_global_idx[active_edges_sorted[ai]["id"]], sign)
+                     for ai, sign in loop] for loop in loops_active]
+    log.append(f"Контуров={len(loops_global)}, вент-в-хордах={sum(1 for cid in chord_ids if any(e['id']==cid and e['hasFan'] for e in active_edges))}")
 
     # ══ ШАГ 4: Начальный расход q0 (рабочая точка главного вентилятора) ══
     # R_net — характеристическое сопротивление основного пути от ГВУ к атмосфере.
@@ -1422,6 +1450,12 @@ def _bfs_tree(edges):
       - tree_set: set индексов рёбер дерева
       - chords: список индексов хорд (замыкающие рёбра)
       - node_list: все узлы сети
+
+    КРИТИЧНО: активные вентиляторы НЕ берутся в дерево.
+    Если вентилятор попадёт в дерево — он не войдёт ни в один контур МКР
+    и его напор выпадет из итераций (Q будет определяться только Кирхгофом-1).
+    Алгоритм: два прохода BFS — сначала только НЕ-вентиляторные рёбра,
+    затем при необходимости (граф не связан) добавляем вентиляторы.
     """
     node_set = set()
     for e in edges:
@@ -1429,15 +1463,15 @@ def _bfs_tree(edges):
         node_set.add(e["b"])
     node_list = list(node_set)
 
-    # Сортируем рёбра каждого узла по R (сначала малое R).
-    # Это гарантирует что ветви с большим R (перемычки) уходят в хорды,
-    # а не в дерево — иначе sync_tree_q перезапишет их Q из баланса.
+    # Ключ сортировки: вентиляторы последними, потом по R (малое R → в дерево).
     adj = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        adj[e["a"]].append((i, e["b"], e["R"]))
-        adj[e["b"]].append((i, e["a"], e["R"]))
+        is_fan = bool(e.get("hasFan") and not e.get("fanStopped"))
+        sort_key = (1 if is_fan else 0, e["R"])
+        adj[e["a"]].append((i, e["b"], sort_key))
+        adj[e["b"]].append((i, e["a"], sort_key))
     for u in adj:
-        adj[u].sort(key=lambda x: x[2])  # сортировка по R: малое R → в дерево
+        adj[u].sort(key=lambda x: x[2])
 
     root = GND if GND in node_set else node_list[0]
     visited  = {root}
@@ -1448,7 +1482,7 @@ def _bfs_tree(edges):
 
     while queue:
         u = queue.popleft()
-        for ei, nb, _r in adj[u]:
+        for ei, nb, _sk in adj[u]:
             if nb not in visited:
                 visited.add(nb)
                 parent[nb] = (u, ei)
@@ -1690,13 +1724,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     log.append(f"МКР хорд={n_chords_mkr}, q_chord={q_init_mkr:.3f}")
     for ci in chords:
         Q[local_to_global[ci]] = q_init_mkr
-    for i, e in enumerate(active_edges_list):
-        if e.get("hasFan"):
-            # ВМП всегда инициализируем с положительным знаком (свой напор)
-            if e.get("fanType") == "ВМП":
-                Q[local_to_global[i]] = q0 / n_chords_mkr
-            else:
-                Q[local_to_global[i]] = q_init_mkr
 
     # BFS bottom-up: синхронизация Q ветвей дерева по 1-му закону Кирхгофа.
     # Алгоритм (как в Аэросеть/Вентсим):
@@ -1743,6 +1770,13 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             e  = active_edges_list[li]
             gi = local_to_global[li]
             b  = bal[v]
+            # Вентилятор в дереве (fallback): его Q фиксировано итерациями МКР,
+            # не перезаписываем из баланса. Только передаём его вклад вверх.
+            if e.get("hasFan") and not e.get("fanStopped"):
+                # вклад вентилятора уже учтён в bal через хорды-участок контура
+                # просто передаём накопленный дисбаланс узла v в родителя
+                bal[p_node] += b
+                continue
             # Q в направлении ребра: чтобы баланс в v стал равен 0
             q_new = -b if e["b"] == v else b
             # Для высокоомных ветвей (перемычки) — ограничиваем Q физическим
