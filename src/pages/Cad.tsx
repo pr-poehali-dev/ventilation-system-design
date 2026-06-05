@@ -5988,41 +5988,54 @@ export default function CadPage() {
                 setSelectedSymbolId(null);
               }}
               onSymbolClick={(symId) => {
+                // Одиночный клик: выбрать УО и показать свойства (панель params)
                 const sym = schemaSymbols.find(s => s.id === symId);
+                setSelectedSymbolId(symId);
+                if (sym?.branchId) {
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                } else {
+                  setSelectedBranchId(null);
+                  setSelectedNodeId(null);
+                }
+                setFanSymbolBranchId(null);
+                setActiveSide("params");
+              }}
+              onSymbolDblClick={(symId) => {
+                // Двойной клик: открыть настройки вентилятора / перемычки / аварии
+                const sym = schemaSymbols.find(s => s.id === symId);
+                setSelectedSymbolId(symId);
                 if (sym?.typeId === "fan" && sym.branchId) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(sym.branchId);
                   setActiveSide("fan");
                 } else if (sym && FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
-                  // Клик на очаг пожара — открываем вкладку Аварии
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
-                  setSelectedSymbolId(symId);
                   setActiveSide("accidents");
                   setActiveRibbon("involve");
                 } else if (sym && EXPLOSION_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
-                  // Клик на символ взрыва — открываем вкладку Взрыв
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
-                  setSelectedSymbolId(symId);
                   setActiveSide("blast");
                   setActiveRibbon("involve");
                 } else if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
-                  // Клик на редукционный клапан — открываем вкладку Трубы с настройками
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
-                  setSelectedSymbolId(symId);
                   setActiveSide("waterpipes");
+                } else if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
+                  setActiveSide("params");
                 } else {
-                  // Для не-вентиляторных символов — снять выбор ветви/узла, показать панель символа
                   setSelectedBranchId(null);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
-                  setSelectedSymbolId(symId);
                   setActiveSide("params");
                 }
               }}

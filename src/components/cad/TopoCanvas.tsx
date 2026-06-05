@@ -124,8 +124,10 @@ interface Props {
   onSymbolIndOffset?: (id: string, ox: number, oy: number) => void;
   /** Начало перемещения символа (для сохранения истории undo) */
   onSymbolDragStart?: (id: string) => void;
-  /** Клик на символ (для открытия свойств) */
+  /** Клик на символ (для открытия свойств — одиночный) */
   onSymbolClick?: (id: string) => void;
+  /** Двойной клик на символ (для открытия настроек вентилятора/перемычки) */
+  onSymbolDblClick?: (id: string) => void;
   /** Масштаб символа (delta: +0.2 или -0.2) */
   onSymbolScale?: (id: string, delta: number) => void;
   /** Удаление символа */
@@ -216,7 +218,7 @@ export default function TopoCanvas(props: Props) {
     selectedNodeIds, onNodeMultiSelect,
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
-    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolDragStart, onSymbolClick,
+    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
     pendingSymbolTypeId, onPendingSymbolPlace,
@@ -328,6 +330,8 @@ export default function TopoCanvas(props: Props) {
   // Зум: ref для синхронного применения без батчинга
   const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
+  // Для определения двойного клика по УО
+  const symLastClickRef = useRef<{ id: string; time: number } | null>(null);
   const [draggingSymbolId, setDraggingSymbolId] = useState<string | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
@@ -1362,6 +1366,27 @@ export default function TopoCanvas(props: Props) {
   const onContextMenuCanvas = (e: React.MouseEvent<HTMLCanvasElement>)  => onContextMenuSVG(asS(e));
   // Touch для canvas теперь регистрируются нативно в CanvasLayer (passive:false)
 
+  // Обработчик клика по УО: одиночный клик = выбор + открыть свойства,
+  // двойной клик (≤350мс) = открыть настройки (fan/перемычка).
+  // Ctrl+click = выбор без открытия настроек (для множественного выбора через родителя).
+  const handleSymbolClick = (id: string, isCtrl: boolean) => {
+    const now = Date.now();
+    const last = symLastClickRef.current;
+    const isDbl = last?.id === id && now - last.time < 350;
+    symLastClickRef.current = { id, time: now };
+
+    if (isDbl) {
+      // Двойной клик: открыть настройки
+      onSymbolDblClick?.(id);
+    } else if (isCtrl) {
+      // Ctrl+click: просто переключить выбор, не открывать настройки
+      onSelectSymbol?.(selectedSymbolId === id ? null : id);
+    } else {
+      // Одиночный клик: выбор + показать свойства
+      onSymbolClick?.(id);
+    }
+  };
+
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden"
       style={{
@@ -2061,6 +2086,8 @@ export default function TopoCanvas(props: Props) {
           }
           // Без округления (иначе при sc < 0.2 символ исчезает); минимум 4 px на экране.
           const SZ = Math.max(4, 32 * sc * symScale);
+          // Минимальный размер hitbox: 28px, чтобы в мелком масштабе всегда можно было кликнуть
+          const HIT_MIN = 28;
           const HX = px - SZ / 2;
           const HY = py - SZ / 2 - 4;
 
@@ -2089,8 +2116,7 @@ export default function TopoCanvas(props: Props) {
                 const moved = Math.hypot(t.clientX - symTouchRef.current.x, t.clientY - symTouchRef.current.y);
                 symTouchRef.current = null;
                 if (moved < 10) {
-                  onSelectSymbol?.(isSel ? null : sym.id);
-                  onSymbolClick?.(sym.id);
+                  handleSymbolClick(sym.id, false);
                 }
               }}
               onMouseDown={(e) => {
@@ -2127,17 +2153,12 @@ export default function TopoCanvas(props: Props) {
                       onSymbolMoveAlongBranch?.(sym.id, t);
                     }
                   };
-                  const onUp = () => {
+                  const onUp = (ue: MouseEvent) => {
                     window.removeEventListener("mousemove", onMove);
                     window.removeEventListener("mouseup", onUp);
                     setDraggingSymbolId(null);
                     if (!didDrag) {
-                      // клик без перетаскивания — выбор / снятие выбора
-                      if (isSel) {
-                        onSelectSymbol?.(null);
-                      } else {
-                        onSymbolClick?.(sym.id);
-                      }
+                      handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
                     }
                   };
                   window.addEventListener("mousemove", onMove);
@@ -2153,29 +2174,21 @@ export default function TopoCanvas(props: Props) {
                     const dy = -(me.clientY - startY) / view.scale;
                     onSymbolMove?.(sym.id, origX + dx, origY + dy);
                   };
-                  const onUp = () => {
+                  const onUp = (ue: MouseEvent) => {
                     window.removeEventListener("mousemove", onMove);
                     window.removeEventListener("mouseup", onUp);
                     setDraggingSymbolId(null);
                     if (!didDrag) {
-                      if (isSel) {
-                        onSelectSymbol?.(null);
-                      } else {
-                        onSymbolClick?.(sym.id);
-                      }
+                      handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
                     }
                   };
                   window.addEventListener("mousemove", onMove);
                   window.addEventListener("mouseup", onUp);
                 } else {
-                  const onUp = () => {
+                  const onUp = (ue: MouseEvent) => {
                     window.removeEventListener("mouseup", onUp);
                     setDraggingSymbolId(null);
-                    if (isSel) {
-                      onSelectSymbol?.(null);
-                    } else {
-                      onSymbolClick?.(sym.id);
-                    }
+                    handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
                   };
                   window.addEventListener("mouseup", onUp);
                 }
@@ -2481,9 +2494,14 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
               </g>{/* конец pointerEvents="none" */}
-              {/* Hitbox поверх всего символа — гарантированно ловит события мыши */}
-              <rect x={HX - 4} y={HY - 4} width={SZ + 8} height={SZ + 8}
-                fill="transparent" stroke="none" />
+              {/* Hitbox поверх всего символа — гарантированно ловит события мыши.
+                  Минимум HIT_MIN px, отступ 10px со всех сторон. */}
+              {(() => {
+                const hW = Math.max(SZ + 20, HIT_MIN);
+                const hH = Math.max(SZ + 20, HIT_MIN);
+                return <rect x={px - hW / 2} y={py - hH / 2} width={hW} height={hH}
+                  fill="transparent" stroke="none" />;
+              })()}
 
               {/* ── Индикаторы перемычки на схеме ────────────────────── */}
               {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && (() => {
