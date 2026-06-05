@@ -952,8 +952,10 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
                     fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    q_fan = Q[gi] * fan_dir  # Q в направлении действия вентилятора
-                    Hv = fan_H(e, q_fan)     # передаём знаковый Q для fan_H
+                    # q_fan > 0: поток совпадает с направлением вентилятора → напор есть.
+                    # q_fan < 0: поток опрокинут против вентилятора → Hv = 0.
+                    q_fan = Q[gi] * fan_dir
+                    Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
@@ -1218,13 +1220,36 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         if is_dead and not e.get("hasFan"):
             q = 0.0  # тупиковые выработки без вентилятора — Q=0
         elif is_dead and e.get("hasFan"):
-            # Тупиковая ветвь с ВМП: рабочая точка через собственное R ветви
-            # (трубопровод ВМП), а не через R_net всей сети
+            # Тупиковая ветвь с ВМП: рабочая точка H_вент(Q) = R·Q²
+            # Бисекция по модулю расхода (qv > 0).
+            # При fanReverse=True используем реверсную характеристику (reverseH0/H1/H2)
+            # если задана, иначе прямую. В конце инвертируем знак Q (поток b→a).
             R = e["R"] if e["R"] > 1e-6 else 1e-3
+            is_rev = bool(e.get("fanReverse", False))
             q_lo = float(e.get("qMin", 0.1))
-            q_hi = float(e.get("qMax", 90.0))
-            def f_vmp(qv, _e=e, _R=R):
-                return fan_H(_e, qv) - _R * qv * qv
+            q_hi_key = "reverseQMax" if (is_rev and e.get("reverseQMax")) else "qMax"
+            q_hi = float(e.get(q_hi_key, 90.0))
+            def _h_vmp(qv, _e=e, _rev=is_rev):
+                """Напор ВМП при расходе qv > 0 с учётом реверсной характеристики."""
+                N = max(1, int(_e.get("fanParallel", 1) or 1))
+                q_one = qv / N
+                if _e.get("fanMode", "constant") == "curve":
+                    if _rev and _e.get("reverseH0") is not None:
+                        rh0 = float(_e.get("reverseH0", 0))
+                        rh1 = float(_e.get("reverseH1", 0))
+                        rh2 = float(_e.get("reverseH2", 0))
+                        q_max_r = float(_e.get("reverseQMax", _e.get("qMax", 1e9)))
+                        return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one) if q_one <= q_max_r else 0.0
+                    h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
+                    q_max_f = float(_e.get("qMax", 1e9))
+                    return max(0.0, h0v + h1v * q_one + h2v * q_one * q_one) if q_one <= q_max_f else 0.0
+                fp = float(_e.get("fanPressure", 0))
+                q_max_c = float(_e.get("qMax", 0))
+                if q_max_c > 0 and q_one > q_max_c:
+                    return fp * max(0.0, 1.0 - (q_one - q_max_c) / (0.1 * q_max_c))
+                return fp
+            def f_vmp(qv, _R=R):
+                return _h_vmp(qv) - _R * qv * qv
             if f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
                 for _ in range(60):
                     qm = 0.5 * (q_lo + q_hi)
@@ -1236,6 +1261,9 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 q = q_lo
             else:
                 q = q_hi
+            # При реверсе ВМП поток идёт в обратном направлении (b→a)
+            if is_rev:
+                q = -q
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
