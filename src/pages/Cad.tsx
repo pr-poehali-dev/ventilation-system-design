@@ -1616,7 +1616,7 @@ export default function CadPage() {
           const mode = s.bkResMode ?? "project";
           let r = 0;
           if (mode === "manual") {
-            r = (s.bkManualR ?? 0) * 1e3;
+            r = (s.bkManualR ?? 0) * 1e3 * 9.81; // кМюрг → Мюрг → Н·с²/м⁸
           } else if (mode === "survey") {
             const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
             r = q > 0 ? dp / (q * q) : 0;
@@ -1636,7 +1636,7 @@ export default function CadPage() {
                   ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
                   ?? b.bulkheadAirPerm ?? 0);
               const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-              r = kAir > 0 ? 1 / (kAir * kAir) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
+              r = kAir > 0 ? (1 / (kAir * kAir)) * 9.81 : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0) * 9.81;
             }
           }
           return sum + r;
@@ -1739,7 +1739,7 @@ export default function CadPage() {
               const mode = s.bkResMode ?? "project";
               let r = 0;
               if (mode === "manual") {
-                r = (s.bkManualR ?? 0) * 1e3;
+                r = (s.bkManualR ?? 0) * 1e3 * 9.81; // кМюрг → Мюрг → Н·с²/м⁸
               } else if (mode === "survey") {
                 const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
                 r = q > 0 ? dp / (q * q) : 0;
@@ -1762,7 +1762,7 @@ export default function CadPage() {
                       ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
                       ?? b.bulkheadAirPerm ?? 0);
                   const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  r = kAir > 0 ? 1 / (kAir * kAir) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
+                  r = kAir > 0 ? 1 / (kAir * kAir) * 9.81 : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0) * 9.81;
                 }
               }
               return sum + r;
@@ -1771,19 +1771,19 @@ export default function CadPage() {
             // добавляем её R напрямую из полей ветви
             const rBranchBulkhead = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
               const mode = b.bulkheadResMode ?? "project";
-              if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3; // кМюрг → единицы resistance
+              if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3 * 9.81; // кМюрг → Мюрг → Н·с²/м⁸
               if (mode === "survey") {
                 const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
                 return q > 0 ? dp / (q * q) : 0;
               }
               // project: воздухопроницаемость вручную
               if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
-                return 1 / (b.bulkheadCustomAirPerm! * b.bulkheadCustomAirPerm!);
+                return 1 / (b.bulkheadCustomAirPerm! * b.bulkheadCustomAirPerm!) * 9.81;
               // project: воздухопроницаемость из справочника
               if ((b.bulkheadAirPerm ?? 0) > 0)
-                return 1 / (b.bulkheadAirPerm * b.bulkheadAirPerm);
-              // fallback: справочный R (хранится в Мюрг)
-              return b.bulkheadR ?? 0;
+                return 1 / (b.bulkheadAirPerm * b.bulkheadAirPerm) * 9.81;
+              // fallback: справочный R (хранится в Мюрг → Н·с²/м⁸)
+              return (b.bulkheadR ?? 0) * 9.81;
             })() : 0;
             const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
               ? (b.fanCrossingR ?? 0) : 0;
