@@ -1566,11 +1566,48 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Q по глобальным индексам
     Q = [0.0] * len(edges)
 
-    # ВМП теперь в dead_end_ids — не участвуют в расчёте.
-    # Их Q вычисляется в make_result через собственную рабочую точку H(Q)=R*Q².
-    r_total = sum(e["R"] for e in active_edges_list if not e.get("hasFan"))
-    if r_total <= 0:
-        r_total = 1e-3
+    # R_net: путь BFS от главного вентилятора до атмосферы (GND).
+    # Используем ту же логику что в Кросс (compute_r_main), чтобы перемычки
+    # с большим R на боковых ветвях не искажали оценку начального Q₀.
+    def _estimate_r_net_mkr():
+        fans = [e for e in active_edges_list if e.get("hasFan") and not e.get("fanStopped")]
+        if not fans:
+            return None
+        def fan_h0(e):
+            return abs(float(e.get("h0", 0))) if e.get("fanMode") == "curve" else abs(float(e.get("fanPressure", 0)))
+        main_fan = max(fans, key=fan_h0)
+        adj = collections.defaultdict(list)
+        for e in active_edges_list:
+            adj[e["a"]].append((e["b"], e["R"]))
+            adj[e["b"]].append((e["a"], e["R"]))
+        start = main_fan["a"] if main_fan["a"] != GND else main_fan["b"]
+        if start == GND:
+            return main_fan["R"]
+        visited = {start}
+        queue = collections.deque([(start, main_fan["R"])])
+        while queue:
+            node, r_sum = queue.popleft()
+            if node == GND:
+                return r_sum
+            for nb, r in adj[node]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, r_sum + r))
+        return None
+
+    r_net = _estimate_r_net_mkr()
+    if r_net and r_net > 1e-6:
+        r_total = r_net
+    else:
+        # Запасной вариант: медиана R (как в Кросс) — исключает выбросы перемычек
+        r_branches = sorted(e["R"] for e in active_edges_list if not e.get("hasFan") and e["R"] > 1e-9)
+        if r_branches:
+            n_tree = max(1, len(tree_set))
+            r_total = r_branches[len(r_branches) // 2] * n_tree
+        else:
+            r_total = 1e-3
+    log.append(f"МКР R_net={r_total:.4f} (путь BFS от вентилятора)")
+
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
@@ -1605,6 +1642,25 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Это исключает невязки Кирхгофа в МКР после каждой итерации.
     tree_branches = {parent_map[v][1] for v in bfs_order if parent_map.get(v)}
 
+    # Характерный напор — нужен до sync_tree_q для ограничения Q перемычек
+    h_char = 0.0
+    for _e in active_edges_list:
+        if _e.get("hasFan") and not _e.get("fanStopped"):
+            if _e.get("fanMode") == "curve":
+                h_char = max(h_char, abs(float(_e.get("h0", 0))))
+            else:
+                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
+        h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
+    if h_char <= 0:
+        h_char = 1.0
+
+    # Порог «высокоомной» ветви: R в 100× выше медианы сети.
+    # Ветви с R выше этого порога — перемычки. sync_tree_q ограничивает их Q
+    # физическим максимумом sqrt(H_char / R), не перезаписывает произвольно.
+    _r_vals = sorted(_e["R"] for _e in active_edges_list if not _e.get("hasFan") and _e["R"] > 1e-9)
+    _r_median = _r_vals[len(_r_vals) // 2] if _r_vals else 1e-3
+    HIGH_R_THRESHOLD = _r_median * 100.0
+
     def sync_tree_q(Q_arr):
         # Начальный дисбаланс — только от ХОРД (не древесных рёбер)
         bal = collections.defaultdict(float)
@@ -1625,10 +1681,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             gi = local_to_global[li]
             b  = bal[v]
             # Q в направлении ребра: чтобы баланс в v стал равен 0
-            if e["b"] == v:
-                Q_arr[gi] = -b
-            else:
-                Q_arr[gi] = b
+            q_new = -b if e["b"] == v else b
+            # Для высокоомных ветвей (перемычки) — ограничиваем Q физическим
+            # максимумом sqrt(H_char / R). Без этого sync_tree_q назначает
+            # перемычке произвольный Q из баланса, игнорируя её сопротивление.
+            if e["R"] >= HIGH_R_THRESHOLD and e["R"] > 1e-6:
+                q_phys_max = math.sqrt(h_char / e["R"]) if h_char > 0 else 0.0
+                if abs(q_new) > q_phys_max:
+                    q_new = math.copysign(q_phys_max, q_new)
+                    # Возвращаем в баланс родителя только фактически протёкшее
+                    b = -q_new if e["b"] == v else q_new
+            Q_arr[gi] = q_new
             # Передаём баланс родителю
             bal[p_node] += b
 
@@ -1644,16 +1707,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     it = 0
     min_iter = 10  # минимум итераций перед проверкой сходимости (больше для шахт)
 
-    # Характерный напор системы — для относительного критерия сходимости.
-    # Как в Вентсим: tol_h_relative = max(абс_tol, 0.001 * H_характерное).
-    h_char = 0.0
-    for e in active_edges_list:
-        if e.get("hasFan") and not e.get("fanStopped"):
-            if e.get("fanMode") == "curve":
-                h_char = max(h_char, abs(float(e.get("h0", 0))))
-            else:
-                h_char = max(h_char, abs(float(e.get("fanPressure", 0))))
-        h_char = max(h_char, abs(e.get("naturalDraft", 0.0)))
     # Относительный допуск: 0.5% от макс. напора в сети (≈ 10 Па для 2000 Па ГВУ)
     tol_h_rel = max(tol_h, 0.005 * h_char)
 
