@@ -22,6 +22,8 @@ interface BranchPropsPanelProps {
   onFanSymbolScale?: (scale: number) => void;
   /** Удалить только символ УО (без удаления вентилятора из ветви) */
   onFanSymbolDelete?: () => void;
+  /** Развернуть ветвь вентилятора (сменить направление нагнетания) */
+  onReverse?: () => void;
   /** Расходы прямого режима (для проверки нормы ПБ при реверсе) */
   normalFlows?: Record<string, number>;
   /** Вентиляторы, добавленные в справочник рудника */
@@ -228,7 +230,7 @@ function fmtR(rKmu: number, minDecimals = 4): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -690,14 +692,24 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </InlineLabel>
             )}
 
-            {onFanSymbolDelete && (
-              <div className="px-1 py-1">
-                <button
-                  onClick={onFanSymbolDelete}
-                  className="text-[11px] px-2 py-0.5 rounded"
-                  style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}>
-                  Удалить УО с схемы
-                </button>
+            {(onFanSymbolDelete || onReverse) && (
+              <div className="px-1 py-1 flex gap-1">
+                {onFanSymbolDelete && (
+                  <button
+                    onClick={onFanSymbolDelete}
+                    className="text-[11px] px-2 py-0.5 rounded"
+                    style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}>
+                    Удалить УО
+                  </button>
+                )}
+                {onReverse && (
+                  <button
+                    onClick={onReverse}
+                    className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
+                    style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", cursor: "pointer" }}>
+                    ⇄ Развернуть
+                  </button>
+                )}
               </div>
             )}
 

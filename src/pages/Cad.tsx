@@ -4363,6 +4363,7 @@ export default function CadPage() {
                   const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);
                   if (sym) removeSymbol(sym.id);
                 } : undefined}
+                onReverse={selectedBranch.hasFan ? () => handleReverseBranch(selectedBranch.id) : undefined}
                 normalFlows={normalFlows}
                 mineFans={mineFans}
                 mineBulkheads={mineBulkheads}
