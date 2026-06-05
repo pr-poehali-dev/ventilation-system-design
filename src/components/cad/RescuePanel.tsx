@@ -7,6 +7,9 @@ import {
   RescueResult,
   RescueSegment,
 } from "@/lib/rescueCalculator";
+import FUNC2URL from "../../../backend/func2url.json";
+
+const RESCUE_URL = (FUNC2URL as Record<string, string>)["rescue-calculator"];
 
 interface NodeLite { id: string; name: string; number: string; x: number; y: number; z: number; }
 interface BranchLite {
@@ -556,7 +559,7 @@ export default function RescuePanel({
     return n.name || (n.number ? `Узел ${n.number}` : id.slice(0, 8));
   };
 
-  function handleCalc() {
+  async function handleCalc() {
     if (!startNodeId || !targetNodeId) {
       alert("Укажите начальный узел (база ВГСЧ) и целевой узел (место аварии)");
       return;
@@ -572,7 +575,25 @@ export default function RescuePanel({
       oxygenConsumption, oxygenVolume,
       waypointNodeIds: activeWaypoints,
     };
-    const res = calcRescue(nodes, branches, startNodeId, targetNodeId, params);
+
+    let res: RescueResult;
+    try {
+      const resp = await fetch(RESCUE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes, branches, startNodeId, targetNodeId, params }),
+      });
+      const data = await resp.json();
+      // branchDirs приходит как объект — конвертируем в Map
+      res = {
+        ...data,
+        branchDirs: new Map<string, boolean>(Object.entries(data.branchDirs ?? {})),
+      };
+    } catch {
+      // fallback на локальный расчёт при недоступности backend
+      res = calcRescue(nodes, branches, startNodeId, targetNodeId, params);
+    }
+
     setResult(res);
     setShowDialog(true);
     setShowResultLink(true);

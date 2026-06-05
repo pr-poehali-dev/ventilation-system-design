@@ -1,0 +1,59 @@
+{
+  "tests": [
+    {
+      "name": "Простой маршрут — два узла, одна ветвь",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "N1", "name": "База", "number": "1", "x": 0, "y": 0, "z": 0},
+          {"id": "N2", "name": "Авария", "number": "2", "x": 100, "y": 0, "z": 0}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "N1", "toId": "N2", "length": 300, "angle": 0, "area": 10}
+        ],
+        "startNodeId": "N1",
+        "targetNodeId": "N2",
+        "params": {
+          "operationType": "scout",
+          "useAirTemp": false,
+          "useIdaTime": true,
+          "idaWorkTime": 400,
+          "provideCare": false,
+          "careTime": 10,
+          "useInterpolation": false,
+          "oxygenConsumption": 1.4,
+          "oxygenVolume": 400,
+          "waypointNodeIds": []
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true, "totalTimeForward": 5.56},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Маршрут не найден — несвязная сеть",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "N1", "name": "База", "number": "1", "x": 0, "y": 0, "z": 0},
+          {"id": "N2", "name": "Авария", "number": "2", "x": 100, "y": 0, "z": 0}
+        ],
+        "branches": [],
+        "startNodeId": "N1",
+        "targetNodeId": "N2",
+        "params": {
+          "operationType": "scout",
+          "useIdaTime": false,
+          "provideCare": false,
+          "oxygenConsumption": 1.4,
+          "oxygenVolume": 400
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"ok": false, "segments": []},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
