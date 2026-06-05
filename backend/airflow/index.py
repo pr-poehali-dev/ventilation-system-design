@@ -78,15 +78,8 @@ def fan_H(e, Q):
     При fanStopped=True вентилятор остановлен — H=0 (только сопротивление ветви).
     При Q > qMax: для curve возвращаем 0 (паспорт закончился); для constant —
     линейно спадаем (защита от Q→∞ в итерациях).
-
-    Q может быть знаковым: Q > 0 — поток совпадает с направлением действия вентилятора,
-    Q < 0 — поток опрокинут против вентилятора. При опрокидывании H = 0
-    (вентилятор не создаёт напора против потока — как в реальности).
     """
     if not e.get("hasFan") or e.get("fanStopped"):
-        return 0.0
-    # Опрокинутый поток: вентилятор не создаёт напора
-    if Q < 0:
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
@@ -593,6 +586,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         log.append("Естественная тяга: не учитывается (Δz=0 или одинаковые температуры)")
 
     log.append(f"Метод Кросса: ветвей={len(edges)}, вент={len(fans)}, атм_узлов={len(atm)}")
+    for e in edges:
+        print(f"[edge] {e['id']} {e['a']}→{e['b']} R={e['R']:.4f} Hнат={e.get('naturalDraft',0):.1f}"
+              f"{'  ВЕН' if e['hasFan'] else ''}")
 
     # ══ ШАГ 1: Тупиковые ветви — Q=0 ════════════════════════════════════
     dead_end_ids = find_dead_ends(edges)
@@ -906,28 +902,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # Обновление: Qi ← Qi + δQ·sign_i  для всех ветвей контура.
     # Метод Зейделя: сразу используем обновлённые Q при следующем контуре.
     max_dq = float("inf")
-    max_dh = float("inf")
     prev_max_dq = float("inf")
     alpha_cur = alpha
     osc_streak = 0   # счётчик осцилляций (для адаптивного снижения alpha)
     it = 0
 
-    # Характерный напор — для относительного допуска ΔH
-    h_char = 0.0
-    for _e in edges:
-        if _e.get("hasFan") and not _e.get("fanStopped"):
-            if _e.get("fanMode") == "curve":
-                h_char = max(h_char, abs(float(_e.get("h0", 0))))
-            else:
-                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
-        h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
-    if h_char <= 0:
-        h_char = 1.0
-    tol_h_abs = float(options.get("tolPressure", 0.1))
-
     for it in range(1, max_iter + 1):
         max_dq = 0.0
-        max_dh = 0.0
 
         for loop in loops_global:
             # Невязка давлений по контуру (Па)
@@ -947,13 +928,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # ориентации вентилятора и направления обхода контура.
                 # fan_dir=+1 (прямой) → напор по a→b; fan_dir=-1 (реверс) → по b→a.
                 # В обходе с sign: реальный вклад = fan_dir * sign.
-                # При опрокинутом потоке (Q[gi] < 0 у прямого вент. или Q[gi] > 0
-                # у реверсного) вентилятор работает против потока: передаём
-                # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
                     fan_dir = -1.0 if e.get("fanReverse") else 1.0
-                    q_fan = Q[gi] * fan_dir  # Q в направлении действия вентилятора
-                    Hv = fan_H(e, q_fan)     # передаём знаковый Q для fan_H
+                    Hv = fan_H(e, abs(Q[gi]))
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
@@ -965,9 +942,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
             if sum_2RQ < 1e-12:
                 continue
-
-            if abs(sum_H) > max_dh:
-                max_dh = abs(sum_H)
 
             # Поправка с демпфированием α: δQ = -α·ΔH / Σ(2·R·|Q|)
             dq = alpha_cur * (-sum_H / sum_2RQ)
@@ -987,15 +961,12 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 if not math.isfinite(Q[gi]):
                     Q[gi] = 0.0
 
-        # Двойной критерий: и δQ, и ΔH должны быть малы.
-        # ΔH-допуск относительный: 0.5% от h_char (≈10 Па при ГВУ 2000 Па).
-        tol_h = max(tol_h_abs, 0.005 * h_char)
-        if max_dq < tol and max_dh < tol_h:
+        if max_dq < tol:
             it += 1
             break
 
-        # Адаптивное демпфирование: снижаем при росте невязки, восстанавливаем
-        # при монотонном убывании (10%/итерацию, не быстрее стартового alpha).
+        # Адаптивное демпфирование: если максимальная поправка растёт —
+        # снижаем α (детекция осцилляций как в Аэросеть).
         if max_dq > prev_max_dq * 0.99:
             osc_streak += 1
             if osc_streak >= 5 and alpha_cur > 0.05:
@@ -1003,15 +974,17 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 osc_streak = 0
         else:
             osc_streak = 0
-            alpha_cur = min(alpha, alpha_cur * 1.1)  # восстановление к стартовому
         prev_max_dq = max_dq
 
-    converged = max_dq < tol and max_dh < tol_h
+    converged = max_dq < tol
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
-                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па"})
+                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с"})
 
-    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па, сошлось={converged}")
+    log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, сошлось={converged}")
+    for i, e in enumerate(edges):
+        print(f"[Q] {e['id']}: Q={Q[i]:.3f} R={e['R']:.4f} {e['a']}→{e['b']}"
+              f"{'  ВЕН[РЕВ]' if e.get('fanReverse') else '  ВЕН' if e['hasFan'] else ''}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
@@ -1262,10 +1235,7 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 else:
                     q = q_hi
 
-        # Депрессия: аэродинамические потери (всегда ≥ 0) + вклад естественной тяги.
-        # H_nat со знаком: положительная тяга снижает депрессию (помогает потоку).
-        H_friction = e["R"] * q * q
-        H    = H_friction - e.get("naturalDraft", 0.0) * (1.0 if q >= 0 else -1.0)
+        H    = e["R"] * q * abs(q)
         Hv   = fan_H_display(e, abs(q))
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
@@ -1646,38 +1616,41 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
-    # Инициализация хорд: одинаковое q0 для всех хорд.
-    # При реверсе ГЛАВНОГО вентилятора (ГВУ/ВВУ) — инвертируем знак,
-    # чтобы стартовать ближе к решению. ВМП НЕ инвертируем: их направление
-    # определяется балансом сети, а не глобальным реверсом.
+    # ── КЛАССИЧЕСКИЙ МКР: контурные потоки ──────────────────────────────
+    # Каждая хорда задаёт независимый контур со своим контурным потоком.
+    # Q любой ветви = алгебраическая сумма контурных потоков всех контуров,
+    # проходящих через неё. Это АВТОМАТИЧЕСКИ выполняет 1-й закон Кирхгофа
+    # на каждой итерации — без отдельной синхронизации дерева (sync_tree_q).
+    #
+    # branch_loops[local_idx] = [(loop_index, sign), ...] — в какие контуры
+    # входит ветвь и с каким знаком.
     sign_mkr = 1.0
     for e in active_edges_list:
         if e.get("hasFan") and e.get("fanReverse") and e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
             sign_mkr = -1.0
             break
-    # КРИТИЧНО: q_init_mkr = q0 / N_chords (как в Кросс),
-    # чтобы суммарный поток через дерево не превышал Q_ГВУ.
-    n_chords_mkr = max(1, len(chords))
-    q_init_mkr = (q0 / n_chords_mkr) * sign_mkr
-    log.append(f"МКР хорд={n_chords_mkr}, q_chord={q_init_mkr:.3f}")
-    for ci in chords:
-        Q[local_to_global[ci]] = q_init_mkr
-    for i, e in enumerate(active_edges_list):
-        if e.get("hasFan"):
-            # ВМП всегда инициализируем с положительным знаком (свой напор)
-            if e.get("fanType") == "ВМП":
-                Q[local_to_global[i]] = q0 / n_chords_mkr
-            else:
-                Q[local_to_global[i]] = q_init_mkr
 
-    # BFS bottom-up: синхронизация Q ветвей дерева по 1-му закону Кирхгофа.
-    # Алгоритм (как в Аэросеть/Вентсим):
-    #   1) считаем дисбаланс в каждом узле от ВСЕХ хорд (нетривиальные ветви)
-    #   2) проходим дерево снизу вверх — Q родительского ребра = сумма Q дочерних
-    # Это исключает невязки Кирхгофа в МКР после каждой итерации.
-    tree_branches = {parent_map[v][1] for v in bfs_order if parent_map.get(v)}
+    # Контурный поток для каждого контура (по индексу в contours_local)
+    loop_flow = [q0 * sign_mkr] * len(contours_local)
 
-    # Характерный напор — нужен до sync_tree_q для ограничения Q перемычек
+    # Для каждой ветви — список (loop_index, sign)
+    branch_loops = collections.defaultdict(list)
+    for loop_idx, contour in enumerate(contours_local):
+        for li, sign in contour:
+            branch_loops[li].append((loop_idx, sign))
+
+    def recompute_Q_from_loops():
+        """Q каждой ветви = Σ контурных потоков, проходящих через неё."""
+        for i in range(len(active_edges_list)):
+            gi = local_to_global[i]
+            q = 0.0
+            for loop_idx, sign in branch_loops.get(i, ()):
+                q += loop_flow[loop_idx] * sign
+            Q[gi] = q
+
+    recompute_Q_from_loops()
+
+    # Характерный напор сети
     h_char = 0.0
     for _e in active_edges_list:
         if _e.get("hasFan") and not _e.get("fanStopped"):
@@ -1689,50 +1662,9 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     if h_char <= 0:
         h_char = 1.0
 
-    # Порог «высокоомной» ветви: R в 100× выше медианы сети.
-    # Ветви с R выше этого порога — перемычки. sync_tree_q ограничивает их Q
-    # физическим максимумом sqrt(H_char / R), не перезаписывает произвольно.
-    _r_vals = sorted(_e["R"] for _e in active_edges_list if not _e.get("hasFan") and _e["R"] > 1e-9)
-    _r_median = _r_vals[len(_r_vals) // 2] if _r_vals else 1e-3
-    HIGH_R_THRESHOLD = _r_median * 100.0
+    log.append(f"МКР контуров={len(contours_local)}, q0={q0:.3f}")
 
-    def sync_tree_q(Q_arr):
-        # Начальный дисбаланс — только от ХОРД (не древесных рёбер)
-        bal = collections.defaultdict(float)
-        for i, e in enumerate(active_edges_list):
-            if i in tree_branches:
-                continue   # древесные пересчитываются ниже
-            gi = local_to_global[i]
-            bal[e["a"]] -= Q_arr[gi]
-            bal[e["b"]] += Q_arr[gi]
-        # Снизу вверх: каждое древесное ребро уравнивает баланс своего листа
-        for idx in range(len(bfs_order) - 1, 0, -1):
-            v  = bfs_order[idx]
-            p  = parent_map.get(v)
-            if p is None:
-                continue
-            p_node, li = p
-            e  = active_edges_list[li]
-            gi = local_to_global[li]
-            b  = bal[v]
-            # Q в направлении ребра: чтобы баланс в v стал равен 0
-            q_new = -b if e["b"] == v else b
-            # Для высокоомных ветвей (перемычки) — ограничиваем Q физическим
-            # максимумом sqrt(H_char / R). Без этого sync_tree_q назначает
-            # перемычке произвольный Q из баланса, игнорируя её сопротивление.
-            if e["R"] >= HIGH_R_THRESHOLD and e["R"] > 1e-6:
-                q_phys_max = math.sqrt(h_char / e["R"]) if h_char > 0 else 0.0
-                if abs(q_new) > q_phys_max:
-                    q_new = math.copysign(q_phys_max, q_new)
-                    # Возвращаем в баланс родителя только фактически протёкшее
-                    b = -q_new if e["b"] == v else q_new
-            Q_arr[gi] = q_new
-            # Передаём баланс родителю
-            bal[p_node] += b
-
-    sync_tree_q(Q)
-
-    # ── Итерации МКР ────────────────────────────────────────────────────────
+    # ── Итерации МКР (контурные потоки) ──────────────────────────────────────
     max_dh = float("inf")
     max_dq = float("inf")
     # При наличии вентилятора можно стартовать с 0.5; без вентилятора (только тяга)
@@ -1749,7 +1681,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         max_dh = 0.0
         max_dq = 0.0
 
-        for contour in contours_local:
+        for loop_idx, contour in enumerate(contours_local):
             num = 0.0
             den = 0.0
 
@@ -1779,7 +1711,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
             dq_raw = -num / den
             # Защита от взрыва: ограничиваем только по max|Q| в контуре, БЕЗ q0
-            # (для большой сети q0 мал — это душило сходимость).
             q_ref_mkr = max((abs(Q[local_to_global[li]]) for li, _ in contour), default=0.0)
             if q_ref_mkr < 0.1:
                 q_ref_mkr = max(q0, 1.0)   # минимум 1 м³/с для устойчивости
@@ -1792,14 +1723,19 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
 
-            for li, sign in contour:
+            # Корректируем КОНТУРНЫЙ ПОТОК и сразу пересчитываем Q всех ветвей
+            # контура из обновлённых контурных потоков (метод Гаусса-Зейделя).
+            loop_flow[loop_idx] += dq
+            for li, _sign in contour:
                 gi = local_to_global[li]
-                Q[gi] += dq * sign
-                if not math.isfinite(Q[gi]):
-                    Q[gi] = 0.0
+                q = 0.0
+                for lp, sgn in branch_loops.get(li, ()):
+                    q += loop_flow[lp] * sgn
+                Q[gi] = q if math.isfinite(q) else 0.0
 
-        # Синхронизация ветвей дерева по Кирхгофу-1
-        sync_tree_q(Q)
+        # Полный пересчёт Q всех ветвей из контурных потоков.
+        # 1-й закон Кирхгофа выполняется автоматически (по построению контуров).
+        recompute_Q_from_loops()
 
         # Адаптивное демпфирование (как в Аэросеть): быстрый рост при сходимости,
         # резкое снижение при росте невязки. Стабилизирует расчёт больших сетей.
