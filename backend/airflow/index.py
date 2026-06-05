@@ -1616,41 +1616,38 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
-    # ── КЛАССИЧЕСКИЙ МКР: контурные потоки ──────────────────────────────
-    # Каждая хорда задаёт независимый контур со своим контурным потоком.
-    # Q любой ветви = алгебраическая сумма контурных потоков всех контуров,
-    # проходящих через неё. Это АВТОМАТИЧЕСКИ выполняет 1-й закон Кирхгофа
-    # на каждой итерации — без отдельной синхронизации дерева (sync_tree_q).
-    #
-    # branch_loops[local_idx] = [(loop_index, sign), ...] — в какие контуры
-    # входит ветвь и с каким знаком.
+    # Инициализация хорд: одинаковое q0 для всех хорд.
+    # При реверсе ГЛАВНОГО вентилятора (ГВУ/ВВУ) — инвертируем знак,
+    # чтобы стартовать ближе к решению. ВМП НЕ инвертируем: их направление
+    # определяется балансом сети, а не глобальным реверсом.
     sign_mkr = 1.0
     for e in active_edges_list:
         if e.get("hasFan") and e.get("fanReverse") and e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
             sign_mkr = -1.0
             break
+    # КРИТИЧНО: q_init_mkr = q0 / N_chords (как в Кросс),
+    # чтобы суммарный поток через дерево не превышал Q_ГВУ.
+    n_chords_mkr = max(1, len(chords))
+    q_init_mkr = (q0 / n_chords_mkr) * sign_mkr
+    log.append(f"МКР хорд={n_chords_mkr}, q_chord={q_init_mkr:.3f}")
+    for ci in chords:
+        Q[local_to_global[ci]] = q_init_mkr
+    for i, e in enumerate(active_edges_list):
+        if e.get("hasFan"):
+            # ВМП всегда инициализируем с положительным знаком (свой напор)
+            if e.get("fanType") == "ВМП":
+                Q[local_to_global[i]] = q0 / n_chords_mkr
+            else:
+                Q[local_to_global[i]] = q_init_mkr
 
-    # Контурный поток для каждого контура (по индексу в contours_local)
-    loop_flow = [q0 * sign_mkr] * len(contours_local)
+    # BFS bottom-up: синхронизация Q ветвей дерева по 1-му закону Кирхгофа.
+    # Алгоритм (как в Аэросеть/Вентсим):
+    #   1) считаем дисбаланс в каждом узле от ВСЕХ хорд (нетривиальные ветви)
+    #   2) проходим дерево снизу вверх — Q родительского ребра = сумма Q дочерних
+    # Это исключает невязки Кирхгофа в МКР после каждой итерации.
+    tree_branches = {parent_map[v][1] for v in bfs_order if parent_map.get(v)}
 
-    # Для каждой ветви — список (loop_index, sign)
-    branch_loops = collections.defaultdict(list)
-    for loop_idx, contour in enumerate(contours_local):
-        for li, sign in contour:
-            branch_loops[li].append((loop_idx, sign))
-
-    def recompute_Q_from_loops():
-        """Q каждой ветви = Σ контурных потоков, проходящих через неё."""
-        for i in range(len(active_edges_list)):
-            gi = local_to_global[i]
-            q = 0.0
-            for loop_idx, sign in branch_loops.get(i, ()):
-                q += loop_flow[loop_idx] * sign
-            Q[gi] = q
-
-    recompute_Q_from_loops()
-
-    # Характерный напор сети
+    # Характерный напор — нужен до sync_tree_q для ограничения Q перемычек
     h_char = 0.0
     for _e in active_edges_list:
         if _e.get("hasFan") and not _e.get("fanStopped"):
@@ -1662,9 +1659,50 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     if h_char <= 0:
         h_char = 1.0
 
-    log.append(f"МКР контуров={len(contours_local)}, q0={q0:.3f}")
+    # Порог «высокоомной» ветви: R в 100× выше медианы сети.
+    # Ветви с R выше этого порога — перемычки. sync_tree_q ограничивает их Q
+    # физическим максимумом sqrt(H_char / R), не перезаписывает произвольно.
+    _r_vals = sorted(_e["R"] for _e in active_edges_list if not _e.get("hasFan") and _e["R"] > 1e-9)
+    _r_median = _r_vals[len(_r_vals) // 2] if _r_vals else 1e-3
+    HIGH_R_THRESHOLD = _r_median * 100.0
 
-    # ── Итерации МКР (контурные потоки) ──────────────────────────────────────
+    def sync_tree_q(Q_arr):
+        # Начальный дисбаланс — только от ХОРД (не древесных рёбер)
+        bal = collections.defaultdict(float)
+        for i, e in enumerate(active_edges_list):
+            if i in tree_branches:
+                continue   # древесные пересчитываются ниже
+            gi = local_to_global[i]
+            bal[e["a"]] -= Q_arr[gi]
+            bal[e["b"]] += Q_arr[gi]
+        # Снизу вверх: каждое древесное ребро уравнивает баланс своего листа
+        for idx in range(len(bfs_order) - 1, 0, -1):
+            v  = bfs_order[idx]
+            p  = parent_map.get(v)
+            if p is None:
+                continue
+            p_node, li = p
+            e  = active_edges_list[li]
+            gi = local_to_global[li]
+            b  = bal[v]
+            # Q в направлении ребра: чтобы баланс в v стал равен 0
+            q_new = -b if e["b"] == v else b
+            # Для высокоомных ветвей (перемычки) — ограничиваем Q физическим
+            # максимумом sqrt(H_char / R). Без этого sync_tree_q назначает
+            # перемычке произвольный Q из баланса, игнорируя её сопротивление.
+            if e["R"] >= HIGH_R_THRESHOLD and e["R"] > 1e-6:
+                q_phys_max = math.sqrt(h_char / e["R"]) if h_char > 0 else 0.0
+                if abs(q_new) > q_phys_max:
+                    q_new = math.copysign(q_phys_max, q_new)
+                    # Возвращаем в баланс родителя только фактически протёкшее
+                    b = -q_new if e["b"] == v else q_new
+            Q_arr[gi] = q_new
+            # Передаём баланс родителю
+            bal[p_node] += b
+
+    sync_tree_q(Q)
+
+    # ── Итерации МКР ────────────────────────────────────────────────────────
     max_dh = float("inf")
     max_dq = float("inf")
     # При наличии вентилятора можно стартовать с 0.5; без вентилятора (только тяга)
@@ -1681,7 +1719,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         max_dh = 0.0
         max_dq = 0.0
 
-        for loop_idx, contour in enumerate(contours_local):
+        for contour in contours_local:
             num = 0.0
             den = 0.0
 
@@ -1711,6 +1749,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
             dq_raw = -num / den
             # Защита от взрыва: ограничиваем только по max|Q| в контуре, БЕЗ q0
+            # (для большой сети q0 мал — это душило сходимость).
             q_ref_mkr = max((abs(Q[local_to_global[li]]) for li, _ in contour), default=0.0)
             if q_ref_mkr < 0.1:
                 q_ref_mkr = max(q0, 1.0)   # минимум 1 м³/с для устойчивости
@@ -1723,19 +1762,14 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             if abs(dq) > max_dq:
                 max_dq = abs(dq)
 
-            # Корректируем КОНТУРНЫЙ ПОТОК и сразу пересчитываем Q всех ветвей
-            # контура из обновлённых контурных потоков (метод Гаусса-Зейделя).
-            loop_flow[loop_idx] += dq
-            for li, _sign in contour:
+            for li, sign in contour:
                 gi = local_to_global[li]
-                q = 0.0
-                for lp, sgn in branch_loops.get(li, ()):
-                    q += loop_flow[lp] * sgn
-                Q[gi] = q if math.isfinite(q) else 0.0
+                Q[gi] += dq * sign
+                if not math.isfinite(Q[gi]):
+                    Q[gi] = 0.0
 
-        # Полный пересчёт Q всех ветвей из контурных потоков.
-        # 1-й закон Кирхгофа выполняется автоматически (по построению контуров).
-        recompute_Q_from_loops()
+        # Синхронизация ветвей дерева по Кирхгофу-1
+        sync_tree_q(Q)
 
         # Адаптивное демпфирование (как в Аэросеть): быстрый рост при сходимости,
         # резкое снижение при росте невязки. Стабилизирует расчёт больших сетей.
