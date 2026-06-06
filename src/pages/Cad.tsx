@@ -546,6 +546,7 @@ export default function CadPage() {
     setSelectedNodeId(null);
     setSelectedBranchId(null);
     setSelectedSymbolId(null);
+    setSelectedSymbolIds(new Set());
     setIsDirty(true);
   };
 
@@ -847,6 +848,7 @@ export default function CadPage() {
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
+  const [selectedSymbolIds, setSelectedSymbolIds] = useState<Set<string>>(new Set());
   // Режим «ожидания привязки»: символ из буфера ждёт клика на ветвь
   const [pendingSymbol, setPendingSymbol] = useState<SchemaSymbol | null>(null);
 
@@ -2109,6 +2111,7 @@ export default function CadPage() {
       }
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
+      setSelectedSymbolIds(new Set());
     } else if (selectedBranchId) {
       pushHistory();
       setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
@@ -5880,7 +5883,7 @@ export default function CadPage() {
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
-              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); } }}
+              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); } }}
               onSelectBranch={(id) => {
                 if (posBranchBindMode && selectedPositionId && id) {
                   // Режим F3: привязываем/отвязываем ветвь к позиции
@@ -5909,7 +5912,7 @@ export default function CadPage() {
                   }));
                   return;
                 }
-                setSelectedBranchId(id); setSelectedBranchIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); }
+                setSelectedBranchId(id); setSelectedBranchIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); }
               }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
               onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
@@ -5924,7 +5927,16 @@ export default function CadPage() {
               zScale={zScale}
               schemaSymbols={schemaSymbols}
               selectedSymbolId={selectedSymbolId}
-              onSelectSymbol={setSelectedSymbolId}
+              selectedSymbolIds={selectedSymbolIds}
+              onSelectSymbol={(id) => { setSelectedSymbolId(id); setSelectedSymbolIds(new Set()); }}
+              onSymbolMultiSelect={(id) => {
+                setSelectedSymbolIds(prev => {
+                  const next = new Set(prev);
+                  if (next.has(id)) { next.delete(id); } else { next.add(id); }
+                  return next;
+                });
+                setSelectedSymbolId(id);
+              }}
               onSymbolDragStart={() => pushHistory()}
               onSymbolMove={(id, x, y) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, x, y } : s))}
               onSymbolMoveAlongBranch={(id, t) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, t } : s))}
@@ -5986,6 +5998,7 @@ export default function CadPage() {
                 }
                 removeSymbol(id);
                 setSelectedSymbolId(null);
+                setSelectedSymbolIds(new Set());
               }}
               onSymbolClick={(symId) => {
                 // Одиночный клик: выбрать УО и показать свойства (панель params)

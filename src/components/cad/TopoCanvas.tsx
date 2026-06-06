@@ -128,6 +128,10 @@ interface Props {
   onSymbolClick?: (id: string) => void;
   /** Двойной клик на символ (для открытия настроек вентилятора/перемычки) */
   onSymbolDblClick?: (id: string) => void;
+  /** Множественный выбор символов (Ctrl+click) */
+  selectedSymbolIds?: Set<string>;
+  /** Добавить/убрать символ из множественного выбора */
+  onSymbolMultiSelect?: (id: string) => void;
   /** Масштаб символа (delta: +0.2 или -0.2) */
   onSymbolScale?: (id: string, delta: number) => void;
   /** Удаление символа */
@@ -219,6 +223,7 @@ export default function TopoCanvas(props: Props) {
     infoConfig, zScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
+    selectedSymbolIds, onSymbolMultiSelect,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
     pendingSymbolTypeId, onPendingSymbolPlace,
@@ -831,6 +836,9 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    // Если клик произошёл внутри g[data-sym] — это символ УО, не трогаем ветвь/узел
+    if ((e.target as Element).closest?.("[data-sym]")) return;
+
     const hitN = hitNode(sx, sy, projNodes);
     const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, branches) : null;
 
@@ -1368,7 +1376,7 @@ export default function TopoCanvas(props: Props) {
 
   // Обработчик клика по УО: одиночный клик = выбор + открыть свойства,
   // двойной клик (≤350мс) = открыть настройки (fan/перемычка).
-  // Ctrl+click = выбор без открытия настроек (для множественного выбора через родителя).
+  // Ctrl+click = добавить/убрать из множественного выбора.
   const handleSymbolClick = (id: string, isCtrl: boolean) => {
     const now = Date.now();
     const last = symLastClickRef.current;
@@ -1377,10 +1385,15 @@ export default function TopoCanvas(props: Props) {
 
     if (isDbl) {
       // Двойной клик: открыть настройки
+      symLastClickRef.current = null; // сбросить чтобы следующий клик не стал тройным
       onSymbolDblClick?.(id);
     } else if (isCtrl) {
-      // Ctrl+click: просто переключить выбор, не открывать настройки
-      onSelectSymbol?.(selectedSymbolId === id ? null : id);
+      // Ctrl+click: мультивыбор УО
+      if (onSymbolMultiSelect) {
+        onSymbolMultiSelect(id);
+      } else {
+        onSelectSymbol?.(selectedSymbolId === id ? null : id);
+      }
     } else {
       // Одиночный клик: выбор + показать свойства
       onSymbolClick?.(id);
@@ -2070,7 +2083,7 @@ export default function TopoCanvas(props: Props) {
           const px = basePx + (sym.offsetX ?? 0);
           const py = basePy + (sym.offsetY ?? 0);
 
-          const isSel = selectedSymbolId === sym.id;
+          const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
           const sc = sym.scale ?? 1;
           // Контр-масштаб: символы растут вместе со схемой при приближении,
           // но плавно ограничиваются, чтобы не были гигантскими при сильном зуме.
@@ -2097,6 +2110,7 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={sym.id}
+              data-sym={sym.id}
               style={{ cursor: "default" }}
               onContextMenu={(e) => {
                 if (tool !== "select") return;
@@ -2892,7 +2906,7 @@ export default function TopoCanvas(props: Props) {
 
             const px = basePx + (sym.offsetX ?? 0);
             const py = basePy + (sym.offsetY ?? 0);
-            const isSel = selectedSymbolId === sym.id;
+            const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
             const sc = sym.scale ?? 1;
             let symScaleV: number;
             if (view.scale < 0.4) { symScaleV = view.scale / 0.4; }
