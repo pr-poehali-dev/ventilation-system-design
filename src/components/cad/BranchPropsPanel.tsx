@@ -272,6 +272,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
     ? branch.resistance / branch.length
     : 0;
 
+  // Единица отображения аэродинамического сопротивления (по умолчанию кМюрг)
+  const uRes = getUnit(unitsConfig, "resistance");
+  // Перевод resistance [Н·с²/м⁸] → выбранная единица: сначала Н·с²/м⁸ → Мюрг (* 1/9.81e-3), затем fromBase
+  const rToDisplay = (rNsm8: number) => uRes.fromBase(rNsm8 / 9.81e-3);
+
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
 
@@ -608,12 +613,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <ComputedInput value={numFmt(branch.area, 2)} />
             </ParamRow>
 
-            <ParamRow id="v_resistance" label="Аэродин. сопр. R, кМюрг" visible={visible.has("v_resistance")} onToggle={toggle}>
-              <ComputedInput value={fmtR(branch.resistance / 9.81, 4)} />
+            <ParamRow id="v_resistance" label={`Аэродин. сопр. R, ${uRes.symbol}`} visible={visible.has("v_resistance")} onToggle={toggle}>
+              <ComputedInput value={fmtR(rToDisplay(branch.resistance), uRes.decimals)} />
             </ParamRow>
 
-            <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кМюрг/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
-              <ComputedInput value={fmtR(unitR / 9.81, 5)} />
+            <ParamRow id="v_unit_r" label={`Ед. сопр. R(ед), ${uRes.symbol}/м`} visible={visible.has("v_unit_r")} onToggle={toggle}>
+              <ComputedInput value={fmtR(rToDisplay(unitR), uRes.decimals + 1)} />
             </ParamRow>
 
             <ParamRow id="v_velocity" label="Скорость V, м/с" visible={visible.has("v_velocity")} onToggle={toggle}>
@@ -632,12 +637,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <ComputedInput value={numFmt(branch.dP, 1)} />
             </ParamRow>
 
-            <ParamRow id="v_r_friction" label="R трение, кМюрг" visible={visible.has("v_r_friction")} onToggle={toggle}>
-              <ComputedInput value={fmtR(branch.rFriction / 9.81, 4)} />
+            <ParamRow id="v_r_friction" label={`R трение, ${uRes.symbol}`} visible={visible.has("v_r_friction")} onToggle={toggle}>
+              <ComputedInput value={fmtR(rToDisplay(branch.rFriction), uRes.decimals)} />
             </ParamRow>
 
-            <ParamRow id="v_r_local" label="R местные, кМюрг" visible={visible.has("v_r_local")} onToggle={toggle}>
-              <ComputedInput value={fmtR(branch.rLocal / 9.81, 4)} />
+            <ParamRow id="v_r_local" label={`R местные, ${uRes.symbol}`} visible={visible.has("v_r_local")} onToggle={toggle}>
+              <ComputedInput value={fmtR(rToDisplay(branch.rLocal), uRes.decimals)} />
             </ParamRow>
 
             <ParamRow id="v_reynolds" label="Re (Рейнольдс), тыс." visible={visible.has("v_reynolds")} onToggle={toggle}>
