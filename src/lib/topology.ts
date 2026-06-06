@@ -784,6 +784,7 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
     rho,
   });
 
+
   // Примечание: сопротивление перемычек считается отдельно в Cad.tsx
   // (параметры хранятся в SchemaSymbol.bk* для каждого символа независимо)
   const totalR = r.R;
