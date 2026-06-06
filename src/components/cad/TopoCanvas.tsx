@@ -2538,14 +2538,14 @@ export default function TopoCanvas(props: Props) {
                     rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
                   } else if (mode === "survey") {
                     const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                    const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                    rBase = rNsm8 / 9.81e-3; // Н·с²/м⁸ → Мюрг
+                    // ΔP/Q² = Па/(м³/с)² = Мюрг (базовая единица)
+                    rBase = sq > 0 ? dp / (sq * sq) : 0;
                   } else {
                     // project: используем bkAirPerm или bkBulkheadR
                     const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                     if (kAir > 0) {
-                      const rNsm8 = 1 / (kAir * kAir);
-                      rBase = rNsm8 / 9.81e-3; // Н·с²/м⁸ → Мюрг
+                      // 1/A² = Мюрг (базовая единица resistance)
+                      rBase = 1 / (kAir * kAir);
                     } else {
                       rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
                     }

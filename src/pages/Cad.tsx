@@ -4780,13 +4780,13 @@ export default function CadPage() {
                           rMkyurg = sym.bkManualR ?? 0; // уже в кМюрг
                         } else if (mode === "survey") {
                           const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                          const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                          rMkyurg = rNsm8 / 9.81; // Н·с²/м⁸ → кМюрг
+                          // ΔP/Q² = Мюрг → /1000 = кМюрг
+                          rMkyurg = (sq > 0 ? dp / (sq * sq) : 0) / 1000;
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {
-                            const rNsm8 = 1 / (kAir * kAir);
-                            rMkyurg = rNsm8 / 9.81; // Н·с²/м⁸ → кМюрг
+                            // 1/A² = Мюрг → /1000 = кМюрг
+                            rMkyurg = (1 / (kAir * kAir)) / 1000;
                           } else {
                             rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000; // Мюрг → кМюрг
                           }
