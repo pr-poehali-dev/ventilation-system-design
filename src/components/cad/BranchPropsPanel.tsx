@@ -223,8 +223,8 @@ function numFmt(v: number, d = 2): string {
 }
 
 // Умный форматтер для сопротивления: показывает значащие цифры при очень малых значениях
-function fmtR(rKmu: number, minDecimals = 4): string {
-  if (isNaN(rKmu) || rKmu === 0) return "0.0000";
+function fmtR(rKmu: number, minDecimals = 7): string {
+  if (isNaN(rKmu) || rKmu === 0) return (0).toFixed(minDecimals);
   const mag = Math.floor(Math.log10(Math.abs(rKmu)));
   const d = Math.max(minDecimals, -mag + 2);
   return rKmu.toFixed(d);
