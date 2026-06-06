@@ -17,7 +17,7 @@ import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
-import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import PositionsPanel from "@/components/cad/PositionsPanel";
@@ -5329,7 +5329,11 @@ export default function CadPage() {
                     </PropGroup>
 
                     <PropGroup title="Вычисленные параметры">
-                      <FieldRow label="Сопротив-ие:" value={`${selectedBranch.resistance.toFixed(6)} кМюрг`} computed />
+                      {(() => {
+                        const uR = getUnit(unitsConfig, "resistance");
+                        const rDisp = uR.fromBase(selectedBranch.resistance / 9.81e-3);
+                        return <FieldRow label={`Сопротив-ие, ${uR.symbol}:`} value={rDisp.toFixed(uR.decimals)} computed />;
+                      })()}
                       <FieldRow label="Расход:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} computed />
                       <FieldRow label="V воздуха:" value={`${selectedBranch.velocity.toFixed(2)} м/с`} computed />
                       <FieldRow label="ΔP:" value={`${selectedBranch.dP.toFixed(0)} Па`} computed />
