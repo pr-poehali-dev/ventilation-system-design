@@ -374,12 +374,15 @@ export default function BranchTopologyTab({
 
       <ParamRow id="v_resistance" label="Аэродин. сопр. R, кμ" visible={visible.has("v_resistance")} onToggle={toggle}>
         {(() => {
-          // Геометрическое R = α·P·L/S³ (формула Аткинсона, по геометрии независимо от режима задания R)
-          // resistanceFromAlpha → Н·с²/м⁸; /10 ≈ /9.81 → кМюрг (как везде в этом файле)
-          const rGeomNsm8 = resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area);
+          // Геометрическое R = α·P·L/S³ (только для режимов с известным α)
+          // В режиме manual α не задаётся пользователем — сравнение невозможно
+          const hasAlpha = branch.resistanceMode !== "manual";
+          const rGeomNsm8 = hasAlpha
+            ? resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area)
+            : 0;
           const rGeomKmu = rGeomNsm8 / 10;
           const rAeroKmu = branch.resistance / 10;
-          const isWrong = rGeomNsm8 > 0 && branch.resistance < rGeomNsm8;
+          const isWrong = hasAlpha && rGeomNsm8 > 0 && branch.resistance < rGeomNsm8;
           return (
             <div className="flex items-center flex-1 min-w-0">
               <ComputedInput
@@ -400,6 +403,9 @@ export default function BranchTopologyTab({
 
       <ParamRow id="v_geom_r" label="Геометр. сопр. R, кμ" visible={visible.has("v_geom_r")} onToggle={toggle}>
         {(() => {
+          if (branch.resistanceMode === "manual") {
+            return <ComputedInput value="—" />;
+          }
           const rGeomNsm8 = resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area);
           return <ComputedInput value={numFmt(rGeomNsm8 / 10, 7)} />;
         })()}
@@ -407,6 +413,10 @@ export default function BranchTopologyTab({
 
       <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
         <ComputedInput value={numFmt(unitR / 10, 7)} />
+      </ParamRow>
+
+      <ParamRow id="v_unit_r_100" label="Уд. сопр. R, кμ/100м" visible={visible.has("v_unit_r_100")} onToggle={toggle}>
+        <ComputedInput value={branch.length > 0 ? numFmt((branch.resistance / 10) / branch.length * 100, 7) : "—"} />
       </ParamRow>
 
       <ParamRow id="v_velocity" label="Скорость V, м/с" visible={visible.has("v_velocity")} onToggle={toggle}>

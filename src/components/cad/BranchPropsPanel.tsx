@@ -251,7 +251,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set([
-      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_geom_r", "v_unit_r",
+      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_geom_r", "v_unit_r", "v_unit_r_100",
       "v_velocity", "v_adddep", "v_flow", "v_dep",
       "v_r_friction", "v_r_local", "v_reynolds", "v_power",
     ])
