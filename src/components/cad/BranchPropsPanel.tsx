@@ -1205,20 +1205,24 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     R = {(() => {
                       const uRes = getUnit(unitsConfig, "resistance");
                       const mode = branch.bulkheadResMode ?? "project";
-                      let rMkyurg = 0;
+                      // rBase в Мюрг — базовая единица resistance (fromBase ожидает Мюрг)
+                      let rBase = 0;
                       if (mode === "manual") {
-                        rMkyurg = (branch.bulkheadManualR ?? 0) * 1e3;
+                        rBase = (branch.bulkheadManualR ?? 0) * 1e3; // кМюрг → Мюрг
                       } else if (mode === "survey") {
                         const q = branch.bulkheadSurveyQ ?? 0;
                         const dp = branch.bulkheadSurveyDP ?? 0;
-                        rMkyurg = q > 0 ? dp / (q * q) : 0;
+                        rBase = q > 0 ? (dp / (q * q)) * 1e6 : 0; // Н·с²/м⁸ → Мюрг
                       } else {
-                        rMkyurg = branch.bulkheadAirPerm > 0
-                          ? 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm)
-                          : (branch.bulkheadR ?? 0);
+                        const A = branch.bulkheadManualAirPerm
+                          ? (branch.bulkheadCustomAirPerm ?? 0)
+                          : (branch.bulkheadAirPerm ?? 0);
+                        rBase = A > 0
+                          ? (1 / (A * A)) * 1e6  // Н·с²/м⁸ → Мюрг
+                          : (branch.bulkheadR ?? 0); // уже Мюрг
                       }
-                      if (rMkyurg === 0) return `— ${uRes.symbol}`;
-                      return `${uRes.fromBase(rMkyurg).toFixed(uRes.decimals)} ${uRes.symbol}`;
+                      if (rBase === 0) return `— ${uRes.symbol}`;
+                      return `${uRes.fromBase(rBase).toFixed(uRes.decimals)} ${uRes.symbol}`;
                     })()}
                   </span>
                 </div>
@@ -1288,14 +1292,14 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        // Вычисляем R перемычки по той же логике что в расчёте
+                        // rBulk в Н·с²/м⁸ для расчёта ΔP = R × Q × |Q| [Па]
                         let rBulk = 0;
                         if (branch.bulkheadManualAirPerm && (branch.bulkheadCustomAirPerm ?? 0) > 0) {
-                          rBulk = 1 / (branch.bulkheadCustomAirPerm! * branch.bulkheadCustomAirPerm!);
+                          rBulk = 1 / (branch.bulkheadCustomAirPerm! * branch.bulkheadCustomAirPerm!); // Н·с²/м⁸
                         } else if ((branch.bulkheadAirPerm ?? 0) > 0) {
-                          rBulk = 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm);
+                          rBulk = 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm); // Н·с²/м⁸
                         } else {
-                          rBulk = branch.bulkheadR ?? 0;
+                          rBulk = (branch.bulkheadR ?? 0) * 1e6; // Мюрг → Н·с²/м⁸
                         }
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);
