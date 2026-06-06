@@ -4415,7 +4415,7 @@ export default function CadPage() {
                 const q = brForSym.flow ?? 0;
                 const mode = sym.bkResMode ?? "project";
                 if (mode === "manual") {
-                  const rNsm8 = (sym.bkManualR ?? 0) * 10;
+                  const rNsm8 = (sym.bkManualR ?? 0) * 1e3; // кМюрг → Н·с²/м⁸ (аналогично networkSolver)
                   return rNsm8 * q * Math.abs(q);
                 }
                 if (mode === "survey") {
@@ -4444,7 +4444,13 @@ export default function CadPage() {
                       ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                       ?? brForSym.bulkheadAirPerm ?? 0);
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  rNsm8 = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0);
+                  if (kAir > 0) {
+                    rNsm8 = 1 / (kAir * kAir); // уже Н·с²/м⁸
+                  } else if ((sym.bkBulkheadR ?? rRefSym) > 0) {
+                    rNsm8 = (sym.bkBulkheadR ?? rRefSym) * 1e3; // кМюрг → Н·с²/м⁸
+                  } else {
+                    rNsm8 = (brForSym.bulkheadR ?? 0) * 1e6; // Мюрг → Н·с²/м⁸
+                  }
                 }
                 return rNsm8 * q * Math.abs(q);
               })();
@@ -4517,21 +4523,28 @@ export default function CadPage() {
                               const branchArea = brForSym?.area ?? 0;
                               const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
                                 || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-                              let rMurg = 0;
+                              // rKmu = кМюрг для отображения
                               if (isFullyOpen) {
-                                rMurg = 0;
+                                rKmu = 0;
                               } else if (sw > 0.001) {
+                                // Формула Вейсбаха: R [Н·с²/м⁸] → кМюрг (* 1e3)
                                 const mu = 0.65;
-                                rMurg = rho / (2 * mu * mu * sw * sw);
+                                const rNsm8w = rho / (2 * mu * mu * sw * sw);
+                                rKmu = rNsm8w * 1e3;
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
-                                const rRefDisp = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                rMurg = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefDisp ?? brForSym?.bulkheadR ?? 0);
+                                if (kAir > 0) {
+                                  // 1/A² [Н·с²/м⁸] → кМюрг (* 1e3)
+                                  rKmu = (1 / (kAir * kAir)) * 1e3;
+                                } else {
+                                  // bkBulkheadR хранится в кМюрг, bulkheadR — в Мюрг
+                                  const rRefDisp = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+                                  rKmu = sym.bkBulkheadR ?? rRefDisp ?? ((brForSym?.bulkheadR ?? 0) / 1000);
+                                }
                               }
-                              rKmu = rMurg / 1000;
                             }
                             if (rKmu === 0) return "0 кМюрг";
                             const mag = Math.floor(Math.log10(Math.abs(rKmu)));
@@ -4769,12 +4782,12 @@ export default function CadPage() {
                         } else if (mode === "survey") {
                           const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
                           const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                          rMkyurg = rNsm8 / 1e9; // Н·с²/м⁸ → кМюрг (/1e6 Мюрг, /1e3 кМюрг)
+                          rMkyurg = rNsm8 * 1e3; // Н·с²/м⁸ → кМюрг (*1e6 Мюрг, /1e3 кМюрг)
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {
                             const rNsm8 = 1 / (kAir * kAir);
-                            rMkyurg = rNsm8 / 1e9; // Н·с²/м⁸ → кМюрг
+                            rMkyurg = rNsm8 * 1e3; // Н·с²/м⁸ → кМюрг (*1e6 Мюрг, /1e3 кМюрг)
                           } else {
                             rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1e3; // Мюрг → кМюрг
                           }

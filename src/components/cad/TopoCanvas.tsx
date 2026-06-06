@@ -2538,13 +2538,13 @@ export default function TopoCanvas(props: Props) {
                   } else if (mode === "survey") {
                     const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
                     const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                    rBase = rNsm8 / 1e6; // Н·с²/м⁸ → Мюрг
+                    rBase = rNsm8 * 1e6; // Н·с²/м⁸ → Мюрг (1 Мюрг = 1e-6 Н·с²/м⁸)
                   } else {
                     // project: используем bkAirPerm или bkBulkheadR
                     const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                     if (kAir > 0) {
                       const rNsm8 = 1 / (kAir * kAir);
-                      rBase = rNsm8 / 1e6; // Н·с²/м⁸ → Мюрг
+                      rBase = rNsm8 * 1e6; // Н·с²/м⁸ → Мюрг (1 Мюрг = 1e-6 Н·с²/м⁸)
                     } else {
                       rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
                     }
