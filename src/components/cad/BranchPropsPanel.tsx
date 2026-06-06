@@ -598,7 +598,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <SectionHeader title="Вычисленные параметры" />
 
             <ParamRow id="v_name" label="Название ветви" visible={visible.has("v_name")} onToggle={toggle}>
-              <ComputedInput value={branch.id} />
+              <ComputedInput value={branch.type || branch.id} />
             </ParamRow>
 
             <ParamRow id="v_length" label="Длина ветви, м" visible={visible.has("v_length")} onToggle={toggle}>
