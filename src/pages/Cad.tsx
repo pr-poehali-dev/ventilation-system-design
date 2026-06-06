@@ -4514,34 +4514,35 @@ export default function CadPage() {
                             if (mode === "manual") {
                               rKmu = sym.bkManualR ?? 0;
                             } else if (mode === "survey") {
-                              // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸
+                              // ΔP/Q² → Па/(м³/с)² = Па·с²/м⁶ = Мюрг → /1000 = кМюрг
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              const rNsm8 = q > 0 ? dp / (q * q) : 0;
-                              rKmu = rNsm8 / 9.81; // Н·с²/м⁸ → кМюрг
+                              const rMkyurg = q > 0 ? dp / (q * q) : 0;
+                              rKmu = rMkyurg / 1000; // Мюрг → кМюрг
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               const branchArea = brForSym?.area ?? 0;
                               const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
                                 || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-                              // rKmu = кМюрг для отображения (1 кМюрг = 9.81 Н·с²/м⁸)
                               if (isFullyOpen) {
                                 rKmu = 0;
                               } else if (sw > 0.001) {
+                                // ρ/(2μ²S²) → кг·с²/м⁷ = Н·с²/м⁸; /9.81e-3 → кМюрг
                                 const mu = 0.65;
                                 const rNsm8w = rho / (2 * mu * mu * sw * sw);
-                                rKmu = rNsm8w / 9.81; // Н·с²/м⁸ → кМюрг
+                                rKmu = rNsm8w / 9.81e-3; // Н·с²/м⁸ → кМюрг
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
                                 if (kAir > 0) {
-                                  rKmu = (1 / (kAir * kAir)) / 9.81; // Н·с²/м⁸ → кМюрг
+                                  // 1/A² → Мюрг → /1000 → кМюрг
+                                  rKmu = (1 / (kAir * kAir)) / 1000;
                                 } else {
-                                  // bkBulkheadR хранится в кМюрг, bulkheadR — в Мюрг (/ 1000 = кМюрг)
-                                  const rRefDisp = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                  rKmu = sym.bkBulkheadR ?? rRefDisp ?? ((brForSym?.bulkheadR ?? 0) / 1000);
+                                  // rMin/rMax в каталоге хранятся в Мюрг → /1000 = кМюрг
+                                  const rRefMkyurg = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMin ?? 0) : 0;
+                                  rKmu = sym.bkBulkheadR ?? (rRefMkyurg > 0 ? rRefMkyurg / 1000 : (brForSym?.bulkheadR ?? 0) / 1000);
                                 }
                               }
                             }
