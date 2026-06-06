@@ -365,12 +365,13 @@ export function solveNetwork(
           return q > 0 ? dp / (q * q) : 1e9; // Па·с²/м⁶ = Н·с²/м⁸ ✓
         }
         // project: если задана воздухопроницаемость вручную — пересчитываем R = 1/A²
+        // airPermToR возвращает Мюрг → × 9.81e-3 = Н·с²/м⁸
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadCustomAirPerm!); // airPermToR возвращает Н·с²/м⁸ ✓
+          return airPermToR(b.bulkheadCustomAirPerm!) * 9.81e-3; // Мюрг → Н·с²/м⁸
         }
         // project: воздухопроницаемость из справочника — пересчитываем R = 1/A²
         if ((b.bulkheadAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadAirPerm!); // Н·с²/м⁸ ✓
+          return airPermToR(b.bulkheadAirPerm!) * 9.81e-3; // Мюрг → Н·с²/м⁸
         }
         // fallback: bulkheadR хранится в Мюрг → Н·с²/м⁸
         return (b.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸

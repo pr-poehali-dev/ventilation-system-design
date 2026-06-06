@@ -1241,13 +1241,15 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       } else if (mode === "survey") {
                         const q = branch.bulkheadSurveyQ ?? 0;
                         const dp = branch.bulkheadSurveyDP ?? 0;
-                        rBase = q > 0 ? (dp / (q * q)) / 9.81e-3 : 0; // Н·с²/м⁸ → Мюрг
+                        // ΔP/Q² = Па/(м³/с)² = Мюрг (базовая единица resistance)
+                        rBase = q > 0 ? dp / (q * q) : 0;
                       } else {
                         const A = branch.bulkheadManualAirPerm
                           ? (branch.bulkheadCustomAirPerm ?? 0)
                           : (branch.bulkheadAirPerm ?? 0);
+                        // 1/A² = Мюрг (базовая единица resistance)
                         rBase = A > 0
-                          ? (1 / (A * A)) / 9.81e-3  // Н·с²/м⁸ → Мюрг
+                          ? 1 / (A * A)
                           : (branch.bulkheadR ?? 0); // уже Мюрг
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
