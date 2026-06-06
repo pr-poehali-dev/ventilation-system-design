@@ -1206,19 +1206,20 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       const uRes = getUnit(unitsConfig, "resistance");
                       const mode = branch.bulkheadResMode ?? "project";
                       // rBase в Мюрг — базовая единица resistance (fromBase ожидает Мюрг)
+                      // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
                       let rBase = 0;
                       if (mode === "manual") {
                         rBase = (branch.bulkheadManualR ?? 0) * 1e3; // кМюрг → Мюрг
                       } else if (mode === "survey") {
                         const q = branch.bulkheadSurveyQ ?? 0;
                         const dp = branch.bulkheadSurveyDP ?? 0;
-                        rBase = q > 0 ? (dp / (q * q)) * 1e6 : 0; // Н·с²/м⁸ → Мюрг
+                        rBase = q > 0 ? (dp / (q * q)) / 9.81e-3 : 0; // Н·с²/м⁸ → Мюрг
                       } else {
                         const A = branch.bulkheadManualAirPerm
                           ? (branch.bulkheadCustomAirPerm ?? 0)
                           : (branch.bulkheadAirPerm ?? 0);
                         rBase = A > 0
-                          ? (1 / (A * A)) * 1e6  // Н·с²/м⁸ → Мюрг
+                          ? (1 / (A * A)) / 9.81e-3  // Н·с²/м⁸ → Мюрг
                           : (branch.bulkheadR ?? 0); // уже Мюрг
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
@@ -1299,7 +1300,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         } else if ((branch.bulkheadAirPerm ?? 0) > 0) {
                           rBulk = 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm); // Н·с²/м⁸
                         } else {
-                          rBulk = (branch.bulkheadR ?? 0) * 1e6; // Мюрг → Н·с²/м⁸
+                          rBulk = (branch.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸ (1 Мюрг = 9.81e-3 Н·с²/м⁸)
                         }
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);

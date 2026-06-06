@@ -2528,8 +2528,9 @@ export default function TopoCanvas(props: Props) {
                 if (sym.indDescription && sym.description) lines.push(sym.description);
                 if (sym.indResistance) {
                   // Вычисляем R в базовых единицах (Мюрг) из параметров символа.
-                  // bkManualR хранится в кМюрг → *1000 = Мюрг (базовая единица)
-                  // rNsm8 (Н·с²/м⁸) → / 1e6 = Мюрг
+                  // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
+                  // bkManualR хранится в кМюрг → *1000 = Мюрг
+                  // rNsm8 (Н·с²/м⁸) → / 9.81e-3 = Мюрг
                   // bkBulkheadR / br.bulkheadR хранятся в Мюрг
                   const mode = sym.bkResMode ?? "project";
                   let rBase = 0; // в Мюрг (базовых единицах)
@@ -2538,20 +2539,20 @@ export default function TopoCanvas(props: Props) {
                   } else if (mode === "survey") {
                     const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
                     const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                    rBase = rNsm8 * 1e6; // Н·с²/м⁸ → Мюрг (1 Мюрг = 1e-6 Н·с²/м⁸)
+                    rBase = rNsm8 / 9.81e-3; // Н·с²/м⁸ → Мюрг
                   } else {
                     // project: используем bkAirPerm или bkBulkheadR
                     const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                     if (kAir > 0) {
                       const rNsm8 = 1 / (kAir * kAir);
-                      rBase = rNsm8 * 1e6; // Н·с²/м⁸ → Мюрг (1 Мюрг = 1e-6 Н·с²/м⁸)
+                      rBase = rNsm8 / 9.81e-3; // Н·с²/м⁸ → Мюрг
                     } else {
                       rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
                     }
                   }
                   // Fallback: если sym.bk* не заполнены
                   if (rBase === 0 && br.bulkheadR > 0) rBase = br.bulkheadR;
-                  if (rBase === 0) rBase = br.resistance / 1e6; // Н·с²/м⁸ → Мюрг
+                  if (rBase === 0) rBase = br.resistance / 9.81e-3; // Н·с²/м⁸ → Мюрг
                   lines.push(`R=${uResInd.fromBase(rBase).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
                 }
                 if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);

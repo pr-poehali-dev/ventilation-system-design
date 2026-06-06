@@ -356,24 +356,26 @@ export function solveNetwork(
       b:             toGnd(b.toId),
       R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => {
         const mode = b.bulkheadResMode ?? "project";
-        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3; // кМюрг → единицы resistance
+        // В этой кодовой базе: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
+        // b.resistance хранится в Н·с²/м⁸ (от calcResistance)
+        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 9.81; // кМюрг → Н·с²/м⁸
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0;
           const dp = b.bulkheadSurveyDP ?? 0;
-          return q > 0 ? dp / (q * q) : 1e9;
+          return q > 0 ? dp / (q * q) : 1e9; // Па·с²/м⁶ = Н·с²/м⁸ ✓
         }
         // project: если задана воздухопроницаемость вручную — пересчитываем R = 1/A²
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadCustomAirPerm!);
+          return airPermToR(b.bulkheadCustomAirPerm!); // airPermToR возвращает Н·с²/м⁸ ✓
         }
         // project: воздухопроницаемость из справочника — пересчитываем R = 1/A²
         if ((b.bulkheadAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadAirPerm!);
+          return airPermToR(b.bulkheadAirPerm!); // Н·с²/м⁸ ✓
         }
-        // fallback: R уже вычислен при выборе из справочника
-        return b.bulkheadR ?? 0;
+        // fallback: bulkheadR хранится в Мюрг → Н·с²/м⁸
+        return (b.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸
       })() : 0)
-      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) : 0)),
+      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) * 9.81e-3 : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",

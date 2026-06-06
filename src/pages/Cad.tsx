@@ -4447,9 +4447,9 @@ export default function CadPage() {
                   if (kAir > 0) {
                     rNsm8 = 1 / (kAir * kAir); // уже Н·с²/м⁸
                   } else if ((sym.bkBulkheadR ?? rRefSym) > 0) {
-                    rNsm8 = (sym.bkBulkheadR ?? rRefSym) * 1e3; // кМюрг → Н·с²/м⁸
+                    rNsm8 = (sym.bkBulkheadR ?? rRefSym) * 9.81; // кМюрг → Н·с²/м⁸
                   } else {
-                    rNsm8 = (brForSym.bulkheadR ?? 0) * 1e6; // Мюрг → Н·с²/м⁸
+                    rNsm8 = (brForSym.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸
                   }
                 }
                 return rNsm8 * q * Math.abs(q);
@@ -4514,33 +4514,32 @@ export default function CadPage() {
                             if (mode === "manual") {
                               rKmu = sym.bkManualR ?? 0;
                             } else if (mode === "survey") {
+                              // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              const rMurg = q > 0 ? dp / (q * q) : 0;
-                              rKmu = rMurg / 1000;
+                              const rNsm8 = q > 0 ? dp / (q * q) : 0;
+                              rKmu = rNsm8 / 9.81; // Н·с²/м⁸ → кМюрг
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               const branchArea = brForSym?.area ?? 0;
                               const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
                                 || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-                              // rKmu = кМюрг для отображения
+                              // rKmu = кМюрг для отображения (1 кМюрг = 9.81 Н·с²/м⁸)
                               if (isFullyOpen) {
                                 rKmu = 0;
                               } else if (sw > 0.001) {
-                                // Формула Вейсбаха: R [Н·с²/м⁸] → кМюрг (* 1e3)
                                 const mu = 0.65;
                                 const rNsm8w = rho / (2 * mu * mu * sw * sw);
-                                rKmu = rNsm8w * 1e3;
+                                rKmu = rNsm8w / 9.81; // Н·с²/м⁸ → кМюрг
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
                                 if (kAir > 0) {
-                                  // 1/A² [Н·с²/м⁸] → кМюрг (* 1e3)
-                                  rKmu = (1 / (kAir * kAir)) * 1e3;
+                                  rKmu = (1 / (kAir * kAir)) / 9.81; // Н·с²/м⁸ → кМюрг
                                 } else {
-                                  // bkBulkheadR хранится в кМюрг, bulkheadR — в Мюрг
+                                  // bkBulkheadR хранится в кМюрг, bulkheadR — в Мюрг (/ 1000 = кМюрг)
                                   const rRefDisp = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
                                   rKmu = sym.bkBulkheadR ?? rRefDisp ?? ((brForSym?.bulkheadR ?? 0) / 1000);
                                 }
@@ -4773,8 +4772,7 @@ export default function CadPage() {
                       {/* Значения для справки */}
                       {brForSym && (sym.indResistance || sym.indDeltaP || sym.indLeakage) && (() => {
                         // Вычисляем R в кМюрг из sym.bk* (те же данные что в панели настройки)
-                        // bkManualR хранится в кМюрг — отображаем напрямую
-                        // rNsm8 / 1e6 = Мюрг, / 1e3 = кМюрг
+                        // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
                         const mode = sym.bkResMode ?? "project";
                         let rMkyurg = 0;
                         if (mode === "manual") {
@@ -4782,17 +4780,17 @@ export default function CadPage() {
                         } else if (mode === "survey") {
                           const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
                           const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                          rMkyurg = rNsm8 * 1e3; // Н·с²/м⁸ → кМюрг (*1e6 Мюрг, /1e3 кМюрг)
+                          rMkyurg = rNsm8 / 9.81; // Н·с²/м⁸ → кМюрг
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {
                             const rNsm8 = 1 / (kAir * kAir);
-                            rMkyurg = rNsm8 * 1e3; // Н·с²/м⁸ → кМюрг (*1e6 Мюрг, /1e3 кМюрг)
+                            rMkyurg = rNsm8 / 9.81; // Н·с²/м⁸ → кМюрг
                           } else {
-                            rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1e3; // Мюрг → кМюрг
+                            rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000; // Мюрг → кМюрг
                           }
                         }
-                        if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR / 1e3;
+                        if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR / 1000;
                         return (
                           <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
                             style={{ background: "#f0f4ff", border: "1px solid #c8d8f0" }}>
