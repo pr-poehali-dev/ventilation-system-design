@@ -373,7 +373,30 @@ export default function BranchTopologyTab({
       </ParamRow>
 
       <ParamRow id="v_resistance" label="Аэродин. сопр. R, кμ" visible={visible.has("v_resistance")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.resistance / 10, 6)} />
+        {(() => {
+          const rAero = branch.resistance / 10;
+          const rGeom = branch.rFriction / 10;
+          const isWrong = branch.rFriction > 0 && branch.resistance < branch.rFriction;
+          return (
+            <div className="flex items-center flex-1 min-w-0">
+              <ComputedInput
+                value={numFmt(rAero, 7)}
+                color={isWrong ? "#dc2626" : undefined}
+              />
+              {isWrong && (
+                <span
+                  title={`Ошибка: аэродинамическое сопротивление (${numFmt(rAero, 4)}) меньше геометрического (${numFmt(rGeom, 4)}). Аэродинамическое R не может быть меньше геометрического — проверьте параметры ветви.`}
+                  className="ml-1 flex-shrink-0 cursor-help"
+                  style={{ fontSize: 12, color: "#dc2626" }}
+                >⚠</span>
+              )}
+            </div>
+          );
+        })()}
+      </ParamRow>
+
+      <ParamRow id="v_geom_r" label="Геометр. сопр. R, кμ" visible={visible.has("v_geom_r")} onToggle={toggle}>
+        <ComputedInput value={numFmt(branch.rFriction / 10, 7)} />
       </ParamRow>
 
       <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>

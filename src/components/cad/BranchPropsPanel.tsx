@@ -251,7 +251,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set([
-      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_unit_r",
+      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_geom_r", "v_unit_r",
       "v_velocity", "v_adddep", "v_flow", "v_dep",
       "v_r_friction", "v_r_local", "v_reynolds", "v_power",
     ])
@@ -614,7 +614,30 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </ParamRow>
 
             <ParamRow id="v_resistance" label={`Аэродин. сопр. R, ${uRes.symbol}`} visible={visible.has("v_resistance")} onToggle={toggle}>
-              <ComputedInput value={fmtR(rToDisplay(branch.resistance), uRes.decimals)} />
+              {(() => {
+                const rAero = rToDisplay(branch.resistance);
+                const rGeom = rToDisplay(branch.rFriction);
+                const isWrong = branch.rFriction > 0 && branch.resistance < branch.rFriction;
+                return (
+                  <div className="relative flex items-center flex-1">
+                    <ComputedInput
+                      value={fmtR(rAero, uRes.decimals)}
+                      color={isWrong ? "#dc2626" : undefined}
+                    />
+                    {isWrong && (
+                      <span
+                        title={`Ошибка: аэродинамическое сопротивление (${fmtR(rAero, 4)}) меньше геометрического (${fmtR(rGeom, 4)}). Аэродинамическое R не может быть меньше геометрического — проверьте параметры ветви.`}
+                        className="ml-1 cursor-help flex-shrink-0"
+                        style={{ fontSize: 12, color: "#dc2626" }}
+                      >⚠</span>
+                    )}
+                  </div>
+                );
+              })()}
+            </ParamRow>
+
+            <ParamRow id="v_geom_r" label={`Геометр. сопр. R, ${uRes.symbol}`} visible={visible.has("v_geom_r")} onToggle={toggle}>
+              <ComputedInput value={fmtR(rToDisplay(branch.rFriction), uRes.decimals)} />
             </ParamRow>
 
             <ParamRow id="v_unit_r" label={`Ед. сопр. R(ед), ${uRes.symbol}/м`} visible={visible.has("v_unit_r")} onToggle={toggle}>

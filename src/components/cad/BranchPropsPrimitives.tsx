@@ -93,16 +93,16 @@ export function EditInput({
   );
 }
 
-export function ComputedInput({ value }: { value: string }) {
+export function ComputedInput({ value, color, className }: { value: string; color?: string; className?: string }) {
   return (
     <div
-      className="w-full text-[11px] text-right px-1 font-bold"
+      className={`w-full text-[11px] text-right px-1 font-bold${className ? ` ${className}` : ""}`}
       style={{
         background: CB,
         border: CBB,
         height: 18,
         lineHeight: "18px",
-        color: "#1a1a1a",
+        color: color ?? "#1a1a1a",
         userSelect: "text",
       }}>
       {value}
