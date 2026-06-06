@@ -6019,7 +6019,8 @@ export default function CadPage() {
                 // Одиночный клик: выбрать УО и показать свойства (панель params)
                 const sym = schemaSymbols.find(s => s.id === symId);
                 setSelectedSymbolId(symId);
-                if (sym?.branchId) {
+                // Для перемычек — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
+                if (sym?.branchId && !BULKHEAD_SYMBOL_IDS.has(sym.typeId)) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                 } else {
@@ -6056,10 +6057,13 @@ export default function CadPage() {
                   setFanSymbolBranchId(null);
                   setActiveSide("waterpipes");
                 } else if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                  // Двойной клик на перемычку — открываем ветвь и переходим на вкладку Топология
+                  // (там находится блок настроек перемычки)
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
+                  setSelectedSymbolId(symId);
                   setFanSymbolBranchId(null);
-                  setActiveSide("params");
+                  setActiveSide("topology");
                 } else {
                   setSelectedBranchId(null);
                   setSelectedNodeId(null);
