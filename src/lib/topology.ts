@@ -788,6 +788,10 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
   // Примечание: сопротивление перемычек считается отдельно в Cad.tsx
   // (параметры хранятся в SchemaSymbol.bk* для каждого символа независимо)
   const totalR = r.R;
+  // DEBUG: ветвь S≈5, L≈67, деревянная крепь
+  if (b.alphaCoef === 60 && b.length >= 65 && b.length <= 69) {
+    console.log('[DEBUG якутская ветвь]', JSON.stringify({ mode: b.resistanceMode, alpha: b.alphaCoef, area, perimeter, length: b.length, rho, manualSection: b.manualSection, rectWidth: b.rectWidth, rectHeight: b.rectHeight, Rfriction: r.Rfriction, Rlocal: r.Rlocal, totalR }));
+  }
 
   // 3) Поток
   const V = calcVel(b.flow, area);
