@@ -1,5 +1,5 @@
 import { type TopoBranch, type Horizon } from "@/lib/topology";
-import { SURFACE_TYPES } from "@/lib/aerodynamics";
+import { SURFACE_TYPES, resistanceFromAlpha } from "@/lib/aerodynamics";
 import { type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { type UnitsConfig, getUnit } from "@/lib/unitsConfig";
 import {
@@ -374,18 +374,21 @@ export default function BranchTopologyTab({
 
       <ParamRow id="v_resistance" label="Аэродин. сопр. R, кμ" visible={visible.has("v_resistance")} onToggle={toggle}>
         {(() => {
-          const rAero = branch.resistance / 10;
-          const rGeom = branch.rFriction / 10;
-          const isWrong = branch.rFriction > 0 && branch.resistance < branch.rFriction;
+          // Геометрическое R = α·P·L/S³ (формула Аткинсона, по геометрии независимо от режима задания R)
+          // resistanceFromAlpha → Н·с²/м⁸; /10 ≈ /9.81 → кМюрг (как везде в этом файле)
+          const rGeomNsm8 = resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area);
+          const rGeomKmu = rGeomNsm8 / 10;
+          const rAeroKmu = branch.resistance / 10;
+          const isWrong = rGeomNsm8 > 0 && branch.resistance < rGeomNsm8;
           return (
             <div className="flex items-center flex-1 min-w-0">
               <ComputedInput
-                value={numFmt(rAero, 7)}
+                value={numFmt(rAeroKmu, 7)}
                 color={isWrong ? "#dc2626" : undefined}
               />
               {isWrong && (
                 <span
-                  title={`Ошибка: аэродинамическое сопротивление (${numFmt(rAero, 4)}) меньше геометрического (${numFmt(rGeom, 4)}). Аэродинамическое R не может быть меньше геометрического — проверьте параметры ветви.`}
+                  title={`Ошибка: аэродинамическое сопротивление (${numFmt(rAeroKmu, 4)} кМюрг) меньше геометрического (${numFmt(rGeomKmu, 4)} кМюрг). Аэродинамическое R не может быть меньше геометрического — проверьте параметры ветви.`}
                   className="ml-1 flex-shrink-0 cursor-help"
                   style={{ fontSize: 12, color: "#dc2626" }}
                 >⚠</span>
@@ -396,7 +399,10 @@ export default function BranchTopologyTab({
       </ParamRow>
 
       <ParamRow id="v_geom_r" label="Геометр. сопр. R, кμ" visible={visible.has("v_geom_r")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.rFriction / 10, 7)} />
+        {(() => {
+          const rGeomNsm8 = resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area);
+          return <ComputedInput value={numFmt(rGeomNsm8 / 10, 7)} />;
+        })()}
       </ParamRow>
 
       <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
