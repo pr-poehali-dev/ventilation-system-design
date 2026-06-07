@@ -98,18 +98,20 @@ export interface SurfaceType {
   roughness: number;     // мм — эквивалентная шероховатость
 }
 
+// Значения α по справочнику ВНИИГД (Воронин, 1989), таблица 2.1
+// α в единицах ×10⁻⁴ Н·с²/м⁴ при плотности воздуха ρ₀ = 1.2 кг/м³
 export const SURFACE_TYPES: SurfaceType[] = [
   { id: "smooth",        name: "Воздухоподающая выработка, без неровностей", alpha: 9,    roughness: 1   },
-  { id: "concrete",      name: "Бетонная крепь гладкая",                      alpha: 12,   roughness: 3   },
-  { id: "concrete_rough",name: "Бетонная крепь, неровности до 50 мм",         alpha: 30,   roughness: 30  },
-  { id: "anchor",        name: "Анкерная крепь",                              alpha: 35,   roughness: 50  },
-  { id: "wood",          name: "Деревянная крепь, рамная",                    alpha: 60,   roughness: 80  },
-  { id: "metal_arch",    name: "Металлическая арочная крепь",                 alpha: 50,   roughness: 60  },
-  { id: "uncoupled",     name: "Незакреплённая, ровная порода",               alpha: 25,   roughness: 25  },
-  { id: "uncoupled_r",   name: "Незакреплённая, рваный контур",               alpha: 80,   roughness: 120 },
+  { id: "concrete",      name: "Бетонная крепь гладкая",                      alpha: 18,   roughness: 5   },
+  { id: "concrete_rough",name: "Бетонная крепь, неровности до 50 мм",         alpha: 36,   roughness: 30  },
+  { id: "anchor",        name: "Анкерная крепь",                              alpha: 55,   roughness: 50  },
+  { id: "wood",          name: "Деревянная крепь, рамная",                    alpha: 110,  roughness: 100 },
+  { id: "metal_arch",    name: "Металлическая арочная крепь",                 alpha: 65,   roughness: 70  },
+  { id: "uncoupled",     name: "Незакреплённая, ровная порода",               alpha: 30,   roughness: 25  },
+  { id: "uncoupled_r",   name: "Незакреплённая, рваный контур",               alpha: 100,  roughness: 150 },
   { id: "shaft_smooth",  name: "Ствол с тюбинговой крепью",                   alpha: 15,   roughness: 5   },
-  { id: "shaft_skip",    name: "Ствол со скиповым подъёмом",                  alpha: 45,   roughness: 50  },
-  { id: "lava",          name: "Очистной забой (лава)",                       alpha: 150,  roughness: 200 },
+  { id: "shaft_skip",    name: "Ствол со скиповым подъёмом",                  alpha: 50,   roughness: 60  },
+  { id: "lava",          name: "Очистной забой (лава)",                       alpha: 200,  roughness: 250 },
 ];
 
 // ─── Способ задания сопротивления ──────────────────────────────────────────

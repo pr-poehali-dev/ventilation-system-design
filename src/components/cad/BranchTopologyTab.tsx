@@ -380,8 +380,8 @@ export default function BranchTopologyTab({
           const rGeomNsm8 = hasAlpha
             ? resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area)
             : 0;
-          const rGeomKmu = rGeomNsm8 / 10;
-          const rAeroKmu = branch.resistance / 10;
+          const rGeomKmu = rGeomNsm8 / 9.81;
+          const rAeroKmu = branch.resistance / 9.81;
           const isWrong = hasAlpha && rGeomNsm8 > 0 && branch.resistance < rGeomNsm8;
           return (
             <div className="flex items-center flex-1 min-w-0">
@@ -407,16 +407,16 @@ export default function BranchTopologyTab({
             return <ComputedInput value="—" />;
           }
           const rGeomNsm8 = resistanceFromAlpha(branch.alphaCoef, branch.perimeter, branch.length, branch.area);
-          return <ComputedInput value={numFmt(rGeomNsm8 / 10, 7)} />;
+          return <ComputedInput value={numFmt(rGeomNsm8 / 9.81, 7)} />;
         })()}
       </ParamRow>
 
       <ParamRow id="v_unit_r" label="Ед. сопр. R(ед), кμ/м" visible={visible.has("v_unit_r")} onToggle={toggle}>
-        <ComputedInput value={numFmt(unitR / 10, 7)} />
+        <ComputedInput value={numFmt(unitR / 9.81, 7)} />
       </ParamRow>
 
       <ParamRow id="v_unit_r_100" label="Уд. сопр. R, кμ/100м" visible={visible.has("v_unit_r_100")} onToggle={toggle}>
-        <ComputedInput value={branch.length > 0 ? numFmt((branch.resistance / 10) / branch.length * 100, 7) : "—"} />
+        <ComputedInput value={branch.length > 0 ? numFmt((branch.resistance / 9.81) / branch.length * 100, 7) : "—"} />
       </ParamRow>
 
       <ParamRow id="v_velocity" label="Скорость V, м/с" visible={visible.has("v_velocity")} onToggle={toggle}>
@@ -436,11 +436,11 @@ export default function BranchTopologyTab({
       </ParamRow>
 
       <ParamRow id="v_r_friction" label="R трение, кμ" visible={visible.has("v_r_friction")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.rFriction / 10, 6)} />
+        <ComputedInput value={numFmt(branch.rFriction / 9.81, 6)} />
       </ParamRow>
 
       <ParamRow id="v_r_local" label="R местные, кμ" visible={visible.has("v_r_local")} onToggle={toggle}>
-        <ComputedInput value={numFmt(branch.rLocal / 10, 6)} />
+        <ComputedInput value={numFmt(branch.rLocal / 9.81, 6)} />
       </ParamRow>
 
       <ParamRow id="v_reynolds" label="Re (Рейнольдс), тыс." visible={visible.has("v_reynolds")} onToggle={toggle}>
