@@ -42,6 +42,7 @@ import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type E
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
+import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
@@ -95,7 +96,7 @@ export interface SchemaSymbol {
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath";
 
 interface Excavation {
   id: string;
@@ -656,6 +657,14 @@ export default function CadPage() {
   const [rescuePathBranchIds, setRescuePathBranchIds] = useState<Set<string>>(new Set());
   const [rescuePathBranchDirs, setRescuePathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
+  // ─── Горнорабочий ──────────────────────────────────────────────────
+  const [workerPickMode, setWorkerPickMode] = useState<WorkerPickMode>(null);
+  const [workerStartNodeId, setWorkerStartNodeId] = useState("");
+  const [workerTargetNodeId, setWorkerTargetNodeId] = useState("");
+  const workerPickHandlerRef = React.useRef<((nodeId: string) => void) | null>(null);
+  const [workerPathBranchIds, setWorkerPathBranchIds] = useState<Set<string>>(new Set());
+  const [workerPathBranchDirs, setWorkerPathBranchDirs] = useState<Map<string, boolean>>(new Map());
+  const [workerPathNodeIds, setWorkerPathNodeIds] = useState<Set<string>>(new Set());
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
@@ -3050,9 +3059,16 @@ export default function CadPage() {
           </RibbonGroup>
         )}
 
-        {/* ── Группа: Горноспасатели ── */}
-        <RibbonGroup label="Горноспасатели">
+        {/* ── Группа: Пути движения ── */}
+        <RibbonGroup label="Пути движения">
           <div className="flex items-stretch gap-1">
+            <RibbonBigBtn
+              icon="PersonStanding"
+              label="Вычислить время"
+              sublabel="хода горнорабочего"
+              active={activeSide === "workerPath"}
+              onClick={() => setActiveSide("workerPath")}
+            />
             <RibbonBigBtn
               icon="ShieldCheck"
               label="Расчёт"
@@ -5478,6 +5494,26 @@ export default function CadPage() {
               />
             )}
 
+            {/* ═══ ВРЕМЯ ХОДА ГОРНОРАБОЧЕГО ════════════════════════════ */}
+            {activeSide === "workerPath" && (
+              <WorkerPathPanel
+                nodes={nodes}
+                branches={branches}
+                pickMode={workerPickMode}
+                onPickModeChange={setWorkerPickMode}
+                onRegisterPickHandler={(fn) => { workerPickHandlerRef.current = fn; }}
+                pickedStartId={workerStartNodeId}
+                pickedTargetId={workerTargetNodeId}
+                onPickedStartChange={setWorkerStartNodeId}
+                onPickedTargetChange={setWorkerTargetNodeId}
+                onRouteChange={(bIds, nIds, bDirs) => {
+                  setWorkerPathBranchIds(bIds);
+                  setWorkerPathNodeIds(nIds);
+                  setWorkerPathBranchDirs(bDirs);
+                }}
+              />
+            )}
+
             {/* ═══ ВКЛАДКА: РАСХОД ВОЗДУХА ════════════════════════════ */}
             {activeSide === "flowQ" && (() => {
               const BAR_H = 320;
@@ -6271,12 +6307,25 @@ export default function CadPage() {
                 });
                 return map.size > 0 ? map : undefined;
               })()}
-              rescuePathBranchIds={rescuePathBranchIds.size > 0 ? rescuePathBranchIds : undefined}
-              rescuePathBranchDirs={rescuePathBranchDirs.size > 0 ? rescuePathBranchDirs : undefined}
-              rescuePathNodeIds={rescuePathNodeIds.size > 0 ? rescuePathNodeIds : undefined}
-              rescuePickMode={rescuePickMode}
+              rescuePathBranchIds={
+                workerPathBranchIds.size > 0 ? workerPathBranchIds
+                : rescuePathBranchIds.size > 0 ? rescuePathBranchIds
+                : undefined
+              }
+              rescuePathBranchDirs={
+                workerPathBranchDirs.size > 0 ? workerPathBranchDirs
+                : rescuePathBranchDirs.size > 0 ? rescuePathBranchDirs
+                : undefined
+              }
+              rescuePathNodeIds={
+                workerPathNodeIds.size > 0 ? workerPathNodeIds
+                : rescuePathNodeIds.size > 0 ? rescuePathNodeIds
+                : undefined
+              }
+              rescuePickMode={rescuePickMode ?? workerPickMode}
               onRescueNodePick={(nodeId) => {
-                rescuePickHandlerRef.current?.(nodeId);
+                if (rescuePickMode) rescuePickHandlerRef.current?.(nodeId);
+                else if (workerPickMode) workerPickHandlerRef.current?.(nodeId);
               }}
               onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {

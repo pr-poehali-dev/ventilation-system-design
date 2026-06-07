@@ -457,3 +457,208 @@ export function calcRescue(
     branchDirs,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// РАСЧЁТ ВРЕМЕНИ ХОДА ГОРНОРАБОЧЕГО
+// Источник: РД 15-11-2007 Прил.4 (нормы движения без ИДА),
+//           ФНиП №467 (угольные шахты)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Скорости горнорабочего (м/мин) — без ИДА, нормальный темп движения
+function getWorkerSpeed(method: "rd" | "fnip", angleDeg: number): number {
+  const a = Math.abs(angleDeg);
+  if (method === "rd") {
+    // РД 15-11-2007, скорость горнорабочего в пригодной атмосфере
+    if (a <= 5)  return 100;
+    if (a <= 10) return 80;
+    if (a <= 15) return 65;
+    if (a <= 20) return 55;
+    if (a <= 30) return 40;
+    if (a <= 45) return 28;
+    return 22;
+  } else {
+    // ФНиП №467, скорость горнорабочего
+    if (a <= 5)  return 110;
+    if (a <= 10) return 88;
+    if (a <= 15) return 70;
+    if (a <= 20) return 58;
+    if (a <= 30) return 43;
+    if (a <= 45) return 30;
+    return 24;
+  }
+}
+
+export interface WorkerSegment {
+  branchId: string;
+  branchName: string;
+  branchLabel: string;
+  segmentNumber: number;
+  length: number;          // м
+  angle: number;           // °
+  fromNodeId: string;
+  toNodeId: string;
+  speed_mpm: number;       // м/мин
+  time_min: number;        // мин (туда)
+  time_back_min: number;   // мин (обратно)
+  cumulTime: number;       // накопленное время туда
+  cumulTimeBack: number;   // накопленное обратно (считается отдельно)
+}
+
+export interface WorkerPathResult {
+  startNodeId: string;
+  targetNodeId: string;
+  waypointNodeIds: string[];
+  method: "rd" | "fnip";
+  segments: WorkerSegment[];
+  totalTimeForward: number;  // мин
+  totalTimeBack: number;     // мин
+  totalTime: number;         // мин (туда + обратно)
+  ok: boolean;
+  warnings: string[];
+  branchDirs: Map<string, boolean>;
+}
+
+export function calcWorkerPath(
+  nodes: TopoNodeLite[],
+  branches: TopoBranchLite[],
+  startNodeId: string,
+  targetNodeId: string,
+  method: "rd" | "fnip",
+  waypointNodeIds: string[] = [],
+): WorkerPathResult {
+  const warnings: string[] = [];
+
+  // Строим граф (все ветви проходимы для горнорабочего, включая перемычки с дверями)
+  const adj = new Map<string, Edge[]>();
+  for (const n of nodes) adj.set(n.id, []);
+  for (const b of branches) {
+    if (b.isLeakage) continue;
+    if ((b.length ?? 0) <= 0) continue;
+    // Горнорабочий проходит через двери, паруса, регуляторы; глухие перемычки — нет
+    if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
+    adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
+    adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
+  }
+
+  // Дейкстра с весами по скорости горнорабочего
+  function dijkstraWorker(startId: string) {
+    const dist = new Map<string, number>();
+    const prev = new Map<string, { nodeId: string; branchId: string; forward: boolean } | null>();
+    for (const n of nodes) dist.set(n.id, Infinity);
+    dist.set(startId, 0);
+    prev.set(startId, null);
+    type PQItem = { nodeId: string; d: number };
+    const pq: PQItem[] = [{ nodeId: startId, d: 0 }];
+    const visited = new Set<string>();
+    while (pq.length > 0) {
+      pq.sort((a, b) => a.d - b.d);
+      const { nodeId: cur, d: curD } = pq.shift()!;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      for (const edge of (adj.get(cur) ?? [])) {
+        const b = branches.find(b2 => b2.id === edge.branchId);
+        if (!b) continue;
+        const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
+        const speed = getWorkerSpeed(method, signedAngle);
+        const t = b.length > 0 ? b.length / speed : 0;
+        const nd = curD + t;
+        if (nd < (dist.get(edge.toId) ?? Infinity)) {
+          dist.set(edge.toId, nd);
+          prev.set(edge.toId, { nodeId: cur, branchId: b.id, forward: edge.forward });
+          pq.push({ nodeId: edge.toId, d: nd });
+        }
+      }
+    }
+    return { dist, prev };
+  }
+
+  const checkpoints = [startNodeId, ...waypointNodeIds, targetNodeId];
+  const allPathEdges: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
+  let routeOk = true;
+
+  for (let i = 0; i < checkpoints.length - 1; i++) {
+    const from = checkpoints[i];
+    const to = checkpoints[i + 1];
+    const { dist, prev } = dijkstraWorker(from);
+    if ((dist.get(to) ?? Infinity) === Infinity) {
+      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети`);
+      routeOk = false;
+      continue;
+    }
+    const segEdges = buildPath(prev, to);
+    allPathEdges.push(...segEdges);
+  }
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const branchMap = new Map(branches.map(b => [b.id, b]));
+
+  // Строим сегменты вперёд
+  const segments: WorkerSegment[] = [];
+  let cumTime = 0;
+  for (let i = 0; i < allPathEdges.length; i++) {
+    const edge = allPathEdges[i];
+    const b = branchMap.get(edge.branchId);
+    if (!b) continue;
+    const isForward = edge.forward;
+    const signedAngle = isForward ? (b.angle ?? 0) : -(b.angle ?? 0);
+    const speed = getWorkerSpeed(method, signedAngle);
+    const speedBack = getWorkerSpeed(method, -signedAngle);
+    const time_min = b.length > 0 ? b.length / speed : 0;
+    const time_back_min = b.length > 0 ? b.length / speedBack : 0;
+    cumTime += time_min;
+
+    const fromNodeId = isForward ? b.fromId : b.toId;
+    const toNodeId   = isForward ? b.toId   : b.fromId;
+    const fromNode   = nodeMap.get(fromNodeId);
+    const toNode     = nodeMap.get(toNodeId);
+    const branchLabel = b.name?.trim() || "";
+    const nodeFrom = fromNode?.name || (fromNode?.number ? `Узел ${fromNode.number}` : fromNodeId);
+    const nodeTo   = toNode?.name   || (toNode?.number   ? `Узел ${toNode.number}`   : toNodeId);
+    const branchName = branchLabel ? `${branchLabel} (${nodeFrom} → ${nodeTo})` : `${nodeFrom} → ${nodeTo}`;
+
+    segments.push({
+      branchId: b.id, branchName, branchLabel,
+      segmentNumber: i + 1,
+      length: b.length, angle: signedAngle,
+      fromNodeId, toNodeId,
+      speed_mpm: speed, time_min, time_back_min,
+      cumulTime: cumTime, cumulTimeBack: 0,
+    });
+  }
+
+  // Считаем обратное накопленное время
+  const backEdges = [...allPathEdges].reverse().map(e => ({ ...e, forward: !e.forward }));
+  let cumBack = 0;
+  const backTimes: number[] = [];
+  for (const edge of backEdges) {
+    const b = branchMap.get(edge.branchId);
+    if (!b) continue;
+    const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
+    const speed = getWorkerSpeed(method, signedAngle);
+    const t = b.length > 0 ? b.length / speed : 0;
+    cumBack += t;
+    backTimes.push(cumBack);
+  }
+  for (let i = 0; i < segments.length; i++) {
+    segments[segments.length - 1 - i].cumulTimeBack = backTimes[i] ?? 0;
+  }
+
+  const totalTimeForward = segments.reduce((s, seg) => s + seg.time_min, 0);
+  const totalTimeBack    = segments.reduce((s, seg) => s + seg.time_back_min, 0);
+  const totalTime = totalTimeForward + totalTimeBack;
+
+  const branchDirs = new Map<string, boolean>();
+  for (const edge of allPathEdges) branchDirs.set(edge.branchId, edge.forward);
+
+  if (!routeOk && segments.length === 0) {
+    warnings.push("Маршрут не построен — проверьте начальный, промежуточные и целевой узлы");
+  }
+
+  return {
+    startNodeId, targetNodeId, waypointNodeIds,
+    method, segments,
+    totalTimeForward, totalTimeBack, totalTime,
+    ok: routeOk && segments.length > 0,
+    warnings, branchDirs,
+  };
+}

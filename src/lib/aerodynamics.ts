@@ -133,10 +133,6 @@ export function resistanceFromAlpha(alpha: number, P: number, L: number, S: numb
   if (S <= 0.05 || L <= 0 || P <= 0) return 0;
   const a = alpha * 1e-4;
   const r = (a * P * L) / Math.pow(S, 3);
-  // DEBUG: деревянная крепь, L≈67
-  if (alpha === 60 && L >= 65 && L <= 69) {
-    console.log('[DEBUG resistanceFromAlpha]', JSON.stringify({ alpha, P, L, S, a, r }));
-  }
   // Ограничение разумным пределом (типичные R шахтных выработок < 10000 кмюрг = 98100 Нс²/м⁸)
   return isFinite(r) ? Math.min(r, 1000) : 0;
 }
