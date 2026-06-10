@@ -5711,10 +5711,7 @@ export default function CadPage() {
               <input
                 type="checkbox"
                 checked={scaleLimitsEnabled}
-                onChange={e => {
-                  setScaleLimitsEnabled(e.target.checked);
-                  if (!e.target.checked) setBranchWidth(7); // сброс к базовой толщине
-                }}
+                onChange={e => setScaleLimitsEnabled(e.target.checked)}
                 style={{ width: 12, height: 12, accentColor: "#2563eb", cursor: "pointer" }}
               />
             </label>
@@ -5970,18 +5967,7 @@ export default function CadPage() {
               colorByHorizon={colorMode === "horizon"}
               showFlowArrows={showFlowArrows}
               scaleOverride={viewScale}
-              onScaleChange={(s) => {
-                setViewScale(s);
-                // Пределы масштабов: масштабируем толщину ветвей в диапазоне [min..max]%
-                if (scaleLimitsEnabled && scaleBranchMode === "relative") {
-                  const baseW = 7;
-                  const refScale = 0.4; // базовый масштаб схемы
-                  const ratio = Math.max(0.01, s / refScale); // отношение к базовому
-                  const rawPct = ratio * 100;
-                  const clampedPct = Math.max(scaleBranchMin, Math.min(scaleBranchMax, rawPct));
-                  setBranchWidth(Math.max(1, baseW * clampedPct / 100));
-                }
-              }}
+              onScaleChange={setViewScale}
               fitToScreenNonce={fitToScreenNonce}
               focusNonce={focusNonce}
               focusNodeId={focusNodeId}

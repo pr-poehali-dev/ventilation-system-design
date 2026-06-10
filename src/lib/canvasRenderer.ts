@@ -235,8 +235,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
     const baseW = isSel ? bw + 1 : bw;
-    const w = thinLines ? 1 : baseW;
-    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+    // Масштабируем толщину пропорционально zoom (нормализовано к базовому масштабу 0.4)
+    const scaleFactor = sc / 0.4;
+    const w = (thinLines ? 1 : baseW) * scaleFactor;
+    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * scaleFactor;
     const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
     const showDashes   = flowVisible && (flowDisplay === "flow"     || flowDisplay === "both");
     const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
@@ -523,7 +525,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
         ctx.save();
         ctx.strokeStyle = "#94a3b8";
-        ctx.lineWidth = 0.8;
+        ctx.lineWidth = 0.8 * sc;
         ctx.setLineDash([3, 2]);
         ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
         ctx.setLineDash([]);
@@ -534,18 +536,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.translate(anchorX, anchorY);
       if (labelAng !== 0) ctx.rotate(labelAng);
 
-      const lh = 11;
-      const bh = allLines.length * lh + 4;
+      // Масштабируем размер текста пропорционально zoom (нормализовано к 0.4)
+      const textSc = Math.max(0.3, sc / 0.4);
+      const lh = 11 * textSc;
+      const bh = allLines.length * lh + 4 * textSc;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
       allLines.forEach((ln, li) => {
         const ty = -bh / 2 + lh * (li + 0.6);
         const isNumLine = li === 0 && showNum;
-        const fontSize = isNumLine ? (branchNum.length > 2 ? 7.5 : 9) : 8.5;
+        const baseFontSize = isNumLine ? (branchNum.length > 2 ? 7.5 : 9) : 8.5;
+        const fontSize = baseFontSize * textSc;
         ctx.font = `600 ${fontSize}px "Segoe UI",sans-serif`;
         ctx.strokeStyle = "white";
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3 * textSc;
         ctx.lineJoin = "round";
         ctx.strokeText(ln, 0, ty);
         ctx.fillStyle = isNumLine
@@ -599,8 +604,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      // Размеры идентичны SVG: r=4 выделен, r=2.5 обычный
-      const r = isSel ? 4 : 2.5;
+      // Масштабируем радиус узла пропорционально zoom (нормализовано к 0.4)
+      const r = (isSel ? 4 : 2.5) * (sc / 0.4);
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
 
@@ -611,9 +616,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const hasFire = fireType !== "none";
 
       // Кольцо выделения — только для обычных узлов (fire-узлы рисуют своё внутри иконок)
+      const nodeScF = sc / 0.4;
       if (isSel && !hasFire) {
-        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4, 0, Math.PI * 2);
-        ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4 * nodeScF, 0, Math.PI * 2);
+        ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5 * nodeScF;
         ctx.setLineDash([3, 2]); ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -623,10 +629,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
                       : fireType === "consumer"  ? consumerColor
                       : fireType === "junction"  ? "#7c3aed"
                       : color;
-      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2) : r, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2 * nodeScF) : r, 0, Math.PI * 2);
       ctx.fillStyle = nodeColor;
       ctx.strokeStyle = isSel ? ringColor : (hasFire ? nodeColor : "#1f2937");
-      ctx.lineWidth = isSel ? 2 : 1;
+      ctx.lineWidth = (isSel ? 2 : 1) * nodeScF;
       ctx.fill(); ctx.stroke();
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────

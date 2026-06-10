@@ -1575,12 +1575,13 @@ export default function TopoCanvas(props: Props) {
             if (!col) return null;
             const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
-            const w = thinLines ? 1 : bw;
-            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+            const sf0 = view.scale / 0.4;
+            const w = (thinLines ? 1 : bw) * sf0;
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * sf0;
             return (
               <line key={`posOuter-${b.id}`}
                 x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                stroke={col} strokeWidth={w + borderW * 2 + 6}
+                stroke={col} strokeWidth={w + borderW * 2 + 6 * sf0}
                 strokeLinecap="round" opacity="0.7" />
             );
           }) : null;
@@ -1597,8 +1598,9 @@ export default function TopoCanvas(props: Props) {
             const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
             const baseW = isSel ? bw + 1 : bw;
-            const w = thinLines ? 1 : baseW;
-            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+            const sf1 = view.scale / 0.4;
+            const w = (thinLines ? 1 : baseW) * sf1;
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * sf1;
             if (borderW === 0) return null;
             return (
               <line key={`border-${b.id}`}
@@ -1686,9 +1688,11 @@ export default function TopoCanvas(props: Props) {
           const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
           const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
           const baseW = isSel ? bw + 1 : bw;
-          const w = thinLines ? 1 : baseW;
+          // Масштабируем пропорционально zoom (нормализовано к базовому масштабу 0.4)
+          const sf2 = view.scale / 0.4;
+          const w = (thinLines ? 1 : baseW) * sf2;
           // Обводка (контур вокруг линии): ширина = w + 2*border
-          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb);
+          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * sf2;
           const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
@@ -1931,8 +1935,10 @@ export default function TopoCanvas(props: Props) {
                 const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
                 if (allLines.length === 0) return null;
 
-                const lh = 11;
-                const bh = allLines.length * lh + 4;
+                // Масштабируем текст пропорционально zoom (нормализовано к базовому масштабу 0.4)
+                const textSvgSc = view.scale / 0.4;
+                const lh = 11 * textSvgSc;
+                const bh = allLines.length * lh + 4 * textSvgSc;
                 const lox = b.labelOffsetX ?? 0;
                 const loy = b.labelOffsetY ?? -16;
                 const labelAng = b.labelAngle ?? 0;
@@ -1945,7 +1951,7 @@ export default function TopoCanvas(props: Props) {
                     {/* Выноска если метка сдвинута */}
                     {hasMoved && (
                       <line x1={midX} y1={midY} x2={anchorX} y2={anchorY}
-                        stroke="#94a3b8" strokeWidth="0.8" strokeDasharray="3 2"
+                        stroke="#94a3b8" strokeWidth={0.8 * textSvgSc} strokeDasharray="3 2"
                         pointerEvents="none" />
                     )}
                     {/* Весь блок: номер + данные — единый текст без обводки кружком */}
@@ -1977,10 +1983,10 @@ export default function TopoCanvas(props: Props) {
                       {allLines.map((ln, li) => (
                         <text key={li} textAnchor="middle" dominantBaseline="middle"
                           y={-bh / 2 + lh * (li + 0.6)}
-                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? "7.5" : "9") : "8.5"}
+                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? 7.5 : 9) * textSvgSc : 8.5 * textSvgSc}
                           fontWeight="600"
                           fill={li === 0 && showNum ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f")}
-                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3, strokeLinejoin: "round" }}>
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 * textSvgSc, strokeLinejoin: "round" }}>
                           {ln}
                         </text>
                       ))}
@@ -2018,7 +2024,7 @@ export default function TopoCanvas(props: Props) {
         {pendingSymbolTypeId && hoverScreenPos && (() => {
           const lt = LEGEND_TYPES.find(l => l.id === pendingSymbolTypeId);
           if (!lt) return null;
-          const symScale = Math.min(1, view.scale / 0.4);
+          const symScale = view.scale / 0.4;
           const SZ = Math.round(32 * symScale);
           let gsx = hoverScreenPos.sx, gsy = hoverScreenPos.sy;
           // Если над ветвью — снэп к ветви
@@ -2085,18 +2091,8 @@ export default function TopoCanvas(props: Props) {
 
           const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
           const sc = sym.scale ?? 1;
-          // Контр-масштаб: символы растут вместе со схемой при приближении,
-          // но плавно ограничиваются, чтобы не были гигантскими при сильном зуме.
-          // При view.scale < 0.4 — масштабируются вместе со схемой.
-          // При view.scale ≥ 0.4 — плавно подрастают с насыщением (smooth cap ~3x от базы).
-          let symScale: number;
-          if (view.scale < 0.4) {
-            symScale = view.scale / 0.4;
-          } else {
-            // Плавное насыщение: при view.scale = 0.4 -> 1, при view.scale → ∞ → 3
-            const k = (view.scale - 0.4) / 0.4;
-            symScale = 1 + 2 * (k / (k + 2));
-          }
+          // Символы масштабируются прямо пропорционально view.scale
+          const symScale = view.scale / 0.4;
           // Без округления (иначе при sc < 0.2 символ исчезает); минимум 4 px на экране.
           const SZ = Math.max(4, 32 * sc * symScale);
           // Минимальный размер hitbox: 28px, чтобы в мелком масштабе всегда можно было кликнуть
@@ -2632,32 +2628,31 @@ export default function TopoCanvas(props: Props) {
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
-          // Фиксированный размер в px — не зависит от масштаба схемы
-          const r = isSel ? 4 : 2.5;
+          // Масштабируем радиус узла пропорционально zoom (нормализовано к 0.4)
+          const r = (isSel ? 4 : 2.5) * (view.scale / 0.4);
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          // Иконка ППЗ — фиксированный экранный размер.
-          // Базово 10px; при приближении растёт до 16px.
-          const IS = Math.min(16, Math.max(7, 10 + (view.scale - 0.4) * 8));
+          // Иконка ППЗ — масштабируется пропорционально zoom
+          const IS = Math.min(64, Math.max(3, 10 * (view.scale / 0.4)));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо маршрута горноспасателей */}
               {isRescuePath && (
-                <circle r={r + 7} fill="#16a34a" stroke="#15803d" strokeWidth="1.5" opacity="0.85" />
+                <circle r={r + 7 * (view.scale / 0.4)} fill="#16a34a" stroke="#15803d" strokeWidth={1.5 * (view.scale / 0.4)} opacity="0.85" />
               )}
               {/* Кольцо выделения — только для обычных узлов */}
               {(isSel || isBranchFrom) && !hasFire && (
-                <circle r={r + 4} fill="none" stroke={ringColor} strokeWidth="1.5"
+                <circle r={r + 4 * (view.scale / 0.4)} fill="none" stroke={ringColor} strokeWidth={1.5 * (view.scale / 0.4)}
                   strokeDasharray={isSel ? "3 2" : undefined} />
               )}
               {/* Основной кружок — только для обычных узлов */}
               {!hasFire && (
                 <>
-                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={isSel ? 2 : 1} />
+                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={(isSel ? 2 : 1) * (view.scale / 0.4)} />
                   {node.atmosphereLink && (
-                    <circle r={Math.max(1.5, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth="1.2" strokeDasharray="2 1" />
+                    <circle r={Math.max(1.5 * (view.scale / 0.4), r * 0.55)} fill="none" stroke="#1f2937" strokeWidth={1.2 * (view.scale / 0.4)} strokeDasharray="2 1" />
                   )}
                 </>
               )}
@@ -2771,8 +2766,10 @@ export default function TopoCanvas(props: Props) {
                     if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${uGas.fromBase(node.computedGasConc).toFixed(uGas.decimals)}${uGas.symbol}`);
                   }
                   if (nlines.length === 0) return null;
+                  const nodeFontSize = 9 * (view.scale / 0.4);
+                  const nodeLineH = 11 * (view.scale / 0.4);
                   return nlines.map((ln, li) => (
-                    <text key={li} y={(li + 1) * 11} fontSize="9" fill="#6b7280" opacity={nodeOpacity}>{ln}</text>
+                    <text key={li} y={(li + 1) * nodeLineH} fontSize={nodeFontSize} fill="#6b7280" opacity={nodeOpacity}>{ln}</text>
                   ));
                 })()}
               </g>
