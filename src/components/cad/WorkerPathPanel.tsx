@@ -34,6 +34,8 @@ interface BranchLite {
   hasBulkhead?: boolean;
   bulkheadId?: string;
   isLeakage?: boolean;
+  fireComputedSmokeDens?: number;
+  fireComputedCO?: number;
 }
 
 export type WorkerPickMode = "start" | "target" | `wp:${number}` | null;
@@ -41,6 +43,7 @@ export type WorkerPickMode = "start" | "target" | `wp:${number}` | null;
 interface Props {
   nodes: NodeLite[];
   branches: BranchLite[];
+  fireCalcDone?: boolean;
   pickMode: WorkerPickMode;
   onPickModeChange: (mode: WorkerPickMode) => void;
   onRegisterPickHandler: (fn: (nodeId: string) => void) => void;
@@ -64,12 +67,13 @@ function exportCsv(result: WorkerPathResult) {
   rows.push([`Время обратно, мин`, result.totalTimeBack.toFixed(1)]);
   rows.push([`Общее время, мин`, result.totalTime.toFixed(1)]);
   rows.push([]);
-  rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "V, м/мин", "t туда, мин", "t обратно, мин", "Σt туда, мин"]);
+  rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t туда, мин", "t обратно, мин", "Σt туда, мин"]);
   for (const s of result.segments) {
+    const zl = !s.zone || s.zone === "clean" ? "Чистая" : s.zone === "smoky_low" ? "Задым. 5-10м" : "Задым. <5м";
     rows.push([
       s.branchName, String(s.segmentNumber),
       String(Math.round(s.length)), s.angle.toFixed(0),
-      String(s.speed_mpm), s.time_min.toFixed(2),
+      zl, String(s.speed_mpm), s.time_min.toFixed(2),
       s.time_back_min.toFixed(2), s.cumulTime.toFixed(2),
     ]);
   }
@@ -85,9 +89,16 @@ function exportCsv(result: WorkerPathResult) {
   URL.revokeObjectURL(url);
 }
 
+function zoneLabel(z: "clean" | "smoky_low" | "smoky_high" | undefined) {
+  if (!z || z === "clean") return { label: "Чистая", color: "#14532d", bg: "#f0fdf4" };
+  if (z === "smoky_low") return { label: "Задым. (5-10м)", color: "#92400e", bg: "#fffbeb" };
+  return { label: "Задым. (<5м)", color: "#991b1b", bg: "#fef2f2" };
+}
+
 function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: () => void }) {
   const method = result.method === "rd" ? "РД 15-11-2007" : "ФНиП №467";
   const totalLen = Math.round(result.segments.reduce((a, s) => a + s.length, 0));
+  const hasSmoky = result.segments.some(s => s.zone && s.zone !== "clean");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
@@ -142,6 +153,17 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
             </div>
           )}
 
+          {/* Предупреждение о задымлении */}
+          {hasSmoky && (
+            <div className="border border-orange-200 bg-orange-50 rounded p-2 flex items-start gap-2">
+              <span className="text-orange-500 mt-0.5">⚠</span>
+              <div>
+                <div className="text-[11px] font-semibold text-orange-800">Маршрут проходит через задымлённые выработки</div>
+                <div className="text-[10px] text-orange-700 mt-0.5">Скорость движения снижена согласно нормативам в зонах задымления</div>
+              </div>
+            </div>
+          )}
+
           {/* Таблица сегментов */}
           <div className="border rounded overflow-hidden">
             <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 border-b" style={{ background: "#f8fafc" }}>
@@ -155,6 +177,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">Выработка</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Длина, м</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Угол, °</th>
+                    <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">Зона</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V, м/мин</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t туда, мин</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t обр., мин</th>
@@ -162,25 +185,35 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                   </tr>
                 </thead>
                 <tbody>
-                  {result.segments.map((s: WorkerSegment, i: number) => (
-                    <tr key={s.branchId + i} style={{ background: i % 2 === 0 ? "white" : "#f8fafc" }}>
+                  {result.segments.map((s: WorkerSegment, i: number) => {
+                    const z = zoneLabel(s.zone);
+                    const rowBg = s.zone === "smoky_high" ? "#fff1f2" : s.zone === "smoky_low" ? "#fffbeb" : (i % 2 === 0 ? "white" : "#f8fafc");
+                    return (
+                    <tr key={s.branchId + i} style={{ background: rowBg }}>
                       <td className="px-2 py-0.5 text-gray-400">{s.segmentNumber}</td>
                       <td className="px-2 py-0.5 text-gray-800 max-w-[200px] truncate" title={s.branchName}>
                         {s.branchLabel || s.branchName}
                       </td>
                       <td className="px-2 py-0.5 text-right">{Math.round(s.length)}</td>
                       <td className="px-2 py-0.5 text-right">{s.angle.toFixed(0)}°</td>
-                      <td className="px-2 py-0.5 text-right text-blue-700">{s.speed_mpm}</td>
+                      <td className="px-2 py-0.5">
+                        <span className="px-1 rounded text-[10px] font-medium" style={{ background: z.bg, color: z.color }}>
+                          {z.label}
+                        </span>
+                      </td>
+                      <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "#b45309" : "#1d4ed8" }}>{s.speed_mpm}</td>
                       <td className="px-2 py-0.5 text-right font-medium">{numFmt(s.time_min, 2)}</td>
                       <td className="px-2 py-0.5 text-right">{numFmt(s.time_back_min, 2)}</td>
                       <td className="px-2 py-0.5 text-right font-semibold text-blue-800">{numFmt(s.cumulTime, 2)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr style={{ background: "#e0f2fe", borderTop: "2px solid #bae6fd" }}>
                     <td className="px-2 py-1 font-bold text-blue-900" colSpan={2}>ИТОГО</td>
                     <td className="px-2 py-1 text-right font-bold text-blue-900">{totalLen}</td>
+                    <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1 text-right font-bold text-blue-900">{numFmt(result.totalTimeForward, 2)}</td>
@@ -217,7 +250,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
 }
 
 export default function WorkerPathPanel({
-  nodes, branches,
+  nodes, branches, fireCalcDone,
   pickMode, onPickModeChange, onRegisterPickHandler,
   pickedStartId, pickedTargetId,
   onPickedStartChange, onPickedTargetChange,
@@ -299,6 +332,14 @@ export default function WorkerPathPanel({
         <div className="px-2 py-1 border-b" style={{ background: "#f0f9ff", fontSize: 10, color: "#0369a1", fontWeight: 600 }}>
           Расчёт времени хода горнорабочего
         </div>
+
+        {/* Статус учёта задымления */}
+        {fireCalcDone && (
+          <div className="px-2 py-1 flex items-center gap-1.5 border-b" style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+            <Icon name="Flame" size={11} style={{ color: "#ea580c" }} />
+            <span className="text-[10px] text-orange-700 font-medium">Учёт задымления активен — скорость снижена в задымлённых зонах</span>
+          </div>
+        )}
 
         <div className="px-2 py-2 flex flex-col gap-2">
           {/* Методика расчёта */}

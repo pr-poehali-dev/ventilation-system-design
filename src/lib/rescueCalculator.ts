@@ -497,6 +497,8 @@ export interface WorkerSegment {
   angle: number;           // °
   fromNodeId: string;
   toNodeId: string;
+  zone: "clean" | "smoky_low" | "smoky_high";
+  smokeDensity: number;    // м⁻¹
   speed_mpm: number;       // м/мин
   time_min: number;        // мин (туда)
   time_back_min: number;   // мин (обратно)
@@ -559,8 +561,11 @@ export function calcWorkerPath(
         const b = branches.find(b2 => b2.id === edge.branchId);
         if (!b) continue;
         const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
-        const speed = getWorkerSpeed(method, signedAngle);
-        const t = b.length > 0 ? b.length / speed : 0;
+        const sdens = b.fireComputedSmokeDens ?? 0;
+        const sz = getZone(sdens);
+        const smokeK = sz === "clean" ? 1.0 : sz === "smoky_low" ? 0.75 : 0.55;
+        const speed = Math.round(getWorkerSpeed(method, signedAngle) * smokeK);
+        const t = b.length > 0 ? b.length / Math.max(1, speed) : 0;
         const nd = curD + t;
         if (nd < (dist.get(edge.toId) ?? Infinity)) {
           dist.set(edge.toId, nd);
@@ -601,8 +606,16 @@ export function calcWorkerPath(
     if (!b) continue;
     const isForward = edge.forward;
     const signedAngle = isForward ? (b.angle ?? 0) : -(b.angle ?? 0);
-    const speed = getWorkerSpeed(method, signedAngle);
-    const speedBack = getWorkerSpeed(method, -signedAngle);
+    // Учёт задымления: в задымлённых зонах горнорабочий движется медленнее
+    const smokeDensity = b.fireComputedSmokeDens ?? 0;
+    const zone = getZone(smokeDensity);
+    // Скорость горнорабочего корректируется аналогично горноспасателю (без кислорода)
+    // В чистой зоне — нормативная скорость по методике; в задымлении — снижается
+    const workerBaseSpeed = getWorkerSpeed(method, signedAngle);
+    const smokeKoeff = zone === "clean" ? 1.0 : zone === "smoky_low" ? 0.75 : 0.55;
+    const speed = Math.round(workerBaseSpeed * smokeKoeff);
+    const speedBackBase = getWorkerSpeed(method, -signedAngle);
+    const speedBack = Math.round(speedBackBase * smokeKoeff);
     const time_min = b.length > 0 ? b.length / speed : 0;
     const time_back_min = b.length > 0 ? b.length / speedBack : 0;
     cumTime += time_min;
@@ -621,6 +634,7 @@ export function calcWorkerPath(
       segmentNumber: i + 1,
       length: b.length, angle: signedAngle,
       fromNodeId, toNodeId,
+      zone, smokeDensity,
       speed_mpm: speed, time_min, time_back_min,
       cumulTime: cumTime, cumulTimeBack: 0,
     });
