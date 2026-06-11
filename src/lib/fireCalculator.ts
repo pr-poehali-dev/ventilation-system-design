@@ -98,8 +98,8 @@ export function calcVehicleFire(
     const volume = mass / rhoMax;
     // Шаг 2: радиус эквивалентного шара
     const radius = Math.pow((3 * volume) / (4 * Math.PI), 1 / 3);
-    // Шаг 3: поверхность горения (поверхность шара)
-    const surface = 4 * Math.PI * radius * radius;
+    // Шаг 3: поверхность горения F = r × 4π (по методике ВНИМИ)
+    const surface = radius * 4 * Math.PI;
     // Шаг 4: запас тепловой энергии (МДж)
     const energy = mass * mat.heatValue;
     // Шаг 5: время выгорания (ч)
@@ -121,11 +121,10 @@ export function calcVehicleFire(
   const burnTime_h   = totalEnergy_MJ / (power_MW * 3600);
   const burnTime_min = burnTime_h * 60;
 
-  // Шаг 8: расчётная температура горения — используем ту же формулу что и calcFireTemp,
-  // чтобы результат совпадал с «Температурой продуктов» в панели.
-  // deltaT_C — прирост температуры (не абсолютная), для отображения в таблице.
-  const fireAbsTemp = calcFireTemp(power_MW, airFlow);   // °C абсолютная (20 + ΔT)
-  const deltaT_C = airFlow > 0 ? fireAbsTemp - 20 : 0;  // °C прирост, для таблицы
+  // Шаг 8: расчётная температура горения по методике ВНИМИ
+  // Δt = Q×10⁶ / (L × 1.25 × 1005)
+  const fireAbsTemp = calcFireTemp(power_MW, airFlow);
+  const deltaT_C = airFlow > 0 ? fireAbsTemp - 20 : 500;
 
   return {
     power_MW,
@@ -189,9 +188,10 @@ export function calcFireTemp(
   ambientTemp_C = 20,
 ): number {
   if (airFlow_m3s <= 0) return ambientTemp_C + 500;
+  // Δt = Q×10⁶ / (L × 1.25 × 1005) — методика ВНИМИ
+  // ρ = 1.25 кг/м³ фиксированная, CP = 1005 Дж/(кг·К)
   const Q_W = heatRelease_MW * 1e6;
-  const rho = RHO_AIR_0 * 293 / (273 + ambientTemp_C);
-  const massFlow = rho * airFlow_m3s;
+  const massFlow = 1.25 * airFlow_m3s;
   const deltaT = Q_W / (massFlow * CP_AIR * 1000);
   return Math.min(1200, ambientTemp_C + deltaT);
 }
