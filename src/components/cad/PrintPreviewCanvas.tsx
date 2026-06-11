@@ -43,8 +43,6 @@ interface Props {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
-  // Колбэк для редактирования полей штампа прямо в предпросмотре
-  onHorizonPrintLayerChange?: (horizonId: string, patch: Partial<import("@/lib/topology").HorizonPrintLayer>) => void;
 }
 
 const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function PrintPreviewCanvas({
@@ -64,7 +62,6 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   posOuterColors,
   positions = [],
   showPositions = true,
-  onHorizonPrintLayerChange,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -231,9 +228,6 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           layer={h.printLayer}
           width={width}
           height={height}
-          onChange={onHorizonPrintLayerChange
-            ? (patch) => onHorizonPrintLayerChange(h.id, patch)
-            : undefined}
         />
       ) : null)}
     </div>
