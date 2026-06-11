@@ -360,17 +360,17 @@ export default function CadPage() {
     };
     if (typeof window === "undefined") return ensureOverview(DEFAULT_HORIZONS);
     try {
-      const raw = window.localStorage.getItem("vent-cad/horizons-v3");
-      if (!raw) return ensureOverview(DEFAULT_HORIZONS);
+      const raw = window.localStorage.getItem("vent-cad/horizons-v4");
+      if (!raw) return ensureOverview([]);
       const parsed = JSON.parse(raw) as Horizon[];
       if (Array.isArray(parsed) && parsed.length) return ensureOverview(parsed);
     } catch { /* игнорируем повреждённые данные */ }
-    return ensureOverview(DEFAULT_HORIZONS);
+    return ensureOverview([]);
   });
   // Сохраняем горизонты при каждом изменении.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try { window.localStorage.setItem("vent-cad/horizons-v3", JSON.stringify(horizons)); }
+    try { window.localStorage.setItem("vent-cad/horizons-v4", JSON.stringify(horizons)); }
     catch { /* квота переполнена — пропускаем */ }
   }, [horizons]);
   const [activeHorizonId, setActiveHorizonId] = useState<string>("");
@@ -1604,8 +1604,7 @@ export default function CadPage() {
       printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
         orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
         period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
-        showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } } as Horizon,
-      ...DEFAULT_HORIZONS]);
+        showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } } as Horizon]);
     setActiveHorizonId("");
     setActiveRibbon("home");
   };
