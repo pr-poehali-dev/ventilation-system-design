@@ -1368,10 +1368,21 @@ export default function TopoCanvas(props: Props) {
           return (
             <foreignObject x={apX} y={apY} width={apW} height={apH}
               style={{ pointerEvents: onPrintLayerChange ? "auto" : "none", overflow: "visible" }}>
-              <div style={{
-                fontFamily: "Arial, sans-serif", fontSize: apFs, color: "#111",
-                textAlign: "center", lineHeight: 1.4, padding: `${apFs * 0.2}px ${apFs * 0.5}px`,
-              }}>
+              <div
+                style={{
+                  fontFamily: "Arial, sans-serif", fontSize: apFs, color: "#111",
+                  textAlign: "center", lineHeight: 1.4, padding: `${apFs * 0.2}px ${apFs * 0.5}px`,
+                  background: "white",
+                }}
+                onMouseDown={e => e.stopPropagation()}
+                onMouseMove={e => e.stopPropagation()}
+                onMouseUp={e => e.stopPropagation()}
+                onWheel={e => e.stopPropagation()}
+                onKeyDown={e => e.stopPropagation()}
+                onKeyUp={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+                onDoubleClick={e => e.stopPropagation()}
+              >
                 <div style={{ fontWeight: "bold", fontSize: apFs * 1.15, marginBottom: apFs * 0.2 }}>УТВЕРЖДАЮ</div>
                 {/* Должность — редактируемая */}
                 <div

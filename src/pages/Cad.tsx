@@ -1941,11 +1941,12 @@ export default function CadPage() {
   // F9 — запустить расчёт воздухораспределения. Esc — снять выделение.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // isEditing: true только если активный элемент — поле ввода
+      // isEditing: true если активный элемент — поле ввода или contentEditable
       const active = document.activeElement as HTMLElement | null;
       const tag = active?.tagName ?? "";
-      const isEditing = (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
-        && active !== document.body;
+      const isEditing = ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
+        && active !== document.body)
+        || (active?.isContentEditable ?? false);
 
       if (e.ctrlKey && (e.key === "z" || e.key === "я" || e.key === "Я")) {
         e.preventDefault();
