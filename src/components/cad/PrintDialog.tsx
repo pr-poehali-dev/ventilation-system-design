@@ -612,40 +612,19 @@ body{background:white;font-family:Arial,sans-serif}
     if (!tile) return;
     const pageNum = tileIdx + 1;
     const png = await renderTileToCanvas(tile.col, tile.row, 300);
-    const stampHtml = showStamp ? `
-      <table class="stamp" cellpadding="0" cellspacing="0">
-        <tr><td colspan="5"></td>
-          <td rowspan="6" class="col-name">${drawingTitle}</td>
-          <td class="col-stage">Стадия</td><td class="col-sheet">Лист</td><td class="col-total">Листов</td></tr>
-        <tr><td>Разраб.</td><td>${engineer}</td><td></td><td></td><td>${printDate}</td>
-          <td rowspan="5" class="org-cell">${organization}</td>
-          <td>Р</td><td>${pageNum}</td><td>${tiles.list.length}</td></tr>
-        <tr><td>Пров.</td><td>${approvedBy}</td><td></td><td></td><td>${printDate}</td>
-          <td rowspan="4" colspan="3" class="num-cell">${drawingNumber}</td></tr>
-        <tr><td>Н.контр.</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td>Утв.</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td colspan="5"></td></tr>
-      </table>` : "";
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>${drawingTitle} — лист ${pageNum}</title>
+<title>${projectName} — лист ${pageNum}</title>
 <style>
 @page{size:${paper.w}mm ${paper.h}mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:white;font-family:Arial,sans-serif}
 .page{width:${paper.w}mm;height:${paper.h}mm;position:relative;overflow:hidden;background:white}
 .page-img{position:absolute;top:0;left:0;width:${paper.w}mm;height:${paper.h}mm;display:block}
-.stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
-.stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
-.col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
-.col-stage,.col-sheet,.col-total{width:12mm;text-align:center}
-.num-cell{font-size:10pt;font-weight:bold;text-align:center}
-.org-cell{font-size:9pt;text-align:center}
-.page-num{position:absolute;bottom:${marginBottom + (showStamp ? 58 : 2)}mm;right:${marginRight + 2}mm;font-size:9pt;color:#555}
+.page-num{position:absolute;bottom:${marginBottom + 2}mm;right:${marginRight + 2}mm;font-size:9pt;color:#555}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
 <div class="page">
   <img src="${png}" class="page-img" />
-  ${stampHtml}
   ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
 </div>
 <script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
@@ -653,9 +632,8 @@ body{background:white;font-family:Arial,sans-serif}
     const win = window.open("", "_blank", "width=1400,height=900");
     if (!win) { alert("Разрешите всплывающие окна"); return; }
     win.document.open(); win.document.write(html); win.document.close();
-  }, [tiles, paper, marginBottom, marginRight,
-      showStamp, showPageNumbers, drawingTitle, drawingNumber,
-      engineer, approvedBy, organization, printDate, renderTileToCanvas, closeCtxMenu]);
+  }, [tiles, paper, marginBottom, marginRight, projectName,
+      showPageNumbers, renderTileToCanvas, closeCtxMenu]);
 
   // ─── Экспорт ─────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
@@ -695,23 +673,10 @@ body{background:white;font-family:Arial,sans-serif}
           if (!pngSrc) continue;
           if (i > 0) pdf.addPage([paper.w, paper.h], isLandscape ? "landscape" : "portrait");
           pdf.addImage(pngSrc, "PNG", 0, 0, paper.w, paper.h, undefined, "MEDIUM");
-          // Штамп поверх изображения (текст)
-          if (showStamp && drawingTitle) {
-            const sy = paper.h - marginBottom - 55;
-            pdf.setFontSize(8); pdf.setTextColor(0); pdf.setDrawColor(0); pdf.setLineWidth(0.2);
-            pdf.rect(marginLeft, sy, 185, 55);
-            pdf.setFontSize(11);
-            pdf.text(drawingTitle, marginLeft + 120, sy + 28, { align: "center", maxWidth: 63 });
-            pdf.setFontSize(7);
-            pdf.text(`Разраб.: ${engineer || ""}`, marginLeft + 2, sy + 10);
-            pdf.text(`Пров.: ${approvedBy || ""}`, marginLeft + 2, sy + 18);
-            pdf.text(`Орг.: ${organization || ""}`, marginLeft + 2, sy + 26);
-            pdf.text(printDate || new Date().toLocaleDateString("ru"), marginLeft + 2, sy + 34);
-          }
           if (showPageNumbers) {
             pdf.setFontSize(8); pdf.setTextColor(80);
             pdf.text(`${i + 1} / ${tilesList.length}`, paper.w - marginRight - 2,
-              paper.h - marginBottom - (showStamp ? 58 : 2), { align: "right" });
+              paper.h - marginBottom - 2, { align: "right" });
           }
         }
         pdf.save(`${projectName}.pdf`);
