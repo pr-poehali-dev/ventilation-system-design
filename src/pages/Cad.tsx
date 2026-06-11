@@ -193,8 +193,8 @@ export default function CadPage() {
   const [mineTypes, setMineTypes] = useState<BranchType[]>([]);
 
   // ─── Топология ─────────────────────────────────────────────────────────
-  const [nodes, setNodes] = useState<TopoNode[]>(DEMO_NODES);
-  const [branchesRaw, setBranches] = useState<TopoBranch[]>(DEMO_BRANCHES);
+  const [nodes, setNodes] = useState<TopoNode[]>([]);
+  const [branchesRaw, setBranches] = useState<TopoBranch[]>([]);
 
   // ─── История изменений (undo) ───────────────────────────────────────────
   const historyRef = useRef<Array<{ nodes: TopoNode[]; branches: TopoBranch[]; symbols: SchemaSymbol[] }>>([]);
@@ -1328,6 +1328,7 @@ export default function CadPage() {
     zScale,
     view: savedViewState ?? undefined,
     positions,
+    scaleLimitsEnabled,
   });
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
@@ -1522,6 +1523,7 @@ export default function CadPage() {
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
     if (data.zScale !== undefined) setZScale(data.zScale as number);
+    if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
     setProjectFileName((data.name as string) ?? fileName);
