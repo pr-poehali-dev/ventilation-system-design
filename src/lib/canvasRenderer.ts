@@ -622,7 +622,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // Кольцо выделения — только для обычных узлов (fire-узлы рисуют своё внутри иконок)
       if (isSel && !hasFire) {
         ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + baseNodeR * 0.5, 0, Math.PI * 2);
-        ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5 * objSF;
+        ctx.strokeStyle = ringColor; ctx.lineWidth = Math.min(2, Math.max(0.5, baseNodeR * 0.2));
         ctx.setLineDash([3, 2]); ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -635,7 +635,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2 * objSF) : r, 0, Math.PI * 2);
       ctx.fillStyle = nodeColor;
       ctx.strokeStyle = isSel ? ringColor : (hasFire ? nodeColor : "#1f2937");
-      ctx.lineWidth = (isSel ? 2 : 1) * objSF;
+      // Обводка = ~20% от радиуса, но не больше 2px и не меньше 0.5px
+      ctx.lineWidth = Math.min(2, Math.max(0.5, baseNodeR * 0.25));
       ctx.fill(); ctx.stroke();
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────

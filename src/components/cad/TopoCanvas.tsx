@@ -2645,15 +2645,15 @@ export default function TopoCanvas(props: Props) {
               )}
               {/* Кольцо выделения — только для обычных узлов */}
               {(isSel || isBranchFrom) && !hasFire && (
-                <circle r={r + baseNodeR * 0.5} fill="none" stroke={ringColor} strokeWidth={1.5 * nodeSF}
+                <circle r={r + baseNodeR * 0.5} fill="none" stroke={ringColor} strokeWidth={Math.min(2, Math.max(0.5, baseNodeR * 0.2))}
                   strokeDasharray={isSel ? "3 2" : undefined} />
               )}
               {/* Основной кружок — только для обычных узлов */}
               {!hasFire && (
                 <>
-                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={(isSel ? 2 : 1) * nodeSF} />
+                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={Math.min(2, Math.max(0.5, baseNodeR * 0.25))} />
                   {node.atmosphereLink && (
-                    <circle r={Math.max(1.5 * nodeSF, r * 0.5)} fill="none" stroke="#1f2937" strokeWidth={Math.max(0.8, 1.2 * nodeSF)} strokeDasharray="2 1" />
+                    <circle r={r * 0.5} fill="none" stroke="#1f2937" strokeWidth={Math.min(1.5, Math.max(0.5, baseNodeR * 0.2))} strokeDasharray="2 1" />
                   )}
                 </>
               )}
