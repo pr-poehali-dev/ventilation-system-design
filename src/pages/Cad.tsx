@@ -5052,6 +5052,48 @@ export default function CadPage() {
                 )}
 
                 {selectedBranch && (
+                  <FrameGroup title="Размер индикаторов">
+                    <div className="text-[10px] text-gray-500 px-1 pb-1">
+                      Множитель размера текста на схеме (1.0 = авто)
+                    </div>
+                    <div className="flex items-center gap-2 px-1">
+                      <input
+                        type="range" min={0.3} max={4} step={0.1}
+                        value={selectedBranch.labelSize ?? 1}
+                        onChange={(e) => updateBranch(selectedBranch.id, { labelSize: Number(e.target.value) })}
+                        className="flex-1"
+                        style={{ accentColor: "#2563eb" }}
+                      />
+                      <input
+                        type="number" min={0.3} max={4} step={0.1}
+                        value={selectedBranch.labelSize ?? 1}
+                        onChange={(e) => updateBranch(selectedBranch.id, { labelSize: Math.max(0.3, Math.min(4, Number(e.target.value) || 1)) })}
+                        className="text-[11px] text-right px-1"
+                        style={{ width: 46, border: "1px solid #c8c8c8", height: 20, outline: "none", background: "white" }}
+                      />
+                      <button
+                        onClick={() => updateBranch(selectedBranch.id, { labelSize: undefined })}
+                        className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 text-gray-500"
+                        title="Сбросить к авто">↺</button>
+                    </div>
+                    <div className="flex gap-1 px-1 pt-1">
+                      {[0.5, 0.75, 1, 1.5, 2].map(s => (
+                        <button key={s}
+                          onClick={() => updateBranch(selectedBranch.id, { labelSize: s === 1 ? undefined : s })}
+                          className="flex-1 text-[10px] py-0.5 border rounded hover:bg-blue-50 hover:border-blue-400"
+                          style={{
+                            borderColor: (selectedBranch.labelSize ?? 1) === s ? "#2563eb" : "#d1d5db",
+                            color: (selectedBranch.labelSize ?? 1) === s ? "#2563eb" : "#374151",
+                            background: (selectedBranch.labelSize ?? 1) === s ? "#eff6ff" : "white",
+                          }}>
+                          ×{s}
+                        </button>
+                      ))}
+                    </div>
+                  </FrameGroup>
+                )}
+
+                {selectedBranch && (
                   <FrameGroup title="Примечание">
                     <textarea
                       value={selectedBranch.comment ?? ""}

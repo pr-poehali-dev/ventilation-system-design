@@ -1936,8 +1936,11 @@ export default function TopoCanvas(props: Props) {
                 const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
                 if (allLines.length === 0) return null;
 
-                const lh = 11 * objSF;
-                const bh = allLines.length * lh + 4 * objSF;
+                // Масштаб текста пропорционален ширине ветви (как узлы), умноженный на labelSize
+                const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
+                const textSc = Math.max(0.3, branchPxLabel * 0.55) * (b.labelSize ?? 1);
+                const lh = 11 * textSc;
+                const bh = allLines.length * lh + 4 * textSc;
                 const lox = b.labelOffsetX ?? 0;
                 const loy = b.labelOffsetY ?? -16;
                 const labelAng = b.labelAngle ?? 0;
@@ -1982,10 +1985,10 @@ export default function TopoCanvas(props: Props) {
                       {allLines.map((ln, li) => (
                         <text key={li} textAnchor="middle" dominantBaseline="middle"
                           y={-bh / 2 + lh * (li + 0.6)}
-                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? 7.5 : 9) * objSF : 8.5 * objSF}
+                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? 7.5 : 9) * textSc : 8.5 * textSc}
                           fontWeight="600"
                           fill={li === 0 && showNum ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f")}
-                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 * objSF, strokeLinejoin: "round" }}>
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 * textSc, strokeLinejoin: "round" }}>
                           {ln}
                         </text>
                       ))}
