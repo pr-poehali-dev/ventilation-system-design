@@ -1522,7 +1522,19 @@ export default function CadPage() {
       makeBranch(b.id, b.fromId, b.toId, b)
     );
     setBranches(mergedBranches);
-    if (data.horizons) setHorizons(data.horizons as typeof horizons);
+    if (data.horizons) {
+      const loaded = data.horizons as Horizon[];
+      // Гарантируем наличие "Общего вида" при открытии любого проекта
+      const withOverview = loaded.some(h => h.id === OVERVIEW_HORIZON_ID)
+        ? loaded
+        : [{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+            printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
+              orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
+              period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
+              showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } } as Horizon,
+          ...loaded];
+      setHorizons(withOverview);
+    }
     const loadedSymbols = (data.schemaSymbols as SchemaSymbol[]) ?? [];
     // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)
     const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
@@ -1588,7 +1600,12 @@ export default function CadPage() {
     setBranches([]);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
-    setHorizons(DEFAULT_HORIZONS);
+    setHorizons([{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+      printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
+        orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
+        period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
+        showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } } as Horizon,
+      ...DEFAULT_HORIZONS]);
     setActiveHorizonId("");
     setActiveRibbon("home");
   };
@@ -6679,8 +6696,9 @@ export default function CadPage() {
               // Проекция узла с zScale
               const projNode = (n: { x: number; y: number; z: number }) =>
                 project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, projOpts);
-              // Масштабируем позиции ПЛА пропорционально zoom, нормированному к базовому масштабу 0.4
-              const posSF = scaleLimitsEnabled ? 1 : Math.max(0.15, vs.scale / 0.4);
+              // По ГОСТ позиции ПЛА имеют фиксированный размер на чертеже (13 мм).
+              // Ограничиваем масштаб: min 0.3 (мелкий план) / max 2.0 (крупный план)
+              const posSF = scaleLimitsEnabled ? 1 : Math.min(2.0, Math.max(0.3, vs.scale / 0.4));
               const PX_PER_MM = 3.78 * posSF;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
