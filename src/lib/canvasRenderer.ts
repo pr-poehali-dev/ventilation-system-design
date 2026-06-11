@@ -539,9 +539,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.translate(anchorX, anchorY);
       if (labelAng !== 0) ctx.rotate(labelAng);
 
-      // Масштаб текста: пропорционален ширине ветви (как узлы), умноженный на labelSize ветви
+      // Масштаб текста: пропорционален ширине ветви, с лимитом [0.3..2.5]
       const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
-      const textSc = Math.max(0.3, branchPxLabel * 0.55) * (b.labelSize ?? 1);
+      const textSc = Math.min(2.5, Math.max(0.3, branchPxLabel * 0.28)) * (b.labelSize ?? 1);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;
       ctx.textAlign = "center";

@@ -1936,9 +1936,9 @@ export default function TopoCanvas(props: Props) {
                 const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
                 if (allLines.length === 0) return null;
 
-                // Масштаб текста пропорционален ширине ветви (как узлы), умноженный на labelSize
+                // Масштаб текста пропорционален ширине ветви, с лимитом [0.3..2.5]
                 const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
-                const textSc = Math.max(0.3, branchPxLabel * 0.55) * (b.labelSize ?? 1);
+                const textSc = Math.min(2.5, Math.max(0.3, branchPxLabel * 0.28)) * (b.labelSize ?? 1);
                 const lh = 11 * textSc;
                 const bh = allLines.length * lh + 4 * textSc;
                 const lox = b.labelOffsetX ?? 0;
