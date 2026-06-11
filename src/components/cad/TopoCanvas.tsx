@@ -1150,14 +1150,27 @@ export default function TopoCanvas(props: Props) {
     return `hsl(${hue}, 70%, 50%)`;
   };
 
-  // Сортировка ветвей по средней глубине (painter's алгоритм)
-  // O(n log n) вместо O(n²) — используем Map для lookup
+  // Карта порядка горизонтов: чем меньше индекс в списке — тем выше z-order (рисуется поверх)
+  const horizonOrderMap = useMemo(() => {
+    const m = new Map<string, number>();
+    (horizons ?? []).forEach((h, i) => m.set(h.id, i));
+    return m;
+  }, [horizons]);
+
+  // Сортировка ветвей: сначала по глубине (3D), затем по иерархии горизонтов (как в Фотошопе)
+  // Горизонт с меньшим индексом в списке рисуется ПОВЕРХ остальных
   const branchesSorted = useMemo(() => [...visibleBranches].map((b) => {
     const from = projNodesMap.get(b.fromId);
     const to = projNodesMap.get(b.toId);
     const depth = from && to ? (from.depth + to.depth) / 2 : 0;
-    return { branch: b, depth };
-  }).sort((a, b) => a.depth - b.depth), [visibleBranches, projNodesMap]);
+    // Порядок горизонта: чем меньше индекс — тем поверх (инвертируем для sort)
+    const hOrder = b.horizonId ? (horizonOrderMap.get(b.horizonId) ?? 9999) : 9999;
+    return { branch: b, depth, hOrder };
+  }).sort((a, b) => {
+    // Сначала по глубине 3D, затем по иерархии горизонтов (больший hOrder = ниже)
+    if (a.depth !== b.depth) return a.depth - b.depth;
+    return b.hOrder - a.hOrder; // меньший индекс горизонта рисуется поверх
+  }), [visibleBranches, projNodesMap, horizonOrderMap]);
 
   const nodesSorted = useMemo(
     () => [...projNodes].sort((a, b) => a.depth - b.depth),

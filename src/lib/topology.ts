@@ -297,6 +297,9 @@ export const DEFAULT_HORIZONS: Horizon[] = [
   { id: "H_-20",     name: "Гор. −20 м",   z:  -20, color: "#3b82f6", visible: true },
 ];
 
+/** ID специального горизонта "Общий вид" — bounds авто-подстраиваются под всю схему */
+export const OVERVIEW_HORIZON_ID = "H_OVERVIEW";
+
 export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
   return {
     id,

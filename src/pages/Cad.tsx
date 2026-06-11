@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
-  DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, recalcAll, makeNode, makeBranch,
+  DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
@@ -349,14 +349,23 @@ export default function CadPage() {
   // Стартовое состояние горизонтов: пытаемся восстановить из localStorage
   // (там лежат подложки PNG/JPG как dataURL — не теряются при обновлении страницы).
   const [horizons, setHorizons] = useState<Horizon[]>(() => {
-    if (typeof window === "undefined") return DEFAULT_HORIZONS;
+    const ensureOverview = (list: Horizon[]): Horizon[] => {
+      if (list.some(h => h.id === OVERVIEW_HORIZON_ID)) return list;
+      return [{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+        printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
+          orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
+          period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
+          showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } },
+        ...list];
+    };
+    if (typeof window === "undefined") return ensureOverview(DEFAULT_HORIZONS);
     try {
       const raw = window.localStorage.getItem("vent-cad/horizons-v3");
-      if (!raw) return DEFAULT_HORIZONS;
+      if (!raw) return ensureOverview(DEFAULT_HORIZONS);
       const parsed = JSON.parse(raw) as Horizon[];
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed) && parsed.length) return ensureOverview(parsed);
     } catch { /* игнорируем повреждённые данные */ }
-    return DEFAULT_HORIZONS;
+    return ensureOverview(DEFAULT_HORIZONS);
   });
   // Сохраняем горизонты при каждом изменении.
   useEffect(() => {
@@ -377,11 +386,41 @@ export default function CadPage() {
     setHorizons((p) => [...p, { id, name: `Горизонт ${p.length + 1}`, z: 0, color: "#64748b", visible: true }]);
   };
   const removeHorizon = (id: string) => {
+    if (id === OVERVIEW_HORIZON_ID) return; // "Общий вид" нельзя удалить
     setHorizons((p) => p.filter((h) => h.id !== id));
     setBranches((p) => p.map((b) => b.horizonId === id ? { ...b, horizonId: "" } : b));
     if (activeHorizonId === id) setActiveHorizonId("");
     if (editingHorizonImageId === id) setEditingHorizonImageId(null);
   };
+
+  // Drag-and-drop для изменения порядка горизонтов
+  const [horizonDragIdx, setHorizonDragIdx] = useState<number | null>(null);
+  const [horizonDragOverIdx, setHorizonDragOverIdx] = useState<number | null>(null);
+  const handleHorizonDragStart = (idx: number) => setHorizonDragIdx(idx);
+  const handleHorizonDragOver = (e: React.DragEvent, idx: number) => { e.preventDefault(); setHorizonDragOverIdx(idx); };
+  const handleHorizonDrop = (idx: number) => {
+    if (horizonDragIdx === null || horizonDragIdx === idx) { setHorizonDragIdx(null); setHorizonDragOverIdx(null); return; }
+    setHorizons(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(horizonDragIdx, 1);
+      next.splice(idx, 0, moved);
+      return next;
+    });
+    setHorizonDragIdx(null); setHorizonDragOverIdx(null);
+  };
+
+  // Авто-обновление bounds "Общего вида" при изменении узлов схемы
+  useEffect(() => {
+    if (!nodes.length) return;
+    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+    const pad = 200; // отступ в метрах вокруг схемы
+    const b = { x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad };
+    setHorizons(prev => prev.map(h => h.id !== OVERVIEW_HORIZON_ID ? h : {
+      ...h,
+      printLayer: h.printLayer ? { ...h.printLayer, bounds: b } : h.printLayer,
+    }));
+  }, [nodes]);
+
   const setHorizonImageBounds = (
     id: string, bounds: { x1: number; y1: number; x2: number; y2: number },
   ) => {
@@ -5157,22 +5196,37 @@ export default function CadPage() {
                     </button>
                   </div>
                   <div className="space-y-1">
-                    {horizons.map((h) => {
+                    {horizons.map((h, hIdx) => {
                       const usedCount = branches.filter((b) => b.horizonId === h.id).length;
                       const isActive = activeHorizonId === h.id;
+                      const isOverview = h.id === OVERVIEW_HORIZON_ID;
+                      const isDragOver = horizonDragOverIdx === hIdx;
                       return (
-                        <div key={h.id} className="border rounded"
+                        <div key={h.id}
+                          draggable
+                          onDragStart={() => handleHorizonDragStart(hIdx)}
+                          onDragOver={(e) => handleHorizonDragOver(e, hIdx)}
+                          onDrop={() => handleHorizonDrop(hIdx)}
+                          onDragEnd={() => { setHorizonDragIdx(null); setHorizonDragOverIdx(null); }}
+                          className="border rounded"
                           style={{
                             background: isActive ? "#eff6ff" : "white",
-                            borderColor: isActive ? "#3b82f6" : "#d1d5db",
+                            borderColor: isDragOver ? "#2563eb" : isActive ? "#3b82f6" : "#d1d5db",
+                            opacity: horizonDragIdx === hIdx ? 0.5 : 1,
+                            outline: isDragOver ? "2px solid #93c5fd" : undefined,
                           }}>
                           {/* ── Строка горизонта ── */}
                           <div className="flex items-center gap-1 px-1 py-1">
-                            <input type="radio" name="active-horizon"
+                            {/* Drag-handle */}
+                            <span title="Перетащить для изменения порядка"
+                              className="cursor-grab text-gray-300 hover:text-gray-500 flex-shrink-0 select-none"
+                              style={{ fontSize: 12, lineHeight: 1 }}>⠿</span>
+                            {!isOverview && <input type="radio" name="active-horizon"
                               checked={isActive}
                               onChange={() => setActiveHorizonId(h.id)}
                               title="Сделать активным для построения"
-                              className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
+                              className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />}
+                            {isOverview && <span className="w-[13px] flex-shrink-0" />}
                             <input type="checkbox" checked={h.visible}
                               onChange={(e) => updateHorizon(h.id, { visible: e.target.checked })}
                               title="Видимость на схеме" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
@@ -5184,19 +5238,23 @@ export default function CadPage() {
                               onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
                               className="cad-input flex-1 min-w-0"
                               placeholder="Название" />
-                            <input type="number" value={h.z}
+                            {!isOverview && <input type="number" value={h.z}
                               onChange={(e) => updateHorizon(h.id, { z: Number(e.target.value) })}
                               className="cad-input w-16 text-right"
-                              title="Высотная отметка, м" />
-                            <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>
+                              title="Высотная отметка, м" />}
+                            {!isOverview && <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>}
+                            {isOverview && <span className="text-[10px] text-purple-500 flex-shrink-0 px-1" title="Общий вид — авто-bounds по всей схеме">авто</span>}
                             <span className="text-[10px] text-gray-400 w-7 text-center" title="Ветвей на горизонте">
                               {usedCount}
                             </span>
-                            <button onClick={() => removeHorizon(h.id)}
-                              className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
-                              title="Удалить горизонт">
-                              <Icon name="Trash2" size={11} className="text-gray-600" />
-                            </button>
+                            {!isOverview && (
+                              <button onClick={() => removeHorizon(h.id)}
+                                className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
+                                title="Удалить горизонт">
+                                <Icon name="Trash2" size={11} className="text-gray-600" />
+                              </button>
+                            )}
+                            {isOverview && <span className="w-5 flex-shrink-0" />}
                           </div>
                           {/* ── Кнопка раскрытия настроек ── */}
                           <button
