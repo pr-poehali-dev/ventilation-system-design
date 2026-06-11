@@ -117,6 +117,11 @@ export default function SchemaSymbolsOverlay({
           const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
           const isFirePP  = tid === "fire_door_pp";
           const isProem   = tid.includes("proem_");
+          // Глухая перемычка — нет материала, двери, открытия, окна, решётки, воды, паруса, барьера
+          const isBlind   = !isDestroyed && !isDoor && !isAuto && !isOpen && !isWindow && !isLattice
+                            && !isWater && !isSail && !isBarrier && !isFirePP && !isProem
+                            && !tid.includes("concrete") && !tid.includes("wood") && !tid.includes("brick")
+                            && !tid.includes("metal") && tid !== "fire_door";
 
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
@@ -159,7 +164,9 @@ export default function SchemaSymbolsOverlay({
                 </>
               ) : (
                 <>
-                  <rect x={-pw/2} y={-ph/2} width={pw} height={ph} fill={fill} stroke={stroke} strokeWidth={sw2} />
+                  <rect x={-pw/2} y={-ph/2} width={pw} height={ph} fill={fill}
+                    stroke={isBlind ? "#000000" : stroke}
+                    strokeWidth={isBlind ? Math.max(0.8, pw * 0.28) : sw2} />
                   {(isWindow || isProem) && (
                     <rect x={-pw*0.25} y={-ph*0.2} width={pw*0.5} height={ph*0.4}
                       fill="white" stroke={stroke} strokeWidth={1} />

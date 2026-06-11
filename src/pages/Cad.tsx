@@ -6777,10 +6777,10 @@ export default function CadPage() {
 
                     return (
                       <g key={`leader-${pos.id}`}>
-                        {/* Пунктирная линия */}
+                        {/* Пунктирная линия — по ГОСТ чёрного цвета */}
                         <line
                           x1={x1} y1={y1} x2={endSx} y2={endSy}
-                          stroke={pos.color} strokeWidth={lw}
+                          stroke="#000000" strokeWidth={lw}
                           strokeDasharray="6,3" strokeLinecap="round"
                           opacity={isDrawing ? 0.6 : 0.9}
                           style={{ pointerEvents: "none" }}
@@ -6788,7 +6788,7 @@ export default function CadPage() {
                         {/* Точка привязки к ветви */}
                         {isBranchAttached && !isDrawing && (
                           <circle cx={endSx} cy={endSy} r={4}
-                            fill={pos.color} stroke="#fff" strokeWidth={1.5}
+                            fill="#000000" stroke="#fff" strokeWidth={1.5}
                             style={{ pointerEvents: "none" }} />
                         )}
                         {/* Ручка для перемещения (только когда не привязана к ветви) */}
