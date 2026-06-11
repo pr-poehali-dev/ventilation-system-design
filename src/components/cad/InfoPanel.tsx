@@ -182,7 +182,7 @@ export default function InfoPanel({
         )}
 
         {/* ─── Позиции ПЛА ─── */}
-        {positions.length > 0 && onPositionVisibilityChange && (
+        {onPositionVisibilityChange && (
           <>
             <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
               style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
@@ -278,7 +278,7 @@ export default function InfoPanel({
         )}
 
         {/* ─── Видимость узлов (как в Аэросети) ─── */}
-        {nodes.length > 0 && onNodeVisibilityChange && (
+        {onNodeVisibilityChange && (
           <>
             <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
               style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>

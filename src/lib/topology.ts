@@ -291,11 +291,8 @@ export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {
   };
 }
 
-// Дефолтный набор горизонтов для шахты (поверхность + рабочий горизонт)
-export const DEFAULT_HORIZONS: Horizon[] = [
-  { id: "H_SURFACE", name: "Поверхность",  z:    0, color: "#22c55e", visible: true },
-  { id: "H_-20",     name: "Гор. −20 м",   z:  -20, color: "#3b82f6", visible: true },
-];
+// Дефолтный набор горизонтов — пустой, пользователь добавляет сам
+export const DEFAULT_HORIZONS: Horizon[] = [];
 
 /** ID специального горизонта "Общий вид" — bounds авто-подстраиваются под всю схему */
 export const OVERVIEW_HORIZON_ID = "H_OVERVIEW";
