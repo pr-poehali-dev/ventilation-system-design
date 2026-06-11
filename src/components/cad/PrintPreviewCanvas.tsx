@@ -198,17 +198,22 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       {showPositions && positions.length > 0 && (
         <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
           {positions.map(pos => {
-            const sx = pos.x != null ? (() => {
+            if (pos.visible === false) return null;
+            const projected = pos.x != null ? (() => {
               const p = project3D({ x: pos.x, y: pos.y, z: (pos.z ?? 0) * zScale }, projOpts);
               return { sx: p.sx, sy: p.sy };
             })() : null;
-            if (!sx) return null;
-            const r = 18;
+            if (!projected) return null;
+            // По ГОСТ диаметр позиции ПЛА = 13 мм.
+            // Ограничиваем масштаб чтобы кружки не перекрывали схему.
+            const posSF = Math.min(1.0, Math.max(0.25, activeView.scale / 0.5));
+            const r = (pos.diameter ?? 13) * 3.78 * posSF / 2;
+            const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
             return (
-              <g key={pos.id} transform={`translate(${sx.sx},${sx.sy})`}>
-                <circle r={r} fill={pos.color} stroke={pos.borderColor ?? "#1f2937"} strokeWidth={2} opacity={0.92} />
-                <text textAnchor="middle" dominantBaseline="central" fontSize={13} fontWeight={700}
-                  fill={pos.textColor ?? "#000000"} style={{ userSelect: "none" }}>
+              <g key={pos.id} transform={`translate(${projected.sx},${projected.sy})`}>
+                <circle r={r} fill={pos.color} stroke={pos.borderColor ?? "#000000"} strokeWidth={2} />
+                <text textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={700}
+                  fill="#000000" style={{ userSelect: "none" }}>
                   {pos.number}
                 </text>
               </g>

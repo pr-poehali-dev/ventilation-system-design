@@ -6686,9 +6686,9 @@ export default function CadPage() {
               // Проекция узла с zScale
               const projNode = (n: { x: number; y: number; z: number }) =>
                 project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, projOpts);
-              // По ГОСТ позиции ПЛА имеют фиксированный размер на чертеже (13 мм).
-              // Ограничиваем масштаб: min 0.3 (мелкий план) / max 2.0 (крупный план)
-              const posSF = scaleLimitsEnabled ? 1 : Math.min(2.0, Math.max(0.3, vs.scale / 0.4));
+              // По ГОСТ позиции ПЛА: диаметр 13 мм на чертеже.
+              // base zoom 0.5 → при zoom ×0.5 posSF=1.0 (номинал). max=1.0 чтобы не перекрывать схему.
+              const posSF = scaleLimitsEnabled ? 1 : Math.min(1.0, Math.max(0.25, vs.scale / 0.5));
               const PX_PER_MM = 3.78 * posSF;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
