@@ -6638,7 +6638,7 @@ export default function CadPage() {
 
               return (
                 <svg
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", cursor: leaderDrawMode ? "crosshair" : "inherit" }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "hidden", pointerEvents: "none", cursor: leaderDrawMode ? "crosshair" : "inherit" }}
                 >
                   {/* ── Подсветка ветви под snap (режим рисования) ── */}
                   {leaderDrawMode && leaderSnapBranch && (() => {
