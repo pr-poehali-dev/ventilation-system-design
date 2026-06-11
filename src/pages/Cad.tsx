@@ -861,10 +861,7 @@ export default function CadPage() {
 
   // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
-  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([
-    { id: "SYM_FAN_4",   typeId: "fan",        x: 0, y: 0, branchId: "4", t: 0.5, airDirection: "forward" },
-    { id: "SYM_COPRA_1", typeId: "copra_tower", x: 0, y: 0, branchId: "1", t: 0.2, label: "Надшахтное здание ЮВС" },
-  ]);
+  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
@@ -5829,6 +5826,25 @@ export default function CadPage() {
               <span>Ветвей: <b>{branches.length}</b></span>
             </div>
           </div>
+
+          {/* Стартовый экран — только когда схема пустая */}
+          {nodes.length === 0 && branches.length === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"
+              style={{ background: "rgba(255,255,255,0.0)" }}>
+              <div className="flex flex-col items-center gap-4 opacity-40">
+                <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                  <rect x="8" y="8" width="48" height="48" rx="8" stroke="#94a3b8" strokeWidth="2" strokeDasharray="6 3"/>
+                  <line x1="32" y1="20" x2="32" y2="44" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round"/>
+                  <line x1="20" y1="32" x2="44" y2="32" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round"/>
+                </svg>
+                <div className="text-center">
+                  <p className="text-[15px] font-semibold text-slate-500">Рабочая область пуста</p>
+                  <p className="text-[12px] text-slate-400 mt-1">Нажмите <b>+ Узел</b> на панели инструментов,</p>
+                  <p className="text-[12px] text-slate-400">или откройте файл проекта через <b>Файл → Открыть</b></p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Холст топологии */}
           <div className="flex-1 relative"
