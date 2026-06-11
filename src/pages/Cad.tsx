@@ -5393,6 +5393,38 @@ export default function CadPage() {
                                         <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
                                         <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
                                       </div>
+
+                                      {/* ── Текстовые поля штампа ── */}
+                                      {(() => {
+                                        const plRow = (label: string, field: keyof import("@/lib/topology").HorizonPrintLayer, placeholder = "") => (
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-gray-400 flex-shrink-0" style={{ width: 68 }}>{label}</span>
+                                            <input className="cad-input flex-1 min-w-0 text-[10px]"
+                                              value={(pl[field] as string) ?? ""}
+                                              placeholder={placeholder}
+                                              onChange={(e) => updatePl({ [field]: e.target.value })} />
+                                          </div>
+                                        );
+                                        return (
+                                          <div className="space-y-1 pt-0.5" style={{ borderTop: "1px solid #f0edff" }}>
+                                            <div className="text-[9px] text-purple-400 font-semibold uppercase tracking-wide pt-0.5">Название чертежа</div>
+                                            {plRow("Заголовок", "title", "Вентиляционный план...")}
+                                            {plRow("Период", "period", "II кв. 2025")}
+                                            {plRow("Масштаб", "scale", "1:2000")}
+                                            {plRow("Лист №", "sheetNum", "1")}
+                                            {plRow("Всего л.", "sheetTotal", "1")}
+                                            <div className="text-[9px] text-purple-400 font-semibold uppercase tracking-wide pt-0.5">Блок «Утверждаю»</div>
+                                            {plRow("Организация", "orgName", "ООО «Название»")}
+                                            {plRow("Должность", "approverTitle", "Главный инженер")}
+                                            {plRow("ФИО", "approverName", "И.О. Фамилия")}
+                                            {plRow("Год", "year", String(new Date().getFullYear()))}
+                                            <div className="text-[9px] text-purple-400 font-semibold uppercase tracking-wide pt-0.5">Нижний штамп</div>
+                                            {plRow("Нач. УПВ", "developer", "Фамилия И.О.")}
+                                            {plRow("Проверил", "checker", "Фамилия И.О.")}
+                                          </div>
+                                        );
+                                      })()}
+
                                       {/* Кнопка редактирования рамки */}
                                       <button
                                         className="w-full px-2 py-1 text-[11px] border rounded"
