@@ -1,11 +1,81 @@
-// Слой печати горизонта: рамка, заголовок, УО, штамп
+// Слой печати горизонта: рамка, заголовок, блок УТВЕРЖДАЮ, УО, штамп
 // Рендерится поверх PrintPreviewCanvas как абсолютный div
+import { useState, useRef, useEffect } from "react";
 import { type HorizonPrintLayer } from "@/lib/topology";
 
 interface Props {
   layer: HorizonPrintLayer;
   width: number;
   height: number;
+  onChange?: (patch: Partial<HorizonPrintLayer>) => void;
+}
+
+// Инлайн-редактирование: двойной клик → input/textarea
+function InlineEdit({
+  value, onChange, multiline = false, style, textStyle,
+}: {
+  value: string; onChange: (v: string) => void;
+  multiline?: boolean; style?: React.CSSProperties; textStyle?: React.CSSProperties;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null);
+
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+  useEffect(() => { if (editing && ref.current) { ref.current.focus(); ref.current.select(); } }, [editing]);
+
+  const commit = () => { setEditing(false); if (draft !== value) onChange(draft); };
+
+  const inputStyle: React.CSSProperties = {
+    ...textStyle,
+    background: "rgba(255,253,230,0.97)",
+    border: "1.5px solid #f59e0b",
+    borderRadius: 2,
+    outline: "none",
+    resize: "none",
+    padding: "1px 3px",
+    width: "100%",
+    boxSizing: "border-box",
+    fontFamily: "inherit",
+    fontSize: "inherit",
+    fontWeight: "inherit",
+  };
+
+  if (editing) {
+    if (multiline) {
+      return (
+        <textarea
+          ref={ref as React.Ref<HTMLTextAreaElement>}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => e.key === "Escape" && setEditing(false)}
+          style={{ ...inputStyle, minHeight: 28, display: "block" }}
+          rows={Math.max(2, draft.split("\n").length)}
+        />
+      );
+    }
+    return (
+      <input
+        ref={ref as React.Ref<HTMLInputElement>}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
+        style={{ ...inputStyle, display: "block" }}
+      />
+    );
+  }
+
+  return (
+    <span
+      title="Двойной клик для редактирования"
+      onDoubleClick={() => setEditing(true)}
+      style={{ ...style, cursor: "text", display: "block", minWidth: 20, whiteSpace: "pre-wrap", ...textStyle }}
+    >
+      {value || <span style={{ color: "#bbb", fontStyle: "italic" }}>—</span>}
+    </span>
+  );
 }
 
 const S = "#333";
@@ -70,7 +140,7 @@ const LEGEND_ITEMS: { svg: React.ReactNode; name: string }[] = [
   },
 ];
 
-export default function HorizonPrintLayerOverlay({ layer, width, height }: Props) {
+export default function HorizonPrintLayerOverlay({ layer, width, height, onChange }: Props) {
   // Масштаб относительно A4 (794px при 96dpi)
   const sc = width / 794;
   const fs = (mm: number) => mm * sc * 3.78; // мм → px при 96dpi
@@ -79,16 +149,21 @@ export default function HorizonPrintLayerOverlay({ layer, width, height }: Props
   const stampH = layer.showStamp ? fs(55) : 0;
   const legendW = layer.showLegend ? fs(70) : 0;
   const legendX = pad;
-  const legendY = height - pad - stampH - (layer.showLegend ? fs(4) : 0);
   const stampX = legendW > 0 ? legendX + legendW + fs(4) : legendX;
   const stampY = height - pad - stampH;
   const stampW = width - stampX - pad;
 
+  // Блок УТВЕРЖДАЮ: ширина ~75мм, правый верхний угол
+  const apprW = fs(75);
+  const apprX = width - pad - apprW;
+  const apprY = pad + fs(2);
+
   const titleY = pad + fs(6);
+  const lw = Math.max(0.5, sc * 0.6);
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
-      <svg width={width} height={height} style={{ position: "absolute", inset: 0 }}>
+    <div style={{ position: "absolute", inset: 0, pointerEvents: layer.showApprover && onChange ? "auto" : "none" }}>
+      <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
         {/* Внешняя рамка */}
         <rect x={pad * 0.5} y={pad * 0.5} width={width - pad} height={height - pad}
           fill="none" stroke="#333" strokeWidth={Math.max(1, sc * 2)} />
@@ -105,40 +180,65 @@ export default function HorizonPrintLayerOverlay({ layer, width, height }: Props
             {layer.title}
           </text>
         )}
+      </svg>
 
-        {/* Блок "УТВЕРЖДАЮ" */}
-        <text x={width - pad - fs(2)} y={titleY} textAnchor="end"
-          fontSize={fs(3.5)} fontFamily="Arial, sans-serif" fill="#333">
-          «УТВЕРЖДАЮ»
-        </text>
-        {layer.approverTitle && (
-          <text x={width - pad - fs(2)} y={titleY + fs(5)} textAnchor="end"
-            fontSize={fs(3)} fontFamily="Arial, sans-serif" fill="#333">
-            {layer.approverTitle}
-          </text>
-        )}
-        {layer.orgName && (
-          <text x={width - pad - fs(2)} y={titleY + fs(9)} textAnchor="end"
-            fontSize={fs(3)} fontFamily="Arial, sans-serif" fill="#333">
-            {layer.orgName}
-          </text>
-        )}
-        {layer.approverName && (
-          <>
-            <line x1={width - pad - fs(42)} y1={titleY + fs(15)} x2={width - pad - fs(2)} y2={titleY + fs(15)}
-              stroke="#333" strokeWidth={Math.max(0.5, sc * 0.5)} />
-            <text x={width - pad - fs(22)} y={titleY + fs(19)} textAnchor="middle"
-              fontSize={fs(3.5)} fontFamily="Arial, sans-serif" fill="#333">
-              {layer.approverName}
-            </text>
-          </>
-        )}
-        {layer.year && (
-          <text x={width - pad - fs(2)} y={titleY + fs(25)} textAnchor="end"
-            fontSize={fs(3.5)} fontFamily="Arial, sans-serif" fill="#333">
-            «___» ____________ {layer.year} г.
-          </text>
-        )}
+      {/* ── Блок УТВЕРЖДАЮ — HTML для редактирования ── */}
+      {layer.showApprover && (
+        <div style={{
+          position: "absolute",
+          right: pad,
+          top: apprY,
+          width: apprW,
+          fontFamily: "Arial, sans-serif",
+          fontSize: fs(3.2),
+          color: "#111",
+          textAlign: "center",
+          lineHeight: 1.5,
+          pointerEvents: onChange ? "auto" : "none",
+        }}>
+          {/* УТВЕРЖДАЮ */}
+          <div style={{ fontWeight: "bold", fontSize: fs(3.8), marginBottom: fs(1) }}>
+            УТВЕРЖДАЮ
+          </div>
+          {/* Должность (многострочная) */}
+          <InlineEdit
+            value={layer.approverTitle || "Должность"}
+            onChange={v => onChange?.({ approverTitle: v })}
+            multiline
+            textStyle={{ fontSize: fs(3.2), textAlign: "center", color: "#111" }}
+          />
+          {/* Организация (многострочная) */}
+          <InlineEdit
+            value={layer.orgName || "Организация"}
+            onChange={v => onChange?.({ orgName: v })}
+            multiline
+            textStyle={{ fontSize: fs(3.2), textAlign: "center", color: "#111" }}
+          />
+          {/* Линия + ФИО */}
+          <div style={{ borderTop: `${lw}px solid #111`, margin: `${fs(2)}px ${fs(4)}px ${fs(0.5)}px` }} />
+          <InlineEdit
+            value={layer.approverName || "И.О. Фамилия"}
+            onChange={v => onChange?.({ approverName: v })}
+            textStyle={{ fontSize: fs(3.2), textAlign: "right", color: "#111", paddingRight: fs(1) }}
+          />
+          {/* Дата */}
+          <div style={{ borderTop: `${lw}px solid #111`, margin: `${fs(1.5)}px 0 ${fs(0.5)}px` }} />
+          <div style={{ display: "flex", alignItems: "center", gap: fs(1), fontSize: fs(3.2) }}>
+            <span>«</span>
+            <InlineEdit
+              value={layer.year || "_____"}
+              onChange={v => onChange?.({ year: v })}
+              textStyle={{ fontSize: fs(3.2), width: fs(10), textAlign: "center", color: "#111" }}
+            />
+            <span>»</span>
+            <span style={{ flexGrow: 1, borderBottom: `${lw}px solid #111`, minWidth: fs(20) }} />
+            <span>г.</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── SVG: штамп ── */}
+      <svg width={width} height={height} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
 
         {/* ── Штамп (угловой штамп) ── */}
         {layer.showStamp && (

@@ -97,6 +97,8 @@ interface Props {
   editingPrintLayerId?: string | null;
   /** Колбэк изменения bounds слоя печати горизонта. */
   onPrintLayerBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
+  /** Колбэк изменения полей слоя печати (заголовок, утверждающий и др.) */
+  onPrintLayerChange?: (horizonId: string, patch: Partial<import("@/lib/topology").HorizonPrintLayer>) => void;
   /** Контекстное меню по правой кнопке на узле (id узла, экранные координаты). */
   onNodeContextMenu?: (id: string, screenX: number, screenY: number) => void;
   /** Контекстное меню по правой кнопке на ветви (id ветви, экранные координаты). */
@@ -218,7 +220,7 @@ export default function TopoCanvas(props: Props) {
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId,
     editingHorizonImageId, onHorizonImageBoundsChange,
-    editingPrintLayerId, onPrintLayerBoundsChange,
+    editingPrintLayerId, onPrintLayerBoundsChange, onPrintLayerChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
     selectedNodeIds, onNodeMultiSelect,
@@ -1355,6 +1357,73 @@ export default function TopoCanvas(props: Props) {
             {pl.title}
           </text>
         )}
+        {/* Блок УТВЕРЖДАЮ — правый верхний угол рамки */}
+        {pl.showApprover && (() => {
+          const apW = Math.min(rw * 0.28, 220);
+          const apH = rh * 0.22;
+          const apX = rx + rw - inset - apW;
+          const apY = ry + inset + 2;
+          const apFs = Math.max(7, Math.min(13, rh * 0.018));
+          const lw2 = Math.max(0.4, apFs * 0.06);
+          return (
+            <foreignObject x={apX} y={apY} width={apW} height={apH}
+              style={{ pointerEvents: onPrintLayerChange ? "auto" : "none", overflow: "visible" }}>
+              <div style={{
+                fontFamily: "Arial, sans-serif", fontSize: apFs, color: "#111",
+                textAlign: "center", lineHeight: 1.4, padding: `${apFs * 0.2}px ${apFs * 0.5}px`,
+              }}>
+                <div style={{ fontWeight: "bold", fontSize: apFs * 1.15, marginBottom: apFs * 0.2 }}>УТВЕРЖДАЮ</div>
+                {/* Должность — редактируемая */}
+                <div
+                  contentEditable={!!onPrintLayerChange}
+                  suppressContentEditableWarning
+                  onBlur={e => onPrintLayerChange?.(h.id, { approverTitle: e.currentTarget.innerText })}
+                  style={{ outline: "none", cursor: onPrintLayerChange ? "text" : "default",
+                    borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none" }}
+                >
+                  {pl.approverTitle || (onPrintLayerChange ? "Должность" : "")}
+                </div>
+                {/* Организация — редактируемая */}
+                <div
+                  contentEditable={!!onPrintLayerChange}
+                  suppressContentEditableWarning
+                  onBlur={e => onPrintLayerChange?.(h.id, { orgName: e.currentTarget.innerText })}
+                  style={{ outline: "none", cursor: onPrintLayerChange ? "text" : "default",
+                    borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none" }}
+                >
+                  {pl.orgName || (onPrintLayerChange ? "Организация" : "")}
+                </div>
+                {/* Линия + ФИО */}
+                <div style={{ borderTop: `${lw2}px solid #111`, margin: `${apFs * 0.5}px ${apFs}px ${apFs * 0.1}px` }} />
+                <div style={{ textAlign: "right", paddingRight: apFs * 0.3 }}>
+                  <span
+                    contentEditable={!!onPrintLayerChange}
+                    suppressContentEditableWarning
+                    onBlur={e => onPrintLayerChange?.(h.id, { approverName: e.currentTarget.innerText })}
+                    style={{ outline: "none", cursor: onPrintLayerChange ? "text" : "default",
+                      borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none" }}
+                  >
+                    {pl.approverName || (onPrintLayerChange ? "И.О. Фамилия" : "")}
+                  </span>
+                </div>
+                {/* Дата */}
+                <div style={{ borderTop: `${lw2}px solid #111`, margin: `${apFs * 0.4}px 0 0` }}>
+                  <span>«</span>
+                  <span
+                    contentEditable={!!onPrintLayerChange}
+                    suppressContentEditableWarning
+                    onBlur={e => onPrintLayerChange?.(h.id, { year: e.currentTarget.innerText })}
+                    style={{ outline: "none", minWidth: apFs * 2, display: "inline-block",
+                      borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none",
+                      cursor: onPrintLayerChange ? "text" : "default" }}
+                  >{pl.year || String(new Date().getFullYear())}</span>
+                  <span>» ___________ г.</span>
+                </div>
+              </div>
+            </foreignObject>
+          );
+        })()}
+
         {/* Цветная рамка-подсветка в режиме редактирования */}
         {isEditing && (
           <rect x={rx - 1} y={ry - 1} width={rw + 2} height={rh + 2}

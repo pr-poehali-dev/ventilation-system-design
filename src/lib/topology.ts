@@ -262,6 +262,8 @@ export interface HorizonPrintLayer {
   showLegend: boolean;
   /** Показывать штамп */
   showStamp: boolean;
+  /** Показывать блок «УТВЕРЖДАЮ» в правом верхнем углу */
+  showApprover?: boolean;
   /** Формат бумаги */
   paperFormat: PaperFormat;
   /** Ориентация: landscape = альбом, portrait = книжная */

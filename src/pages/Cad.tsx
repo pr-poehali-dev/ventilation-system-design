@@ -5388,10 +5388,11 @@ export default function CadPage() {
                                           <option value="portrait">Книжная</option>
                                         </select>
                                       </div>
-                                      {/* УО / Штамп */}
-                                      <div className="flex gap-2">
+                                      {/* УО / Штамп / Утв */}
+                                      <div className="flex gap-2 flex-wrap">
                                         <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
                                         <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
+                                        <CadCheckbox checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="Утв" />
                                       </div>
                                       {/* Кнопка редактирования рамки */}
                                       <button
@@ -6121,6 +6122,11 @@ export default function CadPage() {
               onHorizonImageBoundsChange={setHorizonImageBounds}
               editingPrintLayerId={editingPrintLayerId}
               onPrintLayerBoundsChange={setPrintLayerBounds}
+              onPrintLayerChange={(horizonId, patch) =>
+                setHorizons(prev => prev.map(h => h.id !== horizonId || !h.printLayer ? h : {
+                  ...h, printLayer: { ...h.printLayer, ...patch },
+                }))
+              }
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
