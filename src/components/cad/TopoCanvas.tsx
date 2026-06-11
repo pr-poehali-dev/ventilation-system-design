@@ -2628,9 +2628,10 @@ export default function TopoCanvas(props: Props) {
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
           const nodeSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          // Радиус узла = ширина ветви * 0.9, синхронизирован с canvasRenderer
-          const baseNodeR = Math.min(20, Math.max(2, branchWidth * nodeSF * 0.9));
-          const r = isSel ? baseNodeR * 1.4 : baseNodeR;
+          // Радиус узла = половина пиксельной ширины ветви (синхронизировано с canvasRenderer)
+          const branchPx = (thinLines ? 1 : branchWidth) * nodeSF;
+          const baseNodeR = Math.min(10, Math.max(1.5, branchPx * 0.55));
+          const r = isSel ? baseNodeR * 1.5 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";

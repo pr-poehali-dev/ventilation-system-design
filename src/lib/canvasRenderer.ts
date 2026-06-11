@@ -606,9 +606,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      // Радиус узла = ширина ветви * 0.9, но не меньше 2px и не больше 20px
-      const baseNodeR = Math.min(20, Math.max(2, branchWidth * objSF * 0.9));
-      const r = isSel ? baseNodeR * 1.4 : baseNodeR;
+      // Радиус узла = половина пиксельной ширины ветви, но не меньше 1.5px и не больше 10px
+      const branchPx = (thinLines ? 1 : branchWidth) * objSF;
+      const baseNodeR = Math.min(10, Math.max(1.5, branchPx * 0.55));
+      const r = isSel ? baseNodeR * 1.5 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
 
