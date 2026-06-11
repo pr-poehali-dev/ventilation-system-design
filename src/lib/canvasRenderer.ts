@@ -7,7 +7,7 @@ import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "./unitsConfig";
 import { type WaterNodeResult } from "./waterHydraulics";
 
-export const CANVAS_THRESHOLD = 600;
+export const CANVAS_THRESHOLD = 800;
 
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 
