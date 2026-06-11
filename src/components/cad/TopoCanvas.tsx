@@ -2027,10 +2027,7 @@ export default function TopoCanvas(props: Props) {
           const lt = LEGEND_TYPES.find(l => l.id === pendingSymbolTypeId);
           if (!lt) return null;
           const ghostSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          const ghostBr = hoverBranchId ? branches.find(b => b.id === hoverBranchId) : null;
-          const ghostBrW = ghostBr ? (ghostBr.lineWidth && ghostBr.lineWidth > 0 ? ghostBr.lineWidth : branchWidth) : branchWidth;
-          const ghostBrPx = (thinLines ? 1 : ghostBrW) * ghostSF;
-          const SZ = Math.max(4, ghostBrPx * 0.4);
+          const SZ = Math.max(4, 32 * ghostSF);
           let gsx = hoverScreenPos.sx, gsy = hoverScreenPos.sy;
           // Если над ветвью — снэп к ветви
           if (hoverBranchId) {
@@ -2096,14 +2093,9 @@ export default function TopoCanvas(props: Props) {
 
           const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
           const sc = sym.scale ?? 1;
-          // Символы масштабируются от ширины прилегающей ветви (синхронно с узлами)
-          const symBranch = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
-          const symBranchW = symBranch ? (symBranch.lineWidth && symBranch.lineWidth > 0 ? symBranch.lineWidth : branchWidth) : branchWidth;
+          // Символы: базовый размер 32px при zoom=0.4, масштабируются пропорционально zoom
           const symSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          const symBranchPx = (thinLines ? 1 : symBranchW) * symSF;
-          // базовый размер символа = ширина ветви × 4, умноженный на пользовательский sc
-          const symScale = Math.max(0.05, symBranchPx * 0.4 / 32) * sc;
-          const SZ = Math.max(4, 32 * symScale);
+          const SZ = Math.max(4, 32 * sc * symSF);
           // Минимальный размер hitbox: 28px, чтобы в мелком масштабе всегда можно было кликнуть
           const HIT_MIN = 28;
           const HX = px - SZ / 2;
