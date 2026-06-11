@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   type TopoNode, type TopoBranch, type ProjOptions, type ViewPreset, type WorkPlane,
   type Horizon, type PaperFormat,
-  PAPER_SIZES_MM,
+  PAPER_SIZES_MM, OVERVIEW_HORIZON_ID,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
@@ -1254,37 +1254,61 @@ export default function TopoCanvas(props: Props) {
     const aspect = ori === "landscape" ? mm.w / mm.h : mm.h / mm.w;
     const isEditing = editingPrintLayerId === h.id;
 
-    // Вычисляем bounds в мировых координатах
-    let wb: { x1: number; y1: number; x2: number; y2: number };
-    if (pl.bounds) {
-      wb = pl.bounds;
-    } else {
-      const hNodeIds = new Set<string>();
-      branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
-      const hNodes = nodes.filter(n => hNodeIds.has(n.id));
-      if (hNodes.length === 0) return null;
-      const wxs = hNodes.map(n => n.x);
-      const wys = hNodes.map(n => n.y);
-      const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
-      const wmy = Math.min(...wys), wMy = Math.max(...wys);
-      const ww = wMx - wmx, wh = wMy - wmy;
-      const pad = Math.max(ww, wh) * 0.12 + 10;
-      const cx = (wmx + wMx) / 2, cy = (wmy + wMy) / 2;
-      const fitW = ww + pad * 2;
-      const fitH = wh + pad * 2;
+    // ── Вычисляем экранный bbox рамки ──────────────────────────────────────
+    let rx: number, ry: number, rw: number, rh: number;
+
+    if (h.id === OVERVIEW_HORIZON_ID) {
+      // Для "Общего вида" — bbox из проекций ВСЕХ узлов с реальными x,y,z.
+      // Это корректно работает при любой проекции: план, фронт, профиль, ИЗО.
+      const allNodes = nodes.length > 0 ? nodes : null;
+      if (!allNodes) return null;
+      let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+      allNodes.forEach(n => {
+        const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, proj);
+        if (p.sx < minSx) minSx = p.sx;
+        if (p.sx > maxSx) maxSx = p.sx;
+        if (p.sy < minSy) minSy = p.sy;
+        if (p.sy > maxSy) maxSy = p.sy;
+      });
+      const padPx = Math.max(20, Math.max(maxSx - minSx, maxSy - minSy) * 0.08);
+      const cxS = (minSx + maxSx) / 2, cyS = (minSy + maxSy) / 2;
+      const fitW = (maxSx - minSx) + padPx * 2;
+      const fitH = (maxSy - minSy) + padPx * 2;
       let rw2 = fitW, rh2 = fitW / aspect;
       if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
-      wb = { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 };
+      rx = cxS - rw2 / 2; ry = cyS - rh2 / 2; rw = rw2; rh = rh2;
+    } else {
+      // Для обычных горизонтов — мировые bounds → 4 угла → экранный bbox
+      let wb: { x1: number; y1: number; x2: number; y2: number };
+      if (pl.bounds) {
+        wb = pl.bounds;
+      } else {
+        const hNodeIds = new Set<string>();
+        branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
+        const hNodes = nodes.filter(n => hNodeIds.has(n.id));
+        if (hNodes.length === 0) return null;
+        const wxs = hNodes.map(n => n.x);
+        const wys = hNodes.map(n => n.y);
+        const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
+        const wmy = Math.min(...wys), wMy = Math.max(...wys);
+        const ww = wMx - wmx, wh = wMy - wmy;
+        const pad = Math.max(ww, wh) * 0.12 + 10;
+        const cx = (wmx + wMx) / 2, cy = (wmy + wMy) / 2;
+        const fitW = ww + pad * 2;
+        const fitH = wh + pad * 2;
+        let rw2 = fitW, rh2 = fitW / aspect;
+        if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
+        wb = { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 };
+      }
+      const pTL = project3D({ x: wb.x1, y: wb.y2, z: h.z }, proj);
+      const pTR = project3D({ x: wb.x2, y: wb.y2, z: h.z }, proj);
+      const pBL = project3D({ x: wb.x1, y: wb.y1, z: h.z }, proj);
+      const pBR = project3D({ x: wb.x2, y: wb.y1, z: h.z }, proj);
+      rx = Math.min(pTL.sx, pBL.sx);
+      ry = Math.min(pTL.sy, pTR.sy);
+      rw = Math.max(pTR.sx, pBR.sx) - rx;
+      rh = Math.max(pBL.sy, pBR.sy) - ry;
     }
-
-    const pTL = project3D({ x: wb.x1, y: wb.y2, z: h.z }, proj);
-    const pTR = project3D({ x: wb.x2, y: wb.y2, z: h.z }, proj);
-    const pBL = project3D({ x: wb.x1, y: wb.y1, z: h.z }, proj);
-    const pBR = project3D({ x: wb.x2, y: wb.y1, z: h.z }, proj);
-    const rx = Math.min(pTL.sx, pBL.sx);
-    const ry = Math.min(pTL.sy, pTR.sy);
-    const rw = Math.max(pTR.sx, pBR.sx) - rx;
-    const rh = Math.max(pBL.sy, pBR.sy) - ry;
     const inset = Math.max(4, Math.min(rw, rh) * 0.015);
     const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
 

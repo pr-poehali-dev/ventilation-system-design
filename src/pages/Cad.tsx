@@ -409,17 +409,8 @@ export default function CadPage() {
     setHorizonDragIdx(null); setHorizonDragOverIdx(null);
   };
 
-  // Авто-обновление bounds "Общего вида" при изменении узлов схемы
-  useEffect(() => {
-    if (!nodes.length) return;
-    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
-    const pad = 200; // отступ в метрах вокруг схемы
-    const b = { x1: Math.min(...xs) - pad, y1: Math.min(...ys) - pad, x2: Math.max(...xs) + pad, y2: Math.max(...ys) + pad };
-    setHorizons(prev => prev.map(h => h.id !== OVERVIEW_HORIZON_ID ? h : {
-      ...h,
-      printLayer: h.printLayer ? { ...h.printLayer, bounds: b } : h.printLayer,
-    }));
-  }, [nodes]);
+  // Bounds "Общего вида" теперь вычисляются динамически в TopoCanvas
+  // из проекций всех узлов — это корректно при любой проекции (план/фронт/профиль/ИЗО).
 
   const setHorizonImageBounds = (
     id: string, bounds: { x1: number; y1: number; x2: number; y2: number },
