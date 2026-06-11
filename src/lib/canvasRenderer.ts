@@ -68,6 +68,8 @@ export interface CanvasRenderOptions {
   posOuterColors?: Map<string, string>;
   /** Режим печати: белый фон без сетки */
   printMode?: boolean;
+  /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме */
+  fixedObjectScale?: boolean;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -170,12 +172,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
+    fixedObjectScale = false,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
 
   // ─── LOD пороги ───────────────────────────────────────────────────────────
   const sc = view.scale;
+  // Коэффициент масштабирования объектов: 1 = фиксированный размер, sc/0.4 = пропорциональный
+  const objSF = fixedObjectScale ? 1 : sc / 0.4;
   const lodChevrons = sc >= 0.25;
   const lodArrows   = sc >= 0.15;
   const lodLabels   = sc >= 0.04;
@@ -235,10 +240,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
     const baseW = isSel ? bw + 1 : bw;
-    // Масштабируем толщину пропорционально zoom (нормализовано к базовому масштабу 0.4)
-    const scaleFactor = sc / 0.4;
-    const w = (thinLines ? 1 : baseW) * scaleFactor;
-    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * scaleFactor;
+    const w = (thinLines ? 1 : baseW) * objSF;
+    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
     const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
     const showDashes   = flowVisible && (flowDisplay === "flow"     || flowDisplay === "both");
     const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
@@ -525,7 +528,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
         ctx.save();
         ctx.strokeStyle = "#94a3b8";
-        ctx.lineWidth = 0.8 * sc;
+        ctx.lineWidth = 0.8 * objSF;
         ctx.setLineDash([3, 2]);
         ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
         ctx.setLineDash([]);
@@ -536,8 +539,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.translate(anchorX, anchorY);
       if (labelAng !== 0) ctx.rotate(labelAng);
 
-      // Масштабируем размер текста пропорционально zoom (нормализовано к 0.4)
-      const textSc = Math.max(0.3, sc / 0.4);
+      const textSc = Math.max(0.3, objSF);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;
       ctx.textAlign = "center";
@@ -604,8 +606,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      // Масштабируем радиус узла пропорционально zoom (нормализовано к 0.4)
-      const r = (isSel ? 4 : 2.5) * (sc / 0.4);
+      const r = (isSel ? 4 : 2.5) * objSF;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
 
@@ -616,10 +617,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const hasFire = fireType !== "none";
 
       // Кольцо выделения — только для обычных узлов (fire-узлы рисуют своё внутри иконок)
-      const nodeScF = sc / 0.4;
       if (isSel && !hasFire) {
-        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4 * nodeScF, 0, Math.PI * 2);
-        ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5 * nodeScF;
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4 * objSF, 0, Math.PI * 2);
+        ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5 * objSF;
         ctx.setLineDash([3, 2]); ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -629,10 +629,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
                       : fireType === "consumer"  ? consumerColor
                       : fireType === "junction"  ? "#7c3aed"
                       : color;
-      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2 * nodeScF) : r, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2 * objSF) : r, 0, Math.PI * 2);
       ctx.fillStyle = nodeColor;
       ctx.strokeStyle = isSel ? ringColor : (hasFire ? nodeColor : "#1f2937");
-      ctx.lineWidth = (isSel ? 2 : 1) * nodeScF;
+      ctx.lineWidth = (isSel ? 2 : 1) * objSF;
       ctx.fill(); ctx.stroke();
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────

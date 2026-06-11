@@ -67,6 +67,8 @@ interface Props {
   branchBorder?: number;
   /** Тонкие линии (F6): всё в 1px без обводки и без анимации, для печатной/схемной подачи. */
   thinLines?: boolean;
+  /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме. */
+  fixedObjectScale?: boolean;
   /** Окрашивать ветви по цвету горизонта (вместо цвета по скорости/потоку). */
   colorByHorizon?: boolean;
   /** Показывать стрелки направления свежей струи после расчёта (F9). */
@@ -211,7 +213,7 @@ export default function TopoCanvas(props: Props) {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
-    horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false,
+    horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false,
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId,
@@ -1433,6 +1435,7 @@ export default function TopoCanvas(props: Props) {
           branchWidth={branchWidth}
           branchBorder={branchBorder}
           thinLines={thinLines}
+          fixedObjectScale={fixedObjectScale}
           colorByHorizon={colorByHorizon}
           showFlowArrows={showFlowArrows}
           flowDisplay={flowDisplay}
@@ -1561,10 +1564,12 @@ export default function TopoCanvas(props: Props) {
         {/* ─── ВЕТВИ (отсортированы по глубине) ────────────────────────── */}
         {/* Пороги LOD: при отдалении отключаем дорогостоящие элементы */}
         {(() => {
-          const lodChevrons  = view.scale >= 0.25;  // шевроны/пунктир — только при достаточном зуме
-          const lodArrows    = view.scale >= 0.15;  // стрелки потока
-          const lodLabels    = view.scale >= 0.04;  // метки с цифрами
-          const lodBorder    = view.scale >= 0.10;  // обводка линий
+          const lodChevrons  = view.scale >= 0.25;
+          const lodArrows    = view.scale >= 0.15;
+          const lodLabels    = view.scale >= 0.04;
+          const lodBorder    = view.scale >= 0.10;
+          // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный
+          const objSF = fixedObjectScale ? 1 : view.scale / 0.4;
           // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
           // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
           const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {
@@ -1575,13 +1580,12 @@ export default function TopoCanvas(props: Props) {
             if (!col) return null;
             const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
-            const sf0 = view.scale / 0.4;
-            const w = (thinLines ? 1 : bw) * sf0;
-            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * sf0;
+            const w = (thinLines ? 1 : bw) * objSF;
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
             return (
               <line key={`posOuter-${b.id}`}
                 x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                stroke={col} strokeWidth={w + borderW * 2 + 6 * sf0}
+                stroke={col} strokeWidth={w + borderW * 2 + 6 * objSF}
                 strokeLinecap="round" opacity="0.7" />
             );
           }) : null;
@@ -1598,9 +1602,8 @@ export default function TopoCanvas(props: Props) {
             const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
             const baseW = isSel ? bw + 1 : bw;
-            const sf1 = view.scale / 0.4;
-            const w = (thinLines ? 1 : baseW) * sf1;
-            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * sf1;
+            const w = (thinLines ? 1 : baseW) * objSF;
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
             if (borderW === 0) return null;
             return (
               <line key={`border-${b.id}`}
@@ -1688,11 +1691,9 @@ export default function TopoCanvas(props: Props) {
           const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
           const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
           const baseW = isSel ? bw + 1 : bw;
-          // Масштабируем пропорционально zoom (нормализовано к базовому масштабу 0.4)
-          const sf2 = view.scale / 0.4;
-          const w = (thinLines ? 1 : baseW) * sf2;
+          const w = (thinLines ? 1 : baseW) * objSF;
           // Обводка (контур вокруг линии): ширина = w + 2*border
-          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * sf2;
+          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
           const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
@@ -1935,10 +1936,8 @@ export default function TopoCanvas(props: Props) {
                 const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
                 if (allLines.length === 0) return null;
 
-                // Масштабируем текст пропорционально zoom (нормализовано к базовому масштабу 0.4)
-                const textSvgSc = view.scale / 0.4;
-                const lh = 11 * textSvgSc;
-                const bh = allLines.length * lh + 4 * textSvgSc;
+                const lh = 11 * objSF;
+                const bh = allLines.length * lh + 4 * objSF;
                 const lox = b.labelOffsetX ?? 0;
                 const loy = b.labelOffsetY ?? -16;
                 const labelAng = b.labelAngle ?? 0;
@@ -1951,7 +1950,7 @@ export default function TopoCanvas(props: Props) {
                     {/* Выноска если метка сдвинута */}
                     {hasMoved && (
                       <line x1={midX} y1={midY} x2={anchorX} y2={anchorY}
-                        stroke="#94a3b8" strokeWidth={0.8 * textSvgSc} strokeDasharray="3 2"
+                        stroke="#94a3b8" strokeWidth={0.8 * objSF} strokeDasharray="3 2"
                         pointerEvents="none" />
                     )}
                     {/* Весь блок: номер + данные — единый текст без обводки кружком */}
@@ -1983,10 +1982,10 @@ export default function TopoCanvas(props: Props) {
                       {allLines.map((ln, li) => (
                         <text key={li} textAnchor="middle" dominantBaseline="middle"
                           y={-bh / 2 + lh * (li + 0.6)}
-                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? 7.5 : 9) * textSvgSc : 8.5 * textSvgSc}
+                          fontSize={li === 0 && showNum ? (branchNum.length > 2 ? 7.5 : 9) * objSF : 8.5 * objSF}
                           fontWeight="600"
                           fill={li === 0 && showNum ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f")}
-                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 * textSvgSc, strokeLinejoin: "round" }}>
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 * objSF, strokeLinejoin: "round" }}>
                           {ln}
                         </text>
                       ))}
@@ -2024,7 +2023,7 @@ export default function TopoCanvas(props: Props) {
         {pendingSymbolTypeId && hoverScreenPos && (() => {
           const lt = LEGEND_TYPES.find(l => l.id === pendingSymbolTypeId);
           if (!lt) return null;
-          const symScale = view.scale / 0.4;
+          const symScale = fixedObjectScale ? 1 : view.scale / 0.4;
           const SZ = Math.round(32 * symScale);
           let gsx = hoverScreenPos.sx, gsy = hoverScreenPos.sy;
           // Если над ветвью — снэп к ветви
@@ -2091,8 +2090,8 @@ export default function TopoCanvas(props: Props) {
 
           const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
           const sc = sym.scale ?? 1;
-          // Символы масштабируются прямо пропорционально view.scale
-          const symScale = view.scale / 0.4;
+          // Символы масштабируются пропорционально zoom (или фиксированный размер)
+          const symScale = fixedObjectScale ? 1 : view.scale / 0.4;
           // Без округления (иначе при sc < 0.2 символ исчезает); минимум 4 px на экране.
           const SZ = Math.max(4, 32 * sc * symScale);
           // Минимальный размер hitbox: 28px, чтобы в мелком масштабе всегда можно было кликнуть
@@ -2628,31 +2627,30 @@ export default function TopoCanvas(props: Props) {
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
-          // Масштабируем радиус узла пропорционально zoom (нормализовано к 0.4)
-          const r = (isSel ? 4 : 2.5) * (view.scale / 0.4);
+          const nodeSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          const r = (isSel ? 4 : 2.5) * nodeSF;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          // Иконка ППЗ — масштабируется пропорционально zoom
-          const IS = Math.min(64, Math.max(3, 10 * (view.scale / 0.4)));
+          const IS = Math.min(64, Math.max(3, 10 * nodeSF));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо маршрута горноспасателей */}
               {isRescuePath && (
-                <circle r={r + 7 * (view.scale / 0.4)} fill="#16a34a" stroke="#15803d" strokeWidth={1.5 * (view.scale / 0.4)} opacity="0.85" />
+                <circle r={r + 7 * nodeSF} fill="#16a34a" stroke="#15803d" strokeWidth={1.5 * nodeSF} opacity="0.85" />
               )}
               {/* Кольцо выделения — только для обычных узлов */}
               {(isSel || isBranchFrom) && !hasFire && (
-                <circle r={r + 4 * (view.scale / 0.4)} fill="none" stroke={ringColor} strokeWidth={1.5 * (view.scale / 0.4)}
+                <circle r={r + 4 * nodeSF} fill="none" stroke={ringColor} strokeWidth={1.5 * nodeSF}
                   strokeDasharray={isSel ? "3 2" : undefined} />
               )}
               {/* Основной кружок — только для обычных узлов */}
               {!hasFire && (
                 <>
-                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={(isSel ? 2 : 1) * (view.scale / 0.4)} />
+                  <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={(isSel ? 2 : 1) * nodeSF} />
                   {node.atmosphereLink && (
-                    <circle r={Math.max(1.5 * (view.scale / 0.4), r * 0.55)} fill="none" stroke="#1f2937" strokeWidth={1.2 * (view.scale / 0.4)} strokeDasharray="2 1" />
+                    <circle r={Math.max(1.5 * nodeSF, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth={1.2 * nodeSF} strokeDasharray="2 1" />
                   )}
                 </>
               )}
@@ -2766,8 +2764,8 @@ export default function TopoCanvas(props: Props) {
                     if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${uGas.fromBase(node.computedGasConc).toFixed(uGas.decimals)}${uGas.symbol}`);
                   }
                   if (nlines.length === 0) return null;
-                  const nodeFontSize = 9 * (view.scale / 0.4);
-                  const nodeLineH = 11 * (view.scale / 0.4);
+                  const nodeFontSize = 9 * nodeSF;
+                  const nodeLineH = 11 * nodeSF;
                   return nlines.map((ln, li) => (
                     <text key={li} y={(li + 1) * nodeLineH} fontSize={nodeFontSize} fill="#6b7280" opacity={nodeOpacity}>{ln}</text>
                   ));
