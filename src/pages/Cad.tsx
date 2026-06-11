@@ -6621,7 +6621,9 @@ export default function CadPage() {
               // Проекция узла с zScale
               const projNode = (n: { x: number; y: number; z: number }) =>
                 project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, projOpts);
-              const PX_PER_MM = 3.78;
+              // Масштабируем позиции ПЛА пропорционально zoom, нормированному к базовому масштабу 0.4
+              const posSF = scaleLimitsEnabled ? 1 : Math.max(0.15, vs.scale / 0.4);
+              const PX_PER_MM = 3.78 * posSF;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
               const leaderBranchEnd = (branchId: string, t: number): { sx: number; sy: number } | null => {

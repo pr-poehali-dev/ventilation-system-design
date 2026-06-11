@@ -2026,8 +2026,11 @@ export default function TopoCanvas(props: Props) {
         {pendingSymbolTypeId && hoverScreenPos && (() => {
           const lt = LEGEND_TYPES.find(l => l.id === pendingSymbolTypeId);
           if (!lt) return null;
-          const symScale = fixedObjectScale ? 1 : view.scale / 0.4;
-          const SZ = Math.round(32 * symScale);
+          const ghostSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          const ghostBr = hoverBranchId ? branches.find(b => b.id === hoverBranchId) : null;
+          const ghostBrW = ghostBr ? (ghostBr.lineWidth && ghostBr.lineWidth > 0 ? ghostBr.lineWidth : branchWidth) : branchWidth;
+          const ghostBrPx = (thinLines ? 1 : ghostBrW) * ghostSF;
+          const SZ = Math.max(4, ghostBrPx * 0.4);
           let gsx = hoverScreenPos.sx, gsy = hoverScreenPos.sy;
           // Если над ветвью — снэп к ветви
           if (hoverBranchId) {
@@ -2093,10 +2096,14 @@ export default function TopoCanvas(props: Props) {
 
           const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
           const sc = sym.scale ?? 1;
-          // Символы масштабируются пропорционально zoom (или фиксированный размер)
-          const symScale = fixedObjectScale ? 1 : view.scale / 0.4;
-          // Без округления (иначе при sc < 0.2 символ исчезает); минимум 4 px на экране.
-          const SZ = Math.max(4, 32 * sc * symScale);
+          // Символы масштабируются от ширины прилегающей ветви (синхронно с узлами)
+          const symBranch = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+          const symBranchW = symBranch ? (symBranch.lineWidth && symBranch.lineWidth > 0 ? symBranch.lineWidth : branchWidth) : branchWidth;
+          const symSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          const symBranchPx = (thinLines ? 1 : symBranchW) * symSF;
+          // базовый размер символа = ширина ветви × 4, умноженный на пользовательский sc
+          const symScale = Math.max(0.05, symBranchPx * 0.4 / 32) * sc;
+          const SZ = Math.max(4, 32 * symScale);
           // Минимальный размер hitbox: 28px, чтобы в мелком масштабе всегда можно было кликнуть
           const HIT_MIN = 28;
           const HX = px - SZ / 2;
@@ -2631,15 +2638,19 @@ export default function TopoCanvas(props: Props) {
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
           const nodeSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          // Радиус узла = половина пиксельной ширины ветви (синхронизировано с canvasRenderer)
-          const branchPx = (thinLines ? 1 : branchWidth) * nodeSF;
+          // Средняя ширина прилегающих ветвей для синхронного масштабирования узла
+          const adjBr = branches.filter(b => b.fromId === node.id || b.toId === node.id);
+          const adjAvgW = adjBr.length > 0
+            ? adjBr.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBr.length
+            : branchWidth;
+          const branchPx = (thinLines ? 1 : adjAvgW) * nodeSF;
           const baseNodeR = Math.min(10, Math.max(1.5, branchPx * 0.55));
           const r = isSel ? baseNodeR * 1.5 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          const IS = Math.min(64, Math.max(3, 10 * nodeSF));
+          const IS = Math.min(24, Math.max(3, baseNodeR * 2.5));
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо маршрута горноспасателей */}
@@ -2770,8 +2781,8 @@ export default function TopoCanvas(props: Props) {
                     if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${uGas.fromBase(node.computedGasConc).toFixed(uGas.decimals)}${uGas.symbol}`);
                   }
                   if (nlines.length === 0) return null;
-                  const nodeFontSize = 9 * nodeSF;
-                  const nodeLineH = 11 * nodeSF;
+                  const nodeFontSize = Math.max(4, baseNodeR * 1.6);
+                  const nodeLineH = nodeFontSize * 1.2;
                   return nlines.map((ln, li) => (
                     <text key={li} y={(li + 1) * nodeLineH} fontSize={nodeFontSize} fill="#6b7280" opacity={nodeOpacity}>{ln}</text>
                   ));

@@ -608,8 +608,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      // Радиус узла = половина пиксельной ширины ветви, но не меньше 1.5px и не больше 10px
-      const branchPx = (thinLines ? 1 : branchWidth) * objSF;
+      // Ширина ветвей прилегающих к узлу (среднее), для синхронного масштабирования
+      const adjBranches = branches.filter(b => b.fromId === n.id || b.toId === n.id);
+      const adjAvgW = adjBranches.length > 0
+        ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
+        : branchWidth;
+      const branchPx = (thinLines ? 1 : adjAvgW) * objSF;
       const baseNodeR = Math.min(10, Math.max(1.5, branchPx * 0.55));
       const r = isSel ? baseNodeR * 1.5 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
@@ -634,7 +638,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
                       : fireType === "consumer"  ? consumerColor
                       : fireType === "junction"  ? "#7c3aed"
                       : color;
-      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, 2 * objSF) : r, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, baseNodeR * 0.5) : r, 0, Math.PI * 2);
       ctx.fillStyle = nodeColor;
       ctx.strokeStyle = isSel ? ringColor : (hasFire ? nodeColor : "#1f2937");
       // Обводка = ~20% от радиуса, но не больше 2px и не меньше 0.5px
@@ -643,7 +647,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
       if (fireType === "reservoir" && sc > 0.025) {
-        const IS = Math.min(16, Math.max(7, 10 + (sc - 0.4) * 8));
+        const IS = Math.min(24, Math.max(4, baseNodeR * 2.5));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hw = IS * 0.8, hh = IS * 0.6;
@@ -674,7 +678,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
       // Закрыт → красный, открыт → синий с заливкой
       if (fireType === "consumer" && sc > 0.025) {
-        const IS = Math.min(16, Math.max(7, 10 + (sc - 0.4) * 8));
+        const IS = Math.min(24, Math.max(4, baseNodeR * 2.5));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hydrantOpen = n.fireHydrantOpen ?? false;
@@ -733,7 +737,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
       if (fireType === "junction" && sc > 0.025) {
-        const IS = Math.min(7, Math.max(4, 5 + (sc - 0.4) * 4));
+        const IS = Math.min(12, Math.max(2, baseNodeR * 1.8));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);
