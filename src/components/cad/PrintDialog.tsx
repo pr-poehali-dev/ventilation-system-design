@@ -99,8 +99,14 @@ export default function PrintDialog({
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
 
-  const [format, setFormat] = useState<PaperFormat>("A3");
-  const [orientation, setOrientation] = useState<Orientation>("landscape");
+  // Берём формат/ориентацию из первого горизонта с активным слоем печати
+  const firstActivePrintLayer = horizons.find(h => h.printLayer?.visible)?.printLayer ?? null;
+  const [format, setFormat] = useState<PaperFormat>(
+    (firstActivePrintLayer?.paperFormat as PaperFormat | undefined) ?? "A3"
+  );
+  const [orientation, setOrientation] = useState<Orientation>(
+    (firstActivePrintLayer?.orientation as Orientation | undefined) ?? "landscape"
+  );
   const [customW, setCustomW] = useState(420);
   const [customH, setCustomH] = useState(297);
 
@@ -123,17 +129,9 @@ export default function PrintDialog({
   const [marginLeft, setMarginLeft] = useState(5);
   const [marginRight, setMarginRight] = useState(5);
   const [showPageNumbers, setShowPageNumbers] = useState(true);
-  const [showStamp, setShowStamp] = useState(false);
-  const [showFrame, setShowFrame] = useState(false);
   const [copies, setCopies] = useState(1);
   const [reverseOrder, setReverseOrder] = useState(false);
   const [pageRange, setPageRange] = useState("");
-  const [drawingNumber, setDrawingNumber] = useState("");
-  const [drawingTitle, setDrawingTitle] = useState(projectName);
-  const [engineer, setEngineer] = useState("");
-  const [approvedBy, setApprovedBy] = useState("");
-  const [organization, setOrganization] = useState("");
-  const [printDate] = useState(() => new Date().toLocaleDateString("ru"));
   const [templateName, setTemplateName] = useState("");
   const [templates, setTemplates] = useState<Record<string, object>>(() => {
     try { return JSON.parse(localStorage.getItem("printTemplates") || "{}"); } catch { return {}; }
@@ -360,8 +358,8 @@ export default function PrintDialog({
 
   const workArea = useMemo(() => ({
     w: paper.w - marginLeft - marginRight,
-    h: paper.h - marginTop - marginBottom - (showStamp ? 56 : 0),
-  }), [paper, marginLeft, marginRight, marginTop, marginBottom, showStamp]);
+    h: paper.h - marginTop - marginBottom,
+  }), [paper, marginLeft, marginRight, marginTop, marginBottom]);
 
   // ─── Размеры предпросмотра ────────────────────────────────────────────
   const PREV_MAX_W = 700;
@@ -566,20 +564,8 @@ export default function PrintDialog({
       pngPages.push(await renderTileToCanvas(t.col, t.row, PRINT_DPI));
     }
 
-    const makeStamp = (idx: number, total2: number) => showStamp ? `
-      <table class="stamp" cellpadding="0" cellspacing="0">
-        <tr><td colspan="5"></td>
-          <td rowspan="6" class="col-name">${drawingTitle}</td>
-          <td class="col-stage">Стадия</td><td class="col-sheet">Лист</td><td class="col-total">Листов</td></tr>
-        <tr><td>Разраб.</td><td>${engineer}</td><td></td><td></td><td>${printDate}</td>
-          <td rowspan="5" class="org-cell">${organization}</td>
-          <td>Р</td><td>${idx}</td><td>${total2}</td></tr>
-        <tr><td>Пров.</td><td>${approvedBy}</td><td></td><td></td><td>${printDate}</td>
-          <td rowspan="4" colspan="3" class="num-cell">${drawingNumber}</td></tr>
-        <tr><td>Н.контр.</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td>Утв.</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td colspan="5"></td></tr>
-      </table>` : "";
+    // Штамп теперь рендерится через HorizonPrintLayerOverlay — не нужен отдельный HTML
+    const makeStamp = (_idx: number, _total2: number) => "";
 
     // Canvas теперь = полный лист, img растягивается на весь лист без padding
     const pageHtmls: string[] = [];
@@ -596,7 +582,7 @@ export default function PrintDialog({
     }
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>${drawingTitle}</title>
+<title>${projectName}</title>
 <style>
 @page{size:${paper.w}mm ${paper.h}mm;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -604,13 +590,7 @@ body{background:white;font-family:Arial,sans-serif}
 .page{width:${paper.w}mm;height:${paper.h}mm;position:relative;page-break-after:always;overflow:hidden;background:white}
 .page:last-child{page-break-after:auto}
 .page-img{position:absolute;top:0;left:0;width:${paper.w}mm;height:${paper.h}mm;display:block}
-.stamp{position:absolute;bottom:${marginBottom}mm;right:${marginRight}mm;width:185mm;height:55mm;border-collapse:collapse;border:1px solid #000;font-size:8pt}
-.stamp td{border:.5px solid #000;padding:1mm 2mm;white-space:nowrap;overflow:hidden}
-.col-name{font-size:11pt;font-weight:bold;text-align:center;width:65mm}
-.col-stage,.col-sheet,.col-total{width:12mm;text-align:center}
-.num-cell{font-size:10pt;font-weight:bold;text-align:center}
-.org-cell{font-size:9pt;text-align:center}
-.page-num{position:absolute;bottom:${marginBottom+(showStamp?58:2)}mm;right:${marginRight+2}mm;font-size:9pt;color:#555}
+.page-num{position:absolute;bottom:${marginBottom+2}mm;right:${marginRight+2}mm;font-size:9pt;color:#555}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>${pageHtmls.join("")}
 <script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
@@ -621,9 +601,9 @@ body{background:white;font-family:Arial,sans-serif}
     win.document.open();
     win.document.write(html);
     win.document.close();
-  }, [paper, marginTop, marginBottom, marginRight, showStamp,
-      showPageNumbers, copies, reverseOrder, drawingTitle, drawingNumber, engineer, approvedBy,
-      organization, printDate, tiles, totalPages, renderTileToCanvas]);
+  }, [paper, marginTop, marginBottom, marginRight,
+      showPageNumbers, copies, reverseOrder, projectName,
+      tiles, totalPages, renderTileToCanvas]);
 
   // Печать одного тайла (после tiles и renderTileToCanvas)
   const handlePrintSingleTile = useCallback(async (tileIdx: number) => {
@@ -770,14 +750,13 @@ body{background:white;font-family:Arial,sans-serif}
       setPdfExporting(false);
     }
   }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw,
-      renderTileToCanvas, tiles, paper, showStamp, showPageNumbers,
-      marginLeft, marginRight, marginBottom,
-      drawingTitle, engineer, approvedBy, organization, printDate]);
+      renderTileToCanvas, tiles, paper, showPageNumbers,
+      marginLeft, marginRight, marginBottom]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
     if (!templateName.trim()) { alert("Введите название"); return; }
-    const tpl = { format, orientation, scale, marginTop, marginBottom, marginLeft, marginRight, showStamp, showFrame, showPageNumbers };
+    const tpl = { format, orientation, scale, marginTop, marginBottom, marginLeft, marginRight, showPageNumbers };
     const next = { ...templates, [templateName.trim()]: tpl };
     setTemplates(next); localStorage.setItem("printTemplates", JSON.stringify(next));
   };
@@ -791,8 +770,6 @@ body{background:white;font-family:Arial,sans-serif}
     if (t.marginBottom !== undefined) setMarginBottom(t.marginBottom as number);
     if (t.marginLeft !== undefined) setMarginLeft(t.marginLeft as number);
     if (t.marginRight !== undefined) setMarginRight(t.marginRight as number);
-    if (t.showStamp !== undefined) setShowStamp(t.showStamp as boolean);
-    if (t.showFrame !== undefined) setShowFrame(t.showFrame as boolean);
     if (t.showPageNumbers !== undefined) setShowPageNumbers(t.showPageNumbers as boolean);
   };
   const deleteTemplate = (name: string) => {
@@ -1016,30 +993,14 @@ body{background:white;font-family:Arial,sans-serif}
 
             {/* Номера страниц */}
             <Section title="Номера страниц" defaultOpen={false}>
-              {([
-                [showPageNumbers, setShowPageNumbers, "Номера страниц"],
-                [showFrame, setShowFrame, "Рамка"],
-                [showStamp, setShowStamp, "Штамп (основная надпись)"],
-              ] as [boolean, (v: boolean) => void, string][]).map(([v, set, label]) => (
-                <label key={label} className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={v} onChange={e => set(e.target.checked)}
-                    style={{ accentColor: "#2563eb" }} />
-                  <span style={{ fontSize: 12, color: "#1a1a1a" }}>{label}</span>
-                </label>
-              ))}
-              {showStamp && (
-                <div className="mt-2 space-y-1.5 border-t border-gray-300 pt-2">
-                  {([["Номер:", drawingNumber, setDrawingNumber],["Название:", drawingTitle, setDrawingTitle],
-                     ["Разработал:", engineer, setEngineer],["Проверил:", approvedBy, setApprovedBy],
-                     ["Организация:", organization, setOrganization]
-                  ] as [string, string, (v: string) => void][]).map(([lbl, val, set]) => (
-                    <div key={lbl}>
-                      <div style={{ fontSize: 11, color: "#333", marginBottom: 2 }}>{lbl}</div>
-                      <input className={inp + " w-full"} style={ih} value={val} onChange={e => set(e.target.value)} />
-                    </div>
-                  ))}
-                </div>
-              )}
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" checked={showPageNumbers} onChange={e => setShowPageNumbers(e.target.checked)}
+                  style={{ accentColor: "#2563eb" }} />
+                <span style={{ fontSize: 12, color: "#1a1a1a" }}>Номера страниц</span>
+              </label>
+              <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                Рамка, штамп и УО управляются через «Слой печати» в панели горизонтов.
+              </p>
             </Section>
 
             {/* Сброс */}
@@ -1048,7 +1009,7 @@ body{background:white;font-family:Arial,sans-serif}
                 setUserScale(null); setUserOffsetX(null); setUserOffsetY(null);
                 setScaleDisplay(100); setOffsetXDisplay(0); setOffsetYDisplay(0);
                 setMarginTop(5); setMarginBottom(5); setMarginLeft(5); setMarginRight(5);
-                setShowPageNumbers(true); setShowFrame(false); setShowStamp(false);
+                setShowPageNumbers(true);
               }} className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-gray-200 bg-white text-gray-700">
                 Сбросить настройки
               </button>
@@ -1114,15 +1075,7 @@ body{background:white;font-family:Arial,sans-serif}
                       cursor: isDragging ? "grabbing" : "grab",
                       overflow: "hidden", userSelect: "none",
                     }}>
-                    {/* Рамка */}
-                    {showFrame && (
-                      <div style={{
-                        position: "absolute", zIndex: 2, pointerEvents: "none",
-                        top: px(marginTop), left: px(marginLeft),
-                        right: px(marginRight), bottom: px(marginBottom + (showStamp ? 56 : 0)),
-                        border: "1px solid #222",
-                      }} />
-                    )}
+                    {/* Рамка отображается через HorizonPrintLayerOverlay внутри PrintPreviewCanvas */}
 
                     {/* Схема — тайл на весь лист чтобы подписи не обрезались полями */}
                     <div style={{ position: "absolute", top: 0, left: 0, width: prevW, height: prevH }}>
@@ -1156,31 +1109,13 @@ body{background:white;font-family:Arial,sans-serif}
                       />
                     </div>
 
-                    {/* Штамп */}
-                    {showStamp && (
-                      <div style={{
-                        position: "absolute", zIndex: 3,
-                        bottom: px(marginBottom), right: px(marginRight),
-                        width: px(185), height: px(55),
-                        border: "1px solid #666", background: "white",
-                        display: "grid", gridTemplateColumns: "1fr 1fr",
-                        fontSize: Math.max(6, px(2.5)), color: "#333",
-                      }}>
-                        <div style={{ borderRight: "1px solid #aaa", padding: "2px 4px" }}>
-                          <div style={{ fontWeight: 600 }}>{drawingTitle || "Название"}</div>
-                          {engineer && <div style={{ fontSize: "0.9em", color: "#666" }}>Разраб.: {engineer}</div>}
-                        </div>
-                        <div style={{ padding: "2px 4px", fontWeight: 700, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          {drawingNumber || "Номер"}
-                        </div>
-                      </div>
-                    )}
+                    {/* Штамп, рамка и УО рендерятся через HorizonPrintLayerOverlay внутри PrintPreviewCanvas */}
 
                     {/* Номер страницы */}
                     {showPageNumbers && (
                       <div style={{
                         position: "absolute", zIndex: 3,
-                        bottom: px(marginBottom + (showStamp ? 57 : 1)),
+                        bottom: px(marginBottom + 1),
                         right: px(marginRight + 1),
                         fontSize: Math.max(8, px(3)), color: "#888",
                       }}>{pageNum} / {totalPages}</div>
