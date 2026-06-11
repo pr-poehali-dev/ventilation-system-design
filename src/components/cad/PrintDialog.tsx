@@ -37,6 +37,8 @@ interface PrintDialogProps {
   showPositions?: boolean;
   initialOpenExport?: boolean;
   onExportDialogOpened?: () => void;
+  /** Колбэк для редактирования полей штампа прямо в предпросмотре */
+  onHorizonPrintLayerChange?: (horizonId: string, patch: Partial<import("@/lib/topology").HorizonPrintLayer>) => void;
 }
 
 type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0" | "custom";
@@ -95,6 +97,7 @@ export default function PrintDialog({
   showPositions = true,
   initialOpenExport = false,
   onExportDialogOpened,
+  onHorizonPrintLayerChange,
 }: PrintDialogProps) {
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
@@ -1153,6 +1156,7 @@ body{background:white;font-family:Arial,sans-serif}
                         posOuterColors={posOuterColors}
                         positions={positions}
                         showPositions={showPositions}
+                        onHorizonPrintLayerChange={onHorizonPrintLayerChange}
                       />
                     </div>
 

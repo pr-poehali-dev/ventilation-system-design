@@ -5393,6 +5393,40 @@ export default function CadPage() {
                                         <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
                                         <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
                                       </div>
+
+                                      {/* ── Редактирование полей штампа ── */}
+                                      {(() => {
+                                        const plInput = (label: string, field: keyof import("@/lib/topology").HorizonPrintLayer, placeholder = "") => (
+                                          <div key={field} className="flex items-center gap-1">
+                                            <span className="text-[10px] text-gray-400 flex-shrink-0" style={{ width: 62 }}>{label}</span>
+                                            <input className="cad-input flex-1 min-w-0 text-[10px]"
+                                              value={(pl[field] as string) ?? ""}
+                                              placeholder={placeholder}
+                                              onChange={e => updatePl({ [field]: e.target.value } as Partial<import("@/lib/topology").HorizonPrintLayer>)} />
+                                          </div>
+                                        );
+                                        return (
+                                          <div className="space-y-1" style={{ borderTop: "1px solid #ede9fe", paddingTop: 4 }}>
+                                            <div className="text-[9px] font-semibold uppercase tracking-wide" style={{ color: "#9333ea" }}>Название</div>
+                                            {plInput("Заголовок", "title", "Вентиляционный план...")}
+                                            {plInput("Период", "period", "II кв. 2025")}
+                                            {plInput("Масштаб", "scale", "1:2000")}
+                                            <div className="flex gap-1">
+                                              <div className="flex-1">{plInput("Лист", "sheetNum", "1")}</div>
+                                              <div className="flex-1">{plInput("Всего", "sheetTotal", "1")}</div>
+                                            </div>
+                                            <div className="text-[9px] font-semibold uppercase tracking-wide mt-1" style={{ color: "#9333ea" }}>Утверждаю</div>
+                                            {plInput("Организация", "orgName", "ООО «Название»")}
+                                            {plInput("Должность", "approverTitle", "Главный инженер")}
+                                            {plInput("ФИО", "approverName", "И.О. Фамилия")}
+                                            {plInput("Год", "year", String(new Date().getFullYear()))}
+                                            <div className="text-[9px] font-semibold uppercase tracking-wide mt-1" style={{ color: "#9333ea" }}>Нижний штамп</div>
+                                            {plInput("Нач. УПВ", "developer", "Фамилия И.О.")}
+                                            {plInput("Проверил", "checker", "Фамилия И.О.")}
+                                          </div>
+                                        );
+                                      })()}
+
                                       {/* Кнопка редактирования рамки */}
                                       <button
                                         className="w-full px-2 py-1 text-[11px] border rounded"
@@ -7661,6 +7695,11 @@ export default function CadPage() {
         showPositions={showPositions}
         initialOpenExport={printDialogOpenExport}
         onExportDialogOpened={() => setPrintDialogOpenExport(false)}
+        onHorizonPrintLayerChange={(horizonId, patch) => {
+          setHorizons(prev => prev.map(h => h.id !== horizonId || !h.printLayer ? h : {
+            ...h, printLayer: { ...h.printLayer, ...patch },
+          }));
+        }}
       />
     )}
 
