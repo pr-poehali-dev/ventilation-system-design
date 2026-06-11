@@ -606,7 +606,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      const r = (isSel ? 4 : 2.5) * objSF;
+      // Радиус узла = ширина ветви * 0.9, но не меньше 2px и не больше 20px
+      const baseNodeR = Math.min(20, Math.max(2, branchWidth * objSF * 0.9));
+      const r = isSel ? baseNodeR * 1.4 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
 
@@ -618,7 +620,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // Кольцо выделения — только для обычных узлов (fire-узлы рисуют своё внутри иконок)
       if (isSel && !hasFire) {
-        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + 4 * objSF, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + baseNodeR * 0.5, 0, Math.PI * 2);
         ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5 * objSF;
         ctx.setLineDash([3, 2]); ctx.stroke();
         ctx.setLineDash([]);

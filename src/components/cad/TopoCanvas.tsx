@@ -2628,7 +2628,9 @@ export default function TopoCanvas(props: Props) {
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
           const nodeSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          const r = (isSel ? 4 : 2.5) * nodeSF;
+          // Радиус узла = ширина ветви * 0.9, синхронизирован с canvasRenderer
+          const baseNodeR = Math.min(20, Math.max(2, branchWidth * nodeSF * 0.9));
+          const r = isSel ? baseNodeR * 1.4 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
@@ -2638,11 +2640,11 @@ export default function TopoCanvas(props: Props) {
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо маршрута горноспасателей */}
               {isRescuePath && (
-                <circle r={r + 7 * nodeSF} fill="#16a34a" stroke="#15803d" strokeWidth={1.5 * nodeSF} opacity="0.85" />
+                <circle r={r + baseNodeR * 0.8} fill="#16a34a" stroke="#15803d" strokeWidth={1.5 * nodeSF} opacity="0.85" />
               )}
               {/* Кольцо выделения — только для обычных узлов */}
               {(isSel || isBranchFrom) && !hasFire && (
-                <circle r={r + 4 * nodeSF} fill="none" stroke={ringColor} strokeWidth={1.5 * nodeSF}
+                <circle r={r + baseNodeR * 0.5} fill="none" stroke={ringColor} strokeWidth={1.5 * nodeSF}
                   strokeDasharray={isSel ? "3 2" : undefined} />
               )}
               {/* Основной кружок — только для обычных узлов */}
@@ -2650,7 +2652,7 @@ export default function TopoCanvas(props: Props) {
                 <>
                   <circle r={r} fill={color} stroke={isSel ? ringColor : "#1f2937"} strokeWidth={(isSel ? 2 : 1) * nodeSF} />
                   {node.atmosphereLink && (
-                    <circle r={Math.max(1.5 * nodeSF, r * 0.55)} fill="none" stroke="#1f2937" strokeWidth={1.2 * nodeSF} strokeDasharray="2 1" />
+                    <circle r={Math.max(1.5 * nodeSF, r * 0.5)} fill="none" stroke="#1f2937" strokeWidth={Math.max(0.8, 1.2 * nodeSF)} strokeDasharray="2 1" />
                   )}
                 </>
               )}
