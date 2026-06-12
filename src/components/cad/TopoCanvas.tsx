@@ -1390,7 +1390,15 @@ export default function TopoCanvas(props: Props) {
             const csy = e.clientY - rect.top;
             const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
             if (!wp) return;
-            setDraggingPrintCorner({ horizonId: h.id, corner: "move", startWx: wp.x, startWy: wp.y, startBounds: wb });
+            // Для OVERVIEW wb вычисляем из экранного bbox → мировые координаты
+            const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
+              ? (() => {
+                  const wBL = unproject2D(rx,      ry + rh, proj, h.z);
+                  const wTR = unproject2D(rx + rw, ry,      proj, h.z);
+                  return { x1: wBL.x, y1: wBL.y, x2: wTR.x, y2: wTR.y };
+                })()
+              : wb;
+            setDraggingPrintCorner({ horizonId: h.id, corner: "move", startWx: wp.x, startWy: wp.y, startBounds: activeBounds });
           } : undefined}
         />
         {/* Внешняя рамка */}
@@ -1567,7 +1575,14 @@ export default function TopoCanvas(props: Props) {
               const csy = e.clientY - rect.top;
               const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
               if (!wp) return;
-              setDraggingPrintCorner({ horizonId: h.id, corner: c.key, startWx: wp.x, startWy: wp.y, startBounds: wb });
+              const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
+                ? (() => {
+                    const wBL = unproject2D(rx,      ry + rh, proj, h.z);
+                    const wTR = unproject2D(rx + rw, ry,      proj, h.z);
+                    return { x1: wBL.x, y1: wBL.y, x2: wTR.x, y2: wTR.y };
+                  })()
+                : wb;
+              setDraggingPrintCorner({ horizonId: h.id, corner: c.key, startWx: wp.x, startWy: wp.y, startBounds: activeBounds });
             }}>
             <circle cx={c.sx} cy={c.sy} r={8} fill="white" stroke="#7c3aed" strokeWidth={2} />
             <circle cx={c.sx} cy={c.sy} r={3} fill="#7c3aed" />
