@@ -273,6 +273,15 @@ export interface HorizonPrintLayer {
   /** Смещение заголовка относительно центра рамки в пикселях (экранные) */
   titleOffsetX?: number;
   titleOffsetY?: number;
+  /** Смещение блока УО от нижнего-левого угла рамки (экранные px) */
+  legendOffsetX?: number;
+  legendOffsetY?: number;
+  /** Смещение штампа от нижнего-правого угла рамки (экранные px) */
+  stampOffsetX?: number;
+  stampOffsetY?: number;
+  /** Дополнительные поля штампа */
+  projectName?: string;
+  modeName?: string;
 }
 
 export interface Horizon {
