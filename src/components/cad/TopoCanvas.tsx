@@ -847,6 +847,8 @@ export default function TopoCanvas(props: Props) {
 
   // ─── Обработчики мыши ───────────────────────────────────────────────────
   const onMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    // Если клик внутри активной рамки слоя печати — не обрабатываем (дочерний <rect> уже обработал)
+    if (editingPrintLayerId && (e.target as SVGElement).closest(`[data-printlayer]`)) return;
     // Правая кнопка или tool=rotate → вращение в 3D
     if (e.button === 2 || tool === "rotate") {
       const { pivot, pivotScreen } = computeRotPivot();
@@ -1381,21 +1383,21 @@ export default function TopoCanvas(props: Props) {
     const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
 
     return (
-      <g key={`printlayer-${h.id}`}>
+      <g key={`printlayer-${h.id}`} data-printlayer={h.id}>
         {/* Белая подложка */}
         <rect x={rx} y={ry} width={rw} height={rh} fill="white"
           style={{ cursor: isEditing ? "move" : "default" }}
           onMouseDown={isEditing ? (e) => {
             e.stopPropagation();
-            const plane: WorkPlane = { axis: "z", value: h.z };
-            const svgEl = (e.target as SVGElement).closest("svg");
+            e.preventDefault();
+            const svgEl = (e.currentTarget as SVGElement).ownerSVGElement;
             if (!svgEl) return;
-            const rect = svgEl.getBoundingClientRect();
-            const csx = e.clientX - rect.left;
-            const csy = e.clientY - rect.top;
+            const svgRect = svgEl.getBoundingClientRect();
+            const csx = e.clientX - svgRect.left;
+            const csy = e.clientY - svgRect.top;
+            const plane: WorkPlane = { axis: "z", value: h.z };
             const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
             if (!wp) return;
-            // Для OVERVIEW wb вычисляем из экранного bbox → мировые координаты
             const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
               ? (() => {
                   const wBL = unproject2D(rx,      ry + rh, proj, h.z);
@@ -1403,7 +1405,25 @@ export default function TopoCanvas(props: Props) {
                   return { x1: wBL.x, y1: wBL.y, x2: wTR.x, y2: wTR.y };
                 })()
               : wb;
-            setDraggingPrintCorner({ horizonId: h.id, corner: "move", startWx: wp.x, startWy: wp.y, startBounds: activeBounds });
+            const startState = { horizonId: h.id, corner: "move" as const, startWx: wp.x, startWy: wp.y, startBounds: activeBounds };
+            setDraggingPrintCorner(startState);
+            const onMove = (me: MouseEvent) => {
+              const sx2 = me.clientX - svgRect.left;
+              const sy2 = me.clientY - svgRect.top;
+              const wp2 = is3D ? unprojectToPlane(sx2, sy2, proj, plane) : unproject2D(sx2, sy2, proj, h.z);
+              if (!wp2) return;
+              const dx = wp2.x - startState.startWx;
+              const dy = wp2.y - startState.startWy;
+              const sb = startState.startBounds;
+              onPrintLayerBoundsChange?.(h.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
+            };
+            const onUp = () => {
+              setDraggingPrintCorner(null);
+              window.removeEventListener("mousemove", onMove);
+              window.removeEventListener("mouseup", onUp);
+            };
+            window.addEventListener("mousemove", onMove);
+            window.addEventListener("mouseup", onUp);
           } : undefined}
         />
         {/* Внешняя рамка */}
@@ -1465,13 +1485,25 @@ export default function TopoCanvas(props: Props) {
               onMouseDown={canEdit ? (e) => {
                 if (e.detail >= 2) return;
                 e.stopPropagation();
-                setDraggingPrintTitle({
-                  horizonId: h.id,
-                  startSx: e.clientX - (e.currentTarget.ownerSVGElement?.getBoundingClientRect().left ?? 0),
-                  startSy: e.clientY - (e.currentTarget.ownerSVGElement?.getBoundingClientRect().top ?? 0),
-                  startOffX: pl.titleOffsetX ?? 0,
-                  startOffY: pl.titleOffsetY ?? 0,
-                });
+                e.preventDefault();
+                const startOffX = pl.titleOffsetX ?? 0;
+                const startOffY = pl.titleOffsetY ?? 0;
+                const startSx = e.clientX;
+                const startSy = e.clientY;
+                setDraggingPrintTitle({ horizonId: h.id, startSx, startSy, startOffX, startOffY });
+                const onMove = (me: MouseEvent) => {
+                  onPrintLayerChange?.(h.id, {
+                    titleOffsetX: startOffX + (me.clientX - startSx),
+                    titleOffsetY: startOffY + (me.clientY - startSy),
+                  });
+                };
+                const onUp = () => {
+                  setDraggingPrintTitle(null);
+                  window.removeEventListener("mousemove", onMove);
+                  window.removeEventListener("mouseup", onUp);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
               } : undefined}
             >
               {pl.title}
@@ -1572,12 +1604,13 @@ export default function TopoCanvas(props: Props) {
           <g key={c.key} style={{ cursor: c.cur }}
             onMouseDown={(e) => {
               e.stopPropagation();
-              const plane: WorkPlane = { axis: "z", value: h.z };
-              const svgEl = (e.target as SVGElement).closest("svg");
+              e.preventDefault();
+              const svgEl = (e.currentTarget as SVGElement).ownerSVGElement;
               if (!svgEl) return;
-              const rect = svgEl.getBoundingClientRect();
-              const csx = e.clientX - rect.left;
-              const csy = e.clientY - rect.top;
+              const svgRect = svgEl.getBoundingClientRect();
+              const csx = e.clientX - svgRect.left;
+              const csy = e.clientY - svgRect.top;
+              const plane: WorkPlane = { axis: "z", value: h.z };
               const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
               if (!wp) return;
               const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
@@ -1587,7 +1620,34 @@ export default function TopoCanvas(props: Props) {
                     return { x1: wBL.x, y1: wBL.y, x2: wTR.x, y2: wTR.y };
                   })()
                 : wb;
-              setDraggingPrintCorner({ horizonId: h.id, corner: c.key, startWx: wp.x, startWy: wp.y, startBounds: activeBounds });
+              const startState = { horizonId: h.id, corner: c.key, startWx: wp.x, startWy: wp.y, startBounds: activeBounds };
+              setDraggingPrintCorner(startState);
+              const fmt2 = hz.printLayer!.paperFormat ?? "A3";
+              const ori2 = hz.printLayer!.orientation ?? "landscape";
+              const mm2 = PAPER_SIZES_MM[fmt2 as PaperFormat];
+              const aspect2 = ori2 === "landscape" ? mm2.w / mm2.h : mm2.h / mm2.w;
+              const onMove = (me: MouseEvent) => {
+                const sx2 = me.clientX - svgRect.left;
+                const sy2 = me.clientY - svgRect.top;
+                const wp2 = is3D ? unprojectToPlane(sx2, sy2, proj, plane) : unproject2D(sx2, sy2, proj, h.z);
+                if (!wp2) return;
+                const sb = startState.startBounds;
+                const b2 = { ...sb };
+                switch (startState.corner) {
+                  case "br": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
+                  case "bl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
+                  case "tr": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
+                  case "tl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
+                }
+                onPrintLayerBoundsChange?.(h.id, b2);
+              };
+              const onUp = () => {
+                setDraggingPrintCorner(null);
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
             }}>
             <circle cx={c.sx} cy={c.sy} r={8} fill="white" stroke="#7c3aed" strokeWidth={2} />
             <circle cx={c.sx} cy={c.sy} r={3} fill="#7c3aed" />
