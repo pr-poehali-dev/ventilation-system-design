@@ -389,6 +389,37 @@ export default function TopoCanvas(props: Props) {
 
   // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
   // scaleOverride используется ТОЛЬКО для внешних команд (ввод в поле, fitToScreen).
+  // Компенсация сдвига view при изменении xyScale/zScale без сброса позиции камеры
+  const prevXyScale = useRef<number>(xyScale);
+  const prevZScale = useRef<number>(zScale);
+  useEffect(() => {
+    const prev = prevXyScale.current;
+    prevXyScale.current = xyScale;
+    if (prev === xyScale || prev === 0) return;
+    const ratio = xyScale / prev;
+    // Центр экрана остаётся на том же мировом XY — сдвигаем offset
+    setView((v) => ({
+      ...v,
+      offsetX: size.w / 2 - (size.w / 2 - v.offsetX) * ratio,
+      offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio,
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xyScale]);
+
+  useEffect(() => {
+    const prev = prevZScale.current;
+    prevZScale.current = zScale;
+    if (prev === zScale || prev === 0) return;
+    const ratio = zScale / prev;
+    // При смене zScale в 3D-режиме корректируем вертикальный offset
+    if (!is3D) return;
+    setView((v) => ({
+      ...v,
+      offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio,
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zScale]);
+
   // Wheel-зум работает полностью внутри и не синхронизируется с родителем.
   const prevScaleOverride = useRef<number | undefined>(undefined);
 
@@ -1268,7 +1299,7 @@ export default function TopoCanvas(props: Props) {
       if (!allNodes) return null;
       let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
       allNodes.forEach(n => {
-        const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, proj);
+        const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, proj);
         if (p.sx < minSx) minSx = p.sx;
         if (p.sx > maxSx) maxSx = p.sx;
         if (p.sy < minSy) minSy = p.sy;
@@ -1291,8 +1322,9 @@ export default function TopoCanvas(props: Props) {
         branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
         const hNodes = nodes.filter(n => hNodeIds.has(n.id));
         if (hNodes.length === 0) return null;
-        const wxs = hNodes.map(n => n.x);
-        const wys = hNodes.map(n => n.y);
+        const _xy = xyScale ?? 1;
+        const wxs = hNodes.map(n => n.x * _xy);
+        const wys = hNodes.map(n => n.y * _xy);
         const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
         const wmy = Math.min(...wys), wMy = Math.max(...wys);
         const ww = wMx - wmx, wh = wMy - wmy;
@@ -1304,10 +1336,12 @@ export default function TopoCanvas(props: Props) {
         if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
         wb = { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 };
       }
-      const pTL = project3D({ x: wb.x1, y: wb.y2, z: h.z }, proj);
-      const pTR = project3D({ x: wb.x2, y: wb.y2, z: h.z }, proj);
-      const pBL = project3D({ x: wb.x1, y: wb.y1, z: h.z }, proj);
-      const pBR = project3D({ x: wb.x2, y: wb.y1, z: h.z }, proj);
+      const xy = xyScale ?? 1;
+      const zs = zScale ?? 1;
+      const pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
+      const pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
+      const pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
+      const pBR = project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
       rx = Math.min(pTL.sx, pBL.sx);
       ry = Math.min(pTL.sy, pTR.sy);
       rw = Math.max(pTR.sx, pBR.sx) - rx;
