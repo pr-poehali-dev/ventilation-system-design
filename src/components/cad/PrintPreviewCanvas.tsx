@@ -137,29 +137,35 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Белый фон до рендера — чтобы canvas не оставался чёрным при ошибке
     ctx.fillStyle = "#ffffff";
-    renderCanvas({
-      ctx, width, height,
-      nodes, branches, horizons, horizonMap,
-      visibleBranches, hiddenBranchIds: new Set(),
-      projNodes, projNodesMap, proj,
-      view: activeView,
-      is3D, zScale, zLevel: 0,
-      selectedBranchId: null, selectedBranchIds: new Set(),
-      selectedNodeId: null, selectedNodeIds: new Set(),
-      hoverBranchId: null,
-      branchWidth, branchBorder,
-      thinLines, colorByHorizon,
-      showFlowArrows: false,
-      flowDisplay,
-      animOffset: 0,
-      infoConfig,
-      unitsConfig,
-      colorMode,
-      posInnerColors,
-      posOuterColors,
-      printMode: true,
-    });
+    ctx.fillRect(0, 0, width, height);
+    try {
+      renderCanvas({
+        ctx, width, height,
+        nodes, branches, horizons, horizonMap,
+        visibleBranches, hiddenBranchIds: new Set(),
+        projNodes, projNodesMap, proj,
+        view: activeView,
+        is3D, zScale, zLevel: 0,
+        selectedBranchId: null, selectedBranchIds: new Set(),
+        selectedNodeId: null, selectedNodeIds: new Set(),
+        hoverBranchId: null,
+        branchWidth, branchBorder,
+        thinLines, colorByHorizon,
+        showFlowArrows: false,
+        flowDisplay,
+        animOffset: 0,
+        infoConfig,
+        unitsConfig,
+        colorMode,
+        posInnerColors,
+        posOuterColors,
+        printMode: true,
+      });
+    } catch (err) {
+      console.error("PrintPreviewCanvas renderCanvas error:", err);
+    }
   }, [nodes, branches, horizons, horizonMap, visibleBranches,
       projNodes, projNodesMap, proj, activeView,
       is3D, zScale, width, height,

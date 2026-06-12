@@ -1514,78 +1514,48 @@ export default function TopoCanvas(props: Props) {
         {/* Блок УТВЕРЖДАЮ — правый верхний угол рамки */}
         {pl.showApprover && (() => {
           const apW = Math.min(rw * 0.28, 220);
-          const apH = rh * 0.22;
           const apX = rx + rw - inset - apW;
           const apY = ry + inset + 2;
           const apFs = Math.max(7, Math.min(13, rh * 0.018));
           const lw2 = Math.max(0.4, apFs * 0.06);
+          const canEdit = !!onPrintLayerChange;
+          const apCx = apX + apW / 2;
+          let ay = apY + apFs * 1.4;
+          const lineY = (dy: number) => { ay += dy; return ay; };
           return (
-            <foreignObject x={apX} y={apY} width={apW} height={apH}
-              style={{ pointerEvents: onPrintLayerChange ? "auto" : "none", overflow: "visible" }}>
-              <div
-                style={{
-                  fontFamily: "Arial, sans-serif", fontSize: apFs, color: "#111",
-                  textAlign: "center", lineHeight: 1.4, padding: `${apFs * 0.2}px ${apFs * 0.5}px`,
-                  background: "white",
-                }}
-                onMouseDown={e => e.stopPropagation()}
-                onMouseMove={e => e.stopPropagation()}
-                onMouseUp={e => e.stopPropagation()}
-                onWheel={e => e.stopPropagation()}
-                onKeyDown={e => e.stopPropagation()}
-                onKeyUp={e => e.stopPropagation()}
-                onClick={e => e.stopPropagation()}
-                onDoubleClick={e => e.stopPropagation()}
-              >
-                <div style={{ fontWeight: "bold", fontSize: apFs * 1.15, marginBottom: apFs * 0.2 }}>УТВЕРЖДАЮ</div>
-                {/* Должность — редактируемая */}
-                <div
-                  contentEditable={!!onPrintLayerChange}
-                  suppressContentEditableWarning
-                  onBlur={e => onPrintLayerChange?.(h.id, { approverTitle: e.currentTarget.innerText })}
-                  style={{ outline: "none", cursor: onPrintLayerChange ? "text" : "default",
-                    borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none" }}
-                >
-                  {pl.approverTitle || (onPrintLayerChange ? "Должность" : "")}
-                </div>
-                {/* Организация — редактируемая */}
-                <div
-                  contentEditable={!!onPrintLayerChange}
-                  suppressContentEditableWarning
-                  onBlur={e => onPrintLayerChange?.(h.id, { orgName: e.currentTarget.innerText })}
-                  style={{ outline: "none", cursor: onPrintLayerChange ? "text" : "default",
-                    borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none" }}
-                >
-                  {pl.orgName || (onPrintLayerChange ? "Организация" : "")}
-                </div>
-                {/* Линия + ФИО */}
-                <div style={{ borderTop: `${lw2}px solid #111`, margin: `${apFs * 0.5}px ${apFs}px ${apFs * 0.1}px` }} />
-                <div style={{ textAlign: "right", paddingRight: apFs * 0.3 }}>
-                  <span
-                    contentEditable={!!onPrintLayerChange}
-                    suppressContentEditableWarning
-                    onBlur={e => onPrintLayerChange?.(h.id, { approverName: e.currentTarget.innerText })}
-                    style={{ outline: "none", cursor: onPrintLayerChange ? "text" : "default",
-                      borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none" }}
-                  >
-                    {pl.approverName || (onPrintLayerChange ? "И.О. Фамилия" : "")}
-                  </span>
-                </div>
-                {/* Дата */}
-                <div style={{ borderTop: `${lw2}px solid #111`, margin: `${apFs * 0.4}px 0 0` }}>
-                  <span>«</span>
-                  <span
-                    contentEditable={!!onPrintLayerChange}
-                    suppressContentEditableWarning
-                    onBlur={e => onPrintLayerChange?.(h.id, { year: e.currentTarget.innerText })}
-                    style={{ outline: "none", minWidth: apFs * 2, display: "inline-block",
-                      borderBottom: onPrintLayerChange ? `${lw2}px dashed #bbb` : "none",
-                      cursor: onPrintLayerChange ? "text" : "default" }}
-                  >{pl.year || String(new Date().getFullYear())}</span>
-                  <span>» ___________ г.</span>
-                </div>
-              </div>
-            </foreignObject>
+            <g key="approver-block">
+              <rect x={apX} y={apY} width={apW} height={apFs * 10} fill="white" style={{ pointerEvents: "none" }} />
+              {/* УТВЕРЖДАЮ */}
+              <text x={apCx} y={lineY(0)} textAnchor="middle" fontSize={apFs * 1.1} fontWeight="bold" fontFamily="Arial, sans-serif" fill="#111" style={{ pointerEvents: "none" }}>УТВЕРЖДАЮ</text>
+              {/* Должность */}
+              <text x={apCx} y={lineY(apFs * 1.6)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
+                style={{ cursor: canEdit ? "text" : "default" }}
+                onDoubleClick={canEdit ? () => { const v = prompt("Должность:", pl.approverTitle ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { approverTitle: v }); } : undefined}>
+                {pl.approverTitle || (canEdit ? "Должность" : "")}
+              </text>
+              {/* Организация */}
+              <text x={apCx} y={lineY(apFs * 1.4)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
+                style={{ cursor: canEdit ? "text" : "default" }}
+                onDoubleClick={canEdit ? () => { const v = prompt("Организация:", pl.orgName ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { orgName: v }); } : undefined}>
+                {pl.orgName || (canEdit ? "Организация" : "")}
+              </text>
+              {/* Линия */}
+              <line x1={apX + apFs} y1={lineY(apFs * 1.6)} x2={apX + apW - apFs} y2={ay} stroke="#111" strokeWidth={lw2} />
+              {/* ФИО */}
+              <text x={apX + apW - apFs * 0.5} y={lineY(apFs * 1.2)} textAnchor="end" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#1a44b8"
+                style={{ cursor: canEdit ? "text" : "default" }}
+                onDoubleClick={canEdit ? () => { const v = prompt("ФИО:", pl.approverName ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { approverName: v }); } : undefined}>
+                {pl.approverName || (canEdit ? "И.О. Фамилия" : "")}
+              </text>
+              {/* Линия даты */}
+              <line x1={apX} y1={lineY(apFs * 1.4)} x2={apX + apW} y2={ay} stroke="#111" strokeWidth={lw2} />
+              {/* Год */}
+              <text x={apCx} y={lineY(apFs * 1.2)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
+                style={{ cursor: canEdit ? "text" : "default" }}
+                onDoubleClick={canEdit ? () => { const v = prompt("Год:", pl.year ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { year: v }); } : undefined}>
+                «{pl.year || String(new Date().getFullYear())}» ___________ г.
+              </text>
+            </g>
           );
         })()}
 
@@ -1624,8 +1594,8 @@ export default function TopoCanvas(props: Props) {
                 : wb;
               const startState = { horizonId: h.id, corner: c.key, startWx: wp.x / _xys2, startWy: wp.y / _xys2, startBounds: activeBounds };
               setDraggingPrintCorner(startState);
-              const fmt2 = hz.printLayer!.paperFormat ?? "A3";
-              const ori2 = hz.printLayer!.orientation ?? "landscape";
+              const fmt2 = h.printLayer!.paperFormat ?? "A3";
+              const ori2 = h.printLayer!.orientation ?? "landscape";
               const mm2 = PAPER_SIZES_MM[fmt2 as PaperFormat];
               const aspect2 = ori2 === "landscape" ? mm2.w / mm2.h : mm2.h / mm2.w;
               const onMove = (me: MouseEvent) => {
@@ -1778,25 +1748,27 @@ export default function TopoCanvas(props: Props) {
               {/* НАЧ. УПВ / подпись */}
               {pl.checker && <text x={sx2+3} y={sy2+rowH*4.6} fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#333">Нач. УПВ: {pl.checker}</text>}
 
-              {/* Название проекта (верхняя правая) */}
-              <foreignObject x={sx2+stW*0.4+2} y={sy2+rowH*5+2} width={stW*0.3-4} height={rowH*2-4}>
-                <div style={{ fontSize: stFontSize, fontFamily: "Arial, sans-serif", color: "#111", lineHeight: 1.2, wordBreak: "break-word" }}
-                  contentEditable={canDrag} suppressContentEditableWarning
-                  onBlur={e => onPrintLayerChange?.(h.id, { projectName: e.currentTarget.innerText })}
-                  onMouseDown={e => e.stopPropagation()}>
-                  {pl.projectName || (canDrag ? "Название проекта" : "")}
-                </div>
-              </foreignObject>
+              {/* Название проекта */}
+              <text x={sx2+stW*0.55} y={sy2+rowH*5.8} textAnchor="middle"
+                fontSize={stFontSize} fontFamily="Arial, sans-serif" fill="#111"
+                style={{ cursor: canDrag ? "text" : "default" }}
+                onDoubleClick={canDrag ? () => {
+                  const v = prompt("Название проекта:", pl.projectName ?? "");
+                  if (v !== null) onPrintLayerChange?.(h.id, { projectName: v });
+                } : undefined}>
+                {pl.projectName || (canDrag ? "Название проекта" : "")}
+              </text>
 
-              {/* Режим (нижняя левая) */}
-              <foreignObject x={sx2+stW*0.4+2} y={sy2+rowH*6+2} width={stW*0.3-4} height={rowH-4}>
-                <div style={{ fontSize: stFontSize*0.85, fontFamily: "Arial, sans-serif", color: "#555", lineHeight: 1.2 }}
-                  contentEditable={canDrag} suppressContentEditableWarning
-                  onBlur={e => onPrintLayerChange?.(h.id, { modeName: e.currentTarget.innerText })}
-                  onMouseDown={e => e.stopPropagation()}>
-                  {pl.modeName || (canDrag ? "Режим проветривания" : "")}
-                </div>
-              </foreignObject>
+              {/* Режим проветривания */}
+              <text x={sx2+stW*0.55} y={sy2+rowH*6.5} textAnchor="middle"
+                fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#555"
+                style={{ cursor: canDrag ? "text" : "default" }}
+                onDoubleClick={canDrag ? () => {
+                  const v = prompt("Режим проветривания:", pl.modeName ?? "");
+                  if (v !== null) onPrintLayerChange?.(h.id, { modeName: v });
+                } : undefined}>
+                {pl.modeName || (canDrag ? "Режим проветривания" : "")}
+              </text>
 
               {/* Организация */}
               <text x={sx2+stW*0.855} y={sy2+rowH*6.5} textAnchor="middle" fontSize={stFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
