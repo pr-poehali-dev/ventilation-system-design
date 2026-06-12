@@ -1318,9 +1318,8 @@ export default function TopoCanvas(props: Props) {
     const wb: { x1: number; y1: number; x2: number; y2: number } = { x1: 0, y1: 0, x2: 0, y2: 0 };
     const pTL = { sx: 0, sy: 0 }, pTR = { sx: 0, sy: 0 }, pBL = { sx: 0, sy: 0 }, pBR = { sx: 0, sy: 0 };
 
-    if (h.id === OVERVIEW_HORIZON_ID) {
-      // Для "Общего вида" — bbox из проекций ВСЕХ узлов с реальными x,y,z.
-      // Это корректно работает при любой проекции: план, фронт, профиль, ИЗО.
+    if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
+      // Для "Общего вида" без ручного bounds — авто-bbox из проекций ВСЕХ узлов.
       const allNodes = nodes.length > 0 ? nodes : null;
       if (!allNodes) return null;
       let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
@@ -1338,7 +1337,6 @@ export default function TopoCanvas(props: Props) {
       let rw2 = fitW, rh2 = fitW / aspect;
       if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
       rx = cxS - rw2 / 2; ry = cyS - rh2 / 2; rw = rw2; rh = rh2;
-      // Угловые точки для ручек (в экранных координатах)
       Object.assign(pTL, { sx: rx, sy: ry });
       Object.assign(pTR, { sx: rx + rw, sy: ry });
       Object.assign(pBL, { sx: rx, sy: ry + rh });
@@ -1352,9 +1350,8 @@ export default function TopoCanvas(props: Props) {
         branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
         const hNodes = nodes.filter(n => hNodeIds.has(n.id));
         if (hNodes.length === 0) return null;
-        const _xy = xyScale ?? 1;
-        const wxs = hNodes.map(n => n.x * _xy);
-        const wys = hNodes.map(n => n.y * _xy);
+        const wxs = hNodes.map(n => n.x);
+        const wys = hNodes.map(n => n.y);
         const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
         const wmy = Math.min(...wys), wMy = Math.max(...wys);
         const ww = wMx - wmx, wh = wMy - wmy;
@@ -1398,22 +1395,26 @@ export default function TopoCanvas(props: Props) {
             const plane: WorkPlane = { axis: "z", value: h.z };
             const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
             if (!wp) return;
+            const _xys = xyScale ?? 1;
             const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
               ? (() => {
                   const wBL = unproject2D(rx,      ry + rh, proj, h.z);
                   const wTR = unproject2D(rx + rw, ry,      proj, h.z);
-                  return { x1: wBL.x, y1: wBL.y, x2: wTR.x, y2: wTR.y };
+                  return { x1: wBL.x / _xys, y1: wBL.y / _xys, x2: wTR.x / _xys, y2: wTR.y / _xys };
                 })()
               : wb;
-            const startState = { horizonId: h.id, corner: "move" as const, startWx: wp.x, startWy: wp.y, startBounds: activeBounds };
+            // startWx/startWy тоже делим на xyScale чтобы быть в "чистых" мировых
+            const startWx = wp.x / _xys;
+            const startWy = wp.y / _xys;
+            const startState = { horizonId: h.id, corner: "move" as const, startWx, startWy, startBounds: activeBounds };
             setDraggingPrintCorner(startState);
             const onMove = (me: MouseEvent) => {
               const sx2 = me.clientX - svgRect.left;
               const sy2 = me.clientY - svgRect.top;
               const wp2 = is3D ? unprojectToPlane(sx2, sy2, proj, plane) : unproject2D(sx2, sy2, proj, h.z);
               if (!wp2) return;
-              const dx = wp2.x - startState.startWx;
-              const dy = wp2.y - startState.startWy;
+              const dx = wp2.x / _xys - startState.startWx;
+              const dy = wp2.y / _xys - startState.startWy;
               const sb = startState.startBounds;
               onPrintLayerBoundsChange?.(h.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
             };
@@ -1613,14 +1614,15 @@ export default function TopoCanvas(props: Props) {
               const plane: WorkPlane = { axis: "z", value: h.z };
               const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
               if (!wp) return;
+              const _xys2 = xyScale ?? 1;
               const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
                 ? (() => {
                     const wBL = unproject2D(rx,      ry + rh, proj, h.z);
                     const wTR = unproject2D(rx + rw, ry,      proj, h.z);
-                    return { x1: wBL.x, y1: wBL.y, x2: wTR.x, y2: wTR.y };
+                    return { x1: wBL.x / _xys2, y1: wBL.y / _xys2, x2: wTR.x / _xys2, y2: wTR.y / _xys2 };
                   })()
                 : wb;
-              const startState = { horizonId: h.id, corner: c.key, startWx: wp.x, startWy: wp.y, startBounds: activeBounds };
+              const startState = { horizonId: h.id, corner: c.key, startWx: wp.x / _xys2, startWy: wp.y / _xys2, startBounds: activeBounds };
               setDraggingPrintCorner(startState);
               const fmt2 = hz.printLayer!.paperFormat ?? "A3";
               const ori2 = hz.printLayer!.orientation ?? "landscape";
@@ -1633,11 +1635,12 @@ export default function TopoCanvas(props: Props) {
                 if (!wp2) return;
                 const sb = startState.startBounds;
                 const b2 = { ...sb };
+                const wx2 = wp2.x / _xys2;
                 switch (startState.corner) {
-                  case "br": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
-                  case "bl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
-                  case "tr": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
-                  case "tl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
+                  case "br": { const w2 = wx2 - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
+                  case "bl": { const w2 = sb.x2 - wx2; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
+                  case "tr": { const w2 = wx2 - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
+                  case "tl": { const w2 = sb.x2 - wx2; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
                 }
                 onPrintLayerBoundsChange?.(h.id, b2);
               };
