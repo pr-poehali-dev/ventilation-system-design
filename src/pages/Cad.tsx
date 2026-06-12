@@ -885,6 +885,7 @@ export default function CadPage() {
   const updateInfoConfig = (patch: Partial<InfoDisplayConfig>) =>
     setInfoConfig((prev) => ({ ...prev, ...patch }));
   const [zScale, setZScale] = useState<number>(1);
+  const [xyScale, setXyScale] = useState<number>(1);
 
   // ─── ЕДИНИЦЫ ИЗМЕРЕНИЯ ───────────────────────────────────────────
   const [unitsConfig, setUnitsConfig] = useState<UnitsConfig>(DEFAULT_UNITS_CONFIG);
@@ -1353,6 +1354,7 @@ export default function CadPage() {
     showFlowArrows,
     flowDisplay,
     zScale,
+    xyScale,
     view: savedViewState ?? undefined,
     positions,
     scaleLimitsEnabled,
@@ -1366,7 +1368,7 @@ export default function CadPage() {
   }, [nodes, branchesRaw, schemaSymbols, mineFans, mineBulkheads, mineTypes,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
-      showFlowArrows, flowDisplay, zScale]);
+      showFlowArrows, flowDisplay, zScale, xyScale]);
 
   // Предупреждение при закрытии/обновлении вкладки
   useEffect(() => {
@@ -1562,6 +1564,7 @@ export default function CadPage() {
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
     if (data.zScale !== undefined) setZScale(data.zScale as number);
+    if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
@@ -6174,6 +6177,7 @@ export default function CadPage() {
               unitsConfig={unitsConfig}
               waterNodeResults={waterNetwork.nodeResults}
               zScale={zScale}
+              xyScale={xyScale}
               schemaSymbols={schemaSymbols}
               selectedSymbolId={selectedSymbolId}
               selectedSymbolIds={selectedSymbolIds}
@@ -6685,14 +6689,14 @@ export default function CadPage() {
             {positions.length > 0 && showPositions && (() => {
               const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
-              // zScale применяем к z-оси, как это делает TopoCanvas
+              // xyScale и zScale применяем к осям, как это делает TopoCanvas
               const proj = (wx: number, wy: number, wz = 0) => {
-                const p = project3D({ x: wx, y: wy, z: wz * (zScale ?? 1) }, projOpts);
+                const p = project3D({ x: wx * (xyScale ?? 1), y: wy * (xyScale ?? 1), z: wz * (zScale ?? 1) }, projOpts);
                 return { sx: p.sx, sy: p.sy };
               };
-              // Проекция узла с zScale
+              // Проекция узла с xyScale и zScale
               const projNode = (n: { x: number; y: number; z: number }) =>
-                project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, projOpts);
+                project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, projOpts);
               // По ГОСТ позиции ПЛА: диаметр 13 мм на чертеже.
               // base zoom 0.5 → при zoom ×0.5 posSF=1.0 (номинал). max=1.0 чтобы не перекрывать схему.
               const posSF = scaleLimitsEnabled ? 1 : Math.min(1.0, Math.max(0.25, vs.scale / 0.5));
@@ -7233,8 +7237,25 @@ export default function CadPage() {
                 />
               </div>
 
-              {/* Масштаб Z */}
+              {/* Масштаб XY и Z */}
               <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
+                {/* XY */}
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб XY: ×{xyScale.toFixed(1)}</span>
+                  <button onClick={() => setXyScale(1)}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
+                    Сброс
+                  </button>
+                </div>
+                <input type="range" min="0.1" max="10" step="0.1"
+                  value={xyScale}
+                  onChange={(e) => setXyScale(parseFloat(e.target.value))}
+                  className="w-full"
+                  style={{ accentColor: "#16a34a" }} />
+                <div className="flex justify-between text-[10px] text-gray-400 mb-2">
+                  <span>0.1×</span><span>5×</span><span>10×</span>
+                </div>
+                {/* Z */}
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
                   <button onClick={() => setZScale(1)}

@@ -109,6 +109,8 @@ interface Props {
   infoConfig?: import("@/lib/infoConfig").InfoDisplayConfig;
   /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
   zScale?: number;
+  /** Масштаб по осям X и Y (горизонтальное растяжение схемы). */
+  xyScale?: number;
   /** Условные обозначения на схеме */
   schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
     indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;
@@ -224,7 +226,7 @@ export default function TopoCanvas(props: Props) {
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
     selectedNodeIds, onNodeMultiSelect,
-    infoConfig, zScale = 1,
+    infoConfig, zScale = 1, xyScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
     selectedSymbolIds, onSymbolMultiSelect,
@@ -417,7 +419,7 @@ export default function TopoCanvas(props: Props) {
     };
     let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
     nodes.forEach((n) => {
-      const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, tmpProj);
+      const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, tmpProj);
       if (p.sx < minSx) minSx = p.sx;
       if (p.sx > maxSx) maxSx = p.sx;
       if (p.sy < minSy) minSy = p.sy;
@@ -454,7 +456,7 @@ export default function TopoCanvas(props: Props) {
     if (focusNodeId) {
       const n = nodes.find(nn => nn.id === focusNodeId);
       if (n) {
-        const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, tmpProj);
+        const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, tmpProj);
         targetX = p.sx; targetY = p.sy; found = true;
       }
     } else if (focusBranchId) {
@@ -463,8 +465,8 @@ export default function TopoCanvas(props: Props) {
         const fromN = nodes.find(n => n.id === b.fromId);
         const toN = nodes.find(n => n.id === b.toId);
         if (fromN && toN) {
-          const pf = project3D({ x: fromN.x, y: fromN.y, z: fromN.z * (zScale ?? 1) }, tmpProj);
-          const pt = project3D({ x: toN.x,   y: toN.y,   z: toN.z   * (zScale ?? 1) }, tmpProj);
+          const pf = project3D({ x: fromN.x * (xyScale ?? 1), y: fromN.y * (xyScale ?? 1), z: fromN.z * (zScale ?? 1) }, tmpProj);
+          const pt = project3D({ x: toN.x * (xyScale ?? 1),   y: toN.y * (xyScale ?? 1),   z: toN.z   * (zScale ?? 1) }, tmpProj);
           targetX = (pf.sx + pt.sx) / 2;
           targetY = (pf.sy + pt.sy) / 2;
           found = true;
@@ -589,7 +591,7 @@ export default function TopoCanvas(props: Props) {
     };
     let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
     nodes.forEach((n) => {
-      const p = project3D({ x: n.x, y: n.y, z: n.z * (zScale ?? 1) }, tmpProj);
+      const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, tmpProj);
       if (p.sx < minSx) minSx = p.sx;
       if (p.sx > maxSx) maxSx = p.sx;
       if (p.sy < minSy) minSy = p.sy;
@@ -632,10 +634,10 @@ export default function TopoCanvas(props: Props) {
     zScale,
   }), [view.scale, view.offsetX, view.offsetY, view.azimuth, view.elevation, zScale]);
 
-  // zScale применяем к Z-координате перед проекцией
+  // xyScale и zScale применяем к координатам перед проекцией
   const projectWithZ = useCallback((p: { x: number; y: number; z: number }) =>
-    project3D({ ...p, z: p.z * (zScale ?? 1) }, proj),
-  [proj, zScale]);
+    project3D({ x: p.x * (xyScale ?? 1), y: p.y * (xyScale ?? 1), z: p.z * (zScale ?? 1) }, proj),
+  [proj, zScale, xyScale]);
 
   // Проекции всех узлов — пересчитываются только при изменении nodes или proj
   const projNodes = useMemo(
