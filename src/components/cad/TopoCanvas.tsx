@@ -1677,7 +1677,7 @@ export default function TopoCanvas(props: Props) {
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}
-        style={{ touchAction: "none", userSelect: "none", visibility: useCanvas ? "hidden" : undefined, pointerEvents: useCanvas ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? -1 : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
+        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? (editingPrintLayerId ? 1 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
