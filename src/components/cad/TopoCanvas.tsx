@@ -1051,6 +1051,8 @@ export default function TopoCanvas(props: Props) {
       onSelectBranch(null);
     }
     setBranchFrom(null);
+    // В режиме редактирования рамки — не начинаем pan/rotate (клик мог быть по рамке)
+    if (editingPrintLayerId) return;
     // Свободный клик в 3D = вращение, в 2D = панорама
     if (is3D) {
       const { pivot, pivotScreen } = computeRotPivot();
@@ -1069,6 +1071,47 @@ export default function TopoCanvas(props: Props) {
     const rect = (e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
+
+    // ── Drag рамки/угла слоя печати — обрабатываем ПЕРВЫМ, до pan/rotate ──
+    if (draggingPrintCorner && onPrintLayerBoundsChange) {
+      const hz = horizons?.find((hh) => hh.id === draggingPrintCorner.horizonId);
+      if (hz && hz.printLayer) {
+        const plane: WorkPlane = { axis: "z", value: hz.z };
+        const wp2 = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
+        if (wp2) {
+          const sb = draggingPrintCorner.startBounds;
+          const fmt2 = hz.printLayer.paperFormat ?? "A3";
+          const ori2 = hz.printLayer.orientation ?? "landscape";
+          const mm2 = PAPER_SIZES_MM[fmt2 as PaperFormat];
+          const aspect2 = ori2 === "landscape" ? mm2.w / mm2.h : mm2.h / mm2.w;
+          if (draggingPrintCorner.corner === "move") {
+            const dx = wp2.x - draggingPrintCorner.startWx;
+            const dy = wp2.y - draggingPrintCorner.startWy;
+            onPrintLayerBoundsChange(hz.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
+          } else {
+            const b2 = { ...sb };
+            switch (draggingPrintCorner.corner) {
+              case "br": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x2 = sb.x1 + nw2; b2.y1 = sb.y2 - nw2 / aspect2; break; }
+              case "bl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x1 = sb.x2 - nw2; b2.y1 = sb.y2 - nw2 / aspect2; break; }
+              case "tr": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x2 = sb.x1 + nw2; b2.y2 = sb.y1 + nw2 / aspect2; break; }
+              case "tl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x1 = sb.x2 - nw2; b2.y2 = sb.y1 + nw2 / aspect2; break; }
+            }
+            onPrintLayerBoundsChange(hz.id, b2);
+          }
+        }
+      }
+      return;
+    }
+    // ── Drag заголовка слоя печати — тоже до pan ──
+    if (draggingPrintTitle && onPrintLayerChange) {
+      const dx = sx - draggingPrintTitle.startSx;
+      const dy = sy - draggingPrintTitle.startSy;
+      onPrintLayerChange(draggingPrintTitle.horizonId, {
+        titleOffsetX: draggingPrintTitle.startOffX + dx,
+        titleOffsetY: draggingPrintTitle.startOffY + dy,
+      });
+      return;
+    }
 
     // hover-позиция: показываем мировые координаты в текущей рабочей плоскости
     const w = screenToWorld(sx, sy);
@@ -1140,45 +1183,7 @@ export default function TopoCanvas(props: Props) {
       }
       onHorizonImageBoundsChange(draggingCorner.horizonId, b);
     }
-    // ── Перетаскивание рамки/угла слоя печати ──────────────────────────────
-    if (draggingPrintCorner && onPrintLayerBoundsChange) {
-      const hz = horizons?.find((hh) => hh.id === draggingPrintCorner.horizonId);
-      if (!hz || !hz.printLayer) return;
-      const plane: WorkPlane = { axis: "z", value: hz.z };
-      const wp = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
-      if (!wp) return;
-      const sb = draggingPrintCorner.startBounds;
-      const fmt = hz.printLayer.paperFormat ?? "A3";
-      const ori = hz.printLayer.orientation ?? "landscape";
-      const mm = PAPER_SIZES_MM[fmt as PaperFormat];
-      const aspect = ori === "landscape" ? mm.w / mm.h : mm.h / mm.w;
-      if (draggingPrintCorner.corner === "move") {
-        const dx = wp.x - draggingPrintCorner.startWx;
-        const dy = wp.y - draggingPrintCorner.startWy;
-        onPrintLayerBoundsChange(hz.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
-      } else {
-        const b = { ...sb };
-        const w0 = sb.x2 - sb.x1;
-        const h0 = sb.y2 - sb.y1;
-        switch (draggingPrintCorner.corner) {
-          case "br": { const w = wp.x - sb.x1; const nw = Math.max(50, w); b.x2 = sb.x1 + nw; b.y1 = sb.y2 - nw / aspect; break; }
-          case "bl": { const w = sb.x2 - wp.x; const nw = Math.max(50, w); b.x1 = sb.x2 - nw; b.y1 = sb.y2 - nw / aspect; break; }
-          case "tr": { const w = wp.x - sb.x1; const nw = Math.max(50, w); b.x2 = sb.x1 + nw; b.y2 = sb.y1 + nw / aspect; break; }
-          case "tl": { const w = sb.x2 - wp.x; const nw = Math.max(50, w); b.x1 = sb.x2 - nw; b.y2 = sb.y1 + nw / aspect; break; }
-        }
-        void w0; void h0;
-        onPrintLayerBoundsChange(hz.id, b);
-      }
-    }
-    // ── Перетаскивание заголовка слоя печати ───────────────────────────────
-    if (draggingPrintTitle && onPrintLayerChange) {
-      const dx = sx - draggingPrintTitle.startSx;
-      const dy = sy - draggingPrintTitle.startSy;
-      onPrintLayerChange(draggingPrintTitle.horizonId, {
-        titleOffsetX: draggingPrintTitle.startOffX + dx,
-        titleOffsetY: draggingPrintTitle.startOffY + dy,
-      });
-    }
+
   };
 
   const onMouseUp = () => {
