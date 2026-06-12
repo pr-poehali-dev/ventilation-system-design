@@ -1700,20 +1700,20 @@ export default function TopoCanvas(props: Props) {
           </>)}
         </defs>
 
-        {!is3D && view.scale >= 0.5 && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
-        {!is3D && view.scale < 0.5 && <rect width={size.w} height={size.h} fill="#f8f9fa" />}
-        {is3D && renderGroundGrid()}
+        {!useCanvas && !is3D && view.scale >= 0.5 && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
+        {!useCanvas && !is3D && view.scale < 0.5 && <rect width={size.w} height={size.h} fill="#f8f9fa" />}
+        {!useCanvas && is3D && renderGroundGrid()}
 
 
 
-        {is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
+        {!useCanvas && is3D && (tool === "node" || tool === "branch") && renderWorkPlane()}
 
         {/* ── ШАБЛОНЫ ПЕЧАТИ ГОРИЗОНТОВ ──────────────────────────────────── */}
         {renderPrintLayers()}
 
         {/* ── ПОДЛОЖКИ ГОРИЗОНТОВ (PNG/JPG) ─────────────────────────────── */}
         {/* Рисуются ПОД ветвями. Видимость подложки = h.image.visible && h.visible */}
-        {(horizons ?? []).map((h) => {
+        {!useCanvas && (horizons ?? []).map((h) => {
           if (!h.visible || !h.image || !h.image.visible) return null;
           const b = h.image.bounds;
           // Для проекции углы лежат на плоскости z = h.z
@@ -1750,7 +1750,7 @@ export default function TopoCanvas(props: Props) {
         })}
 
         {/* ── РУЧКИ ДЛЯ РАСТЯГИВАНИЯ ПОДЛОЖКИ (только для активного горизонта) ── */}
-        {editingHorizonImageId && (() => {
+        {!useCanvas && editingHorizonImageId && (() => {
           const h = (horizons ?? []).find((hh) => hh.id === editingHorizonImageId);
           if (!h || !h.image || !h.image.visible || !h.visible) return null;
           const b = h.image.bounds;
@@ -1781,7 +1781,7 @@ export default function TopoCanvas(props: Props) {
 
         {/* ─── ВЕТВИ (отсортированы по глубине) ────────────────────────── */}
         {/* Пороги LOD: при отдалении отключаем дорогостоящие элементы */}
-        {(() => {
+        {!useCanvas && (() => {
           const lodChevrons  = view.scale >= 0.25;
           const lodArrows    = view.scale >= 0.15;
           const lodLabels    = view.scale >= 0.04;
@@ -2838,7 +2838,7 @@ export default function TopoCanvas(props: Props) {
         })}
 
         {/* ─── УЗЛЫ (отсортированы по глубине, ближние сверху) ─────────── */}
-        {nodesSorted.map(({ node, sx, sy }) => {
+        {!useCanvas && nodesSorted.map(({ node, sx, sy }) => {
           // Если узел скрыт через «Видимость узлов» — не рендерим ничего
           if (node.visible === false) return null;
           // Если все ветви узла принадлежат скрытым горизонтам — скрываем узел
@@ -3004,14 +3004,14 @@ export default function TopoCanvas(props: Props) {
         })}
 
         {/* ── ViewCube в углу (3D-индикатор ориентации) ─────────────── */}
-        <ViewCube
+        {!useCanvas && <ViewCube
           x={size.w - 70} y={20}
           azimuth={view.azimuth} elevation={view.elevation}
           onPick={applyPreset}
-        />
+        />}
 
         {/* ── МАСШТАБНАЯ ЛИНЕЙКА (как в АэроСети) ─────────────────── */}
-        {(() => {
+        {!useCanvas && (() => {
           // Подбираем «красивое» значение шага линейки
           const targetPx = 120;  // целевая длина линейки в пикселях
           const rawM = targetPx / view.scale;  // метры при текущем масштабе
@@ -3064,7 +3064,7 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* ─── МАРКЕР PIVOT-ТОЧКИ (виден только во время вращения) ─── */}
-        {rotStart && (() => {
+        {!useCanvas && rotStart && (() => {
           // Перепроецируем pivot в текущей проекции (углы уже обновлены).
           const ps = project3D(rotStart.pivot, proj);
           return (
