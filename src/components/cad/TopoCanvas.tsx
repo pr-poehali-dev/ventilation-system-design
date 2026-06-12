@@ -358,6 +358,13 @@ export default function TopoCanvas(props: Props) {
   const [draggingPrintCorner, setDraggingPrintCorner] = useState<
     { horizonId: string; corner: "tl" | "tr" | "bl" | "br" | "move"; startWx: number; startWy: number; startBounds: { x1: number; y1: number; x2: number; y2: number } } | null
   >(null);
+  // Перетаскивание заголовка слоя печати
+  const [draggingPrintTitle, setDraggingPrintTitle] = useState<
+    { horizonId: string; startSx: number; startSy: number; startOffX: number; startOffY: number } | null
+  >(null);
+  // Редактирование заголовка слоя печати
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitleDraft, setEditingTitleDraft] = useState("");
 
   // При смене инструмента сбрасываем «начало ветви» — иначе возникнут призрачные сегменты.
   useEffect(() => { setBranchFrom(null); }, [tool]);
@@ -1163,6 +1170,15 @@ export default function TopoCanvas(props: Props) {
         onPrintLayerBoundsChange(hz.id, b);
       }
     }
+    // ── Перетаскивание заголовка слоя печати ───────────────────────────────
+    if (draggingPrintTitle && onPrintLayerChange) {
+      const dx = sx - draggingPrintTitle.startSx;
+      const dy = sy - draggingPrintTitle.startSy;
+      onPrintLayerChange(draggingPrintTitle.horizonId, {
+        titleOffsetX: draggingPrintTitle.startOffX + dx,
+        titleOffsetY: draggingPrintTitle.startOffY + dy,
+      });
+    }
   };
 
   const onMouseUp = () => {
@@ -1171,6 +1187,7 @@ export default function TopoCanvas(props: Props) {
     setDraggingNode(null);
     setDraggingCorner(null);
     setDraggingPrintCorner(null);
+    setDraggingPrintTitle(null);
   };
 
   // Зум через колёсико полностью обрабатывается нативным listener выше.
@@ -1377,22 +1394,69 @@ export default function TopoCanvas(props: Props) {
           width={rw - inset * 2} height={rh - inset * 2}
           fill="none" stroke="#1a1a1a" strokeWidth={0.8}
           style={{ pointerEvents: "none" }} />
-        {/* Метка формата */}
-        <text x={rx + inset + 4} y={ry + inset + titleFontSize * 0.8}
-          fontSize={titleFontSize * 0.75} fontFamily="Arial, sans-serif"
-          fill="#9ca3af" style={{ pointerEvents: "none" }}>
-          {fmt} {ori === "landscape" ? "альбом" : "книжная"}
-        </text>
-        {/* Заголовок */}
-        {pl.title && (
-          <text x={rx + rw / 2} y={ry + inset + titleFontSize + 4}
-            textAnchor="middle" dominantBaseline="hanging"
-            fontSize={titleFontSize}
-            fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111"
-            style={{ pointerEvents: "none" }}>
-            {pl.title}
-          </text>
-        )}
+        {/* Заголовок — редактируемый и перетаскиваемый */}
+        {(() => {
+          const titleX = rx + rw / 2 + (pl.titleOffsetX ?? 0);
+          const titleY = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0);
+          const canEdit = !!onPrintLayerChange;
+          const isEditingTitle = editingTitleId === h.id;
+          if (isEditingTitle) {
+            return (
+              <foreignObject x={titleX - rw * 0.4} y={titleY - titleFontSize - 2} width={rw * 0.8} height={titleFontSize * 3}>
+                <input
+                  // @ts-expect-error xmlns
+                  xmlns="http://www.w3.org/1999/xhtml"
+                  autoFocus
+                  value={editingTitleDraft}
+                  onChange={e => setEditingTitleDraft(e.target.value)}
+                  onBlur={() => {
+                    onPrintLayerChange?.(h.id, { title: editingTitleDraft });
+                    setEditingTitleId(null);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") { onPrintLayerChange?.(h.id, { title: editingTitleDraft }); setEditingTitleId(null); }
+                    if (e.key === "Escape") setEditingTitleId(null);
+                    e.stopPropagation();
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    width: "100%", textAlign: "center",
+                    fontSize: titleFontSize, fontFamily: "Arial, sans-serif", fontWeight: "bold",
+                    border: "1.5px solid #7c3aed", borderRadius: 2, outline: "none",
+                    background: "rgba(255,253,230,0.97)", padding: "1px 4px", boxSizing: "border-box" as const,
+                  }}
+                />
+              </foreignObject>
+            );
+          }
+          return pl.title ? (
+            <text
+              x={titleX} y={titleY}
+              textAnchor="middle" dominantBaseline="hanging"
+              fontSize={titleFontSize}
+              fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111"
+              style={{ cursor: canEdit ? (draggingPrintTitle?.horizonId === h.id ? "grabbing" : "grab") : "default", userSelect: "none" }}
+              onDoubleClick={canEdit ? (e) => {
+                e.stopPropagation();
+                setEditingTitleDraft(pl.title);
+                setEditingTitleId(h.id);
+              } : undefined}
+              onMouseDown={canEdit ? (e) => {
+                if (e.detail >= 2) return;
+                e.stopPropagation();
+                setDraggingPrintTitle({
+                  horizonId: h.id,
+                  startSx: e.clientX - (e.currentTarget.ownerSVGElement?.getBoundingClientRect().left ?? 0),
+                  startSy: e.clientY - (e.currentTarget.ownerSVGElement?.getBoundingClientRect().top ?? 0),
+                  startOffX: pl.titleOffsetX ?? 0,
+                  startOffY: pl.titleOffsetY ?? 0,
+                });
+              } : undefined}
+            >
+              {pl.title}
+            </text>
+          ) : null;
+        })()}
         {/* Блок УТВЕРЖДАЮ — правый верхний угол рамки */}
         {pl.showApprover && (() => {
           const apW = Math.min(rw * 0.28, 220);
@@ -1510,6 +1574,7 @@ export default function TopoCanvas(props: Props) {
   if (!useCanvas) canvasExportRef.current = null;
 
   const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
+    : draggingPrintTitle ? "grabbing"
     : draggingNode ? "grabbing"
     : rescuePickMode ? "cell"
     : branchBindMode ? "pointer"

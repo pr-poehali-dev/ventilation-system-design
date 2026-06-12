@@ -270,6 +270,9 @@ export interface HorizonPrintLayer {
   orientation: "landscape" | "portrait";
   /** Положение и размер подложки в мировых координатах (м). null = автовычисление из bbox горизонта */
   bounds?: { x1: number; y1: number; x2: number; y2: number };
+  /** Смещение заголовка относительно центра рамки в пикселях (экранные) */
+  titleOffsetX?: number;
+  titleOffsetY?: number;
 }
 
 export interface Horizon {
