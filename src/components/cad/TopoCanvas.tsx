@@ -1308,6 +1308,8 @@ export default function TopoCanvas(props: Props) {
 
     // ── Вычисляем экранный bbox рамки ──────────────────────────────────────
     let rx: number, ry: number, rw: number, rh: number;
+    const wb: { x1: number; y1: number; x2: number; y2: number } = { x1: 0, y1: 0, x2: 0, y2: 0 };
+    const pTL = { sx: 0, sy: 0 }, pTR = { sx: 0, sy: 0 }, pBL = { sx: 0, sy: 0 }, pBR = { sx: 0, sy: 0 };
 
     if (h.id === OVERVIEW_HORIZON_ID) {
       // Для "Общего вида" — bbox из проекций ВСЕХ узлов с реальными x,y,z.
@@ -1329,11 +1331,15 @@ export default function TopoCanvas(props: Props) {
       let rw2 = fitW, rh2 = fitW / aspect;
       if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
       rx = cxS - rw2 / 2; ry = cyS - rh2 / 2; rw = rw2; rh = rh2;
+      // Угловые точки для ручек (в экранных координатах)
+      Object.assign(pTL, { sx: rx, sy: ry });
+      Object.assign(pTR, { sx: rx + rw, sy: ry });
+      Object.assign(pBL, { sx: rx, sy: ry + rh });
+      Object.assign(pBR, { sx: rx + rw, sy: ry + rh });
     } else {
       // Для обычных горизонтов — мировые bounds → 4 угла → экранный bbox
-      let wb: { x1: number; y1: number; x2: number; y2: number };
       if (pl.bounds) {
-        wb = pl.bounds;
+        Object.assign(wb, pl.bounds);
       } else {
         const hNodeIds = new Set<string>();
         branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
@@ -1351,14 +1357,16 @@ export default function TopoCanvas(props: Props) {
         const fitH = wh + pad * 2;
         let rw2 = fitW, rh2 = fitW / aspect;
         if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
-        wb = { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 };
+        Object.assign(wb, { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 });
       }
       const xy = xyScale ?? 1;
       const zs = zScale ?? 1;
-      const pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
-      const pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
-      const pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
-      const pBR = project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
+      const _pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
+      const _pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
+      const _pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
+      const _pBR = project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
+      Object.assign(pTL, _pTL); Object.assign(pTR, _pTR);
+      Object.assign(pBL, _pBL); Object.assign(pBR, _pBR);
       rx = Math.min(pTL.sx, pBL.sx);
       ry = Math.min(pTL.sy, pTR.sy);
       rw = Math.max(pTR.sx, pBR.sx) - rx;
