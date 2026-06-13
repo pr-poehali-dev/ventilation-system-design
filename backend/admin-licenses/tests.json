@@ -1,0 +1,28 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Unauthorized without password",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "list_licenses"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Wrong password returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "generate_key", "password": "wrong"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

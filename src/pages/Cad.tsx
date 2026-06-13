@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
+import { useLicenseContext } from "@/context/LicenseContext";
+import LicenseDialog from "@/components/LicenseDialog";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
@@ -172,6 +174,15 @@ const DEFAULT_EXC: Excavation = {
 const LAYERS = ["Стволы", "Квершлаги", "Штреки", "Уклоны", "Камеры", "Сбойки", "Скважины"];
 
 export default function CadPage() {
+  const license = useLicenseContext();
+  const isDemo = license.status === "demo";
+  const [showLicenseDialog, setShowLicenseDialog] = useState(false);
+
+  // При первом запуске без лицензии показываем диалог активации
+  useEffect(() => {
+    if (license.status === "demo") setShowLicenseDialog(true);
+  }, [license.status]);
+
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
   const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
@@ -607,6 +618,10 @@ export default function CadPage() {
   // Создаёт узел в указанной мировой точке. Если активен горизонт —
   // навязывает его Z и horizonId. Возвращает ID созданного узла.
   const handleNodeAdd = (x: number, y: number, z: number): string => {
+    if (isDemo && nodes.length >= 20) {
+      setShowLicenseDialog(true);
+      return "";
+    }
     pushHistory();
     const newId = nextNodeId();
     const finalZ = activeHorizon ? activeHorizon.z : z;
@@ -984,6 +999,7 @@ export default function CadPage() {
 
   // Захватывает схему и открывает диалог печати
   const openPrintDialog = () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
     // 1) Canvas-режим: читаем живой DOM-canvas напрямую
     const canvas = liveCanvasRef.current;
     if (canvas && canvas.width > 0 && canvas.height > 0) {
@@ -1420,6 +1436,7 @@ export default function CadPage() {
   };
 
   const handleSave = async () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
     const data = buildProjectData();
     // Если есть открытый handle — перезаписываем без диалога
     if (fileHandleRef.current) {
@@ -1444,6 +1461,7 @@ export default function CadPage() {
   };
 
   const handleSaveAs = async () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
     const data = buildProjectData();
     // File System Access API — показываем диалог выбора файла
     if ("showSaveFilePicker" in window) {
@@ -1479,6 +1497,7 @@ export default function CadPage() {
   };
 
   const handleOpen = async () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
     // File System Access API — открываем с handle для последующей перезаписи
     if ("showOpenFilePicker" in window) {
       try {
@@ -2433,6 +2452,19 @@ export default function CadPage() {
         </div>
       </div>
 
+      {/* ── Демо-баннер ────────────────────────────────────────────────── */}
+      {isDemo && (
+        <div className="flex items-center justify-between px-3 py-1 text-[11px] font-medium select-none"
+          style={{ background: "#fef3c7", borderBottom: "1px solid #fcd34d", color: "#92400e" }}>
+          <span>⚠ Демо-режим: ограничено 20 узлов, нет сохранения, печати и расчётов аварий</span>
+          <button onClick={() => setShowLicenseDialog(true)}
+            className="ml-3 px-2 py-0.5 rounded text-[10px] font-semibold text-white flex-shrink-0"
+            style={{ background: "#d97706" }}>
+            Активировать лицензию
+          </button>
+        </div>
+      )}
+
       {/* ═══ RIBBON TABS ══════════════════════════════════════════════════ */}
       <div className="flex items-end h-7 px-1 gap-0.5"
         style={{ background: "#f0f0f0", borderBottom: "1px solid #b8b8b8" }}>
@@ -2440,7 +2472,9 @@ export default function CadPage() {
         <RibbonTabBtn label="Главная" active={activeRibbon === "home"} onClick={() => setActiveRibbon("home")} />
         <RibbonTabBtn label="Схема" active={activeRibbon === "vent"} onClick={() => setActiveRibbon("vent")} />
         <RibbonTabBtn label="Вентиляция" active={activeRibbon === "thermo"} onClick={() => setActiveRibbon("thermo")} />
-        <RibbonTabBtn label="Аварии" active={activeRibbon === "involve"} onClick={() => setActiveRibbon("involve")} />
+        <RibbonTabBtn label="Аварии" active={activeRibbon === "involve"}
+          onClick={() => { if (isDemo) { setShowLicenseDialog(true); return; } setActiveRibbon("involve"); }}
+          title={isDemo ? "Аварийные расчёты — только в полной версии" : undefined} />
         <RibbonTabBtn label="Трубы" active={activeRibbon === "costs"} onClick={() => setActiveRibbon("costs")} />
         <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => setActiveRibbon("general")} />
         <RibbonTabBtn label="Общее" active={false} onClick={() => {}} highlight />
@@ -2455,16 +2489,17 @@ export default function CadPage() {
 
       {/* ═══ МЕНЮ ФАЙЛ (выпадающее, как в Аэросеть) ═══════════════════════ */}
       {activeRibbon === "file" && (() => {
-        const sections: { id: string; label: string }[] = [
-          { id: "new",     label: "Создать" },
-          { id: "open",    label: "Открыть" },
-          { id: "recent",  label: "Последние" },
-          { id: "add",     label: "Добавить" },
-          { id: "saveas",  label: "Сохранить как" },
-          { id: "save",    label: "Сохранить" },
-          { id: "print",   label: "Печать" },
-          { id: "export",  label: "Экспорт" },
-          { id: "install", label: "Установить" },
+        const sections: { id: string; label: string; separator?: boolean }[] = [
+          { id: "new",       label: "Создать" },
+          { id: "open",      label: "Открыть" },
+          { id: "recent",    label: "Последние" },
+          { id: "add",       label: "Добавить" },
+          { id: "saveas",    label: "Сохранить как" },
+          { id: "save",      label: "Сохранить" },
+          { id: "print",     label: "Печать" },
+          { id: "export",    label: "Экспорт" },
+          { id: "install",   label: "Установить" },
+          { id: "license",   label: isDemo ? "🔑 Лицензия" : "✓ Лицензия", separator: true },
         ];
         return (
           <div className="fixed inset-0 z-50" onClick={() => setActiveRibbon("home")}>
@@ -2743,8 +2778,47 @@ export default function CadPage() {
                   );
                 })()}
 
+                {/* ── Лицензия ── */}
+                {fileSectionState === "license" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Лицензия</div>
+                    {isDemo ? (
+                      <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 mb-3">
+                        <div className="text-[12px] font-semibold text-amber-800 mb-1">Демо-режим</div>
+                        <div className="text-[11px] text-amber-700 space-y-0.5">
+                          <div>• Максимум 20 узлов</div>
+                          <div>• Нет сохранения файлов</div>
+                          <div>• Нет расчётов аварий</div>
+                          <div>• Нет печати</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-lg border border-green-200 bg-green-50 mb-3">
+                        <div className="text-[12px] font-semibold text-green-800 mb-1">✓ Лицензия активна</div>
+                        <div className="text-[11px] text-green-700">{license.info?.owner}</div>
+                        <div className="text-[11px] font-mono text-green-600">{license.info?.key}</div>
+                        {license.info?.seats && (
+                          <div className="text-[11px] text-green-600 mt-0.5">
+                            Мест: {license.info.seats.used} / {license.info.seats.max}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={() => { setShowLicenseDialog(true); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded hover:bg-blue-50 border border-blue-200 group">
+                      <div className="w-9 h-9 flex items-center justify-center rounded border border-blue-300" style={{ background: "#dbeafe" }}>
+                        <Icon name="KeyRound" size={18} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-blue-700">{isDemo ? "Активировать лицензию" : "Управление лицензией"}</div>
+                        <div className="text-[10px] text-gray-400">Ввести лицензионный ключ</div>
+                      </div>
+                    </button>
+                  </>
+                )}
+
                 {/* ── Остальные секции — заглушки ── */}
-                {!["new", "add", "open", "save", "saveas", "print", "export", "install"].includes(fileSectionState) && (
+                {!["new", "add", "open", "save", "saveas", "print", "export", "install", "license"].includes(fileSectionState) && (
                   <div className="text-[12px] text-gray-400 pt-4">
                     Функция «{sections.find((s) => s.id === fileSectionState)?.label}» будет реализована.
                   </div>
@@ -7322,6 +7396,25 @@ export default function CadPage() {
                 </select>
               </div>
             )}
+
+            {/* ── Водяной знак ДЕМО ─────────────────────────────── */}
+            {isDemo && (
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center"
+                style={{ zIndex: 10 }}>
+                <div className="select-none"
+                  style={{
+                    fontSize: "clamp(48px, 8vw, 120px)",
+                    fontWeight: 900,
+                    color: "rgba(180,30,30,0.07)",
+                    letterSpacing: "0.15em",
+                    transform: "rotate(-35deg)",
+                    userSelect: "none",
+                    whiteSpace: "nowrap",
+                  }}>
+                  ДЕМО
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -8090,6 +8183,15 @@ export default function CadPage() {
           </div>
         </div>
       </div>
+    )}
+
+    {/* ── Диалог лицензии ─────────────────────────────────────────────── */}
+    {showLicenseDialog && (
+      <LicenseDialog
+        license={license}
+        onClose={() => setShowLicenseDialog(false)}
+        required={isDemo && !license.info}
+      />
     )}
 
     </>

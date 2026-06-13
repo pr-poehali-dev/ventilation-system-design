@@ -7,10 +7,12 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useEffect, useState } from "react";
 import Index from "./pages/Index";
 import Cad from "./pages/Cad";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import MobileStub from "./components/MobileStub";
 import InstallPwaButton from "./components/InstallPwaButton";
 import PwaUpdateBanner from "./components/PwaUpdateBanner";
+import { LicenseProvider } from "./context/LicenseContext";
 
 const queryClient = new QueryClient();
 
@@ -68,16 +70,19 @@ const App = () => {
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Cad />} />
-          <Route path="/legacy" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-      <InstallPwaButton />
-      <PwaUpdateBanner />
+      <LicenseProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Cad />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="/legacy" element={<Index />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+        <InstallPwaButton />
+        <PwaUpdateBanner />
+      </LicenseProvider>
     </TooltipProvider>
   </QueryClientProvider>
   );
