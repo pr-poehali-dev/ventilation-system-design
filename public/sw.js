@@ -4,14 +4,15 @@
  *  - Иконки /icon-*.png — проксируем с CDN и кэшируем локально
  *  - Статика (js/css/png/svg/woff2) — stale-while-revalidate
  */
-const VERSION = 'pv-sistema-v1.1.0';
+const VERSION = 'pv-sistema-v1.2.0';
 const CACHE_STATIC = `${VERSION}-static`;
 const CACHE_RUNTIME = `${VERSION}-runtime`;
 
 // CDN-источники иконок (проксируем как локальные /icon-*.png)
+const LOGO_CDN = 'https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/a81f2c98-d805-485d-b5f9-3e15893dd1a4.png';
 const ICON_MAP = {
-  '/icon-512.png': 'https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/54f363e3-a3a0-4a8d-9e99-b6c32172dfdd.png',
-  '/icon-192.png': 'https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/54f363e3-a3a0-4a8d-9e99-b6c32172dfdd.png',
+  '/icon-512.png': LOGO_CDN,
+  '/icon-192.png': LOGO_CDN,
 };
 
 const PRECACHE_URLS = [

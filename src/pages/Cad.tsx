@@ -2703,8 +2703,8 @@ export default function CadPage() {
                                 else { alert("Для установки откройте сайт в браузере Chrome или Edge и нажмите значок установки (⊕) в адресной строке."); }
                               }}>
                               <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
-                                <img src="/icon-192.png"
-                                  alt="" className="w-7 h-7" />
+                                <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/a81f2c98-d805-485d-b5f9-3e15893dd1a4.png"
+                                  alt="" className="w-7 h-7 rounded-lg" />
                               </div>
                               <div>
                                 <div className="text-[13px] font-medium text-blue-700">Установить ПВ-Система на ПК</div>
