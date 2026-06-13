@@ -1323,36 +1323,40 @@ export default function TopoCanvas(props: Props) {
     const pTL = { sx: 0, sy: 0 }, pTR = { sx: 0, sy: 0 }, pBL = { sx: 0, sy: 0 }, pBR = { sx: 0, sy: 0 };
 
     if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
-      // Авто-bbox OVERVIEW по чистым мировым X/Y (без xyScale, без zScale, z=0).
-      // Это гарантирует корректное отображение при любой проекции и zScale.
+      // Авто-bbox OVERVIEW: проецируем все узлы в экранные координаты (z=0),
+      // берём экранный bbox — это единственный способ корректно работать
+      // при любых xyScale, zScale и проекции (план/ИЗО/фронт/профиль).
       const allNodes = nodes.length > 0 ? nodes : null;
       if (!allNodes) return null;
-      let minWx = Infinity, maxWx = -Infinity, minWy = Infinity, maxWy = -Infinity;
-      allNodes.forEach(n => {
-        if (n.x < minWx) minWx = n.x; if (n.x > maxWx) maxWx = n.x;
-        if (n.y < minWy) minWy = n.y; if (n.y > maxWy) maxWy = n.y;
-      });
-      const ww = maxWx - minWx, wh = maxWy - minWy;
-      const pad = Math.max(ww, wh) * 0.1 + 10;
-      const cx = (minWx + maxWx) / 2, cy = (minWy + maxWy) / 2;
-      const fitWw = ww + pad * 2, fitHw = wh + pad * 2;
-      let bw = fitWw, bh = fitWw / aspect;
-      if (bh < fitHw) { bh = fitHw; bw = fitHw * aspect; }
-      // wb в чистых мировых — else-ветка умножит на xyScale при project3D
-      Object.assign(wb, { x1: cx - bw / 2, y1: cy - bh / 2, x2: cx + bw / 2, y2: cy + bh / 2 });
-      // Проецируем с z=0 и xyScale — как обычный горизонт
       const xy0 = xyScale ?? 1;
-      const _pTL = project3D({ x: wb.x1 * xy0, y: wb.y2 * xy0, z: 0 }, proj);
-      const _pTR = project3D({ x: wb.x2 * xy0, y: wb.y2 * xy0, z: 0 }, proj);
-      const _pBL = project3D({ x: wb.x1 * xy0, y: wb.y1 * xy0, z: 0 }, proj);
-      const _pBR = project3D({ x: wb.x2 * xy0, y: wb.y1 * xy0, z: 0 }, proj);
-      Object.assign(pTL, _pTL); Object.assign(pTR, _pTR);
-      Object.assign(pBL, _pBL); Object.assign(pBR, _pBR);
-      rx = Math.min(pTL.sx, pBL.sx);
-      ry = Math.min(pTL.sy, pTR.sy);
-      rw = Math.max(pTR.sx, pBR.sx) - rx;
-      rh = Math.max(pBL.sy, pBR.sy) - ry;
-      rw = Math.max(rw, 40); rh = Math.max(rh, 40);
+      let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+      allNodes.forEach(n => {
+        // z=0: рамка по горизонтальному плану, не разлетается при zScale
+        const p = project3D({ x: n.x * xy0, y: n.y * xy0, z: 0 }, proj);
+        if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
+        if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
+      });
+      const spreadX = maxSx - minSx, spreadY = maxSy - minSy;
+      const padPx = Math.max(30, Math.max(spreadX, spreadY) * 0.08);
+      const cxS = (minSx + maxSx) / 2, cyS = (minSy + maxSy) / 2;
+      const fitW = spreadX + padPx * 2, fitH = spreadY + padPx * 2;
+      let rw2 = fitW, rh2 = fitW / aspect;
+      if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
+      rw2 = Math.max(rw2, 60); rh2 = Math.max(rh2, 60);
+      rx = cxS - rw2 / 2; ry = cyS - rh2 / 2; rw = rw2; rh = rh2;
+      // Угловые точки в экранных координатах
+      Object.assign(pTL, { sx: rx,      sy: ry      });
+      Object.assign(pTR, { sx: rx + rw, sy: ry      });
+      Object.assign(pBL, { sx: rx,      sy: ry + rh });
+      Object.assign(pBR, { sx: rx + rw, sy: ry + rh });
+      // wb — обратное проецирование для drag-handler (мировые координаты)
+      // используем unproject2D чтобы сохранить bounds при перетаскивании
+      const _wBL = unproject2D(rx,      ry + rh, proj, 0);
+      const _wTR = unproject2D(rx + rw, ry,      proj, 0);
+      Object.assign(wb, {
+        x1: _wBL.x / xy0, y1: _wBL.y / xy0,
+        x2: _wTR.x / xy0, y2: _wTR.y / xy0,
+      });
     } else {
       // Для обычных горизонтов — мировые bounds → 4 угла → экранный bbox
       if (pl.bounds) {
