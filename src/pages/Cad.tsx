@@ -1526,7 +1526,21 @@ export default function CadPage() {
               period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
               showLegend: false, showStamp: false, showApprover: false, paperFormat: "A1", orientation: "landscape" } } as Horizon,
           ...loaded];
-      setHorizons(withOverview);
+      // Миграция: сбрасываем showLegend/showStamp/showApprover в false для всех горизонтов
+      // (старые файлы могли сохранить эти значения как true)
+      const migratedHorizons = withOverview.map(h => {
+        if (!h.printLayer) return h;
+        return {
+          ...h,
+          printLayer: {
+            ...h.printLayer,
+            showLegend: h.printLayer.showLegend ?? false,
+            showStamp: h.printLayer.showStamp ?? false,
+            showApprover: h.printLayer.showApprover ?? false,
+          },
+        };
+      });
+      setHorizons(migratedHorizons);
     }
     const loadedSymbols = (data.schemaSymbols as SchemaSymbol[]) ?? [];
     // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)

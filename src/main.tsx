@@ -15,22 +15,8 @@ createRoot(document.getElementById("root")!).render(<App />);
 if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
-      .then((reg) => {
-        // Авто-обновление: если появилась новая версия — активируем её
-        reg.addEventListener('updatefound', () => {
-          const sw = reg.installing;
-          if (!sw) return;
-          sw.addEventListener('statechange', () => {
-            if (sw.state === 'installed' && navigator.serviceWorker.controller) {
-              sw.postMessage('SKIP_WAITING');
-            }
-          });
-        });
-      })
       .catch(() => { /* SW не критичен — приложение работает и без него */ });
-
-    // При смене активного SW — НЕ перезагружаем автоматически,
-    // чтобы не зациклить сплеш. Новая версия подхватится при следующем открытии.
+    // Обнаружение обновлений и баннер — в компоненте PwaUpdateBanner
   });
 }
 

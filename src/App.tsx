@@ -10,6 +10,7 @@ import Cad from "./pages/Cad";
 import NotFound from "./pages/NotFound";
 import MobileStub from "./components/MobileStub";
 import InstallPwaButton from "./components/InstallPwaButton";
+import PwaUpdateBanner from "./components/PwaUpdateBanner";
 
 const queryClient = new QueryClient();
 
@@ -76,6 +77,7 @@ const App = () => {
         </Routes>
       </BrowserRouter>
       <InstallPwaButton />
+      <PwaUpdateBanner />
     </TooltipProvider>
   </QueryClientProvider>
   );
