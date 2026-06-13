@@ -5281,10 +5281,11 @@ export default function CadPage() {
                               <span className="ml-1 text-purple-400" title="Слой печати активен">●</span>
                             )}
                           </button>
-                          {/* ── Подложка плана (внутри строки горизонта) — скрыта для Общего вида ── */}
-                          {expandedHorizons.has(h.id) && h.id !== OVERVIEW_HORIZON_ID && (
+                          {/* ── Настройки горизонта (подложка + слой печати) ── */}
+                          {expandedHorizons.has(h.id) && (
                           <div className="px-1 pb-1 pt-0">
-                            {h.image ? (
+                            {/* Подложка плана — только для обычных горизонтов */}
+                            {h.id !== OVERVIEW_HORIZON_ID && (h.image ? (
                               <div className="space-y-1 pt-1">
                                 <div className="flex items-center gap-1">
                                   <img src={h.image.dataUrl} alt=""
@@ -5336,7 +5337,7 @@ export default function CadPage() {
                                 <Icon name="Upload" size={10} className="inline flex-shrink-0" />
                                 Загрузить план
                               </label>
-                            )}
+                            ))}
                             {/* ── Слой печати горизонта ── */}
                             {(() => {
                               const pl = h.printLayer;
