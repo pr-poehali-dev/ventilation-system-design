@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
-  DEMO_NODES, DEMO_BRANCHES, DEFAULT_HORIZONS, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
+  DEMO_NODES, DEMO_BRANCHES, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
@@ -357,27 +357,27 @@ export default function CadPage() {
         showLegend: false, showStamp: false, showApprover: false,
         paperFormat: "A1", orientation: "landscape" },
     } as Horizon;
+
+    // Принудительный сброс галочек УО/Штамп/Утв для всех горизонтов
+    const resetPrintFlags = (list: Horizon[]): Horizon[] =>
+      list.map(h => !h.printLayer ? h : {
+        ...h,
+        printLayer: { ...h.printLayer, showLegend: false, showStamp: false, showApprover: false },
+      });
+
     const ensureOverview = (list: Horizon[]): Horizon[] => {
-      if (list.some(h => h.id === OVERVIEW_HORIZON_ID)) {
-        // Миграция: сбрасываем поля которые не заданы явно в старых данных
-        return list.map(h => h.id !== OVERVIEW_HORIZON_ID ? h : {
-          ...h,
-          printLayer: h.printLayer ? {
-            ...h.printLayer,
-            showLegend: h.printLayer.showLegend ?? false,
-            showStamp: h.printLayer.showStamp ?? false,
-            showApprover: h.printLayer.showApprover ?? false,
-          } : h.printLayer,
-        });
-      }
+      if (list.some(h => h.id === OVERVIEW_HORIZON_ID)) return list;
       return [DEFAULT_OVERVIEW, ...list];
     };
-    if (typeof window === "undefined") return ensureOverview(DEFAULT_HORIZONS);
+
+    if (typeof window === "undefined") return [DEFAULT_OVERVIEW];
     try {
       const raw = window.localStorage.getItem("vent-cad/horizons-v4");
       if (!raw) return [DEFAULT_OVERVIEW];
       const parsed = JSON.parse(raw) as Horizon[];
-      if (Array.isArray(parsed) && parsed.length) return ensureOverview(parsed);
+      if (!Array.isArray(parsed) || !parsed.length) return [DEFAULT_OVERVIEW];
+      // Миграция v3: принудительно сбрасываем галочки при каждой загрузке из localStorage
+      return resetPrintFlags(ensureOverview(parsed));
     } catch { /* игнорируем повреждённые данные */ }
     return [DEFAULT_OVERVIEW];
   });
