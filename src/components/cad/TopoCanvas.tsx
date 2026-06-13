@@ -370,10 +370,11 @@ export default function TopoCanvas(props: Props) {
   useEffect(() => { setBranchFrom(null); }, [tool]);
 
   // ─── ВОССТАНОВЛЕНИЕ СОХРАНЁННОГО ВИДА ───────────────────────────────
-  // restoredViewNonce: когда view восстановлен из файла — блокируем fitToScreen
+  // restoredViewNonce: когда view восстановлен из файла — блокируем fitToScreen на 5 сек
   const restoredViewNonce = useRef<number>(0);
   useEffect(() => {
     if (!restoreView) return;
+    // Устанавливаем nonce НЕМЕДЛЕННО чтобы заблокировать любые fitToScreen
     restoredViewNonce.current = Date.now();
     setView((v) => ({
       scale: restoreView.scale ?? v.scale,
@@ -383,6 +384,8 @@ export default function TopoCanvas(props: Props) {
       elevation: restoreView.elevation ?? v.elevation,
     }));
     onRestoreViewDone?.();
+    // Дополнительно сбрасываем fitAfterPreset — при восстановлении вида fit не нужен
+    fitAfterPresetRef.current = false;
   }, [restoreView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Синхронизируем viewRef — всегда актуальное значение для нативных listeners
@@ -448,8 +451,8 @@ export default function TopoCanvas(props: Props) {
     if (!fitToScreenNonce) return;
     if (nodes.length === 0) return;
     if (size.w < 50 || size.h < 50) return;
-    // Если view был восстановлен из файла менее 2 секунд назад — не перезаписываем
-    if (restoredViewNonce.current && (Date.now() - restoredViewNonce.current) < 2000) return;
+    // Если view был восстановлен из файла менее 5 секунд назад — не перезаписываем
+    if (restoredViewNonce.current && (Date.now() - restoredViewNonce.current) < 5000) return;
     // Проецируем узлы при масштабе 1 и offset(0,0) — получаем "мировые экранные" координаты
     const tmpProj: ProjOptions = {
       scale: 1, offsetX: 0, offsetY: 0,
@@ -613,9 +616,9 @@ export default function TopoCanvas(props: Props) {
   useEffect(() => {
     if (!viewPreset) return;
     const p = VIEW_PRESETS[viewPreset.name];
-    // Авто-fit только если вид не был восстановлен из файла недавно
+    // Авто-fit только если вид не был восстановлен из файла недавно (5 сек)
     const timeSinceRestore = Date.now() - restoredViewNonce.current;
-    if (timeSinceRestore > 3000) {
+    if (timeSinceRestore > 5000) {
       fitAfterPresetRef.current = true;
     }
     setView((v) => ({ ...v, azimuth: p.azimuth, elevation: p.elevation }));
@@ -1323,74 +1326,62 @@ export default function TopoCanvas(props: Props) {
     const pTL = { sx: 0, sy: 0 }, pTR = { sx: 0, sy: 0 }, pBL = { sx: 0, sy: 0 }, pBR = { sx: 0, sy: 0 };
 
     if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
-      // Авто-bbox OVERVIEW: проецируем все узлы в экранные координаты (z=0),
-      // берём экранный bbox — это единственный способ корректно работать
-      // при любых xyScale, zScale и проекции (план/ИЗО/фронт/профиль).
+      // Авто-bbox OVERVIEW: вычисляем в мировых X/Y координатах (z=0, без zScale).
+      // Потом проецируем как обычный горизонт — тогда рамка правильно следует
+      // за схемой при ЛЮБОЙ смене проекции (план, ИЗО, фронт, профиль).
       const allNodes = nodes.length > 0 ? nodes : null;
       if (!allNodes) return null;
-      const xy0 = xyScale ?? 1;
-      let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+      let minWx = Infinity, maxWx = -Infinity, minWy = Infinity, maxWy = -Infinity;
       allNodes.forEach(n => {
-        // z=0: рамка по горизонтальному плану, не разлетается при zScale
-        const p = project3D({ x: n.x * xy0, y: n.y * xy0, z: 0 }, proj);
-        if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
-        if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
+        if (n.x < minWx) minWx = n.x; if (n.x > maxWx) maxWx = n.x;
+        if (n.y < minWy) minWy = n.y; if (n.y > maxWy) maxWy = n.y;
       });
-      const spreadX = maxSx - minSx, spreadY = maxSy - minSy;
-      const padPx = Math.max(30, Math.max(spreadX, spreadY) * 0.08);
-      const cxS = (minSx + maxSx) / 2, cyS = (minSy + maxSy) / 2;
-      const fitW = spreadX + padPx * 2, fitH = spreadY + padPx * 2;
+      const ww = maxWx - minWx, wh = maxWy - minWy;
+      const pad = Math.max(ww, wh) * 0.12 + 10;
+      const cx = (minWx + maxWx) / 2, cy = (minWy + maxWy) / 2;
+      const fitWw = ww + pad * 2, fitHw = wh + pad * 2;
+      let bw = fitWw, bh = fitWw / aspect;
+      if (bh < fitHw) { bh = fitHw; bw = fitHw * aspect; }
+      // wb в чистых мировых — ниже проецируем как обычный горизонт с xyScale и z=0
+      Object.assign(wb, { x1: cx - bw / 2, y1: cy - bh / 2, x2: cx + bw / 2, y2: cy + bh / 2 });
+    } else if (pl.bounds) {
+      // Ручные bounds (после перетаскивания) — используем как есть
+      Object.assign(wb, pl.bounds);
+    } else {
+      // Авто-bbox обычного горизонта — по узлам этого горизонта
+      const hNodeIds = new Set<string>();
+      branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
+      const hNodes = nodes.filter(n => hNodeIds.has(n.id));
+      if (hNodes.length === 0) return null;
+      const wxs = hNodes.map(n => n.x);
+      const wys = hNodes.map(n => n.y);
+      const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
+      const wmy = Math.min(...wys), wMy = Math.max(...wys);
+      const ww = wMx - wmx, wh = wMy - wmy;
+      const pad = Math.max(ww, wh) * 0.12 + 10;
+      const cx = (wmx + wMx) / 2, cy = (wmy + wMy) / 2;
+      const fitW = ww + pad * 2, fitH = wh + pad * 2;
       let rw2 = fitW, rh2 = fitW / aspect;
       if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
-      rw2 = Math.max(rw2, 60); rh2 = Math.max(rh2, 60);
-      rx = cxS - rw2 / 2; ry = cyS - rh2 / 2; rw = rw2; rh = rh2;
-      // Угловые точки в экранных координатах
-      Object.assign(pTL, { sx: rx,      sy: ry      });
-      Object.assign(pTR, { sx: rx + rw, sy: ry      });
-      Object.assign(pBL, { sx: rx,      sy: ry + rh });
-      Object.assign(pBR, { sx: rx + rw, sy: ry + rh });
-      // wb — обратное проецирование для drag-handler (мировые координаты)
-      // используем unproject2D чтобы сохранить bounds при перетаскивании
-      const _wBL = unproject2D(rx,      ry + rh, proj, 0);
-      const _wTR = unproject2D(rx + rw, ry,      proj, 0);
-      Object.assign(wb, {
-        x1: _wBL.x / xy0, y1: _wBL.y / xy0,
-        x2: _wTR.x / xy0, y2: _wTR.y / xy0,
-      });
-    } else {
-      // Для обычных горизонтов — мировые bounds → 4 угла → экранный bbox
-      if (pl.bounds) {
-        Object.assign(wb, pl.bounds);
-      } else {
-        const hNodeIds = new Set<string>();
-        branches.forEach(b => { if (b.horizonId === h.id) { hNodeIds.add(b.fromId); hNodeIds.add(b.toId); } });
-        const hNodes = nodes.filter(n => hNodeIds.has(n.id));
-        if (hNodes.length === 0) return null;
-        const wxs = hNodes.map(n => n.x);
-        const wys = hNodes.map(n => n.y);
-        const wmx = Math.min(...wxs), wMx = Math.max(...wxs);
-        const wmy = Math.min(...wys), wMy = Math.max(...wys);
-        const ww = wMx - wmx, wh = wMy - wmy;
-        const pad = Math.max(ww, wh) * 0.12 + 10;
-        const cx = (wmx + wMx) / 2, cy = (wmy + wMy) / 2;
-        const fitW = ww + pad * 2;
-        const fitH = wh + pad * 2;
-        let rw2 = fitW, rh2 = fitW / aspect;
-        if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
-        Object.assign(wb, { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 });
-      }
+      Object.assign(wb, { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 });
+    }
+    // ── Общий путь: проецируем wb (мировые) → экранные координаты ──────────
+    // OVERVIEW: z=0 (рамка по горизонтальному плану, не разлетается при zScale)
+    // Остальные горизонты: z = h.z * zScale
+    {
       const xy = xyScale ?? 1;
-      const zs = zScale ?? 1;
-      const _pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
-      const _pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: h.z * zs }, proj);
-      const _pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
-      const _pBR = project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: h.z * zs }, proj);
+      const z4proj = (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) ? 0 : h.z * (zScale ?? 1);
+      const _pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: z4proj }, proj);
+      const _pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: z4proj }, proj);
+      const _pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: z4proj }, proj);
+      const _pBR = project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: z4proj }, proj);
       Object.assign(pTL, _pTL); Object.assign(pTR, _pTR);
       Object.assign(pBL, _pBL); Object.assign(pBR, _pBR);
       rx = Math.min(pTL.sx, pBL.sx);
       ry = Math.min(pTL.sy, pTR.sy);
       rw = Math.max(pTR.sx, pBR.sx) - rx;
       rh = Math.max(pBL.sy, pBR.sy) - ry;
+      rw = Math.max(rw, 40); rh = Math.max(rh, 40);
     }
     const inset = Math.max(4, Math.min(rw, rh) * 0.015);
     const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
