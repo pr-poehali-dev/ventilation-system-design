@@ -246,6 +246,10 @@ export interface HorizonPrintLayer {
   approverTitle: string;
   /** ФИО утверждающего */
   approverName: string;
+  /** День (число месяца) */
+  day?: string;
+  /** Месяц (название) */
+  month?: string;
   /** Год */
   year: string;
   /** Период действия (напр. "II-е полугодие 2025 года") */

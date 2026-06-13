@@ -123,7 +123,7 @@ export default function HorizonPrintLayerOverlay({ layer, width, height, onChang
           lineHeight: 1.5,
           pointerEvents: onChange ? "auto" : "none",
         }}>
-          <div style={{ fontWeight: "bold", fontSize: fs(3.8), marginBottom: fs(1) }}>
+          <div style={{ fontWeight: "normal", fontSize: fs(3.8), marginBottom: fs(1) }}>
             УТВЕРЖДАЮ
           </div>
           <InlineEdit
@@ -145,15 +145,24 @@ export default function HorizonPrintLayerOverlay({ layer, width, height, onChang
             textStyle={{ fontSize: fs(3.2), textAlign: "right", color: "#111", paddingRight: fs(1) }}
           />
           <div style={{ borderTop: `${lw}px solid #111`, margin: `${fs(1.5)}px 0 ${fs(0.5)}px` }} />
-          <div style={{ display: "flex", alignItems: "center", gap: fs(1), fontSize: fs(3.2) }}>
+          <div style={{ display: "flex", alignItems: "center", gap: fs(0.8), fontSize: fs(3.2) }}>
             <span>«</span>
             <InlineEdit
-              value={layer.year || "_____"}
-              onChange={v => onChange?.({ year: v })}
-              textStyle={{ fontSize: fs(3.2), width: fs(10), textAlign: "center", color: "#111" }}
+              value={layer.day || "__"}
+              onChange={v => onChange?.({ day: v })}
+              textStyle={{ fontSize: fs(3.2), width: fs(8), textAlign: "center", color: "#111" }}
             />
             <span>»</span>
-            <span style={{ flexGrow: 1, borderBottom: `${lw}px solid #111`, minWidth: fs(20) }} />
+            <InlineEdit
+              value={layer.month || "__________"}
+              onChange={v => onChange?.({ month: v })}
+              textStyle={{ fontSize: fs(3.2), width: fs(22), textAlign: "center", color: "#111" }}
+            />
+            <InlineEdit
+              value={layer.year || String(new Date().getFullYear())}
+              onChange={v => onChange?.({ year: v })}
+              textStyle={{ fontSize: fs(3.2), width: fs(12), textAlign: "center", color: "#111" }}
+            />
             <span>г.</span>
           </div>
         </div>

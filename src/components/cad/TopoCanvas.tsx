@@ -1561,7 +1561,7 @@ export default function TopoCanvas(props: Props) {
             <g key="approver-block">
               <rect x={apX} y={apY} width={apW} height={apFs * 10} fill="white" style={{ pointerEvents: "none" }} />
               {/* УТВЕРЖДАЮ */}
-              <text x={apCx} y={lineY(0)} textAnchor="middle" fontSize={apFs * 1.1} fontWeight="bold" fontFamily="Arial, sans-serif" fill="#111" style={{ pointerEvents: "none" }}>УТВЕРЖДАЮ</text>
+              <text x={apCx} y={lineY(0)} textAnchor="middle" fontSize={apFs * 1.1} fontWeight="normal" fontFamily="Arial, sans-serif" fill="#111" style={{ pointerEvents: "none" }}>УТВЕРЖДАЮ</text>
               {/* Должность */}
               <text x={apCx} y={lineY(apFs * 1.6)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
                 style={{ cursor: canEdit ? "text" : "default" }}
@@ -1584,11 +1584,21 @@ export default function TopoCanvas(props: Props) {
               </text>
               {/* Линия даты */}
               <line x1={apX} y1={lineY(apFs * 1.4)} x2={apX + apW} y2={ay} stroke="#111" strokeWidth={lw2} />
-              {/* Год */}
-              <text x={apCx} y={lineY(apFs * 1.2)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
+              {/* Дата: «день» месяц год г. */}
+              <text x={apX + apFs * 0.3} y={lineY(apFs * 1.2)} textAnchor="start" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
+                style={{ cursor: canEdit ? "text" : "default" }}
+                onDoubleClick={canEdit ? () => { const v = prompt("Число (день):", pl.day ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { day: v }); } : undefined}>
+                «{pl.day || "__"}»
+              </text>
+              <text x={apX + apFs * 3.2} y={ay} textAnchor="start" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
+                style={{ cursor: canEdit ? "text" : "default" }}
+                onDoubleClick={canEdit ? () => { const v = prompt("Месяц:", pl.month ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { month: v }); } : undefined}>
+                {pl.month || "__________"}
+              </text>
+              <text x={apX + apW - apFs * 0.3} y={ay} textAnchor="end" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
                 style={{ cursor: canEdit ? "text" : "default" }}
                 onDoubleClick={canEdit ? () => { const v = prompt("Год:", pl.year ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { year: v }); } : undefined}>
-                «{pl.year || String(new Date().getFullYear())}» ___________ г.
+                {pl.year || String(new Date().getFullYear())} г.
               </text>
             </g>
           );
