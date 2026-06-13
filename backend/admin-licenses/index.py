@@ -42,15 +42,19 @@ def resp(status: int, body: dict) -> dict:
 
 
 def check_auth(event: dict, body: dict) -> bool:
-    admin_pass = os.environ.get("ADMIN_PASSWORD", "")
+    admin_pass = os.environ.get("ADMIN_PASSWORD", "").strip()
     if not admin_pass:
+        print("[admin] ADMIN_PASSWORD not set")
         return False
     provided = (
         body.get("password", "")
         or (event.get("headers") or {}).get("x-admin-password", "")
         or (event.get("headers") or {}).get("X-Admin-Password", "")
     )
-    return provided == admin_pass
+    provided = provided.strip()
+    match = provided == admin_pass
+    print(f"[admin] auth check: provided_len={len(provided)} expected_len={len(admin_pass)} match={match}")
+    return match
 
 
 def generate_key() -> str:
