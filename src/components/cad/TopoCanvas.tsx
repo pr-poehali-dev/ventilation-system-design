@@ -400,6 +400,8 @@ export default function TopoCanvas(props: Props) {
   // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
   // scaleOverride используется ТОЛЬКО для внешних команд (ввод в поле, fitToScreen).
   // Компенсация сдвига view при изменении xyScale/zScale без сброса позиции камеры
+  const nodesRef = useRef(nodes);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   const prevXyScale = useRef<number>(xyScale);
   const prevZScale = useRef<number>(zScale);
   useEffect(() => {
@@ -410,10 +412,11 @@ export default function TopoCanvas(props: Props) {
     // Масштабируем от центра bbox схемы (а не от центра экрана)
     setView((v) => {
       // Центр bbox узлов в экранных координатах при СТАРОМ xyScale
-      if (nodes.length > 0) {
+      const curNodes = nodesRef.current;
+      if (curNodes.length > 0) {
         const tmpProj: ProjOptions = { scale: v.scale, offsetX: v.offsetX, offsetY: v.offsetY, azimuth: v.azimuth, elevation: v.elevation, zScale };
         let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
-        nodes.forEach(n => {
+        curNodes.forEach(n => {
           const p = project3D({ x: n.x * prev, y: n.y * prev, z: n.z * (zScale ?? 1) }, tmpProj);
           if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
           if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
@@ -440,17 +443,26 @@ export default function TopoCanvas(props: Props) {
     prevZScale.current = zScale;
     if (prev === zScale || prev === 0) return;
     const ratio = zScale / prev;
-    // Масштабируем от центра bbox схемы по оси Y (работает и в плане, и в 3D)
+    // Масштабируем от центра bbox схемы (в 3D Z влияет на обе оси проекции)
     setView((v) => {
-      if (nodes.length > 0) {
+      const curNodes2 = nodesRef.current;
+      if (curNodes2.length > 0) {
         const tmpProj: ProjOptions = { scale: v.scale, offsetX: v.offsetX, offsetY: v.offsetY, azimuth: v.azimuth, elevation: v.elevation, zScale: prev };
-        let minSy = Infinity, maxSy = -Infinity;
-        nodes.forEach(n => {
+        let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+        curNodes2.forEach(n => {
           const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * prev }, tmpProj);
+          if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
           if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
         });
+        const csx = (minSx + maxSx) / 2;
         const csy = (minSy + maxSy) / 2;
-        return { ...v, offsetY: csy - (csy - v.offsetY) * ratio };
+        // В плановом виде (elevation≈90) Z не проецируется по X — offsetX не трогаем
+        const isTopView = Math.abs(v.elevation - 90) < 5;
+        return {
+          ...v,
+          offsetX: isTopView ? v.offsetX : csx - (csx - v.offsetX) * ratio,
+          offsetY: csy - (csy - v.offsetY) * ratio,
+        };
       }
       return { ...v, offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio };
     });

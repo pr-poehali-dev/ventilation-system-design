@@ -894,7 +894,7 @@ export default function CadPage() {
         // Приоритет 1: собственный bkBulkheadId символа
         if (s.bkBulkheadId) {
           const ref = mineBulkheads.find(b => b.id === s.bkBulkheadId);
-          if (ref) return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0 };
+          if (ref) return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0, bkFailurePressure: ref.failurePressure ?? 0 };
         }
         // Приоритет 2: bulkheadId ветви
         if (!s.branchId) return s;
@@ -902,20 +902,20 @@ export default function CadPage() {
         if (!br || !br.bulkheadId) return s;
         const ref = mineBulkheads.find(b => b.id === br.bulkheadId);
         if (!ref) return s;
-        return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0 };
+        return { ...s, bkAirPerm: ref.airPermeability ?? 0, bkBulkheadR: ref.rMkyurg ?? 0, bkFailurePressure: ref.failurePressure ?? 0 };
       }));
       return updated;
     });
   }, [mineBulkheads]);
 
-  // Синхронизация bkAirPerm в символах при изменении данных ветвей (выбор перемычки из справочника)
+  // Синхронизация bkAirPerm/bkFailurePressure в символах при изменении данных ветвей
   useEffect(() => {
     setSchemaSymbols(prev => prev.map(s => {
       if (!BULKHEAD_SYMBOL_IDS.has(s.typeId) || !s.branchId || s.bkManualAirPerm) return s;
       const br = branches.find(b => b.id === s.branchId);
       if (!br || !br.bulkheadId) return s;
-      if (s.bkAirPerm === br.bulkheadAirPerm && s.bkBulkheadR === br.bulkheadR) return s;
-      return { ...s, bkAirPerm: br.bulkheadAirPerm ?? 0, bkBulkheadR: br.bulkheadR ?? 0 };
+      if (s.bkAirPerm === br.bulkheadAirPerm && s.bkBulkheadR === br.bulkheadR && s.bkFailurePressure === br.bulkheadFailurePressure) return s;
+      return { ...s, bkAirPerm: br.bulkheadAirPerm ?? 0, bkBulkheadR: br.bulkheadR ?? 0, bkFailurePressure: br.bulkheadFailurePressure ?? 0 };
     }));
   }, [branches]);
 
@@ -1398,6 +1398,10 @@ export default function CadPage() {
     branchWidth,
     branchBorder,
     colorByHorizon,
+    colorMode,
+    posColorInner,
+    posColorOuter,
+    showPositions,
     showFlowArrows,
     flowDisplay,
     zScale,
@@ -1632,7 +1636,16 @@ export default function CadPage() {
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
-    if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); if (data.colorByHorizon) setColorMode("horizon"); }
+    if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); }
+    // colorMode сохраняется явно — восстанавливаем точное значение
+    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "horizon");
+    else if (data.colorByHorizon) setColorMode("horizon");
+    else setColorMode("none");
+    if (data.posColorInner !== undefined) setPosColorInner(data.posColorInner as boolean);
+    else setPosColorInner(false);
+    if (data.posColorOuter !== undefined) setPosColorOuter(data.posColorOuter as boolean);
+    else setPosColorOuter(false);
+    if (data.showPositions !== undefined) setShowPositions(data.showPositions as boolean);
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
     if (data.zScale !== undefined) setZScale(data.zScale as number);
@@ -3227,7 +3240,10 @@ export default function CadPage() {
                   const bkSym = symbolsRef.current.find(s =>
                     BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id
                   );
-                  const fp = (bkSym?.bkFailurePressure ?? b.bulkheadFailurePressure) || 0; // МПа
+                  // давление разрушения: из символа (если задано > 0) или из ветви (из справочника)
+                  const fp = (bkSym?.bkFailurePressure && bkSym.bkFailurePressure > 0
+                    ? bkSym.bkFailurePressure
+                    : b.bulkheadFailurePressure) || 0; // МПа
                   if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
                   const dFrom = netDist.get(b.fromId) ?? Infinity;
                   const dTo   = netDist.get(b.toId) ?? Infinity;
