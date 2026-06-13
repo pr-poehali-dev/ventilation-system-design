@@ -6345,7 +6345,19 @@ export default function CadPage() {
               onNodeMove={handleNodeMove}
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
-              onSelectNode={(id) => { setSelectedNodeId(id); setSelectedNodeIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); } }}
+              onSelectNode={(id) => {
+                if (id && rescuePickMode) {
+                  rescuePickHandlerRef.current?.(id);
+                  setSelectedNodeId(id);
+                  return;
+                }
+                if (id && workerPickMode) {
+                  workerPickHandlerRef.current?.(id);
+                  setSelectedNodeId(id);
+                  return;
+                }
+                setSelectedNodeId(id); setSelectedNodeIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); }
+              }}
               onSelectBranch={(id) => {
                 if (posBranchBindMode && selectedPositionId && id) {
                   // Режим F3: привязываем/отвязываем ветвь к позиции
