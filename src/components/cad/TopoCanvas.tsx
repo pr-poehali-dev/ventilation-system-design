@@ -408,6 +408,8 @@ export default function TopoCanvas(props: Props) {
     const prev = prevXyScale.current;
     prevXyScale.current = xyScale;
     if (prev === xyScale || prev === 0) return;
+    // Если вид только что восстановлен из файла — не перекрываем его
+    if (restoredViewNonce.current && (Date.now() - restoredViewNonce.current) < 3000) return;
     const ratio = xyScale / prev;
     // Масштабируем от центра bbox схемы (а не от центра экрана)
     setView((v) => {
@@ -442,6 +444,8 @@ export default function TopoCanvas(props: Props) {
     const prev = prevZScale.current;
     prevZScale.current = zScale;
     if (prev === zScale || prev === 0) return;
+    // Если вид только что восстановлен из файла — не перекрываем его
+    if (restoredViewNonce.current && (Date.now() - restoredViewNonce.current) < 3000) return;
     const ratio = zScale / prev;
     // Масштабируем от центра bbox схемы (в 3D Z влияет на обе оси проекции)
     setView((v) => {
