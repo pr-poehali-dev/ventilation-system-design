@@ -6472,12 +6472,21 @@ export default function CadPage() {
                 fireResult.branches.forEach((fr, bid) => {
                   const branch = branches.find(b => b.id === bid);
                   if (!branch) return;
+                  const col = hazardCol(fr.hazardLevel);
 
                   if (branch.hasFire) {
                     if (smokeTimeMinutes <= 0) return;
-                    // Очаг: дым заполняет ВСЮ ветвь (от очага в обе стороны)
-                    // Это корректно — очаг горит с t=0, дым есть по всей длине ветви
-                    map.set(bid, { color: hazardCol(fr.hazardLevel), fromT: 0, toT: 1 });
+                    // Очаг: дым расходится от точки очага fireT в ОБЕ стороны
+                    const ft = branch.fireT ?? 0.5;
+                    const speed = fr.airSpeed > 0 ? fr.airSpeed : 0.3;
+                    const len = branch.length > 0 ? branch.length : 1;
+                    // Расстояние, пройденное дымом от очага (метров)
+                    const smokedLen = smokeTimeMinutes * 60 * speed;
+                    const smokedFrac = Math.min(1, smokedLen / len);
+                    // В обе стороны от ft
+                    const fromT = Math.max(0, ft - smokedFrac);
+                    const toT   = Math.min(1, ft + smokedFrac);
+                    map.set(bid, { color: col, fromT, toT });
                     return;
                   }
 
@@ -6495,7 +6504,15 @@ export default function CadPage() {
                     ? Math.min(1, smokedLen / branch.length)
                     : 1;
 
-                  map.set(bid, { color: hazardCol(fr.hazardLevel), fromT: 0, toT: smokedFrac });
+                  // Дым входит с той стороны ветви, откуда идёт поток
+                  // flow >= 0: воздух from→to, дым входит с fromT=0
+                  // flow < 0: воздух to→from, дым входит с toT=1 (fromT = 1 - frac)
+                  const flowPos = branch.flow ?? 0;
+                  if (flowPos >= 0) {
+                    map.set(bid, { color: col, fromT: 0, toT: smokedFrac });
+                  } else {
+                    map.set(bid, { color: col, fromT: 1 - smokedFrac, toT: 1 });
+                  }
                 });
 
 

@@ -195,6 +195,38 @@ export const FAN_CATALOG: FanCurve[] = [
     reverseQMin: 6, reverseQMax: 26,
     reverseEfficiencyFactor: 0.80,
   },
+
+  // ─── Zitron (осевые главного проветривания) ─────────────────────────────────
+  {
+    // По графику: Q 0..850 м³/с, H 0..6500 Па, 6 кривых углов, n=750 об/мин
+    // Средняя кривая (~угол 3): H(0)≈5200, H(400)≈4200, H(800)≈1000
+    // Аппроксимация: H = 5200 + 2·Q - 0.0065·Q²
+    id: "ZVN-1-40-2500-8",
+    name: "Zitron ZVN 1-40-2500/8", type: "axial", diameter: 2.5,
+    h0: 5200, h1: 2, h2: -0.0065,
+    e0: 0.32, e1: 0.0012, e2: -0.0000018,
+    qMin: 50, qMax: 850, qNominal: 500, hNominal: 4000,
+    rpmMin: 0, rpmMax: 750, rpmNominal: 750,
+    bladeAngles: [1, 2, 3, 4, 5, 6],
+    reverseH0: 3640, reverseH1: 1.4, reverseH2: -0.0053,
+    reverseQMin: 40, reverseQMax: 720,
+    reverseEfficiencyFactor: 0.82,
+  },
+  {
+    // По графику: Q 20..43 м³/с, H 1000..5000 Па, 4 кривых углов, n=1200 об/мин (макс 1500)
+    // Средняя кривая (~угол 2): H(20)≈4600, H(30)≈3800, H(42)≈2000
+    // Аппроксимация: H = 7200 - 60·Q - 2.5·Q²
+    id: "ZVN-1-12-90-4",
+    name: "Zitron ZVN 1-12-90/4", type: "axial", diameter: 1.2,
+    h0: 7200, h1: -60, h2: -2.5,
+    e0: 0.35, e1: 0.012, e2: -0.00030,
+    qMin: 20, qMax: 43, qNominal: 32, hNominal: 3500,
+    rpmMin: 0, rpmMax: 1500, rpmNominal: 1200,
+    bladeAngles: [1, 2, 3, 4],
+    reverseH0: 5040, reverseH1: -48, reverseH2: -2.0,
+    reverseQMin: 16, reverseQMax: 36,
+    reverseEfficiencyFactor: 0.82,
+  },
 ];
 
 // ─── Вычисление H(Q) и η(Q) ────────────────────────────────────────────────
