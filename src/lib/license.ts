@@ -1,5 +1,6 @@
 const LICENSE_URL = "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023";
 const STORAGE_KEY = "pvs_license";
+const MACHINE_ID_KEY = "pvs_machine_id";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 часов
 
 export interface LicenseInfo {
@@ -10,37 +11,23 @@ export interface LicenseInfo {
   checkedAt?: number;
 }
 
-// ── Fingerprint браузера (без сторонних библиотек) ───────────────────────────
-export async function getBrowserFingerprint(): Promise<string> {
-  const parts: string[] = [
-    navigator.userAgent,
-    navigator.language,
-    String(screen.width) + "x" + String(screen.height),
-    String(screen.colorDepth),
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-    String(navigator.hardwareConcurrency ?? 0),
-  ];
-
-  // Canvas fingerprint
+// ── Стабильный Machine ID ─────────────────────────────────────────────────────
+// Генерируется один раз и навсегда хранится в localStorage.
+// Не зависит от браузера, разрешения, обновлений — пока не очищен localStorage.
+export function getMachineId(): string {
   try {
-    const c = document.createElement("canvas");
-    const ctx = c.getContext("2d");
-    if (ctx) {
-      ctx.textBaseline = "top";
-      ctx.font = "14px Arial";
-      ctx.fillStyle = "#f60";
-      ctx.fillRect(125, 1, 62, 20);
-      ctx.fillStyle = "#069";
-      ctx.fillText("PVS-fp", 2, 15);
-      parts.push(c.toDataURL());
-    }
+    const existing = localStorage.getItem(MACHINE_ID_KEY);
+    if (existing && existing.length === 64) return existing;
+    // Генерируем новый: случайные байты + хэш
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    const id = Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(MACHINE_ID_KEY, id);
+    return id;
   } catch {
-    /* ignore */
+    // Fallback если localStorage недоступен
+    return "fallback-" + Math.random().toString(36).slice(2);
   }
-
-  const raw = parts.join("|");
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ── Загрузить кэш из localStorage ────────────────────────────────────────────
@@ -67,7 +54,7 @@ export function clearLicenseCache() {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
 }
 
-// ── Проверить fingerprint на сервере ─────────────────────────────────────────
+// ── Проверить machine ID на сервере ──────────────────────────────────────────
 export async function checkLicense(fingerprint: string): Promise<LicenseInfo> {
   const res = await fetch(LICENSE_URL, {
     method: "POST",

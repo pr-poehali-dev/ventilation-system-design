@@ -26,6 +26,15 @@
       "expectedStatus": 404,
       "expectedBody": {"error": "key_not_found"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Transfer with invalid key format",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "transfer", "fingerprint": "old-fp", "new_fingerprint": "new-fp", "key": "BADKEY"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "invalid_key_format"},
+      "bodyMatcher": "partial"
     }
   ]
 }

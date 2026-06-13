@@ -167,5 +167,41 @@ def handler(event: dict, context) -> dict:
             "seats": {"max": max_seats, "used": int(used_seats)},
         })
 
+    # ── transfer ────────────────────────────────────────────────────────────────
+    # Перенос лицензии на новый machine_id (при переустановке ОС/браузера).
+    # Требует старый fingerprint и новый + ключ для верификации.
+    if action == "transfer":
+        license_key = body.get("key", "").strip().upper()
+        new_fp_raw  = body.get("new_fingerprint", "").strip()[:128]
+
+        if not validate_key(license_key):
+            conn.close()
+            return resp(400, {"error": "invalid_key_format"})
+        if not new_fp_raw:
+            conn.close()
+            return resp(400, {"error": "new_fingerprint_required"})
+
+        new_fp_hash = hashlib.sha256(new_fp_raw.encode()).hexdigest()[:64]
+
+        # Находим seat по текущему fp_hash + ключу
+        cur.execute("""
+            SELECT s.id FROM license_seats s
+            JOIN licenses l ON l.id = s.license_id
+            WHERE s.fingerprint = %s AND l.key = %s AND l.is_active = TRUE
+            LIMIT 1
+        """, (fp_hash, license_key))
+        seat = cur.fetchone()
+        if not seat:
+            conn.close()
+            return resp(404, {"error": "seat_not_found"})
+
+        cur.execute(
+            "UPDATE license_seats SET fingerprint = %s, last_seen_at = NOW() WHERE id = %s",
+            (new_fp_hash, seat[0])
+        )
+        conn.commit()
+        conn.close()
+        return resp(200, {"ok": True, "transferred": True})
+
     conn.close()
     return resp(400, {"error": "unknown_action"})

@@ -292,31 +292,52 @@ export default function Admin() {
                   {/* Раскрытые рабочие места */}
                   {seatsForId === lic.id && seats && (
                     <div className="px-5 pb-4 bg-blue-50 border-t border-blue-100">
-                      <div className="text-[11px] font-semibold text-blue-700 mb-2 pt-3">
-                        Активированные рабочие места
+                      <div className="text-[11px] font-semibold text-blue-700 mb-2 pt-3 flex items-center justify-between">
+                        <span>Активированные рабочие места</span>
+                        <span className="font-normal text-blue-500">{seats.length} / {lic.max_seats}</span>
                       </div>
                       {seats.length === 0 ? (
                         <div className="text-[11px] text-gray-400">Нет активированных мест</div>
                       ) : (
                         <div className="space-y-2">
-                          {seats.map(seat => (
-                            <div key={seat.id} className="flex items-center gap-3 p-2.5 bg-white rounded-lg border border-blue-100">
-                              <Icon name="Monitor" size={14} className="text-blue-400 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[11px] font-mono text-gray-600">{seat.fingerprint}</div>
-                                <div className="text-[10px] text-gray-400 mt-0.5">
-                                  Активировано: {fmtDate(seat.activated_at)} · Активность: {fmtDate(seat.last_seen_at)}
+                          {seats.map((seat, idx) => {
+                            const ua = seat.user_agent || "";
+                            const os = ua.includes("Windows") ? "Windows"
+                              : ua.includes("Mac") ? "macOS"
+                              : ua.includes("Linux") ? "Linux"
+                              : ua.includes("Android") ? "Android"
+                              : ua.includes("iPhone") || ua.includes("iPad") ? "iOS" : "—";
+                            const browser = ua.includes("Chrome") && !ua.includes("Edg") ? "Chrome"
+                              : ua.includes("Firefox") ? "Firefox"
+                              : ua.includes("Safari") && !ua.includes("Chrome") ? "Safari"
+                              : ua.includes("Edg") ? "Edge" : "—";
+                            return (
+                              <div key={seat.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-blue-100">
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                  style={{ background: "#eff6ff" }}>
+                                  <span className="text-[15px]">{os === "Windows" ? "🖥️" : os === "macOS" ? "🍎" : os === "Linux" ? "🐧" : "💻"}</span>
                                 </div>
-                                {seat.user_agent && (
-                                  <div className="text-[10px] text-gray-400 truncate max-w-xs">{seat.user_agent}</div>
-                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[12px] font-semibold text-gray-700">Место #{idx + 1}</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{os}</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{browser}</span>
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                                    ID: {seat.fingerprint}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 mt-0.5">
+                                    Активировано: {fmtDate(seat.activated_at)} · Последняя активность: {fmtDate(seat.last_seen_at)}
+                                  </div>
+                                </div>
+                                <button onClick={() => revokeSeat(seat.id)}
+                                  title="Освободить место (ключ можно ввести заново)"
+                                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-red-200 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors">
+                                  <Icon name="Trash2" size={11} />Сбросить
+                                </button>
                               </div>
-                              <button onClick={() => revokeSeat(seat.id)}
-                                className="text-[11px] text-red-500 hover:text-red-700 flex items-center gap-1 flex-shrink-0">
-                                <Icon name="X" size={12} />Освободить
-                              </button>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>

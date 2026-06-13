@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  getBrowserFingerprint,
+  getMachineId,
   loadCachedLicense,
   checkLicense,
   activateLicense,
@@ -28,7 +28,8 @@ export function useLicense(): UseLicenseReturn {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const fp = await getBrowserFingerprint();
+      // Стабильный machine ID — хранится в localStorage навсегда
+      const fp = getMachineId();
       if (cancelled) return;
       setFingerprint(fp);
 
@@ -60,7 +61,7 @@ export function useLicense(): UseLicenseReturn {
 
   const activate = useCallback(async (key: string) => {
     setError(null);
-    const fp = fingerprint || (await getBrowserFingerprint());
+    const fp = fingerprint || getMachineId();
     const result = await activateLicense(fp, key);
     setInfo(result);
     setStatus("licensed");
