@@ -1531,6 +1531,12 @@ export default function CadPage() {
 
   // Применить данные из JSON — с слиянием дефолтов для ветвей
   const applyProjectData = (data: Record<string, unknown>, fileName: string) => {
+    // Восстанавливаем вид ПЕРВЫМ — до setNodes/setBranches,
+    // чтобы авто-fit не перекрыл сохранённый вид
+    if (data.view) {
+      const v = data.view as { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
+      setSavedViewToRestore(v);
+    }
     setNodes((data.nodes as TopoNode[]) ?? []);
     // Каждую ветвь прогоняем через makeBranch чтобы гарантировать все поля (fanRpm и т.д.)
     const rawBranches = (data.branches as TopoBranch[]) ?? [];
@@ -1608,11 +1614,8 @@ export default function CadPage() {
     setProjectFileName((data.name as string) ?? fileName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
-    // Восстанавливаем сохранённый вид если есть
-    if (data.view) {
-      const v = data.view as { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
-      setSavedViewToRestore(v);
-    } else {
+    // Если вида нет в файле — авто-fit по импортируемым данным
+    if (!data.view) {
       setImportNonce((n) => n + 1);
     }
     setActiveRibbon("home");

@@ -613,7 +613,11 @@ export default function TopoCanvas(props: Props) {
   useEffect(() => {
     if (!viewPreset) return;
     const p = VIEW_PRESETS[viewPreset.name];
-    fitAfterPresetRef.current = true; // вписать после смены угла
+    // Авто-fit только если вид не был восстановлен из файла недавно
+    const timeSinceRestore = Date.now() - restoredViewNonce.current;
+    if (timeSinceRestore > 3000) {
+      fitAfterPresetRef.current = true;
+    }
     setView((v) => ({ ...v, azimuth: p.azimuth, elevation: p.elevation }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewPreset?.nonce]);
@@ -1330,12 +1334,16 @@ export default function TopoCanvas(props: Props) {
         if (p.sy < minSy) minSy = p.sy;
         if (p.sy > maxSy) maxSy = p.sy;
       });
-      const padPx = Math.max(20, Math.max(maxSx - minSx, maxSy - minSy) * 0.08);
+      const spreadX = maxSx - minSx, spreadY = maxSy - minSy;
+      // Минимальный размер — чтобы рамка не схлопывалась при фронтальной/профильной проекции
+      const minSpread = Math.max(spreadX, spreadY, size.w * 0.1, 80);
+      const padPx = Math.max(20, minSpread * 0.08);
       const cxS = (minSx + maxSx) / 2, cyS = (minSy + maxSy) / 2;
-      const fitW = (maxSx - minSx) + padPx * 2;
-      const fitH = (maxSy - minSy) + padPx * 2;
+      const fitW = Math.max(spreadX, minSpread * 0.3) + padPx * 2;
+      const fitH = Math.max(spreadY, minSpread * 0.3) + padPx * 2;
       let rw2 = fitW, rh2 = fitW / aspect;
       if (rh2 < fitH) { rh2 = fitH; rw2 = fitH * aspect; }
+      rw2 = Math.max(rw2, 60); rh2 = Math.max(rh2, 60);
       rx = cxS - rw2 / 2; ry = cyS - rh2 / 2; rw = rw2; rh = rh2;
       Object.assign(pTL, { sx: rx, sy: ry });
       Object.assign(pTR, { sx: rx + rw, sy: ry });
