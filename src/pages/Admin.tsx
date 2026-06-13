@@ -43,7 +43,7 @@ function fmtDate(s: string | null) {
 }
 
 export default function Admin() {
-  const [password, setPassword]         = useState(() => localStorage.getItem("pvs_admin_pwd") || "");
+  const [password, setPassword]         = useState("");
   const [authed, setAuthed]             = useState(false);
   const [authErr, setAuthErr]           = useState("");
   const [licenses, setLicenses]         = useState<License[]>([]);
@@ -64,7 +64,6 @@ export default function Admin() {
       const data = await adminApi(pwd, { action: "list_licenses" });
       setLicenses(data.licenses);
       setAuthed(true);
-      localStorage.setItem("pvs_admin_pwd", pwd);
     } catch (e: unknown) {
       setAuthErr(e instanceof Error ? e.message : "Ошибка");
     } finally {
@@ -73,8 +72,8 @@ export default function Admin() {
   }, []);
 
   useEffect(() => {
-    if (password) loadLicenses(password);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    localStorage.removeItem("pvs_admin_pwd");
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
