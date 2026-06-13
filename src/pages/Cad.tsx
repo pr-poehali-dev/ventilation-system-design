@@ -3101,13 +3101,13 @@ export default function CadPage() {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
-                        method: b.explosionMethod ?? "gas_dynamics",
-                        sourceType: b.explosionSourceType ?? "gas",
+                        method: b.explosionMethod ?? "fnip_494",
+                        sourceType: b.explosionSourceType ?? "mass",
                         gasId: b.explosionGasId ?? "methane",
                         gasVolume_m3: b.explosionGasVolume ?? 100,
                         gasConcentration: b.explosionGasConcentration ?? 9.5,
                         explosiveId: b.explosionExplosiveId ?? "ammonit",
-                        explosiveMass_kg: b.explosionExplosiveMass ?? 10,
+                        explosiveMass_kg: b.explosionExplosiveMass ?? 100,
                         excavationArea_m2: area,
                         excavationLength_m: length,
                         ambientPressure_kPa: 101.3,
@@ -3145,13 +3145,13 @@ export default function CadPage() {
                     };
                   } catch {
                     res = calcExplosion({
-                      method: (b.explosionMethod ?? "gas_dynamics") as ExplosionMethod,
-                      sourceType: (b.explosionSourceType ?? "gas") as ExplosionSourceType,
+                      method: (b.explosionMethod ?? "fnip_494") as ExplosionMethod,
+                      sourceType: (b.explosionSourceType ?? "mass") as ExplosionSourceType,
                       gasId: b.explosionGasId ?? "methane",
                       gasVolume_m3: b.explosionGasVolume ?? 100,
                       gasConcentration: b.explosionGasConcentration ?? 9.5,
                       explosiveId: b.explosionExplosiveId ?? "ammonit",
-                      explosiveMass_kg: b.explosionExplosiveMass ?? 10,
+                      explosiveMass_kg: b.explosionExplosiveMass ?? 100,
                       excavationArea_m2: area,
                       excavationLength_m: length,
                       ambientPressure_kPa: 101.3,
