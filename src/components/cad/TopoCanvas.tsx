@@ -407,12 +407,31 @@ export default function TopoCanvas(props: Props) {
     prevXyScale.current = xyScale;
     if (prev === xyScale || prev === 0) return;
     const ratio = xyScale / prev;
-    // Центр экрана остаётся на том же мировом XY — сдвигаем offset
-    setView((v) => ({
-      ...v,
-      offsetX: size.w / 2 - (size.w / 2 - v.offsetX) * ratio,
-      offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio,
-    }));
+    // Масштабируем от центра bbox схемы (а не от центра экрана)
+    setView((v) => {
+      // Центр bbox узлов в экранных координатах при СТАРОМ xyScale
+      if (nodes.length > 0) {
+        const tmpProj: ProjOptions = { scale: v.scale, offsetX: v.offsetX, offsetY: v.offsetY, azimuth: v.azimuth, elevation: v.elevation, zScale };
+        let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+        nodes.forEach(n => {
+          const p = project3D({ x: n.x * prev, y: n.y * prev, z: n.z * (zScale ?? 1) }, tmpProj);
+          if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
+          if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
+        });
+        const csx = (minSx + maxSx) / 2;
+        const csy = (minSy + maxSy) / 2;
+        return {
+          ...v,
+          offsetX: csx - (csx - v.offsetX) * ratio,
+          offsetY: csy - (csy - v.offsetY) * ratio,
+        };
+      }
+      return {
+        ...v,
+        offsetX: size.w / 2 - (size.w / 2 - v.offsetX) * ratio,
+        offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio,
+      };
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xyScale]);
 
@@ -421,12 +440,20 @@ export default function TopoCanvas(props: Props) {
     prevZScale.current = zScale;
     if (prev === zScale || prev === 0) return;
     const ratio = zScale / prev;
-    // При смене zScale в 3D-режиме корректируем вертикальный offset
-    if (!is3D) return;
-    setView((v) => ({
-      ...v,
-      offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio,
-    }));
+    // Масштабируем от центра bbox схемы по оси Y (работает и в плане, и в 3D)
+    setView((v) => {
+      if (nodes.length > 0) {
+        const tmpProj: ProjOptions = { scale: v.scale, offsetX: v.offsetX, offsetY: v.offsetY, azimuth: v.azimuth, elevation: v.elevation, zScale: prev };
+        let minSy = Infinity, maxSy = -Infinity;
+        nodes.forEach(n => {
+          const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * prev }, tmpProj);
+          if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
+        });
+        const csy = (minSy + maxSy) / 2;
+        return { ...v, offsetY: csy - (csy - v.offsetY) * ratio };
+      }
+      return { ...v, offsetY: size.h / 2 - (size.h / 2 - v.offsetY) * ratio };
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zScale]);
 
@@ -1370,7 +1397,8 @@ export default function TopoCanvas(props: Props) {
     // Остальные горизонты: z = h.z * zScale
     {
       const xy = xyScale ?? 1;
-      const z4proj = (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) ? 0 : h.z * (zScale ?? 1);
+      // OVERVIEW всегда z=0 — рамка не разлетается при zScale ни в авто, ни с ручными bounds
+      const z4proj = (h.id === OVERVIEW_HORIZON_ID) ? 0 : h.z * (zScale ?? 1);
       const _pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: z4proj }, proj);
       const _pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: z4proj }, proj);
       const _pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: z4proj }, proj);
