@@ -801,11 +801,19 @@ export default function CadPage() {
   const [focusNonce, setFocusNonce] = useState<number>(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [focusBranchId, setFocusBranchId] = useState<string | null>(null);
-  // При первом рендере переключаем на вид Фронт и вписываем сеть
+  // Флаг: файл был загружен — не сбрасываем вид начальным пресетом
+  const initialFileLoadedRef = useRef(false);
+  // При первом рендере — дефолтный вид только если файл не открывался
   useEffect(() => {
-    setViewPreset({ name: "front", nonce: Date.now() });
-    const t = window.setTimeout(() => setFitToScreenNonce(Date.now()), 200);
+    // 600ms — достаточно для любой асинхронной загрузки файла при старте
+    const t = window.setTimeout(() => {
+      if (!initialFileLoadedRef.current) {
+        setViewPreset({ name: "isoSW", nonce: Date.now() });
+        setTimeout(() => setFitToScreenNonce(Date.now()), 200);
+      }
+    }, 600);
     return () => window.clearTimeout(t);
+   
   }, []);
 
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
@@ -1531,6 +1539,8 @@ export default function CadPage() {
 
   // Применить данные из JSON — с слиянием дефолтов для ветвей
   const applyProjectData = (data: Record<string, unknown>, fileName: string) => {
+    // Блокируем начальный пресет вида — файл загружен
+    initialFileLoadedRef.current = true;
     // Восстанавливаем вид ПЕРВЫМ — до setNodes/setBranches,
     // чтобы авто-fit не перекрыл сохранённый вид
     if (data.view) {
