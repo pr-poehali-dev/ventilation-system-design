@@ -6904,27 +6904,66 @@ export default function CadPage() {
               }}
             />
 
-            {/* ── Легенда зон взрыва ─────────────────────────────────── */}
-            {showExplosionZones && explosionCalcDone && (
-              <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 20, background: "rgba(0,0,0,0.78)", borderRadius: 8, padding: "8px 12px", color: "white", fontSize: 11, minWidth: 190, pointerEvents: "none", border: "1px solid rgba(245,158,11,0.4)" }}>
-                <div style={{ fontWeight: 700, marginBottom: 6, color: "#fbbf24", fontSize: 12 }}>💥 Зоны поражения взрывом</div>
-                {[
-                  { color: "#7c1010", label: "Летальная (ΔP > 100 кПа)" },
-                  { color: "#dc2626", label: "Тяжёлые (ΔP 50–100 кПа)" },
-                  { color: "#f97316", label: "Средние (ΔP 30–50 кПа)" },
-                  { color: "#fbbf24", label: "Лёгкие (ΔP 10–30 кПа)" },
-                  { color: "#22c55e", label: "Безопасно (ΔP < 10 кПа)" },
-                ].map(({ color, label }) => (
-                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                    <div style={{ width: 28, height: 6, background: color, borderRadius: 3, opacity: 0.9, flexShrink: 0 }} />
-                    <span style={{ color: "#e5e7eb" }}>{label}</span>
-                  </div>
-                ))}
-                {explosionResult && (
-                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.15)", color: "#fde68a", fontSize: 10 }}>
-                    Q_тнт = {explosionResult.q_tnt_kg} кг · D = {explosionResult.waveFrontSpeed_ms} м/с
-                  </div>
-                )}
+            {/* ── Легенда зон взрыва с радиусами ────────────────────── */}
+            {showExplosionZones && explosionCalcDone && explosionResult && (
+              <div style={{
+                position: "absolute", bottom: 12, left: 12, zIndex: 20,
+                background: "rgba(10,6,0,0.88)", borderRadius: 10,
+                padding: "10px 14px", color: "white", fontSize: 11,
+                minWidth: 220, pointerEvents: "none",
+                border: "1px solid rgba(245,158,11,0.45)",
+                backdropFilter: "blur(6px)",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+              }}>
+                <div style={{ fontWeight: 700, marginBottom: 8, color: "#fbbf24", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                  💥 Зоны поражения взрывом
+                </div>
+                {(() => {
+                  const zoneDefs = [
+                    { color: "#7c1010", label: "Летальная",        dp: "ΔP > 100 кПа", hazard: "lethal"  },
+                    { color: "#dc2626", label: "Тяжёлые травмы",   dp: "ΔP 50–100 кПа", hazard: "heavy"  },
+                    { color: "#f97316", label: "Средние травмы",   dp: "ΔP 30–50 кПа",  hazard: "medium" },
+                    { color: "#fbbf24", label: "Лёгкие травмы",    dp: "ΔP 10–30 кПа",  hazard: "light"  },
+                    { color: "#22c55e", label: "Безопасно",         dp: "ΔP < 10 кПа",   hazard: "safe"   },
+                  ];
+                  return zoneDefs.map(({ color, label, dp, hazard }) => {
+                    const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
+                    const r = zone?.radius_m ?? 0;
+                    const isActive = blastWaveRadius > 0 && r > 0 && blastWaveRadius >= r;
+                    return (
+                      <div key={hazard} style={{
+                        display: "flex", alignItems: "center", gap: 8, marginBottom: 5,
+                        opacity: r === 0 ? 0.4 : 1,
+                      }}>
+                        {/* Цветная полоска */}
+                        <div style={{
+                          width: 6, height: 28, background: color, borderRadius: 3,
+                          flexShrink: 0,
+                          boxShadow: isActive ? `0 0 6px ${color}` : "none",
+                        }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, color: isActive ? "#fff" : "#d1d5db", fontSize: 11 }}>{label}</div>
+                          <div style={{ color: "#9ca3af", fontSize: 10 }}>{dp}</div>
+                        </div>
+                        {/* Радиус */}
+                        <div style={{
+                          fontSize: 11, fontWeight: 700, textAlign: "right", flexShrink: 0,
+                          color: r > 0 ? color : "#4b5563",
+                          background: r > 0 ? `${color}20` : "transparent",
+                          border: `1px solid ${r > 0 ? color + "60" : "transparent"}`,
+                          borderRadius: 4, padding: "1px 6px", minWidth: 54,
+                        }}>
+                          {r > 0 ? `${r} м` : "—"}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+                <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(255,255,255,0.12)", display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ color: "#fde68a", fontSize: 10 }}>Q_тнт = <b>{explosionResult.q_tnt_kg} кг</b></span>
+                  <span style={{ color: "#fde68a", fontSize: 10 }}>D = <b>{explosionResult.waveFrontSpeed_ms} м/с</b></span>
+                  <span style={{ color: "#fde68a", fontSize: 10 }}>ΔP_max = <b>{explosionResult.maxDeltaP_kPa} кПа</b></span>
+                </div>
               </div>
             )}
 
@@ -7170,8 +7209,8 @@ export default function CadPage() {
               <div style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
                 background: "rgba(10,8,0,0.93)", borderTop: "2px solid #b45309",
-                padding: "5px 12px 6px", display: "flex", alignItems: "center",
-                gap: 8, zIndex: 60, backdropFilter: "blur(4px)",
+                padding: "22px 12px 6px", display: "flex", alignItems: "center",
+                gap: 8, zIndex: 60, backdropFilter: "blur(4px)", overflow: "visible",
               }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#fde68a", whiteSpace: "nowrap" }}>
                   💥 Волна взрыва
@@ -7226,11 +7265,42 @@ export default function CadPage() {
                   ⏮
                 </button>
 
-                <span style={{ fontSize: 11, color: "#fcd34d", whiteSpace: "nowrap" }}>0 м</span>
+                {/* Ползунок с маркерами зон */}
+                <div style={{ position: "relative", flex: 1, minWidth: 120 }}>
+                  {/* Градиент фона */}
+                  <div style={{
+                    position: "absolute", top: "50%", left: 0, right: 0, height: 8,
+                    transform: "translateY(-50%)", borderRadius: 4,
+                    background: "linear-gradient(to right, #7c1010, #dc2626 15%, #f97316 30%, #fbbf24 50%, #22c55e)",
+                    opacity: 0.45, pointerEvents: "none",
+                  }} />
 
-                {/* Градиентная полоска */}
-                <div style={{ position: "relative", flex: 1, minWidth: 80 }}>
-                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 4, background: "linear-gradient(to right, #7c1010, #dc2626, #f97316, #fbbf24, #22c55e)", opacity: 0.35, pointerEvents: "none" }} />
+                  {/* Маркеры радиусов зон */}
+                  {explosionResult && blastMaxRadius > 0 && [
+                    { hazard: "lethal",  color: "#7c1010", label: "Л" },
+                    { hazard: "heavy",   color: "#dc2626", label: "Т" },
+                    { hazard: "medium",  color: "#f97316", label: "С" },
+                    { hazard: "light",   color: "#fbbf24", label: "Л" },
+                    { hazard: "safe",    color: "#22c55e", label: "Б" },
+                  ].map(({ hazard, color, label }) => {
+                    const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
+                    const r = zone?.radius_m ?? 0;
+                    if (r <= 0 || r > blastMaxRadius) return null;
+                    const pct = Math.min(100, (r / blastMaxRadius) * 100);
+                    return (
+                      <div key={hazard} style={{
+                        position: "absolute", top: -18, left: `${pct}%`,
+                        transform: "translateX(-50%)",
+                        pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center",
+                      }}>
+                        <span style={{ fontSize: 9, color, fontWeight: 700, whiteSpace: "nowrap", lineHeight: 1 }}>
+                          {r}м
+                        </span>
+                        <div style={{ width: 1, height: 6, background: color, opacity: 0.8 }} />
+                      </div>
+                    );
+                  })}
+
                   <input
                     type="range" min={0} max={blastMaxRadius} step={blastRadiusStep}
                     value={blastWaveRadius}
@@ -7244,25 +7314,22 @@ export default function CadPage() {
                   />
                 </div>
 
-                <span style={{ fontSize: 11, color: "#fcd34d", whiteSpace: "nowrap" }}>{blastMaxRadius} м</span>
-
-                {/* Текущий радиус */}
-                <span style={{
-                  fontSize: 12, fontWeight: 700, color: "#fff", background: "#92400e",
-                  borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
-                }}>
-                  R = {blastWaveRadius} м
-                </span>
-
-                {/* Давление на текущем радиусе */}
-                {blastWaveRadius > 0 && (
+                {/* Текущий радиус + давление */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, flexShrink: 0 }}>
                   <span style={{
-                    fontSize: 11, color: "#fde68a", background: "rgba(255,255,255,0.07)",
-                    borderRadius: 4, padding: "1px 7px", whiteSpace: "nowrap", border: "1px solid #b45309",
+                    fontSize: 12, fontWeight: 700, color: "#fff", background: "#92400e",
+                    borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
                   }}>
-                    ΔP = {explosionResult.pressureAtDistance(blastWaveRadius).toFixed(1)} кПа
+                    R = {blastWaveRadius} м
                   </span>
-                )}
+                  {blastWaveRadius > 0 && (
+                    <span style={{
+                      fontSize: 10, color: "#fde68a", whiteSpace: "nowrap",
+                    }}>
+                      ΔP = {explosionResult.pressureAtDistance(blastWaveRadius).toFixed(1)} кПа
+                    </span>
+                  )}
+                </div>
 
                 <div style={{ width: 1, background: "#b45309", alignSelf: "stretch", margin: "0 2px" }} />
 
