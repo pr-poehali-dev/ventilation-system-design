@@ -1,83 +1,39 @@
-/* Service Worker для ПВ-Система
- * Стратегия:
- *  - HTML (navigation) — network-first, fallback на кэш
- *  - Иконки /icon-*.png — проксируем с CDN и кэшируем локально
- *  - Статика (js/css/png/svg/woff2) — stale-while-revalidate
- */
-const VERSION = 'pv-sistema-v1.2.0';
-const CACHE_STATIC = `${VERSION}-static`;
-const CACHE_RUNTIME = `${VERSION}-runtime`;
+/* Service Worker для ПВ-Система v1.3.0 */
+const VERSION = 'pv-sistema-v1.3.0';
+const CACHE = `${VERSION}`;
 
-// CDN-источники иконок (проксируем как локальные /icon-*.png)
-const LOGO_CDN = 'https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/a81f2c98-d805-485d-b5f9-3e15893dd1a4.png';
-const ICON_MAP = {
-  '/icon-512.png': LOGO_CDN,
-  '/icon-192.png': LOGO_CDN,
-};
-
-const PRECACHE_URLS = [
-  '/',
-  '/manifest.webmanifest',
-  '/icon-512.png',
-  '/icon-192.png',
-];
+// Ресурсы для предзагрузки при установке SW
+const PRECACHE = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_STATIC).then(async (cache) => {
-      // Кэшируем иконки через проксирование с CDN
-      for (const [path, cdnUrl] of Object.entries(ICON_MAP)) {
-        try {
-          const resp = await fetch(cdnUrl, { mode: 'cors' });
-          if (resp.ok) await cache.put(new Request(path), resp);
-        } catch { /* игнорируем */ }
-      }
-      // Кэшируем остальные ресурсы
-      await cache.addAll(['/', '/manifest.webmanifest']).catch(() => null);
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then((c) => c.addAll(PRECACHE).catch(() => null))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))
-    )).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
 
-  // Не кэшируем backend-функции и метрики
-  if (url.hostname.includes('functions.poehali.dev')) return;
-  if (url.hostname.includes('mc.yandex.ru')) return;
+  // Пропускаем: backend, метрики, CDN других доменов
+  if (url.hostname !== location.hostname) return;
 
-  // Иконки — отдаём из кэша (были загружены при install)
-  if (url.pathname === '/icon-512.png' || url.pathname === '/icon-192.png') {
-    event.respondWith(
-      caches.match(req).then((cached) => {
-        if (cached) return cached;
-        // Fallback: проксируем напрямую
-        const cdnUrl = ICON_MAP[url.pathname];
-        return fetch(cdnUrl, { mode: 'cors' });
-      })
-    );
-    return;
-  }
-
-  // HTML-навигация — network-first
-  if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
+  // HTML навигация — network-first
+  if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
-        .then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE_RUNTIME).then((c) => c.put(req, copy));
-          return resp;
-        })
+        .then((r) => { caches.open(CACHE).then((c) => c.put(req, r.clone())); return r; })
         .catch(() => caches.match(req).then((r) => r || caches.match('/')))
     );
     return;
@@ -86,19 +42,15 @@ self.addEventListener('fetch', (event) => {
   // Статика — stale-while-revalidate
   event.respondWith(
     caches.match(req).then((cached) => {
-      const networkFetch = fetch(req).then((resp) => {
-        if (resp && resp.status === 200) {
-          const copy = resp.clone();
-          caches.open(CACHE_RUNTIME).then((c) => c.put(req, copy));
-        }
-        return resp;
+      const fresh = fetch(req).then((r) => {
+        if (r.ok) caches.open(CACHE).then((c) => c.put(req, r.clone()));
+        return r;
       }).catch(() => cached);
-      return cached || networkFetch;
+      return cached || fresh;
     })
   );
 });
 
-// Принимаем сообщение от страницы для немедленного обновления
-self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') self.skipWaiting();
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });

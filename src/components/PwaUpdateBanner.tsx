@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 
 export default function PwaUpdateBanner() {
   const [waitingSW, setWaitingSW] = useState<ServiceWorker | null>(null);
+  const handledRef = useRef(false);
   const [reloading, setReloading] = useState(false);
   // Флаг чтобы не показывать баннер сразу после перезагрузки по обновлению
   const didReloadRef = useRef(
@@ -18,25 +19,29 @@ export default function PwaUpdateBanner() {
       return;
     }
 
-    const checkReg = (reg: ServiceWorkerRegistration) => {
-      // Есть ожидающий SW — это реальное обновление
-      if (reg.waiting) {
-        setWaitingSW(reg.waiting);
+    const trySet = (sw: ServiceWorker) => {
+      // Показываем баннер ТОЛЬКО если уже был активный контроллер
+      // (первая установка SW — не обновление)
+      if (navigator.serviceWorker.controller && !handledRef.current) {
+        handledRef.current = true;
+        setWaitingSW(sw);
+      }
+    };
+
+    navigator.serviceWorker.ready.then((reg) => {
+      // Ожидающий SW + есть активный = реальное обновление
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        trySet(reg.waiting);
         return;
       }
       reg.addEventListener("updatefound", () => {
         const sw = reg.installing;
         if (!sw) return;
         sw.addEventListener("statechange", () => {
-          // installed + есть активный контроллер = новая версия готова
-          if (sw.state === "installed" && navigator.serviceWorker.controller) {
-            setWaitingSW(sw);
-          }
+          if (sw.state === "installed") trySet(sw);
         });
       });
-    };
-
-    navigator.serviceWorker.ready.then(checkReg);
+    });
 
     // Проверка каждые 10 минут
     const interval = setInterval(() => {
