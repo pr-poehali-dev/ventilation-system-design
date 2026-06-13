@@ -1524,7 +1524,7 @@ export default function CadPage() {
             printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
               orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
               period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
-              showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } } as Horizon,
+              showLegend: false, showStamp: false, showApprover: false, paperFormat: "A1", orientation: "landscape" } } as Horizon,
           ...loaded];
       setHorizons(withOverview);
     }
@@ -1598,7 +1598,7 @@ export default function CadPage() {
       printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
         orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
         period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
-        showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } } as Horizon]);
+        showLegend: false, showStamp: false, showApprover: false, paperFormat: "A1", orientation: "landscape" } } as Horizon]);
     setActiveHorizonId("");
     setActiveRibbon("home");
   };
@@ -5347,7 +5347,7 @@ export default function CadPage() {
                                   scale: "1:2000", orgName: "", approverTitle: "Главный инженер ЮПР",
                                   approverName: "", year: String(new Date().getFullYear()),
                                   period: "", developer: "", checker: "",
-                                  sheetNum: "1", sheetTotal: "1", showLegend: true, showStamp: true,
+                                  sheetNum: "1", sheetTotal: "1", showLegend: false, showStamp: false, showApprover: false,
                                   paperFormat: "A3", orientation: "landscape",
                                   ...patch,
                                 }});
