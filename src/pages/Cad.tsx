@@ -3115,16 +3115,32 @@ export default function CadPage() {
                       }),
                     });
                     const data = await resp.json();
-                    // Восстанавливаем функции pressureAtDistance и impulseAtDistance из pressurePoints
+                    // Восстанавливаем pressureAtDistance / impulseAtDistance по формуле Садовского
+                    // напрямую из q_tnt_kg и wall_factor (не зависит от таблицы точек)
+                    const _qTnt = data.q_tnt_kg ?? 0.001;
+                    const _considerWalls = b.explosionConsiderWalls ?? true;
+                    const _wfRaw = area <= 0 ? 1.5 : area < 10 ? 2.0 : area < 20 ? 1.8 : area < 40 ? 1.5 : 1.3;
+                    const _wf   = _considerWalls ? _wfRaw : 1.0;
+                    const _meth = b.explosionMethod ?? "gas_dynamics";
+                    const sadovsky = (r: number): number => {
+                      if (_qTnt <= 0 || r <= 0) return 0;
+                      const rBar = r / Math.pow(_qTnt, 1 / 3);
+                      if (rBar < 0.1) return 10000;
+                      return Math.round(101.3 * (0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar)) * 10) / 10;
+                    };
+                    const fnip494 = (r: number): number => {
+                      if (_qTnt <= 0 || r <= 0) return 0;
+                      return Math.round(1.07 * Math.pow(_qTnt / (r * r * r), 1 / 3) * 101.3 * 10) / 10;
+                    };
                     res = {
                       ...data,
                       pressureAtDistance: (r: number) => {
-                        const pt = (data.pressurePoints ?? []).find((p: {r_m: number}) => p.r_m === r);
-                        return pt?.deltaP_kPa ?? 0;
+                        const dp = _meth === "gas_dynamics" ? sadovsky(r) : fnip494(r);
+                        return Math.round(dp * _wf * 10) / 10;
                       },
                       impulseAtDistance: (r: number) => {
-                        const pt = (data.pressurePoints ?? []).find((p: {r_m: number}) => p.r_m === r);
-                        return pt?.impulse_Pas ?? 0;
+                        if (_qTnt <= 0 || r <= 0) return 0;
+                        return Math.round(200 * Math.pow(_qTnt, 1 / 3) / r * _wf * 10) / 10;
                       },
                     };
                   } catch {
@@ -6676,15 +6692,31 @@ export default function CadPage() {
                   }
                 }
 
-                // Окрашиваем ветви: ветвь попадает в зону если хотя бы один её узел достигнут волной
+                // Окрашиваем ветви по давлению в их середине (ближайшая точка к источнику)
                 branches.forEach(b => {
+                  // Ветвь-источник взрыва: давление максимальное (в точке взрыва)
+                  if (b.hasExplosion && b.explosionComputedMaxP > 0) {
+                    map.set(b.id, zoneColor(b.explosionComputedMaxP));
+                    return;
+                  }
                   const dFrom = distNode.get(b.fromId);
                   const dTo   = distNode.get(b.toId);
                   // Ни один узел не достигнут — волна не дошла
                   if (dFrom === undefined && dTo === undefined) return;
-                  // Минимальное расстояние по сети до ближайшей точки ветви
-                  const minD = Math.min(dFrom ?? Infinity, dTo ?? Infinity);
-                  const dp = explosionResult.pressureAtDistance(minD);
+                  // Расстояние до ближайшей точки ветви с учётом середины:
+                  // если оба узла достигнуты — берём минимум из узлов и середины ветви
+                  const dF = dFrom ?? Infinity;
+                  const dT = dTo   ?? Infinity;
+                  const len = branchLen(b);
+                  // Ближайшая точка на ветви: минимум расстояний по длине ветви
+                  // Если волна достигла обоих узлов — минимум в середине ≈ min(dF,dT) + len/2 - len/2 = min(dF,dT)
+                  // Если только один — ближайшая точка = ближайший узел
+                  const minNodeD = Math.min(dF, dT);
+                  // Для ветви между двумя достигнутыми узлами — давление по ближайшей точке
+                  // Используем наименьшее из: расстояний до узлов
+                  // (точная интерполяция: ближайшая точка на ветви = min(dF, dT) - len*t_closest)
+                  // Но это усложняет код, берём просто min расстояний до узлов
+                  const dp = explosionResult.pressureAtDistance(minNodeD);
                   map.set(b.id, zoneColor(dp));
                 });
 
