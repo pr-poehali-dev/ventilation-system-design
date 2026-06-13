@@ -5195,7 +5195,7 @@ export default function CadPage() {
                   <div className="flex gap-1 mb-2">
                     <button onClick={addHorizon}
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1">
-                      <Icon name="Plus" size={11} /> Добавить горизонт
+                      <Icon name="Plus" size={11} /> Добавить
                     </button>
                     <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: true })))}
                       className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
@@ -5281,8 +5281,8 @@ export default function CadPage() {
                               <span className="ml-1 text-purple-400" title="Слой печати активен">●</span>
                             )}
                           </button>
-                          {/* ── Подложка плана (внутри строки горизонта) ── */}
-                          {expandedHorizons.has(h.id) && (
+                          {/* ── Подложка плана (внутри строки горизонта) — скрыта для Общего вида ── */}
+                          {expandedHorizons.has(h.id) && h.id !== OVERVIEW_HORIZON_ID && (
                           <div className="px-1 pb-1 pt-0">
                             {h.image ? (
                               <div className="space-y-1 pt-1">
@@ -5375,25 +5375,45 @@ export default function CadPage() {
                                   {/* Настройки слоя (если включён) */}
                                   {hasPl && pl.visible && (
                                     <div className="px-2 pb-2 pt-1 space-y-1.5" style={{ borderTop: "1px solid #ede9fe" }}>
-                                      {/* Формат бумаги */}
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 52 }}>Формат</span>
-                                        <select className="cad-input flex-1 min-w-0 text-[11px]"
+                                      {/* Формат · Ориентация · УО · Штамп · Утв — всё в одну строку */}
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <select className="cad-input text-[11px]" style={{ width: 40 }}
                                           value={pl.paperFormat ?? "A3"}
                                           onChange={(e) => updatePl({ paperFormat: e.target.value as import("@/lib/topology").PaperFormat, bounds: undefined })}>
                                           {(["A4","A3","A2","A1","A0"] as const).map(f => (
                                             <option key={f} value={f}>{f}</option>
                                           ))}
                                         </select>
-                                        <select className="cad-input" style={{ width: 68 }}
-                                          value={pl.orientation ?? "landscape"}
-                                          onChange={(e) => updatePl({ orientation: e.target.value as "landscape"|"portrait", bounds: undefined })}>
-                                          <option value="landscape">Альбом</option>
-                                          <option value="portrait">Книжная</option>
-                                        </select>
-                                      </div>
-                                      {/* УО / Штамп / Утв */}
-                                      <div className="flex gap-2 flex-wrap">
+                                        {/* Кнопки ориентации (иконки) */}
+                                        <button
+                                          title="Альбомная"
+                                          onClick={() => updatePl({ orientation: "landscape", bounds: undefined })}
+                                          className="flex items-center justify-center border rounded"
+                                          style={{
+                                            width: 26, height: 20, padding: 0,
+                                            background: (pl.orientation ?? "landscape") === "landscape" ? "#2563eb" : "white",
+                                            borderColor: (pl.orientation ?? "landscape") === "landscape" ? "#1d4ed8" : "#d1d5db",
+                                          }}>
+                                          <svg width="16" height="12" viewBox="0 0 16 12">
+                                            <rect x="1" y="1" width="14" height="10" rx="1" fill="none"
+                                              stroke={(pl.orientation ?? "landscape") === "landscape" ? "white" : "#555"} strokeWidth="1.5"/>
+                                          </svg>
+                                        </button>
+                                        <button
+                                          title="Книжная"
+                                          onClick={() => updatePl({ orientation: "portrait", bounds: undefined })}
+                                          className="flex items-center justify-center border rounded"
+                                          style={{
+                                            width: 20, height: 26, padding: 0,
+                                            background: (pl.orientation ?? "landscape") === "portrait" ? "#2563eb" : "white",
+                                            borderColor: (pl.orientation ?? "landscape") === "portrait" ? "#1d4ed8" : "#d1d5db",
+                                          }}>
+                                          <svg width="12" height="16" viewBox="0 0 12 16">
+                                            <rect x="1" y="1" width="10" height="14" rx="1" fill="none"
+                                              stroke={(pl.orientation ?? "landscape") === "portrait" ? "white" : "#555"} strokeWidth="1.5"/>
+                                          </svg>
+                                        </button>
+                                        <div className="w-px self-stretch bg-gray-300 mx-0.5" />
                                         <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
                                         <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
                                         <CadCheckbox checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="Утв" />
