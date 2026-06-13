@@ -13,6 +13,18 @@
   "icons": [
     {
       "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"

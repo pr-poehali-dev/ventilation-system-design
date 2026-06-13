@@ -349,23 +349,37 @@ export default function CadPage() {
   // Стартовое состояние горизонтов: пытаемся восстановить из localStorage
   // (там лежат подложки PNG/JPG как dataURL — не теряются при обновлении страницы).
   const [horizons, setHorizons] = useState<Horizon[]>(() => {
+    const DEFAULT_OVERVIEW: Horizon = {
+      id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+      printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
+        orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
+        period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
+        showLegend: false, showStamp: false, showApprover: false,
+        paperFormat: "A1", orientation: "landscape" },
+    } as Horizon;
     const ensureOverview = (list: Horizon[]): Horizon[] => {
-      if (list.some(h => h.id === OVERVIEW_HORIZON_ID)) return list;
-      return [{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
-        printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
-          orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
-          period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
-          showLegend: true, showStamp: true, paperFormat: "A1", orientation: "landscape" } },
-        ...list];
+      if (list.some(h => h.id === OVERVIEW_HORIZON_ID)) {
+        // Миграция: сбрасываем поля которые не заданы явно в старых данных
+        return list.map(h => h.id !== OVERVIEW_HORIZON_ID ? h : {
+          ...h,
+          printLayer: h.printLayer ? {
+            ...h.printLayer,
+            showLegend: h.printLayer.showLegend ?? false,
+            showStamp: h.printLayer.showStamp ?? false,
+            showApprover: h.printLayer.showApprover ?? false,
+          } : h.printLayer,
+        });
+      }
+      return [DEFAULT_OVERVIEW, ...list];
     };
     if (typeof window === "undefined") return ensureOverview(DEFAULT_HORIZONS);
     try {
       const raw = window.localStorage.getItem("vent-cad/horizons-v4");
-      if (!raw) return ensureOverview([]);
+      if (!raw) return [DEFAULT_OVERVIEW];
       const parsed = JSON.parse(raw) as Horizon[];
       if (Array.isArray(parsed) && parsed.length) return ensureOverview(parsed);
     } catch { /* игнорируем повреждённые данные */ }
-    return ensureOverview([]);
+    return [DEFAULT_OVERVIEW];
   });
   // Сохраняем горизонты при каждом изменении.
   useEffect(() => {
@@ -2420,14 +2434,15 @@ export default function CadPage() {
       {/* ═══ МЕНЮ ФАЙЛ (выпадающее, как в Аэросеть) ═══════════════════════ */}
       {activeRibbon === "file" && (() => {
         const sections: { id: string; label: string }[] = [
-          { id: "new",    label: "Создать" },
-          { id: "open",   label: "Открыть" },
-          { id: "recent", label: "Последние" },
-          { id: "add",    label: "Добавить" },
-          { id: "saveas", label: "Сохранить как" },
-          { id: "save",   label: "Сохранить" },
-          { id: "print",  label: "Печать" },
-          { id: "export", label: "Экспорт" },
+          { id: "new",     label: "Создать" },
+          { id: "open",    label: "Открыть" },
+          { id: "recent",  label: "Последние" },
+          { id: "add",     label: "Добавить" },
+          { id: "saveas",  label: "Сохранить как" },
+          { id: "save",    label: "Сохранить" },
+          { id: "print",   label: "Печать" },
+          { id: "export",  label: "Экспорт" },
+          { id: "install", label: "Установить" },
         ];
         return (
           <div className="fixed inset-0 z-50" onClick={() => setActiveRibbon("home")}>
@@ -2658,8 +2673,56 @@ export default function CadPage() {
                   </>
                 )}
 
+                {/* ── Установить приложение ── */}
+                {fileSectionState === "install" && (() => {
+                  const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+                    || (navigator as unknown as { standalone?: boolean }).standalone === true;
+                  return (
+                    <>
+                      <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Установить приложение</div>
+                      {isStandalone ? (
+                        <div className="flex items-center gap-3 px-3 py-3 rounded bg-green-50 border border-green-200 mb-3">
+                          <Icon name="CheckCircle" size={22} className="text-green-600 flex-shrink-0" />
+                          <div>
+                            <div className="text-[13px] font-medium text-green-800">Приложение установлено</div>
+                            <div className="text-[11px] text-green-600">ПВ-Система работает как настольное приложение</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-[12px] text-gray-600 mb-3 leading-relaxed">
+                            Установите ПВ-Система на ПК — приложение откроется без браузера, как обычная программа Windows.
+                          </div>
+                          <div id="pwa-install-area" className="mb-3">
+                            <button
+                              id="pwa-install-btn"
+                              className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group"
+                              onClick={() => {
+                                const ev = (window as unknown as { __pwaPrompt?: { prompt: () => void } }).__pwaPrompt;
+                                if (ev) { ev.prompt(); }
+                                else { alert("Для установки откройте сайт в браузере Chrome или Edge и нажмите значок установки (⊕) в адресной строке."); }
+                              }}>
+                              <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                                <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/c7f108e6-b1ee-4885-ae0d-e0cde1314a7a.png"
+                                  alt="" className="w-7 h-7" />
+                              </div>
+                              <div>
+                                <div className="text-[13px] font-medium text-blue-700">Установить ПВ-Система на ПК</div>
+                                <div className="text-[11px] text-gray-400">Chrome / Edge — Windows, macOS, Linux</div>
+                              </div>
+                            </button>
+                          </div>
+                          <div className="text-[11px] text-gray-400 leading-relaxed px-1">
+                            Если кнопка не работает — найдите значок <b>⊕</b> или <b>⬇</b> в правой части адресной строки браузера.
+                          </div>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+
                 {/* ── Остальные секции — заглушки ── */}
-                {!["new", "add", "open", "save", "saveas", "print", "export"].includes(fileSectionState) && (
+                {!["new", "add", "open", "save", "saveas", "print", "export", "install"].includes(fileSectionState) && (
                   <div className="text-[12px] text-gray-400 pt-4">
                     Функция «{sections.find((s) => s.id === fileSectionState)?.label}» будет реализована.
                   </div>
