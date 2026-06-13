@@ -358,26 +358,35 @@ export default function CadPage() {
         paperFormat: "A1", orientation: "landscape" },
     } as Horizon;
 
-    // Принудительный сброс галочек УО/Штамп/Утв для всех горизонтов
-    const resetPrintFlags = (list: Horizon[]): Horizon[] =>
-      list.map(h => !h.printLayer ? h : {
-        ...h,
-        printLayer: { ...h.printLayer, showLegend: false, showStamp: false, showApprover: false },
-      });
-
-    const ensureOverview = (list: Horizon[]): Horizon[] => {
-      if (list.some(h => h.id === OVERVIEW_HORIZON_ID)) return list;
-      return [DEFAULT_OVERVIEW, ...list];
-    };
-
     if (typeof window === "undefined") return [DEFAULT_OVERVIEW];
+
+    // Версия схемы данных — при смене сбрасываем горизонты к дефолту
+    const DATA_VERSION = "v5";
+    const storedVersion = localStorage.getItem("vent-cad/data-version");
+    if (storedVersion !== DATA_VERSION) {
+      // Новая версия — очищаем старые горизонты, устанавливаем только Общий вид
+      localStorage.setItem("vent-cad/data-version", DATA_VERSION);
+      localStorage.removeItem("vent-cad/horizons-v4");
+      return [DEFAULT_OVERVIEW];
+    }
+
     try {
-      const raw = window.localStorage.getItem("vent-cad/horizons-v4");
+      const raw = localStorage.getItem("vent-cad/horizons-v4");
       if (!raw) return [DEFAULT_OVERVIEW];
       const parsed = JSON.parse(raw) as Horizon[];
       if (!Array.isArray(parsed) || !parsed.length) return [DEFAULT_OVERVIEW];
-      // Миграция v3: принудительно сбрасываем галочки при каждой загрузке из localStorage
-      return resetPrintFlags(ensureOverview(parsed));
+      // Нормализуем: сбрасываем галочки, фиксируем title Общего вида
+      return parsed.map(h => {
+        if (!h.printLayer) return h;
+        const pl = {
+          ...h.printLayer,
+          showLegend: false,
+          showStamp: false,
+          showApprover: false,
+          ...(h.id === OVERVIEW_HORIZON_ID ? { title: "Общий вид вентиляционной схемы" } : {}),
+        };
+        return { ...h, printLayer: pl };
+      });
     } catch { /* игнорируем повреждённые данные */ }
     return [DEFAULT_OVERVIEW];
   });
@@ -1548,9 +1557,9 @@ export default function CadPage() {
           ...h,
           printLayer: {
             ...h.printLayer,
-            showLegend: h.printLayer.showLegend ?? false,
-            showStamp: h.printLayer.showStamp ?? false,
-            showApprover: h.printLayer.showApprover ?? false,
+            showLegend: false,
+            showStamp: false,
+            showApprover: false,
           },
         };
       });
