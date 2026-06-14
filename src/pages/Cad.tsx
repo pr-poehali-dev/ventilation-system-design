@@ -3335,6 +3335,11 @@ export default function CadPage() {
                 if (activeSide === "workerPath") {
                   setActiveSide("general");
                   setWorkerPickMode(null);
+                  setWorkerPathBranchIds(new Set());
+                  setWorkerPathBranchDirs(new Map());
+                  setWorkerPathNodeIds(new Set());
+                  setWorkerStartNodeId("");
+                  setWorkerTargetNodeId("");
                 } else {
                   setActiveSide("workerPath");
                 }
@@ -3349,6 +3354,11 @@ export default function CadPage() {
                 if (activeSide === "rescue") {
                   setActiveSide("general");
                   setRescuePickMode(null);
+                  setRescuePathBranchIds(new Set());
+                  setRescuePathBranchDirs(new Map());
+                  setRescuePathNodeIds(new Set());
+                  setRescueStartNodeId("");
+                  setRescueTargetNodeId("");
                 } else {
                   setActiveSide("rescue");
                 }

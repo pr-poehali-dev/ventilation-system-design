@@ -389,7 +389,7 @@ export const LEGEND_TYPES: LegendType[] = [
 
   // ─── ПОЖАР (расчётный очаг) ──────────────────────────────────────────
   { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
-    svgContent: `<ellipse cx="24" cy="32" rx="12" ry="5" fill="#ff6b35" opacity="0.4"/><path d="M24,8 C22,14 17,16 18,22 C18,27 22,29 24,30 C26,29 30,27 30,22 C31,16 26,14 24,8Z" fill="#ff5722" stroke="none"/><path d="M24,14 C23,18 20,20 21,24 C21,27 23,28 24,29 C25,28 27,27 27,24 C28,20 25,18 24,14Z" fill="#ffd600" stroke="none"/><path d="M21,22 C21,25 22,27 24,28 C26,27 27,25 27,22 C27,20 25,19 24,19 C23,19 21,20 21,22Z" fill="white" opacity="0.7" stroke="none"/>` },
+    svgContent: `<circle cx="24" cy="24" r="13" fill="none" stroke="#e00" stroke-width="3.2"/><line x1="24" y1="2" x2="24" y2="9" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="24" y1="39" x2="24" y2="46" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="2" y1="24" x2="9" y2="24" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="39" y1="24" x2="46" y2="24" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="7.5" y1="7.5" x2="12.5" y2="12.5" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="35.5" y1="35.5" x2="40.5" y2="40.5" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="40.5" y1="7.5" x2="35.5" y2="12.5" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/><line x1="12.5" y1="35.5" x2="7.5" y2="40.5" stroke="#e00" stroke-width="3.2" stroke-linecap="square"/>` },
 
   // ─── ВЗРЫВ (расчётный источник) ──────────────────────────────────────
   { id: "explosion_source", name: "Источник взрыва",  group: "Аварийный режим",
