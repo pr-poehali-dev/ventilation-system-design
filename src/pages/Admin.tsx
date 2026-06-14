@@ -23,6 +23,9 @@ interface Seat {
   activated_at: string;
   last_seen_at: string;
   user_agent: string | null;
+  hostname: string | null;
+  platform: string | null;
+  screen_info: string | null;
 }
 
 interface LicenseForm {
@@ -385,38 +388,78 @@ export default function Admin() {
                       ) : (
                         <div className="space-y-2">
                           {seats.map((seat, idx) => {
-                            const ua = seat.user_agent || "";
-                            const os = ua.includes("Windows") ? "Windows"
+                            // Определяем ОС и браузер — сначала из новых полей, иначе из user_agent
+                            const plat = seat.platform || seat.hostname || seat.user_agent || "";
+                            const ua   = seat.user_agent || "";
+
+                            const os = seat.platform
+                              ? seat.platform
+                              : ua.includes("Windows") ? "Windows"
                               : ua.includes("Mac") ? "macOS"
                               : ua.includes("Linux") ? "Linux"
                               : ua.includes("Android") ? "Android"
                               : ua.includes("iPhone") || ua.includes("iPad") ? "iOS" : "—";
+
                             const browser = ua.includes("Chrome") && !ua.includes("Edg") ? "Chrome"
                               : ua.includes("Firefox") ? "Firefox"
                               : ua.includes("Safari") && !ua.includes("Chrome") ? "Safari"
                               : ua.includes("Edg") ? "Edge" : "—";
+
+                            const osIcon = plat.includes("Win") ? "🖥️"
+                              : plat.includes("mac") || plat.includes("Mac") ? "🍎"
+                              : plat.includes("Linux") ? "🐧"
+                              : plat.includes("Android") ? "📱"
+                              : plat.includes("iOS") ? "📱" : "💻";
+
+                            // Отображаемое имя рабочего места
+                            const displayName = seat.hostname
+                              ? seat.hostname
+                              : `${os} / ${browser}`;
+
                             return (
-                              <div key={seat.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-blue-100">
-                                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                              <div key={seat.id} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-100">
+                                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
                                   style={{ background: "#eff6ff" }}>
-                                  <span className="text-[15px]">{os === "Windows" ? "🖥️" : os === "macOS" ? "🍎" : os === "Linux" ? "🐧" : "💻"}</span>
+                                  <span className="text-[17px]">{osIcon}</span>
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[12px] font-semibold text-gray-700">Место #{idx + 1}</span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{os}</span>
+                                  {/* Заголовок места */}
+                                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                                    <span className="text-[12px] font-semibold text-gray-800">
+                                      Место #{idx + 1}
+                                    </span>
+                                    {seat.platform && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">
+                                        {seat.platform}
+                                      </span>
+                                    )}
+                                    {!seat.platform && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{os}</span>
+                                    )}
                                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{browser}</span>
                                   </div>
-                                  <div className="text-[10px] text-gray-400 font-mono mt-0.5 truncate">
+                                  {/* Название рабочего места */}
+                                  <div className="text-[12px] text-gray-700 font-medium truncate">
+                                    {displayName}
+                                  </div>
+                                  {/* Разрешение экрана */}
+                                  {seat.screen_info && (
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      🖥 {seat.screen_info}
+                                    </div>
+                                  )}
+                                  {/* Fingerprint и даты */}
+                                  <div className="text-[10px] text-gray-400 font-mono mt-0.5">
                                     ID: {seat.fingerprint}
                                   </div>
-                                  <div className="text-[10px] text-gray-400 mt-0.5">
-                                    Активировано: {fmtDate(seat.activated_at)} · Последняя активность: {fmtDate(seat.last_seen_at)}
+                                  <div className="text-[10px] text-gray-400 mt-0.5 flex gap-3 flex-wrap">
+                                    <span>Активировано: {fmtDate(seat.activated_at)}</span>
+                                    <span>Последняя активность: {fmtDate(seat.last_seen_at)}</span>
                                   </div>
                                 </div>
                                 <button onClick={() => revokeSeat(seat.id)}
-                                  title="Освободить место (ключ можно ввести заново)"
-                                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-red-200 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors">
+                                  title="Освободить место — пользователь сможет активировать ключ заново"
+                                  className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border border-red-200 text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors mt-0.5">
                                   <Icon name="Trash2" size={11} />Сбросить
                                 </button>
                               </div>

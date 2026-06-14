@@ -192,7 +192,8 @@ def handler(event: dict, context) -> dict:
         if action == "list_seats":
             lic_id = int(body.get("license_id", 0))
             cur.execute("""
-                SELECT id, fingerprint, activated_at, last_seen_at, user_agent
+                SELECT id, fingerprint, activated_at, last_seen_at,
+                       user_agent, hostname, platform, screen_info
                 FROM license_seats WHERE license_id = %s
                 ORDER BY activated_at DESC
             """, (lic_id,))
@@ -204,6 +205,9 @@ def handler(event: dict, context) -> dict:
                     "activated_at": str(r[2]),
                     "last_seen_at": str(r[3]),
                     "user_agent": r[4],
+                    "hostname":    r[5],
+                    "platform":    r[6],
+                    "screen_info": r[7],
                 })
             return resp(200, {"seats": seats})
 

@@ -1,11 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  getMachineId,
+  getMachineInfo,
   loadCachedLicense,
   checkLicense,
   activateLicense,
   clearLicenseCache,
   type LicenseInfo,
+  type MachineInfo,
 } from "@/lib/license";
 
 export type LicenseStatus = "loading" | "demo" | "licensed";
@@ -14,24 +15,29 @@ export interface UseLicenseReturn {
   status: LicenseStatus;
   info: LicenseInfo | null;
   fingerprint: string;
+  machineInfo: MachineInfo | null;
   activate: (key: string) => Promise<void>;
   deactivate: () => void;
   error: string | null;
 }
 
 export function useLicense(): UseLicenseReturn {
-  const [status, setStatus]           = useState<LicenseStatus>("loading");
-  const [info, setInfo]               = useState<LicenseInfo | null>(null);
-  const [fingerprint, setFingerprint] = useState<string>("");
-  const [error, setError]             = useState<string | null>(null);
+  const [status, setStatus]             = useState<LicenseStatus>("loading");
+  const [info, setInfo]                 = useState<LicenseInfo | null>(null);
+  const [fingerprint, setFingerprint]   = useState<string>("");
+  const [machineInfo, setMachineInfo]   = useState<MachineInfo | null>(null);
+  const [error, setError]               = useState<string | null>(null);
+  const machineInfoRef                  = useRef<MachineInfo | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Стабильный machine ID — хранится в localStorage навсегда
-      const fp = getMachineId();
+      // Получаем стабильный аппаратный fingerprint
+      const mi = await getMachineInfo();
       if (cancelled) return;
-      setFingerprint(fp);
+      setFingerprint(mi.fingerprint);
+      setMachineInfo(mi);
+      machineInfoRef.current = mi;
 
       // 1. Смотрим кэш
       const cached = loadCachedLicense();
@@ -40,9 +46,9 @@ export function useLicense(): UseLicenseReturn {
         setStatus("licensed");
       }
 
-      // 2. Проверяем на сервере (в фоне)
+      // 2. Проверяем на сервере (обновляем сведения о ПК)
       try {
-        const fresh = await checkLicense(fp);
+        const fresh = await checkLicense(mi.fingerprint, mi);
         if (cancelled) return;
         setInfo(fresh);
         setStatus(fresh.licensed ? "licensed" : "demo");
@@ -61,11 +67,11 @@ export function useLicense(): UseLicenseReturn {
 
   const activate = useCallback(async (key: string) => {
     setError(null);
-    const fp = fingerprint || getMachineId();
-    const result = await activateLicense(fp, key);
+    const mi = machineInfoRef.current ?? await getMachineInfo();
+    const result = await activateLicense(mi.fingerprint, key, mi);
     setInfo(result);
     setStatus("licensed");
-  }, [fingerprint]);
+  }, []);
 
   const deactivate = useCallback(() => {
     clearLicenseCache();
@@ -73,5 +79,5 @@ export function useLicense(): UseLicenseReturn {
     setStatus("demo");
   }, []);
 
-  return { status, info, fingerprint, activate, deactivate, error };
+  return { status, info, fingerprint, machineInfo, activate, deactivate, error };
 }
