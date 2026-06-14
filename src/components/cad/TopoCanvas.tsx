@@ -1364,29 +1364,43 @@ export default function TopoCanvas(props: Props) {
     const isEditing = editingPrintLayerId === h.id;
 
     // ── Вычисляем экранный bbox рамки ──────────────────────────────────────
-    let rx: number, ry: number, rw: number, rh: number;
+    let rx = 0, ry = 0, rw = 0, rh = 0;
     const wb: { x1: number; y1: number; x2: number; y2: number } = { x1: 0, y1: 0, x2: 0, y2: 0 };
     const pTL = { sx: 0, sy: 0 }, pTR = { sx: 0, sy: 0 }, pBL = { sx: 0, sy: 0 }, pBR = { sx: 0, sy: 0 };
+    let skipWorldProject = false; // флаг: экранные coords уже вычислены, пропустить общий блок
 
     if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
-      // Авто-bbox OVERVIEW: вычисляем в мировых X/Y координатах (z=0, без zScale).
-      // Потом проецируем как обычный горизонт — тогда рамка правильно следует
-      // за схемой при ЛЮБОЙ смене проекции (план, ИЗО, фронт, профиль).
+      // Авто-bbox OVERVIEW: проецируем все узлы с реальными X/Y/Z в экранные координаты,
+      // затем строим рамку вокруг экранного bbox.
+      // Это корректно работает при ЛЮБОЙ проекции (план, ИЗО, фронт, профиль).
       const allNodes = nodes.length > 0 ? nodes : null;
       if (!allNodes) return null;
-      let minWx = Infinity, maxWx = -Infinity, minWy = Infinity, maxWy = -Infinity;
+      const xy = xyScale ?? 1;
+      let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
       allNodes.forEach(n => {
-        if (n.x < minWx) minWx = n.x; if (n.x > maxWx) maxWx = n.x;
-        if (n.y < minWy) minWy = n.y; if (n.y > maxWy) maxWy = n.y;
+        const p = project3D({ x: n.x * xy, y: n.y * xy, z: n.z * (zScale ?? 1) }, proj);
+        if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
+        if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
       });
-      const ww = maxWx - minWx, wh = maxWy - minWy;
-      const pad = Math.max(ww, wh) * 0.12 + 10;
-      const cx = (minWx + maxWx) / 2, cy = (minWy + maxWy) / 2;
-      const fitWw = ww + pad * 2, fitHw = wh + pad * 2;
-      let bw = fitWw, bh = fitWw / aspect;
-      if (bh < fitHw) { bh = fitHw; bw = fitHw * aspect; }
-      // wb в чистых мировых — ниже проецируем как обычный горизонт с xyScale и z=0
-      Object.assign(wb, { x1: cx - bw / 2, y1: cy - bh / 2, x2: cx + bw / 2, y2: cy + bh / 2 });
+      const sw = maxSx - minSx, sh = maxSy - minSy;
+      const pad = Math.max(sw, sh) * 0.12 + 20;
+      const scx = (minSx + maxSx) / 2;
+      // Рамка располагается НИЖЕ схемы: верхний экранный край = maxSy + gap
+      const fitSw = sw + pad * 2, fitSh = sh + pad * 2;
+      let rsw = fitSw, rsh = fitSw / aspect;
+      if (rsh < fitSh) { rsh = fitSh; rsw = fitSh * aspect; }
+      const gap = pad * 0.5;
+      const scy = maxSy + gap + rsh / 2;
+      // Заполняем экранные координаты углов напрямую (без проекции через wb)
+      Object.assign(pTL, { sx: scx - rsw / 2, sy: scy - rsh / 2 });
+      Object.assign(pTR, { sx: scx + rsw / 2, sy: scy - rsh / 2 });
+      Object.assign(pBL, { sx: scx - rsw / 2, sy: scy + rsh / 2 });
+      Object.assign(pBR, { sx: scx + rsw / 2, sy: scy + rsh / 2 });
+      rx = scx - rsw / 2;
+      ry = scy - rsh / 2;
+      rw = Math.max(rsw, 40);
+      rh = Math.max(rsh, 40);
+      skipWorldProject = true;
     } else if (pl.bounds) {
       // Ручные bounds (после перетаскивания) — используем как есть
       Object.assign(wb, pl.bounds);
@@ -1409,12 +1423,10 @@ export default function TopoCanvas(props: Props) {
       Object.assign(wb, { x1: cx - rw2 / 2, y1: cy - rh2 / 2, x2: cx + rw2 / 2, y2: cy + rh2 / 2 });
     }
     // ── Общий путь: проецируем wb (мировые) → экранные координаты ──────────
-    // OVERVIEW: z=0 (рамка по горизонтальному плану, не разлетается при zScale)
-    // Остальные горизонты: z = h.z * zScale
-    {
+    // Пропускается для OVERVIEW без ручных bounds (skipWorldProject = true)
+    if (!skipWorldProject) {
       const xy = xyScale ?? 1;
-      // OVERVIEW всегда z=0 — рамка не разлетается при zScale ни в авто, ни с ручными bounds
-      const z4proj = (h.id === OVERVIEW_HORIZON_ID) ? 0 : h.z * (zScale ?? 1);
+      const z4proj = h.z * (zScale ?? 1);
       const _pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: z4proj }, proj);
       const _pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: z4proj }, proj);
       const _pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: z4proj }, proj);
