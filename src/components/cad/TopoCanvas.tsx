@@ -1405,8 +1405,65 @@ export default function TopoCanvas(props: Props) {
       rw = Math.max(rsw, 40);
       rh = Math.max(rsh, 40);
       skipWorldProject = true;
+    } else if (pl.bounds && h.id === OVERVIEW_HORIZON_ID) {
+      // OVERVIEW с ручными bounds: bounds хранятся в мировых X/Y плана.
+      // Вычисляем авто-позицию в экранных, затем применяем сохранённое смещение рамки.
+      // Это корректно при ЛЮБОЙ проекции — рамка следует за схемой + смещение пользователя.
+      if (projNodes.length === 0) return null;
+      const visibleNodeIds2 = new Set<string>();
+      visibleBranches.forEach(b => { visibleNodeIds2.add(b.fromId); visibleNodeIds2.add(b.toId); });
+      const relevantProj2 = projNodes.filter(pn => visibleNodeIds2.has(pn.node.id));
+      if (relevantProj2.length === 0) return null;
+      let minSx2 = Infinity, maxSx2 = -Infinity, minSy2 = Infinity, maxSy2 = -Infinity;
+      relevantProj2.forEach(pn => {
+        if (pn.sx < minSx2) minSx2 = pn.sx; if (pn.sx > maxSx2) maxSx2 = pn.sx;
+        if (pn.sy < minSy2) minSy2 = pn.sy; if (pn.sy > maxSy2) maxSy2 = pn.sy;
+      });
+      const sw2 = maxSx2 - minSx2, sh2 = maxSy2 - minSy2;
+      const pad2 = Math.max(sw2, sh2) * 0.08 + 15;
+      const scx2 = (minSx2 + maxSx2) / 2;
+      const fitSw2 = sw2 + pad2 * 2, fitSh2 = sh2 + pad2 * 2;
+      let rsw2 = fitSw2, rsh2 = fitSw2 / aspect;
+      if (rsh2 < fitSh2) { rsh2 = fitSh2; rsw2 = fitSh2 * aspect; }
+      const gap2 = pad2 * 0.8;
+      // Авто-центр рамки (под схемой)
+      const autoCenterX = scx2;
+      const autoCenterY = maxSy2 + gap2 + rsh2 / 2;
+      // pl.bounds хранит мировые X/Y: вычитаем авто-центр схемы (в планарных мировых) и получаем смещение пользователя
+      // Смещение в экранных пикселях = смещение в мировых * scale (только XY, без поворота — приближение)
+      const bCenterWx = (pl.bounds.x1 + pl.bounds.x2) / 2;
+      const bCenterWy = (pl.bounds.y1 + pl.bounds.y2) / 2;
+      // Авто-центр схемы в мировых X/Y (план)
+      const xy2 = xyScale ?? 1;
+      let minWx2 = Infinity, maxWx2 = -Infinity, minWy2 = Infinity, maxWy2 = -Infinity;
+      relevantProj2.forEach(pn => {
+        const wx = pn.node.x; const wy = pn.node.y;
+        if (wx < minWx2) minWx2 = wx; if (wx > maxWx2) maxWx2 = wx;
+        if (wy < minWy2) minWy2 = wy; if (wy > maxWy2) maxWy2 = wy;
+      });
+      const autoBCenterWx = (minWx2 + maxWx2) / 2;
+      const autoBCenterWy = (minWy2 + maxWy2) / 2;
+      // Смещение рамки от авто-позиции в мировых ед., конвертируем в экранные пиксели
+      const dxScreen = (bCenterWx - autoBCenterWx) * xy2 * (proj.scale ?? 1);
+      const dyScreen = -(bCenterWy - autoBCenterWy) * xy2 * (proj.scale ?? 1); // Y инвертирован
+      // Размер рамки из bounds
+      const bW = (pl.bounds.x2 - pl.bounds.x1) * xy2 * (proj.scale ?? 1);
+      const bH = (pl.bounds.y2 - pl.bounds.y1) * xy2 * (proj.scale ?? 1);
+      const finalRsw = Math.max(rsw2, Math.abs(bW));
+      const finalRsh = Math.max(rsh2, Math.abs(bH));
+      const finalCx = autoCenterX + dxScreen;
+      const finalCy = autoCenterY + dyScreen;
+      Object.assign(pTL, { sx: finalCx - finalRsw / 2, sy: finalCy - finalRsh / 2 });
+      Object.assign(pTR, { sx: finalCx + finalRsw / 2, sy: finalCy - finalRsh / 2 });
+      Object.assign(pBL, { sx: finalCx - finalRsw / 2, sy: finalCy + finalRsh / 2 });
+      Object.assign(pBR, { sx: finalCx + finalRsw / 2, sy: finalCy + finalRsh / 2 });
+      rx = finalCx - finalRsw / 2;
+      ry = finalCy - finalRsh / 2;
+      rw = Math.max(finalRsw, 40);
+      rh = Math.max(finalRsh, 40);
+      skipWorldProject = true;
     } else if (pl.bounds) {
-      // Ручные bounds (после перетаскивания) — используем как есть
+      // Обычный горизонт с ручными bounds — используем как есть
       Object.assign(wb, pl.bounds);
     } else {
       // Авто-bbox обычного горизонта — по узлам этого горизонта
