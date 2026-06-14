@@ -6593,16 +6593,32 @@ export default function CadPage() {
 
                   if (branch.hasFire) {
                     if (smokeTimeMinutes <= 0) return;
-                    // Очаг: дым расходится от точки очага fireT в ОБЕ стороны
+                    // Очаг: дым расходится от точки очага fireT
+                    // По потоку — с нормальной скоростью воздуха
+                    // Против потока — только диффузия (0.1 м/с)
                     const ft = branch.fireT ?? 0.5;
-                    const speed = fr.airSpeed > 0 ? fr.airSpeed : 0.3;
+                    const flowSpeed = fr.airSpeed > 0 ? fr.airSpeed : 0.3;
+                    const diffSpeed = 0.1; // скорость диффузии против потока
                     const len = branch.length > 0 ? branch.length : 1;
-                    // Расстояние, пройденное дымом от очага (метров)
-                    const smokedLen = smokeTimeMinutes * 60 * speed;
-                    const smokedFrac = Math.min(1, smokedLen / len);
-                    // В обе стороны от ft
-                    const fromT = Math.max(0, ft - smokedFrac);
-                    const toT   = Math.min(1, ft + smokedFrac);
+                    const elapsedSec = smokeTimeMinutes * 60;
+                    const flowDir = (branch.flow ?? 0) >= 0; // true = from→to
+
+                    // По направлению потока (от очага к выходному узлу)
+                    const downLen = Math.min(flowDir ? (1 - ft) * len : ft * len, elapsedSec * flowSpeed);
+                    // Против потока (от очага к входному узлу) — диффузия
+                    const upLen   = Math.min(flowDir ? ft * len : (1 - ft) * len, elapsedSec * diffSpeed);
+
+                    const downFrac = downLen / len;
+                    const upFrac   = upLen / len;
+
+                    // fromT/toT в координатах ветви (0=fromId, 1=toId)
+                    const fromT = flowDir
+                      ? Math.max(0, ft - upFrac)    // против потока → влево
+                      : Math.max(0, ft - downFrac);  // по потоку → влево (поток обратный)
+                    const toT = flowDir
+                      ? Math.min(1, ft + downFrac)   // по потоку → вправо
+                      : Math.min(1, ft + upFrac);    // против потока → вправо (поток обратный)
+
                     map.set(bid, { color: col, fromT, toT });
                     return;
                   }
