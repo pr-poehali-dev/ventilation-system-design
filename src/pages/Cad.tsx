@@ -45,6 +45,7 @@ import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
+import VentPipeDialog from "@/components/cad/VentPipeDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
@@ -733,6 +734,9 @@ export default function CadPage() {
   const [workerPathBranchIds, setWorkerPathBranchIds] = useState<Set<string>>(new Set());
   const [workerPathBranchDirs, setWorkerPathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [workerPathNodeIds, setWorkerPathNodeIds] = useState<Set<string>>(new Set());
+  // ─── Вентрубопровод ────────────────────────────────────────────────
+  const [showVentPipeDialog, setShowVentPipeDialog] = useState(false);
+  const [ventPipeBranchIds, setVentPipeBranchIds] = useState<string[]>([]);
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
@@ -2407,6 +2411,17 @@ export default function CadPage() {
       case "toggle_capital": if (branchId) handleToggleCapital(branchId); break;
       case "toggle_designed": if (branchId) handleToggleDesigned(branchId); break;
       case "reverse_branch": if (branchId) handleReverseBranch(branchId); break;
+      case "add_vent_pipe": {
+        // Собираем все выделенные ветви (или одну из контекстного меню)
+        const ids = selectedBranchIds.size > 0
+          ? [...selectedBranchIds]
+          : branchId ? [branchId] : [];
+        if (ids.length > 0) {
+          setVentPipeBranchIds(ids);
+          setShowVentPipeDialog(true);
+        }
+        break;
+      }
       case "copy_branch_params": {
         const src = branchId ? branches.find((b) => b.id === branchId) : null;
         if (src) {
@@ -8346,6 +8361,30 @@ export default function CadPage() {
       />
     )}
 
+    {/* ── Диалог вентрубопровода ─────────────────────────────────────── */}
+    {showVentPipeDialog && ventPipeBranchIds.length > 0 && (() => {
+      const vpBranches = ventPipeBranchIds
+        .map(id => branches.find(b => b.id === id))
+        .filter(Boolean) as typeof branches;
+      if (vpBranches.length === 0) return null;
+      return (
+        <VentPipeDialog
+          branches={vpBranches}
+          onClose={() => setShowVentPipeDialog(false)}
+          onApply={(patch) => {
+            ventPipeBranchIds.forEach(id => updateBranch(id, patch, false));
+            // Единственный pushHistory после всех изменений
+            pushHistory();
+          }}
+          onRemove={() => {
+            ventPipeBranchIds.forEach(id => updateBranch(id, { hasVentPipe: false }, false));
+            pushHistory();
+            setShowVentPipeDialog(false);
+          }}
+        />
+      );
+    })()}
+
     </>
   );
 }
@@ -8385,6 +8424,7 @@ function branchContextItems(branch: TopoBranch | null, hasBuffer: boolean, multi
     { id: "toggle_designed", label: branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь", icon: "Pencil" },
     { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight", shortcut: "Ctrl+R" },
     { id: "div3", label: "", divider: true },
+    { id: "add_vent_pipe", label: branch?.hasVentPipe ? "✎ Вентрубопровод (изменить)" : "+ Вентрубопровод", icon: "Wind" },
     { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
     { id: "div4", label: "", divider: true },
     { id: "delete_branch", label: "Удалить", icon: "Trash2", shortcut: "Del", danger: true },

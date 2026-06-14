@@ -2393,6 +2393,35 @@ export default function TopoCanvas(props: Props) {
                 stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1}
                 strokeDasharray={isLeakage ? "6 4" : undefined} />
 
+              {/* ── Вентрубопровод — пунктирная линия параллельно ветви ── */}
+              {b.hasVentPipe && (() => {
+                const nx = -uy;
+                const ny = ux;
+                const vpOff = w / 2 + 3;
+                const vpX1 = from.sx + nx * vpOff;
+                const vpY1 = from.sy + ny * vpOff;
+                const vpX2 = to.sx + nx * vpOff;
+                const vpY2 = to.sy + ny * vpOff;
+                const vpW = Math.max(1.5, w * 0.35);
+                const mX = (vpX1 + vpX2) / 2;
+                const mY = (vpY1 + vpY2) / 2;
+                const fs = Math.max(8, Math.min(12, w * 1.2));
+                return (
+                  <g pointerEvents="none">
+                    <line x1={vpX1} y1={vpY1} x2={vpX2} y2={vpY2}
+                      stroke="white" strokeWidth={vpW + 2} strokeLinecap="round" opacity="0.6" />
+                    <line x1={vpX1} y1={vpY1} x2={vpX2} y2={vpY2}
+                      stroke="#0ea5e9" strokeWidth={vpW} strokeLinecap="round"
+                      strokeDasharray="8 4" opacity="0.9" />
+                    {segLen > 60 && view.scale > 0.3 && (
+                      <text x={mX} y={mY} textAnchor="middle" dominantBaseline="middle"
+                        fontSize={fs} fontFamily="Arial" fontWeight="bold"
+                        fill="#0ea5e9" opacity="0.95">ВТ</text>
+                    )}
+                  </g>
+                );
+              })()}
+
               {/* Бегущий пунктир в направлении потока (как в Вентиляция 2.0) */}
               {showDashes && (
                 <line x1={sxA} y1={syA} x2={sxB} y2={syB}

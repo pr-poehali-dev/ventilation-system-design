@@ -180,6 +180,25 @@ export interface TopoBranch {
   fireThermalDepression?: number;  // Па — тепловая депрессия пожара (передаётся в solver)
   originalFlow?: number;           // м³/с — расход до итераций (для обнаружения опрокидывания)
 
+  // ─── Вентиляционный трубопровод (ВМП / тупиковые забои) ─────────────
+  hasVentPipe: boolean;            // ветвь содержит вентрубопровод
+  vpDiameter: number;              // мм — внутренний диаметр трубы
+  vpMaterial: string;              // материал: Пластик / Металл / Гибкий рукав
+  vpLengthManual: boolean;         // длина задана вручную
+  vpLength: number;                // м — длина вентрубопровода
+  vpLeakageCoeff: number;          // % утечки на 100 м (0 = без утечек)
+  vpJointCount: number;            // кол-во стыков на маршруте
+  vpLocalXi: number;               // сумма ξ местных сопротивлений (повороты, фасонины)
+  vpManualR: number;               // Н·с²/м⁸ — ручное сопротивление (если задан вручную)
+  vpRoughnessMode: "auto" | "manual"; // авто = по материалу, ручной = vpRoughness
+  vpRoughness: number;             // мм — шероховатость (при ручном режиме)
+  // Вычисленные параметры вентрубопровода
+  vpComputedR: number;             // Н·с²/м⁸ — аэродинамическое сопротивление трубы
+  vpComputedFlow: number;          // м³/с — расход в трубе
+  vpComputedVelocity: number;      // м/с — скорость воздуха
+  vpComputedDeltaP: number;        // Па — потери давления
+  vpComputedLeakage: number;       // м³/с — суммарные утечки
+
   // ─── Взрыв (расчёт параметров воздушных ударных волн) ───────────────
   hasExplosion: boolean;                   // в ветви установлен источник взрыва
   explosionT: number;                      // позиция источника вдоль ветви 0..1
@@ -448,6 +467,23 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpReducerModel: "kppr_50",
     wpReducerOutPressure: 0.5,
     wpReducerMaxFlow: 25,
+    // Вентрубопровод
+    hasVentPipe: false,
+    vpDiameter: 500,
+    vpMaterial: "Пластик",
+    vpLengthManual: false,
+    vpLength: 0,
+    vpLeakageCoeff: 0.5,
+    vpJointCount: 0,
+    vpLocalXi: 0,
+    vpManualR: 0,
+    vpRoughnessMode: "auto",
+    vpRoughness: 0.2,
+    vpComputedR: 0,
+    vpComputedFlow: 0,
+    vpComputedVelocity: 0,
+    vpComputedDeltaP: 0,
+    vpComputedLeakage: 0,
     // Пожар
     hasFire: false,
     fireT: 0.5,              // позиция очага вдоль ветви 0..1 (0=fromId, 1=toId)

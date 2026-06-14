@@ -398,6 +398,50 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
     ctx.restore();
 
+    // ── Вентрубопровод — пунктирная линия параллельно ветви ──────────────
+    if (b.hasVentPipe) {
+      const nx = -uy; // нормаль к ветви
+      const ny = ux;
+      const vpOffset = w / 2 + 3;
+      const vpX1 = from!.sx + nx * vpOffset;
+      const vpY1 = from!.sy + ny * vpOffset;
+      const vpX2 = to!.sx + nx * vpOffset;
+      const vpY2 = to!.sy + ny * vpOffset;
+      const vpW = Math.max(1.5, w * 0.35);
+      // Белая подложка для читаемости
+      ctx.save();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = vpW + 2;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.6;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
+      ctx.restore();
+      // Голубая пунктирная линия
+      ctx.save();
+      ctx.strokeStyle = "#0ea5e9";
+      ctx.lineWidth = vpW;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
+      ctx.restore();
+      // Метка "ВТ" в середине при достаточном масштабе
+      if (segLen > 60 && view.scale > 0.3) {
+        const mX = (vpX1 + vpX2) / 2;
+        const mY = (vpY1 + vpY2) / 2;
+        const fs = Math.max(8, Math.min(12, w * 1.2));
+        ctx.save();
+        ctx.fillStyle = "#0ea5e9";
+        ctx.font = `bold ${fs}px Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.globalAlpha = 0.95;
+        ctx.fillText("ВТ", mX, mY);
+        ctx.restore();
+      }
+    }
+
     // Бегущий пунктир
     if (showDashes) {
       ctx.save();
