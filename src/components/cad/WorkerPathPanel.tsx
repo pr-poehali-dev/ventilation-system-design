@@ -451,15 +451,32 @@ export default function WorkerPathPanel({
           </div>
 
           {/* Кнопка расчёта */}
-          <button
-            onClick={handleCalc}
-            disabled={!canCalc}
-            className="w-full py-1.5 rounded text-[12px] font-semibold text-white mt-1 disabled:opacity-40"
-            style={{ background: "#0284c7", border: "none", cursor: canCalc ? "pointer" : "default" }}
-          >
-            <Icon name="Timer" size={13} style={{ display: "inline", marginRight: 5, verticalAlign: "middle" }} />
-            Вычислить время хода
-          </button>
+          <div className="flex gap-1 mt-1">
+            <button
+              onClick={handleCalc}
+              disabled={!canCalc}
+              className="flex-1 py-1.5 rounded text-[12px] font-semibold text-white disabled:opacity-40"
+              style={{ background: "#0284c7", border: "none", cursor: canCalc ? "pointer" : "default" }}
+            >
+              <Icon name="Timer" size={13} style={{ display: "inline", marginRight: 5, verticalAlign: "middle" }} />
+              Вычислить
+            </button>
+            {result && (
+              <button
+                onClick={() => {
+                  setResult(null);
+                  onPickedStartChange("");
+                  onPickedTargetChange("");
+                  onPickModeChange(null);
+                  onRouteChange(new Set(), new Set(), new Map());
+                }}
+                className="px-2 py-1.5 rounded text-[11px] text-gray-600 border border-gray-300 hover:bg-gray-50"
+                title="Очистить маршрут"
+              >
+                <Icon name="X" size={13} />
+              </button>
+            )}
+          </div>
 
           {/* Результат (краткий) */}
           {result && result.segments.length > 0 && (

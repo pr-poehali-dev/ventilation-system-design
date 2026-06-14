@@ -806,6 +806,20 @@ export default function RescuePanel({
             Показать график
           </button>
         )}
+        {result && (
+          <button
+            onClick={() => {
+              setResult(null);
+              setShowResultLink(false);
+              onPickedStartChange("");
+              onPickedTargetChange("");
+              onPickModeChange(null);
+              onRouteChange(new Set(), new Set(), new Map());
+            }}
+            className="w-full py-1 rounded text-[11px] text-gray-600 border border-gray-300 hover:bg-gray-50">
+            Очистить маршрут
+          </button>
+        )}
       </div>
 
       {/* Краткий итог */}
