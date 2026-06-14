@@ -1370,26 +1370,30 @@ export default function TopoCanvas(props: Props) {
     let skipWorldProject = false; // флаг: экранные coords уже вычислены, пропустить общий блок
 
     if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
-      // Авто-bbox OVERVIEW: проецируем все узлы с реальными X/Y/Z в экранные координаты,
-      // затем строим рамку вокруг экранного bbox.
+      // Авто-bbox OVERVIEW: проецируем ВИДИМЫЕ ветви с реальными X/Y/Z в экранные координаты.
+      // Используем проецированные узлы (projNodes) — они уже готовы с текущей проекцией.
       // Это корректно работает при ЛЮБОЙ проекции (план, ИЗО, фронт, профиль).
-      const allNodes = nodes.length > 0 ? nodes : null;
-      if (!allNodes) return null;
-      const xy = xyScale ?? 1;
+      if (projNodes.length === 0) return null;
+      // Берём только узлы реально используемых (видимых) ветвей
+      const visibleNodeIds = new Set<string>();
+      visibleBranches.forEach(b => { visibleNodeIds.add(b.fromId); visibleNodeIds.add(b.toId); });
+      const relevantProj = projNodes.filter(pn => visibleNodeIds.has(pn.node.id));
+      if (relevantProj.length === 0) return null;
       let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
-      allNodes.forEach(n => {
-        const p = project3D({ x: n.x * xy, y: n.y * xy, z: n.z * (zScale ?? 1) }, proj);
-        if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
-        if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
+      relevantProj.forEach(pn => {
+        if (pn.sx < minSx) minSx = pn.sx; if (pn.sx > maxSx) maxSx = pn.sx;
+        if (pn.sy < minSy) minSy = pn.sy; if (pn.sy > maxSy) maxSy = pn.sy;
       });
       const sw = maxSx - minSx, sh = maxSy - minSy;
-      const pad = Math.max(sw, sh) * 0.12 + 20;
+      // Отступ: 8% от размера схемы + фиксированный минимум
+      const pad = Math.max(sw, sh) * 0.08 + 15;
       const scx = (minSx + maxSx) / 2;
-      // Рамка располагается НИЖЕ схемы: верхний экранный край = maxSy + gap
+      // Размер рамки охватывает схему с отступами, соблюдая пропорции бумаги
       const fitSw = sw + pad * 2, fitSh = sh + pad * 2;
       let rsw = fitSw, rsh = fitSw / aspect;
       if (rsh < fitSh) { rsh = fitSh; rsw = fitSh * aspect; }
-      const gap = pad * 0.5;
+      // Рамка НИЖЕ схемы: gap между нижним краем схемы и верхним краем рамки
+      const gap = pad * 0.8;
       const scy = maxSy + gap + rsh / 2;
       // Заполняем экранные координаты углов напрямую (без проекции через wb)
       Object.assign(pTL, { sx: scx - rsw / 2, sy: scy - rsh / 2 });
