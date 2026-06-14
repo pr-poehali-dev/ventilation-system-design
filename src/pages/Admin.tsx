@@ -25,6 +25,15 @@ interface Seat {
   user_agent: string | null;
 }
 
+interface LicenseForm {
+  owner_name: string;
+  owner_email: string;
+  max_seats: string;
+  expires_at: string;
+  notes: string;
+  key: string;
+}
+
 async function adminApi(password: string, body: object) {
   const res = await fetch(ADMIN_URL, {
     method: "POST",
@@ -42,6 +51,16 @@ function fmtDate(s: string | null) {
   catch { return s; }
 }
 
+function toInputDate(s: string | null): string {
+  if (!s || s === "None") return "";
+  try {
+    const d = new Date(s);
+    return d.toISOString().slice(0, 10);
+  } catch { return ""; }
+}
+
+const emptyForm: LicenseForm = { owner_name: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "" };
+
 export default function Admin() {
   const [password, setPassword]         = useState("");
   const [authed, setAuthed]             = useState(false);
@@ -50,13 +69,20 @@ export default function Admin() {
   const [loading, setLoading]           = useState(false);
   const [seats, setSeats]               = useState<Seat[] | null>(null);
   const [seatsForId, setSeatsForId]     = useState<number | null>(null);
+
+  // Создание
   const [showCreate, setShowCreate]     = useState(false);
   const [generatedKey, setGeneratedKey] = useState("");
-  const [form, setForm]                 = useState({
-    owner_name: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "",
-  });
+  const [form, setForm]                 = useState<LicenseForm>(emptyForm);
   const [createErr, setCreateErr]       = useState("");
   const [createOk, setCreateOk]         = useState(false);
+
+  // Редактирование
+  const [editingLic, setEditingLic]     = useState<License | null>(null);
+  const [editForm, setEditForm]         = useState<LicenseForm>(emptyForm);
+  const [editErr, setEditErr]           = useState("");
+  const [editOk, setEditOk]             = useState(false);
+  const [editSaving, setEditSaving]     = useState(false);
 
   const loadLicenses = useCallback(async (pwd: string) => {
     setLoading(true);
@@ -102,12 +128,66 @@ export default function Admin() {
         key: form.key || undefined,
       });
       setCreateOk(true);
-      setForm({ owner_name: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "" });
+      setForm(emptyForm);
       setGeneratedKey("");
       await loadLicenses(password);
       setTimeout(() => { setShowCreate(false); setCreateOk(false); }, 1500);
     } catch (e: unknown) {
       setCreateErr(e instanceof Error ? e.message : "Ошибка создания");
+    }
+  };
+
+  const openEdit = (lic: License) => {
+    setEditingLic(lic);
+    setEditForm({
+      owner_name: lic.owner_name,
+      owner_email: lic.owner_email ?? "",
+      max_seats: String(lic.max_seats),
+      expires_at: toInputDate(lic.expires_at),
+      notes: lic.notes ?? "",
+      key: lic.key,
+    });
+    setEditErr("");
+    setEditOk(false);
+  };
+
+  const closeEdit = () => {
+    setEditingLic(null);
+    setEditErr("");
+    setEditOk(false);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLic) return;
+    setEditErr("");
+    setEditOk(false);
+    setEditSaving(true);
+    try {
+      await adminApi(password, {
+        action: "update_license",
+        license_id: editingLic.id,
+        owner_name: editForm.owner_name,
+        owner_email: editForm.owner_email || undefined,
+        max_seats: parseInt(editForm.max_seats),
+        expires_at: editForm.expires_at || undefined,
+        notes: editForm.notes || undefined,
+      });
+      setEditOk(true);
+      // Обновляем локальный список без перезагрузки
+      setLicenses(ls => ls.map(l => l.id === editingLic.id ? {
+        ...l,
+        owner_name: editForm.owner_name,
+        owner_email: editForm.owner_email || null,
+        max_seats: parseInt(editForm.max_seats),
+        expires_at: editForm.expires_at || null,
+        notes: editForm.notes || null,
+      } : l));
+      setTimeout(() => closeEdit(), 1200);
+    } catch (e: unknown) {
+      setEditErr(e instanceof Error ? e.message : "Ошибка сохранения");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -134,6 +214,9 @@ export default function Admin() {
     setSeats(s => s ? s.filter(x => x.id !== seatId) : null);
     setLicenses(ls => ls.map(l => l.id === seatsForId ? { ...l, used_seats: Math.max(0, l.used_seats - 1) } : l));
   };
+
+  // Общие стили полей формы
+  const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300";
 
   // ── Экран входа ──
   if (!authed) {
@@ -207,17 +290,12 @@ export default function Admin() {
             { label: "Активных", value: licenses.filter(l => l.is_active).length, icon: "CheckCircle", color: "#16a34a" },
             { label: "Рабочих мест занято", value: licenses.reduce((s, l) => s + l.used_seats, 0), icon: "Monitor", color: "#d97706" },
           ].map(s => (
-            <div key={s.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ background: s.color + "15" }}>
-                  <Icon name={s.icon as "Key"} size={18} style={{ color: s.color }} />
-                </div>
-                <div>
-                  <div className="text-[22px] font-bold" style={{ color: s.color }}>{s.value}</div>
-                  <div className="text-[11px] text-gray-500">{s.label}</div>
-                </div>
+            <div key={s.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon name={s.icon as "Key"} size={16} style={{ color: s.color }} />
+                <span className="text-[11px] text-gray-500">{s.label}</span>
               </div>
+              <div className="text-[28px] font-bold" style={{ color: s.color }}>{s.value}</div>
             </div>
           ))}
         </div>
@@ -272,6 +350,12 @@ export default function Admin() {
                         style={{ borderColor: "#93c5fd", color: "#2563eb" }}>
                         <Icon name="Monitor" size={12} />
                         {seatsForId === lic.id ? "Скрыть" : `Места (${lic.used_seats})`}
+                      </button>
+                      <button onClick={() => openEdit(lic)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-amber-50"
+                        style={{ borderColor: "#fcd34d", color: "#b45309" }}>
+                        <Icon name="Pencil" size={12} />
+                        Изменить
                       </button>
                       <button
                         onClick={() => toggleLicense(lic.id, !lic.is_active)}
@@ -364,14 +448,13 @@ export default function Admin() {
             </div>
 
             <div className="p-5 space-y-3">
-              {/* Генератор ключа */}
               <div>
                 <label className="block text-[11px] font-semibold text-gray-600 mb-1">Лицензионный ключ</label>
                 <div className="flex gap-2">
                   <input type="text" value={form.key}
                     onChange={e => setForm(f => ({ ...f, key: e.target.value.toUpperCase() }))}
                     placeholder="PVS-XXXX-XXXX-XXXX-XXXX"
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                    className={`flex-1 border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-300`} />
                   <button type="button" onClick={generateKey}
                     className="px-3 py-2 rounded-lg text-[11px] font-medium text-white flex-shrink-0"
                     style={{ background: "#2563eb" }}>
@@ -388,7 +471,7 @@ export default function Admin() {
                 <input required type="text" value={form.owner_name}
                   onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))}
                   placeholder="ООО Шахта Северная"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                  className={inputCls} />
               </div>
 
               <div>
@@ -396,7 +479,7 @@ export default function Admin() {
                 <input type="email" value={form.owner_email}
                   onChange={e => setForm(f => ({ ...f, owner_email: e.target.value }))}
                   placeholder="info@example.com"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                  className={inputCls} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -404,13 +487,13 @@ export default function Admin() {
                   <label className="block text-[11px] font-semibold text-gray-600 mb-1">Рабочих мест</label>
                   <input type="number" min={1} max={100} value={form.max_seats}
                     onChange={e => setForm(f => ({ ...f, max_seats: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                    className={inputCls} />
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-600 mb-1">Действует до</label>
                   <input type="date" value={form.expires_at}
                     onChange={e => setForm(f => ({ ...f, expires_at: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                    className={inputCls} />
                 </div>
               </div>
 
@@ -419,7 +502,7 @@ export default function Admin() {
                 <input type="text" value={form.notes}
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Договор №123..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300" />
+                  className={inputCls} />
               </div>
 
               {createErr && <div className="text-[12px] text-red-600 flex items-center gap-1"><Icon name="AlertCircle" size={13} />{createErr}</div>}
@@ -430,6 +513,88 @@ export default function Admin() {
                 style={{ background: "#16a34a" }}>
                 Создать лицензию
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Модал: редактирование лицензии */}
+      {editingLic && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+          <form onSubmit={handleUpdate}
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4"
+              style={{ background: "#92400e" }}>
+              <div className="text-white font-bold text-[14px] flex items-center gap-2">
+                <Icon name="Pencil" size={16} />Изменить лицензию
+              </div>
+              <button type="button" onClick={closeEdit}
+                className="text-white/70 hover:text-white"><Icon name="X" size={16} /></button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              {/* Ключ — только для просмотра */}
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Лицензионный ключ</label>
+                <div className="border border-gray-200 rounded-lg px-3 py-2 text-[12px] font-mono text-gray-500 bg-gray-50 select-all">
+                  {editingLic.key}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">Ключ изменить нельзя</div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Организация *</label>
+                <input required type="text" value={editForm.owner_name}
+                  onChange={e => setEditForm(f => ({ ...f, owner_name: e.target.value }))}
+                  placeholder="ООО Шахта Северная"
+                  className={inputCls} />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Email</label>
+                <input type="email" value={editForm.owner_email}
+                  onChange={e => setEditForm(f => ({ ...f, owner_email: e.target.value }))}
+                  placeholder="info@example.com"
+                  className={inputCls} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Рабочих мест</label>
+                  <input type="number" min={1} max={100} value={editForm.max_seats}
+                    onChange={e => setEditForm(f => ({ ...f, max_seats: e.target.value }))}
+                    className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">Действует до</label>
+                  <input type="date" value={editForm.expires_at}
+                    onChange={e => setEditForm(f => ({ ...f, expires_at: e.target.value }))}
+                    className={inputCls} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Примечание</label>
+                <input type="text" value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Договор №123..."
+                  className={inputCls} />
+              </div>
+
+              {editErr && <div className="text-[12px] text-red-600 flex items-center gap-1"><Icon name="AlertCircle" size={13} />{editErr}</div>}
+              {editOk && <div className="text-[12px] text-green-600 flex items-center gap-1"><Icon name="CheckCircle2" size={13} />Изменения сохранены!</div>}
+
+              <div className="flex gap-2">
+                <button type="button" onClick={closeEdit}
+                  className="flex-1 py-2.5 rounded-lg text-[13px] font-medium border border-gray-300 text-gray-600 hover:bg-gray-50">
+                  Отмена
+                </button>
+                <button type="submit" disabled={editSaving}
+                  className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#b45309" }}>
+                  {editSaving ? "Сохранение..." : "Сохранить"}
+                </button>
+              </div>
             </div>
           </form>
         </div>

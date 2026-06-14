@@ -5,6 +5,7 @@
 POST /  body: {action, password, ...params}
   list_licenses    — список всех лицензий с занятыми местами
   create_license   — создать новый ключ {owner_name, owner_email, max_seats, expires_at, notes}
+  update_license   — изменить лицензию {license_id, owner_name, owner_email, max_seats, expires_at, notes}
   toggle_license   — включить/отключить лицензию {license_id, is_active}
   delete_license   — удалить лицензию и все места {license_id}
   list_seats       — места конкретной лицензии {license_id}
@@ -137,6 +138,32 @@ def handler(event: dict, context) -> dict:
                 "id": row[0], "key": row[1], "created_at": str(row[2]),
                 "owner_name": owner_name, "max_seats": max_seats,
             })
+
+        # ── update_license ───────────────────────────────────────────────────────
+        if action == "update_license":
+            lic_id      = int(body.get("license_id", 0))
+            owner_name  = body.get("owner_name", "").strip()
+            owner_email = body.get("owner_email", "").strip()
+            max_seats   = int(body.get("max_seats", 5))
+            expires_at  = body.get("expires_at") or None
+            notes       = body.get("notes", "").strip()
+
+            if not owner_name:
+                return resp(400, {"error": "owner_name_required"})
+            if max_seats < 1 or max_seats > 100:
+                return resp(400, {"error": "invalid_seats"})
+
+            cur.execute("""
+                UPDATE licenses
+                SET owner_name = %s, owner_email = %s, max_seats = %s,
+                    expires_at = %s, notes = %s
+                WHERE id = %s
+                RETURNING id
+            """, (owner_name, owner_email or None, max_seats, expires_at, notes or None, lic_id))
+            if not cur.fetchone():
+                return resp(404, {"error": "not_found"})
+            conn.commit()
+            return resp(200, {"ok": True})
 
         # ── toggle_license ───────────────────────────────────────────────────────
         if action == "toggle_license":
