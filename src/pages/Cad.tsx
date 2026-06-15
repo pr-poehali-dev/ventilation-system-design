@@ -4228,6 +4228,29 @@ export default function CadPage() {
                   {/* Параметры очага */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Параметры очага пожара</div>
 
+                  {/* ── Масштаб УО ── */}
+                  {fireSymId && (() => {
+                    const fireSym = schemaSymbols.find(s => s.id === fireSymId.id);
+                    const updFireSym = (patch: Record<string, unknown>) =>
+                      setSchemaSymbols(prev => prev.map(s => s.id === fireSymId.id ? { ...s, ...patch } : s));
+                    const scaleVal = Math.round((fireSym?.scale ?? 1) * 100);
+                    return (
+                      <div className="flex items-center gap-1 px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Масштаб УО:</span>
+                        <input type="range" min={5} max={400} step={5}
+                          value={scaleVal}
+                          onChange={e => updFireSym({ scale: Number(e.target.value) / 100 })}
+                          className="flex-1" style={{ accentColor: "#dc2626" }} />
+                        <input type="number" min={5} max={400} step={5}
+                          value={scaleVal}
+                          onChange={e => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); updFireSym({ scale: v / 100 }); }}
+                          className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                          style={{ fontSize: 11, height: 18 }} />
+                        <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
                     <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Задаётся:</span>
                     <select value={b.fireMode ?? "heat"} onChange={e => updateBranch(b.id, { fireMode: e.target.value as "heat" | "temp" })}

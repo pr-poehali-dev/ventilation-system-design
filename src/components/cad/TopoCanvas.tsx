@@ -2754,7 +2754,18 @@ export default function TopoCanvas(props: Props) {
           const sc = sym.scale ?? 1;
           // Символы: базовый размер 32px при zoom=0.4, масштабируются пропорционально zoom
           const symSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          const SZ = Math.max(4, 32 * sc * symSF);
+
+          // Авто-масштаб УО «Очаг пожара» от ширины ветви
+          let SZ: number;
+          if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
+            const fireBrSvg = branches.find(b => b.id === sym.branchId);
+            const fireBwSvg = (fireBrSvg?.lineWidth && fireBrSvg.lineWidth > 0) ? fireBrSvg.lineWidth : branchWidth;
+            const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
+            SZ = Math.max(8, autoSZsvg * sc);
+          } else {
+            SZ = Math.max(4, 32 * sc * symSF);
+          }
+
           // Минимальный размер hitbox: 28px, чтобы в мелком масштабе всегда можно было кликнуть
           const HIT_MIN = 28;
           const HX = px - SZ / 2;
@@ -3575,7 +3586,20 @@ export default function TopoCanvas(props: Props) {
             let symScaleV: number;
             if (view.scale < 0.4) { symScaleV = view.scale / 0.4; }
             else { const k = (view.scale - 0.4) / 0.4; symScaleV = 1 + 2 * (k / (k + 2)); }
-            const SZ = Math.max(4, 32 * sc * symScaleV);
+
+            // Авто-масштаб УО «Очаг пожара» от ширины ветви (как valve_reduce).
+            // Если у пользователя явно задан scale ≠ 1, используем его поверх авто-базы.
+            let SZ: number;
+            if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
+              const fireBr = branches.find(b => b.id === sym.branchId);
+              const fireBw = (fireBr?.lineWidth && fireBr.lineWidth > 0) ? fireBr.lineWidth : branchWidth;
+              // Базовый размер = ширина ветви в px × 4 (как для valve_reduce × 4 × 1.2)
+              const autoSZ = Math.max(8, fireBw * view.scale * 4);
+              SZ = Math.max(8, autoSZ * sc);
+            } else {
+              SZ = Math.max(4, 32 * sc * symScaleV);
+            }
+
             const HX = px - SZ / 2;
             const HY = py - SZ / 2 - 4;
 
