@@ -3819,6 +3819,17 @@ function hitBranchR(sx: number, sy: number,
   projNodesMap: Map<string, ProjNodeEntry>,
   branches: TopoBranch[], tol = 5): string | null {
   const tol2 = tol * tol;
+
+  // Функция: расстояние² от точки (sx,sy) до отрезка (x1,y1)→(x2,y2)
+  const distSqToSeg = (x1: number, y1: number, x2: number, y2: number): number => {
+    const C = x2 - x1, D = y2 - y1;
+    const lenSq = C * C + D * D;
+    if (lenSq === 0) { const dx = sx - x1, dy = sy - y1; return dx * dx + dy * dy; }
+    const t = Math.max(0, Math.min(1, ((sx - x1) * C + (sy - y1) * D) / lenSq));
+    const dx = sx - (x1 + t * C), dy = sy - (y1 + t * D);
+    return dx * dx + dy * dy;
+  };
+
   for (const b of branches) {
     const from = projNodesMap.get(b.fromId);
     const to = projNodesMap.get(b.toId);
@@ -3826,10 +3837,24 @@ function hitBranchR(sx: number, sy: number,
     const C = to.sx - from.sx, D = to.sy - from.sy;
     const lenSq = C * C + D * D;
     if (lenSq === 0) continue;
-    const A = sx - from.sx, B = sy - from.sy;
-    const t = Math.max(0, Math.min(1, (A * C + B * D) / lenSq));
-    const dx = sx - (from.sx + t * C), dy = sy - (from.sy + t * D);
-    if (dx * dx + dy * dy < tol2) return b.id;
+
+    // 1. Проверка попадания по основной линии ветви
+    if (distSqToSeg(from.sx, from.sy, to.sx, to.sy) < tol2) return b.id;
+
+    // 2. Если есть вентруба — проверяем попадание по параллельной линии трубы
+    //    (смещение: нормаль к ветви × vpOffset пикселей, как в рендере)
+    if (b.hasVentPipe) {
+      const segLen = Math.sqrt(lenSq);
+      const ux = C / segLen, uy = D / segLen;
+      // нормаль (перпендикуляр влево)
+      const nx = -uy, ny = ux;
+      // Используем толщину ветви ≈ 4px + 3px offset (как в SVG рендере: w/2 + 3)
+      const vpOff = 4 / 2 + 3;
+      const vx1 = from.sx + nx * vpOff, vy1 = from.sy + ny * vpOff;
+      const vx2 = to.sx   + nx * vpOff, vy2 = to.sy   + ny * vpOff;
+      // tolerance для трубы чуть больше (7px) — тонкая линия
+      if (distSqToSeg(vx1, vy1, vx2, vy2) < 7 * 7) return b.id;
+    }
   }
   return null;
 }

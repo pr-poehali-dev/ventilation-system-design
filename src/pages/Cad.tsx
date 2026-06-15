@@ -46,6 +46,7 @@ import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
+import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
@@ -737,6 +738,8 @@ export default function CadPage() {
   // ─── Вентрубопровод ────────────────────────────────────────────────
   const [showVentPipeDialog, setShowVentPipeDialog] = useState(false);
   const [ventPipeBranchIds, setVentPipeBranchIds] = useState<string[]>([]);
+  // ─── Групповое редактирование ветвей ───────────────────────────────
+  const [showMultiBranchProps, setShowMultiBranchProps] = useState(false);
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
@@ -2392,7 +2395,19 @@ export default function CadPage() {
     const branchId = ctxMenu?.kind === "branch" ? ctxMenu.id : undefined;
     switch (action) {
       case "delete_node": if (nodeId) handleDeleteNode(nodeId); break;
-      case "delete_branch": if (branchId) handleDeleteBranch(branchId); break;
+      case "delete_branch": {
+        // Удаляем все выделенные ветви (или одну из контекстного меню)
+        const targets = selectedBranchIds.size > 1
+          ? new Set(selectedBranchIds)
+          : branchId ? new Set([branchId]) : new Set<string>();
+        if (targets.size > 0) {
+          pushHistory();
+          setBranches(p => p.filter(b => !targets.has(b.id)));
+          if (branchId && targets.has(branchId)) setSelectedBranchId(null);
+          setSelectedBranchIds(new Set());
+        }
+        break;
+      }
       case "split_connections": if (nodeId) handleSplitNodeConnections(nodeId); break;
       case "merge_nodes": {
         const ids = selectedNodeIds.size >= 2
@@ -2408,8 +2423,23 @@ export default function CadPage() {
       case "align_center_x": handleAlignNodes("x", "avg"); break;
       case "align_center_y": handleAlignNodes("y", "avg"); break;
       case "toggle_atmosphere": if (nodeId) handleToggleAtmosphere(nodeId); break;
-      case "toggle_capital": if (branchId) handleToggleCapital(branchId); break;
-      case "toggle_designed": if (branchId) handleToggleDesigned(branchId); break;
+      case "toggle_capital": {
+        const targets = selectedBranchIds.size > 1 ? [...selectedBranchIds] : branchId ? [branchId] : [];
+        if (targets.length > 0) {
+          // Если хотя бы одна не капитальная — ставим всем; если все капитальные — снимаем
+          const allCapital = targets.every(tid => branches.find(b => b.id === tid)?.capital);
+          setBranches(p => p.map(b => targets.includes(b.id) ? { ...b, capital: !allCapital } : b));
+        }
+        break;
+      }
+      case "toggle_designed": {
+        const targets = selectedBranchIds.size > 1 ? [...selectedBranchIds] : branchId ? [branchId] : [];
+        if (targets.length > 0) {
+          const allDesigned = targets.every(tid => branches.find(b => b.id === tid)?.designed);
+          setBranches(p => p.map(b => targets.includes(b.id) ? { ...b, designed: !allDesigned } : b));
+        }
+        break;
+      }
       case "reverse_branch": if (branchId) handleReverseBranch(branchId); break;
       case "add_vent_pipe": {
         // Собираем все выделенные ветви (или одну из контекстного меню)
@@ -2446,7 +2476,15 @@ export default function CadPage() {
       case "open_props":
         setRightPanelOpen(true);
         if (nodeId) { setRightTab("node"); setSelectedNodeId(nodeId); }
-        if (branchId) { setRightTab("branch"); setSelectedBranchId(branchId); }
+        if (branchId) {
+          setRightTab("branch");
+          setSelectedBranchId(branchId);
+          // При мультиселекте > 1 открываем диалог группового редактирования параметров
+          if (selectedBranchIds.size > 1) {
+            setVentPipeBranchIds([]); // сбрасываем вентруба если был открыт
+            setShowMultiBranchProps(true);
+          }
+        }
         break;
     }
     setCtxMenu(null);
@@ -6426,10 +6464,23 @@ export default function CadPage() {
                   }));
                   return;
                 }
-                setSelectedBranchId(id); setSelectedBranchIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); }
+                // Одиночный клик: устанавливаем как основную выделенную ветвь
+                // и делаем её единственной в мультиселекте (не сбрасываем весь Set,
+                // а заменяем на Set из одной ветви — это позволяет Ctrl+клик накапливать дальше)
+                setSelectedBranchId(id);
+                setSelectedBranchIds(id ? new Set([id]) : new Set());
+                setSelectedSymbolId(null); setSelectedSymbolIds(new Set());
+                if (id) { setSelectedNodeId(null); setFanSymbolBranchId(null); setActiveSide("general"); }
               }}
               onNodeContextMenu={(id, x, y) => { setSelectedNodeId(id); setSelectedBranchId(null); setCtxMenu({ kind: "node", id, x, y }); }}
-              onBranchContextMenu={(id, x, y) => { setSelectedBranchId(id); setSelectedNodeId(null); setCtxMenu({ kind: "branch", id, x, y }); }}
+              onBranchContextMenu={(id, x, y) => {
+                // Правый клик: если ветвь уже в мультиселекте — не трогаем Set,
+                // иначе начинаем новый мультиселект с этой ветви
+                setSelectedBranchId(id);
+                setSelectedNodeId(null);
+                setSelectedBranchIds(prev => prev.has(id) ? prev : new Set([id]));
+                setCtxMenu({ kind: "branch", id, x, y });
+              }}
               onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
               selectedBranchIds={selectedBranchIds}
               onBranchMultiSelect={handleBranchMultiSelect}
@@ -8361,6 +8412,24 @@ export default function CadPage() {
       />
     )}
 
+    {/* ── Групповое редактирование ветвей ────────────────────────────── */}
+    {showMultiBranchProps && selectedBranchIds.size > 1 && (() => {
+      const multiBranches = [...selectedBranchIds]
+        .map(id => branches.find(b => b.id === id))
+        .filter(Boolean) as typeof branches;
+      if (multiBranches.length < 2) return null;
+      return (
+        <MultiBranchPropsDialog
+          branches={multiBranches}
+          onClose={() => setShowMultiBranchProps(false)}
+          onApply={(patch) => {
+            pushHistory();
+            [...selectedBranchIds].forEach(id => updateBranch(id, patch, false));
+          }}
+        />
+      );
+    })()}
+
     {/* ── Диалог вентрубопровода ─────────────────────────────────────── */}
     {showVentPipeDialog && ventPipeBranchIds.length > 0 && (() => {
       const vpBranches = ventPipeBranchIds
@@ -8412,22 +8481,49 @@ function nodeContextItems(node: TopoNode | null, multiNodeCount: number): Contex
 }
 
 function branchContextItems(branch: TopoBranch | null, hasBuffer: boolean, multiCount: number): ContextMenuItem[] {
+  const multi = multiCount > 1;
   return [
-    { id: "open_props", label: "Свойства ветви...", icon: "Settings", shortcut: "Ctrl+J" },
+    {
+      id: "open_props",
+      label: multi ? `Свойства выделенных (${multiCount} ветв.)...` : "Свойства ветви...",
+      icon: "Settings", shortcut: "Ctrl+J",
+    },
     { id: "div1", label: "", divider: true },
-    { id: "copy_branch_params", label: "Копировать параметры ветви", icon: "Copy", shortcut: "Alt+C" },
-    { id: "paste_branch_params", label: multiCount > 0
+    { id: "copy_branch_params", label: "Копировать параметры ветви", icon: "Copy", shortcut: "Alt+C", disabled: multi },
+    { id: "paste_branch_params", label: multi
         ? `Применить к выделенным (${multiCount} ветв.)`
         : "Применить параметры...", icon: "ClipboardPaste", disabled: !hasBuffer },
     { id: "div2", label: "", divider: true },
-    { id: "toggle_capital", label: branch?.capital ? "Снять Капитальная" : "Капитальная ветвь", icon: "Star" },
-    { id: "toggle_designed", label: branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь", icon: "Pencil" },
-    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight", shortcut: "Ctrl+R" },
+    {
+      id: "toggle_capital",
+      label: multi
+        ? "Капитальная ветвь (всем выбранным)"
+        : (branch?.capital ? "Снять Капитальная" : "Капитальная ветвь"),
+      icon: "Star",
+    },
+    {
+      id: "toggle_designed",
+      label: multi
+        ? "Проектируемая ветвь (всем выбранным)"
+        : (branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь"),
+      icon: "Pencil",
+    },
+    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight", shortcut: "Ctrl+R", disabled: multi },
     { id: "div3", label: "", divider: true },
-    { id: "add_vent_pipe", label: branch?.hasVentPipe ? "✎ Вентрубопровод (изменить)" : "+ Вентрубопровод", icon: "Wind" },
+    {
+      id: "add_vent_pipe",
+      label: multi
+        ? `+ Вентрубопровод (${multiCount} ветв.)`
+        : (branch?.hasVentPipe ? "✎ Вентрубопровод (изменить)" : "+ Вентрубопровод"),
+      icon: "Wind",
+    },
     { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
     { id: "div4", label: "", divider: true },
-    { id: "delete_branch", label: "Удалить", icon: "Trash2", shortcut: "Del", danger: true },
+    {
+      id: "delete_branch",
+      label: multi ? `Удалить (${multiCount} ветв.)` : "Удалить",
+      icon: "Trash2", shortcut: "Del", danger: true,
+    },
   ];
 }
 

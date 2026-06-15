@@ -857,6 +857,16 @@ export function hitBranchCanvas(
   tol = 5,
 ): string | null {
   const tol2 = tol * tol;
+
+  const distSqToSeg = (x1: number, y1: number, x2: number, y2: number): number => {
+    const C = x2 - x1, D = y2 - y1;
+    const lenSq2 = C * C + D * D;
+    if (lenSq2 === 0) { const dx = sx - x1, dy = sy - y1; return dx * dx + dy * dy; }
+    const t = Math.max(0, Math.min(1, ((sx - x1) * C + (sy - y1) * D) / lenSq2));
+    const dx = sx - (x1 + t * C), dy = sy - (y1 + t * D);
+    return dx * dx + dy * dy;
+  };
+
   for (const b of branches) {
     const from = projNodesMap.get(b.fromId);
     const to   = projNodesMap.get(b.toId);
@@ -864,10 +874,20 @@ export function hitBranchCanvas(
     const C = to.sx - from.sx, D = to.sy - from.sy;
     const lenSq = C * C + D * D;
     if (lenSq === 0) continue;
-    const A = sx - from.sx, B = sy - from.sy;
-    const t = Math.max(0, Math.min(1, (A * C + B * D) / lenSq));
-    const dx = sx - (from.sx + t * C), dy = sy - (from.sy + t * D);
-    if (dx * dx + dy * dy < tol2) return b.id;
+
+    // 1. Попадание по основной линии ветви
+    if (distSqToSeg(from.sx, from.sy, to.sx, to.sy) < tol2) return b.id;
+
+    // 2. Попадание по параллельной линии вентрубы
+    if (b.hasVentPipe) {
+      const segLen = Math.sqrt(lenSq);
+      const ux = C / segLen, uy = D / segLen;
+      const nx = -uy, ny = ux;
+      const vpOff = 4 / 2 + 3;
+      const vx1 = from.sx + nx * vpOff, vy1 = from.sy + ny * vpOff;
+      const vx2 = to.sx   + nx * vpOff, vy2 = to.sy   + ny * vpOff;
+      if (distSqToSeg(vx1, vy1, vx2, vy2) < 7 * 7) return b.id;
+    }
   }
   return null;
 }
