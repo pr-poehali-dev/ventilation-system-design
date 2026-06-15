@@ -1081,7 +1081,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     # ── Проверка норматива реверса ───────────────────────────────────────
     check_reverse(edges, Q_map, normal_flows or {}, diag)
 
-    return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids, R_net=R_net)
+    return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids, R_net=R_net, nodes_in=nodes_in)
 
 
 def find_dead_ends(edges):
@@ -1239,7 +1239,69 @@ def find_dead_ends(edges):
     return dead_edges
 
 
-def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, dead_end_ids=None, R_net=0.0):
+def compute_node_pressures(edges, Q, nodes_in):
+    """BFS расчёт абсолютного давления в узлах.
+    Корень (GND / атмосфера) = 101325 Па. Каждый узел:
+      P_b = P_a - dP,  dP = R·Q·|Q| - H_fan
+    Коррекция на высоту: +12 Па/м (столб воздуха при стандартных условиях).
+    """
+    # Карта высотных отметок узлов
+    node_z = {}
+    for n in nodes_in:
+        node_z[n["id"]] = float(n.get("z", 0.0) or 0.0)
+
+    # Строим граф смежности (с индексом ребра)
+    adj = collections.defaultdict(list)
+    for i, e in enumerate(edges):
+        adj[e["a"]].append((e["b"], i))
+        adj[e["b"]].append((e["a"], i))
+
+    # BFS от GND
+    P_ATM = 101325.0
+    pressure = {GND: P_ATM}
+    visited = {GND}
+    queue = collections.deque([GND])
+
+    while queue:
+        u = queue.popleft()
+        for other, ei in adj[u]:
+            if other in visited:
+                continue
+            e  = edges[ei]
+            q  = Q.get(e["id"], 0.0)
+            R  = float(e.get("R", 0.0))
+            # Напор вентилятора со знаком (+ = нагнетание a→b)
+            habs = 0.0
+            if e.get("hasFan") and not e.get("fanStopped"):
+                habs = fan_H(e, abs(q))
+            fan_dir = -1.0 if e.get("fanReverse") else 1.0
+            H = fan_dir * habs
+            # ΔP = R·Q·|Q| - H (падение давления от a к b)
+            dP = R * q * abs(q) - H
+            Pu = pressure[u]
+            # u == a → P_b = P_a - dP; u == b → P_a = P_b + dP → P_other = Pu + dP
+            pressure[other] = Pu - dP if e["a"] == u else Pu + dP
+            visited.add(other)
+            queue.append(other)
+
+    # Формируем список узлов с давлениями
+    nodes_out = []
+    for n in nodes_in:
+        nid = n["id"]
+        # Атмосферные узлы → GND
+        pid = GND if (n.get("isAtm") or n.get("atmosphereLink")) else nid
+        P = pressure.get(pid)
+        if P is None:
+            nodes_out.append({"id": nid, "computedPressure": 0})
+            continue
+        z = node_z.get(nid, 0.0)
+        # Коррекция на высоту: +12 Па/м (вниз давление растёт)
+        p_abs = round(P + 12.0 * (-z))
+        nodes_out.append({"id": nid, "computedPressure": p_abs})
+    return nodes_out
+
+
+def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, dead_end_ids=None, R_net=0.0, nodes_in=None):
     # dead_end_ids передаётся из solve() (уже вычислено), иначе пересчитываем
     dead_ends = dead_end_ids if dead_end_ids is not None else find_dead_ends(edges)
     out = []
@@ -1365,7 +1427,10 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         diag.append({"level": "warning", "category": "kirchhoff_balance",
                      "message": f"Баланс масс с погрешностью: узел {worst_nd}, |ΣQ|={worst_bal:.3f} м³/с"})
 
-    return {"branches": out, "nodes": [], "iterations": it,
+    # Расчёт давлений в узлах (BFS от атмосферы)
+    nodes_out = compute_node_pressures(edges, Q, nodes_in or []) if nodes_in else []
+
+    return {"branches": out, "nodes": nodes_out, "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
             "kirchhoffBalance": round(worst_bal, 4),
             "log": log, "diagnostics": diag}
@@ -1889,7 +1954,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Проверка реверса
     check_reverse(edges, Q_map, normal_flows or {}, diag)
 
-    return make_result(edges, Q_map, it, converged, max_dh, log, diag, dead_end_ids=dead_end_ids, R_net=r_total)
+    return make_result(edges, Q_map, it, converged, max_dh, log, diag, dead_end_ids=dead_end_ids, R_net=r_total, nodes_in=nodes_in)
 
 
 def empty_result(msg):

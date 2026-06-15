@@ -2137,6 +2137,18 @@ export default function CadPage() {
         };
       }));
 
+      // Применяем давления в узлах из результата расчёта
+      if (data.nodes && Array.isArray(data.nodes) && data.nodes.length > 0) {
+        const nodePressures = new Map<string, number>(
+          (data.nodes as { id: string; computedPressure: number }[])
+            .map(n => [n.id, n.computedPressure])
+        );
+        setNodes(prev => prev.map(n => {
+          const P = nodePressures.get(n.id);
+          return P !== undefined ? { ...n, computedPressure: P } : n;
+        }));
+      }
+
       // Сохраняем расходы прямого режима (без реверса) для последующей проверки k_rev >= 0.6
       if (!branches.some(b => b.fanReverse) && data.converged) {
         const flows: Record<string, number> = {};
