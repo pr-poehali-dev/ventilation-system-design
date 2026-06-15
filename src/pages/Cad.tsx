@@ -26,6 +26,7 @@ import PositionsPanel from "@/components/cad/PositionsPanel";
 import { type Position, makePosition } from "@/lib/positions";
 import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
 import { type ExcelImportResult } from "@/lib/excelImport";
+import ExcelExportDialog from "@/components/cad/ExcelExportDialog";
 import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
@@ -1162,6 +1163,7 @@ export default function CadPage() {
   // ─── DXF ИМПОРТ ─────────────────────────────────────────────────────
   const [showDxfImport, setShowDxfImport] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
+  const [showExcelExport, setShowExcelExport] = useState(false);
   const [showCombinedImport, setShowCombinedImport] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showVentsimImport, setShowVentsimImport] = useState(false);
@@ -4052,6 +4054,20 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
+        {/* ── Группа: Анализ ── */}
+        <RibbonGroup label="Анализ">
+          <div className="flex items-stretch gap-1">
+            <button
+              onClick={() => setShowExcelExport(true)}
+              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-green-50 hover:border-green-400 border border-transparent rounded min-w-[64px]"
+              title="Экспорт параметров выработок в Excel">
+              <Icon name="FileSpreadsheet" size={22} className="text-green-700" />
+              <div className="text-[10px] leading-tight mt-0.5 text-center">
+                <div>Экспорт</div><div>в Excel</div>
+              </div>
+            </button>
+          </div>
+        </RibbonGroup>
 
       </div>
       )}
@@ -8324,6 +8340,17 @@ export default function CadPage() {
       <ExcelImportDialog
         onImport={handleExcelImport}
         onClose={() => setShowExcelImport(false)}
+      />
+    )}
+
+    {/* ═══ EXCEL ЭКСПОРТ ДИАЛОГ ═══════════════════════════════════════════ */}
+    {showExcelExport && (
+      <ExcelExportDialog
+        branches={branches}
+        nodes={nodes}
+        horizons={horizons}
+        projectName={projectFileName.replace(/\.vproj$/, "")}
+        onClose={() => setShowExcelExport(false)}
       />
     )}
 
