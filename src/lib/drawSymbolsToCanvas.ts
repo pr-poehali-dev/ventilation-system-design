@@ -71,6 +71,7 @@ export async function drawSymbolsToCanvas(
     const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
     const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
     const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+    const isFireSource = sym.typeId === "fire_source";
 
     // Угол поворота по направлению ветви (для символов на трубах)
     const brAngleForSym = hasBranchPts
@@ -83,6 +84,25 @@ export async function drawSymbolsToCanvas(
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);
+    } else if (isFireSource && hasBranchPts) {
+      // Очаг пожара: рисуется поперёк ветви (как перемычка) + SVG-иконка сверху
+      const fireSZ = Math.max(6, SZ * 1.6);  // крупнее обычного символа
+      const ph = Math.max(5, fireSZ * 0.85);
+      const pw = Math.max(2, ph * 0.22);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(brAngleForSym);
+      // Красная поперечная полоса
+      ctx.fillStyle = "rgba(220,38,38,0.18)";
+      ctx.strokeStyle = "#dc2626";
+      ctx.lineWidth = Math.max(1.5, pw * 0.6);
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(0, -ph / 2); ctx.lineTo(0, ph / 2); ctx.stroke();
+      ctx.restore();
+      // SVG-иконка поверх (увеличенная, без поворота)
+      const imgSize = Math.ceil(fireSZ);
+      const img = await svgToImage(lt.svgContent, imgSize);
+      ctx.drawImage(img, px - fireSZ / 2, py - fireSZ / 2 - 4, fireSZ, fireSZ);
     } else {
       // SVG-иконка через Image (с поворотом для трубопроводных символов)
       const imgSize = Math.ceil(SZ);

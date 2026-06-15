@@ -178,6 +178,8 @@ interface Props {
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
+  reversedBranchIds?: Set<string>;
   /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */
   rescuePathBranchIds?: Set<string>;
   /** Направление движения по ветви маршрута: true = fromId→toId, false = toId→fromId */
@@ -248,6 +250,7 @@ export default function TopoCanvas(props: Props) {
     waterNodeResults,
     branchFireColors,
     branchExplosionColors,
+    reversedBranchIds,
     rescuePathBranchIds,
     rescuePathBranchDirs,
     rescuePathNodeIds,
@@ -2124,6 +2127,7 @@ export default function TopoCanvas(props: Props) {
           waterNodeResults={waterNodeResults}
           branchFireColors={branchFireColors}
           branchExplosionColors={branchExplosionColors}
+          reversedBranchIds={reversedBranchIds}
           pollutedBranchIds={pollutedBranchIds}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
@@ -2399,6 +2403,15 @@ export default function TopoCanvas(props: Props) {
 
           return (
             <g key={b.id}>
+              {/* Опрокидывание — синяя пунктирная аура по всей ветви */}
+              {reversedBranchIds?.has(b.id) && (<>
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#2563eb" strokeWidth={Math.max(w + 18, 10)} strokeLinecap="round"
+                  opacity="0.55" strokeDasharray="8 4" />
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke="#2563eb" strokeWidth={Math.max(w + 10, 6)} strokeLinecap="round"
+                  opacity="0.3" />
+              </>)}
               {/* Подсветка задымления (пожар) — сегмент от fromT до toT по направлению потока */}
               {fireSeg && (() => {
                 const { color: fireCol, fromT, toT } = fireSeg;

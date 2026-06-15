@@ -72,6 +72,8 @@ export interface CanvasRenderOptions {
   fixedObjectScale?: boolean;
   /** ID ветвей, загрязнённых воздухом (pollutesAir + все ниже по потоку) — стрелки синие */
   pollutedBranchIds?: Set<string>;
+  /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
+  reversedBranchIds?: Set<string>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -281,6 +283,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   for (const { b, from, to } of sorted) {
     const p = branchParams(b, from, to);
     if (!p || p.bwBorder === 0) continue;
+    // Опрокидывание — синяя аура под border
+    if (reversedBranchIds?.has(b.id)) {
+      ctx.save();
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = Math.max(p.w + 18, 10);
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.55;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth = Math.max(p.w + 10, 6);
+      ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
+      ctx.restore();
+    }
     // Пожар — аура под border
     const fireSeg = branchFireColors?.get(b.id);
     if (fireSeg) {
@@ -344,8 +361,23 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       sxA, syA, sxB, syB, midX, midY, color, w,
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;
 
-    // Пожар — аура (только если нет border, иначе уже нарисована в проходе 1)
+    // Пожар и опрокидывание — ауры (только если нет border, иначе уже нарисованы в проходе 1)
     if (p.bwBorder === 0) {
+      // Опрокидывание — синяя аура
+      if (reversedBranchIds?.has(b.id)) {
+        ctx.save();
+        ctx.strokeStyle = "#2563eb";
+        ctx.lineWidth = Math.max(w + 18, 10);
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.55;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = Math.max(w + 10, 6);
+        ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
+        ctx.restore();
+      }
       const fireSeg = branchFireColors?.get(b.id);
       if (fireSeg) {
         const { color: fireCol, fromT, toT } = fireSeg;

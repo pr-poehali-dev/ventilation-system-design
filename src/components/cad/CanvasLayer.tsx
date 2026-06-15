@@ -59,6 +59,7 @@ interface CanvasLayerProps {
   waterNodeResults?: Map<string, WaterNodeResult>;
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  reversedBranchIds?: Set<string>;
   fixedObjectScale?: boolean;
   pollutedBranchIds?: Set<string>;
 
@@ -185,6 +186,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
       waterNodeResults: p.waterNodeResults,
       branchFireColors: p.branchFireColors,
       branchExplosionColors: p.branchExplosionColors,
+      reversedBranchIds: p.reversedBranchIds,
       fixedObjectScale: p.fixedObjectScale,
       pollutedBranchIds: p.pollutedBranchIds,
     });
