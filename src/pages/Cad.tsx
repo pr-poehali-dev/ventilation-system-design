@@ -1825,6 +1825,22 @@ export default function CadPage() {
     setSolverAlpha(0.8);
     setSurfaceTemp(20);
 
+    // ── Справочники — сброс к заводским значениям ──
+    setMineFans([
+      { catalogId: "VOD-18", name: "ВО-18/12АВР", diameter: 1.8, rpmMin: 600, rpmMax: 1500 },
+    ]);
+    setMineBulkheads(BULKHEAD_CATALOG.map(item => ({
+      id: `mb_${item.id}`,
+      name: item.name,
+      type: item.type,
+      airPermeability: item.airPermeability,
+      rMkyurg: airPermToR(item.airPermeability),
+      failurePressure: item.failurePressure,
+      note: item.note,
+      color: item.color,
+    })));
+    setMineTypes([]);
+
     // ── Имя файла и вид ──
     setProjectFileName("Проект1.vproj");
     fileHandleRef.current = null;
