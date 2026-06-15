@@ -1747,16 +1747,88 @@ export default function CadPage() {
     if (nodes.length > 0 || branches.length > 0) {
       if (!window.confirm("Создать новый проект? Все несохранённые данные будут потеряны.")) return;
     }
+
+    // ── Топология ──
     setNodes([]);
     setBranches([]);
-    setSelectedNodeId(null);
-    setSelectedBranchId(null);
+    setSchemaSymbols([]);
+    setPositions([]);
+
+    // ── Горизонты — сброс к одному «Общий вид» ──
     setHorizons([{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
       printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
         orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
         period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
         showLegend: false, showStamp: false, showApprover: false, paperFormat: "A1", orientation: "landscape" } } as Horizon]);
     setActiveHorizonId("");
+
+    // ── Выделение и инструмент ──
+    setSelectedNodeId(null);
+    setSelectedBranchId(null);
+    setSelectedNodeIds(new Set());
+    setSelectedBranchIds(new Set());
+    setSelectedSymbolId(null);
+    setSelectedSymbolIds(new Set());
+    setFanSymbolBranchId(null);
+    setTool("select");
+
+    // ── Результаты расчётов ──
+    setSolveResult(null);
+    setNormalFlows({});
+    setFireResult(null);
+    setFireCalcDone(false);
+    setExplosionResult(null);
+    setExplosionCalcDone(false);
+    setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
+    setVcSolving(false);
+    setVcError(null);
+
+    // ── Временные буферы ──
+    setBranchParamBuffer(null);
+    setSymbolClipboard(null);
+    setPendingSymbol(null);
+    setCtxMenu(null);
+
+    // ── Интерфейс ──
+    setActiveSide("general");
+    setEditingHorizonImageId(null);
+    setEditingPrintLayerId(null);
+    setZLevel(0);
+    setShowMultiBranchProps(false);
+    setShowVentPipeDialog(false);
+    setVentPipeBranchIds([]);
+
+    // ── Настройки отображения — сброс к дефолтам ──
+    setFlowColorMin(0);
+    setFlowColorMax(75);
+    setFlowColorHue("red");
+    setThinLines(false);
+    setShowFlowArrows(false);
+    setFlowDisplay("off");
+    setColorMode("none");
+    setColorByHorizon(false);
+    setBranchWidth(7);
+    setBranchBorder(0.6);
+    setZScale(1);
+    setXyScale(1);
+    setScaleLimitsEnabled(false);
+    setPosColorInner(false);
+    setPosColorOuter(false);
+    setShowPositions(true);
+    setInfoConfig(DEFAULT_INFO_CONFIG);
+    setUnitsConfig(DEFAULT_UNITS_CONFIG);
+
+    // ── Параметры расчёта — сброс к дефолтам ──
+    setCalcMode("cross");
+    setSolverTolerance(0.01);
+    setSolverMaxIter(2000);
+    setSolverAlpha(0.8);
+    setSurfaceTemp(20);
+
+    // ── Имя файла и вид ──
+    setProjectFileName("Проект1.vproj");
+    fileHandleRef.current = null;
+    setImportNonce(n => n + 1);
     setActiveRibbon("home");
   };
 
