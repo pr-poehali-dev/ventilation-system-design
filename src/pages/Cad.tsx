@@ -1571,6 +1571,75 @@ export default function CadPage() {
   const applyProjectData = (data: Record<string, unknown>, fileName: string) => {
     // Блокируем начальный пресет вида — файл загружен
     initialFileLoadedRef.current = true;
+
+    // ── ПОЛНЫЙ СБРОС СОСТОЯНИЯ ДО ДЕФОЛТОВ ПЕРЕД ЗАГРУЗКОЙ ─────────────
+    // Чтобы данные предыдущего проекта не «просачивались» в новый
+    // (особенно важно при открытии второго файла без перезагрузки страницы)
+
+    // Выделение и инструмент
+    setSelectedNodeId(null);
+    setSelectedBranchId(null);
+    setSelectedNodeIds(new Set());
+    setSelectedBranchIds(new Set());
+    setSelectedSymbolId(null);
+    setSelectedSymbolIds(new Set());
+    setFanSymbolBranchId(null);
+    setTool("select");
+
+    // Результаты расчётов
+    setSolveResult(null);
+    setNormalFlows({});
+    setFireResult(null);
+    setFireCalcDone(false);
+    setExplosionResult(null);
+    setExplosionCalcDone(false);
+    setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
+    setVcSolving(false);
+    setVcError(null);
+
+    // Временные буферы и состояния
+    setBranchParamBuffer(null);
+    setSymbolClipboard(null);
+    setPendingSymbol(null);
+    setCtxMenu(null);
+
+    // Состояния интерфейса (сбрасываем к дефолтам)
+    setActiveSide("general");
+    setActiveHorizonId("");
+    setEditingHorizonImageId(null);
+    setEditingPrintLayerId(null);
+    setZLevel(0);
+    setShowMultiBranchProps(false);
+    setShowVentPipeDialog(false);
+    setVentPipeBranchIds([]);
+
+    // Настройки отображения — сбрасываем до дефолтов;
+    // ниже переопределятся значениями из файла если они там есть
+    setFlowColorMin(0);
+    setFlowColorMax(75);
+    setFlowColorHue("red");
+    setThinLines(false);
+    setShowFlowArrows(false);
+    setFlowDisplay("off");
+    setColorMode("none");
+    setColorByHorizon(false);
+    setBranchWidth(7);
+    setBranchBorder(0.6);
+    setZScale(1);
+    setXyScale(1);
+    setScaleLimitsEnabled(false);
+    setPosColorInner(false);
+    setPosColorOuter(false);
+    setShowPositions(true);
+    setInfoConfig(DEFAULT_INFO_CONFIG);
+    setUnitsConfig(DEFAULT_UNITS_CONFIG);
+    setCalcMode("cross");
+    setSolverTolerance(0.01);
+    setSolverMaxIter(2000);
+    setSolverAlpha(0.8);
+    setSurfaceTemp(20);
+    // ── конец сброса ────────────────────────────────────────────────────
+
     setNodes((data.nodes as TopoNode[]) ?? []);
     // Каждую ветвь прогоняем через makeBranch чтобы гарантировать все поля (fanRpm и т.д.)
     const rawBranches = (data.branches as TopoBranch[]) ?? [];
