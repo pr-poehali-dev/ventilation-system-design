@@ -47,6 +47,7 @@ import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
+import HelpDialog from "@/components/cad/HelpDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
@@ -1378,6 +1379,8 @@ export default function CadPage() {
   const [showCloseConfirm, setShowCloseConfirm] = useState<boolean>(false);
   // Окно "О программе"
   const [showAbout, setShowAbout] = useState<boolean>(false);
+  // Диалог руководства пользователя
+  const [showHelpDialog, setShowHelpDialog] = useState<boolean>(false);
 
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -2701,6 +2704,7 @@ export default function CadPage() {
         <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => setActiveRibbon("general")} />
         <RibbonTabBtn label="Общее" active={false} onClick={() => {}} highlight />
         <RibbonTabBtn label="Печать" active={false} onClick={() => setShowPrintDialog(true)} />
+        <RibbonTabBtn label="Помощь" active={false} onClick={() => setShowHelpDialog(true)} />
         <div className="ml-auto pr-2 pb-0.5">
           <button className="w-5 h-5 hover:bg-black/10 flex items-center justify-center"
             title="Свернуть ленту">
@@ -8616,6 +8620,11 @@ export default function CadPage() {
           </div>
         </div>
       </div>
+    )}
+
+    {/* ── Руководство пользователя ────────────────────────────────────── */}
+    {showHelpDialog && (
+      <HelpDialog onClose={() => setShowHelpDialog(false)} />
     )}
 
     {/* ── Диалог лицензии ─────────────────────────────────────────────── */}
