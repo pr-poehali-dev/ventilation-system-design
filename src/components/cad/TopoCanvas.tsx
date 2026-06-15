@@ -824,10 +824,31 @@ export default function TopoCanvas(props: Props) {
   // регистрируются в CanvasLayer через тот же подход
 
   // Применить пресет ракурса
+  // При смене проекции пересчитываем offsetX/offsetY так, чтобы центроид схемы
+  // остался в центре экрана — это гарантирует правильное положение OVERVIEW рамки.
   const applyPreset = useCallback((preset: ViewPreset) => {
     const p = VIEW_PRESETS[preset];
-    setView((v) => ({ ...v, azimuth: p.azimuth, elevation: p.elevation }));
-  }, []);
+    setView((v) => {
+      if (nodes.length === 0) return { ...v, azimuth: p.azimuth, elevation: p.elevation };
+      // Вычисляем центроид схемы в мировых координатах
+      let sumX = 0, sumY = 0, sumZ = 0;
+      for (const n of nodes) { sumX += n.x; sumY += n.y; sumZ += n.z; }
+      const cx = sumX / nodes.length;
+      const cy = sumY / nodes.length;
+      const cz = sumZ / nodes.length;
+      // Проецируем центроид в НОВОЙ проекции (без смещения — offsetX/Y=0)
+      const newProjNoOffset = { scale: v.scale, offsetX: 0, offsetY: 0,
+        azimuth: p.azimuth, elevation: p.elevation, zScale };
+      const projected = project3D(
+        { x: cx * (xyScale ?? 1), y: cy * (xyScale ?? 1), z: cz * (zScale ?? 1) },
+        newProjNoOffset,
+      );
+      // Центрируем центроид в центре экрана
+      const newOx = size.w / 2 - projected.sx;
+      const newOy = size.h / 2 - projected.sy;
+      return { ...v, azimuth: p.azimuth, elevation: p.elevation, offsetX: newOx, offsetY: newOy };
+    });
+  }, [nodes, size, xyScale, zScale]);
 
   // Эффективная рабочая плоскость: явно заданная пользователем либо подобранная по ракурсу
   const effPlane: WorkPlane = workPlane ?? autoWorkPlane(view.azimuth, view.elevation, {
@@ -879,19 +900,25 @@ export default function TopoCanvas(props: Props) {
     if (nodes.length === 0) {
       return {
         pivot: { x: 0, y: 0, z: 0 },
-        pivotScreen: project3D({ x: 0, y: 0, z: 0 }, proj),
+        pivotScreen: { sx: proj.offsetX, sy: proj.offsetY, depth: 0 },
       };
     }
+    // Центроид схемы в «чистых» мировых координатах (без масштабов)
     let sx = 0, sy = 0, sz = 0;
     for (const n of nodes) {
-      sx += n.x; sy += n.y; sz += n.z * (zScale ?? 1);
+      sx += n.x; sy += n.y; sz += n.z;
     }
     const cx = sx / nodes.length;
     const cy = sy / nodes.length;
     const cz = sz / nodes.length;
+    // Проецируем через projectWithZ, которая корректно применяет xyScale и zScale
+    const pivotScreen = project3D(
+      { x: cx * (xyScale ?? 1), y: cy * (xyScale ?? 1), z: cz * (zScale ?? 1) },
+      proj,
+    );
     return {
       pivot: { x: cx, y: cy, z: cz },
-      pivotScreen: project3D({ x: cx, y: cy, z: cz }, proj),
+      pivotScreen,
     };
   };
 
@@ -1196,7 +1223,13 @@ export default function TopoCanvas(props: Props) {
         elevation: newEl,
         zScale,
       };
-      const newPivotScreen = project3D(rotStart.pivot, tmpProj);
+      // Применяем xyScale/zScale к pivot перед проецированием (pivot хранится в чистых мировых)
+      const scaledPivot = {
+        x: rotStart.pivot.x * (xyScale ?? 1),
+        y: rotStart.pivot.y * (xyScale ?? 1),
+        z: rotStart.pivot.z * (zScale ?? 1),
+      };
+      const newPivotScreen = project3D(scaledPivot, tmpProj);
       const newOx = rotStart.ox + (rotStart.pivotScreen.sx - newPivotScreen.sx);
       const newOy = rotStart.oy + (rotStart.pivotScreen.sy - newPivotScreen.sy);
       setView((v) => ({ ...v, azimuth: newAz, elevation: newEl, offsetX: newOx, offsetY: newOy }));
@@ -1388,13 +1421,27 @@ export default function TopoCanvas(props: Props) {
       // Отступ: 8% от размера схемы + фиксированный минимум
       const pad = Math.max(sw, sh) * 0.08 + 15;
       const scx = (minSx + maxSx) / 2;
+      const scy_schema = (minSy + maxSy) / 2;
       // Размер рамки охватывает схему с отступами, соблюдая пропорции бумаги
       const fitSw = sw + pad * 2, fitSh = sh + pad * 2;
       let rsw = fitSw, rsh = fitSw / aspect;
       if (rsh < fitSh) { rsh = fitSh; rsw = fitSh * aspect; }
-      // Рамка НИЖЕ схемы: gap между нижним краем схемы и верхним краем рамки
-      const gap = pad * 0.8;
-      const scy = maxSy + gap + rsh / 2;
+      // В режиме плана (elevation ≈ 90): рамка НИЖЕ схемы
+      // В 3D-режиме (ИЗО, фронт, профиль): рамка ОХВАТЫВАЕТ схему (центрируется по схеме)
+      const isFlat = (view.elevation ?? 90) >= 88;
+      let scy: number;
+      if (isFlat) {
+        // Плановый вид: рамка строго под схемой
+        const gap = pad * 0.8;
+        scy = maxSy + gap + rsh / 2;
+      } else {
+        // 3D-вид: рамка охватывает схему со всех сторон (центр по центру экранного bbox схемы)
+        scy = scy_schema;
+        // При 3D рамка должна охватывать всю схему по обеим осям
+        rsw = Math.max(rsw, sw + pad * 2);
+        rsh = rsw / aspect;
+        if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
+      }
       // Заполняем экранные координаты углов напрямую (без проекции через wb)
       Object.assign(pTL, { sx: scx - rsw / 2, sy: scy - rsh / 2 });
       Object.assign(pTR, { sx: scx + rsw / 2, sy: scy - rsh / 2 });
