@@ -60,6 +60,7 @@ interface CanvasLayerProps {
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   fixedObjectScale?: boolean;
+  pollutedBranchIds?: Set<string>;
 
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -185,6 +186,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
       branchFireColors: p.branchFireColors,
       branchExplosionColors: p.branchExplosionColors,
       fixedObjectScale: p.fixedObjectScale,
+      pollutedBranchIds: p.pollutedBranchIds,
     });
   }, []);
 

@@ -222,6 +222,11 @@ export interface TopoBranch {
   explosionComputedR_medium: number;       // м — радиус средних поражений
   explosionComputedR_light: number;        // м — радиус лёгких поражений
   explosionComputedDeltaP: number;         // кПа — давление в данной ветви (от расстояния)
+
+  // ─── Качество воздуха ───────────────────────────────────────────────────
+  pollutesAir: boolean;  // ветвь является источником загрязнения воздуха;
+                          // стрелки потока ниже по направлению движения воздуха
+                          // окрашиваются в синий цвет (исходящий загрязнённый поток)
 }
 
 // ─── Горизонты (как в ПО Аэросеть): группировка ветвей по высотным отметкам ───
@@ -519,6 +524,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     explosionComputedR_medium: 0,
     explosionComputedR_light: 0,
     explosionComputedDeltaP: 0,
+    // Качество воздуха
+    pollutesAir: false,
     ...partial,
   };
 }

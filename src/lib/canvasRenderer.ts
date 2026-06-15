@@ -70,6 +70,8 @@ export interface CanvasRenderOptions {
   printMode?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме */
   fixedObjectScale?: boolean;
+  /** ID ветвей, загрязнённых воздухом (pollutesAir + все ниже по потоку) — стрелки синие */
+  pollutedBranchIds?: Set<string>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -172,7 +174,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
-    fixedObjectScale = false,
+    fixedObjectScale = false, pollutedBranchIds,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
@@ -491,11 +493,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
 
     // Стрелки потока (F9) — тонкие
+    // Красные — свежая струя; синие — загрязнённый воздух (pollutesAir + ниже по потоку)
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80) {
       const stepA = 130;
       const count = Math.max(1, Math.floor(segLen / stepA));
       const arrowLen = Math.min(28, Math.max(16, w * 4));
       const hw = arrowLen / 2;
+      const isPolluted = pollutedBranchIds?.has(b.id) ?? false;
+      const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
       ctx.save();
       for (let i = 0; i < count; i++) {
         const t0 = (i + 1) / (count + 1);
@@ -505,12 +510,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.translate(cx, cy);
         ctx.rotate(angle);
         // Тонкий хвостик
-        ctx.strokeStyle = "#dc2626";
+        ctx.strokeStyle = arrowColor;
         ctx.lineWidth = 1;
         ctx.lineCap = "round";
         ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 5, 0); ctx.stroke();
         // Компактный наконечник
-        ctx.fillStyle = "#dc2626";
+        ctx.fillStyle = arrowColor;
         ctx.strokeStyle = "white";
         ctx.lineWidth = 0.6;
         ctx.beginPath();

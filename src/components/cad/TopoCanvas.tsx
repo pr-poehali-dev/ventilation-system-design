@@ -740,6 +740,56 @@ export default function TopoCanvas(props: Props) {
     return m;
   }, [projNodes]);
 
+  // ── Загрязнённые ветви (ниже по потоку от ветвей с pollutesAir=true) ───
+  // BFS/DFS по графу в направлении движения воздуха (flow > 0: from→to, flow < 0: to→from).
+  // Включает сами «источники загрязнения» (pollutesAir=true) и все ветви ниже по потоку.
+  const pollutedBranchIds = useMemo((): Set<string> => {
+    // Если нет ни одной ветви-источника — пустой Set (ранний выход)
+    const sources = branches.filter(b => b.pollutesAir);
+    if (sources.length === 0) return new Set();
+
+    // adjacency: для каждого узла — список ветвей, исходящих ИЗ него по потоку
+    // (если flow > 0: from→to; если flow < 0: to→from)
+    const outEdges = new Map<string, string[]>(); // nodeId → [branchId, ...]
+    for (const b of branches) {
+      const fromNode = b.flow >= 0 ? b.fromId : b.toId;
+      const toNode   = b.flow >= 0 ? b.toId   : b.fromId;
+      if (!outEdges.has(fromNode)) outEdges.set(fromNode, []);
+      outEdges.get(fromNode)!.push(b.id);
+      // Убедимся что toNode есть в карте (даже без исходящих рёбер)
+      if (!outEdges.has(toNode)) outEdges.set(toNode, []);
+    }
+    // Карта: branchId → toNode (выходной узел по направлению потока)
+    const branchToNode = new Map<string, string>();
+    for (const b of branches) {
+      branchToNode.set(b.id, b.flow >= 0 ? b.toId : b.fromId);
+    }
+
+    const visited = new Set<string>();
+    const queue: string[] = []; // nodeId
+
+    for (const src of sources) {
+      visited.add(src.id);
+      // Начинаем обход с выходного узла ветви-источника
+      const exitNode = src.flow >= 0 ? src.toId : src.fromId;
+      queue.push(exitNode);
+    }
+
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      const edges = outEdges.get(nodeId) ?? [];
+      for (const bId of edges) {
+        if (!visited.has(bId)) {
+          visited.add(bId);
+          const nextNode = branchToNode.get(bId);
+          if (nextNode) queue.push(nextNode);
+        }
+      }
+    }
+
+    return visited;
+  }, [branches]);
+
   // Обновляем ref для touch hit-test (всегда актуальные данные без пересоздания listeners)
   touchHitRef.current = { projNodes, projNodesMap, branches, onSelectNode, onSelectBranch, onScaleChange };
 
@@ -2074,6 +2124,7 @@ export default function TopoCanvas(props: Props) {
           waterNodeResults={waterNodeResults}
           branchFireColors={branchFireColors}
           branchExplosionColors={branchExplosionColors}
+          pollutedBranchIds={pollutedBranchIds}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -2526,13 +2577,16 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Стрелки направления свежей струи (F9, после расчёта) ── */}
-              {/* Полноценные стрелки с хвостиком (─►), как в АэроСеть */}
+              {/* ── Стрелки направления воздуха (F9, после расчёта) ── */}
+              {/* Красные — свежая струя; синие — загрязнённый воздух (pollutesAir ниже по потоку) */}
               {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 && (() => {
                 const step = 130;
                 const count = Math.max(1, Math.floor(segLen / step));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
                 const arrowLen = Math.min(28, Math.max(16, w * 4));
+                // Синие стрелки — для ветвей-источников загрязнения и всех ветвей ниже по потоку
+                const isPolluted = pollutedBranchIds.has(b.id);
+                const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
                 return (
                   <g>
                     {Array.from({ length: count }, (_, i) => {
@@ -2544,11 +2598,11 @@ export default function TopoCanvas(props: Props) {
                         <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
                           {/* Хвостик — тонкая линия */}
                           <line x1={-hw} y1={0} x2={hw - 5} y2={0}
-                            stroke="#dc2626" strokeWidth="1"
+                            stroke={arrowColor} strokeWidth="1"
                             strokeLinecap="round" />
                           {/* Наконечник — компактный треугольник */}
                           <polygon points={`${hw - 7},-4 ${hw},0 ${hw - 7},4`}
-                            fill="#dc2626" stroke="white" strokeWidth="0.6"
+                            fill={arrowColor} stroke="white" strokeWidth="0.6"
                             strokeLinejoin="round" />
                         </g>
                       );

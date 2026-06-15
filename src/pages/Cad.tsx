@@ -5885,8 +5885,43 @@ export default function CadPage() {
               );
             })()}
 
+            {/* ═══ ВКЛАДКА: УЧАСТКИ ═════════════════════════════════════ */}
+            {activeSide === "areas" && selectedBranch && (() => {
+              const b = selectedBranch;
+              const SH = "#f0f4ff"; const SB = "1px solid #c7d7f0";
+              return (
+                <div className="flex flex-col h-full overflow-y-auto" style={{ fontSize: 11 }}>
+                  {/* ── Воздушный поток ── */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold select-none"
+                    style={{ background: SH, borderBottom: SB, color: "#1d3a6b" }}>
+                    Воздушный поток
+                  </div>
+                  {/* Галочка: Загрязняет воздух */}
+                  <label className="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-blue-50 transition-colors"
+                    style={{ borderBottom: "1px solid #ebebeb" }}>
+                    <input
+                      type="checkbox"
+                      checked={b.pollutesAir ?? false}
+                      onChange={e => updateBranch(b.id, { pollutesAir: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded"
+                      style={{ accentColor: "#2563eb" }}
+                    />
+                    <span className="text-[11px] text-gray-700 leading-tight">Загрязняет воздух</span>
+                  </label>
+                  {/* Подсказка */}
+                  {(b.pollutesAir ?? false) && (
+                    <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
+                      style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
+                      Стрелки направления воздуха в ветвях ниже по потоку от этой ветви
+                      будут отображаться синим цветом.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ═══ ОСТАЛЬНЫЕ ВКЛАДКИ ═════════════════════════════════════ */}
-            {(activeSide === "thermo" || activeSide === "areas"
+            {(activeSide === "thermo"
               || activeSide === "coords"
               || activeSide === "measure" || activeSide === "pipes") && (
               <div className="p-4 text-center text-gray-400 text-xs">
