@@ -320,8 +320,8 @@ function drawBulkheadIndicators(
 
   // Выноска
   ctx.save();
-  ctx.strokeStyle = "#8899bb"; ctx.lineWidth = 0.7;
-  ctx.setLineDash([3, 2]);
+  ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4;
+  ctx.setLineDash([2, 3]);
   ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bx, by - boxH/2); ctx.stroke();
   ctx.setLineDash([]);
 

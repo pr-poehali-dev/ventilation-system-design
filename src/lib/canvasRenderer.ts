@@ -576,9 +576,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // Выноска если метка сдвинута
       if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
         ctx.save();
-        ctx.strokeStyle = "#94a3b8";
-        ctx.lineWidth = 0.8 * objSF;
-        ctx.setLineDash([3, 2]);
+        ctx.strokeStyle = "#555555";
+        ctx.lineWidth = 0.4 * objSF;
+        ctx.setLineDash([2, 3]);
         ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();

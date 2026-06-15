@@ -101,7 +101,7 @@ export interface SchemaSymbol {
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath";
 
 interface Excavation {
   id: string;
@@ -4083,6 +4083,7 @@ export default function CadPage() {
             : fanSymbolBranchId
             ? ([
                 { id: "fan", label: "Вентилятор" },
+                { id: "fan-indicators", label: "Индикаторы" },
               ] as { id: SideTab; label: string }[])
             : ([
                 { id: "general", label: "Общие" },
@@ -6041,6 +6042,56 @@ export default function CadPage() {
                     <IndRow k="branchGasSpreadTime" label="Концентрация оксидов азота" />
                     <IndRow k="branchNatDragT"      label="Тепловая критическая депрессия" />
                     <IndRow k="branchNatDragW"      label="Тепловая депрессия пожара" />
+                  </Section>
+                </div>
+              );
+            })()}
+
+            {/* ═══ ВКЛАДКА: ИНДИКАТОРЫ ВЕНТИЛЯТОРА ══════════════════════ */}
+            {activeSide === "fan-indicators" && (() => {
+              if (!selectedBranch?.hasFan) return (
+                <div className="p-4 text-center text-gray-400 text-xs">Нет вентилятора на ветви</div>
+              );
+              const ind = selectedBranch.indicators ?? {};
+              const setInd = (key: string, val: boolean) =>
+                updateBranch(selectedBranch.id, { indicators: { ...ind, [key]: val } });
+              const IndRow = ({ k, label }: { k: string; label: string }) => (
+                <label className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                  <input type="checkbox" checked={ind[k] ?? false}
+                    onChange={e => setInd(k, e.target.checked)}
+                    style={{ width: 13, height: 13, accentColor: "#2563eb", cursor: "pointer" }} />
+                  <span className="text-[11px] text-gray-700">{label}</span>
+                </label>
+              );
+              const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+                <div className="mb-2">
+                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
+                    style={{ borderBottom: "1px solid #e5e7eb" }}>{title}</div>
+                  <div className="pt-0.5">{children}</div>
+                </div>
+              );
+              return (
+                <div className="p-2 overflow-y-auto flex-1">
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-[11px] font-semibold text-gray-700">Отображаемые индикаторы</span>
+                    <button onClick={() => updateBranch(selectedBranch.id, { indicators: {} })}
+                      className="text-[10px] text-gray-400 hover:text-red-500 px-1"
+                      title="Сбросить все индикаторы">
+                      Сбросить
+                    </button>
+                  </div>
+                  <Section title="Расход воздуха">
+                    <IndRow k="branchFlowCalc"  label="Расход воздуха на вентиляторе" />
+                    <IndRow k="branchFlow"       label="Фактический расход воздуха" />
+                  </Section>
+                  <Section title="Напор и мощность">
+                    <IndRow k="fanPressure"      label="Напор вентилятора" />
+                    <IndRow k="fanShaftPower"    label="Мощность вентилятора" />
+                    <IndRow k="fanEfficiency"    label="КПД вентилятора" />
+                    <IndRow k="fanMaxPressure"   label="Макс. напор вентилятора" />
+                  </Section>
+                  <Section title="Описание">
+                    <IndRow k="branchName"       label="Описание объекта" />
                   </Section>
                 </div>
               );
