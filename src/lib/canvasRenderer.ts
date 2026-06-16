@@ -183,15 +183,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── LOD пороги ───────────────────────────────────────────────────────────
   const sc = view.scale;
-  // Коэффициент масштабирования объектов: 1 = фиксированный размер, sc/0.4 = пропорциональный.
-  // В режиме печати объекты НЕ зависят от масштаба (иначе при малом sc схема исчезает).
-  const objSF = (fixedObjectScale || printMode) ? 1 : sc / 0.4;
-  // В режиме печати LOD отключён — рисуем все элементы независимо от масштаба.
+  // Коэффициент масштабирования объектов.
+  // В режиме печати / fixedObjectScale — фиксированный размер (1).
+  // В обычном режиме — пропорционально масштабу, но не меньше минимума
+  // чтобы ветви и узлы были видимы при любом удалении (координаты могут быть в метрах → sc очень мал).
+  const rawObjSF = (fixedObjectScale || printMode) ? 1 : sc / 0.4;
+  // Минимальный objSF: ветвь всегда не менее 0.5px, при branchWidth=2 → objSF >= 0.25
+  const objSF = Math.max(rawObjSF, 0.25);
+  // LOD: в режиме печати все элементы видны; иначе — только при достаточном масштабе.
+  // Используем objSF-скорректированный sc для LOD чтобы учесть минимальный размер объектов.
   const lodChevrons = printMode || sc >= 0.25;
   const lodArrows   = printMode || sc >= 0.15;
   const lodLabels   = printMode || sc >= 0.04;
   const lodBorder   = printMode || sc >= 0.10;
-  const lodNodes    = printMode || sc >= 0.03;
+  // Узлы: всегда показываем (при малом scale они маленькие но видимы благодаря min objSF)
+  const lodNodes    = true;
 
   // ─── Фон / сетка ──────────────────────────────────────────────────────────
   if (printMode) {
@@ -234,8 +240,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const midY = (from.sy + to.sy) / 2;
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const posInnerCol = posInnerColors?.get(b.id);
-    // В режиме печати на белом фоне белые ветви не видны — используем тёмный цвет по умолчанию
-    const defaultBranchColor = printMode ? "#333333" : "#ffffff";
+    // Цвет ветви по умолчанию (без потока, без выделения).
+    // В Canvas (в отличие от SVG) фон белый/светлый, поэтому белые ветви невидимы.
+    // Используем тёмно-серый — он виден и на светлом и на тёмном фоне.
+    const defaultBranchColor = "#333333";
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
