@@ -141,9 +141,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh }: PrintLayerSvg
 
   return (
     <>
-      {/* Белая подложка */}
-      <rect x={rx} y={ry} width={rw} height={rh} fill="white" />
-      {/* Внешняя рамка */}
+      {/* Внешняя рамка (без белой подложки — схема видна сквозь неё) */}
       <rect x={rx} y={ry} width={rw} height={rh} fill="none" stroke="#1a1a1a" strokeWidth={2} />
       {/* Внутренняя рамка */}
       <rect x={rx + inset} y={ry + inset} width={rw - inset * 2} height={rh - inset * 2} fill="none" stroke="#1a1a1a" strokeWidth={0.8} />
