@@ -11,7 +11,7 @@ import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterNodeResult } from "@/lib/waterHydraulics";
 
-export { CANVAS_THRESHOLD };
+
 
 interface ViewState {
   scale: number;
@@ -255,8 +255,4 @@ export default function CanvasLayer(props: CanvasLayerProps) {
   );
 }
 
-// Реэкспорт hit-функций для использования в TopoCanvas
-export { hitNodeCanvas, hitBranchCanvas };
-
-// Реэкспорт утилит из canvasUtils (вынесены чтобы не ломать Fast Refresh)
-export { buildProjNodesMap, computeProjNodes } from "@/lib/canvasUtils";
+// Все реэкспорты перенесены в CanvasLayerExports.ts (Fast Refresh требует только default export в этом файле)

@@ -7,7 +7,8 @@ import {
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
-import CanvasLayer, { CANVAS_THRESHOLD } from "@/components/cad/CanvasLayer";
+import CanvasLayer from "@/components/cad/CanvasLayer";
+import { CANVAS_THRESHOLD } from "@/components/cad/CanvasLayerExports";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
