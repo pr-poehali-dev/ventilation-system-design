@@ -546,21 +546,19 @@ export default function PrintDialog({
     });
 
     if (hasPrintLayer && activePrintHorizon?.printLayer) {
-      // Режим слоя печати: сначала вычисляем tentView (baseView → canvas),
-      // потом находим bbox рамки и подгоняем view чтобы рамка = весь canvas.
-      const tentSc  = sc * dpiRatio;
-      const tentOX  = offsetX * dpiRatio;
-      const tentOY  = offsetY * dpiRatio;
-      const tentProj = { scale: tentSc, offsetX: tentOX, offsetY: tentOY,
+      // Режим слоя печати: auto-fit схемы → bbox рамки → подогнать view → схема → рамка поверх.
+      // Шаг 1: auto-fit схемы в canvas
+      const bboxE = schemaBbox;
+      const bw = bboxE.w || 1, bh = bboxE.h || 1;
+      const padE = 20 * dpiRatio;
+      const s0 = Math.min((oc.width - padE * 2) / bw, (oc.height - padE * 2) / bh);
+      const ox0 = (oc.width - bw * s0) / 2 - bboxE.minX * s0;
+      const oy0 = (oc.height - bh * s0) / 2 - bboxE.minY * s0;
+      const proj0 = { scale: s0, offsetX: ox0, offsetY: oy0,
         azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
-      const tentPNodes = nodes.map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, tentProj));
-      // Bbox узлов
-      let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
-      tentPNodes.forEach(p => {
-        if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
-        if (p.sy < mnSy) mnSy = p.sy; if (p.sy > mxSy) mxSy = p.sy;
-      });
-      // Рамка (те же пропорции что в TopoCanvas)
+      const pNodes0 = nodes.map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0));
+
+      // Шаг 2: bbox рамки при s0/ox0/oy0
       const pl = activePrintHorizon.printLayer;
       const plFmt2 = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
       const plMm2 = PAPER_SIZES[plFmt2] ?? PAPER_SIZES["A3"];
@@ -568,6 +566,11 @@ export default function PrintDialog({
       const plW3 = plOri2 === "landscape" ? plMm2.h : plMm2.w;
       const plH3 = plOri2 === "landscape" ? plMm2.w : plMm2.h;
       const fAsp = plW3 / plH3;
+      let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
+      pNodes0.forEach(p => {
+        if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
+        if (p.sy < mnSy) mnSy = p.sy; if (p.sy > mxSy) mxSy = p.sy;
+      });
       const sw3 = mxSx - mnSx || 1, sh3 = mxSy - mnSy || 1;
       const pad3 = Math.max(sw3, sh3) * 0.08 + 15;
       const scx3 = (mnSx + mxSx) / 2, scy3 = (mnSy + mxSy) / 2;
@@ -577,20 +580,20 @@ export default function PrintDialog({
       rsh3 = rsw3 / fAsp;
       if (rsh3 < sh3 + pad3 * 2) { rsh3 = sh3 + pad3 * 2; rsw3 = rsh3 * fAsp; }
       const fRx = scx3 - rsw3 / 2, fRy = scy3 - rsh3 / 2;
-      // Подгоняем: рамка = весь canvas
+
+      // Шаг 3: подгоняем view чтобы рамка = весь canvas
       const fitF = Math.min(oc.width / (rsw3 || 1), oc.height / (rsh3 || 1));
-      const scaledSc   = tentSc  * fitF;
-      const scaledOffX = (tentOX - fRx) * fitF;
-      const scaledOffY = (tentOY - fRy) * fitF;
-      const sv = {
-        scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
-        azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
-      };
+      const scaledSc   = s0 * fitF;
+      const scaledOffX = (ox0 - fRx) * fitF;
+      const scaledOffY = (oy0 - fRy) * fitF;
+      const sv = { scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
+        azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
       const projNodes = nodes.map(n => ({
         node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
       }));
       const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
+      // Шаг 4: рисуем схему
       renderCanvas({
         ctx, width: oc.width, height: oc.height,
         nodes, branches, horizons, horizonMap,
@@ -611,8 +614,7 @@ export default function PrintDialog({
         await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
       }
 
-      // Рисуем рамку слоя печати поверх схемы через SVG→Image
-      // Пересчитываем bbox узлов для нового sv
+      // Шаг 5: рамка поверх — bbox из новых projNodes
       let minSx2 = Infinity, maxSx2 = -Infinity, minSy2 = Infinity, maxSy2 = -Infinity;
       projNodes.forEach(pn => {
         if (pn.sx < minSx2) minSx2 = pn.sx; if (pn.sx > maxSx2) maxSx2 = pn.sx;
@@ -1137,59 +1139,6 @@ body{background:white;font-family:Arial,sans-serif}
             }}>
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
-                const BASE_DPI = 150;
-                const paperWpx = paper.w * BASE_DPI / 25.4;
-                const prevToPage = prevW / paperWpx;
-
-                // view предпросмотра в px превью
-                let prevSc: number, prevOffX: number, prevOffY: number;
-                if (hasPrintLayer && activePrintHorizon?.printLayer) {
-                  // Режим слоя печати: вычисляем где будет рамка при baseView,
-                  // затем подгоняем view так чтобы рамка = весь лист prevW×prevH.
-                  // Сначала получаем view в пикселях предпросмотра (baseView в 150dpi → prevToPage)
-                  const tentSc  = baseView.sc * prevToPage;
-                  const tentOffX = baseView.offsetX * prevToPage;
-                  const tentOffY = baseView.offsetY * prevToPage;
-                  // Вычисляем projNodes при tentSc/tentOff
-                  const tentProj = { scale: tentSc, offsetX: tentOffX, offsetY: tentOffY,
-                    azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
-                  const tentNodes = nodes.map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, tentProj));
-                  // Bbox узлов в пикселях предпросмотра
-                  let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
-                  tentNodes.forEach(p => {
-                    if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
-                    if (p.sy < mnSy) mnSy = p.sy; if (p.sy > mxSy) mxSy = p.sy;
-                  });
-                  // Вычисляем рамку точно как TopoCanvas (тот же алгоритм)
-                  const pl = activePrintHorizon.printLayer;
-                  const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
-                  const plMm = PAPER_SIZES[plFmt] ?? PAPER_SIZES["A3"];
-                  const plOri = pl.orientation ?? "landscape";
-                  const plW2 = plOri === "landscape" ? plMm.h : plMm.w;
-                  const plH2 = plOri === "landscape" ? plMm.w : plMm.h;
-                  const frameAspect = plW2 / plH2;
-                  const sw2 = mxSx - mnSx || 1, sh2 = mxSy - mnSy || 1;
-                  const pad2 = Math.max(sw2, sh2) * 0.08 + 15;
-                  const scx2 = (mnSx + mxSx) / 2, scy2 = (mnSy + mxSy) / 2;
-                  let rsw2 = sw2 + pad2 * 2, rsh2 = rsw2 / frameAspect;
-                  if (rsh2 < sh2 + pad2 * 2) { rsh2 = sh2 + pad2 * 2; rsw2 = rsh2 * frameAspect; }
-                  rsw2 = Math.max(rsw2, sw2 + pad2 * 2);
-                  rsh2 = rsw2 / frameAspect;
-                  if (rsh2 < sh2 + pad2 * 2) { rsh2 = sh2 + pad2 * 2; rsw2 = rsh2 * frameAspect; }
-                  const frameRx = scx2 - rsw2 / 2, frameRy = scy2 - rsh2 / 2;
-                  // Подгоняем view: рамка должна = 0,0,prevW,prevH
-                  // scale: prevW/rsw2 (или prevH/rsh2, берём min)
-                  const fitScFrame = Math.min(prevW / (rsw2 || 1), prevH / (rsh2 || 1));
-                  prevSc  = tentSc  * fitScFrame;
-                  prevOffX = (tentOffX - frameRx) * fitScFrame;
-                  prevOffY = (tentOffY - frameRy) * fitScFrame;
-                } else {
-                  prevSc  = baseView.sc * prevToPage;
-                  const marginLeftPx150 = marginLeft * BASE_DPI / 25.4;
-                  const marginTopPx150  = marginTop  * BASE_DPI / 25.4;
-                  prevOffX = (marginLeftPx150 + baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
-                  prevOffY = (marginTopPx150  + baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
-                }
 
                 return (
                   <div key={`${tile.col}-${tile.row}`}
@@ -1208,7 +1157,7 @@ body{background:white;font-family:Arial,sans-serif}
                       overflow: "hidden", userSelect: "none",
                     }}>
 
-                    {/* Схема */}
+                    {/* Схема + слой печати (auto-fit внутри PrintPreviewCanvas) */}
                     <div style={{ position: "absolute", top: 0, left: 0, width: prevW, height: prevH }}>
                       <PrintPreviewCanvas
                         ref={idx === 0 ? previewRef : undefined}
@@ -1220,9 +1169,6 @@ body{background:white;font-family:Arial,sans-serif}
                         elevation={viewState.elevation}
                         zScale={zScale}
                         is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
-                        scale={prevSc}
-                        offsetX={prevOffX}
-                        offsetY={prevOffY}
                         width={prevW}
                         height={prevH}
                         branchWidth={branchWidth}
