@@ -347,7 +347,7 @@ export default function TopoCanvas(props: Props) {
   // Для определения двойного клика по УО
   const symLastClickRef = useRef<{ id: string; time: number } | null>(null);
   const [draggingSymbolId, setDraggingSymbolId] = useState<string | null>(null);
-  const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane } | null>(null);
+  const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane; dsx: number; dsy: number } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [hoverBranchId, setHoverBranchId] = useState<string | null>(null);
@@ -1164,7 +1164,12 @@ export default function TopoCanvas(props: Props) {
             : effPlane.axis === "z" ? { axis: "z", value: zv }
             : effPlane.axis === "y" ? { axis: "y", value: node.y * xy }
             : { axis: "x", value: node.x * xy };
-          setDraggingNode({ id: hitN, plane });
+          // Сохраняем смещение курсора от экранного центра узла,
+          // чтобы при drag узел не прыгал к курсору
+          const pn = projNodes.find((p) => p.node.id === hitN);
+          const dsx = pn ? sx - pn.sx : 0;
+          const dsy = pn ? sy - pn.sy : 0;
+          setDraggingNode({ id: hitN, plane, dsx, dsy });
         }
       }
       return;
@@ -1297,10 +1302,13 @@ export default function TopoCanvas(props: Props) {
       return;
     }
     if (draggingNode) {
-      // Тащим в плоскости, зафиксированной при начале drag
+      // Тащим в плоскости, зафиксированной при начале drag.
+      // Вычитаем смещение клика от центра узла, чтобы узел не прыгал к курсору.
+      const asx = sx - draggingNode.dsx;
+      const asy = sy - draggingNode.dsy;
       const wp = is3D
-        ? unprojectToPlane(sx, sy, proj, draggingNode.plane)
-        : unproject2D(sx, sy, proj, draggingNode.plane.axis === "z" ? draggingNode.plane.value : 0);
+        ? unprojectToPlane(asx, asy, proj, draggingNode.plane)
+        : unproject2D(asx, asy, proj, draggingNode.plane.axis === "z" ? draggingNode.plane.value : 0);
       if (!wp) return;
       // Делим обратно на xyScale и zScale — proj/unproject работает в масштабированном пространстве
       const xy = xyScale ?? 1;
