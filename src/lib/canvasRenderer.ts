@@ -195,7 +195,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   const lodChevrons = printMode || sc >= 0.25;
   const lodArrows   = printMode || sc >= 0.15;
   const lodLabels   = printMode || sc >= 0.04;
-  const lodBorder   = printMode || sc >= 0.10;
+  // Border всегда включён — без него белые ветви невидимы на светлом фоне
+  const lodBorder   = true;
   // Узлы: всегда показываем (при малом scale они маленькие но видимы благодаря min objSF)
   const lodNodes    = true;
 
@@ -240,10 +241,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const midY = (from.sy + to.sy) / 2;
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const posInnerCol = posInnerColors?.get(b.id);
-    // Цвет ветви по умолчанию (без потока, без выделения).
-    // В Canvas (в отличие от SVG) фон белый/светлый, поэтому белые ветви невидимы.
-    // Используем тёмно-серый — он виден и на светлом и на тёмном фоне.
-    const defaultBranchColor = "#333333";
+    // Цвет ветви по умолчанию (без потока, без выделения) — белый как в SVG.
+    // Видимость обеспечивается тёмной обводкой (border) в ПРОХОДЕ 1.
+    const defaultBranchColor = printMode ? "#333333" : "#ffffff";
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
