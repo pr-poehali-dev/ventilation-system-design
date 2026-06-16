@@ -51,8 +51,7 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH }:
   const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
   let body = "";
 
-  // Белая подложка + рамки
-  body += `<rect x="${n(rx)}" y="${n(ry)}" width="${n(rw)}" height="${n(rh)}" fill="white"/>`;
+  // Рамки (без белой подложки — схема видна из canvas под SVG)
   body += `<rect x="${n(rx)}" y="${n(ry)}" width="${n(rw)}" height="${n(rh)}" fill="none" stroke="#1a1a1a" stroke-width="2"/>`;
   body += `<rect x="${n(rx+inset)}" y="${n(ry+inset)}" width="${n(rw-inset*2)}" height="${n(rh-inset*2)}" fill="none" stroke="#1a1a1a" stroke-width="0.8"/>`;
 
