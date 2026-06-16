@@ -183,13 +183,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── LOD пороги ───────────────────────────────────────────────────────────
   const sc = view.scale;
-  // Коэффициент масштабирования объектов: 1 = фиксированный размер, sc/0.4 = пропорциональный
-  const objSF = fixedObjectScale ? 1 : sc / 0.4;
-  const lodChevrons = sc >= 0.25;
-  const lodArrows   = sc >= 0.15;
-  const lodLabels   = sc >= 0.04;
-  const lodBorder   = sc >= 0.10;
-  const lodNodes    = sc >= 0.03;
+  // Коэффициент масштабирования объектов: 1 = фиксированный размер, sc/0.4 = пропорциональный.
+  // В режиме печати объекты НЕ зависят от масштаба (иначе при малом sc схема исчезает).
+  const objSF = (fixedObjectScale || printMode) ? 1 : sc / 0.4;
+  // В режиме печати LOD отключён — рисуем все элементы независимо от масштаба.
+  const lodChevrons = printMode || sc >= 0.25;
+  const lodArrows   = printMode || sc >= 0.15;
+  const lodLabels   = printMode || sc >= 0.04;
+  const lodBorder   = printMode || sc >= 0.10;
+  const lodNodes    = printMode || sc >= 0.03;
 
   // ─── Фон / сетка ──────────────────────────────────────────────────────────
   if (printMode) {

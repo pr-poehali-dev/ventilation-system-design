@@ -9,7 +9,6 @@ import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 import { jsPDF } from "jspdf";
-import { computePrintLayerRect } from "@/lib/printLayerSvg";
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 
 interface PrintDialogProps {
@@ -490,15 +489,14 @@ export default function PrintDialog({
   const totalPages = tiles.list.length;
 
   // ─── Рендер рамки слоя печати на canvas через SVG→Image ─────────────
-  // Использует ту же логику что PrintPreviewCanvas (computePrintLayerRect + renderPrintLayerSvgContent)
+  // Принимает готовые координаты рамки rx,ry,rw,rh (вычислены тем же алгоритмом что схема)
   const drawPrintLayerFrame = useCallback(async (
     ctx: CanvasRenderingContext2D,
     canvasW: number, canvasH: number,
     layer: NonNullable<Horizon["printLayer"]>,
-    schemaBbox: { minSx: number; maxSx: number; minSy: number; maxSy: number },
+    rect: { rx: number; ry: number; rw: number; rh: number },
   ): Promise<void> => {
-    const { rx, ry, rw, rh } = computePrintLayerRect(layer, schemaBbox, canvasW, canvasH);
-    const svgStr = buildPrintLayerSvgString({ pl: layer, rx, ry, rw, rh, totalW: canvasW, totalH: canvasH });
+    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH });
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     await new Promise<void>((resolve) => {
@@ -507,6 +505,36 @@ export default function PrintDialog({
       img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
       img.src = url;
     });
+  }, []);
+
+  // Вычисляет bbox рамки из projNodes — тот же алгоритм что в PrintPreviewCanvas/TopoCanvas
+  const computeFrameRect = useCallback((
+    pl: NonNullable<Horizon["printLayer"]>,
+    pNodes: { sx: number; sy: number; node: TopoNode }[],
+    visBranches: TopoBranch[],
+  ): { rx: number; ry: number; rw: number; rh: number } | null => {
+    const visIds = new Set<string>();
+    visBranches.forEach(b => { visIds.add(b.fromId); visIds.add(b.toId); });
+    const relevant = pNodes.filter(pn => visIds.has(pn.node.id));
+    if (relevant.length === 0) return null;
+    let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
+    relevant.forEach(p => {
+      if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
+      if (p.sy < mnSy) mnSy = p.sy; if (p.sy > mxSy) mxSy = p.sy;
+    });
+    const sw = mxSx - mnSx || 1, sh = mxSy - mnSy || 1;
+    const pad = Math.max(sw, sh) * 0.08 + 15;
+    const scx = (mnSx + mxSx) / 2, scy = (mnSy + mxSy) / 2;
+    const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
+    const plMm = PAPER_SIZES[plFmt] ?? PAPER_SIZES["A3"];
+    const plOri = pl.orientation ?? "landscape";
+    const aspect = (plOri === "landscape" ? plMm.h : plMm.w) / (plOri === "landscape" ? plMm.w : plMm.h);
+    let rsw = sw + pad * 2, rsh = rsw / aspect;
+    if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
+    rsw = Math.max(rsw, sw + pad * 2);
+    rsh = rsw / aspect;
+    if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
+    return { rx: scx - rsw / 2, ry: scy - rsh / 2, rw: Math.max(rsw, 40), rh: Math.max(rsh, 40) };
   }, []);
 
   // ─── Рендер одного тайла ─────────────────────────────────────────────
@@ -615,14 +643,11 @@ export default function PrintDialog({
         await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
       }
 
-      // Шаг 5: рамка поверх — bbox из новых projNodes
-      let minSx2 = Infinity, maxSx2 = -Infinity, minSy2 = Infinity, maxSy2 = -Infinity;
-      projNodes.forEach(pn => {
-        if (pn.sx < minSx2) minSx2 = pn.sx; if (pn.sx > maxSx2) maxSx2 = pn.sx;
-        if (pn.sy < minSy2) minSy2 = pn.sy; if (pn.sy > maxSy2) maxSy2 = pn.sy;
-      });
-      await drawPrintLayerFrame(ctx, oc.width, oc.height, pl,
-        { minSx: minSx2, maxSx: maxSx2, minSy: minSy2, maxSy: maxSy2 });
+      // Шаг 5: рамка поверх — координаты из новых projNodes (тем же алгоритмом)
+      const frameRect = computeFrameRect(pl, projNodes, visibleBranches);
+      if (frameRect) {
+        await drawPrintLayerFrame(ctx, oc.width, oc.height, pl, frameRect);
+      }
     } else {
       // Стандартный режим: тайлы с полями
       const marginLeftPx = mmToPxE(marginLeft);
@@ -672,11 +697,11 @@ export default function PrintDialog({
     }
 
     return oc.toDataURL("image/png");
-  }, [baseView, paper, workArea, marginLeft, marginTop,
+  }, [baseView, paper, workArea, marginLeft, marginTop, canvasSize,
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
       colorMode, posInnerColors, posOuterColors,
-      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame]);
+      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect]);
 
 
   // ─── Печать ──────────────────────────────────────────────────────────
