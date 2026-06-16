@@ -1,15 +1,18 @@
 // Прямой рендер схемы в canvas для предпросмотра печати.
 // Вписывает схему в canvas автоматически, либо использует переданный view.
-// Поверх canvas — SVG-слой с условными обозначениями (УО).
+// Поверх canvas — SVG-слой с позициями ПЛА и слоями печати.
 import { useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "@/lib/topology";
+import {
+  type TopoNode, type TopoBranch, type Horizon, type ProjOptions,
+  project3D, OVERVIEW_HORIZON_ID,
+} from "@/lib/topology";
 import { renderCanvas, type ProjNode, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
-import { renderPrintLayerSvgContent, computePrintLayerRect } from "@/lib/printLayerSvg";
+import { renderPrintLayerSvgContent } from "@/lib/printLayerSvg";
 
 export interface PrintPreviewCanvasHandle {
   getFitView(): { scale: number; offsetX: number; offsetY: number } | null;
@@ -43,6 +46,52 @@ interface Props {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
+}
+
+// Вычисляет bbox рамки слоя печати из projNodes — точно как TopoCanvas.renderPrintLayers
+function computeFrameRect(
+  pl: Horizon["printLayer"] & object,
+  projNodes: ProjNode[],
+  visibleBranches: TopoBranch[],
+): { rx: number; ry: number; rw: number; rh: number } | null {
+  if (projNodes.length === 0) return null;
+
+  // Берём только узлы видимых ветвей
+  const visibleNodeIds = new Set<string>();
+  visibleBranches.forEach(b => { visibleNodeIds.add(b.fromId); visibleNodeIds.add(b.toId); });
+  const relevant = projNodes.filter(pn => visibleNodeIds.has(pn.node.id));
+  if (relevant.length === 0) return null;
+
+  let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+  relevant.forEach(pn => {
+    if (pn.sx < minSx) minSx = pn.sx; if (pn.sx > maxSx) maxSx = pn.sx;
+    if (pn.sy < minSy) minSy = pn.sy; if (pn.sy > maxSy) maxSy = pn.sy;
+  });
+
+  const sw = maxSx - minSx || 1, sh = maxSy - minSy || 1;
+  const pad = Math.max(sw, sh) * 0.08 + 15;
+  const scx = (minSx + maxSx) / 2, scy = (minSy + maxSy) / 2;
+
+  // Пропорции бумаги (те же что в TopoCanvas)
+  const paperSizes: Record<string, { w: number; h: number }> = {
+    A4: { w: 210, h: 297 }, A3: { w: 297, h: 420 },
+    A2: { w: 420, h: 594 }, A1: { w: 594, h: 841 }, A0: { w: 841, h: 1189 },
+  };
+  const fmt = pl.paperFormat ?? "A3";
+  const ori = pl.orientation ?? "landscape";
+  const mm = paperSizes[fmt as string] ?? paperSizes["A3"];
+  const mmW = ori === "landscape" ? mm.h : mm.w;
+  const mmH = ori === "landscape" ? mm.w : mm.h;
+  const aspect = mmW / mmH; // ширина / высота
+
+  let rsw = sw + pad * 2, rsh = rsw / aspect;
+  if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
+  rsw = Math.max(rsw, sw + pad * 2);
+  rsh = rsw / aspect;
+  if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
+
+  const rx = scx - rsw / 2, ry = scy - rsh / 2;
+  return { rx, ry, rw: Math.max(rsw, 40), rh: Math.max(rsh, 40) };
 }
 
 const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function PrintPreviewCanvas({
@@ -137,7 +186,6 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    // Белый фон до рендера — чтобы canvas не оставался чёрным при ошибке
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
     try {
@@ -180,22 +228,21 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
 
   const projOpts = useMemo<ProjOptions>(() => activeView, [activeView]);
 
-  // Вычисляем bbox проецированных узлов для позиционирования рамки слоя печати
-  const projSchemaBbox = useMemo(() => {
-    if (projNodes.length === 0) return null;
-    let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
-    projNodes.forEach(pn => {
-      if (pn.sx < minSx) minSx = pn.sx; if (pn.sx > maxSx) maxSx = pn.sx;
-      if (pn.sy < minSy) minSy = pn.sy; if (pn.sy > maxSy) maxSy = pn.sy;
-    });
-    return { minSx, maxSx, minSy, maxSy };
-  }, [projNodes]);
-
-  // Активные слои печати — вычисляем их экранные bbox
-  const activePrintLayers = useMemo(() =>
-    horizons.filter(h => h.printLayer?.visible),
-    [horizons],
-  );
+  // Слои печати: вычисляем rx,ry,rw,rh точно как в TopoCanvas.renderPrintLayers
+  const printLayerRects = useMemo(() => {
+    return horizons
+      .filter(h => h.printLayer?.visible && h.id === OVERVIEW_HORIZON_ID)
+      .map(h => {
+        const pl = h.printLayer!;
+        const rect = computeFrameRect(pl, projNodes, visibleBranches);
+        return rect ? { h, pl, ...rect } : null;
+      })
+      .filter(Boolean) as Array<{
+        h: Horizon;
+        pl: NonNullable<Horizon["printLayer"]>;
+        rx: number; ry: number; rw: number; rh: number;
+      }>;
+  }, [horizons, projNodes, visibleBranches]);
 
   return (
     <div style={{ position: "relative", width, height, flexShrink: 0 }}>
@@ -242,21 +289,17 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         </svg>
       )}
 
-      {/* Слои печати — SVG поверх canvas с теми же пропорциями что в рабочей области */}
-      {activePrintLayers.length > 0 && projSchemaBbox && (
+      {/* Слои печати: SVG поверх canvas с теми же координатами rx,ry,rw,rh что в рабочей области */}
+      {printLayerRects.length > 0 && (
         <svg
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}
+          style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
           width={width} height={height}
         >
-          {activePrintLayers.map(h => {
-            if (!h.printLayer) return null;
-            const { rx, ry, rw, rh } = computePrintLayerRect(h.printLayer, projSchemaBbox, width, height);
-            return (
-              <g key={h.id}>
-                {renderPrintLayerSvgContent({ pl: h.printLayer, rx, ry, rw, rh })}
-              </g>
-            );
-          })}
+          {printLayerRects.map(({ h, pl, rx, ry, rw, rh }) => (
+            <g key={h.id}>
+              {renderPrintLayerSvgContent({ pl, rx, ry, rw, rh })}
+            </g>
+          ))}
         </svg>
       )}
     </div>
