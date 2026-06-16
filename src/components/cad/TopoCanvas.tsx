@@ -1156,12 +1156,14 @@ export default function TopoCanvas(props: Props) {
         // Перетаскивание узла: и в 2D, и в 3D.
         const node = nodes.find((n) => n.id === hitN);
         if (node) {
+          const xy = xyScale ?? 1;
           const zv = node.z * (zScale ?? 1);
+          // plane.value должен быть в МАСШТАБИРОВАННЫХ координатах (как в proj)
           const plane: WorkPlane = !is3D
             ? { axis: "z", value: zv }
             : effPlane.axis === "z" ? { axis: "z", value: zv }
-            : effPlane.axis === "y" ? { axis: "y", value: node.y }
-            : { axis: "x", value: node.x };
+            : effPlane.axis === "y" ? { axis: "y", value: node.y * xy }
+            : { axis: "x", value: node.x * xy };
           setDraggingNode({ id: hitN, plane });
         }
       }
@@ -1300,9 +1302,12 @@ export default function TopoCanvas(props: Props) {
         ? unprojectToPlane(sx, sy, proj, draggingNode.plane)
         : unproject2D(sx, sy, proj, draggingNode.plane.axis === "z" ? draggingNode.plane.value : 0);
       if (!wp) return;
-      // Делим Z обратно на zScale (proj работает с z*zScale, нам нужны мировые метры)
+      // Делим обратно на xyScale и zScale — proj/unproject работает в масштабированном пространстве
+      const xy = xyScale ?? 1;
+      const xWorld = xy !== 1 ? wp.x / xy : wp.x;
+      const yWorld = xy !== 1 ? wp.y / xy : wp.y;
       const zWorld = (zScale && zScale !== 1) ? wp.z / zScale : wp.z;
-      onNodeMove(draggingNode.id, wp.x, wp.y, zWorld);
+      onNodeMove(draggingNode.id, xWorld, yWorld, zWorld);
       return;
     }
     if (draggingCorner && onHorizonImageBoundsChange) {
