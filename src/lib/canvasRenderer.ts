@@ -234,15 +234,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const midY = (from.sy + to.sy) / 2;
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const posInnerCol = posInnerColors?.get(b.id);
+    // В режиме печати на белом фоне белые ветви не видны — используем тёмный цвет по умолчанию
+    const defaultBranchColor = printMode ? "#333333" : "#ffffff";
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
       : (colorByHorizon && horizonColor) ? horizonColor
-      : colorMode === "flowQ" ? (Q > 0 ? velocityColor(V) : "#ffffff")
-      : posInnerColors ? (posInnerCol ?? "#ffffff")
-      : colorMode === "none" ? "#ffffff"
+      : colorMode === "flowQ" ? (Q > 0 ? velocityColor(V) : defaultBranchColor)
+      : posInnerColors ? (posInnerCol ?? defaultBranchColor)
+      : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
-      : "#ffffff";
+      : defaultBranchColor;
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
     const baseW = isSel ? bw + 1 : bw;
