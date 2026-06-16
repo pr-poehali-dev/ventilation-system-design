@@ -9,6 +9,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
+import { renderPrintLayerSvgContent, computePrintLayerRect } from "@/lib/printLayerSvg";
 
 export interface PrintPreviewCanvasHandle {
   getFitView(): { scale: number; offsetX: number; offsetY: number } | null;
@@ -177,8 +178,24 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     toDataURL: () => canvasRef.current?.toDataURL("image/png") ?? "",
   }), [fitView]);
 
-  // SVG-проекция позиций для печати
   const projOpts = useMemo<ProjOptions>(() => activeView, [activeView]);
+
+  // Вычисляем bbox проецированных узлов для позиционирования рамки слоя печати
+  const projSchemaBbox = useMemo(() => {
+    if (projNodes.length === 0) return null;
+    let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+    projNodes.forEach(pn => {
+      if (pn.sx < minSx) minSx = pn.sx; if (pn.sx > maxSx) maxSx = pn.sx;
+      if (pn.sy < minSy) minSy = pn.sy; if (pn.sy > maxSy) maxSy = pn.sy;
+    });
+    return { minSx, maxSx, minSy, maxSy };
+  }, [projNodes]);
+
+  // Активные слои печати — вычисляем их экранные bbox
+  const activePrintLayers = useMemo(() =>
+    horizons.filter(h => h.printLayer?.visible),
+    [horizons],
+  );
 
   return (
     <div style={{ position: "relative", width, height, flexShrink: 0 }}>
@@ -209,8 +226,6 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
               return { sx: p.sx, sy: p.sy };
             })() : null;
             if (!projected) return null;
-            // По ГОСТ диаметр позиции ПЛА = 13 мм.
-            // Ограничиваем масштаб чтобы кружки не перекрывали схему.
             const posSF = Math.min(1.0, Math.max(0.25, activeView.scale / 0.5));
             const r = (pos.diameter ?? 13) * 3.78 * posSF / 2;
             const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
@@ -227,6 +242,23 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         </svg>
       )}
 
+      {/* Слои печати — SVG поверх canvas с теми же пропорциями что в рабочей области */}
+      {activePrintLayers.length > 0 && projSchemaBbox && (
+        <svg
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}
+          width={width} height={height}
+        >
+          {activePrintLayers.map(h => {
+            if (!h.printLayer) return null;
+            const { rx, ry, rw, rh } = computePrintLayerRect(h.printLayer, projSchemaBbox, width, height);
+            return (
+              <g key={h.id}>
+                {renderPrintLayerSvgContent({ pl: h.printLayer, rx, ry, rw, rh })}
+              </g>
+            );
+          })}
+        </svg>
+      )}
     </div>
   );
 });

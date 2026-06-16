@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
-import { type TopoNode, type TopoBranch, type Horizon, project3D, PAPER_SIZES_MM, OVERVIEW_HORIZON_ID } from "@/lib/topology";
+import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
 import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -9,6 +9,8 @@ import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 import { jsPDF } from "jspdf";
+import { computePrintLayerRect } from "@/lib/printLayerSvg";
+import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -404,8 +406,8 @@ export default function PrintDialog({
       // Режим слоя печати: вписать всю схему в один лист
       // Рамка занимает весь лист (с полями). Схема центрируется внутри рамки.
       const pl = activePrintHorizon.printLayer;
-      const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES_MM;
-      const plMm = PAPER_SIZES_MM[plFmt] ?? PAPER_SIZES_MM["A3"];
+      const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
+      const plMm = PAPER_SIZES[plFmt] ?? PAPER_SIZES["A3"];
       const plOri = pl.orientation ?? "landscape";
       const plW = plOri === "landscape" ? plMm.h : plMm.w;
       const plH = plOri === "landscape" ? plMm.w : plMm.h;
@@ -487,78 +489,24 @@ export default function PrintDialog({
 
   const totalPages = tiles.list.length;
 
-  // ─── Рендер рамки слоя печати на canvas ─────────────────────────────
-  const drawPrintLayerFrame = useCallback((
+  // ─── Рендер рамки слоя печати на canvas через SVG→Image ─────────────
+  // Использует ту же логику что PrintPreviewCanvas (computePrintLayerRect + renderPrintLayerSvgContent)
+  const drawPrintLayerFrame = useCallback(async (
     ctx: CanvasRenderingContext2D,
     canvasW: number, canvasH: number,
-    layer: Horizon["printLayer"] & object,
-  ) => {
-    const sc = canvasW / 794; // нормировочный коэффициент как в HorizonPrintLayerOverlay
-    const fs = (mm: number) => mm * sc * 3.78;
-    const pad = fs(8);
-    const lw = Math.max(0.5, sc * 0.6);
-
-    ctx.save();
-    ctx.strokeStyle = "#333333";
-    ctx.fillStyle = "#333333";
-    ctx.lineWidth = Math.max(1, sc * 2);
-    // Внешняя рамка
-    ctx.beginPath();
-    ctx.rect(pad * 0.5, pad * 0.5, canvasW - pad, canvasH - pad);
-    ctx.stroke();
-    // Внутренняя рамка
-    ctx.lineWidth = Math.max(0.5, lw);
-    ctx.beginPath();
-    ctx.rect(pad, pad, canvasW - pad * 2, canvasH - pad * 2);
-    ctx.stroke();
-
-    // Заголовок
-    if (layer.title) {
-      ctx.font = `bold ${fs(8)}px Arial, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(layer.title, canvasW / 2, pad + fs(18));
-    }
-
-    // Блок УТВЕРЖДАЮ (правый верхний угол)
-    if (layer.showApprover) {
-      const apprW = fs(75);
-      const apprX = canvasW - pad - apprW;
-      let apprCurY = pad + fs(2);
-      ctx.font = `${fs(3.8)}px Arial, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText("УТВЕРЖДАЮ", apprX + apprW / 2, apprCurY);
-      apprCurY += fs(6);
-      ctx.font = `${fs(3.2)}px Arial, sans-serif`;
-      ctx.fillText(layer.approverTitle || "Должность", apprX + apprW / 2, apprCurY);
-      apprCurY += fs(5);
-      ctx.fillText(layer.orgName || "Организация", apprX + apprW / 2, apprCurY);
-      apprCurY += fs(5);
-      // Линия подписи
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(apprX + fs(4), apprCurY);
-      ctx.lineTo(apprX + apprW - fs(4), apprCurY);
-      ctx.stroke();
-      apprCurY += fs(2);
-      ctx.textAlign = "right";
-      ctx.fillText(layer.approverName || "И.О. Фамилия", apprX + apprW - fs(1), apprCurY);
-      apprCurY += fs(4);
-      // Дата
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(apprX, apprCurY);
-      ctx.lineTo(apprX + apprW, apprCurY);
-      ctx.stroke();
-      apprCurY += fs(2);
-      ctx.textAlign = "center";
-      const day = layer.day || "__";
-      const month = layer.month || "__________";
-      const year = layer.year || String(new Date().getFullYear());
-      ctx.fillText(`«${day}» ${month} ${year} г.`, apprX + apprW / 2, apprCurY);
-    }
-    ctx.restore();
+    layer: NonNullable<Horizon["printLayer"]>,
+    schemaBbox: { minSx: number; maxSx: number; minSy: number; maxSy: number },
+  ): Promise<void> => {
+    const { rx, ry, rw, rh } = computePrintLayerRect(layer, schemaBbox, canvasW, canvasH);
+    const svgStr = buildPrintLayerSvgString({ pl: layer, rx, ry, rw, rh, totalW: canvasW, totalH: canvasH });
+    const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    await new Promise<void>((resolve) => {
+      const img = new Image();
+      img.onload = () => { ctx.drawImage(img, 0, 0); URL.revokeObjectURL(url); resolve(); };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+      img.src = url;
+    });
   }, []);
 
   // ─── Рендер одного тайла ─────────────────────────────────────────────
@@ -631,8 +579,15 @@ export default function PrintDialog({
         await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
       }
 
-      // Рисуем рамку слоя печати поверх схемы
-      drawPrintLayerFrame(ctx, oc.width, oc.height, activePrintHorizon.printLayer);
+      // Вычисляем bbox схемы в координатах canvas для позиционирования рамки
+      let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+      projNodes.forEach(pn => {
+        if (pn.sx < minSx) minSx = pn.sx; if (pn.sx > maxSx) maxSx = pn.sx;
+        if (pn.sy < minSy) minSy = pn.sy; if (pn.sy > maxSy) maxSy = pn.sy;
+      });
+      // Рисуем рамку слоя печати поверх схемы через SVG→Image
+      await drawPrintLayerFrame(ctx, oc.width, oc.height, activePrintHorizon.printLayer,
+        { minSx, maxSx, minSy, maxSy });
     } else {
       // Стандартный режим: тайлы с полями
       const marginLeftPx = mmToPxE(marginLeft);
@@ -1168,12 +1123,6 @@ body{background:white;font-family:Arial,sans-serif}
                   prevOffY = (marginTopPx150  + baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
                 }
 
-                // Параметры рамки для SVG-предпросмотра
-                const plSc = prevW / 794;
-                const plFs = (mm: number) => mm * plSc * 3.78;
-                const plPad = plFs(8);
-                const pl = activePrintHorizon?.printLayer;
-
                 return (
                   <div key={`${tile.col}-${tile.row}`}
                     onContextMenu={e => handleTileContextMenu(e, idx)}
@@ -1223,58 +1172,7 @@ body{background:white;font-family:Arial,sans-serif}
                       />
                     </div>
 
-                    {/* Рамка слоя печати поверх схемы (только если включён) */}
-                    {hasPrintLayer && pl && (
-                      <svg
-                        style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-                        width={prevW} height={prevH}
-                      >
-                        {/* Внешняя рамка */}
-                        <rect x={plPad * 0.5} y={plPad * 0.5}
-                          width={prevW - plPad} height={prevH - plPad}
-                          fill="none" stroke="#333" strokeWidth={Math.max(1, plSc * 2)} />
-                        {/* Внутренняя рамка */}
-                        <rect x={plPad} y={plPad}
-                          width={prevW - plPad * 2} height={prevH - plPad * 2}
-                          fill="none" stroke="#333" strokeWidth={Math.max(0.5, plSc * 0.6)} />
-                        {/* Заголовок */}
-                        {pl.title && (
-                          <text x={prevW / 2} y={plPad + plFs(18)}
-                            textAnchor="middle" dominantBaseline="middle"
-                            fontSize={plFs(8)} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
-                            {pl.title}
-                          </text>
-                        )}
-                        {/* Блок УТВЕРЖДАЮ */}
-                        {pl.showApprover && (
-                          <>
-                            <text x={prevW - plPad - plFs(37.5)} y={plPad + plFs(2)}
-                              textAnchor="middle" dominantBaseline="hanging"
-                              fontSize={plFs(3.8)} fontFamily="Arial, sans-serif" fill="#111">
-                              УТВЕРЖДАЮ
-                            </text>
-                            <text x={prevW - plPad - plFs(37.5)} y={plPad + plFs(8)}
-                              textAnchor="middle" dominantBaseline="hanging"
-                              fontSize={plFs(3.2)} fontFamily="Arial, sans-serif" fill="#111">
-                              {pl.approverTitle || "Должность"}
-                            </text>
-                            <text x={prevW - plPad - plFs(37.5)} y={plPad + plFs(14)}
-                              textAnchor="middle" dominantBaseline="hanging"
-                              fontSize={plFs(3.2)} fontFamily="Arial, sans-serif" fill="#111">
-                              {pl.orgName || "Организация"}
-                            </text>
-                            <line x1={prevW - plPad - plFs(71)} y1={plPad + plFs(20)}
-                              x2={prevW - plPad - plFs(4)} y2={plPad + plFs(20)}
-                              stroke="#111" strokeWidth={Math.max(0.5, plSc * 0.6)} />
-                            <text x={prevW - plPad - plFs(5)} y={plPad + plFs(21)}
-                              textAnchor="end" dominantBaseline="hanging"
-                              fontSize={plFs(3.2)} fontFamily="Arial, sans-serif" fill="#111">
-                              {pl.approverName || "И.О. Фамилия"}
-                            </text>
-                          </>
-                        )}
-                      </svg>
-                    )}
+
 
                     {/* Номер страницы */}
                     {showPageNumbers && (
