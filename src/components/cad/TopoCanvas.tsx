@@ -1492,22 +1492,11 @@ export default function TopoCanvas(props: Props) {
       const fitSw = sw + pad * 2, fitSh = sh + pad * 2;
       let rsw = fitSw, rsh = fitSw / aspect;
       if (rsh < fitSh) { rsh = fitSh; rsw = fitSh * aspect; }
-      // В режиме плана (elevation ≈ 90): рамка НИЖЕ схемы
-      // В 3D-режиме (ИЗО, фронт, профиль): рамка ОХВАТЫВАЕТ схему (центрируется по схеме)
-      const isFlat = (view.elevation ?? 90) >= 88;
-      let scy: number;
-      if (isFlat) {
-        // Плановый вид: рамка строго под схемой
-        const gap = pad * 0.8;
-        scy = maxSy + gap + rsh / 2;
-      } else {
-        // 3D-вид: рамка охватывает схему со всех сторон (центр по центру экранного bbox схемы)
-        scy = scy_schema;
-        // При 3D рамка должна охватывать всю схему по обеим осям
-        rsw = Math.max(rsw, sw + pad * 2);
-        rsh = rsw / aspect;
-        if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
-      }
+      // Рамка всегда охватывает схему со всех сторон (и в плане, и в 3D)
+      const scy = scy_schema;
+      rsw = Math.max(rsw, sw + pad * 2);
+      rsh = rsw / aspect;
+      if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
       // Заполняем экранные координаты углов напрямую (без проекции через wb)
       Object.assign(pTL, { sx: scx - rsw / 2, sy: scy - rsh / 2 });
       Object.assign(pTR, { sx: scx + rsw / 2, sy: scy - rsh / 2 });
