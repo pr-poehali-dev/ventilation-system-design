@@ -11,6 +11,8 @@ export const CANVAS_THRESHOLD = 800;
 
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 
+
+
 export interface ProjNode {
   node: TopoNode;
   sx: number;
@@ -166,6 +168,10 @@ function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
 }
 
 // ─── Основной рендер всей схемы ────────────────────────────────────────────
+// ВАЖНО: все поля CanvasRenderOptions ДОЛЖНЫ быть перечислены в деструктуризации ниже.
+// Если поле добавлено в интерфейс но пропущено здесь — TypeScript не ошибётся,
+// но обращение к переменной в теле функции вызовет ReferenceError в рантайме.
+// Неиспользуемые поля помечай префиксом _ чтобы было явно видно что они получены.
 export function renderCanvas(opts: CanvasRenderOptions) {
   const {
     ctx, width, height, view, proj, is3D,
@@ -177,6 +183,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
     fixedObjectScale = false, pollutedBranchIds, reversedBranchIds,
+    // Поля ниже сейчас не используются в рендере, но деструктурированы явно
+    // чтобы при случайном обращении к ним не было ReferenceError.
+    nodes: _nodes, horizons: _horizons, hiddenBranchIds: _hiddenBranchIds,
+    zScale: _zScale, zLevel: _zLevel,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
