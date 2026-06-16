@@ -546,31 +546,32 @@ export default function PrintDialog({
     });
 
     if (hasPrintLayer && activePrintHorizon?.printLayer) {
-      // Режим слоя печати: auto-fit схемы → bbox рамки → подогнать view → схема → рамка поверх.
-      // Шаг 1: auto-fit схемы в canvas
-      const bboxE = schemaBbox;
-      const bw = bboxE.w || 1, bh = bboxE.h || 1;
-      const padE = 20 * dpiRatio;
-      const s0 = Math.min((oc.width - padE * 2) / bw, (oc.height - padE * 2) / bh);
-      const ox0 = (oc.width - bw * s0) / 2 - bboxE.minX * s0;
-      const oy0 = (oc.height - bh * s0) / 2 - bboxE.minY * s0;
-      const proj0 = { scale: s0, offsetX: ox0, offsetY: oy0,
+      const pl = activePrintHorizon.printLayer;
+
+      // Шаг 1: пересчитываем viewState рабочей области под canvas DPI.
+      // Та же логика что PrintPreviewCanvas: viewState → масштаб под canvas.
+      const cw = canvasSize?.w || oc.width;
+      const ch = canvasSize?.h || oc.height;
+      const k = Math.min(oc.width / cw, oc.height / ch);
+      const sc0 = viewState.scale * k;
+      const ox0 = viewState.offsetX * k + (oc.width - cw * k) / 2;
+      const oy0 = viewState.offsetY * k + (oc.height - ch * k) / 2;
+
+      // Шаг 2: bbox рамки при sc0/ox0/oy0
+      const proj0 = { scale: sc0, offsetX: ox0, offsetY: oy0,
         azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
       const pNodes0 = nodes.map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0));
-
-      // Шаг 2: bbox рамки при s0/ox0/oy0
-      const pl = activePrintHorizon.printLayer;
-      const plFmt2 = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
-      const plMm2 = PAPER_SIZES[plFmt2] ?? PAPER_SIZES["A3"];
-      const plOri2 = pl.orientation ?? "landscape";
-      const plW3 = plOri2 === "landscape" ? plMm2.h : plMm2.w;
-      const plH3 = plOri2 === "landscape" ? plMm2.w : plMm2.h;
-      const fAsp = plW3 / plH3;
       let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
       pNodes0.forEach(p => {
         if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
         if (p.sy < mnSy) mnSy = p.sy; if (p.sy > mxSy) mxSy = p.sy;
       });
+
+      // Размер рамки по алгоритму TopoCanvas
+      const plFmt2 = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
+      const plMm2 = PAPER_SIZES[plFmt2] ?? PAPER_SIZES["A3"];
+      const plOri2 = pl.orientation ?? "landscape";
+      const fAsp = (plOri2 === "landscape" ? plMm2.h : plMm2.w) / (plOri2 === "landscape" ? plMm2.w : plMm2.h);
       const sw3 = mxSx - mnSx || 1, sh3 = mxSy - mnSy || 1;
       const pad3 = Math.max(sw3, sh3) * 0.08 + 15;
       const scx3 = (mnSx + mxSx) / 2, scy3 = (mnSy + mxSy) / 2;
@@ -583,7 +584,7 @@ export default function PrintDialog({
 
       // Шаг 3: подгоняем view чтобы рамка = весь canvas
       const fitF = Math.min(oc.width / (rsw3 || 1), oc.height / (rsh3 || 1));
-      const scaledSc   = s0 * fitF;
+      const scaledSc   = sc0 * fitF;
       const scaledOffX = (ox0 - fRx) * fitF;
       const scaledOffY = (oy0 - fRy) * fitF;
       const sv = { scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
@@ -1157,7 +1158,7 @@ body{background:white;font-family:Arial,sans-serif}
                       overflow: "hidden", userSelect: "none",
                     }}>
 
-                    {/* Схема + слой печати (auto-fit внутри PrintPreviewCanvas) */}
+                    {/* Схема + слой печати */}
                     <div style={{ position: "absolute", top: 0, left: 0, width: prevW, height: prevH }}>
                       <PrintPreviewCanvas
                         ref={idx === 0 ? previewRef : undefined}
@@ -1165,8 +1166,8 @@ body{background:white;font-family:Arial,sans-serif}
                         branches={branches}
                         horizons={horizons}
                         schemaSymbols={schemaSymbols}
-                        azimuth={viewState.azimuth}
-                        elevation={viewState.elevation}
+                        viewState={viewState}
+                        canvasSize={canvasSize ?? { w: prevW, h: prevH }}
                         zScale={zScale}
                         is3D={viewState.elevation < 89.5 || viewState.azimuth !== 0}
                         width={prevW}

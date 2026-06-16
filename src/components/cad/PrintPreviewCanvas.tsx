@@ -1,5 +1,6 @@
 // Рендер схемы в canvas для предпросмотра печати.
-// Схема всегда auto-fit в размер canvas. SVG слоя печати — поверх.
+// Получает viewState из рабочей области и масштабирует его под размер превью.
+// SVG слоя печати рисуется поверх — координаты вычисляются из projNodes текущего view.
 import { useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import {
   type TopoNode, type TopoBranch, type Horizon, type ProjOptions,
@@ -23,8 +24,10 @@ interface Props {
   branches: TopoBranch[];
   horizons: Horizon[];
   schemaSymbols?: SchemaSymbol[];
-  azimuth?: number;
-  elevation?: number;
+  // viewState из рабочей области — что сейчас видно на экране
+  viewState: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
+  // Размер рабочего canvas в px (для пересчёта масштаба)
+  canvasSize: { w: number; h: number };
   zScale?: number;
   is3D?: boolean;
   width: number;
@@ -49,7 +52,6 @@ function computeFrameRect(
   projNodes: ProjNode[],
   visibleBranches: TopoBranch[],
 ): { rx: number; ry: number; rw: number; rh: number } | null {
-  if (projNodes.length === 0) return null;
   const visibleNodeIds = new Set<string>();
   visibleBranches.forEach(b => { visibleNodeIds.add(b.fromId); visibleNodeIds.add(b.toId); });
   const relevant = projNodes.filter(pn => visibleNodeIds.has(pn.node.id));
@@ -88,7 +90,8 @@ function computeFrameRect(
 const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function PrintPreviewCanvas({
   nodes, branches, horizons,
   schemaSymbols = [],
-  azimuth = 0, elevation = 90,
+  viewState,
+  canvasSize,
   zScale = 1, is3D = false,
   width, height,
   branchWidth = 2, branchBorder = 0.4,
@@ -103,6 +106,8 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   showPositions = true,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const { azimuth, elevation } = viewState;
 
   const horizonMap = useMemo(() => {
     const m = new Map<string, Horizon>();
@@ -126,63 +131,52 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   );
   const hasPrintLayer = activePrintLayers.length > 0;
 
-  // Bounding box всех узлов при scale=1 offset=0
-  const bbox = useMemo(() => {
-    if (nodes.length === 0) return null;
-    const tmpProj: ProjOptions = { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-      const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
-      if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
-      if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
-    }
-    return { minX, maxX, minY, maxY };
-  }, [nodes, azimuth, elevation, zScale]);
-
-  // Если слой печати включён — вычисляем view так чтобы РАМКА вписалась в canvas.
-  // Если нет — auto-fit схемы в canvas.
-  const fitView = useMemo(() => {
-    if (!bbox || width <= 0 || height <= 0) return { scale: 1, offsetX: 0, offsetY: 0 };
-
-    if (hasPrintLayer && activePrintLayers[0]?.printLayer) {
-      // Шаг 1: auto-fit схемы чтобы получить проецированные узлы
-      const sw = bbox.maxX - bbox.minX || 1;
-      const sh = bbox.maxY - bbox.minY || 1;
-      const pad = 20;
-      const s0 = Math.min((width - pad * 2) / sw, (height - pad * 2) / sh);
-      const ox0 = (width - sw * s0) / 2 - bbox.minX * s0;
-      const oy0 = (height - sh * s0) / 2 - bbox.minY * s0;
-      const proj0: ProjOptions = { scale: s0, offsetX: ox0, offsetY: oy0, azimuth, elevation, zScale };
-      const pNodes0 = nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0), depth: 0 as const }));
-
-      // Шаг 2: вычисляем bbox рамки при этом view
-      const pl = activePrintLayers[0].printLayer;
-      const rect = computeFrameRect(pl, pNodes0, visibleBranches);
-      if (!rect) return { scale: s0, offsetX: ox0, offsetY: oy0 };
-
-      // Шаг 3: подгоняем scale/offset так чтобы РАМКА = весь canvas
-      const fitS = Math.min(width / (rect.rw || 1), height / (rect.rh || 1));
-      const newS = s0 * fitS;
-      const newOx = (ox0 - rect.rx) * fitS;
-      const newOy = (oy0 - rect.ry) * fitS;
-      return { scale: newS, offsetX: newOx, offsetY: newOy };
+  // Пересчитываем viewState рабочей области под размер превью.
+  // Принцип: то же масштабирование что в рабочей области, но сжатое под prevW×prevH.
+  // Если слой печати — вписываем рамку в весь canvas.
+  const activeView = useMemo((): ProjOptions & { scale: number; offsetX: number; offsetY: number } => {
+    if (width <= 0 || height <= 0) {
+      return { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
     }
 
-    // Обычный auto-fit
-    const sw = bbox.maxX - bbox.minX || 1;
-    const sh = bbox.maxY - bbox.minY || 1;
-    const pad = 20;
-    const s = Math.min((width - pad * 2) / sw, (height - pad * 2) / sh);
+    // Шаг 1: масштабируем viewState рабочей области под размер превью
+    // Коэффициент = min(prevW/canvasW, prevH/canvasH) — вписать рабочую область в превью
+    const cw = canvasSize.w > 0 ? canvasSize.w : width;
+    const ch = canvasSize.h > 0 ? canvasSize.h : height;
+    const k = Math.min(width / cw, height / ch);
+    const sc = viewState.scale * k;
+    const ox = viewState.offsetX * k + (width - cw * k) / 2;
+    const oy = viewState.offsetY * k + (height - ch * k) / 2;
+
+    if (!hasPrintLayer) {
+      return { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
+    }
+
+    // Шаг 2: если слой печати — вычисляем рамку при sc/ox/oy
+    // и подгоняем view чтобы рамка = весь canvas
+    const proj0: ProjOptions = { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
+    const pNodes0: ProjNode[] = nodes.map(n => ({
+      node: n,
+      ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0),
+      depth: 0,
+    }));
+    const pl = activePrintLayers[0].printLayer!;
+    const rect = computeFrameRect(pl, pNodes0, visibleBranches);
+
+    if (!rect || rect.rw <= 0 || rect.rh <= 0) {
+      return { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
+    }
+
+    // Подгоняем: рамка (rx,ry,rw,rh) → (0,0,width,height)
+    const fitS = Math.min(width / rect.rw, height / rect.rh);
     return {
-      scale: s,
-      offsetX: (width - sw * s) / 2 - bbox.minX * s,
-      offsetY: (height - sh * s) / 2 - bbox.minY * s,
+      scale: sc * fitS,
+      offsetX: (ox - rect.rx) * fitS,
+      offsetY: (oy - rect.ry) * fitS,
+      azimuth, elevation, zScale,
     };
-  }, [bbox, width, height, azimuth, elevation, zScale, nodes, visibleBranches, hasPrintLayer, activePrintLayers]);
-
-  const activeView = useMemo(() => ({
-    ...fitView, azimuth, elevation, zScale,
-  }), [fitView, azimuth, elevation, zScale]);
+  }, [viewState, canvasSize, width, height, azimuth, elevation, zScale,
+      hasPrintLayer, activePrintLayers, nodes, visibleBranches]);
 
   const proj = useMemo<ProjOptions>(() => activeView, [activeView]);
 
@@ -235,11 +229,11 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       colorMode, posInnerColors, posOuterColors]);
 
   useImperativeHandle(ref, () => ({
-    getFitView: () => fitView,
+    getFitView: () => ({ scale: activeView.scale, offsetX: activeView.offsetX, offsetY: activeView.offsetY }),
     toDataURL: () => canvasRef.current?.toDataURL("image/png") ?? "",
-  }), [fitView]);
+  }), [activeView]);
 
-  // Вычисляем bbox рамок слоя печати из projNodes текущего view
+  // Рамки слоя печати: bbox из projNodes текущего view
   const printLayerRects = useMemo(() =>
     activePrintLayers
       .map(h => {
@@ -271,8 +265,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       {showPositions && positions.length > 0 && (
         <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
           {positions.map(pos => {
-            if (pos.visible === false) return null;
-            if (pos.x == null) return null;
+            if (pos.visible === false || pos.x == null) return null;
             const p = project3D({ x: pos.x, y: pos.y, z: (pos.z ?? 0) * zScale }, proj);
             const posSF = Math.min(1.0, Math.max(0.25, activeView.scale / 0.5));
             const r = (pos.diameter ?? 13) * 3.78 * posSF / 2;
