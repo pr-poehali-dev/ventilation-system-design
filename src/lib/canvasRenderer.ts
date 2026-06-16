@@ -176,7 +176,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
-    fixedObjectScale = false, pollutedBranchIds,
+    fixedObjectScale = false, pollutedBranchIds, reversedBranchIds,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
