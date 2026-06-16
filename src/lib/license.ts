@@ -1,8 +1,8 @@
 const LICENSE_URL = "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023";
-const STORAGE_KEY = "pvs_license";
-const HW_FP_KEY   = "pvs_hw_fp";      // кэш аппаратного fingerprint
-const MACHINE_UUID_KEY = "pvs_machine_uuid"; // постоянный UUID машины
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 часов
+const STORAGE_KEY      = "pvs_license";
+const HW_FP_KEY        = "pvs_hw_fp";
+const MACHINE_UUID_KEY = "pvs_machine_uuid";
+const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
 
 export interface LicenseInfo {
   licensed: boolean;
@@ -12,26 +12,25 @@ export interface LicenseInfo {
   checkedAt?: number;
 }
 
-// ── Информация о рабочем месте ────────────────────────────────────────────────
 export interface MachineInfo {
-  fingerprint: string;   // SHA-256 стабильных характеристик ПК
-  hostname: string;      // navigator.userAgent краткий вариант
-  platform: string;      // OS + архитектура
-  screen: string;        // разрешение экрана
+  fingerprint: string;    // SHA-256(UUID + железо) — точный, меняется при сбросе PWA
+  hwFingerprint: string;  // SHA-256(только железо) — выживает после переустановки PWA/ОС
+  hostname: string;
+  platform: string;
+  screen: string;
 }
 
-// ── Вычисление SHA-256 через Web Crypto API ───────────────────────────────────
+// ── SHA-256 ───────────────────────────────────────────────────────────────────
 async function sha256hex(text: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-// ── Определение ОС/платформы ──────────────────────────────────────────────────
+// ── ОС/платформа ─────────────────────────────────────────────────────────────
 function detectPlatform(): string {
   const ua = navigator.userAgent;
   const pl = (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform
     ?? navigator.platform ?? "";
-
   if (/Win/i.test(pl) || /Windows/i.test(ua)) {
     const ver = ua.match(/Windows NT ([\d.]+)/);
     const names: Record<string, string> = {
@@ -47,10 +46,9 @@ function detectPlatform(): string {
   return pl || "Unknown";
 }
 
-// ── Постоянный UUID машины ─────────────────────────────────────────────────────
-// Генерируется один раз и хранится в localStorage бессрочно.
-// Не зависит от Canvas/WebGL/браузера — стабилен даже при смене профиля Chrome.
-// При переустановке системы (очистка localStorage) → новый UUID → нужен transfer.
+// ── UUID машины (localStorage) ────────────────────────────────────────────────
+// Живёт пока не сброшен PWA/браузер. Используется как дополнительный компонент
+// для точного fingerprint — чтобы различать два одинаковых ПК.
 function getMachineUUID(): string {
   try {
     const existing = localStorage.getItem(MACHINE_UUID_KEY);
@@ -59,55 +57,49 @@ function getMachineUUID(): string {
     localStorage.setItem(MACHINE_UUID_KEY, uuid);
     return uuid;
   } catch {
-    return "fallback-uuid";
+    return "fallback";
   }
 }
 
-// ── Стабильные характеристики ПК ─────────────────────────────────────────────
-// UUID (постоянный) + экран + часовой пояс + платформа + CPU/RAM
-// Canvas и WebGL убраны — они нестабильны (режим приватности, обновления GPU)
-async function getHardwareComponents(): Promise<string[]> {
+// ── Аппаратные компоненты (без UUID) ─────────────────────────────────────────
+// Эти данные НЕ зависят от localStorage — выживают после переустановки PWA.
+// Используются как hw_fingerprint для восстановления лицензии после переустановки.
+function getHwComponents(): string[] {
   return [
-    // Постоянный UUID машины — основа fingerprint
-    getMachineUUID(),
-    // Экран
     `${screen.width}x${screen.height}x${screen.colorDepth}`,
-    // Часовой пояс
     Intl.DateTimeFormat().resolvedOptions().timeZone,
-    // Язык браузера
     navigator.language,
-    // Количество логических процессоров
     String(navigator.hardwareConcurrency ?? 0),
-    // Платформа
     detectPlatform(),
-    // Память (если доступна)
     String((navigator as { deviceMemory?: number }).deviceMemory ?? 0),
   ];
 }
 
-// ── Генерация стабильного fingerprint ─────────────────────────────────────────
-// Кэшируется в localStorage. При переустановке ОС/очистке данных — new UUID → transfer.
+// ── Генерация MachineInfo ─────────────────────────────────────────────────────
+// fingerprint    = SHA256(UUID + железо) — точный идентификатор сессии
+// hwFingerprint  = SHA256(только железо) — стабилен при переустановке PWA
 export async function getMachineInfo(): Promise<MachineInfo> {
-  // Проверяем кэш (localStorage для персистентности между сессиями)
+  // Кэш на 30 дней
   try {
     const cached = localStorage.getItem(HW_FP_KEY);
     if (cached) {
       const parsed = JSON.parse(cached) as MachineInfo & { cachedAt: number };
-      // Кэш живёт 30 дней, но UUID в localStorage постоянен — fingerprint не изменится
-      if (Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000) {
-        return { fingerprint: parsed.fingerprint, hostname: parsed.hostname,
-                 platform: parsed.platform, screen: parsed.screen };
+      if (Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000 && parsed.hwFingerprint) {
+        return { fingerprint: parsed.fingerprint, hwFingerprint: parsed.hwFingerprint,
+                 hostname: parsed.hostname, platform: parsed.platform, screen: parsed.screen };
       }
     }
   } catch { /* ignore */ }
 
-  const components = await getHardwareComponents();
-  const raw = components.join("||");
-  const fingerprint = await sha256hex(raw);
+  const hwComponents = getHwComponents();
+  const hwFingerprint = await sha256hex(hwComponents.join("||"));
+
+  // Точный fingerprint = UUID + аппаратные компоненты
+  const uuid = getMachineUUID();
+  const fingerprint = await sha256hex([uuid, ...hwComponents].join("||"));
 
   const platform = detectPlatform();
-  const screen   = `${window.screen.width}×${window.screen.height}`;
-
+  const scr = `${window.screen.width}×${window.screen.height}`;
   const ua = navigator.userAgent;
   const browser = ua.includes("Chrome") && !ua.includes("Edg") ? "Chrome"
     : ua.includes("Firefox") ? "Firefox"
@@ -115,7 +107,7 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     : ua.includes("Edg") ? "Edge" : "Browser";
   const hostname = `${browser} / ${platform}`;
 
-  const info: MachineInfo = { fingerprint, hostname, platform, screen };
+  const info: MachineInfo = { fingerprint, hwFingerprint, hostname, platform, screen: scr };
 
   try {
     localStorage.setItem(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
@@ -124,18 +116,15 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   return info;
 }
 
-// ── Загрузить кэш из localStorage ────────────────────────────────────────────
+// ── Кэш лицензии ─────────────────────────────────────────────────────────────
 export function loadCachedLicense(): LicenseInfo | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as LicenseInfo & { checkedAt?: number };
-    const age = Date.now() - (data.checkedAt ?? 0);
-    if (age > CACHE_TTL_MS) return null;
+    if (Date.now() - (data.checkedAt ?? 0) > CACHE_TTL_MS) return null;
     return data;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function saveCache(info: LicenseInfo) {
@@ -147,17 +136,15 @@ function saveCache(info: LicenseInfo) {
 export function clearLicenseCache() {
   try {
     localStorage.removeItem(STORAGE_KEY);
-    // Сбрасываем кэш hw fingerprint — пересчитается при следующем запуске
     localStorage.removeItem(HW_FP_KEY);
   } catch { /* ignore */ }
 }
 
-// ── Сброс кэша HW fingerprint (без сброса лицензии) ──────────────────────────
 export function clearFingerprintCache() {
   try { localStorage.removeItem(HW_FP_KEY); } catch { /* ignore */ }
 }
 
-// ── Проверить machine ID на сервере ──────────────────────────────────────────
+// ── Проверка лицензии ─────────────────────────────────────────────────────────
 export async function checkLicense(fingerprint: string, machineInfo?: MachineInfo): Promise<LicenseInfo> {
   const res = await fetch(LICENSE_URL, {
     method: "POST",
@@ -165,12 +152,17 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
     body: JSON.stringify({
       action: "check",
       fingerprint,
-      hostname: machineInfo?.hostname,
-      platform: machineInfo?.platform,
+      hw_fingerprint: machineInfo?.hwFingerprint,
+      hostname:    machineInfo?.hostname,
+      platform:    machineInfo?.platform,
       screen_info: machineInfo?.screen,
     }),
   });
   const data = await res.json();
+
+  // Если сервер обновил fingerprint (восстановление после переустановки) — сбрасываем кэш
+  if (data.fingerprint_updated) clearFingerprintCache();
+
   const info: LicenseInfo = {
     licensed: !!data.licensed,
     key: data.key,
@@ -181,7 +173,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
   return info;
 }
 
-// ── Активировать лицензионный ключ ────────────────────────────────────────────
+// ── Активация лицензии ────────────────────────────────────────────────────────
 export async function activateLicense(
   fingerprint: string,
   key: string,
@@ -193,23 +185,28 @@ export async function activateLicense(
     body: JSON.stringify({
       action: "activate",
       fingerprint,
+      hw_fingerprint: machineInfo?.hwFingerprint,
       key,
-      hostname: machineInfo?.hostname,
-      platform: machineInfo?.platform,
+      hostname:    machineInfo?.hostname,
+      platform:    machineInfo?.platform,
       screen_info: machineInfo?.screen,
     }),
   });
   const data = await res.json();
   if (!res.ok) {
     const msgs: Record<string, string> = {
-      key_not_found: "Ключ не найден",
+      key_not_found:      "Ключ не найден",
       invalid_key_format: "Неверный формат ключа (PVS-XXXX-XXXX-XXXX-XXXX)",
-      license_disabled: "Лицензия отозвана",
-      license_expired: "Срок лицензии истёк",
-      seats_exhausted: `Все ${data.max_seats ?? 5} рабочих мест заняты`,
+      license_disabled:   "Лицензия отозвана",
+      license_expired:    "Срок лицензии истёк",
+      seats_exhausted:    `Все ${data.max_seats ?? 5} рабочих мест заняты`,
     };
     throw new Error(msgs[data.error] ?? "Ошибка активации");
   }
+
+  // Если сервер восстановил seat по hw_fingerprint — сбрасываем кэш fp чтобы пересчитать
+  if (data.fingerprint_updated) clearFingerprintCache();
+
   const info: LicenseInfo = {
     licensed: true,
     key: data.key,

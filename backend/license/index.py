@@ -1,9 +1,13 @@
 """
 Лицензионный сервис ПВ-Системы.
-POST / body: {action: "check"|"activate"|"transfer", fingerprint, key?, hostname?, platform?, screen_info?}
-  check    — есть ли уже активный fingerprint в БД; обновляет сведения о ПК
-  activate — привязать ключ к fingerprint; сохраняет сведения о ПК
-  transfer — перенос лицензии на новый fingerprint (при переустановке)
+POST / body: {action, fingerprint, hw_fingerprint?, key?, hostname?, platform?, screen_info?}
+
+  fingerprint    — SHA256(UUID + железо): точный, меняется при сбросе PWA/браузера
+  hw_fingerprint — SHA256(только железо): стабилен при переустановке PWA/ОС
+
+  check    — проверить лицензию по fingerprint; если не найден — искать по hw_fingerprint
+  activate — привязать ключ к месту; если hw_fingerprint совпадает — обновить fingerprint
+  transfer — перенос лицензии на новый fingerprint (ручная операция)
 """
 import json
 import os
@@ -38,8 +42,12 @@ def validate_key(key: str) -> bool:
     return bool(re.match(r"^PVS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$", key))
 
 
+def fp_hash(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()[:64]
+
+
 def handler(event: dict, context) -> dict:
-    """Лицензионный сервис — проверка и активация по аппаратному fingerprint."""
+    """Лицензионный сервис — проверка и активация по fingerprint + hw_fingerprint."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -50,42 +58,58 @@ def handler(event: dict, context) -> dict:
         except Exception:
             return resp(400, {"error": "invalid_json"})
 
-    action      = body.get("action", "").strip()
-    fingerprint = body.get("fingerprint", "").strip()[:128]
-    user_agent  = (event.get("headers") or {}).get("user-agent", "")[:500]
-
-    # Дополнительные сведения о рабочем месте
-    hostname    = (body.get("hostname") or "")[:200]
-    platform    = (body.get("platform") or "")[:100]
-    screen_info = (body.get("screen_info") or "")[:50]
+    action         = body.get("action", "").strip()
+    fingerprint    = body.get("fingerprint", "").strip()[:128]
+    hw_fp_raw      = body.get("hw_fingerprint", "").strip()[:128]
+    user_agent     = (event.get("headers") or {}).get("user-agent", "")[:500]
+    hostname       = (body.get("hostname") or "")[:200]
+    platform       = (body.get("platform") or "")[:100]
+    screen_info    = (body.get("screen_info") or "")[:50]
 
     if not fingerprint:
         return resp(400, {"error": "fingerprint_required"})
 
-    fp_hash = hashlib.sha256(fingerprint.encode()).hexdigest()[:64]
+    fph    = fp_hash(fingerprint)
+    hw_fph = fp_hash(hw_fp_raw) if hw_fp_raw else None
 
     conn = get_conn()
     cur  = conn.cursor()
 
     # ── check ──────────────────────────────────────────────────────────────────
     if action == "check":
+        # 1. Ищем по точному fingerprint
         cur.execute("""
             SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
                    (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
-                   s.id AS seat_id
+                   s.id AS seat_id, FALSE AS hw_match
             FROM license_seats s
             JOIN licenses l ON l.id = s.license_id
             WHERE s.fingerprint = %s
-            ORDER BY s.activated_at DESC
-            LIMIT 1
-        """, (fp_hash,))
+            ORDER BY s.activated_at DESC LIMIT 1
+        """, (fph,))
         row = cur.fetchone()
+
+        # 2. Не найден по точному — ищем по hw_fingerprint (переустановка PWA)
+        hw_restored = False
+        if not row and hw_fph:
+            cur.execute("""
+                SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
+                       (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
+                       s.id AS seat_id, TRUE AS hw_match
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.hw_fingerprint = %s
+                ORDER BY s.last_seen_at DESC LIMIT 1
+            """, (hw_fph,))
+            row = cur.fetchone()
+            if row:
+                hw_restored = True
 
         if not row:
             conn.close()
             return resp(200, {"licensed": False})
 
-        key, owner, max_seats, is_active, expires_at, used_seats, seat_id = row
+        key, owner, max_seats, is_active, expires_at, used_seats, seat_id, _ = row
 
         if not is_active:
             conn.close()
@@ -95,16 +119,29 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return resp(200, {"licensed": False, "reason": "license_expired"})
 
-        # Обновляем last_seen_at и сведения о ПК (hostname, platform, screen_info)
-        cur.execute("""
-            UPDATE license_seats
-            SET last_seen_at = NOW(),
-                user_agent   = COALESCE(NULLIF(%s, ''), user_agent),
-                hostname     = COALESCE(NULLIF(%s, ''), hostname),
-                platform     = COALESCE(NULLIF(%s, ''), platform),
-                screen_info  = COALESCE(NULLIF(%s, ''), screen_info)
-            WHERE id = %s
-        """, (user_agent, hostname, platform, screen_info, seat_id))
+        # Обновляем last_seen_at; если восстановили по hw_fp — обновляем fingerprint
+        if hw_restored:
+            cur.execute("""
+                UPDATE license_seats
+                SET last_seen_at = NOW(),
+                    fingerprint  = %s,
+                    user_agent   = COALESCE(NULLIF(%s, ''), user_agent),
+                    hostname     = COALESCE(NULLIF(%s, ''), hostname),
+                    platform     = COALESCE(NULLIF(%s, ''), platform),
+                    screen_info  = COALESCE(NULLIF(%s, ''), screen_info)
+                WHERE id = %s
+            """, (fph, user_agent, hostname, platform, screen_info, seat_id))
+        else:
+            cur.execute("""
+                UPDATE license_seats
+                SET last_seen_at = NOW(),
+                    user_agent   = COALESCE(NULLIF(%s, ''), user_agent),
+                    hostname     = COALESCE(NULLIF(%s, ''), hostname),
+                    platform     = COALESCE(NULLIF(%s, ''), platform),
+                    screen_info  = COALESCE(NULLIF(%s, ''), screen_info)
+                WHERE id = %s
+            """, (user_agent, hostname, platform, screen_info, seat_id))
+
         conn.commit()
         conn.close()
         return resp(200, {
@@ -112,6 +149,7 @@ def handler(event: dict, context) -> dict:
             "key": key,
             "owner": owner,
             "seats": {"max": max_seats, "used": int(used_seats)},
+            "fingerprint_updated": hw_restored,
         })
 
     # ── activate ───────────────────────────────────────────────────────────────
@@ -141,15 +179,28 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return resp(403, {"error": "license_expired"})
 
-        # Ищем существующий seat по fingerprint для этой лицензии
+        hw_restored = False
+
+        # 1. Ищем существующий seat по точному fingerprint
         cur.execute(
             "SELECT id FROM license_seats WHERE license_id = %s AND fingerprint = %s",
-            (lic_id, fp_hash)
+            (lic_id, fph)
         )
         existing = cur.fetchone()
 
+        # 2. Не найден по точному — ищем по hw_fingerprint для ЭТОГО ключа
+        #    Это случай: переустановка PWA на том же железе с тем же ключом
+        if not existing and hw_fph:
+            cur.execute(
+                "SELECT id FROM license_seats WHERE license_id = %s AND hw_fingerprint = %s",
+                (lic_id, hw_fph)
+            )
+            existing = cur.fetchone()
+            if existing:
+                hw_restored = True
+
         if not existing:
-            # Проверяем лимит мест
+            # Новое место — проверяем лимит
             cur.execute("SELECT COUNT(*) FROM license_seats WHERE license_id = %s", (lic_id,))
             used = cur.fetchone()[0]
             if used >= max_seats:
@@ -159,35 +210,40 @@ def handler(event: dict, context) -> dict:
                     "max_seats": max_seats,
                     "used_seats": int(used),
                 })
-            # Новое место — сохраняем все сведения о ПК
+            # Создаём новое место с обоими fingerprint
             cur.execute("""
                 INSERT INTO license_seats
-                    (license_id, fingerprint, user_agent, hostname, platform, screen_info)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (lic_id, fp_hash, user_agent or None,
+                    (license_id, fingerprint, hw_fingerprint, user_agent, hostname, platform, screen_info)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (lic_id, fph, hw_fph, user_agent or None,
                   hostname or None, platform or None, screen_info or None))
         else:
-            # Место уже есть — обновляем сведения о ПК и last_seen_at
+            # Место уже есть — обновляем fingerprint (мог измениться после переустановки)
+            # и hw_fingerprint (на случай если раньше был NULL)
             cur.execute("""
                 UPDATE license_seats
-                SET last_seen_at = NOW(),
-                    user_agent   = COALESCE(NULLIF(%s, ''), user_agent),
-                    hostname     = COALESCE(NULLIF(%s, ''), hostname),
-                    platform     = COALESCE(NULLIF(%s, ''), platform),
-                    screen_info  = COALESCE(NULLIF(%s, ''), screen_info)
+                SET last_seen_at   = NOW(),
+                    fingerprint    = %s,
+                    hw_fingerprint = COALESCE(%s, hw_fingerprint),
+                    user_agent     = COALESCE(NULLIF(%s, ''), user_agent),
+                    hostname       = COALESCE(NULLIF(%s, ''), hostname),
+                    platform       = COALESCE(NULLIF(%s, ''), platform),
+                    screen_info    = COALESCE(NULLIF(%s, ''), screen_info)
                 WHERE id = %s
-            """, (user_agent, hostname, platform, screen_info, existing[0]))
+            """, (fph, hw_fph, user_agent, hostname, platform, screen_info, existing[0]))
 
         conn.commit()
         cur.execute("SELECT COUNT(*) FROM license_seats WHERE license_id = %s", (lic_id,))
         used_seats = cur.fetchone()[0]
         conn.commit()
+        conn.close()
 
         return resp(200, {
             "licensed": True,
             "key": license_key,
             "owner": owner,
             "seats": {"max": max_seats, "used": int(used_seats)},
+            "fingerprint_updated": hw_restored,
         })
 
     # ── transfer ────────────────────────────────────────────────────────────────
@@ -202,14 +258,14 @@ def handler(event: dict, context) -> dict:
             conn.close()
             return resp(400, {"error": "new_fingerprint_required"})
 
-        new_fp_hash = hashlib.sha256(new_fp_raw.encode()).hexdigest()[:64]
+        new_fph = fp_hash(new_fp_raw)
 
         cur.execute("""
             SELECT s.id FROM license_seats s
             JOIN licenses l ON l.id = s.license_id
             WHERE s.fingerprint = %s AND l.key = %s AND l.is_active = TRUE
             LIMIT 1
-        """, (fp_hash, license_key))
+        """, (fph, license_key))
         seat = cur.fetchone()
         if not seat:
             conn.close()
@@ -217,14 +273,15 @@ def handler(event: dict, context) -> dict:
 
         cur.execute("""
             UPDATE license_seats
-            SET fingerprint  = %s,
-                last_seen_at = NOW(),
-                user_agent   = COALESCE(NULLIF(%s, ''), user_agent),
-                hostname     = COALESCE(NULLIF(%s, ''), hostname),
-                platform     = COALESCE(NULLIF(%s, ''), platform),
-                screen_info  = COALESCE(NULLIF(%s, ''), screen_info)
+            SET fingerprint    = %s,
+                hw_fingerprint = COALESCE(%s, hw_fingerprint),
+                last_seen_at   = NOW(),
+                user_agent     = COALESCE(NULLIF(%s, ''), user_agent),
+                hostname       = COALESCE(NULLIF(%s, ''), hostname),
+                platform       = COALESCE(NULLIF(%s, ''), platform),
+                screen_info    = COALESCE(NULLIF(%s, ''), screen_info)
             WHERE id = %s
-        """, (new_fp_hash, user_agent, hostname, platform, screen_info, seat[0]))
+        """, (new_fph, hw_fph, user_agent, hostname, platform, screen_info, seat[0]))
         conn.commit()
         conn.close()
         return resp(200, {"ok": True, "transferred": True})

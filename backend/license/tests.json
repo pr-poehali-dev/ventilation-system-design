@@ -4,7 +4,7 @@
       "name": "Check unknown fingerprint returns not licensed",
       "method": "POST",
       "path": "/",
-      "body": {"action": "check", "fingerprint": "test-unknown-fp-xyz-999", "hostname": "Chrome / Windows 10", "platform": "Windows 10", "screen_info": "1920x1080"},
+      "body": {"action": "check", "fingerprint": "test-unknown-fp-xyz-999", "hw_fingerprint": "test-unknown-hw-fp-xyz-999", "hostname": "Chrome / Windows 10", "platform": "Windows 10", "screen_info": "1920x1080"},
       "expectedStatus": 200,
       "expectedBody": {"licensed": false},
       "bodyMatcher": "partial"
