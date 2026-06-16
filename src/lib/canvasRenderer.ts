@@ -169,7 +169,7 @@ function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
 export function renderCanvas(opts: CanvasRenderOptions) {
   const {
     ctx, width, height, view, proj, is3D,
-    visibleBranches, projNodesMap, projNodes,
+    branches, visibleBranches, projNodesMap, projNodes,
     selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
