@@ -127,6 +127,22 @@
         100% { left: 100%; }
       }
     </style>
+    <!-- Блокируем Ctrl+колесо на уровне браузера/PWA — масштабирует только схема внутри приложения -->
+    <script>
+      (function() {
+        document.addEventListener('wheel', function(e) {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+          }
+        }, { passive: false, capture: true });
+        // Блокируем жест pinch-zoom (touch) на десктопных PWA / тачпадах
+        document.addEventListener('touchmove', function(e) {
+          if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+          }
+        }, { passive: false, capture: true });
+      })();
+    </script>
     <meta name="description" content="ПВ-Система. Проектирование вентиляции и водоснабжения рудников">
     <meta name="author" content="poehali.dev"/>
     <link rel="icon" type="image/png" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/files/favicon-1781342366250.png">
