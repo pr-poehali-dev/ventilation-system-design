@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import {
   type TopoNode, type TopoBranch, type Horizon, type ProjOptions,
-  project3D,
 } from "@/lib/topology";
 import {
   renderCanvas, hitNodeCanvas, hitBranchCanvas,
@@ -259,21 +258,5 @@ export default function CanvasLayer(props: CanvasLayerProps) {
 // Реэкспорт hit-функций для использования в TopoCanvas
 export { hitNodeCanvas, hitBranchCanvas };
 
-// Утилита: создать projNodesMap из projNodes
-export function buildProjNodesMap(projNodes: ProjNode[]): Map<string, ProjNode> {
-  const m = new Map<string, ProjNode>();
-  for (const p of projNodes) m.set(p.node.id, p);
-  return m;
-}
-
-// Утилита: вычислить projNodes
-export function computeProjNodes(
-  nodes: TopoNode[],
-  proj: ProjOptions,
-  zScale: number,
-): ProjNode[] {
-  return nodes.map((n) => {
-    const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj);
-    return { node: n, sx: p.sx, sy: p.sy, depth: p.depth };
-  });
-}
+// Реэкспорт утилит из canvasUtils (вынесены чтобы не ломать Fast Refresh)
+export { buildProjNodesMap, computeProjNodes } from "@/lib/canvasUtils";

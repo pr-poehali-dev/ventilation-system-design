@@ -4,7 +4,7 @@
 import { useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from "react";
 import {
   type TopoNode, type TopoBranch, type Horizon, type ProjOptions,
-  project3D, OVERVIEW_HORIZON_ID,
+  project3D,
 } from "@/lib/topology";
 import { renderCanvas, type ProjNode, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
@@ -124,9 +124,9 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     [branches, horizonMap],
   );
 
-  // Активные слои печати (только OVERVIEW)
+  // Активные слои печати (все горизонты с включённым слоем)
   const activePrintLayers = useMemo(
-    () => horizons.filter(h => h.printLayer?.visible && h.id === OVERVIEW_HORIZON_ID),
+    () => horizons.filter(h => h.printLayer?.visible),
     [horizons],
   );
   const hasPrintLayer = activePrintLayers.length > 0;
