@@ -1,0 +1,41 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Missing SVG returns 400",
+      "method": "POST",
+      "path": "/",
+      "body": {"svg": "", "paper": "A3"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "svg_required"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Invalid JSON returns 400",
+      "method": "POST",
+      "path": "/",
+      "body": {"paper": "A3"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "svg_required"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Valid SVG converts to PDF",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><rect x=\"10\" y=\"10\" width=\"80\" height=\"80\" fill=\"blue\"/><text x=\"50\" y=\"55\" text-anchor=\"middle\" font-size=\"12\" fill=\"white\">TEST</text></svg>",
+        "paper": "A4",
+        "orientation": "portrait"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"paper": "A4"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import { type Position } from "@/lib/positions";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 import { jsPDF } from "jspdf";
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
+import { generateSvg, downloadSvg } from "@/lib/svgExporter";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -273,7 +274,7 @@ export default function PrintDialog({
   }, []);
 
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf">("png");
+  const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf"|"pdf-vector">("png");
   const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -548,7 +549,10 @@ export default function PrintDialog({
     const canvasW = mmToPx(paper.w);
     const canvasH = mmToPx(paper.h);
 
-    const MAX_PX = 16384;
+    // Мобильные браузеры ограничены ~16384px, десктоп держит до 32768px.
+    // Для плоттерной печати A0 @ 600dpi нужно ~28346x40126px — укладывается в 32768.
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+    const MAX_PX = isMobile ? 8192 : 32768;
     const safeW = Math.min(canvasW, MAX_PX);
     const safeH = Math.min(canvasH, MAX_PX);
     const effectiveDpi = dpi * Math.min(safeW / canvasW, safeH / canvasH);
@@ -786,22 +790,80 @@ body{background:white;font-family:Arial,sans-serif}
   }, [tiles, paper, marginBottom, marginRight, projectName,
       showPageNumbers, renderTileToCanvas, closeCtxMenu]);
 
+  // ─── Вспомогательная функция: строим ProjOptions для SVG/PDF-vector ─────
+  const buildProjForExport = useCallback(() => {
+    const { sc, offsetX, offsetY } = baseView;
+    return {
+      scale: sc, offsetX, offsetY,
+      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
+    };
+  }, [baseView, viewState, zScale]);
+
   // ─── Экспорт ─────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
+    // ── SVG (векторный, масштабируется бесконечно) ───────────────────────
     if (exportFormat === "svg") {
-      const raw = getSvgRaw ? getSvgRaw() : "";
-      if (!raw || raw.startsWith("data:")) {
-        alert("SVG-экспорт недоступен. Используйте PNG.");
-        return;
-      }
-      const blob = new Blob([raw], { type: "image/svg+xml" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${projectName}.svg`;
-      a.click();
+      const proj = buildProjForExport();
+      const svgStr = generateSvg({
+        nodes, branches, horizons, horizonMap: baseView.horizonMap,
+        proj, viewState, zScale,
+        is3D: baseView.isScene3D,
+        branchWidth, branchBorder, thinLines, colorByHorizon,
+        infoConfig, unitsConfig, colorMode,
+        canvasW: Math.round(paper.w * 3.78), // мм → px @ 96dpi
+        canvasH: Math.round(paper.h * 3.78),
+        title: projectName,
+      });
+      downloadSvg(svgStr, projectName);
       setShowExportDialog(false);
       return;
     }
+
+    // ── PDF векторный (SVG → PDF через бэкенд, идеально для плоттера) ────
+    if (exportFormat === "pdf-vector") {
+      setPdfExporting(true);
+      try {
+        const proj = buildProjForExport();
+        const svgStr = generateSvg({
+          nodes, branches, horizons, horizonMap: baseView.horizonMap,
+          proj, viewState, zScale,
+          is3D: baseView.isScene3D,
+          branchWidth, branchBorder, thinLines, colorByHorizon,
+          infoConfig, unitsConfig, colorMode,
+          canvasW: Math.round(paper.w * 3.78),
+          canvasH: Math.round(paper.h * 3.78),
+          title: projectName,
+        });
+        const isLandscape = paper.w > paper.h;
+        const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            svg: svgStr,
+            paper: "A3", // используем A3 как базу, cairosvg масштабирует
+            orientation: isLandscape ? "landscape" : "portrait",
+          }),
+        });
+        if (!res.ok) throw new Error("Ошибка сервера");
+        const data = await res.json() as { pdf?: string; error?: string };
+        if (!data.pdf) throw new Error(data.error ?? "Нет данных");
+        // base64 → Blob → скачать
+        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${projectName}-vector.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        setShowExportDialog(false);
+      } catch (e) {
+        alert(`Ошибка векторного PDF: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setPdfExporting(false);
+      }
+      return;
+    }
+
     // PDF и растровые форматы
     setPdfExporting(true);
     try {
@@ -867,7 +929,9 @@ body{background:white;font-family:Arial,sans-serif}
     }
   }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw,
       renderTileToCanvas, tiles, paper, showPageNumbers,
-      marginLeft, marginRight, marginBottom]);
+      marginLeft, marginRight, marginBottom,
+      buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
+      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
@@ -1322,27 +1386,28 @@ body{background:white;font-family:Arial,sans-serif}
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Формат файла:</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {(["png","jpg","bmp","tiff","svg","pdf"] as const).map(f => (
+                  {(["png","jpg","bmp","tiff","svg","pdf","pdf-vector"] as const).map(f => (
                     <button key={f} onClick={() => setExportFormat(f)}
                       className="py-1.5 rounded border text-[12px] font-semibold uppercase"
                       style={{
                         background: exportFormat === f ? "#2563eb" : "white",
                         color: exportFormat === f ? "white" : "#1a1a1a",
                         borderColor: exportFormat === f ? "#2563eb" : "#9ca3af",
-                      }}>{f.toUpperCase()}</button>
+                      }}>{f === "pdf-vector" ? "PDF ✦" : f.toUpperCase()}</button>
                   ))}
                 </div>
                 <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>
-                  {exportFormat === "png"  && "PNG — без потерь, рекомендуется"}
-                  {exportFormat === "jpg"  && "JPEG — с потерями, меньше размер"}
-                  {exportFormat === "bmp"  && "BMP — без сжатия"}
-                  {exportFormat === "tiff" && "TIFF — для полиграфии"}
-                  {exportFormat === "svg"  && "SVG — векторный формат"}
-                  {exportFormat === "pdf"  && "PDF — векторный документ с высоким DPI, все страницы"}
+                  {exportFormat === "png"        && "PNG — растр, без потерь. Рекомендуется для экрана."}
+                  {exportFormat === "jpg"        && "JPEG — растр, с потерями, меньше размер"}
+                  {exportFormat === "bmp"        && "BMP — растр, без сжатия"}
+                  {exportFormat === "tiff"       && "TIFF — растр, для полиграфии"}
+                  {exportFormat === "svg"        && "SVG — вектор, идеально для плоттера, масштаб бесконечен"}
+                  {exportFormat === "pdf"        && "PDF — растровый, все страницы, выбранный DPI"}
+                  {exportFormat === "pdf-vector" && "PDF ✦ — векторный, идеально для плоттера. Конвертируется на сервере из SVG."}
                 </div>
               </div>
 
-              {!["svg"].includes(exportFormat) && (
+              {!["svg", "pdf-vector"].includes(exportFormat) && (
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Разрешение (DPI):</div>
                   <div className="flex gap-2 mb-2">
@@ -1384,8 +1449,8 @@ body{background:white;font-family:Arial,sans-serif}
                 className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60 disabled:cursor-wait"
                 style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
                 {pdfExporting
-                  ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />Генерация PDF...</>
-                  : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat.toUpperCase()}</>
+                  ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />{exportFormat === "pdf-vector" ? "Конвертация SVG→PDF..." : "Генерация PDF..."}</>
+                  : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat === "pdf-vector" ? "PDF ✦ вектор" : exportFormat.toUpperCase()}</>
                 }
               </button>
               <button onClick={() => setShowExportDialog(false)} disabled={pdfExporting}
