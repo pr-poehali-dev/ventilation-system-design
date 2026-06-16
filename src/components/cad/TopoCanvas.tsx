@@ -378,10 +378,17 @@ export default function TopoCanvas(props: Props) {
   const restoredViewNonce = useRef<number>(0);
   useEffect(() => {
     if (!restoreView) return;
-    // Устанавливаем nonce НЕМЕДЛЕННО чтобы заблокировать любые fitToScreen
-    restoredViewNonce.current = Date.now();
+    const restoredScale = restoreView.scale ?? 0.4;
+    // Если сохранённый масштаб слишком мал — возможно файл открывается с другим xyScale
+    // или координаты схемы изменились. В этом случае НЕ блокируем fitToScreen.
+    // Порог: если scale < 0.001 — схема будет субпиксельной, лучше сделать fit.
+    const scaleIsUsable = restoredScale >= 0.001;
+    if (scaleIsUsable) {
+      // Устанавливаем nonce НЕМЕДЛЕННО чтобы заблокировать любые fitToScreen
+      restoredViewNonce.current = Date.now();
+    }
     setView((v) => ({
-      scale: restoreView.scale ?? v.scale,
+      scale: restoredScale,
       offsetX: restoreView.offsetX ?? v.offsetX,
       offsetY: restoreView.offsetY ?? v.offsetY,
       azimuth: restoreView.azimuth ?? v.azimuth,
