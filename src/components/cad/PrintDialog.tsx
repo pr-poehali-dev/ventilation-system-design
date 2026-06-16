@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
-import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
+import { type TopoNode, type TopoBranch, type Horizon, project3D, PAPER_SIZES_MM, OVERVIEW_HORIZON_ID } from "@/lib/topology";
 import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -383,31 +383,65 @@ export default function PrintDialog({
     return { minX, maxX, minY, maxY, w: maxX - minX || 1, h: maxY - minY || 1 };
   }, [nodes, viewState.azimuth, viewState.elevation, zScale]);
 
+  // ─── Активный слой печати (если есть) ────────────────────────────────
+  const activePrintHorizon = useMemo(
+    () => horizons.find(h => h.printLayer?.visible) ?? null,
+    [horizons],
+  );
+  const hasPrintLayer = activePrintHorizon !== null;
+
   // ─── Вычисление базового view для страницы (150dpi) ─────────────────
+  // Если слой печати включён — 1 лист, схема вписывается в рамку.
   // userScale = null → fit в 1 страницу; userScale = N → абсолютный px-scale
   const baseView = useMemo(() => {
     const isScene3D = viewState.elevation < 89.5 || viewState.azimuth !== 0;
     const DPI = 150;
     const mmToPx = (mm: number) => mm * DPI / 25.4;
-    const pageW = mmToPx(workArea.w);   // размер одной страницы в px при 150dpi
-    const pageH = mmToPx(workArea.h);
     const horizonMap = new Map(horizons.map(h => [h.id, h]));
     const { minX, minY, w: bw, h: bh } = schemaBbox;
-    // pad = 5мм в единицах 150dpi px — одинаково для печати и превью (пропорционально)
+
+    if (hasPrintLayer && activePrintHorizon?.printLayer) {
+      // Режим слоя печати: вписать всю схему в один лист
+      // Рамка занимает весь лист (с полями). Схема центрируется внутри рамки.
+      const pl = activePrintHorizon.printLayer;
+      const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES_MM;
+      const plMm = PAPER_SIZES_MM[plFmt] ?? PAPER_SIZES_MM["A3"];
+      const plOri = pl.orientation ?? "landscape";
+      const plW = plOri === "landscape" ? plMm.h : plMm.w;
+      const plH = plOri === "landscape" ? plMm.w : plMm.h;
+      // Рабочая область рамки в px@150dpi (поля 8% от меньшей стороны)
+      const padMmPl = Math.min(plW, plH) * 0.05;
+      const padPx = padMmPl * DPI / 25.4;
+      const frameW = mmToPx(plW) - padPx * 2;
+      const frameH = mmToPx(plH) - padPx * 2;
+      // Вписать схему в рамку с отступом
+      const innerPad = Math.min(frameW, frameH) * 0.05;
+      const fitSc = Math.min((frameW - innerPad * 2) / (bw || 1), (frameH - innerPad * 2) / (bh || 1));
+      const sc = userScale !== null ? fitSc * userScale : fitSc;
+      // Центрировать схему в рамке (рамка = весь лист с полями)
+      const frameOffX = padPx + innerPad + (frameW - innerPad * 2 - bw * sc) / 2;
+      const frameOffY = padPx + innerPad + (frameH - innerPad * 2 - bh * sc) / 2;
+      const defaultOffsetX = frameOffX - minX * sc;
+      const defaultOffsetY = frameOffY - minY * sc;
+      const offsetX = userOffsetX ?? defaultOffsetX;
+      const offsetY = userOffsetY ?? defaultOffsetY;
+      const pageW = mmToPx(paper.w);
+      const pageH = mmToPx(paper.h);
+      return { sc, fitSc, offsetX, offsetY, defaultOffsetX, defaultOffsetY, isScene3D, pageW, pageH, horizonMap };
+    }
+
+    const pageW = mmToPx(workArea.w);
+    const pageH = mmToPx(workArea.h);
     const padMm = 5;
     const pad = padMm * DPI / 25.4;
-    // fit-scale: вписать схему в 1 страницу
-    const fitSc = Math.min((pageW - pad * 2) / bw, (pageH - pad * 2) / bh);
-    // Пользовательский scale в px: userScale хранится как процент/100 от fitSc
-    // т.е. userScale=1.0 → 100% = fit; userScale=2.0 → 200% = вдвое крупнее
+    const fitSc = Math.min((pageW - pad * 2) / (bw || 1), (pageH - pad * 2) / (bh || 1));
     const sc = userScale !== null ? fitSc * userScale : fitSc;
-    // Дефолтный offset: левый верхний угол + pad
     const defaultOffsetX = pad - minX * sc;
     const defaultOffsetY = pad - minY * sc;
     const offsetX = userOffsetX ?? defaultOffsetX;
     const offsetY = userOffsetY ?? defaultOffsetY;
     return { sc, fitSc, offsetX, offsetY, defaultOffsetX, defaultOffsetY, isScene3D, pageW, pageH, horizonMap };
-  }, [schemaBbox, horizons, viewState, zScale, workArea, userScale, userOffsetX, userOffsetY]);
+  }, [schemaBbox, horizons, viewState, zScale, workArea, paper, userScale, userOffsetX, userOffsetY, hasPrintLayer, activePrintHorizon]);
 
   // Синхронизация scaleDisplay с реальным масштабом (только при userScale=null)
   useEffect(() => {
@@ -426,14 +460,16 @@ export default function PrintDialog({
 
   // ─── Вычисление тайлов (сетка страниц) ───────────────────────────────
   const tiles = useMemo(() => {
+    // Если слой печати включён — всегда 1 лист
+    if (hasPrintLayer) {
+      return { list: [{ col: 0, row: 0 }], cols: 1, rows: 1, colMin: 0, rowMin: 0 };
+    }
     const { sc, offsetX, offsetY, pageW, pageH } = baseView;
     const { minX, minY, w: bw, h: bh } = schemaBbox;
-    // Экранные координаты левого-верхнего и правого-нижнего угла bbox схемы
     const schLeft   = minX * sc + offsetX;
     const schTop    = minY * sc + offsetY;
     const schRight  = schLeft + bw * sc;
     const schBottom = schTop  + bh * sc;
-    // Индексы страниц: страница (col,row) покрывает [col*pageW .. (col+1)*pageW]
     const colMin = Math.floor(schLeft   / pageW);
     const colMax = Math.floor((schRight  - 0.5) / pageW);
     const rowMin = Math.floor(schTop    / pageH);
@@ -447,14 +483,85 @@ export default function PrintDialog({
       }
     }
     return { list, cols, rows, colMin, rowMin };
-  }, [baseView, schemaBbox]);
+  }, [baseView, schemaBbox, hasPrintLayer]);
 
   const totalPages = tiles.list.length;
 
+  // ─── Рендер рамки слоя печати на canvas ─────────────────────────────
+  const drawPrintLayerFrame = useCallback((
+    ctx: CanvasRenderingContext2D,
+    canvasW: number, canvasH: number,
+    layer: Horizon["printLayer"] & object,
+  ) => {
+    const sc = canvasW / 794; // нормировочный коэффициент как в HorizonPrintLayerOverlay
+    const fs = (mm: number) => mm * sc * 3.78;
+    const pad = fs(8);
+    const lw = Math.max(0.5, sc * 0.6);
+
+    ctx.save();
+    ctx.strokeStyle = "#333333";
+    ctx.fillStyle = "#333333";
+    ctx.lineWidth = Math.max(1, sc * 2);
+    // Внешняя рамка
+    ctx.beginPath();
+    ctx.rect(pad * 0.5, pad * 0.5, canvasW - pad, canvasH - pad);
+    ctx.stroke();
+    // Внутренняя рамка
+    ctx.lineWidth = Math.max(0.5, lw);
+    ctx.beginPath();
+    ctx.rect(pad, pad, canvasW - pad * 2, canvasH - pad * 2);
+    ctx.stroke();
+
+    // Заголовок
+    if (layer.title) {
+      ctx.font = `bold ${fs(8)}px Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(layer.title, canvasW / 2, pad + fs(18));
+    }
+
+    // Блок УТВЕРЖДАЮ (правый верхний угол)
+    if (layer.showApprover) {
+      const apprW = fs(75);
+      const apprX = canvasW - pad - apprW;
+      let apprCurY = pad + fs(2);
+      ctx.font = `${fs(3.8)}px Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText("УТВЕРЖДАЮ", apprX + apprW / 2, apprCurY);
+      apprCurY += fs(6);
+      ctx.font = `${fs(3.2)}px Arial, sans-serif`;
+      ctx.fillText(layer.approverTitle || "Должность", apprX + apprW / 2, apprCurY);
+      apprCurY += fs(5);
+      ctx.fillText(layer.orgName || "Организация", apprX + apprW / 2, apprCurY);
+      apprCurY += fs(5);
+      // Линия подписи
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(apprX + fs(4), apprCurY);
+      ctx.lineTo(apprX + apprW - fs(4), apprCurY);
+      ctx.stroke();
+      apprCurY += fs(2);
+      ctx.textAlign = "right";
+      ctx.fillText(layer.approverName || "И.О. Фамилия", apprX + apprW - fs(1), apprCurY);
+      apprCurY += fs(4);
+      // Дата
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(apprX, apprCurY);
+      ctx.lineTo(apprX + apprW, apprCurY);
+      ctx.stroke();
+      apprCurY += fs(2);
+      ctx.textAlign = "center";
+      const day = layer.day || "__";
+      const month = layer.month || "__________";
+      const year = layer.year || String(new Date().getFullYear());
+      ctx.fillText(`«${day}» ${month} ${year} г.`, apprX + apprW / 2, apprCurY);
+    }
+    ctx.restore();
+  }, []);
+
   // ─── Рендер одного тайла ─────────────────────────────────────────────
-  // Рендерит полный лист (paper.w × paper.h) при заданном DPI.
-  // Схема позиционируется с учётом полей (marginLeft/Top) и тайлового сдвига.
-  // dpi — итоговое разрешение в точках на дюйм.
   const renderTileToCanvas = useCallback(async (
     col: number,
     row: number,
@@ -462,15 +569,12 @@ export default function PrintDialog({
   ): Promise<string> => {
     const mmToPx = (mm: number) => Math.round(mm * dpi / 25.4);
 
-    // Canvas = полный лист
     const canvasW = mmToPx(paper.w);
     const canvasH = mmToPx(paper.h);
 
-    // Ограничение: браузеры обычно не поддерживают canvas > 16384px
     const MAX_PX = 16384;
     const safeW = Math.min(canvasW, MAX_PX);
     const safeH = Math.min(canvasH, MAX_PX);
-    // Если пришлось уменьшить — пересчитываем DPI
     const effectiveDpi = dpi * Math.min(safeW / canvasW, safeH / canvasH);
     const mmToPxE = (mm: number) => Math.round(mm * effectiveDpi / 25.4);
 
@@ -481,76 +585,108 @@ export default function PrintDialog({
     if (!ctx) return "";
 
     const { sc, offsetX, offsetY, isScene3D, horizonMap, pageW, pageH } = baseView;
-
-    // Масштаб: базовый sc при 150dpi → пересчёт на effectiveDpi
     const BASE_DPI = 150;
     const dpiRatio = effectiveDpi / BASE_DPI;
 
-    // Схема в координатах полного листа при effectiveDpi:
-    // offsetX/Y — позиция в рабочей области (150dpi).
-    // Добавляем поля и тайловый сдвиг, масштабируем на dpiRatio.
-    const marginLeftPx  = mmToPxE(marginLeft);
-    const marginTopPx   = mmToPxE(marginTop);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, oc.width, oc.height);
 
-    const scaledSc   = sc * dpiRatio;
-    const scaledOffX = marginLeftPx  + (offsetX - col * pageW) * dpiRatio;
-    const scaledOffY = marginTopPx   + (offsetY - row * pageH) * dpiRatio;
-
-    const sv = {
-      scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
-      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
-    };
     const visibleBranches = branches.filter(b => {
       if (!b.horizonId) return true;
       const h = horizonMap.get(b.horizonId);
       return !h || h.visible;
     });
-    const projNodes = nodes.map(n => ({
-      node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
-    }));
-    const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, oc.width, oc.height);
+    if (hasPrintLayer && activePrintHorizon?.printLayer) {
+      // Режим слоя печати: схема + рамка на весь лист, без клиппинга по полям
+      const scaledSc   = sc * dpiRatio;
+      const scaledOffX = offsetX * dpiRatio;
+      const scaledOffY = offsetY * dpiRatio;
+      const sv = {
+        scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
+        azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
+      };
+      const projNodes = nodes.map(n => ({
+        node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
+      }));
+      const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
-    // Клиппинг по рабочей области (без полей и штампа)
-    const workW = mmToPxE(workArea.w);
-    const workH = mmToPxE(workArea.h);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(marginLeftPx, marginTopPx, workW, workH);
-    ctx.clip();
+      renderCanvas({
+        ctx, width: oc.width, height: oc.height,
+        nodes, branches, horizons, horizonMap,
+        visibleBranches, hiddenBranchIds: new Set(),
+        projNodes, projNodesMap, proj: sv, view: sv,
+        is3D: isScene3D, zScale, zLevel: 0,
+        selectedBranchId: null, selectedBranchIds: new Set(),
+        selectedNodeId: null, selectedNodeIds: new Set(),
+        hoverBranchId: null, branchWidth, branchBorder,
+        thinLines, colorByHorizon,
+        showFlowArrows: false, flowDisplay,
+        animOffset: 0, infoConfig, unitsConfig,
+        printMode: true,
+        colorMode, posInnerColors, posOuterColors,
+      });
 
-    renderCanvas({
-      ctx, width: oc.width, height: oc.height,
-      nodes, branches, horizons, horizonMap,
-      visibleBranches, hiddenBranchIds: new Set(),
-      projNodes, projNodesMap, proj: sv, view: sv,
-      is3D: isScene3D, zScale, zLevel: 0,
-      selectedBranchId: null, selectedBranchIds: new Set(),
-      selectedNodeId: null, selectedNodeIds: new Set(),
-      hoverBranchId: null, branchWidth, branchBorder,
-      thinLines, colorByHorizon,
-      showFlowArrows: false, flowDisplay,
-      animOffset: 0, infoConfig, unitsConfig,
-      printMode: true,
-      colorMode, posInnerColors, posOuterColors,
-    });
-    ctx.restore();
+      if (schemaSymbols.length > 0) {
+        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
+      }
 
-    if (schemaSymbols.length > 0) {
+      // Рисуем рамку слоя печати поверх схемы
+      drawPrintLayerFrame(ctx, oc.width, oc.height, activePrintHorizon.printLayer);
+    } else {
+      // Стандартный режим: тайлы с полями
+      const marginLeftPx = mmToPxE(marginLeft);
+      const marginTopPx  = mmToPxE(marginTop);
+      const scaledSc   = sc * dpiRatio;
+      const scaledOffX = marginLeftPx + (offsetX - col * pageW) * dpiRatio;
+      const scaledOffY = marginTopPx  + (offsetY - row * pageH) * dpiRatio;
+      const sv = {
+        scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
+        azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
+      };
+      const projNodes = nodes.map(n => ({
+        node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
+      }));
+      const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
+
+      const workW = mmToPxE(workArea.w);
+      const workH = mmToPxE(workArea.h);
       ctx.save();
       ctx.beginPath();
       ctx.rect(marginLeftPx, marginTopPx, workW, workH);
       ctx.clip();
-      await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
+      renderCanvas({
+        ctx, width: oc.width, height: oc.height,
+        nodes, branches, horizons, horizonMap,
+        visibleBranches, hiddenBranchIds: new Set(),
+        projNodes, projNodesMap, proj: sv, view: sv,
+        is3D: isScene3D, zScale, zLevel: 0,
+        selectedBranchId: null, selectedBranchIds: new Set(),
+        selectedNodeId: null, selectedNodeIds: new Set(),
+        hoverBranchId: null, branchWidth, branchBorder,
+        thinLines, colorByHorizon,
+        showFlowArrows: false, flowDisplay,
+        animOffset: 0, infoConfig, unitsConfig,
+        printMode: true,
+        colorMode, posInnerColors, posOuterColors,
+      });
       ctx.restore();
+      if (schemaSymbols.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(marginLeftPx, marginTopPx, workW, workH);
+        ctx.clip();
+        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
+        ctx.restore();
+      }
     }
+
     return oc.toDataURL("image/png");
   }, [baseView, paper, workArea, marginLeft, marginTop,
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
-      colorMode, posInnerColors, posOuterColors]);
+      colorMode, posInnerColors, posOuterColors,
+      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame]);
 
 
   // ─── Печать ──────────────────────────────────────────────────────────
@@ -1014,16 +1150,30 @@ body{background:white;font-family:Arial,sans-serif}
             }}>
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
-                // Коэффициент: превью-px / печатный-px (150dpi).
-                // Теперь canvas = полный лист prevW×prevH, поэтому масштабируем от полного листа.
                 const BASE_DPI = 150;
                 const paperWpx = paper.w * BASE_DPI / 25.4;
                 const prevToPage = prevW / paperWpx;
-                const prevSc     = baseView.sc * prevToPage;
-                const marginLeftPx150 = marginLeft * BASE_DPI / 25.4;
-                const marginTopPx150  = marginTop  * BASE_DPI / 25.4;
-                const prevOffX = (marginLeftPx150 + baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
-                const prevOffY = (marginTopPx150  + baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
+                const prevSc = baseView.sc * prevToPage;
+
+                // В режиме слоя печати — offset без полей (схема центрирована в рамке)
+                // В обычном режиме — с полями и тайловым сдвигом
+                let prevOffX: number, prevOffY: number;
+                if (hasPrintLayer) {
+                  prevOffX = baseView.offsetX * prevToPage;
+                  prevOffY = baseView.offsetY * prevToPage;
+                } else {
+                  const marginLeftPx150 = marginLeft * BASE_DPI / 25.4;
+                  const marginTopPx150  = marginTop  * BASE_DPI / 25.4;
+                  prevOffX = (marginLeftPx150 + baseView.offsetX - tile.col * baseView.pageW) * prevToPage;
+                  prevOffY = (marginTopPx150  + baseView.offsetY - tile.row * baseView.pageH) * prevToPage;
+                }
+
+                // Параметры рамки для SVG-предпросмотра
+                const plSc = prevW / 794;
+                const plFs = (mm: number) => mm * plSc * 3.78;
+                const plPad = plFs(8);
+                const pl = activePrintHorizon?.printLayer;
+
                 return (
                   <div key={`${tile.col}-${tile.row}`}
                     onContextMenu={e => handleTileContextMenu(e, idx)}
@@ -1040,9 +1190,8 @@ body{background:white;font-family:Arial,sans-serif}
                       cursor: isDragging ? "grabbing" : "grab",
                       overflow: "hidden", userSelect: "none",
                     }}>
-                    {/* Рамка отображается через HorizonPrintLayerOverlay внутри PrintPreviewCanvas */}
 
-                    {/* Схема — тайл на весь лист чтобы подписи не обрезались полями */}
+                    {/* Схема */}
                     <div style={{ position: "absolute", top: 0, left: 0, width: prevW, height: prevH }}>
                       <PrintPreviewCanvas
                         ref={idx === 0 ? previewRef : undefined}
@@ -1074,7 +1223,58 @@ body{background:white;font-family:Arial,sans-serif}
                       />
                     </div>
 
-                    {/* Штамп, рамка и УО рендерятся через HorizonPrintLayerOverlay внутри PrintPreviewCanvas */}
+                    {/* Рамка слоя печати поверх схемы (только если включён) */}
+                    {hasPrintLayer && pl && (
+                      <svg
+                        style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+                        width={prevW} height={prevH}
+                      >
+                        {/* Внешняя рамка */}
+                        <rect x={plPad * 0.5} y={plPad * 0.5}
+                          width={prevW - plPad} height={prevH - plPad}
+                          fill="none" stroke="#333" strokeWidth={Math.max(1, plSc * 2)} />
+                        {/* Внутренняя рамка */}
+                        <rect x={plPad} y={plPad}
+                          width={prevW - plPad * 2} height={prevH - plPad * 2}
+                          fill="none" stroke="#333" strokeWidth={Math.max(0.5, plSc * 0.6)} />
+                        {/* Заголовок */}
+                        {pl.title && (
+                          <text x={prevW / 2} y={plPad + plFs(18)}
+                            textAnchor="middle" dominantBaseline="middle"
+                            fontSize={plFs(8)} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
+                            {pl.title}
+                          </text>
+                        )}
+                        {/* Блок УТВЕРЖДАЮ */}
+                        {pl.showApprover && (
+                          <>
+                            <text x={prevW - plPad - plFs(37.5)} y={plPad + plFs(2)}
+                              textAnchor="middle" dominantBaseline="hanging"
+                              fontSize={plFs(3.8)} fontFamily="Arial, sans-serif" fill="#111">
+                              УТВЕРЖДАЮ
+                            </text>
+                            <text x={prevW - plPad - plFs(37.5)} y={plPad + plFs(8)}
+                              textAnchor="middle" dominantBaseline="hanging"
+                              fontSize={plFs(3.2)} fontFamily="Arial, sans-serif" fill="#111">
+                              {pl.approverTitle || "Должность"}
+                            </text>
+                            <text x={prevW - plPad - plFs(37.5)} y={plPad + plFs(14)}
+                              textAnchor="middle" dominantBaseline="hanging"
+                              fontSize={plFs(3.2)} fontFamily="Arial, sans-serif" fill="#111">
+                              {pl.orgName || "Организация"}
+                            </text>
+                            <line x1={prevW - plPad - plFs(71)} y1={plPad + plFs(20)}
+                              x2={prevW - plPad - plFs(4)} y2={plPad + plFs(20)}
+                              stroke="#111" strokeWidth={Math.max(0.5, plSc * 0.6)} />
+                            <text x={prevW - plPad - plFs(5)} y={plPad + plFs(21)}
+                              textAnchor="end" dominantBaseline="hanging"
+                              fontSize={plFs(3.2)} fontFamily="Arial, sans-serif" fill="#111">
+                              {pl.approverName || "И.О. Фамилия"}
+                            </text>
+                          </>
+                        )}
+                      </svg>
+                    )}
 
                     {/* Номер страницы */}
                     {showPageNumbers && (

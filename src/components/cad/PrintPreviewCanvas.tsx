@@ -9,7 +9,6 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
-import HorizonPrintLayerOverlay from "./HorizonPrintLayerOverlay";
 
 export interface PrintPreviewCanvasHandle {
   getFitView(): { scale: number; offsetX: number; offsetY: number } | null;
@@ -227,15 +226,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           })}
         </svg>
       )}
-      {/* Слои печати горизонтов (рамка + УО + штамп) */}
-      {horizons.map(h => h.printLayer?.visible ? (
-        <HorizonPrintLayerOverlay
-          key={h.id}
-          layer={h.printLayer}
-          width={width}
-          height={height}
-        />
-      ) : null)}
+
     </div>
   );
 });
