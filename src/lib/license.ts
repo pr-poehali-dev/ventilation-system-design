@@ -1,6 +1,7 @@
 const LICENSE_URL = "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023";
 const STORAGE_KEY = "pvs_license";
 const HW_FP_KEY   = "pvs_hw_fp";      // кэш аппаратного fingerprint
+const MACHINE_UUID_KEY = "pvs_machine_uuid"; // постоянный UUID машины
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 часов
 
 export interface LicenseInfo {
@@ -46,11 +47,29 @@ function detectPlatform(): string {
   return pl || "Unknown";
 }
 
-// ── Стабильные характеристики ПК (не зависят от localStorage) ────────────────
-// Используем: разрешение + глубина цвета + часовой пояс + язык + CPU cores + платформа
-// + Canvas fingerprint (рендеринг текста — стабилен для одной видеокарты/драйвера/ОС)
+// ── Постоянный UUID машины ─────────────────────────────────────────────────────
+// Генерируется один раз и хранится в localStorage бессрочно.
+// Не зависит от Canvas/WebGL/браузера — стабилен даже при смене профиля Chrome.
+// При переустановке системы (очистка localStorage) → новый UUID → нужен transfer.
+function getMachineUUID(): string {
+  try {
+    const existing = localStorage.getItem(MACHINE_UUID_KEY);
+    if (existing) return existing;
+    const uuid = crypto.randomUUID();
+    localStorage.setItem(MACHINE_UUID_KEY, uuid);
+    return uuid;
+  } catch {
+    return "fallback-uuid";
+  }
+}
+
+// ── Стабильные характеристики ПК ─────────────────────────────────────────────
+// UUID (постоянный) + экран + часовой пояс + платформа + CPU/RAM
+// Canvas и WebGL убраны — они нестабильны (режим приватности, обновления GPU)
 async function getHardwareComponents(): Promise<string[]> {
-  const components: string[] = [
+  return [
+    // Постоянный UUID машины — основа fingerprint
+    getMachineUUID(),
     // Экран
     `${screen.width}x${screen.height}x${screen.colorDepth}`,
     // Часовой пояс
@@ -64,53 +83,17 @@ async function getHardwareComponents(): Promise<string[]> {
     // Память (если доступна)
     String((navigator as { deviceMemory?: number }).deviceMemory ?? 0),
   ];
-
-  // Canvas fingerprint — стабилен для одной GPU/драйвера/ОС
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = 200;
-    canvas.height = 40;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.textBaseline = "alphabetic";
-      ctx.fillStyle = "#f60";
-      ctx.fillRect(125, 1, 62, 20);
-      ctx.fillStyle = "#069";
-      ctx.font = "14px Arial";
-      ctx.fillText("PVS-fingerprint", 2, 15);
-      ctx.fillStyle = "rgba(102,204,0,0.7)";
-      ctx.font = "18px Georgia";
-      ctx.fillText("PVS-fingerprint", 4, 30);
-      components.push(canvas.toDataURL().slice(-50)); // последние 50 символов
-    }
-  } catch { /* ignore */ }
-
-  // WebGL renderer — очень стабилен для конкретного железа
-  try {
-    const gl = document.createElement("canvas").getContext("webgl");
-    if (gl) {
-      const dbgInfo = gl.getExtension("WEBGL_debug_renderer_info");
-      if (dbgInfo) {
-        const renderer = gl.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) as string;
-        const vendor   = gl.getParameter(dbgInfo.UNMASKED_VENDOR_WEBGL) as string;
-        components.push(`${vendor}|${renderer}`);
-      }
-    }
-  } catch { /* ignore */ }
-
-  return components;
 }
 
-// ── Генерация стабильного аппаратного fingerprint ─────────────────────────────
-// Кэшируется в sessionStorage (в рамках сессии) + localStorage (между сессиями).
-// При переустановке приложения — fingerprint НЕ изменится, т.к. зависит от железа.
+// ── Генерация стабильного fingerprint ─────────────────────────────────────────
+// Кэшируется в localStorage. При переустановке ОС/очистке данных — new UUID → transfer.
 export async function getMachineInfo(): Promise<MachineInfo> {
-  // Проверяем кэш (localStorage для персистентности)
+  // Проверяем кэш (localStorage для персистентности между сессиями)
   try {
     const cached = localStorage.getItem(HW_FP_KEY);
     if (cached) {
       const parsed = JSON.parse(cached) as MachineInfo & { cachedAt: number };
-      // Кэш аппаратного fingerprint живёт 30 дней
+      // Кэш живёт 30 дней, но UUID в localStorage постоянен — fingerprint не изменится
       if (Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000) {
         return { fingerprint: parsed.fingerprint, hostname: parsed.hostname,
                  platform: parsed.platform, screen: parsed.screen };
@@ -125,7 +108,6 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   const platform = detectPlatform();
   const screen   = `${window.screen.width}×${window.screen.height}`;
 
-  // hostname — краткое описание машины из UA (браузер + ОС)
   const ua = navigator.userAgent;
   const browser = ua.includes("Chrome") && !ua.includes("Edg") ? "Chrome"
     : ua.includes("Firefox") ? "Firefox"
@@ -135,7 +117,6 @@ export async function getMachineInfo(): Promise<MachineInfo> {
 
   const info: MachineInfo = { fingerprint, hostname, platform, screen };
 
-  // Сохраняем в кэш
   try {
     localStorage.setItem(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
   } catch { /* ignore */ }
@@ -164,7 +145,16 @@ function saveCache(info: LicenseInfo) {
 }
 
 export function clearLicenseCache() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    // Сбрасываем кэш hw fingerprint — пересчитается при следующем запуске
+    localStorage.removeItem(HW_FP_KEY);
+  } catch { /* ignore */ }
+}
+
+// ── Сброс кэша HW fingerprint (без сброса лицензии) ──────────────────────────
+export function clearFingerprintCache() {
+  try { localStorage.removeItem(HW_FP_KEY); } catch { /* ignore */ }
 }
 
 // ── Проверить machine ID на сервере ──────────────────────────────────────────
