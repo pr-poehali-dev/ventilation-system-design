@@ -7,12 +7,21 @@
       "expectedStatus": 200
     },
     {
-      "name": "Missing body returns 400",
+      "name": "Missing SVG returns 400",
+      "method": "POST",
+      "path": "/",
+      "body": {"svg": "", "paper": "A3"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "svg_required"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Invalid JSON returns 400",
       "method": "POST",
       "path": "/",
       "body": {"paper": "A3"},
       "expectedStatus": 400,
-      "expectedBody": {"error": "png_or_svg_required"},
+      "expectedBody": {"error": "svg_required"},
       "bodyMatcher": "partial"
     },
     {
@@ -25,7 +34,7 @@
         "orientation": "portrait"
       },
       "expectedStatus": 200,
-      "expectedBody": {"pdf": "string"},
+      "expectedBody": {"paper": "A4"},
       "bodyMatcher": "partial"
     }
   ]

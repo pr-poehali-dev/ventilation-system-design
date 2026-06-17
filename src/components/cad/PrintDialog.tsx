@@ -274,7 +274,7 @@ export default function PrintDialog({
   }, []);
 
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf"|"pdf-vector">("pdf-vector");
+  const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf"|"pdf-vector">("png");
   const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -819,64 +819,45 @@ body{background:white;font-family:Arial,sans-serif}
       return;
     }
 
-    // ── PDF (высокое DPI) — рендер через renderTileToCanvas @ 600dpi → PDF ─
-    // Использует тот же рендер что и обычная печать: все цвета, рамка, УО, штамп.
-    // PNG отправляется на бэкенд где вставляется в PDF нужного формата бумаги.
+    // ── PDF векторный (SVG → PDF через бэкенд, идеально для плоттера) ────
     if (exportFormat === "pdf-vector") {
       setPdfExporting(true);
       try {
-        const HIRES_DPI = 600;
-        // Рендерим все тайлы или один лист (первый тайл — для printLayer режима)
-        const tilesList = tiles.list;
-        const pngPages: string[] = [];
-        for (const t of tilesList) {
-          const png = await renderTileToCanvas(t.col, t.row, HIRES_DPI);
-          if (png) pngPages.push(png);
-        }
-        if (pngPages.length === 0) throw new Error("Ошибка рендера");
-
-        // Отправляем каждую страницу на бэкенд и собираем PDF
-        // Для многостраничных — отправляем первую, остальные будем добавлять через jsPDF
-        if (pngPages.length === 1) {
-          // Одна страница — отправляем напрямую на бэкенд
-          const pngB64 = pngPages[0].split(",")[1] ?? pngPages[0];
-          const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              png: pngB64,
-              paper_w_mm: paper.w,
-              paper_h_mm: paper.h,
-            }),
-          });
-          if (!res.ok) throw new Error("Ошибка сервера");
-          const data = await res.json() as { pdf?: string; error?: string; detail?: string };
-          if (!data.pdf) throw new Error(data.detail ?? data.error ?? "Нет данных");
-          const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-          const blob = new Blob([bytes], { type: "application/pdf" });
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = `${projectName}.pdf`;
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-        } else {
-          // Многостраничный — собираем через jsPDF (PNG вставка)
-          const isLandscape = paper.w > paper.h;
-          const pdf = new jsPDF({
+        const proj = buildProjForExport();
+        const svgStr = generateSvg({
+          nodes, branches, horizons, horizonMap: baseView.horizonMap,
+          proj, viewState, zScale,
+          is3D: baseView.isScene3D,
+          branchWidth, branchBorder, thinLines, colorByHorizon,
+          infoConfig, unitsConfig, colorMode,
+          canvasW: Math.round(paper.w * 3.78),
+          canvasH: Math.round(paper.h * 3.78),
+          title: projectName,
+        });
+        const isLandscape = paper.w > paper.h;
+        const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            svg: svgStr,
+            paper: "A3", // используем A3 как базу, cairosvg масштабирует
             orientation: isLandscape ? "landscape" : "portrait",
-            unit: "mm",
-            format: [paper.w, paper.h],
-            compress: true,
-          });
-          for (let i = 0; i < pngPages.length; i++) {
-            if (i > 0) pdf.addPage([paper.w, paper.h], isLandscape ? "landscape" : "portrait");
-            pdf.addImage(pngPages[i], "PNG", 0, 0, paper.w, paper.h, undefined, "FAST");
-          }
-          pdf.save(`${projectName}.pdf`);
-        }
+          }),
+        });
+        if (!res.ok) throw new Error("Ошибка сервера");
+        const data = await res.json() as { pdf?: string; error?: string };
+        if (!data.pdf) throw new Error(data.error ?? "Нет данных");
+        // base64 → Blob → скачать
+        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${projectName}-vector.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
         setShowExportDialog(false);
       } catch (e) {
-        alert(`Ошибка экспорта PDF: ${e instanceof Error ? e.message : String(e)}`);
+        alert(`Ошибка векторного PDF: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setPdfExporting(false);
       }
@@ -950,8 +931,7 @@ body{background:white;font-family:Arial,sans-serif}
       renderTileToCanvas, tiles, paper, showPageNumbers,
       marginLeft, marginRight, marginBottom,
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
-      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
-      posInnerColors, posOuterColors]);
+      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
@@ -1423,7 +1403,7 @@ body{background:white;font-family:Arial,sans-serif}
                   {exportFormat === "tiff"       && "TIFF — растр, для полиграфии"}
                   {exportFormat === "svg"        && "SVG — вектор, идеально для плоттера, масштаб бесконечен"}
                   {exportFormat === "pdf"        && "PDF — растровый, все страницы, выбранный DPI"}
-                  {exportFormat === "pdf-vector" && "PDF ✦ — полная схема как на экране (цвета, рамка, УО, штамп) @ 600 DPI. Идеально для плоттера."}
+                  {exportFormat === "pdf-vector" && "PDF ✦ — векторный, идеально для плоттера. Конвертируется на сервере из SVG."}
                 </div>
               </div>
 
