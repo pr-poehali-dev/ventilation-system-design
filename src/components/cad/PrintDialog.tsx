@@ -103,6 +103,35 @@ export default function PrintDialog({
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
 
+  // Вычисляем загрязнённые ветви (BFS по потоку от pollutesAir=true) — для цвета стрелок
+  const pollutedBranchIds = useMemo((): Set<string> => {
+    const sources = branches.filter(b => b.pollutesAir);
+    if (sources.length === 0) return new Set();
+    const outEdges = new Map<string, string[]>();
+    for (const b of branches) {
+      const fromNode = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
+      const toNode   = (b.flow ?? 0) >= 0 ? b.toId   : b.fromId;
+      if (!outEdges.has(fromNode)) outEdges.set(fromNode, []);
+      outEdges.get(fromNode)!.push(b.id);
+      if (!outEdges.has(toNode)) outEdges.set(toNode, []);
+    }
+    const branchToNode = new Map<string, string>();
+    for (const b of branches) branchToNode.set(b.id, (b.flow ?? 0) >= 0 ? b.toId : b.fromId);
+    const visited = new Set<string>();
+    const queue: string[] = [];
+    for (const src of sources) {
+      visited.add(src.id);
+      queue.push((src.flow ?? 0) >= 0 ? src.toId : src.fromId);
+    }
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      for (const bId of outEdges.get(nodeId) ?? []) {
+        if (!visited.has(bId)) { visited.add(bId); const nxt = branchToNode.get(bId); if (nxt) queue.push(nxt); }
+      }
+    }
+    return visited;
+  }, [branches]);
+
   // Берём формат/ориентацию из первого горизонта с активным слоем печати
   const firstActivePrintLayer = horizons.find(h => h.printLayer?.visible)?.printLayer ?? null;
   const [format, setFormat] = useState<PaperFormat>(
@@ -818,6 +847,7 @@ body{background:white;font-family:Arial,sans-serif}
         canvasH: Math.round(paper.h * 3.78),
         title: projectName,
         fixedObjectScale,
+        pollutedBranchIds,
       });
       downloadSvg(svgStr, projectName);
       setShowExportDialog(false);
@@ -841,6 +871,7 @@ body{background:white;font-family:Arial,sans-serif}
           canvasH: Math.round(paper.h * 3.78),
           title: projectName,
           fixedObjectScale,
+          pollutedBranchIds,
         });
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {

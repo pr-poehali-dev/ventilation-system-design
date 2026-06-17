@@ -49,6 +49,9 @@ export interface SvgExportOptions {
   /** Фиксированный масштаб объектов (режим 1): true — ширины не зависят от zoom.
    *  false (режим 2) — ширины/узлы/стрелки масштабируются вместе со схемой. */
   fixedObjectScale?: boolean;
+
+  /** Ветви с загрязнённым воздухом (синие стрелки) */
+  pollutedBranchIds?: Set<string>;
 }
 
 // ── Цвет ветви ────────────────────────────────────────────────────────────────
@@ -267,25 +270,64 @@ export function generateSvg(opts: SvgExportOptions): string {
   }
 
   // ── Стрелки направления потока ─────────────────────────────────────────────
-  parts.push(`<g id="flow-arrows" fill="#1f2937" stroke="none">`);
+  // Логика 1-в-1 с canvasRenderer: реверс, цвет (красный/синий), шаг, размер
+  parts.push(`<g id="flow-arrows">`);
   for (const b of visibleBranches) {
     const Q = Math.abs(b.flow ?? 0);
     if (Q < 0.1 || b.isDead) continue;
-    const from = projMap.get(b.fromId);
-    const to   = projMap.get(b.toId);
-    if (!from || !to) continue;
-    const dx = to.sx - from.sx, dy = to.sy - from.sy;
-    const len = Math.hypot(dx, dy);
-    if (len < 10 * objSF) continue;
-    const ux = dx / len, uy = dy / len;
-    const mx = (from.sx + to.sx) / 2, my = (from.sy + to.sy) / 2;
-    const aw = 5 * objSF, ah = 8 * objSF;
-    const p1x = mx + ux * ah / 2,  p1y = my + uy * ah / 2;
-    const p2x = mx - ux * ah / 2 - uy * aw / 2;
-    const p2y = my - uy * ah / 2 + ux * aw / 2;
-    const p3x = mx - ux * ah / 2 + uy * aw / 2;
-    const p3y = my - uy * ah / 2 - ux * aw / 2;
-    parts.push(`<polygon points="${n(p1x,1)},${n(p1y,1)} ${n(p2x,1)},${n(p2y,1)} ${n(p3x,1)},${n(p3y,1)}" opacity="0.7"/>`);
+    const fromPt = projMap.get(b.fromId);
+    const toPt   = projMap.get(b.toId);
+    if (!fromPt || !toPt) continue;
+
+    // Учитываем реверс потока (как в canvasRenderer строка 245-249)
+    const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && (b.flow ?? 0) >= 0;
+    const reversed = (b.flow ?? 0) < 0 || fanReverseOverride;
+    const sxA = reversed ? toPt.sx : fromPt.sx;
+    const syA = reversed ? toPt.sy : fromPt.sy;
+    const sxB = reversed ? fromPt.sx : toPt.sx;
+    const syB = reversed ? fromPt.sy : toPt.sy;
+
+    const dx = sxB - sxA, dy = syB - syA;
+    const segLen = Math.hypot(dx, dy);
+    if (segLen < 80 * objSF) continue;
+
+    // Цвет: синий — загрязнённый воздух, красный — свежая струя (как в canvasRenderer)
+    const isPolluted = opts.pollutedBranchIds ? (opts.pollutedBranchIds as Set<string>).has(b.id) : false;
+    const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
+
+    // Ширина ветви для размера стрелок
+    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    const w = thinLines ? 1 : bw * objSF;
+    const stepA = 130 * objSF;
+    const count = Math.max(1, Math.floor(segLen / stepA));
+    const arrowLen = Math.min(28 * objSF, Math.max(16 * objSF, w * 4));
+    const hw = arrowLen / 2;
+    const tip = Math.max(3, 5 * objSF);
+    const tipW = Math.max(2, 4 * objSF);
+
+    // Единичный вектор направления
+    const ux = dx / segLen, uy = dy / segLen;
+    // Перпендикуляр (для наконечника)
+    const nx = -uy, ny = ux;
+
+    for (let i = 0; i < count; i++) {
+      const t0 = (i + 1) / (count + 1);
+      const cx = sxA + dx * t0;
+      const cy = syA + dy * t0;
+
+      // Хвостик: от (cx - ux*hw) до (cx + ux*(hw-tip))
+      const tailX1 = cx - ux * hw,       tailY1 = cy - uy * hw;
+      const tailX2 = cx + ux * (hw - tip), tailY2 = cy + uy * (hw - tip);
+      parts.push(`<line x1="${n(tailX1,1)}" y1="${n(tailY1,1)}" x2="${n(tailX2,1)}" y2="${n(tailY2,1)}" stroke="${arrowColor}" stroke-width="${n(Math.max(0.5, objSF), 2)}" stroke-linecap="round"/>`);
+
+      // Наконечник: треугольник
+      const tipPx = cx + ux * hw,       tipPy = cy + uy * hw;
+      const base1x = cx + ux * (hw - tip) + nx * tipW;
+      const base1y = cy + uy * (hw - tip) + ny * tipW;
+      const base2x = cx + ux * (hw - tip) - nx * tipW;
+      const base2y = cy + uy * (hw - tip) - ny * tipW;
+      parts.push(`<polygon points="${n(tipPx,1)},${n(tipPy,1)} ${n(base1x,1)},${n(base1y,1)} ${n(base2x,1)},${n(base2y,1)}" fill="${arrowColor}" stroke="white" stroke-width="${n(Math.max(0.3, 0.6 * objSF), 2)}"/>`);
+    }
   }
   parts.push(`</g>`);
 
