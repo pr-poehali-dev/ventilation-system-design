@@ -2260,9 +2260,6 @@ export default function TopoCanvas(props: Props) {
           const lodBorder    = view.scale >= 0.10;
           // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный
           const objSF = fixedObjectScale ? 1 : view.scale / 0.4;
-          // Коэффициент масштабирования стрелок: ВСЕГДА пропорционален view.scale.
-          // При fixedObjectScale=true ветви фиксированы, но стрелки должны расти вместе со схемой.
-          const arrowSF = view.scale / 0.4;
           // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
           // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
           const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {
@@ -2600,35 +2597,30 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Стрелки направления воздуха (F9, после расчёта) ── */}
               {/* Красные — свежая струя; синие — загрязнённый воздух (pollutesAir ниже по потоку) */}
-              {/* arrowSF = view.scale/0.4: стрелки масштабируются вместе со схемой независимо от fixedObjectScale */}
-              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * arrowSF && (() => {
-                const stepA = 130 * arrowSF;
-                const count = Math.max(1, Math.floor(segLen / stepA));
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 && (() => {
+                const step = 130;
+                const count = Math.max(1, Math.floor(segLen / step));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
-                const arrowLen = Math.min(28 * arrowSF, Math.max(16 * arrowSF, w * 4));
-                const tip = Math.max(3, 5 * arrowSF);
-                const tipW = Math.max(2, 4 * arrowSF);
-                const strokeW = Math.max(0.5, arrowSF);
-                const strokeWTip = Math.max(0.3, 0.6 * arrowSF);
+                const arrowLen = Math.min(28, Math.max(16, w * 4));
                 // Синие стрелки — для ветвей-источников загрязнения и всех ветвей ниже по потоку
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
-                const hw = arrowLen / 2;
                 return (
                   <g>
                     {Array.from({ length: count }, (_, i) => {
                       const t0 = (i + 1) / (count + 1);
                       const cx = sxA + dx * t0;
                       const cy = syA + dy * t0;
+                      const hw = arrowLen / 2;
                       return (
                         <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                          {/* Хвостик */}
-                          <line x1={-hw} y1={0} x2={hw - tip} y2={0}
-                            stroke={arrowColor} strokeWidth={strokeW}
+                          {/* Хвостик — тонкая линия */}
+                          <line x1={-hw} y1={0} x2={hw - 5} y2={0}
+                            stroke={arrowColor} strokeWidth="1"
                             strokeLinecap="round" />
-                          {/* Наконечник */}
-                          <polygon points={`${hw - tip},-${tipW} ${hw},0 ${hw - tip},${tipW}`}
-                            fill={arrowColor} stroke="white" strokeWidth={strokeWTip}
+                          {/* Наконечник — компактный треугольник */}
+                          <polygon points={`${hw - 7},-4 ${hw},0 ${hw - 7},4`}
+                            fill={arrowColor} stroke="white" strokeWidth="0.6"
                             strokeLinejoin="round" />
                         </g>
                       );
