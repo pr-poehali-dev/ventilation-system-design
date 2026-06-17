@@ -848,6 +848,7 @@ body{background:white;font-family:Arial,sans-serif}
         title: projectName,
         fixedObjectScale,
         pollutedBranchIds,
+        schemaSymbols: schemaSymbols ?? [],
       });
       downloadSvg(svgStr, projectName);
       setShowExportDialog(false);
@@ -872,6 +873,7 @@ body{background:white;font-family:Arial,sans-serif}
           title: projectName,
           fixedObjectScale,
           pollutedBranchIds,
+          schemaSymbols: schemaSymbols ?? [],
         });
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {

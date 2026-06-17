@@ -5,10 +5,12 @@
  */
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, PAPER_SIZES_MM } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
-import { type UnitsConfig } from "./unitsConfig";
+import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "./schemaSymbols";
+import { type SchemaSymbol } from "@/pages/Cad";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -28,6 +30,9 @@ export interface SvgExportOptions {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
   colorMode?: "none" | "flowQ";
+
+  // Условные обозначения на схеме
+  schemaSymbols?: SchemaSymbol[];
 
   // Цвета позиций ПЛА: branchId → color
   posInnerColors?: Map<string, string>;
@@ -130,10 +135,11 @@ export function generateSvg(opts: SvgExportOptions): string {
     nodes, branches, horizons, horizonMap, proj,
     zScale, branchWidth = 2, branchBorder = 0.1,
     thinLines = false, colorByHorizon = false,
-    infoConfig, canvasW, canvasH, title = "Схема",
+    infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG, canvasW, canvasH, title = "Схема",
     colorMode = "none",
     posInnerColors, posOuterColors, positions = [],
     fixedObjectScale = true,
+    schemaSymbols = [],
   } = opts;
 
   // В режиме 2 (fixedObjectScale=false) объекты масштабируются вместе со схемой.
@@ -480,6 +486,337 @@ export function generateSvg(opts: SvgExportOptions): string {
       parts.push(`<text x="${n(cx)}" y="${n(cy + 4)}" text-anchor="middle" font-family="Arial,sans-serif" font-size="10" font-weight="bold" fill="${textColor}">${pos.number}</text>`);
     }
     parts.push(`</g>`); // /positions
+  }
+
+  // ── Индикаторы ветвей (Q, V, сечение, название, номер) ───────────────────
+  if (!thinLines && infoConfig) {
+    const uFlow = getUnit(unitsConfig, "flow");
+    const uVel  = getUnit(unitsConfig, "velocity");
+    const uPres = getUnit(unitsConfig, "pressure");
+    const uLen  = getUnit(unitsConfig, "length");
+    const uArea = getUnit(unitsConfig, "area");
+    const uRes  = getUnit(unitsConfig, "resistance");
+    parts.push(`<g id="branch-labels" font-family="Segoe UI,Arial,sans-serif">`);
+
+    for (const b of visibleBranches) {
+      const fromPt = projMap.get(b.fromId);
+      const toPt   = projMap.get(b.toId);
+      if (!fromPt || !toPt) continue;
+
+      const midX = (fromPt.sx + toPt.sx) / 2;
+      const midY = (fromPt.sy + toPt.sy) / 2;
+      const Q = Math.abs(b.flow ?? 0);
+      const V = b.velocity ?? 0;
+      const isDead = b.isDead ?? false;
+      const hasCalc = (Q > 0 || V > 0) && !isDead;
+      const overV = V > (b.vMax ?? 9999);
+
+      // Индивидуальные настройки ветви переопределяют глобальные
+      const ic = (b.indicators && Object.keys(b.indicators).length > 0)
+        ? { ...infoConfig, ...b.indicators } as typeof infoConfig
+        : infoConfig;
+
+      const dataLines: string[] = [];
+      if (!isDead && ic) {
+        const len = b.length ?? 0;
+        const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
+        if (ic.branchName && b.type) dataLines.push(b.type);
+        if (ic.branchLength && len > 0) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
+        if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
+        if (ic.branchSection && b.area > 0) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
+        if (ic.branchResistance && b.resistance > 0) dataLines.push(`R=${uRes.fromBase(b.resistance * 1000 / 9.81).toFixed(uRes.decimals)}${uRes.symbol}`);
+        if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? " ⚠" : ""}`);
+        if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
+        if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP ?? 0).toFixed(uPres.decimals)}${uPres.symbol}`);
+      }
+
+      const showNum = !ic || ic.branchNumber;
+      const branchNum = b.id.replace(/^B/, "");
+      const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
+      if (allLines.length === 0) continue;
+
+      const lox = b.labelOffsetX ?? 0;
+      const loy = b.labelOffsetY ?? -16;
+      const labelAng = ((b.labelAngle ?? 0) * Math.PI / 180);
+      const anchorX = midX + lox;
+      const anchorY = midY + loy;
+
+      const bw = (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth) * objSF;
+      const textSc = Math.min(2.5, Math.max(0.6, bw * 0.28)) * (b.labelSize ?? 1);
+      const lh = 11 * textSc;
+      const bh = allLines.length * lh + 4 * textSc;
+
+      // Выноска если сдвинута
+      if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
+        parts.push(`<line x1="${n(midX)}" y1="${n(midY)}" x2="${n(anchorX)}" y2="${n(anchorY)}" stroke="#555555" stroke-width="0.4" stroke-dasharray="2 3" opacity="0.7"/>`);
+      }
+
+      const transform = labelAng !== 0
+        ? `transform="translate(${n(anchorX)},${n(anchorY)}) rotate(${n(labelAng * 180 / Math.PI)})"`
+        : `transform="translate(${n(anchorX)},${n(anchorY)})"`;
+
+      parts.push(`<g ${transform}>`);
+      allLines.forEach((ln, li) => {
+        const ty = -bh / 2 + lh * (li + 0.6);
+        const isNumLine = li === 0 && showNum;
+        const fs = (isNumLine ? (branchNum.length > 2 ? 7.5 : 9) : 8.5) * textSc;
+        const fillColor = isNumLine ? "#374151" : (overV && !isNumLine ? "#dc2626" : "#1e3a5f");
+        const fw = isNumLine ? "600" : "500";
+        // Белая обводка для читаемости
+        parts.push(`<text x="0" y="${n(ty)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs, 1)}" font-weight="${fw}" stroke="white" stroke-width="${n(2.5 * textSc, 1)}" stroke-linejoin="round" paint-order="stroke" fill="${fillColor}">${esc(ln)}</text>`);
+      });
+      parts.push(`</g>`);
+    }
+    parts.push(`</g>`); // /branch-labels
+  }
+
+  // ── Символы УО (schemaSymbols) ────────────────────────────────────────────
+  if (schemaSymbols.length > 0) {
+    parts.push(`<g id="schema-symbols">`);
+
+    for (const sym of schemaSymbols) {
+      const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+      const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
+      if (!lt && !isBulkhead) continue;
+
+      // Вычисляем позицию символа
+      let px = 0, py = 0;
+      let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
+
+      if (sym.branchId) {
+        const br = branches.find(b => b.id === sym.branchId);
+        const fPt = br ? projMap.get(br.fromId) : null;
+        const tPt = br ? projMap.get(br.toId)   : null;
+        if (fPt && tPt) {
+          fsx = fPt.sx; fsy = fPt.sy; tsx2 = tPt.sx; tsy2 = tPt.sy;
+          hasBranchPts = true;
+          const t = sym.t ?? 0.5;
+          px = fsx + (tsx2 - fsx) * t;
+          py = fsy + (tsy2 - fsy) * t;
+        }
+      } else {
+        const p3 = project3D({ x: sym.x, y: sym.y, z: 0 }, proj);
+        px = p3.sx; py = p3.sy;
+        hasBranchPts = false;
+      }
+
+      px += sym.offsetX ?? 0;
+      py += sym.offsetY ?? 0;
+
+      const sc = sym.scale ?? 1;
+      // symScale: при scale<0.4 уменьшать, иначе ~1
+      const ss = proj.scale < 0.4 ? proj.scale / 0.4 : 1;
+      const SZ = Math.max(4, 32 * sc * ss);
+      const brAngle = hasBranchPts ? Math.atan2(tsy2 - fsy, tsx2 - fsx) : 0;
+      const angDeg = brAngle * 180 / Math.PI;
+
+      if (isBulkhead && hasBranchPts) {
+        // Перемычка — рисуем SVG-примитивами поперёк ветви
+        const tid = sym.typeId;
+        const fill = tid.includes("concrete") ? "#4caf50"
+          : tid.includes("wood")   ? "#ffd600"
+          : tid.includes("brick")  ? "#ff9800"
+          : tid.includes("metal")  ? "#9c27b0"
+          : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
+          : (tid === "barrier")    ? "#555"
+          : "white";
+        const stroke2 = tid.includes("concrete") ? "#1b5e20"
+          : tid.includes("wood")   ? "#e65100"
+          : tid.includes("brick")  ? "#bf360c"
+          : tid.includes("metal")  ? "#4a148c"
+          : (tid === "fire_door" || tid === "fire_door_pp") ? "#800"
+          : "#1a1a1a";
+
+        const ph = Math.max(3, SZ * 0.85);
+        const pw2 = Math.max(1.5, ph * 0.38);
+        const sw2 = Math.max(0.4, pw2 * 0.18);
+        const isSail = tid === "sail";
+        const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
+        const isDoor = tid.includes("door_closed") || tid.includes("door_conc") || tid.includes("door_wood") || tid.includes("door_brick") || tid.includes("door_metal") || tid === "door_base";
+        const isAuto = tid.includes("door_auto") || tid.includes("auto_");
+        const isWindow = tid === "regulator_window" || tid.includes("win_") || tid === "bulkhead_window";
+        const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
+        const isWater = tid.includes("water_dam");
+        const isOpen = tid.includes("regulator_open") || tid.includes("open_");
+
+        parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})">`);
+
+        if (isSail) {
+          parts.push(`<line x1="0" y1="${n(-ph/2)}" x2="0" y2="${n(ph/2)}" stroke="${stroke2}" stroke-width="${n(Math.max(1.8,pw2*0.4))}" stroke-linecap="round"/>`);
+          parts.push(`<path d="M0,${n(-ph*0.38)} Q${n(ph*0.6)},0 0,${n(ph*0.38)}" fill="none" stroke="${stroke2}" stroke-width="${n(Math.max(1.8,pw2*0.4))}"/>`);
+        } else if (isBarrier) {
+          parts.push(`<rect x="${n(-pw2)}" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="#555" stroke="#222" stroke-width="1.3"/>`);
+          parts.push(`<rect x="0" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="#c00" stroke="#800" stroke-width="1.3"/>`);
+        } else if (isOpen) {
+          parts.push(`<rect x="${n(-pw2/2)}" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph*0.38)}" fill="${fill}" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
+          parts.push(`<rect x="${n(-pw2/2)}" y="${n(ph*0.12)}" width="${n(pw2)}" height="${n(ph*0.38)}" fill="${fill}" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
+          parts.push(`<line x1="${n(-pw2/2)}" y1="${n(ph*0.12)}" x2="${n(-pw2/2-ph*0.45)}" y2="${n(ph/2)}" stroke="${stroke2}" stroke-width="${n(Math.max(1.8,pw2*0.3))}" stroke-linecap="round"/>`);
+        } else if (isDoor || isAuto) {
+          parts.push(`<rect x="${n(-pw2/2)}" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="${fill}" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
+          parts.push(`<line x1="${n(-pw2/2)}" y1="${n(-ph/2)}" x2="${n(-pw2/2)}" y2="${n(ph/2)}" stroke="${stroke2}" stroke-width="${n(Math.max(2,pw2*0.35))}" stroke-linecap="round"/>`);
+          if (isAuto) {
+            const cx2 = pw2/2 + ph*0.28;
+            parts.push(`<circle cx="${n(cx2)}" cy="0" r="${n(ph*0.2)}" fill="white" stroke="${stroke2}" stroke-width="1.2"/>`);
+            parts.push(`<text x="${n(cx2)}" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${n(ph*0.2)}" font-weight="bold" fill="${stroke2}">А</text>`);
+          }
+        } else {
+          parts.push(`<rect x="${n(-pw2/2)}" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="${fill}" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
+          if (isWindow) {
+            parts.push(`<rect x="${n(-pw2*0.25)}" y="${n(-ph*0.2)}" width="${n(pw2*0.5)}" height="${n(ph*0.4)}" fill="white" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
+          }
+          if (isLattice) {
+            for (let li = -1; li <= 1; li++) {
+              parts.push(`<line x1="${n(pw2*0.2*li)}" y1="${n(-ph*0.45)}" x2="${n(pw2*0.2*li)}" y2="${n(ph*0.45)}" stroke="${stroke2}" stroke-width="0.8"/>`);
+            }
+            parts.push(`<line x1="${n(-pw2*0.4)}" y1="0" x2="${n(pw2*0.4)}" y2="0" stroke="${stroke2}" stroke-width="0.8"/>`);
+          }
+          if (isWater) {
+            parts.push(`<text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${n(ph*0.3)}" font-weight="bold" fill="${fill === "white" ? "#1565c0" : "white"}">D</text>`);
+          }
+          if (tid === "fire_door") {
+            parts.push(`<text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${n(ph*0.22)}" font-weight="bold" fill="white">ПП</text>`);
+          }
+        }
+        parts.push(`</g>`);
+
+        // Индикаторы перемычки
+        if (sym.branchId) {
+          const br = branches.find(b => b.id === sym.branchId);
+          if (br) {
+            const uRes2 = getUnit(unitsConfig, "resistance");
+            const uPres2 = getUnit(unitsConfig, "pressure");
+            const uFlow2 = getUnit(unitsConfig, "flow");
+            const indLines: string[] = [];
+            if (sym.indDescription && sym.description) indLines.push(sym.description);
+            if (sym.indResistance) {
+              const rVal = br.bulkheadR > 0 ? br.bulkheadR : br.resistance / 1e6;
+              indLines.push(`R=${uRes2.fromBase(rVal).toFixed(uRes2.decimals)} ${uRes2.symbol}`);
+            }
+            if (sym.indDeltaP && br.dP !== 0)
+              indLines.push(`ΔP=${uPres2.fromBase(Math.abs(br.dP)).toFixed(uPres2.decimals)} ${uPres2.symbol}`);
+            if (sym.indLeakage && br.flow !== 0)
+              indLines.push(`Q=${uFlow2.fromBase(Math.abs(br.flow)).toFixed(uFlow2.decimals)} ${uFlow2.symbol}`);
+
+            if (indLines.length > 0) {
+              const brDx2 = tsx2 - fsx, brDy2 = tsy2 - fsy;
+              const brLen2 = Math.hypot(brDx2, brDy2);
+              const perpX = brLen2 > 0 ? -brDy2 / brLen2 : 0;
+              const perpY = brLen2 > 0 ?  brDx2 / brLen2 : 0;
+              const fs2 = Math.max(6, 9 * sc * ss);
+              const lh2 = fs2 + 3;
+              const boxW2 = Math.max(...indLines.map(l => l.length)) * fs2 * 0.52 + 10;
+              const boxH2 = indLines.length * lh2 + 6;
+              const bx = px + perpX * (16 + boxW2 / 2) + (sym.indOffsetX ?? 0);
+              const by = py + perpY * (16 + boxH2 / 2) + (sym.indOffsetY ?? 0);
+              parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bx)}" y2="${n(by - boxH2/2)}" stroke="#555555" stroke-width="0.4" stroke-dasharray="2 3"/>`);
+              indLines.forEach((line, i) => {
+                const ty2 = by - boxH2/2 + i * lh2 + 3;
+                const fw2 = i === 0 && sym.indDescription ? "600" : "400";
+                parts.push(`<text x="${n(bx)}" y="${n(ty2)}" text-anchor="middle" dominant-baseline="auto" font-size="${n(fs2, 1)}" font-weight="${fw2}" stroke="white" stroke-width="2" paint-order="stroke" fill="#1a2a4a">${esc(line)}</text>`);
+              });
+            }
+          }
+        }
+      } else if (lt) {
+        // Обычный символ УО — вставляем svgContent через <use> с трансформом
+        const symId = `uo-${sym.id.replace(/[^a-zA-Z0-9]/g, "_")}`;
+        const HX = px - SZ / 2;
+        const HY = py - SZ / 2 - 4;
+        const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
+        const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
+
+        const isFanStopped = sym.typeId === "fan" && sym.branchId
+          ? (branches.find(b => b.id === sym.branchId)?.fanStopped ?? false)
+          : false;
+
+        const opacityAttr = isFanStopped ? ` opacity="0.35"` : "";
+
+        if (needsRotate) {
+          parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})" ${opacityAttr}>`);
+          parts.push(`<svg x="${n(-SZ/2)}" y="${n(-SZ/2-4)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${lt.svgContent}</svg>`);
+          parts.push(`</g>`);
+        } else {
+          parts.push(`<g${opacityAttr}>`);
+          parts.push(`<svg x="${n(HX)}" y="${n(HY)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${lt.svgContent}</svg>`);
+          parts.push(`</g>`);
+        }
+
+        // Стрелка направления вентилятора
+        if (!isFanStopped && sym.typeId === "fan" && hasBranchPts && (sym.showFanArrow ?? true)) {
+          const iconCx = HX + SZ / 2;
+          const iconCy = HY + SZ * (20 / 48);
+          const rIcon  = SZ * (16 / 48);
+          const aLen   = SZ * 0.32;
+          const arrowAngle = sym.airDirection === "reverse" ? brAngle + Math.PI : brAngle;
+          const aAngDeg = arrowAngle * 180 / Math.PI;
+          const head = Math.max(3, SZ * 0.13);
+          const x0 = rIcon, x1 = rIcon + aLen;
+          const sw3 = Math.max(0.8, SZ * 0.045);
+          parts.push(`<g transform="translate(${n(iconCx)},${n(iconCy)}) rotate(${n(aAngDeg)})">`);
+          parts.push(`<line x1="${n(x0)}" y1="0" x2="${n(x1-head*0.5)}" y2="0" stroke="#111" stroke-width="${n(sw3)}" stroke-linecap="round"/>`);
+          parts.push(`<polygon points="${n(x1-head)},${n(-head*0.55)} ${n(x1)},0 ${n(x1-head)},${n(head*0.55)}" fill="#111"/>`);
+          parts.push(`</g>`);
+        }
+
+        // Подпись
+        if (sym.label) {
+          parts.push(`<text x="${n(px)}" y="${n(py + SZ/2 + 12)}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="${n(Math.round(9 * sc * ss), 1)}" fill="#374151">${esc(sym.label)}</text>`);
+        }
+      }
+    }
+    parts.push(`</g>`); // /schema-symbols
+  }
+
+  // ── Легенда условных обозначений ──────────────────────────────────────────
+  // Собираем все типы УО, которые реально размещены на схеме
+  if (schemaSymbols.length > 0) {
+    const usedTypeIds = [...new Set(schemaSymbols.map(s => s.typeId))];
+    const legendItems: { id: string; name: string; svgContent: string; isBulkhead: boolean }[] = [];
+
+    for (const tid of usedTypeIds) {
+      const lt = LEGEND_TYPES.find(l => l.id === tid);
+      const isBk = BULKHEAD_SYMBOL_IDS.has(tid);
+      if (lt) legendItems.push({ id: tid, name: lt.name, svgContent: lt.svgContent, isBulkhead: false });
+      else if (isBk) legendItems.push({ id: tid, name: tid.replace(/_/g, " "), svgContent: "", isBulkhead: true });
+    }
+
+    if (legendItems.length > 0) {
+      const legX = vbX + 8;
+      const legIconSZ = 28;
+      const legRowH = 34;
+      const legW = 170;
+      const legH = legendItems.length * legRowH + 16;
+      const legY = vbY + vbH - legH - 8;
+
+      parts.push(`<g id="legend" font-family="Segoe UI,Arial,sans-serif">`);
+      // Фон
+      parts.push(`<rect x="${n(legX)}" y="${n(legY)}" width="${n(legW)}" height="${n(legH)}" fill="white" stroke="#374151" stroke-width="0.8" rx="3" opacity="0.95"/>`);
+      parts.push(`<text x="${n(legX+6)}" y="${n(legY+11)}" font-size="8" font-weight="700" fill="#1f2937">Условные обозначения</text>`);
+
+      legendItems.forEach((item, i) => {
+        const iy = legY + 16 + i * legRowH;
+        const icX = legX + 6;
+        const icY = iy + 2;
+
+        if (!item.isBulkhead && item.svgContent) {
+          // SVG-иконка
+          parts.push(`<svg x="${n(icX)}" y="${n(icY)}" width="${legIconSZ}" height="${legIconSZ}" viewBox="0 0 48 40">${item.svgContent}</svg>`);
+        } else {
+          // Перемычка — простой прямоугольник
+          const fill2 = item.id.includes("concrete") ? "#4caf50"
+            : item.id.includes("wood")   ? "#ffd600"
+            : item.id.includes("brick")  ? "#ff9800"
+            : item.id.includes("metal")  ? "#9c27b0"
+            : "white";
+          parts.push(`<rect x="${n(icX+4)}" y="${n(icY+6)}" width="6" height="16" fill="${fill2}" stroke="#1a1a1a" stroke-width="1.2"/>`);
+          parts.push(`<line x1="${n(icX)}" y1="${n(icY+14)}" x2="${n(icX+legIconSZ)}" y2="${n(icY+14)}" stroke="#444" stroke-width="1"/>`);
+        }
+        // Название
+        parts.push(`<text x="${n(icX + legIconSZ + 4)}" y="${n(iy + legRowH/2 + 3)}" font-size="8" fill="#1f2937">${esc(item.name)}</text>`);
+      });
+
+      parts.push(`</g>`); // /legend
+    }
   }
 
   // ── Рамка печати (buildPrintLayerSvgString inline) ────────────────────────
