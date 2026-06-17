@@ -536,14 +536,17 @@ export function generateSvg(opts: SvgExportOptions): string {
         : `transform="translate(${n(anchorX)},${n(anchorY)})"`;
 
       parts.push(`<g ${transform}>`);
+      // Единый полупрозрачный прямоугольник под весь блок меток
+      const bgPad = 2.5 * textSc;
+      parts.push(`<rect x="${n(-bh * 1.6)}" y="${n(-bh / 2 - bgPad)}" width="${n(bh * 3.2)}" height="${n(bh + bgPad * 2)}" rx="${n(1.5 * textSc)}" fill="white" fill-opacity="0.72" stroke="none"/>`);
       allLines.forEach((ln, li) => {
         const ty = -bh / 2 + lh * (li + 0.6);
         const isNumLine = li === 0 && showNum;
         const fs = (isNumLine ? (branchNum.length > 2 ? 7.5 : 9) : 8.5) * textSc;
         const fillColor = isNumLine ? "#374151" : (overV && !isNumLine ? "#dc2626" : "#1e3a5f");
         const fw = isNumLine ? "600" : "500";
-        // Белая обводка для читаемости
-        parts.push(`<text x="0" y="${n(ty)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs, 1)}" font-weight="${fw}" stroke="white" stroke-width="${n(2.5 * textSc, 1)}" stroke-linejoin="round" paint-order="stroke" fill="${fillColor}">${esc(ln)}</text>`);
+        // Тонкая тёмная обводка — читаемость без белого ореола
+        parts.push(`<text x="0" y="${n(ty)}" text-anchor="middle" dominant-baseline="middle" font-size="${n(fs, 1)}" font-weight="${fw}" stroke="rgba(255,255,255,0.4)" stroke-width="${n(0.6 * textSc, 1)}" stroke-linejoin="round" paint-order="stroke" fill="${fillColor}">${esc(ln)}</text>`);
       });
       parts.push(`</g>`);
     }
