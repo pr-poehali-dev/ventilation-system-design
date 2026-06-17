@@ -305,7 +305,7 @@ export default function PrintDialog({
   }, []);
 
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"png"|"jpg"|"bmp"|"svg"|"pdf"|"pdf-vector">("png");
+  const [exportFormat, setExportFormat] = useState<"png"|"png-hq"|"jpg"|"bmp"|"svg"|"pdf"|"pdf-vector">("png");
   const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -839,6 +839,67 @@ body{background:white;font-family:Arial,sans-serif}
 
   // ─── Экспорт ─────────────────────────────────────────────────────────
   const handleExport = useCallback(async () => {
+    // ── PNG HQ — SVG→canvas с заданным DPI (максимальное качество для печати) ──
+    if (exportFormat === "png-hq") {
+      setPdfExporting(true);
+      try {
+        const proj = buildProjForExport();
+        const mmToPx = (mm: number) => Math.round(mm * exportDpi / 25.4);
+        const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+        const MAX_PX = isMobile ? 8192 : 32768;
+        const rawW = mmToPx(paper.w);
+        const rawH = mmToPx(paper.h);
+        const ratio = Math.min(MAX_PX / rawW, MAX_PX / rawH, 1);
+        const canvasW = Math.round(rawW * ratio);
+        const canvasH = Math.round(rawH * ratio);
+
+        const svgStr = generateSvg({
+          nodes, branches, horizons, horizonMap: baseView.horizonMap,
+          proj, viewState, zScale,
+          is3D: baseView.isScene3D,
+          branchWidth, branchBorder, thinLines, colorByHorizon,
+          infoConfig, unitsConfig, colorMode,
+          posInnerColors, posOuterColors,
+          positions: showPositions ? positions : [],
+          canvasW, canvasH,
+          title: projectName,
+          fixedObjectScale,
+          pollutedBranchIds,
+          schemaSymbols: schemaSymbols ?? [],
+        });
+
+        // SVG → data URL → <img> → canvas → PNG
+        const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        await new Promise<void>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const oc = document.createElement("canvas");
+            oc.width = canvasW;
+            oc.height = canvasH;
+            const ctx = oc.getContext("2d")!;
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvasW, canvasH);
+            ctx.drawImage(img, 0, 0, canvasW, canvasH);
+            URL.revokeObjectURL(svgUrl);
+            const a = document.createElement("a");
+            a.href = oc.toDataURL("image/png");
+            a.download = `${projectName}-${exportDpi}dpi.png`;
+            a.click();
+            resolve();
+          };
+          img.onerror = () => { URL.revokeObjectURL(svgUrl); reject(new Error("Ошибка загрузки SVG")); };
+          img.src = svgUrl;
+        });
+        setShowExportDialog(false);
+      } catch (e) {
+        alert(`Ошибка PNG HQ: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setPdfExporting(false);
+      }
+      return;
+    }
+
     // ── SVG (векторный, масштабируется бесконечно) ───────────────────────
     if (exportFormat === "svg") {
       const proj = buildProjForExport();
@@ -980,7 +1041,8 @@ body{background:white;font-family:Arial,sans-serif}
       marginLeft, marginRight, marginBottom,
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
-      posInnerColors, posOuterColors, positions, showPositions]);
+      posInnerColors, posOuterColors, positions, showPositions,
+      fixedObjectScale, pollutedBranchIds, schemaSymbols]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
@@ -1436,18 +1498,21 @@ body{background:white;font-family:Arial,sans-serif}
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Формат файла:</div>
                 <div className="grid grid-cols-3 gap-2">
-                  {(["png","jpg","bmp","tiff","svg","pdf","pdf-vector"] as const).map(f => (
+                  {(["png","png-hq","jpg","bmp","tiff","svg","pdf","pdf-vector"] as const).map(f => (
                     <button key={f} onClick={() => setExportFormat(f)}
                       className="py-1.5 rounded border text-[12px] font-semibold uppercase"
                       style={{
                         background: exportFormat === f ? "#2563eb" : "white",
                         color: exportFormat === f ? "white" : "#1a1a1a",
                         borderColor: exportFormat === f ? "#2563eb" : "#9ca3af",
-                      }}>{f === "pdf-vector" ? "PDF ✦" : f.toUpperCase()}</button>
+                      }}>
+                      {f === "pdf-vector" ? "PDF ✦" : f === "png-hq" ? "PNG ★" : f.toUpperCase()}
+                    </button>
                   ))}
                 </div>
                 <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>
                   {exportFormat === "png"        && "PNG — растр, без потерь. Рекомендуется для экрана."}
+                  {exportFormat === "png-hq"     && <span style={{ color: "#1a6e2e", fontWeight: 600 }}>PNG ★ — высококачественный растр через SVG-вектор. Рамка, штамп, УО — всё чётко при любом DPI. Идеально для широкоформатной печати.</span>}
                   {exportFormat === "jpg"        && "JPEG — растр, с потерями, меньше размер"}
                   {exportFormat === "bmp"        && "BMP — растр, без сжатия"}
                   {exportFormat === "tiff"       && "TIFF — растр, для полиграфии"}
@@ -1479,6 +1544,22 @@ body{background:white;font-family:Arial,sans-serif}
                       style={{ width: 70, height: 24 }} />
                     <span style={{ fontSize: 11, color: "#555" }}>dpi</span>
                   </div>
+                  {(() => {
+                    const pw = Math.round(paper.w * exportDpi / 25.4);
+                    const ph = Math.round(paper.h * exportDpi / 25.4);
+                    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+                    const MAX_PX = isMobile ? 8192 : 32768;
+                    const clipped = pw > MAX_PX || ph > MAX_PX;
+                    const effW = Math.min(pw, MAX_PX);
+                    const effH = Math.min(ph, MAX_PX);
+                    return (
+                      <div style={{ fontSize: 11, marginTop: 6, color: clipped ? "#b45309" : "#555" }}>
+                        Размер: {effW} × {effH} пикс.
+                        {clipped && <span> (ограничено браузером — исходный {pw}×{ph})</span>}
+                        {exportFormat === "png-hq" && !clipped && <span style={{ color: "#1a6e2e" }}> — вектор без пикселизации</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1499,8 +1580,8 @@ body{background:white;font-family:Arial,sans-serif}
                 className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60 disabled:cursor-wait"
                 style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
                 {pdfExporting
-                  ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />{exportFormat === "pdf-vector" ? "Конвертация SVG→PDF..." : "Генерация PDF..."}</>
-                  : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat === "pdf-vector" ? "PDF ✦ вектор" : exportFormat.toUpperCase()}</>
+                  ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />{exportFormat === "pdf-vector" ? "Конвертация SVG→PDF..." : exportFormat === "png-hq" ? "Рендер PNG HQ..." : "Генерация PDF..."}</>
+                  : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat === "pdf-vector" ? "PDF ✦ вектор" : exportFormat === "png-hq" ? "PNG ★ HQ" : exportFormat.toUpperCase()}</>
                 }
               </button>
               <button onClick={() => setShowExportDialog(false)} disabled={pdfExporting}
