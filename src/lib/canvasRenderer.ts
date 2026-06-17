@@ -544,8 +544,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const tip = Math.max(3, 5 * objSF);
       const tipW = Math.max(2, 4 * objSF);
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const arrowTailW = Math.max(0.5, objSF);
-      const arrowTipW  = Math.max(0.3, 0.6 * objSF);
+      const arrowTailW = Math.max(0.3, objSF * 0.4);
+      const arrowTipW  = Math.max(0.2, objSF * 0.25);
       ctx.save();
       ctx.setLineDash([]);
       for (let i = 0; i < count; i++) {
@@ -555,7 +555,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.rotate(angle);
         ctx.strokeStyle = arrowColor; ctx.lineWidth = arrowTailW; ctx.globalAlpha = 1;
         ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - tip, 0); ctx.stroke();
-        ctx.fillStyle = arrowColor; ctx.strokeStyle = "white"; ctx.lineWidth = arrowTipW;
+        ctx.fillStyle = arrowColor; ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = arrowTipW;
+        ctx.lineJoin = "round";
         ctx.beginPath();
         ctx.moveTo(hw - tip, -tipW); ctx.lineTo(hw, 0); ctx.lineTo(hw - tip, tipW);
         ctx.closePath(); ctx.fill(); ctx.stroke();

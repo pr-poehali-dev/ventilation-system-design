@@ -331,8 +331,8 @@ export function generateSvg(opts: SvgExportOptions): string {
     const ux = dx / segLen, uy = dy / segLen;
     const nx = -uy, ny = ux;
 
-    const strokeW    = Math.max(w * 0.25, 0.5);
-    const strokeWTip = Math.max(w * 0.15, 0.3);
+    const strokeW    = Math.max(w * 0.10, 0.3);
+    const strokeWTip = Math.max(w * 0.06, 0.2);
 
     for (let i = 0; i < count; i++) {
       const t0 = (i + 1) / (count + 1);
@@ -348,7 +348,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const tipPx  = cx + ux * hw,                        tipPy  = cy + uy * hw;
       const base1x = cx + ux * (hw - tip) + nx * tipW,   base1y = cy + uy * (hw - tip) + ny * tipW;
       const base2x = cx + ux * (hw - tip) - nx * tipW,   base2y = cy + uy * (hw - tip) - ny * tipW;
-      parts.push(`<polygon points="${n(tipPx,1)},${n(tipPy,1)} ${n(base1x,1)},${n(base1y,1)} ${n(base2x,1)},${n(base2y,1)}" fill="${arrowColor}" stroke="white" stroke-width="${n(strokeWTip, 2)}"/>`);
+      parts.push(`<polygon points="${n(tipPx,1)},${n(tipPy,1)} ${n(base1x,1)},${n(base1y,1)} ${n(base2x,1)},${n(base2y,1)}" fill="${arrowColor}" stroke="#1a1a1a" stroke-width="${n(strokeWTip, 2)}" stroke-linejoin="round"/>`);
     }
   }
   parts.push(`</g>`);
