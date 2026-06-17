@@ -3,13 +3,12 @@
  * Работает с теми же данными что и canvasRenderer, но генерирует чистый SVG.
  * Масштабируется бесконечно — идеально для плоттера.
  */
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "./topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, PAPER_SIZES_MM } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
-import { PAPER_SIZES } from "./topology";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -104,8 +103,8 @@ function computeFrameRect(
   const pad = Math.max(sw, sh) * 0.08 + 15;
   const scx = (mnSx + mxSx) / 2, scy = (mnSy + mxSy) / 2;
 
-  const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES;
-  const plMm = PAPER_SIZES[plFmt] ?? PAPER_SIZES["A3"];
+  const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES_MM;
+  const plMm = PAPER_SIZES_MM[plFmt] ?? PAPER_SIZES_MM["A3"];
   const plOri = pl.orientation ?? "landscape";
   const aspect = (plOri === "landscape" ? plMm.h : plMm.w) / (plOri === "landscape" ? plMm.w : plMm.h);
 
