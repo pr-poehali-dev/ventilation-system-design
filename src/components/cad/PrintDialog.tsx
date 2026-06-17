@@ -810,6 +810,8 @@ body{background:white;font-family:Arial,sans-serif}
         is3D: baseView.isScene3D,
         branchWidth, branchBorder, thinLines, colorByHorizon,
         infoConfig, unitsConfig, colorMode,
+        posInnerColors, posOuterColors,
+        positions: showPositions ? positions : [],
         canvasW: Math.round(paper.w * 3.78), // мм → px @ 96dpi
         canvasH: Math.round(paper.h * 3.78),
         title: projectName,
@@ -830,6 +832,8 @@ body{background:white;font-family:Arial,sans-serif}
           is3D: baseView.isScene3D,
           branchWidth, branchBorder, thinLines, colorByHorizon,
           infoConfig, unitsConfig, colorMode,
+          posInnerColors, posOuterColors,
+          positions: showPositions ? positions : [],
           canvasW: Math.round(paper.w * 3.78),
           canvasH: Math.round(paper.h * 3.78),
           title: projectName,
@@ -931,7 +935,8 @@ body{background:white;font-family:Arial,sans-serif}
       renderTileToCanvas, tiles, paper, showPageNumbers,
       marginLeft, marginRight, marginBottom,
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
-      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode]);
+      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
+      posInnerColors, posOuterColors, positions, showPositions]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
