@@ -257,7 +257,7 @@ export default function PositionsPanel({
 
           <Row label="Диаметр:">
             <div className="flex items-center gap-1">
-              <input type="number" min={5} max={50} step={0.5} value={selected.diameter}
+              <input type="number" min={0.1} max={500} step={0.5} value={selected.diameter}
                 onChange={(e) => upd({ diameter: parseFloat(e.target.value) || 13 })}
                 style={{ ...inputStyle, width: 50 }} />
               <span style={{ fontSize: 11, color: "#666" }}>мм</span>
