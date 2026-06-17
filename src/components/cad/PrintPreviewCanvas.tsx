@@ -44,6 +44,7 @@ interface Props {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
+  fixedObjectScale?: boolean;
 }
 
 // Вычисляет bbox рамки из projNodes — точно как TopoCanvas.renderPrintLayers
@@ -104,6 +105,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   posOuterColors,
   positions = [],
   showPositions = true,
+  fixedObjectScale = false,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -217,6 +219,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         animOffset: 0, infoConfig, unitsConfig,
         colorMode, posInnerColors, posOuterColors,
         printMode: true,
+        fixedObjectScale,
       });
     } catch (err) {
       console.error("PrintPreviewCanvas renderCanvas error:", err);
@@ -267,7 +270,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           {positions.map(pos => {
             if (pos.visible === false || pos.x == null) return null;
             const p = project3D({ x: pos.x, y: pos.y, z: (pos.z ?? 0) * zScale }, proj);
-            const posSF = Math.min(1.0, Math.max(0.25, activeView.scale / 0.5));
+            const posSF = fixedObjectScale ? Math.min(1.0, Math.max(0.25, activeView.scale / 0.5)) : Math.max(0.25, activeView.scale / 0.5);
             const r = (pos.diameter ?? 13) * 3.78 * posSF / 2;
             const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
             return (

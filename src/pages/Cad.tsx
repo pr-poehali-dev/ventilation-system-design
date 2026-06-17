@@ -7395,8 +7395,9 @@ export default function CadPage() {
               const projNode = (n: { x: number; y: number; z: number }) =>
                 project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, projOpts);
               // По ГОСТ позиции ПЛА: диаметр 13 мм на чертеже.
-              // base zoom 0.5 → при zoom ×0.5 posSF=1.0 (номинал). max=1.0 чтобы не перекрывать схему.
-              const posSF = scaleLimitsEnabled ? 1 : Math.min(1.0, Math.max(0.25, vs.scale / 0.5));
+              // Режим 1 (scaleLimitsEnabled=true, fixedObjectScale): фиксированный размер — posSF=1.
+              // Режим 2 (!scaleLimitsEnabled): объекты масштабируются — posSF пропорционален зуму.
+              const posSF = scaleLimitsEnabled ? 1 : Math.max(0.25, vs.scale / 0.5);
               const PX_PER_MM = 3.78 * posSF;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
@@ -8442,6 +8443,7 @@ export default function CadPage() {
         })() : undefined}
         positions={positions}
         showPositions={showPositions}
+        fixedObjectScale={scaleLimitsEnabled}
         initialOpenExport={printDialogOpenExport}
         onExportDialogOpened={() => setPrintDialogOpenExport(false)}
       />

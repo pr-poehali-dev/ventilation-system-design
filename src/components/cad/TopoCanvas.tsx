@@ -3660,9 +3660,15 @@ export default function TopoCanvas(props: Props) {
             const py = basePy + (sym.offsetY ?? 0);
             const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
             const sc = sym.scale ?? 1;
+            // Режим 1 (fixedObjectScale=true): фиксированный размер символов при зуме.
+            // Режим 2 (fixedObjectScale=false): символы масштабируются вместе с объектами (objSF).
             let symScaleV: number;
-            if (view.scale < 0.4) { symScaleV = view.scale / 0.4; }
-            else { const k = (view.scale - 0.4) / 0.4; symScaleV = 1 + 2 * (k / (k + 2)); }
+            if (fixedObjectScale) {
+              if (view.scale < 0.4) { symScaleV = view.scale / 0.4; }
+              else { const k = (view.scale - 0.4) / 0.4; symScaleV = 1 + 2 * (k / (k + 2)); }
+            } else {
+              symScaleV = view.scale / 0.4;
+            }
 
             // Авто-масштаб УО «Очаг пожара» от ширины ветви (как valve_reduce).
             // Если у пользователя явно задан scale ≠ 1, используем его поверх авто-базы.
@@ -3670,7 +3676,6 @@ export default function TopoCanvas(props: Props) {
             if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
               const fireBr = branches.find(b => b.id === sym.branchId);
               const fireBw = (fireBr?.lineWidth && fireBr.lineWidth > 0) ? fireBr.lineWidth : branchWidth;
-              // Базовый размер = ширина ветви в px × 4 (как для valve_reduce × 4 × 1.2)
               const autoSZ = Math.max(8, fireBw * view.scale * 4);
               SZ = Math.max(8, autoSZ * sc);
             } else {

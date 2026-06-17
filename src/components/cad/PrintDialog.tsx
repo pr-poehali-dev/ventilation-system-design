@@ -37,6 +37,7 @@ interface PrintDialogProps {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
+  fixedObjectScale?: boolean;
   initialOpenExport?: boolean;
   onExportDialogOpened?: () => void;
 }
@@ -95,6 +96,7 @@ export default function PrintDialog({
   posOuterColors,
   positions = [],
   showPositions = true,
+  fixedObjectScale = false,
   initialOpenExport = false,
   onExportDialogOpened,
 }: PrintDialogProps) {
@@ -639,7 +641,7 @@ export default function PrintDialog({
         thinLines, colorByHorizon,
         showFlowArrows: false, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        printMode: true,
+        printMode: true, fixedObjectScale,
         colorMode, posInnerColors, posOuterColors,
       });
 
@@ -686,7 +688,7 @@ export default function PrintDialog({
         thinLines, colorByHorizon,
         showFlowArrows: false, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        printMode: true,
+        printMode: true, fixedObjectScale,
         colorMode, posInnerColors, posOuterColors,
       });
       ctx.restore();
@@ -704,7 +706,7 @@ export default function PrintDialog({
   }, [baseView, paper, workArea, marginLeft, marginTop, canvasSize,
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
-      colorMode, posInnerColors, posOuterColors,
+      colorMode, posInnerColors, posOuterColors, fixedObjectScale,
       hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect]);
 
 
@@ -1278,6 +1280,7 @@ body{background:white;font-family:Arial,sans-serif}
                         posOuterColors={posOuterColors}
                         positions={positions}
                         showPositions={showPositions}
+                        fixedObjectScale={fixedObjectScale}
                       />
                     </div>
 
