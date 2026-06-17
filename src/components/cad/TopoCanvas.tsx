@@ -2260,6 +2260,9 @@ export default function TopoCanvas(props: Props) {
           const lodBorder    = view.scale >= 0.10;
           // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный
           const objSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          // Коэффициент масштабирования стрелок: ВСЕГДА пропорционален view.scale.
+          // При fixedObjectScale=true ветви фиксированы, но стрелки должны расти вместе со схемой.
+          const arrowSF = view.scale / 0.4;
           // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
           // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
           const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {
@@ -2597,16 +2600,16 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Стрелки направления воздуха (F9, после расчёта) ── */}
               {/* Красные — свежая струя; синие — загрязнённый воздух (pollutesAir ниже по потоку) */}
-              {/* Все размеры умножаем на objSF — при fixedObjectScale=true стрелки растут вместе со схемой */}
-              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * objSF && (() => {
-                const stepA = 130 * objSF;
+              {/* arrowSF = view.scale/0.4: стрелки масштабируются вместе со схемой независимо от fixedObjectScale */}
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * arrowSF && (() => {
+                const stepA = 130 * arrowSF;
                 const count = Math.max(1, Math.floor(segLen / stepA));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
-                const arrowLen = Math.min(28 * objSF, Math.max(16 * objSF, w * 4));
-                const tip = Math.max(3, 5 * objSF);
-                const tipW = Math.max(2, 4 * objSF);
-                const strokeW = Math.max(0.5, objSF);
-                const strokeWTip = Math.max(0.3, 0.6 * objSF);
+                const arrowLen = Math.min(28 * arrowSF, Math.max(16 * arrowSF, w * 4));
+                const tip = Math.max(3, 5 * arrowSF);
+                const tipW = Math.max(2, 4 * arrowSF);
+                const strokeW = Math.max(0.5, arrowSF);
+                const strokeWTip = Math.max(0.3, 0.6 * arrowSF);
                 // Синие стрелки — для ветвей-источников загрязнения и всех ветвей ниже по потоку
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
