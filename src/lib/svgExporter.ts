@@ -45,6 +45,10 @@ export interface SvgExportOptions {
   canvasW: number;
   canvasH: number;
 
+  /** Физическая ширина бумаги в мм (например 297 для A3).
+   *  Используется для точного перевода мм→px при рендере позиций ПЛА. */
+  paperWidthMm?: number;
+
   // Рамка печати (опционально)
   printLayerSvg?: string;
 
@@ -104,7 +108,13 @@ export function generateSvg(opts: SvgExportOptions): string {
     posInnerColors, posOuterColors, positions = [],
     fixedObjectScale = true,
     schemaSymbols = [],
+    paperWidthMm,
   } = opts;
+
+  // Коэффициент px/мм для физического размера позиций ПЛА.
+  // Если paperWidthMm передан — вычисляем точно из соотношения холст/бумага.
+  // Иначе используем стандарт 96dpi (3.78 px/мм).
+  const pxPerMm = paperWidthMm && paperWidthMm > 0 ? canvasW / paperWidthMm : 3.78;
 
   // В режиме 2 (fixedObjectScale=false) объекты масштабируются вместе со схемой.
   // objSF = proj.scale / 0.4 — тот же коэффициент что в canvasRenderer.
@@ -428,19 +438,16 @@ export function generateSvg(opts: SvgExportOptions): string {
       const pp = project3D({ x: pos.x, y: pos.y, z: pos.z * zScale }, proj);
       const cx = pp.sx, cy = pp.sy;
 
-      // Радиус по ГОСТ: 13мм на чертеже → пиксели SVG.
-      // proj.scale = px/мировая_единица; 3.78px/мм (96dpi).
-      // fixedObjectScale=true: posSF=1 (размер не зависит от зума).
-      // fixedObjectScale=false: posSF = proj.scale/0.4 (масштабируется).
-      const posSF = fixedObjectScale ? 1 : Math.max(0.25, proj.scale / 0.5);
-      // 13мм * 3.78px/мм * posSF / 2 = радиус в пикселях SVG
-      const R = (pos.diameter ?? 13) * 3.78 * posSF / 2;
+      // Радиус позиции ПЛА — физический размер в мм → пиксели SVG.
+      // pxPerMm вычислен из реального формата бумаги (canvasW / paperWidthMm),
+      // поэтому 13мм всегда = 13мм на распечатанном листе, независимо от proj.scale.
+      const R = (pos.diameter ?? 13) * pxPerMm / 2;
       const fontSize = pos.number >= 100 ? R * 0.55 : pos.number >= 10 ? R * 0.7 : R * 0.85;
 
       const fillColor = pos.color || "#f97316";
       const borderColor = pos.borderColor || "#1f2937";
       const textColor = "#000000";
-      const leaderThickness = Math.max(0.5, (pos.leaderThickness ?? 0.2) * 3.78 * posSF);
+      const leaderThickness = Math.max(0.3, (pos.leaderThickness ?? 0.2) * pxPerMm);
 
       // Выноска: если задана leaderBranchId или leaderEndX
       if (pos.leaderBranchId && pos.leaderT != null) {
