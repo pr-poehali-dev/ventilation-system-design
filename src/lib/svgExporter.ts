@@ -457,10 +457,20 @@ export function generateSvg(opts: SvgExportOptions): string {
 
       const pp = project3D({ x: pos.x, y: pos.y, z: pos.z * zScale }, proj);
       const cx = pp.sx, cy = pp.sy;
-      const R = 11;
+
+      // Радиус по ГОСТ: 13мм на чертеже → пиксели SVG.
+      // proj.scale = px/мировая_единица; 3.78px/мм (96dpi).
+      // fixedObjectScale=true: posSF=1 (размер не зависит от зума).
+      // fixedObjectScale=false: posSF = proj.scale/0.4 (масштабируется).
+      const posSF = fixedObjectScale ? 1 : Math.max(0.25, proj.scale / 0.5);
+      // 13мм * 3.78px/мм * posSF / 2 = радиус в пикселях SVG
+      const R = (pos.diameter ?? 13) * 3.78 * posSF / 2;
+      const fontSize = pos.number >= 100 ? R * 0.55 : pos.number >= 10 ? R * 0.7 : R * 0.85;
+
       const fillColor = pos.color || "#f97316";
       const borderColor = pos.borderColor || "#1f2937";
-      const textColor = "#ffffff";
+      const textColor = "#000000";
+      const leaderThickness = Math.max(0.5, (pos.leaderThickness ?? 0.2) * 3.78 * posSF);
 
       // Выноска: если задана leaderBranchId или leaderEndX
       if (pos.leaderBranchId && pos.leaderT != null) {
@@ -472,18 +482,18 @@ export function generateSvg(opts: SvgExportOptions): string {
           if (lbFrom && lbTo) {
             const lx = lbFrom.sx + (lbTo.sx - lbFrom.sx) * pos.leaderT;
             const ly = lbFrom.sy + (lbTo.sy - lbFrom.sy) * pos.leaderT;
-            parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${esc(borderColor)}" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.7"/>`);
+            parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${esc(borderColor)}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.85"/>`);
           }
         }
       } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
         const lp = project3D({ x: pos.leaderEndX, y: pos.leaderEndY, z: pos.z * zScale }, proj);
-        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${esc(borderColor)}" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.7"/>`);
+        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${esc(borderColor)}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.85"/>`);
       }
 
       // Кружок маркера
-      parts.push(`<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(R)}" fill="${esc(fillColor)}" stroke="${esc(borderColor)}" stroke-width="1.5"/>`);
+      parts.push(`<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(R)}" fill="${esc(fillColor)}" stroke="${esc(borderColor)}" stroke-width="${n(Math.max(0.5, R * 0.12))}"/>`);
       // Номер позиции
-      parts.push(`<text x="${n(cx)}" y="${n(cy + 4)}" text-anchor="middle" font-family="Arial,sans-serif" font-size="10" font-weight="bold" fill="${textColor}">${pos.number}</text>`);
+      parts.push(`<text x="${n(cx)}" y="${n(cy)}" text-anchor="middle" dominant-baseline="central" font-family="Arial,sans-serif" font-size="${n(fontSize, 1)}" font-weight="700" fill="${textColor}">${pos.number}</text>`);
     }
     parts.push(`</g>`); // /positions
   }

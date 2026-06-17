@@ -270,12 +270,18 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           {positions.map(pos => {
             if (pos.visible === false || pos.x == null) return null;
             const p = project3D({ x: pos.x, y: pos.y, z: (pos.z ?? 0) * zScale }, proj);
-            const posSF = fixedObjectScale ? Math.min(1.0, Math.max(0.25, activeView.scale / 0.5)) : Math.max(0.25, activeView.scale / 0.5);
-            const r = (pos.diameter ?? 13) * 3.78 * posSF / 2;
+            // posSF: при фиксированном масштабе (fixedObjectScale=true) — posSF=1 (эталонный размер).
+            // При нефиксированном — пропорционально зуму рабочей области.
+            // Используем viewState.scale (зум рабочей области), а не activeView.scale
+            // (который может быть сильно занижен при вписывании в окно превью).
+            const posSF = fixedObjectScale ? 1 : Math.max(0.25, viewState.scale / 0.5);
+            // Переводим posSF в единицы превью (activeView.scale / viewState.scale = коэффициент вписывания)
+            const previewK = viewState.scale > 0 ? activeView.scale / viewState.scale : 1;
+            const r = (pos.diameter ?? 13) * 3.78 * posSF * previewK / 2;
             const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
             return (
               <g key={pos.id} transform={`translate(${p.sx},${p.sy})`}>
-                <circle r={r} fill={pos.color} stroke={pos.borderColor ?? "#000000"} strokeWidth={2} />
+                <circle r={r} fill={pos.color} stroke={pos.borderColor ?? "#000000"} strokeWidth={Math.max(0.5, r * 0.12)} />
                 <text textAnchor="middle" dominantBaseline="central" fontSize={fontSize} fontWeight={700}
                   fill="#000000" style={{ userSelect: "none" }}>{pos.number}</text>
               </g>
