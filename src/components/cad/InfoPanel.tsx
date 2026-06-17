@@ -178,6 +178,30 @@ export default function InfoPanel({
             <CheckRow label="CO в конце (CO кон.), ppm" checked={config.branchCOEnd} onChange={set("branchCOEnd")} />
             <CheckRow label="Q CO в начале (Q CO нач.), м³/с" checked={config.branchQCOStart} onChange={set("branchQCOStart")} />
             <CheckRow label="Q CO в конце (Q CO кон.), м³/с" checked={config.branchQCOEnd} onChange={set("branchQCOEnd")} />
+
+            {/* ─── Толщина выноски ─── */}
+            <div className="px-1 pt-2 pb-1 border-t border-gray-200 mt-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] text-gray-600 select-none">Толщина выноски</span>
+                <span className="text-[11px] font-mono text-blue-700 w-8 text-right">
+                  {(config.labelLeaderWidth ?? 0.4).toFixed(1)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0.2}
+                max={3.0}
+                step={0.1}
+                value={config.labelLeaderWidth ?? 0.4}
+                onChange={(e) => { onChange({ labelLeaderWidth: parseFloat(e.target.value) }); setPreset(0); }}
+                className="w-full h-1.5 rounded appearance-none cursor-pointer"
+                style={{ accentColor: "#2563eb" }}
+              />
+              <div className="flex justify-between text-[9px] text-gray-400 mt-0.5 select-none">
+                <span>тонкая</span>
+                <span>толстая</span>
+              </div>
+            </div>
           </div>
         )}
 

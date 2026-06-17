@@ -629,10 +629,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // Выноска если метка сдвинута
       if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
+        const leaderW = (infoConfig && typeof infoConfig.labelLeaderWidth === "number")
+          ? infoConfig.labelLeaderWidth
+          : 0.4;
         ctx.save();
-        ctx.strokeStyle = "#555555";
-        ctx.lineWidth = 0.4 * objSF;
-        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = "#666666";
+        ctx.lineWidth = leaderW * objSF;
+        ctx.setLineDash([3, 4]);
         ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
