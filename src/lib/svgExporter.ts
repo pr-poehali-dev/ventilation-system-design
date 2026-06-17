@@ -270,12 +270,16 @@ export function generateSvg(opts: SvgExportOptions): string {
   }
 
   // ── Стрелки направления потока ─────────────────────────────────────────────
-  // Логика 1-в-1 с canvasRenderer: реверс, цвет (красный/синий), шаг, размер.
-  // Размеры стрелок задаём в единицах координатного пространства SVG (viewBox),
-  // поэтому масштабируем на proj.scale чтобы стрелки соответствовали ветвям.
-  const sc = proj.scale > 0 ? proj.scale : 1;
-  // Базовый размер стрелки: ~30px на экране при scale=0.4 → 30/0.4 = 75 ед. координат
-  const arrowUnit = 30 / sc;
+  // Координаты sx/sy из project3D — пиксели SVG-холста (proj.scale уже применён).
+  //
+  // Ключевой принцип: размер стрелок и шаг между ними задаём относительно
+  // ШИРИНЫ ВЕТВИ (w в пикселях SVG). Это работает корректно при любом масштабе
+  // схемы (fixedObjectScale=true/false) и при любом proj.scale.
+  //
+  // Соотношения как в canvasRenderer:
+  //   arrowLen ≈ w * 4   (стрелка по высоте ≈ 4 ширины ветви)
+  //   stepA    ≈ w * 16  (шаг между стрелками ≈ 16 ширин ветви)
+  //   minLen   ≈ w * 10  (минимальная длина ветви для отрисовки стрелки)
 
   parts.push(`<g id="flow-arrows">`);
   for (const b of visibleBranches) {
@@ -285,7 +289,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     const toPt   = projMap.get(b.toId);
     if (!fromPt || !toPt) continue;
 
-    // Учитываем реверс потока (как в canvasRenderer строка 245-249)
+    // Реверс потока
     const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && (b.flow ?? 0) >= 0;
     const reversed = (b.flow ?? 0) < 0 || fanReverseOverride;
     const sxA = reversed ? toPt.sx : fromPt.sx;
@@ -295,48 +299,49 @@ export function generateSvg(opts: SvgExportOptions): string {
 
     const dx = sxB - sxA, dy = syB - syA;
     const segLen = Math.hypot(dx, dy);
-    // Минимальная длина: ветвь должна быть хотя бы в 1.5 стрелки
-    if (segLen < arrowUnit * 1.5) continue;
 
-    // Цвет: синий — загрязнённый воздух, красный — свежая струя
+    // Ширина ветви в пикселях SVG (та же формула что для branch-fills выше)
+    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    const w = (thinLines ? 1 : bw) * objSF;
+
+    // Размеры и шаг относительно ширины ветви — не зависят от proj.scale
+    const arrowLen = Math.max(w * 3, 6);   // длина стрелки ≥ 3 ширины ветви
+    const hw       = arrowLen / 2;
+    const tip      = arrowLen * 0.35;       // длина наконечника 35% от arrowLen
+    const tipW     = Math.max(w * 1.2, 3); // полуширина наконечника ≈ 1.2 ширины ветви
+    const stepA    = arrowLen * 4;          // шаг между стрелками = 4 длины стрелки
+
+    // Минимальная длина ветви = 2 стрелки
+    if (segLen < stepA * 1.5) continue;
+
+    // Цвет: синий — загрязнённый, красный — свежий
     const isPolluted = opts.pollutedBranchIds ? opts.pollutedBranchIds.has(b.id) : false;
     const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
 
-    // Ширина ветви (в единицах координат) для пропорций наконечника
-    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-    const wCoord = thinLines ? (1 / sc) : bw;
-
-    const stepA = arrowUnit * 4;   // шаг между стрелками
     const count = Math.max(1, Math.floor(segLen / stepA));
-    const arrowLen = Math.max(arrowUnit, wCoord * 4);
-    const hw = arrowLen / 2;
-    const tip = arrowUnit * 0.25;            // длина наконечника
-    const tipW = Math.max(arrowUnit * 0.15, wCoord * 2.5); // полуширина наконечника
 
-    // Единичный вектор направления
+    // Единичный вектор и перпендикуляр
     const ux = dx / segLen, uy = dy / segLen;
-    // Перпендикуляр (для наконечника)
     const nx = -uy, ny = ux;
-    const strokeW = Math.max(0.5 / sc, wCoord * 0.3);
+
+    const strokeW    = Math.max(w * 0.25, 0.5);
+    const strokeWTip = Math.max(w * 0.15, 0.3);
 
     for (let i = 0; i < count; i++) {
       const t0 = (i + 1) / (count + 1);
       const cx = sxA + dx * t0;
       const cy = syA + dy * t0;
 
-      // Хвостик: от (cx - ux*hw) до (cx + ux*(hw-tip))
-      const tailX1 = cx - ux * hw,         tailY1 = cy - uy * hw;
-      const tailX2 = cx + ux * (hw - tip), tailY2 = cy + uy * (hw - tip);
+      // Хвостик
+      const tailX1 = cx - ux * hw,          tailY1 = cy - uy * hw;
+      const tailX2 = cx + ux * (hw - tip),  tailY2 = cy + uy * (hw - tip);
       parts.push(`<line x1="${n(tailX1,1)}" y1="${n(tailY1,1)}" x2="${n(tailX2,1)}" y2="${n(tailY2,1)}" stroke="${arrowColor}" stroke-width="${n(strokeW, 2)}" stroke-linecap="round"/>`);
 
-      // Наконечник: треугольник
-      const tipPx  = cx + ux * hw;
-      const tipPy  = cy + uy * hw;
-      const base1x = cx + ux * (hw - tip) + nx * tipW;
-      const base1y = cy + uy * (hw - tip) + ny * tipW;
-      const base2x = cx + ux * (hw - tip) - nx * tipW;
-      const base2y = cy + uy * (hw - tip) - ny * tipW;
-      parts.push(`<polygon points="${n(tipPx,1)},${n(tipPy,1)} ${n(base1x,1)},${n(base1y,1)} ${n(base2x,1)},${n(base2y,1)}" fill="${arrowColor}" stroke="white" stroke-width="${n(strokeW * 0.5, 2)}"/>`);
+      // Наконечник
+      const tipPx  = cx + ux * hw,                        tipPy  = cy + uy * hw;
+      const base1x = cx + ux * (hw - tip) + nx * tipW,   base1y = cy + uy * (hw - tip) + ny * tipW;
+      const base2x = cx + ux * (hw - tip) - nx * tipW,   base2y = cy + uy * (hw - tip) - ny * tipW;
+      parts.push(`<polygon points="${n(tipPx,1)},${n(tipPy,1)} ${n(base1x,1)},${n(base1y,1)} ${n(base2x,1)},${n(base2y,1)}" fill="${arrowColor}" stroke="white" stroke-width="${n(strokeWTip, 2)}"/>`);
     }
   }
   parts.push(`</g>`);
