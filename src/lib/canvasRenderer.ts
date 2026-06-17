@@ -107,6 +107,29 @@ function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: 
   return `${v.toFixed(decimals)}${unit.symbol}`;
 }
 
+// ─── Кэш сортировки ветвей по глубине ──────────────────────────────────────
+// При pan/zoom projNodesMap меняется → нужна пересортировка.
+// При анимации потока (needsAnim) projNodesMap НЕ меняется → переиспользуем кэш.
+let _sortedBranchesCache: Array<{ b: TopoBranch; from: { sx: number; sy: number; depth: number } | undefined; to: { sx: number; sy: number; depth: number } | undefined; depth: number }> = [];
+let _sortedBranchesKey: { visibleBranches: TopoBranch[]; projNodesMap: Map<string, unknown> } = { visibleBranches: [], projNodesMap: new Map() };
+
+function getSortedBranches(
+  visibleBranches: TopoBranch[],
+  projNodesMap: Map<string, { sx: number; sy: number; depth: number }>,
+) {
+  if (_sortedBranchesKey.visibleBranches === visibleBranches && _sortedBranchesKey.projNodesMap === projNodesMap) {
+    return _sortedBranchesCache;
+  }
+  _sortedBranchesKey = { visibleBranches, projNodesMap };
+  _sortedBranchesCache = visibleBranches.map((b) => {
+    const from = projNodesMap.get(b.fromId);
+    const to   = projNodesMap.get(b.toId);
+    const depth = from && to ? (from.depth + to.depth) / 2 : 0;
+    return { b, from, to, depth };
+  }).sort((a, b) => a.depth - b.depth);
+  return _sortedBranchesCache;
+}
+
 // ─── Сетка 2D (план) ───────────────────────────────────────────────────────
 function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number, offsetX: number, offsetY: number) {
   if (scale < 0.5) {
@@ -223,12 +246,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   }
 
   // ─── Сортировка ветвей по глубине (painter's algorithm) ───────────────────
-  const sorted = [...visibleBranches].map((b) => {
-    const from = projNodesMap.get(b.fromId);
-    const to   = projNodesMap.get(b.toId);
-    const depth = from && to ? (from.depth + to.depth) / 2 : 0;
-    return { b, from, to, depth };
-  }).sort((a, b) => a.depth - b.depth);
+  // Используем кэш: при анимации потока projNodesMap не меняется → O(1) вместо O(N log N)
+  const sorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number }>);
 
   // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
   // Вспомогательная функция вычисления параметров ветви

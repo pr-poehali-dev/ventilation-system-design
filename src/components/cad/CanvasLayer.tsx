@@ -213,10 +213,27 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [needsAnim, draw]);
 
-  // Перерисовка при изменении данных (без анимации)
+  // Перерисовка при изменении данных (без анимации).
+  // ВАЖНО: deps перечислены явно — иначе draw() вызывается при КАЖДОМ рендере React,
+  // что при 8000+ ветвей даёт заметный фриз на каждый mousemove/hover.
   useEffect(() => {
     if (!needsAnim) draw();
-  });
+  }, [needsAnim, draw,
+    // Все данные схемы — при их изменении нужна перерисовка
+    props.nodes, props.branches, props.horizons, props.horizonMap,
+    props.visibleBranches, props.hiddenBranchIds,
+    props.projNodes, props.projNodesMap, props.proj, props.view,
+    props.is3D, props.zScale, props.zLevel,
+    props.selectedBranchId, props.selectedBranchIds,
+    props.selectedNodeId, props.selectedNodeIds,
+    props.hoverBranchId,
+    props.branchWidth, props.branchBorder, props.thinLines,
+    props.colorByHorizon, props.showFlowArrows, props.flowDisplay,
+    props.infoConfig, props.unitsConfig,
+    props.waterNodeResults, props.branchFireColors, props.branchExplosionColors,
+    props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,
+    props.width, props.height,
+  ]);
 
   // Регистрируем функцию экспорта для печати
   useEffect(() => {

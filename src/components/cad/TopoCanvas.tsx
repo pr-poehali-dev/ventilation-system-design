@@ -15,6 +15,11 @@ import { CANVAS_THRESHOLD } from "@/components/cad/CanvasLayerExports";
 // 2D (план) + 3D с произвольным ракурсом
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Стабильные пустые константы — НЕ создавать inline (new Set()/[] создают новую ссылку при каждом рендере,
+// что сбрасывает мемоизацию и вызывает лишние перерисовки canvas)
+const EMPTY_SET = new Set<string>();
+const EMPTY_ARRAY: never[] = [];
+
 // Форматирует сопротивление с авто-выбором значащих цифр (не показывает 0.0000)
 function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
   const v = unit.fromBase(rMkyurg);
@@ -308,18 +313,28 @@ export default function TopoCanvas(props: Props) {
       .map((b) => b.id)
   ), [branches, horizonMap]);
 
-  // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам.
+  // Карта узел→ветви: строим один раз при изменении branches (O(M)), а не при каждой фильтрации (O(N×M))
+  const nodeBranchesMap = useMemo(() => {
+    const m = new Map<string, TopoBranch[]>();
+    for (const b of branches) {
+      if (!m.has(b.fromId)) m.set(b.fromId, []);
+      if (!m.has(b.toId))   m.set(b.toId,   []);
+      m.get(b.fromId)!.push(b);
+      m.get(b.toId)!.push(b);
+    }
+    return m;
+  }, [branches]);
+
+  // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам — O(N) вместо O(N×M)
   const hiddenNodeIds = useMemo(() => new Set(
     nodes
       .filter((n) => {
-        const nodesBranches = branches.filter(
-          (b) => b.fromId === n.id || b.toId === n.id
-        );
-        if (nodesBranches.length === 0) return false;
-        return nodesBranches.every((b) => hiddenBranchIds.has(b.id));
+        const nb = nodeBranchesMap.get(n.id);
+        if (!nb || nb.length === 0) return false;
+        return nb.every((b) => hiddenBranchIds.has(b.id));
       })
       .map((n) => n.id)
-  ), [nodes, branches, hiddenBranchIds]);
+  ), [nodes, nodeBranchesMap, hiddenBranchIds]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -2104,7 +2119,7 @@ export default function TopoCanvas(props: Props) {
           height={size.h}
           nodes={nodes}
           branches={branches}
-          horizons={horizons ?? []}
+          horizons={horizons ?? EMPTY_ARRAY}
           horizonMap={horizonMap}
           visibleBranches={visibleBranches}
           hiddenBranchIds={hiddenBranchIds}
@@ -2116,9 +2131,9 @@ export default function TopoCanvas(props: Props) {
           zScale={zScale}
           zLevel={zLevel}
           selectedBranchId={selectedBranchId}
-          selectedBranchIds={selectedBranchIds ?? new Set()}
+          selectedBranchIds={selectedBranchIds ?? EMPTY_SET}
           selectedNodeId={selectedNodeId}
-          selectedNodeIds={selectedNodeIds ?? new Set()}
+          selectedNodeIds={selectedNodeIds ?? EMPTY_SET}
           hoverBranchId={hoverBranchId}
           branchWidth={branchWidth}
           branchBorder={branchBorder}
