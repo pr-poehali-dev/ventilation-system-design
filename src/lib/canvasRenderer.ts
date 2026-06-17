@@ -546,13 +546,16 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.restore();
     }
 
-    // Стрелки потока (F9) — тонкие
-    // Красные — свежая струя; синие — загрязнённый воздух (pollutesAir + ниже по потоку)
-    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80) {
-      const stepA = 130;
+    // Стрелки потока (F9)
+    // Красные — свежая струя; синие — загрязнённый воздух
+    // objSF масштабирует шаг и размер стрелок вместе с ветвями
+    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * objSF) {
+      const stepA = 130 * objSF;
       const count = Math.max(1, Math.floor(segLen / stepA));
-      const arrowLen = Math.min(28, Math.max(16, w * 4));
+      const arrowLen = Math.min(28 * objSF, Math.max(16 * objSF, w * 4));
       const hw = arrowLen / 2;
+      const tip = Math.max(3, 5 * objSF);
+      const tipW = Math.max(2, 4 * objSF);
       const isPolluted = pollutedBranchIds?.has(b.id) ?? false;
       const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
       ctx.save();
@@ -563,17 +566,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(angle);
-        // Тонкий хвостик
+        // Хвостик
         ctx.strokeStyle = arrowColor;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = Math.max(0.5, objSF);
         ctx.lineCap = "round";
-        ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 5, 0); ctx.stroke();
-        // Компактный наконечник
+        ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - tip, 0); ctx.stroke();
+        // Наконечник
         ctx.fillStyle = arrowColor;
         ctx.strokeStyle = "white";
-        ctx.lineWidth = 0.6;
+        ctx.lineWidth = Math.max(0.3, 0.6 * objSF);
         ctx.beginPath();
-        ctx.moveTo(hw - 7, -4); ctx.lineTo(hw, 0); ctx.lineTo(hw - 7, 4);
+        ctx.moveTo(hw - tip, -tipW); ctx.lineTo(hw, 0); ctx.lineTo(hw - tip, tipW);
         ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.restore();
       }

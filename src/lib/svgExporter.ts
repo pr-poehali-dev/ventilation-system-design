@@ -45,6 +45,10 @@ export interface SvgExportOptions {
 
   // Заголовок схемы (для метаданных)
   title?: string;
+
+  /** Фиксированный масштаб объектов (режим 1): true — ширины не зависят от zoom.
+   *  false (режим 2) — ширины/узлы/стрелки масштабируются вместе со схемой. */
+  fixedObjectScale?: boolean;
 }
 
 // ── Цвет ветви ────────────────────────────────────────────────────────────────
@@ -126,7 +130,13 @@ export function generateSvg(opts: SvgExportOptions): string {
     infoConfig, canvasW, canvasH, title = "Схема",
     colorMode = "none",
     posInnerColors, posOuterColors, positions = [],
+    fixedObjectScale = true,
   } = opts;
+
+  // В режиме 2 (fixedObjectScale=false) объекты масштабируются вместе со схемой.
+  // objSF = proj.scale / 0.4 — тот же коэффициент что в canvasRenderer.
+  // В режиме 1 и для печати objSF = 1 (ширины не зависят от зума).
+  const objSF = fixedObjectScale ? 1 : Math.max(0.25, proj.scale / 0.4);
 
   // Проецируем все узлы
   const projMap = new Map<string, { sx: number; sy: number }>();
@@ -200,7 +210,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       if (!from || !to) continue;
       const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
       const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
-      const w = bw + bb * 2;
+      const w = (bw + bb * 2) * objSF;
       const dash = b.isLeakage ? `stroke-dasharray="6 4"` : "";
       parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke-width="${n(w)}" ${dash}/>`);
     }
@@ -216,7 +226,7 @@ export function generateSvg(opts: SvgExportOptions): string {
 
     const color = getBranchColor(b, opts);
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-    const w = thinLines ? 1 : bw;
+    const w = thinLines ? 1 : bw * objSF;
     const dash = b.isLeakage ? `stroke-dasharray="6 4"` : "";
     const opacity = b.isDead ? 0.5 : 1;
 
@@ -234,7 +244,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const to   = projMap.get(b.toId);
       if (!from || !to) continue;
       const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-      const outerW = thinLines ? 3 : bw + 4;
+      const outerW = thinLines ? 3 : (bw + 4) * objSF;
       parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke="${esc(outerColor)}" stroke-width="${n(outerW)}"/>`);
     }
     parts.push(`</g>`);
@@ -250,7 +260,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const to   = projMap.get(b.toId);
       if (!from || !to) continue;
       const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-      const innerW = thinLines ? 1 : bw;
+      const innerW = thinLines ? 1 : bw * objSF;
       parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke="${esc(innerColor)}" stroke-width="${n(innerW)}"/>`);
     }
     parts.push(`</g>`);
@@ -266,10 +276,10 @@ export function generateSvg(opts: SvgExportOptions): string {
     if (!from || !to) continue;
     const dx = to.sx - from.sx, dy = to.sy - from.sy;
     const len = Math.hypot(dx, dy);
-    if (len < 10) continue;
+    if (len < 10 * objSF) continue;
     const ux = dx / len, uy = dy / len;
     const mx = (from.sx + to.sx) / 2, my = (from.sy + to.sy) / 2;
-    const aw = 5, ah = 8;
+    const aw = 5 * objSF, ah = 8 * objSF;
     const p1x = mx + ux * ah / 2,  p1y = my + uy * ah / 2;
     const p2x = mx - ux * ah / 2 - uy * aw / 2;
     const p2y = my - uy * ah / 2 + ux * aw / 2;
@@ -297,8 +307,8 @@ export function generateSvg(opts: SvgExportOptions): string {
     const adjAvgW = adjBranches.length > 0
       ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
       : branchWidth;
-    const branchPx = thinLines ? 1 : adjAvgW;
-    const r = Math.min(10, Math.max(1.5, branchPx * 0.55));
+    const branchPx = thinLines ? 1 : adjAvgW * objSF;
+    const r = Math.min(10 * objSF, Math.max(1.5, branchPx * 0.55));
 
     const baseColor = isAtm ? "#7dd3fc" : "#c8a882";
     const consumerColor = (nd.fireHydrantOpen ?? false) ? "#1d4ed8" : "#dc2626";

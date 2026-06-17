@@ -814,9 +814,10 @@ body{background:white;font-family:Arial,sans-serif}
         infoConfig, unitsConfig, colorMode,
         posInnerColors, posOuterColors,
         positions: showPositions ? positions : [],
-        canvasW: Math.round(paper.w * 3.78), // мм → px @ 96dpi
+        canvasW: Math.round(paper.w * 3.78),
         canvasH: Math.round(paper.h * 3.78),
         title: projectName,
+        fixedObjectScale,
       });
       downloadSvg(svgStr, projectName);
       setShowExportDialog(false);
@@ -839,6 +840,7 @@ body{background:white;font-family:Arial,sans-serif}
           canvasW: Math.round(paper.w * 3.78),
           canvasH: Math.round(paper.h * 3.78),
           title: projectName,
+          fixedObjectScale,
         });
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
