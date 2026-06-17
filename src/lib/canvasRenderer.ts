@@ -107,16 +107,18 @@ function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: 
   return `${v.toFixed(decimals)}${unit.symbol}`;
 }
 
-// ─── Кэш сортировки ветвей по глубине ──────────────────────────────────────
-// При pan/zoom projNodesMap меняется → нужна пересортировка.
-// При анимации потока (needsAnim) projNodesMap НЕ меняется → переиспользуем кэш.
-let _sortedBranchesCache: Array<{ b: TopoBranch; from: { sx: number; sy: number; depth: number } | undefined; to: { sx: number; sy: number; depth: number } | undefined; depth: number }> = [];
+// ─── Кэши сортировки по глубине (ветви и узлы) ─────────────────────────────
+// Ключ — ссылочное равенство: если массив/map не изменился → возвращаем кэш O(1).
+// При pan/zoom projNodesMap пересоздаётся → кэш сбрасывается автоматически.
+// При анимации потока projNodesMap НЕ меняется → кэш переиспользуется.
+type SortedBranch = { b: TopoBranch; from: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; to: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; depth: number };
+let _sortedBranchesCache: SortedBranch[] = [];
 let _sortedBranchesKey: { visibleBranches: TopoBranch[]; projNodesMap: Map<string, unknown> } = { visibleBranches: [], projNodesMap: new Map() };
 
 function getSortedBranches(
   visibleBranches: TopoBranch[],
-  projNodesMap: Map<string, { sx: number; sy: number; depth: number }>,
-) {
+  projNodesMap: Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>,
+): SortedBranch[] {
   if (_sortedBranchesKey.visibleBranches === visibleBranches && _sortedBranchesKey.projNodesMap === projNodesMap) {
     return _sortedBranchesCache;
   }
@@ -128,6 +130,17 @@ function getSortedBranches(
     return { b, from, to, depth };
   }).sort((a, b) => a.depth - b.depth);
   return _sortedBranchesCache;
+}
+
+type SortedNode = { node: TopoNode; sx: number; sy: number; depth: number };
+let _sortedNodesCache: SortedNode[] = [];
+let _sortedNodesKey: ProjNode[] | null = null;
+
+function getSortedNodes(projNodes: ProjNode[]): SortedNode[] {
+  if (_sortedNodesKey === projNodes) return _sortedNodesCache;
+  _sortedNodesKey = projNodes;
+  _sortedNodesCache = [...projNodes].sort((a, b) => a.depth - b.depth);
+  return _sortedNodesCache;
 }
 
 // ─── Сетка 2D (план) ───────────────────────────────────────────────────────
@@ -266,12 +279,25 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── Сортировка ветвей по глубине (painter's algorithm) ───────────────────
   // Используем кэш: при анимации потока projNodesMap не меняется → O(1) вместо O(N log N)
-  const sorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number }>);
+  const sorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>);
 
   // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
-  // Вспомогательная функция вычисления параметров ветви
-  const branchParams = (b: typeof sorted[0]["b"], from: typeof sorted[0]["from"], to: typeof sorted[0]["to"]) => {
-    if (!from || !to) return null;
+  // Вычисляем параметры ОДИН РАЗ для каждой ветви и сохраняем в Map.
+  // Ранее branchParams() вызывался дважды (проход 1 + проход 2) = 2×N вычислений.
+  type BranchP = {
+    isSel: boolean; isMulti: boolean; isDead: boolean; isLeakage: boolean;
+    Q: number; V: number; overV: boolean; reversed: boolean;
+    sxA: number; syA: number; sxB: number; syB: number;
+    midX: number; midY: number; color: string; w: number; bwBorder: number; bw: number;
+    flowVisible: boolean; showDashes: boolean; showChevrons: boolean;
+    dx: number; dy: number; segLen: number; ux: number; uy: number; angle: number;
+    fromSx: number; fromSy: number; toSx: number; toSy: number;
+    fromNode: ProjNode["node"]; toNode: ProjNode["node"];
+  };
+  const defaultBranchColor = printMode ? "#333333" : "#ffffff";
+  const bParamsMap = new Map<string, BranchP>();
+  for (const { b, from, to } of sorted) {
+    if (!from || !to) continue;
     const isSel     = selectedBranchId === b.id || selectedBranchIds.has(b.id);
     const isMulti   = selectedBranchIds.has(b.id);
     const isDead    = b.isDead ?? false;
@@ -281,17 +307,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const overV = V > b.vMax;
     const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && b.flow >= 0;
     const reversed = b.flow < 0 || fanReverseOverride;
-    const sxA = reversed ? to.sx : from.sx;
-    const syA = reversed ? to.sy : from.sy;
-    const sxB = reversed ? from.sx : to.sx;
-    const syB = reversed ? from.sy : to.sy;
-    const midX = (from.sx + to.sx) / 2;
-    const midY = (from.sy + to.sy) / 2;
+    const sxA = reversed ? to.sx : from.sx, syA = reversed ? to.sy : from.sy;
+    const sxB = reversed ? from.sx : to.sx, syB = reversed ? from.sy : to.sy;
+    const midX = (from.sx + to.sx) / 2, midY = (from.sy + to.sy) / 2;
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const posInnerCol = posInnerColors?.get(b.id);
-    // Цвет ветви по умолчанию (без потока, без выделения) — белый как в SVG.
-    // Видимость обеспечивается тёмной обводкой (border) в ПРОХОДЕ 1.
-    const defaultBranchColor = printMode ? "#333333" : "#ffffff";
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
@@ -314,41 +334,42 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const ux = segLen > 0 ? dx / segLen : 0;
     const uy = segLen > 0 ? dy / segLen : 0;
     const angle = Math.atan2(dy, dx);
-    return { isSel, isMulti, isDead, isLeakage, Q, V, overV, reversed,
+    bParamsMap.set(b.id, { isSel, isMulti, isDead, isLeakage, Q, V, overV, reversed,
       sxA, syA, sxB, syB, midX, midY, color, w, bwBorder, bw,
-      flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle };
-  };
+      flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle,
+      fromSx: from.sx, fromSy: from.sy, toSx: to.sx, toSy: to.sy,
+      fromNode: from.node, toNode: to.node });
+  }
+
+  // Устанавливаем lineCap один раз перед циклами — большинство ветвей используют "round"
+  ctx.lineCap = "round";
 
   // ── ПРОХОД 0: ПЛА цвет снаружи — под border и fill ───────────────────────
   if (posOuterColors) {
-    for (const { b, from, to } of sorted) {
-      const p = branchParams(b, from, to);
+    ctx.globalAlpha = 0.7;
+    ctx.setLineDash([]);
+    for (const { b } of sorted) {
+      const p = bParamsMap.get(b.id);
       if (!p) continue;
       const col = posOuterColors.get(b.id);
       if (!col) continue;
-      ctx.save();
       ctx.strokeStyle = col;
       ctx.lineWidth = p.w + p.bwBorder * 2 + 6;
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 0.7;
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-      ctx.restore();
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
     }
+    ctx.globalAlpha = 1;
   }
 
   // ── ПРОХОД 1: только border (обводка) всех ветвей ─────────────────────────
   // Рисуем border отдельным проходом ДО всех fill, чтобы fill соседних ветвей
   // перекрывал торцы border — схема выглядит цельной без разрывов в узлах
-  for (const { b, from, to } of sorted) {
-    const p = branchParams(b, from, to);
+  for (const { b } of sorted) {
+    const p = bParamsMap.get(b.id);
     if (!p || p.bwBorder === 0) continue;
     // Опрокидывание — синяя аура под border
     if (reversedBranchIds?.has(b.id)) {
-      ctx.save();
       ctx.strokeStyle = "#2563eb";
       ctx.lineWidth = Math.max(p.w + 18, 10);
-      ctx.lineCap = "round";
       ctx.globalAlpha = 0.55;
       ctx.setLineDash([8, 4]);
       ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
@@ -356,66 +377,54 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.globalAlpha = 0.3;
       ctx.lineWidth = Math.max(p.w + 10, 6);
       ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
-      ctx.restore();
     }
     // Пожар — аура под border
     const fireSeg = branchFireColors?.get(b.id);
     if (fireSeg) {
       const { color: fireCol, fromT, toT } = fireSeg;
-      const fsx = p.sxA + (p.sxB - p.sxA) * fromT;
-      const fsy = p.syA + (p.syB - p.syA) * fromT;
-      const tsx = p.sxA + (p.sxB - p.sxA) * toT;
-      const tsy = p.syA + (p.syB - p.syA) * toT;
-      ctx.save();
+      const fsx = p.sxA + (p.sxB - p.sxA) * fromT, fsy = p.syA + (p.syB - p.syA) * fromT;
+      const tsx = p.sxA + (p.sxB - p.sxA) * toT,   tsy = p.syA + (p.syB - p.syA) * toT;
       ctx.strokeStyle = fireCol;
       ctx.lineWidth = Math.max(p.w + 14, 8);
-      ctx.lineCap = "round";
       ctx.globalAlpha = 0.7;
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
-      ctx.restore();
     }
     // Взрыв — аура под border (штриховая, более широкая)
     const expSeg = branchExplosionColors?.get(b.id);
     if (expSeg) {
-      ctx.save();
       ctx.strokeStyle = expSeg.color;
       ctx.lineWidth = Math.max(p.w + 20, 12);
-      ctx.lineCap = "round";
       ctx.globalAlpha = 0.55;
       ctx.setLineDash([10, 6]);
       ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
-      // Второй слой — более тонкий, непрерывный
       ctx.globalAlpha = 0.35;
       ctx.lineWidth = Math.max(p.w + 8, 6);
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
-      ctx.restore();
     }
     // Подсветка hover
     if (hoverBranchId === b.id) {
-      ctx.save();
       ctx.strokeStyle = "#f59e0b";
       ctx.lineWidth = p.w + 8;
-      ctx.lineCap = "round";
       ctx.globalAlpha = 0.35;
-      ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-      ctx.restore();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
     }
     // Border
-    ctx.save();
     ctx.strokeStyle = "#1f2937";
     ctx.lineWidth = p.w + p.bwBorder * 2;
-    ctx.lineCap = "round";
     ctx.globalAlpha = 0.85;
     ctx.setLineDash(p.isLeakage ? [6, 4] : []);
-    ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-    ctx.restore();
+    ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
   }
+  // Сброс после прохода 1
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
 
   // ── ПРОХОД 2: fill + декор всех ветвей ────────────────────────────────────
-  for (const { b, from, to } of sorted) {
-    const p = branchParams(b, from, to);
+  for (const { b } of sorted) {
+    const p = bParamsMap.get(b.id);
     if (!p) continue;
     const { isSel, isDead, isLeakage, Q, V, overV,
       sxA, syA, sxB, syB, midX, midY, color, w,
@@ -423,12 +432,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     // Пожар и опрокидывание — ауры (только если нет border, иначе уже нарисованы в проходе 1)
     if (p.bwBorder === 0) {
-      // Опрокидывание — синяя аура
       if (reversedBranchIds?.has(b.id)) {
-        ctx.save();
         ctx.strokeStyle = "#2563eb";
         ctx.lineWidth = Math.max(w + 18, 10);
-        ctx.lineCap = "round";
         ctx.globalAlpha = 0.55;
         ctx.setLineDash([8, 4]);
         ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
@@ -436,31 +442,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.globalAlpha = 0.3;
         ctx.lineWidth = Math.max(w + 10, 6);
         ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
-        ctx.restore();
       }
       const fireSeg = branchFireColors?.get(b.id);
       if (fireSeg) {
         const { color: fireCol, fromT, toT } = fireSeg;
-        const fsx = sxA + (sxB - sxA) * fromT;
-        const fsy = syA + (syB - syA) * fromT;
-        const tsx = sxA + (sxB - sxA) * toT;
-        const tsy = syA + (syB - syA) * toT;
-        ctx.save();
+        const fsx = sxA + (sxB - sxA) * fromT, fsy = syA + (syB - syA) * fromT;
+        const tsx = sxA + (sxB - sxA) * toT,   tsy = syA + (syB - syA) * toT;
         ctx.strokeStyle = fireCol;
         ctx.lineWidth = Math.max(w + 14, 8);
-        ctx.lineCap = "round";
         ctx.globalAlpha = 0.7;
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
-        ctx.restore();
       }
-      // Взрыв — аура (только если нет border)
       const expSeg2 = branchExplosionColors?.get(b.id);
       if (expSeg2) {
-        ctx.save();
         ctx.strokeStyle = expSeg2.color;
         ctx.lineWidth = Math.max(w + 20, 12);
-        ctx.lineCap = "round";
         ctx.globalAlpha = 0.55;
         ctx.setLineDash([10, 6]);
         ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
@@ -468,108 +465,65 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.lineWidth = Math.max(w + 8, 6);
         ctx.setLineDash([]);
         ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
-        ctx.restore();
       }
-      // Подсветка hover (только если нет border)
       if (hoverBranchId === b.id) {
-        ctx.save();
         ctx.strokeStyle = "#f59e0b";
         ctx.lineWidth = w + 8;
-        ctx.lineCap = "round";
         ctx.globalAlpha = 0.35;
-        ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-        ctx.restore();
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
       }
     }
 
     // Основная линия
-    ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = w;
-    ctx.lineCap = "round";
     ctx.globalAlpha = flowVisible ? 0.55 : 1;
     ctx.setLineDash(isLeakage ? [6, 4] : []);
-    ctx.beginPath(); ctx.moveTo(from!.sx, from!.sy); ctx.lineTo(to!.sx, to!.sy); ctx.stroke();
-    ctx.restore();
+    ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
 
     // ── Вентрубопровод — пунктирная линия параллельно ветви ──────────────
     if (b.hasVentPipe) {
-      const nx = -uy; // нормаль к ветви
-      const ny = ux;
+      const nx = -uy, ny = ux;
       const vpOffset = w / 2 + 3;
-      const vpX1 = from!.sx + nx * vpOffset;
-      const vpY1 = from!.sy + ny * vpOffset;
-      const vpX2 = to!.sx + nx * vpOffset;
-      const vpY2 = to!.sy + ny * vpOffset;
+      const vpX1 = p.fromSx + nx * vpOffset, vpY1 = p.fromSy + ny * vpOffset;
+      const vpX2 = p.toSx   + nx * vpOffset, vpY2 = p.toSy   + ny * vpOffset;
       const vpW = Math.max(1.5, w * 0.35);
-      // Белая подложка для читаемости
-      ctx.save();
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = vpW + 2;
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = "white"; ctx.lineWidth = vpW + 2; ctx.globalAlpha = 0.6; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
+      ctx.strokeStyle = "#0ea5e9"; ctx.lineWidth = vpW; ctx.globalAlpha = 0.9; ctx.setLineDash([8, 4]);
+      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
-      ctx.restore();
-      // Голубая пунктирная линия
-      ctx.save();
-      ctx.strokeStyle = "#0ea5e9";
-      ctx.lineWidth = vpW;
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 0.9;
-      ctx.setLineDash([8, 4]);
-      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
-      ctx.restore();
-      // Метка "ВТ" в середине при достаточном масштабе
       if (segLen > 60 && view.scale > 0.3) {
-        const mX = (vpX1 + vpX2) / 2;
-        const mY = (vpY1 + vpY2) / 2;
+        const mX = (vpX1 + vpX2) / 2, mY = (vpY1 + vpY2) / 2;
         const fs = Math.max(8, Math.min(12, w * 1.2));
-        ctx.save();
-        ctx.fillStyle = "#0ea5e9";
-        ctx.font = `bold ${fs}px Arial`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = "#0ea5e9"; ctx.font = `bold ${fs}px Arial`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.globalAlpha = 0.95;
         ctx.fillText("ВТ", mX, mY);
-        ctx.restore();
       }
     }
 
     // Бегущий пунктир
     if (showDashes) {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = w;
-      ctx.lineCap = "butt";
-      ctx.globalAlpha = 0.95;
-      ctx.setLineDash([10, 8]);
-      ctx.lineDashOffset = -animOffset;
+      ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "butt";
+      ctx.globalAlpha = 0.95; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -animOffset;
       ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
-      ctx.restore();
+      ctx.lineCap = "round"; ctx.lineDashOffset = 0;
     }
 
-    // Шевроны
+    // Шевроны — один ctx.save/restore на всю ветвь вместо N штук
     if (showChevrons && segLen > 24) {
-      const step = 30;
-      const count = Math.max(1, Math.floor(segLen / step));
+      const count = Math.max(1, Math.floor(segLen / 30));
       ctx.save();
-      ctx.fillStyle = color;
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 0.6;
-      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = color; ctx.strokeStyle = "white"; ctx.lineWidth = 0.6; ctx.globalAlpha = 0.9;
+      ctx.setLineDash([]);
       for (let i = 0; i < count; i++) {
         const t0 = (i + 1) / (count + 1);
-        const cx = sxA + dx * t0;
-        const cy = syA + dy * t0;
         ctx.save();
-        ctx.translate(cx, cy);
+        ctx.translate(sxA + dx * t0, syA + dy * t0);
         ctx.rotate(angle);
-        ctx.beginPath();
-        ctx.moveTo(-4, -4); ctx.lineTo(4, 0); ctx.lineTo(-4, 4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4, -4); ctx.lineTo(4, 0); ctx.lineTo(-4, 4);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.restore();
       }
       ctx.restore();
@@ -577,16 +531,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     // Маркер истока
     if (flowVisible) {
-      ctx.save();
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = color; ctx.globalAlpha = 0.9; ctx.setLineDash([]);
       ctx.beginPath(); ctx.arc(sxA, syA, 2.5, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
     }
 
     // Стрелки потока (F9)
-    // Красные — свежая струя; синие — загрязнённый воздух
-    // objSF масштабирует шаг и размер стрелок вместе с ветвями
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * objSF) {
       const stepA = 130 * objSF;
       const count = Math.max(1, Math.floor(segLen / stepA));
@@ -594,25 +543,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const hw = arrowLen / 2;
       const tip = Math.max(3, 5 * objSF);
       const tipW = Math.max(2, 4 * objSF);
-      const isPolluted = pollutedBranchIds?.has(b.id) ?? false;
-      const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
+      const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
+      const arrowTailW = Math.max(0.5, objSF);
+      const arrowTipW  = Math.max(0.3, 0.6 * objSF);
       ctx.save();
+      ctx.setLineDash([]);
       for (let i = 0; i < count; i++) {
         const t0 = (i + 1) / (count + 1);
-        const cx = sxA + dx * t0;
-        const cy = syA + dy * t0;
         ctx.save();
-        ctx.translate(cx, cy);
+        ctx.translate(sxA + dx * t0, syA + dy * t0);
         ctx.rotate(angle);
-        // Хвостик
-        ctx.strokeStyle = arrowColor;
-        ctx.lineWidth = Math.max(0.5, objSF);
-        ctx.lineCap = "round";
+        ctx.strokeStyle = arrowColor; ctx.lineWidth = arrowTailW; ctx.globalAlpha = 1;
         ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - tip, 0); ctx.stroke();
-        // Наконечник
-        ctx.fillStyle = arrowColor;
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = Math.max(0.3, 0.6 * objSF);
+        ctx.fillStyle = arrowColor; ctx.strokeStyle = "white"; ctx.lineWidth = arrowTipW;
         ctx.beginPath();
         ctx.moveTo(hw - tip, -tipW); ctx.lineTo(hw, 0); ctx.lineTo(hw - tip, tipW);
         ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -623,7 +566,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     // Метки ветвей
     if (lodLabels) {
-      // Индивидуальные индикаторы ветви переопределяют глобальный infoConfig
       const ic = (b.indicators && Object.keys(b.indicators).length > 0)
         ? { ...(infoConfig ?? {}), ...b.indicators } as typeof infoConfig
         : infoConfig;
@@ -634,8 +576,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const lox = b.labelOffsetX ?? 0;
       const loy = b.labelOffsetY ?? -16;
       const labelAng = (b.labelAngle ?? 0) * Math.PI / 180;
-      const anchorX = midX + lox;
-      const anchorY = midY + loy;
+      const anchorX = midX + lox, anchorY = midY + loy;
 
       const dataLines: string[] = [];
       if (!isDead && ic) {
@@ -645,10 +586,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         const uLen  = getUnit(unitsConfig, "length");
         const uArea = getUnit(unitsConfig, "area");
         const uRes  = getUnit(unitsConfig, "resistance");
-        const len = b.length || Math.round(calcBranchLength(from.node, to.node));
         const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
+        const lenReal = b.length || Math.round(calcBranchLength(p.fromNode, p.toNode));
         if (ic.branchName && b.type) dataLines.push(b.type);
-        if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
+        if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(lenReal).toFixed(uLen.decimals)}${uLen.symbol}`);
         if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
         if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
         if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1000 / 9.81, uRes)}`);
@@ -661,51 +602,48 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
       }
 
-      // Все строки: номер (если нужен) + данные
       const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
       if (allLines.length === 0) continue;
 
       ctx.save();
       ctx.globalAlpha = labelOpacity;
 
-      // Выноска если метка сдвинута
       if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
-        ctx.save();
-        ctx.strokeStyle = "#555555";
-        ctx.lineWidth = 0.4 * objSF;
+        ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4 * objSF;
         ctx.setLineDash([2, 3]);
         ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
         ctx.setLineDash([]);
-        ctx.restore();
       }
 
-      // Переносим начало координат + поворот
       ctx.translate(anchorX, anchorY);
       if (labelAng !== 0) ctx.rotate(labelAng);
 
-      // Масштаб текста: пропорционален ширине ветви, с лимитом [0.3..2.5]
       const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
       const textSc = Math.min(2.5, Math.max(0.3, branchPxLabel * 0.28)) * (b.labelSize ?? 1);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
 
-      allLines.forEach((ln, li) => {
+      // Вычисляем оба размера шрифта заранее — ctx.font меняется только при смене размера
+      const numFontSize = (branchNum.length > 2 ? 7.5 : 9) * textSc;
+      const dataFontSize = 8.5 * textSc;
+      const numFont  = `600 ${numFontSize}px "Segoe UI",sans-serif`;
+      const dataFont = `600 ${dataFontSize}px "Segoe UI",sans-serif`;
+      let lastFont = "";
+
+      for (let li = 0; li < allLines.length; li++) {
+        const ln = allLines[li];
         const ty = -bh / 2 + lh * (li + 0.6);
         const isNumLine = li === 0 && showNum;
-        const baseFontSize = isNumLine ? (branchNum.length > 2 ? 7.5 : 9) : 8.5;
-        const fontSize = baseFontSize * textSc;
-        ctx.font = `600 ${fontSize}px "Segoe UI",sans-serif`;
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 3 * textSc;
-        ctx.lineJoin = "round";
+        const font = isNumLine ? numFont : dataFont;
+        if (font !== lastFont) { ctx.font = font; lastFont = font; }
+        ctx.strokeStyle = "white"; ctx.lineWidth = 3 * textSc;
         ctx.strokeText(ln, 0, ty);
-        ctx.fillStyle = isNumLine
-          ? (isSel ? "#2563eb" : "#374151")
-          : (overV ? "#dc2626" : "#1e3a5f");
+        ctx.fillStyle = isNumLine ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f");
         ctx.fillText(ln, 0, ty);
-      });
+      }
 
       ctx.restore();
     }
@@ -744,7 +682,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {
-    const nodesSorted = [...projNodes].sort((a, b) => a.depth - b.depth);
+    // Кэш: узел → смежные ветви, строится за O(M) один раз вместо O(N×M) filter в цикле
+    const nodeAdjBranchesMap = new Map<string, TopoBranch[]>();
+    for (const b of branches) {
+      for (const nid of [b.fromId, b.toId]) {
+        let arr = nodeAdjBranchesMap.get(nid);
+        if (!arr) { arr = []; nodeAdjBranchesMap.set(nid, arr); }
+        arr.push(b);
+      }
+    }
+    // O(1) при анимации — projNodes не меняется между кадрами
+    const nodesSorted = getSortedNodes(projNodes);
     for (const pn of nodesSorted) {
       const n = pn.node;
       if (n.visible === false) continue;
@@ -752,8 +700,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
-      // Ширина ветвей прилегающих к узлу (среднее), для синхронного масштабирования
-      const adjBranches = branches.filter(b => b.fromId === n.id || b.toId === n.id);
+      // O(1) вместо O(M) filter — берём из предварительно построенного Map
+      const adjBranches = nodeAdjBranchesMap.get(n.id) ?? [];
       const adjAvgW = adjBranches.length > 0
         ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
         : branchWidth;
