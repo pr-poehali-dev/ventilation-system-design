@@ -3,7 +3,7 @@
  * Работает с теми же данными что и canvasRenderer, но генерирует чистый SVG.
  * Масштабируется бесконечно — идеально для плоттера.
  */
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, PAPER_SIZES_MM } from "./topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
@@ -92,42 +92,6 @@ function esc(s: string): string {
 
 function n(v: number, d = 2): string { return v.toFixed(d); }
 
-// ── Вычисление bounding box узлов схемы ──────────────────────────────────────
-function computeFrameRect(
-  pl: NonNullable<Horizon["printLayer"]>,
-  projMap: Map<string, { sx: number; sy: number }>,
-  visBranches: TopoBranch[],
-): { rx: number; ry: number; rw: number; rh: number } | null {
-  const visIds = new Set<string>();
-  visBranches.forEach(b => { visIds.add(b.fromId); visIds.add(b.toId); });
-  const pts: { sx: number; sy: number }[] = [];
-  for (const [id, p] of projMap) {
-    if (visIds.has(id)) pts.push(p);
-  }
-  if (pts.length === 0) return null;
-
-  let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
-  pts.forEach(p => {
-    if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
-    if (p.sy < mnSy) mnSy = p.sy; if (p.sy > mxSy) mxSy = p.sy;
-  });
-  const sw = mxSx - mnSx || 1, sh = mxSy - mnSy || 1;
-  const pad = Math.max(sw, sh) * 0.08 + 15;
-  const scx = (mnSx + mxSx) / 2, scy = (mnSy + mxSy) / 2;
-
-  const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES_MM;
-  const plMm = PAPER_SIZES_MM[plFmt] ?? PAPER_SIZES_MM["A3"];
-  const plOri = pl.orientation ?? "landscape";
-  const aspect = (plOri === "landscape" ? plMm.h : plMm.w) / (plOri === "landscape" ? plMm.w : plMm.h);
-
-  let rsw = sw + pad * 2, rsh = rsw / aspect;
-  if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
-  rsw = Math.max(rsw, sw + pad * 2);
-  rsh = rsw / aspect;
-  if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * aspect; }
-
-  return { rx: scx - rsw / 2, ry: scy - rsh / 2, rw: Math.max(rsw, 40), rh: Math.max(rsh, 40) };
-}
 
 // ── Генерация SVG строки ──────────────────────────────────────────────────────
 export function generateSvg(opts: SvgExportOptions): string {
@@ -165,20 +129,25 @@ export function generateSvg(opts: SvgExportOptions): string {
   const activePrintHorizon = horizons.find(h => h.printLayer?.visible) ?? null;
   const pl = activePrintHorizon?.printLayer ?? null;
 
-  // Рамка для viewBox
-  let frameRect: { rx: number; ry: number; rw: number; rh: number } | null = null;
-  if (pl) {
-    frameRect = computeFrameRect(pl, projMap, visibleBranches);
-  }
-
-  // Определяем границы для viewBox
+  // ── viewBox = весь лист (canvasW × canvasH) при наличии слоя печати,
+  //    иначе — по bbox схемы с отступом.
+  // При наличии слоя печати proj уже рассчитан так что схема вписана в рамку
+  // внутри листа canvasW×canvasH. frameRect описывает рамку в px (0..canvasW, 0..canvasH).
   let vbX: number, vbY: number, vbW: number, vbH: number;
+  let frameRect: { rx: number; ry: number; rw: number; rh: number } | null = null;
 
-  if (frameRect) {
-    vbX = frameRect.rx;
-    vbY = frameRect.ry;
-    vbW = frameRect.rw;
-    vbH = frameRect.rh;
+  if (pl) {
+    // viewBox = весь лист
+    vbX = 0; vbY = 0; vbW = canvasW; vbH = canvasH;
+
+    // Рамка в пространстве canvasW×canvasH.
+    // Используем те же поля что PrintDialog (5% от меньшей стороны).
+    const padPx = Math.min(canvasW, canvasH) * 0.05;
+    const rx = padPx;
+    const ry = padPx;
+    const rw = canvasW - padPx * 2;
+    const rh = canvasH - padPx * 2;
+    frameRect = { rx, ry, rw, rh };
   } else {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of projMap.values()) {
@@ -829,30 +798,27 @@ export function generateSvg(opts: SvgExportOptions): string {
     }
   }
 
-  // ── Рамка печати (buildPrintLayerSvgString inline) ────────────────────────
+  // ── Рамка печати ─────────────────────────────────────────────────────────
+  // При активном слое печати: vbX=0,vbY=0,vbW=canvasW,vbH=canvasH.
+  // frameRect уже в пространстве viewBox (0..canvasW, 0..canvasH).
   if (pl && frameRect) {
     const { rx, ry, rw, rh } = frameRect;
-    // buildPrintLayerSvgString ожидает координаты rx/ry относительно (0,0) своего totalW×totalH холста.
-    // Наши rx/ry в пространстве viewBox (начало vbX/vbY) — сдвигаем обратно к (0,0).
     const frameSvgContent = buildPrintLayerSvgString({
       pl,
-      rx: rx - vbX,
-      ry: ry - vbY,
-      rw, rh,
+      rx, ry, rw, rh,
       totalW: vbW,
       totalH: vbH,
     });
     const bodyMatch = frameSvgContent.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
     if (bodyMatch) {
-      // translate обратно в пространство viewBox
-      parts.push(`<g id="print-layer" transform="translate(${n(vbX)},${n(vbY)})">`);
+      parts.push(`<g id="print-layer">`);
       parts.push(bodyMatch[1]);
       parts.push(`</g>`);
     }
   } else if (opts.printLayerSvg) {
     const bodyMatch = opts.printLayerSvg.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
     if (bodyMatch) {
-      parts.push(`<g id="print-layer" transform="translate(${n(vbX)},${n(vbY)})">`);
+      parts.push(`<g id="print-layer">`);
       parts.push(bodyMatch[1]);
       parts.push(`</g>`);
     }

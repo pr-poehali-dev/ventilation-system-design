@@ -822,10 +822,17 @@ body{background:white;font-family:Arial,sans-serif}
       showPageNumbers, renderTileToCanvas, closeCtxMenu]);
 
   // ─── Вспомогательная функция: строим ProjOptions для SVG/PDF-vector ─────
+  // SVG-холст = paper.w × paper.h мм при 96dpi (3.78px/мм).
+  // baseView рассчитан при DPI=150 (5.906px/мм). Пересчитываем sc и offset под 96dpi.
   const buildProjForExport = useCallback(() => {
+    const DPI_PRINT = 150;
+    const DPI_SVG   = 96;
+    const k = DPI_SVG / DPI_PRINT;          // ≈ 0.64
     const { sc, offsetX, offsetY } = baseView;
     return {
-      scale: sc, offsetX, offsetY,
+      scale:   sc      * k,
+      offsetX: offsetX * k,
+      offsetY: offsetY * k,
       azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
     };
   }, [baseView, viewState, zScale]);
