@@ -1871,51 +1871,30 @@ export default function TopoCanvas(props: Props) {
           </g>
         )))}
 
-        {/* ── Блок УО на схеме ────────────────────────────────────────────── */}
-        {pl.showLegend && (() => {
-          const legW = Math.max(100, rw * 0.22);
+        {/* ── Блок УО на схеме — из реально установленных символов ──────────── */}
+        {pl.showLegend && schemaSymbols && schemaSymbols.length > 0 && (() => {
+          // Собираем уникальные типы УО
+          const usedTypeIds = [...new Set(schemaSymbols.map(s => s.typeId))];
+          const legendItems: { name: string; svgContent: string; isBulkhead: boolean; tid: string }[] = [];
+          for (const tid of usedTypeIds) {
+            const lt = LEGEND_TYPES.find(l => l.id === tid);
+            const isBk = BULKHEAD_SYMBOL_IDS.has(tid);
+            if (lt) legendItems.push({ name: lt.name, svgContent: lt.svgContent, isBulkhead: false, tid });
+            else if (isBk) legendItems.push({ name: tid.replace(/_/g, " "), svgContent: "", isBulkhead: true, tid });
+          }
+          if (legendItems.length === 0) return null;
+
           const legFontSize = Math.max(7, Math.min(13, rh * 0.018));
-          const legLineH = legFontSize * 1.6;
-          const legIconW = legFontSize * 2.2;
+          const legIconSZ = legFontSize * 2.2;
+          const legLineH = legIconSZ + legFontSize * 0.4;
           const legPad = legFontSize * 0.6;
-          const legendItems = [
-            { name: "Позиция ПЛА", color: "#333", shape: "circle" },
-            { name: "Реверсивная позиция", color: "#dc2626", shape: "circle2" },
-            { name: "Станция замера воздуха", color: "#dc2626", shape: "lines2" },
-            { name: "Струя входящая", color: "#dc2626", shape: "arrow-r" },
-            { name: "Струя исходящая", color: "#2196f3", shape: "arrow-l" },
-            { name: "Устье выработки", color: "#333", shape: "rect-x" },
-            { name: "Блоковый запасной выход", color: "#333", shape: "blocks3" },
-            { name: "Аварийная сигнализация", color: "#333", shape: "speaker" },
-            { name: "Запасной выход", color: "#111", shape: "blocks3b" },
-            { name: "Телефон", color: "#333", shape: "circle-t" },
-            { name: "Огнетушитель", color: "#dc2626", shape: "circle-o" },
-          ];
+          const legW = Math.max(120, rw * 0.22);
           const legH = legPad * 2 + legendItems.length * legLineH + legFontSize * 1.5;
           const legOffX = pl.legendOffsetX ?? 0;
           const legOffY = pl.legendOffsetY ?? 0;
           const lx = rx + legOffX;
           const ly = ry + rh - legH + legOffY;
           const canDrag = !!onPrintLayerChange;
-
-          const renderIcon = (shape: string, color: string, x: number, y: number, iw: number, ih: number) => {
-            const cx = x + iw / 2, cy = y + ih / 2;
-            const sw = Math.max(0.5, legFontSize * 0.12);
-            switch (shape) {
-              case "circle": return <circle cx={cx} cy={cy} r={ih * 0.38} fill="none" stroke={color} strokeWidth={sw * 1.5} />;
-              case "circle2": return <><circle cx={cx} cy={cy} r={ih * 0.38} fill="none" stroke={color} strokeWidth={sw * 2}/><circle cx={cx} cy={cy} r={ih * 0.19} fill="none" stroke={color} strokeWidth={sw}/></>;
-              case "lines2": return <><line x1={x+1} y1={cy-ih*0.1} x2={x+iw-1} y2={cy-ih*0.1} stroke={color} strokeWidth={sw*2.5}/><line x1={x+1} y1={cy+ih*0.1} x2={x+iw-1} y2={cy+ih*0.1} stroke={color} strokeWidth={sw*2.5}/></>;
-              case "arrow-r": return <><line x1={x+1} y1={cy} x2={x+iw-ih*0.25} y2={cy} stroke={color} strokeWidth={sw*2}/><polygon points={`${x+iw-ih*0.3},${cy-ih*0.28} ${x+iw},${cy} ${x+iw-ih*0.3},${cy+ih*0.28}`} fill={color}/></>;
-              case "arrow-l": return <><line x1={x+ih*0.25} y1={cy} x2={x+iw-1} y2={cy} stroke={color} strokeWidth={sw*2}/><polygon points={`${x+ih*0.3},${cy-ih*0.28} ${x},${cy} ${x+ih*0.3},${cy+ih*0.28}`} fill={color}/></>;
-              case "rect-x": return <><rect x={cx-ih*0.3} y={cy-ih*0.38} width={ih*0.6} height={ih*0.76} fill="none" stroke={color} strokeWidth={sw}/><line x1={cx-ih*0.3} y1={cy-ih*0.38} x2={cx+ih*0.3} y2={cy+ih*0.38} stroke={color} strokeWidth={sw*0.7}/><line x1={cx+ih*0.3} y1={cy-ih*0.38} x2={cx-ih*0.3} y2={cy+ih*0.38} stroke={color} strokeWidth={sw*0.7}/></>;
-              case "blocks3": return <><rect x={x+1} y={cy-ih*0.3} width={iw*0.28} height={ih*0.6} fill="#222"/><rect x={x+iw*0.36} y={cy-ih*0.3} width={iw*0.28} height={ih*0.6} fill="#ffd600"/><rect x={x+iw*0.72} y={cy-ih*0.3} width={iw*0.26} height={ih*0.6} fill="#222"/></>;
-              case "blocks3b": return <><rect x={x+1} y={cy-ih*0.3} width={iw*0.28} height={ih*0.6} fill="#111"/><rect x={x+iw*0.36} y={cy-ih*0.3} width={iw*0.28} height={ih*0.6} fill="#111"/><rect x={x+iw*0.72} y={cy-ih*0.3} width={iw*0.26} height={ih*0.6} fill="#111"/></>;
-              case "speaker": return <><polygon points={`${x+3},${cy-ih*0.22} ${cx-ih*0.08},${cy-ih*0.22} ${cx+ih*0.18},${cy-ih*0.42} ${cx+ih*0.18},${cy+ih*0.42} ${cx-ih*0.08},${cy+ih*0.22} ${x+3},${cy+ih*0.22}`} fill="none" stroke={color} strokeWidth={sw}/><path d={`M${cx+ih*0.18} ${cy-ih*0.12} Q${cx+ih*0.38} ${cy} ${cx+ih*0.18} ${cy+ih*0.12}`} fill="none" stroke={color} strokeWidth={sw}/></>;
-              case "circle-t": return <><circle cx={cx} cy={cy} r={ih*0.38} fill="none" stroke={color} strokeWidth={sw}/><text x={cx} y={cy+legFontSize*0.35} textAnchor="middle" fontSize={legFontSize*0.85} fontWeight="bold" fill={color}>T</text></>;
-              case "circle-o": return <><circle cx={cx} cy={cy} r={ih*0.38} fill="none" stroke={color} strokeWidth={sw}/><circle cx={cx} cy={cy} r={ih*0.19} fill="none" stroke={color} strokeWidth={sw}/></>;
-              default: return null;
-            }
-          };
 
           return (
             <g key="legend-block">
@@ -1925,11 +1904,27 @@ export default function TopoCanvas(props: Props) {
               </text>
               {legendItems.map((item, idx) => {
                 const iy = ly + legPad + legFontSize * 1.5 + idx * legLineH;
-                const ih = legLineH * 0.8;
+                const icX = lx + legPad;
+                const icY = iy + (legLineH - legIconSZ) / 2;
                 return (
                   <g key={idx}>
-                    {renderIcon(item.shape, item.color, lx + legPad, iy + (legLineH - ih) / 2, legIconW, ih)}
-                    <text x={lx + legPad + legIconW + legPad * 0.5} y={iy + legLineH * 0.65}
+                    {!item.isBulkhead && item.svgContent ? (
+                      <image
+                        x={icX} y={icY} width={legIconSZ} height={legIconSZ}
+                        href={`data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 40">${encodeURIComponent(item.svgContent)}</svg>`}
+                      />
+                    ) : (
+                      <g>
+                        <line x1={icX} y1={iy + legLineH / 2} x2={icX + legIconSZ} y2={iy + legLineH / 2} stroke="#555" strokeWidth={1.2} />
+                        <rect
+                          x={icX + legIconSZ / 2 - legIconSZ * 0.175} y={icY + legIconSZ * 0.1}
+                          width={legIconSZ * 0.35} height={legIconSZ * 0.8}
+                          fill={item.tid.includes("concrete") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : "white"}
+                          stroke="#1a1a1a" strokeWidth={1}
+                        />
+                      </g>
+                    )}
+                    <text x={lx + legPad + legIconSZ + legPad * 0.5} y={iy + legLineH * 0.6}
                       fontSize={legFontSize * 0.88} fontFamily="Arial, sans-serif" fill="#333">
                       {item.name}
                     </text>

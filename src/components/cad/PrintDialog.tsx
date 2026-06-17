@@ -528,7 +528,7 @@ export default function PrintDialog({
     layer: NonNullable<Horizon["printLayer"]>,
     rect: { rx: number; ry: number; rw: number; rh: number },
   ): Promise<void> => {
-    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH });
+    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH, schemaSymbols });
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     await new Promise<void>((resolve) => {
@@ -537,7 +537,7 @@ export default function PrintDialog({
       img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
       img.src = url;
     });
-  }, []);
+  }, [schemaSymbols]);
 
   // Вычисляет bbox рамки из projNodes — тот же алгоритм что в PrintPreviewCanvas/TopoCanvas
   const computeFrameRect = useCallback((

@@ -746,58 +746,6 @@ export function generateSvg(opts: SvgExportOptions): string {
     parts.push(`</g>`); // /schema-symbols
   }
 
-  // ── Легенда условных обозначений ──────────────────────────────────────────
-  // Собираем все типы УО, которые реально размещены на схеме
-  if (schemaSymbols.length > 0) {
-    const usedTypeIds = [...new Set(schemaSymbols.map(s => s.typeId))];
-    const legendItems: { id: string; name: string; svgContent: string; isBulkhead: boolean }[] = [];
-
-    for (const tid of usedTypeIds) {
-      const lt = LEGEND_TYPES.find(l => l.id === tid);
-      const isBk = BULKHEAD_SYMBOL_IDS.has(tid);
-      if (lt) legendItems.push({ id: tid, name: lt.name, svgContent: lt.svgContent, isBulkhead: false });
-      else if (isBk) legendItems.push({ id: tid, name: tid.replace(/_/g, " "), svgContent: "", isBulkhead: true });
-    }
-
-    if (legendItems.length > 0) {
-      const legX = vbX + 8;
-      const legIconSZ = 28;
-      const legRowH = 34;
-      const legW = 170;
-      const legH = legendItems.length * legRowH + 16;
-      const legY = vbY + vbH - legH - 8;
-
-      parts.push(`<g id="legend" font-family="Segoe UI,Arial,sans-serif">`);
-      // Фон
-      parts.push(`<rect x="${n(legX)}" y="${n(legY)}" width="${n(legW)}" height="${n(legH)}" fill="white" stroke="#374151" stroke-width="0.8" rx="3" opacity="0.95"/>`);
-      parts.push(`<text x="${n(legX+6)}" y="${n(legY+11)}" font-size="8" font-weight="700" fill="#1f2937">Условные обозначения</text>`);
-
-      legendItems.forEach((item, i) => {
-        const iy = legY + 16 + i * legRowH;
-        const icX = legX + 6;
-        const icY = iy + 2;
-
-        if (!item.isBulkhead && item.svgContent) {
-          // SVG-иконка
-          parts.push(`<svg x="${n(icX)}" y="${n(icY)}" width="${legIconSZ}" height="${legIconSZ}" viewBox="0 0 48 40">${item.svgContent}</svg>`);
-        } else {
-          // Перемычка — простой прямоугольник
-          const fill2 = item.id.includes("concrete") ? "#4caf50"
-            : item.id.includes("wood")   ? "#ffd600"
-            : item.id.includes("brick")  ? "#ff9800"
-            : item.id.includes("metal")  ? "#9c27b0"
-            : "white";
-          parts.push(`<rect x="${n(icX+4)}" y="${n(icY+6)}" width="6" height="16" fill="${fill2}" stroke="#1a1a1a" stroke-width="1.2"/>`);
-          parts.push(`<line x1="${n(icX)}" y1="${n(icY+14)}" x2="${n(icX+legIconSZ)}" y2="${n(icY+14)}" stroke="#444" stroke-width="1"/>`);
-        }
-        // Название
-        parts.push(`<text x="${n(icX + legIconSZ + 4)}" y="${n(iy + legRowH/2 + 3)}" font-size="8" fill="#1f2937">${esc(item.name)}</text>`);
-      });
-
-      parts.push(`</g>`); // /legend
-    }
-  }
-
   // ── Рамка печати ─────────────────────────────────────────────────────────
   // При активном слое печати: vbX=0,vbY=0,vbW=canvasW,vbH=canvasH.
   // frameRect уже в пространстве viewBox (0..canvasW, 0..canvasH).
@@ -808,6 +756,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       rx, ry, rw, rh,
       totalW: vbW,
       totalH: vbH,
+      schemaSymbols,
     });
     const bodyMatch = frameSvgContent.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
     if (bodyMatch) {

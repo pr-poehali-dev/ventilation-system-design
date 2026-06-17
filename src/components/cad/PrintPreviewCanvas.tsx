@@ -298,7 +298,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         >
           {printLayerRects.map(({ h, pl, rx, ry, rw, rh }) => (
             <g key={h.id}>
-              {renderPrintLayerSvgContent({ pl, rx, ry, rw, rh })}
+              {renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols })}
             </g>
           ))}
         </svg>
