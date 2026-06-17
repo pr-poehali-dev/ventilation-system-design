@@ -311,10 +311,10 @@ export function generateSvg(opts: SvgExportOptions): string {
     const tipW     = Math.max(w * 1.2, 3); // полуширина наконечника ≈ 1.2 ширины ветви
     const stepA    = arrowLen * 4;          // шаг между стрелками = 4 длины стрелки
 
-    // Минимальная длина ветви = 2 стрелки
-    if (segLen < stepA * 1.5) continue;
+    // Минимальная длина ветви — хотя бы одна стрелка умещается
+    if (segLen < arrowLen * 1.2) continue;
 
-    // Цвет: синий — загрязнённый, красный — свежий
+    // Цвет: синий — загрязнённый, красный — свежий (как в canvasRenderer)
     const isPolluted = opts.pollutedBranchIds ? opts.pollutedBranchIds.has(b.id) : false;
     const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
 
