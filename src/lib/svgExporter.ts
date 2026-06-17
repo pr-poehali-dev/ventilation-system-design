@@ -310,11 +310,12 @@ export function generateSvg(opts: SvgExportOptions): string {
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const w = (thinLines ? 1 : bw) * objSF;
 
-    // Размеры и шаг относительно ширины ветви
+    // Размеры и шаг относительно ширины ветви.
+    // tipW ограничен w/2 — наконечник не должен выходить за края ветви в PDF.
     const arrowLen = Math.max(w * 3, 6);
     const hw       = arrowLen / 2;
     const tip      = arrowLen * 0.35;
-    const tipW     = Math.max(w * 1.2, 3);
+    const tipW     = Math.min(w / 2, Math.max(w * 0.45, 1.5));
     const stepA    = arrowLen * 4;
 
     // Минимальная длина ветви — хотя бы одна стрелка умещается
