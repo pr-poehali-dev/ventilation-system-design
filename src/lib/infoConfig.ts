@@ -38,8 +38,6 @@ export interface InfoDisplayConfig {
   branchCOEnd: boolean;
   branchQCOStart: boolean;
   branchQCOEnd: boolean;
-  // ─── Оформление выносок индикаторов ─────────────────────────────
-  labelLeaderWidth: number;  // толщина линии выноски, px (0.2..3.0, по умолч. 0.4)
 }
 
 export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
@@ -79,5 +77,4 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   branchCOEnd: false,
   branchQCOStart: false,
   branchQCOEnd: false,
-  labelLeaderWidth: 0.4,
 };
