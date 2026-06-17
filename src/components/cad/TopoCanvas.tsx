@@ -2597,30 +2597,35 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Стрелки направления воздуха (F9, после расчёта) ── */}
               {/* Красные — свежая струя; синие — загрязнённый воздух (pollutesAir ниже по потоку) */}
-              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 && (() => {
-                const step = 130;
-                const count = Math.max(1, Math.floor(segLen / step));
+              {/* Все размеры умножаем на objSF — при fixedObjectScale=true стрелки растут вместе со схемой */}
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * objSF && (() => {
+                const stepA = 130 * objSF;
+                const count = Math.max(1, Math.floor(segLen / stepA));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
-                const arrowLen = Math.min(28, Math.max(16, w * 4));
+                const arrowLen = Math.min(28 * objSF, Math.max(16 * objSF, w * 4));
+                const tip = Math.max(3, 5 * objSF);
+                const tipW = Math.max(2, 4 * objSF);
+                const strokeW = Math.max(0.5, objSF);
+                const strokeWTip = Math.max(0.3, 0.6 * objSF);
                 // Синие стрелки — для ветвей-источников загрязнения и всех ветвей ниже по потоку
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
+                const hw = arrowLen / 2;
                 return (
                   <g>
                     {Array.from({ length: count }, (_, i) => {
                       const t0 = (i + 1) / (count + 1);
                       const cx = sxA + dx * t0;
                       const cy = syA + dy * t0;
-                      const hw = arrowLen / 2;
                       return (
                         <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                          {/* Хвостик — тонкая линия */}
-                          <line x1={-hw} y1={0} x2={hw - 5} y2={0}
-                            stroke={arrowColor} strokeWidth="1"
+                          {/* Хвостик */}
+                          <line x1={-hw} y1={0} x2={hw - tip} y2={0}
+                            stroke={arrowColor} strokeWidth={strokeW}
                             strokeLinecap="round" />
-                          {/* Наконечник — компактный треугольник */}
-                          <polygon points={`${hw - 7},-4 ${hw},0 ${hw - 7},4`}
-                            fill={arrowColor} stroke="white" strokeWidth="0.6"
+                          {/* Наконечник */}
+                          <polygon points={`${hw - tip},-${tipW} ${hw},0 ${hw - tip},${tipW}`}
+                            fill={arrowColor} stroke="white" strokeWidth={strokeWTip}
                             strokeLinejoin="round" />
                         </g>
                       );
