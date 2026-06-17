@@ -281,6 +281,37 @@ export function generateSvg(opts: SvgExportOptions): string {
   //   stepA    ≈ w * 16  (шаг между стрелками ≈ 16 ширин ветви)
   //   minLen   ≈ w * 10  (минимальная длина ветви для отрисовки стрелки)
 
+  // Вычисляем pollutedBranchIds внутри generateSvg — BFS по потоку от ветвей с pollutesAir=true.
+  // Это гарантирует корректность независимо от того, передан ли opts.pollutedBranchIds снаружи.
+  const computedPolluted = ((): Set<string> => {
+    if (opts.pollutedBranchIds && opts.pollutedBranchIds.size > 0) return opts.pollutedBranchIds;
+    const sources = branches.filter(b => b.pollutesAir);
+    if (sources.length === 0) return new Set<string>();
+    const outEdges = new Map<string, string[]>();
+    for (const b of branches) {
+      const fn = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
+      const tn = (b.flow ?? 0) >= 0 ? b.toId   : b.fromId;
+      if (!outEdges.has(fn)) outEdges.set(fn, []);
+      outEdges.get(fn)!.push(b.id);
+      if (!outEdges.has(tn)) outEdges.set(tn, []);
+    }
+    const branchToNode = new Map<string, string>();
+    for (const b of branches) branchToNode.set(b.id, (b.flow ?? 0) >= 0 ? b.toId : b.fromId);
+    const visited = new Set<string>();
+    const queue: string[] = [];
+    for (const src of sources) {
+      visited.add(src.id);
+      queue.push((src.flow ?? 0) >= 0 ? src.toId : src.fromId);
+    }
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      for (const bId of outEdges.get(nodeId) ?? []) {
+        if (!visited.has(bId)) { visited.add(bId); const nxt = branchToNode.get(bId); if (nxt) queue.push(nxt); }
+      }
+    }
+    return visited;
+  })();
+
   parts.push(`<g id="flow-arrows">`);
   for (const b of visibleBranches) {
     const Q = Math.abs(b.flow ?? 0);
@@ -289,7 +320,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     const toPt   = projMap.get(b.toId);
     if (!fromPt || !toPt) continue;
 
-    // Реверс потока
+    // Реверс потока (строго как в canvasRenderer)
     const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && (b.flow ?? 0) >= 0;
     const reversed = (b.flow ?? 0) < 0 || fanReverseOverride;
     const sxA = reversed ? toPt.sx : fromPt.sx;
@@ -300,22 +331,22 @@ export function generateSvg(opts: SvgExportOptions): string {
     const dx = sxB - sxA, dy = syB - syA;
     const segLen = Math.hypot(dx, dy);
 
-    // Ширина ветви в пикселях SVG (та же формула что для branch-fills выше)
+    // Ширина ветви в пикселях SVG
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const w = (thinLines ? 1 : bw) * objSF;
 
-    // Размеры и шаг относительно ширины ветви — не зависят от proj.scale
-    const arrowLen = Math.max(w * 3, 6);   // длина стрелки ≥ 3 ширины ветви
+    // Размеры и шаг относительно ширины ветви
+    const arrowLen = Math.max(w * 3, 6);
     const hw       = arrowLen / 2;
-    const tip      = arrowLen * 0.35;       // длина наконечника 35% от arrowLen
-    const tipW     = Math.max(w * 1.2, 3); // полуширина наконечника ≈ 1.2 ширины ветви
-    const stepA    = arrowLen * 4;          // шаг между стрелками = 4 длины стрелки
+    const tip      = arrowLen * 0.35;
+    const tipW     = Math.max(w * 1.2, 3);
+    const stepA    = arrowLen * 4;
 
     // Минимальная длина ветви — хотя бы одна стрелка умещается
     if (segLen < arrowLen * 1.2) continue;
 
-    // Цвет: синий — загрязнённый, красный — свежий (как в canvasRenderer)
-    const isPolluted = opts.pollutedBranchIds ? opts.pollutedBranchIds.has(b.id) : false;
+    // Цвет: синий — загрязнённый, красный — свежий
+    const isPolluted = computedPolluted.has(b.id);
     const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
 
     const count = Math.max(1, Math.floor(segLen / stepA));
