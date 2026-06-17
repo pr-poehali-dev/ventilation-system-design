@@ -131,6 +131,8 @@ function getSortedBranches(
 }
 
 // ─── Сетка 2D (план) ───────────────────────────────────────────────────────
+// Все линии одного стиля рисуются одним beginPath/stroke — вместо N отдельных stroke() вызовов.
+// При 1920×1080 и scale=1: ~150 линий → было 150 stroke(), стало 2 stroke().
 function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number, offsetX: number, offsetY: number) {
   if (scale < 0.5) {
     ctx.fillStyle = "#f8f9fa";
@@ -143,50 +145,67 @@ function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: 
   const oy = offsetY % major;
 
   ctx.save();
+
+  // Minor grid — один path для всех линий
   ctx.strokeStyle = "#f0f0f0";
   ctx.lineWidth = 0.5;
-  for (let x = ox % minor; x < w; x += minor) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-  for (let y = oy % minor; y < h; y += minor) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.beginPath();
+  for (let x = ox % minor; x < w; x += minor) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+  for (let y = oy % minor; y < h; y += minor) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+  ctx.stroke();
+
+  // Major grid — один path для всех линий
   ctx.strokeStyle = "#dcdcdc";
   ctx.lineWidth = 0.8;
-  for (let x = ox; x < w; x += major) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-  for (let y = oy; y < h; y += major) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  ctx.beginPath();
+  for (let x = ox; x < w; x += major) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+  for (let y = oy; y < h; y += major) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+  ctx.stroke();
+
   ctx.restore();
 }
 
 // ─── 3D-сетка (горизонтальная плоскость z=0) ──────────────────────────────
+// Все линии сетки — один beginPath/stroke вместо N отдельных.
 function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
   const step = 500, range = 3000;
   ctx.save();
   ctx.strokeStyle = "#d4d4d4";
   ctx.globalAlpha = 0.7;
   ctx.lineWidth = 0.6;
+
+  // Все линии сетки одним path
+  ctx.beginPath();
   for (let x = -range; x <= range; x += step) {
     const a = project3D({ x, y: -range, z: 0 }, proj);
-    const b = project3D({ x, y: range, z: 0 }, proj);
-    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    const b = project3D({ x, y:  range, z: 0 }, proj);
+    ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy);
   }
   for (let y = -range; y <= range; y += step) {
     const a = project3D({ x: -range, y, z: 0 }, proj);
-    const b = project3D({ x: range, y, z: 0 }, proj);
-    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    const b = project3D({ x:  range, y, z: 0 }, proj);
+    ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy);
   }
+  ctx.stroke();
+
+  // Оси X/Y/Z — каждая своим цветом, но только 3 stroke() вместо forEach с closures
   ctx.globalAlpha = 1;
-  const O = project3D({ x: 0, y: 0, z: 0 }, proj);
-  const Xa = project3D({ x: 500, y: 0, z: 0 }, proj);
-  const Ya = project3D({ x: 0, y: 500, z: 0 }, proj);
-  const Za = project3D({ x: 0, y: 0, z: 500 }, proj);
-  [["#ef4444", O, Xa, "X"], ["#22c55e", O, Ya, "Y"], ["#3b82f6", O, Za, "Z"]].forEach(([color, from, to, label]) => {
-    ctx.strokeStyle = color as string;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo((from as { sx: number; sy: number }).sx, (from as { sx: number; sy: number }).sy);
-    ctx.lineTo((to as { sx: number; sy: number }).sx, (to as { sx: number; sy: number }).sy);
-    ctx.stroke();
-    ctx.fillStyle = color as string;
-    ctx.font = "10px sans-serif";
-    ctx.fillText(label as string, (to as { sx: number; sy: number }).sx + 4, (to as { sx: number; sy: number }).sy);
-  });
+  ctx.lineWidth = 2;
+  const O  = project3D({ x: 0,   y: 0,   z: 0   }, proj);
+  const Xa = project3D({ x: 500, y: 0,   z: 0   }, proj);
+  const Ya = project3D({ x: 0,   y: 500, z: 0   }, proj);
+  const Za = project3D({ x: 0,   y: 0,   z: 500 }, proj);
+  ctx.font = "10px sans-serif";
+
+  ctx.strokeStyle = "#ef4444"; ctx.beginPath(); ctx.moveTo(O.sx, O.sy); ctx.lineTo(Xa.sx, Xa.sy); ctx.stroke();
+  ctx.fillStyle   = "#ef4444"; ctx.fillText("X", Xa.sx + 4, Xa.sy);
+
+  ctx.strokeStyle = "#22c55e"; ctx.beginPath(); ctx.moveTo(O.sx, O.sy); ctx.lineTo(Ya.sx, Ya.sy); ctx.stroke();
+  ctx.fillStyle   = "#22c55e"; ctx.fillText("Y", Ya.sx + 4, Ya.sy);
+
+  ctx.strokeStyle = "#3b82f6"; ctx.beginPath(); ctx.moveTo(O.sx, O.sy); ctx.lineTo(Za.sx, Za.sy); ctx.stroke();
+  ctx.fillStyle   = "#3b82f6"; ctx.fillText("Z", Za.sx + 4, Za.sy);
+
   ctx.restore();
 }
 
