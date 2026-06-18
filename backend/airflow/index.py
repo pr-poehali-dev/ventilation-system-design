@@ -1931,11 +1931,15 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 if e.get("hasFan"):
                     # ВМП не имеет режима реверса: нагнетает всегда в направлении a→b.
                     # "Разворот ВМП" = разворот ветви (fromId↔toId), а не fanReverse.
+                    # fan_dir=+1 → напор по a→b; fan_dir=-1 (реверс ГВУ) → по b→a.
+                    # При опрокидывании (q_fan < 0) вентилятор не создаёт напора — H=0.
+                    # ИДЕНТИЧНО логике Кросса (строка ~988).
                     is_vmp = e.get("fanType", "ГВУ") == "ВМП"
                     fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
-                    H = _mkr_fan_H(e, Q[gi])
+                    q_fan = Q[gi] * fan_dir
+                    H = _mkr_fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
                     num -= fan_dir * H * sign
-                    den += _mkr_fan_dH(e, Q[gi])
+                    den += _mkr_fan_dH(e, abs(Q[gi]))
 
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
