@@ -2679,7 +2679,7 @@ export default function CadPage() {
             title="О программе"
             className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
             style={{ lineHeight: 0 }}>
-            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/64422e03-0383-46c6-987b-afce90ce7720.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e6a37e59-abfb-4f45-a7d8-89802209b5f4.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           </button>
           <span className="text-xs font-medium">ПВ-Система — {projectFileName}{isDirty ? " *" : ""}</span>
         </div>
@@ -8650,7 +8650,7 @@ export default function CadPage() {
           <div className="px-6 py-6 flex flex-col items-center text-center"
             style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
             <img
-              src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/ef0b03a9-fdf4-4a39-bd09-13ae79b760a9.png"
+              src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e6a37e59-abfb-4f45-a7d8-89802209b5f4.png"
               alt="ПВ-Система"
               className="w-48 object-contain mb-2"
               style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
