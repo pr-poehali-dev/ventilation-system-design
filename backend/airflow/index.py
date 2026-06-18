@@ -1045,34 +1045,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
     log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па, сошлось={converged}")
 
-    # ── Финальная балансировка дерева по Кирхгофу-1 ─────────────────────
-    # Метод Кросса обновляет Q только у ветвей, входящих в контуры.
-    # Ветви дерева вне контуров (напр. трубопровод за ВМП) остаются со
-    # стартовым Q и нарушают баланс. Пересчитываем bottom-up.
-    sync_bal = collections.defaultdict(float)
-    for gi, e in enumerate(edges):
-        if e["id"] in dead_end_ids:
-            continue
-        if gi in tree_branch_set:
-            continue  # ветви дерева пересчитываются ниже
-        sync_bal[e["a"]] -= Q[gi]
-        sync_bal[e["b"]] += Q[gi]
-    for idx in range(len(bfs_order) - 1, 0, -1):
-        v = bfs_order[idx]
-        p = parent_tree.get(v)
-        if p is None:
-            continue
-        p_node, gi = p
-        e = edges[gi]
-        if e.get("hasFan") and not e.get("fanStopped"):
-            sync_bal[p_node] += sync_bal[v]
-            continue
-        b = sync_bal[v]
-        Q[gi] = -b if e["b"] == v else b
-        sync_bal[p_node] += b
-    _sync_vals = [abs(v) for v in sync_bal.values()]
-    log.append(f"✓ Балансировка дерева Кросс: max|ΔQ|={max(_sync_vals) if _sync_vals else 0:.4f}")
-
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
     # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
