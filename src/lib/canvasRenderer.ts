@@ -535,33 +535,30 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.beginPath(); ctx.arc(sxA, syA, 2.5, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Стрелки потока (F9)
-    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 * objSF) {
-      const stepA = 130 * objSF;
-      const count = Math.max(1, Math.floor(segLen / stepA));
-      const arrowLen = Math.min(28 * objSF, Math.max(16 * objSF, w * 4));
-      const hw = arrowLen / 2;
-      const tip = Math.max(3, 5 * objSF);
-      const tipW = Math.max(2, 4 * objSF);
+    // Стрелка потока — одна по центру ветви, стиль Вентиляция 2.0
+    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 * objSF) {
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const arrowTailW = Math.max(0.3, objSF * 0.4);
-      const arrowTipW  = Math.max(0.2, objSF * 0.25);
+      // Размер наконечника — зависит от толщины линии, но не меньше минимума
+      const tipH = Math.max(6, Math.min(18, w * 2.2 + 4));   // высота (вперёд)
+      const tipW = Math.max(4, Math.min(12, w * 1.5 + 3));   // полуширина
       ctx.save();
       ctx.setLineDash([]);
-      for (let i = 0; i < count; i++) {
-        const t0 = (i + 1) / (count + 1);
-        ctx.save();
-        ctx.translate(sxA + dx * t0, syA + dy * t0);
-        ctx.rotate(angle);
-        ctx.strokeStyle = arrowColor; ctx.lineWidth = arrowTailW; ctx.globalAlpha = 1;
-        ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - tip, 0); ctx.stroke();
-        ctx.fillStyle = arrowColor; ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = arrowTipW;
-        ctx.lineJoin = "round";
-        ctx.beginPath();
-        ctx.moveTo(hw - tip, -tipW); ctx.lineTo(hw, 0); ctx.lineTo(hw - tip, tipW);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.restore();
-      }
+      // Одна стрелка посередине ветви
+      const t0 = 0.5;
+      ctx.save();
+      ctx.translate(sxA + dx * t0, syA + dy * t0);
+      ctx.rotate(angle);
+      ctx.fillStyle = arrowColor;
+      ctx.strokeStyle = arrowColor;
+      ctx.lineWidth = 0;
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.moveTo(-tipW, -tipW);
+      ctx.lineTo(tipH - tipW, 0);
+      ctx.lineTo(-tipW, tipW);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
       ctx.restore();
     }
 
