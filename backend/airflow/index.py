@@ -1397,6 +1397,64 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                     "flowDir": flow_dir,
                     "fromNode": e["a"], "toNode": e["b"]})
 
+    # ══════════════════════════════════════════════════════════════════════
+    # ПОСТОБРАБОТКА: Распространяем Q ВМП на тупиковые ветви за ним.
+    # Физика: ВМП нагнетает Q в трубопровод → через каждую ветвь цепочки
+    # за ВМП должен идти тот же Q (закон сохранения массы).
+    # Проблема без этого: МКР не знает о тупиковой цепочке за ВМП
+    # и может дать трубопроводу Q ≠ Q_ВМП.
+    # Алгоритм: для каждого ВМП в active (не тупика) — идём BFS по тупиковым
+    # ветвям от его выходного узла, назначаем им Q = Q_ВМП.
+    # ══════════════════════════════════════════════════════════════════════
+    # Строим карту: id ветви → результат
+    out_by_id = {b["id"]: b for b in out}
+    # Карта тупиковых ветвей: узел → список тупиковых ветвей, инцидентных ему
+    dead_adj = collections.defaultdict(list)
+    for b in out:
+        if b["isDead"]:
+            dead_adj[b["fromNode"]].append(b)
+            dead_adj[b["toNode"]].append(b)
+    # Для каждого активного ВМП — находим тупиковую цепочку за ним
+    for b in out:
+        if b["isDead"] or not out_by_id[b["id"]]:
+            continue
+        # Проверяем: является ли ветвь ВМП
+        src_edge = next((e for e in edges if e["id"] == b["id"]), None)
+        if not src_edge or not src_edge.get("hasFan"):
+            continue
+        q_vmp = b["Q"]
+        if abs(q_vmp) < 1e-4:
+            continue
+        # Выходной узел ВМП (в направлении потока)
+        out_node = b["toNode"] if q_vmp >= 0 else b["fromNode"]
+        # BFS по тупиковым ветвям от out_node
+        visited_dead = set()
+        queue_dead = [out_node]
+        while queue_dead:
+            node = queue_dead.pop()
+            for db in dead_adj.get(node, []):
+                if db["id"] in visited_dead:
+                    continue
+                visited_dead.add(db["id"])
+                # Определяем знак Q: поток входит в node — значит из node идёт дальше
+                # Ребро db: fromNode→toNode. Если node == fromNode → Q > 0, иначе Q < 0
+                if db["fromNode"] == node:
+                    db["Q"] = round(abs(q_vmp), 4)
+                    db["actualQ"] = round(abs(q_vmp), 4)
+                    next_node = db["toNode"]
+                else:
+                    db["Q"] = round(-abs(q_vmp), 4)
+                    db["actualQ"] = round(abs(q_vmp), 4)
+                    next_node = db["fromNode"]
+                db["flowDir"] = "a->b" if db["Q"] >= 0 else "b->a"
+                # Пересчёт депрессии с новым Q
+                dead_edge = next((e for e in edges if e["id"] == db["id"]), None)
+                if dead_edge:
+                    db["H"] = round(dead_edge["R"] * abs(q_vmp) * abs(q_vmp), 3)
+                    db["velocity"] = round(abs(q_vmp) / dead_edge["area"], 3) if dead_edge.get("area", 0) > 0.01 else 0.0
+                queue_dead.append(next_node)
+    out = list(out_by_id.values())
+
     # Реверс: после унификации build_graph рёбра больше не разворачиваются,
     # поэтому отрицательный Q автоматически означает обратное направление
     # потока относительно fromId→toId для всех ветвей. Дополнительная
