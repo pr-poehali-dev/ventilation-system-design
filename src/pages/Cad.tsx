@@ -7395,11 +7395,9 @@ export default function CadPage() {
               const projNode = (n: { x: number; y: number; z: number }) =>
                 project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, projOpts);
               // По ГОСТ позиции ПЛА: диаметр 13 мм на чертеже.
-              // Позиции ВСЕГДА масштабируются вместе со схемой (vs.scale/0.4),
-              // как и остальные объекты в режиме без fixedObjectScale.
-              // При scaleLimitsEnabled ветви фиксированы, но позиции следуют за зумом —
-              // иначе при отдалении они исчезают, при приближении остаются крошечными.
-              const posSF = Math.max(0.1, vs.scale / 0.4);
+              // Режим 1 (scaleLimitsEnabled=true, fixedObjectScale): фиксированный размер — posSF=1.
+              // Режим 2 (!scaleLimitsEnabled): объекты масштабируются — posSF пропорционален зуму.
+              const posSF = scaleLimitsEnabled ? 1 : Math.max(0.25, vs.scale / 0.5);
               const PX_PER_MM = 3.78 * posSF;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
