@@ -1137,6 +1137,14 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </InlineLabel>
             )}
 
+            <InlineLabel label="Пл. окна ΔS, м²">
+              <EditInput
+                type="number" step="0.01" min="0"
+                value={branch.fanWindowArea ?? 0}
+                onChange={(v) => onUpdate({ fanWindowArea: Math.max(0, parseFloat(v) || 0) })}
+              />
+            </InlineLabel>
+
             <SectionHeader title="Вычисленные параметры" />
 
             {branch.fanStopped && (

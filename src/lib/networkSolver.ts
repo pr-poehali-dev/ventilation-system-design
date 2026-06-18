@@ -376,7 +376,10 @@ export function solveNetwork(
         // fallback: bulkheadR хранится в Мюрг → Н·с²/м⁸
         return (b.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸
       })() : 0)
-      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) * 9.81e-3 : 0)),
+      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) * 9.81e-3 : 0)
+      // R вентиляционного окна: R = ρ/(2·ΔS²), ΔS — площадь окна вентсооружения
+      // rho здесь = airRho(T)/1.2 (поправочный коэф.), фактическая ρ = rho*1.2
+      + (b.hasFan && (b.fanWindowArea ?? 0) > 0 ? (rho * 1.2) / (2 * Math.pow(b.fanWindowArea!, 2)) : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",

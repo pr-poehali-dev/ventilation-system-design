@@ -89,6 +89,7 @@ export interface TopoBranch {
   fanParallel: number;      // количество вентиляторов в параллель
   fanInstall: string;       // установка: "Внутри перемычки" / "Без перемычки"
   fanCrossingR: number;     // сопротивление перемычки, мюрг (только при установке "Внутри перемычки")
+  fanWindowArea: number;    // ΔS — площадь поперечного сечения вентиляционного окна, м² (R = ρ/(2·ΔS²))
   fanEfficiency: number;    // расчётный КПД на рабочей точке
   fanShaftPower: number;    // расчётная мощность на валу, Вт
   fanReverse: boolean;      // реверс: вентилятор работает в обратном направлении
@@ -421,6 +422,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fanParallel: 1,
     fanInstall: "Внутри перемычки",
     fanCrossingR: 0,
+    fanWindowArea: 0,
     fanEfficiency: 0,
     fanShaftPower: 0,
     fanReverse: false,
