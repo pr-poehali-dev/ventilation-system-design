@@ -69,7 +69,6 @@ export async function drawSymbolsToCanvas(
     let SZ: number;
     if (isBulkheadSym && hasBranchPts) {
       const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
-      // ph = ширина ветви на экране (bkBw * viewScale) * 2.0 (200%), SZ = ph / 0.85
       SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
     } else {
       SZ = Math.max(4, 32 * sc * ss);
