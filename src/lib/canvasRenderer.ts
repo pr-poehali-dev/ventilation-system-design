@@ -539,38 +539,31 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // Размеры ПОЛНОСТЬЮ пропорциональны w (толщине ветви) → масштабируются вместе со схемой
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 * objSF) {
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const tipH    = w * 2.2;      // длина наконечника
-      const tipW    = w * 0.5;      // полуширина = ровно половина ветви → вписывается в неё
-      const tailLen = w * 3.0;      // длина хвостика
-      const tailW   = Math.max(0.5, w * 0.15);  // тонкий хвостик
+      const tipH    = w * 2.5;    // длина наконечника = 2.5× ширина ветви
+      const tipW    = w * 1.2;    // полуширина наконечника = 1.2× ширина
+      const tailLen = w * 3.0;    // длина хвостика = 3× ширина
+      const tailW   = w * 0.25;   // толщина хвостика = четверть ширины ветви
       ctx.save();
       ctx.setLineDash([]);
       ctx.translate(sxA + dx * 0.5, syA + dy * 0.5);
       ctx.rotate(angle);
       ctx.globalAlpha = 1;
-      // Белая обводка всей стрелки (контур)
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = tailW + 1.5;
-      ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
-      ctx.lineJoin = "round";
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
-      ctx.stroke();
-      // Хвостик
+      // Тонкий хвостик
       ctx.strokeStyle = arrowColor;
       ctx.lineWidth = tailW;
       ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
-      // Наконечник
-      ctx.fillStyle = arrowColor;
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 0.8;
-      ctx.lineJoin = "round";
       ctx.beginPath();
-      ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
-      ctx.fill(); ctx.stroke();
+      ctx.moveTo(-tailLen, 0);
+      ctx.lineTo(0, 0);
+      ctx.stroke();
+      // Наконечник-треугольник вписан в ширину ветви
+      ctx.fillStyle = arrowColor;
+      ctx.beginPath();
+      ctx.moveTo(0, -tipW);
+      ctx.lineTo(tipH, 0);
+      ctx.lineTo(0, tipW);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     }
 
