@@ -2611,25 +2611,31 @@ export default function TopoCanvas(props: Props) {
               })()}
 
               {/* ── Стрелка направления воздуха (F9) — одна по центру, размер = f(w) ── */}
-              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 && (() => {
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && (() => {
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
-                // Размеры пропорциональны w → масштабируются вместе со схемой
-                const tipH    = w * 2.5;    // длина наконечника
-                const tipW    = w * 1.2;    // полуширина наконечника
-                const tailLen = w * 3.0;    // длина хвостика
-                const tailW   = w * 0.25;   // толщина хвостика
+                const tipH    = w * 2.2;
+                const tipW    = w * 0.5;
+                const tailLen = w * 3.0;
+                const tailW   = Math.max(0.5, w * 0.15);
+                // Не показываем если стрелка не влезает в ветвь (как в ПО Вентиляция 2.0)
+                if (segLen < (tailLen + tipH) * 2) return null;
                 const cx = sxA + dx * 0.5;
                 const cy = syA + dy * 0.5;
+                const pts = `0,-${tipW} ${tipH},0 0,${tipW}`;
                 return (
                   <g transform={`translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`}>
-                    {/* Тонкий хвостик */}
+                    {/* Белая обводка хвостика */}
+                    <line x1={-tailLen} y1={0} x2={0} y2={0}
+                      stroke="white" strokeWidth={tailW + 1.5} strokeLinecap="round" />
+                    {/* Белая обводка наконечника */}
+                    <polygon points={pts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                    {/* Хвостик */}
                     <line x1={-tailLen} y1={0} x2={0} y2={0}
                       stroke={arrowColor} strokeWidth={tailW} strokeLinecap="round" />
-                    {/* Наконечник-треугольник вписан в ширину ветви */}
-                    <polygon points={`0,-${tipW} ${tipH},0 0,${tipW}`}
-                      fill={arrowColor} />
+                    {/* Наконечник */}
+                    <polygon points={pts} fill={arrowColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                   </g>
                 );
               })()}
