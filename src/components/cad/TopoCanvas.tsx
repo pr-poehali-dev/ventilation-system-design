@@ -2838,13 +2838,18 @@ export default function TopoCanvas(props: Props) {
           // Символы: базовый размер 32px при zoom=0.4, масштабируются пропорционально zoom
           const symSF = fixedObjectScale ? 1 : view.scale / 0.4;
 
-          // Авто-масштаб УО «Очаг пожара» от ширины ветви
+          // Авто-масштаб УО «Очаг пожара» и перемычек от ширины ветви
           let SZ: number;
           if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
             const fireBrSvg = branches.find(b => b.id === sym.branchId);
             const fireBwSvg = (fireBrSvg?.lineWidth && fireBrSvg.lineWidth > 0) ? fireBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
+          } else if (BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
+            const bkBr = branches.find(b => b.id === sym.branchId);
+            const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
+            // ph = branchWidth * viewScale * 2.0 (200%), SZ = ph / 0.85
+            SZ = Math.max(6, (bkBw * view.scale * 2.0 / 0.85) * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
           }

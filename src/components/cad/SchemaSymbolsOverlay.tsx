@@ -14,12 +14,13 @@ interface Props {
   unitsConfig?: UnitsConfig;
   width: number;
   height: number;
+  defaultBranchWidth?: number;
 }
 
 export default function SchemaSymbolsOverlay({
   symbols, branches, projNodesMap,
   viewScale, unitsConfig = DEFAULT_UNITS_CONFIG,
-  width, height,
+  width, height, defaultBranchWidth = 7,
 }: Props) {
   return (
     <svg
@@ -61,18 +62,23 @@ export default function SchemaSymbolsOverlay({
 
         const sc = sym.scale ?? 1;
         // Тот же контр-масштаб что в TopoCanvas
-        let symScale: number;
+        let symScaleFactor: number;
         if (viewScale < 0.4) {
-          symScale = viewScale / 0.4;
+          symScaleFactor = viewScale / 0.4;
         } else {
           const k = (viewScale - 0.4) / 0.4;
-          symScale = 1 + 2 * (k / (k + 2));
+          symScaleFactor = 1 + 2 * (k / (k + 2));
         }
-        const SZ = Math.max(4, 32 * sc * symScale);
+        const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        let SZ: number;
+        if (isBulkheadSym && hasBranchPts) {
+          const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
+          SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
+        } else {
+          SZ = Math.max(4, 32 * sc * symScaleFactor);
+        }
         const HX = px - SZ / 2;
         const HY = py - SZ / 2 - 4;
-
-        const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
         const isDestroyed = isBulkheadSym && (brForSym?.bulkheadDestroyedByExplosion ?? false);
 

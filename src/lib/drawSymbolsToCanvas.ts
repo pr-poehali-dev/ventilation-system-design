@@ -37,6 +37,7 @@ export async function drawSymbolsToCanvas(
   projNodesMap: Map<string, ProjNode>,
   viewScale: number,
   unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG,
+  defaultBranchWidth: number = 7,
 ): Promise<void> {
   for (const sym of symbols) {
     const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
@@ -64,11 +65,18 @@ export async function drawSymbolsToCanvas(
     const py = basePy + (sym.offsetY ?? 0);
     const sc = sym.scale ?? 1;
     const ss = symScale(viewScale);
-    const SZ = Math.max(4, 32 * sc * ss);
+    const brForSym2 = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+    let SZ: number;
+    if (isBulkheadSym && hasBranchPts) {
+      const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
+      SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
+    } else {
+      SZ = Math.max(4, 32 * sc * ss);
+    }
     const HX = px - SZ / 2;
     const HY = py - SZ / 2 - 4;
 
-    const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+    const brForSym = brForSym2;
     const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
     const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
     const isFireSource = sym.typeId === "fire_source";
