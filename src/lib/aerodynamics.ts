@@ -155,11 +155,13 @@ export type ResistanceMode =
 //   α — коэффициент аэродинамического сопротивления, ×10⁻⁴ Н·с²/м⁴
 //   L — длина трубопровода, м
 //   D — диаметр трубопровода, м
+// Формула даёт результат в кМюрг (рудничные единицы).
+// Перевод в Н·с²/м⁸ (внутренние единицы кода): × 9.81
 export function resistanceFromPipe(alphaPipe: number, L: number, D: number): number {
   if (D <= 0 || L <= 0) return 0;
   const a = alphaPipe * 1e-4;
-  const r = (6.48 * a * L) / Math.pow(D, 5);
-  return isFinite(r) ? Math.min(r, 1e6) : 0;
+  const rKmurg = (6.48 * a * L) / Math.pow(D, 5);
+  return isFinite(rKmurg) ? Math.min(rKmurg * 9.81, 1e6) : 0;
 }
 
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
