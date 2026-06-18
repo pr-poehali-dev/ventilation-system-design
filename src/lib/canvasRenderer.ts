@@ -586,8 +586,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const branchNum = b.id.replace(/^B/, "");
       const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
       const showNum = !ic || ic.branchNumber;
-      const lox = b.labelOffsetX ?? 0;
-      const loy = b.labelOffsetY ?? -16;
+      const lox = (b.labelOffsetX ?? 0) * objSF;
+      const loy = (b.labelOffsetY ?? -16) * objSF;
       const labelAng = (b.labelAngle ?? 0) * Math.PI / 180;
       const anchorX = midX + lox, anchorY = midY + loy;
 
@@ -621,7 +621,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.save();
       ctx.globalAlpha = labelOpacity;
 
-      if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
+      if (Math.abs(lox) > 5 * objSF || Math.abs(loy + 16 * objSF) > 5 * objSF) {
         ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4 * objSF;
         ctx.setLineDash([2, 3]);
         ctx.beginPath(); ctx.moveTo(midX, midY); ctx.lineTo(anchorX, anchorY); ctx.stroke();
@@ -632,7 +632,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (labelAng !== 0) ctx.rotate(labelAng);
 
       const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
-      const textSc = Math.min(2.5, Math.max(0.3, branchPxLabel * 0.28)) * (b.labelSize ?? 1);
+      const textSc = Math.max(0.3, branchPxLabel * 0.28) * (b.labelSize ?? 1);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;
       ctx.textAlign = "center";
