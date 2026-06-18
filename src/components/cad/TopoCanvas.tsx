@@ -2848,8 +2848,9 @@ export default function TopoCanvas(props: Props) {
           } else if (BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
             const bkBr = branches.find(b => b.id === sym.branchId);
             const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
-            // ph = branchWidth * viewScale * 2.0 (200%), SZ = ph / 0.85
-            SZ = Math.max(6, (bkBw * view.scale * 2.0 / 0.85) * sc);
+            // ph = ширина ветви на экране * 2.0 (200%), SZ = ph / 0.85
+            // Используем тот же objSF что и для ветвей (фиксированный или нет)
+            SZ = Math.max(6, (bkBw * symSF * 2.0 / 0.85) * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
           }
