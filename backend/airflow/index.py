@@ -1827,11 +1827,20 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # При реверсе ГЛАВНОГО вентилятора (ГВУ/ВВУ) — инвертируем знак,
     # чтобы стартовать ближе к решению. ВМП НЕ инвертируем: их направление
     # определяется балансом сети, а не глобальным реверсом.
+    # Определяем знак по ГЛАВНОМУ вентилятору (макс. напор среди ГВУ/ВВУ).
+    # Если брать первый попавшийся с fanReverse — при нескольких ГВУ знак может
+    # совпасть со вспомогательным, а не главным, и начальное Q будет антинаправленным.
     sign_mkr = 1.0
+    main_gvu = None
+    max_h0_gvu = -1.0
     for e in active_edges_list:
-        if e.get("hasFan") and e.get("fanReverse") and e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
-            sign_mkr = -1.0
-            break
+        if e.get("hasFan") and not e.get("fanStopped") and e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ"):
+            h0v = abs(float(e.get("h0", 0))) if e.get("fanMode") == "curve" else abs(float(e.get("fanPressure", 0)))
+            if h0v > max_h0_gvu:
+                max_h0_gvu = h0v
+                main_gvu = e
+    if main_gvu and main_gvu.get("fanReverse"):
+        sign_mkr = -1.0
     # КРИТИЧНО: q_init_mkr = q0 / N_chords (как в Кросс),
     # чтобы суммарный поток через дерево не превышал Q_ГВУ.
     n_chords_mkr = max(1, len(chords))
