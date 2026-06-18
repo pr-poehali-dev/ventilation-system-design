@@ -979,13 +979,18 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
                 # у реверсного) вентилятор работает против потока: передаём
                 # знаковый Q чтобы fan_H мог вернуть правильную характеристику.
                 if e["hasFan"]:
-                    # ВМП не имеет режима реверса: нагнетает всегда в направлении a→b.
-                    # "Разворот ВМП" = разворот ветви (fromId↔toId), а не fanReverse.
-                    # Для ГВУ/ВВУ fanReverse управляет реверсом нормально.
+                    # ВМП нагнетает ВСЕГДА в направлении a→b — fan_dir=+1.
+                    # При реверсе ГВУ поток в ветви ВМП опрокидывается (Q<0),
+                    # но ВМП продолжает создавать напор H(|Q|) против потока.
+                    # Проверку q_fan>=0 (обнуление H) применяем ТОЛЬКО к ГВУ/ВВУ:
+                    # они не создают напор при опрокидывании (турбинный режим).
                     is_vmp = e.get("fanType", "ГВУ") == "ВМП"
                     fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
                     q_fan = Q[gi] * fan_dir
-                    Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
+                    if is_vmp:
+                        Hv = fan_H(e, abs(Q[gi]))   # ВМП: H всегда > 0
+                    else:
+                        Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0  # ГВУ/ВВУ: 0 при опрокидывании
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
@@ -1967,15 +1972,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 den += 2.0 * R * abs(qd)
 
                 if e.get("hasFan"):
-                    # ВМП не имеет режима реверса: нагнетает всегда в направлении a→b.
-                    # "Разворот ВМП" = разворот ветви (fromId↔toId), а не fanReverse.
-                    # fan_dir=+1 → напор по a→b; fan_dir=-1 (реверс ГВУ) → по b→a.
-                    # При опрокидывании (q_fan < 0) вентилятор не создаёт напора — H=0.
-                    # ИДЕНТИЧНО логике Кросса (строка ~988).
+                    # ВМП нагнетает ВСЕГДА в направлении a→b — fan_dir=+1.
+                    # При реверсе ГВУ поток в ветви ВМП опрокидывается (Q<0),
+                    # но ВМП продолжает создавать напор H(|Q|) против потока.
+                    # Проверку q_fan>=0 применяем ТОЛЬКО к ГВУ/ВВУ.
                     is_vmp = e.get("fanType", "ГВУ") == "ВМП"
                     fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
                     q_fan = Q[gi] * fan_dir
-                    H = _mkr_fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
+                    if is_vmp:
+                        H = _mkr_fan_H(e, abs(Q[gi]))   # ВМП: H всегда > 0
+                    else:
+                        H = _mkr_fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
                     num -= fan_dir * H * sign
                     den += _mkr_fan_dH(e, abs(Q[gi]))
 
