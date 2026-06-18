@@ -1568,9 +1568,14 @@ def _bfs_tree(edges):
 
     КРИТИЧНО: активные вентиляторы НЕ берутся в дерево.
     Если вентилятор попадёт в дерево — он не войдёт ни в один контур МКР
-    и его напор выпадет из итераций (Q будет определяться только Кирхгофом-1).
-    Алгоритм: два прохода BFS — сначала только НЕ-вентиляторные рёбра,
-    затем при необходимости (граф не связан) добавляем вентиляторы.
+    и его напор выпадет из итераций (Q = только Кирхгоф-1, без Q-H характеристики).
+
+    Алгоритм — СТРОГО ДВА ПРОХОДА:
+    1) BFS только по НЕ-вентиляторным рёбрам → строим максимальный остов без вент.
+    2) Для узлов, не достигнутых на шаге 1, добавляем вентиляторы (fallback для
+       изолированных подграфов, соединённых только через ВМП).
+    Вентиляторы, оба конца которых уже достигнуты на шаге 1, гарантированно
+    становятся хордами и попадают в контуры МКР.
     """
     node_set = set()
     for e in edges:
@@ -1578,32 +1583,56 @@ def _bfs_tree(edges):
         node_set.add(e["b"])
     node_list = list(node_set)
 
-    # Ключ сортировки: вентиляторы последними, потом по R (малое R → в дерево).
-    adj = collections.defaultdict(list)
-    for i, e in enumerate(edges):
-        is_fan = bool(e.get("hasFan") and not e.get("fanStopped"))
-        sort_key = (1 if is_fan else 0, e["R"])
-        adj[e["a"]].append((i, e["b"], sort_key))
-        adj[e["b"]].append((i, e["a"], sort_key))
-    for u in adj:
-        adj[u].sort(key=lambda x: x[2])
-
     root = GND if GND in node_set else node_list[0]
-    visited  = {root}
-    parent   = {root: None}
-    tree_set = set()
+
+    # ── Проход 1: только НЕ-вентиляторные рёбра ──────────────────────────
+    adj_nofan = collections.defaultdict(list)
+    for i, e in enumerate(edges):
+        if e.get("hasFan") and not e.get("fanStopped"):
+            continue
+        adj_nofan[e["a"]].append((i, e["b"], e["R"]))
+        adj_nofan[e["b"]].append((i, e["a"], e["R"]))
+    for u in adj_nofan:
+        adj_nofan[u].sort(key=lambda x: x[2])  # малое R → предпочтительнее в дерево
+
+    visited   = {root}
+    parent    = {root: None}
+    tree_set  = set()
     bfs_order = [root]
     queue = collections.deque([root])
-
     while queue:
         u = queue.popleft()
-        for ei, nb, _sk in adj[u]:
+        for ei, nb, _r in adj_nofan[u]:
             if nb not in visited:
                 visited.add(nb)
                 parent[nb] = (u, ei)
                 tree_set.add(ei)
                 bfs_order.append(nb)
                 queue.append(nb)
+
+    # ── Проход 2: вентиляторы — только для несвязных узлов (fallback) ────
+    # Типичный случай: изолированный подграф, соединённый с основной сетью
+    # исключительно через ВМП (нет обходного пути без вентилятора).
+    adj_fan = collections.defaultdict(list)
+    for i, e in enumerate(edges):
+        if not e.get("hasFan") or e.get("fanStopped"):
+            continue
+        adj_fan[e["a"]].append((i, e["b"], e["R"]))
+        adj_fan[e["b"]].append((i, e["a"], e["R"]))
+    for u in adj_fan:
+        adj_fan[u].sort(key=lambda x: x[2])
+
+    # BFS второго прохода стартует с уже достигнутых узлов
+    queue2 = collections.deque(bfs_order[:])   # копия текущего bfs_order
+    while queue2:
+        u = queue2.popleft()
+        for ei, nb, _r in adj_fan[u]:
+            if nb not in visited:
+                visited.add(nb)
+                parent[nb] = (u, ei)
+                tree_set.add(ei)
+                bfs_order.append(nb)
+                queue2.append(nb)
 
     chords = [i for i in range(len(edges)) if i not in tree_set]
     return bfs_order, parent, tree_set, chords, node_list
