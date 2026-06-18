@@ -3643,8 +3643,9 @@ export default function TopoCanvas(props: Props) {
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
           {schemaSymbols.map(sym => {
+            const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
-            if (!lt) return null;
+            if (!lt && !isBulkheadOv) return null;
             if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
 
             let basePx: number, basePy: number;
@@ -3751,8 +3752,68 @@ export default function TopoCanvas(props: Props) {
                 {/* hitbox — для valve_reduce сдвинут к линии трубы */}
                 <rect x={vcpx - vSZ / 2 - 4} y={vcpy - vSZ / 2 - 4} width={vSZ + 8} height={vSZ + 8} fill="transparent" stroke="none" />
                 {isSel && <circle cx={vcpx} cy={vcpy} r={vSZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
-                {/* valve_reduce: рисуем примитивами — квадрат вдоль ветви, треугольник поперёк */}
-                {sym.typeId === "valve_reduce" && hasBranchPts ? (() => {
+                {/* Перемычки: рисуем геометрически с поворотом по углу ветви */}
+                {isBulkheadOv && hasBranchPts ? (() => {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                  const tid = sym.typeId;
+                  const bkBrOv = branches.find(b => b.id === sym.branchId);
+                  const isDestroyedOv = bkBrOv?.bulkheadDestroyedByExplosion ?? false;
+                  const fillOv  = isDestroyedOv ? "#ff4444"
+                    : tid.includes("concrete") ? "#4caf50" : tid.includes("wood") ? "#ffd600"
+                    : tid.includes("brick") ? "#ff9800" : tid.includes("metal") ? "#9c27b0"
+                    : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
+                    : tid === "barrier" ? "#555" : "white";
+                  const strokeOv = isDestroyedOv ? "#8b0000"
+                    : tid.includes("concrete") ? "#1b5e20" : tid.includes("wood") ? "#e65100"
+                    : tid.includes("brick") ? "#bf360c" : tid.includes("metal") ? "#4a148c"
+                    : (tid === "fire_door" || tid === "fire_door_pp") ? "#800" : "#1a1a1a";
+                  const bkBwOv = (bkBrOv?.lineWidth && bkBrOv.lineWidth > 0) ? bkBrOv.lineWidth : branchWidth;
+                  const symSFov = fixedObjectScale ? 1 : view.scale / 0.4;
+                  const SZov = Math.max(6, (bkBwOv * symSFov * 2.0 / 0.85) * (sym.scale ?? 1));
+                  const ph = Math.max(3, SZov * 0.85);
+                  const pw = Math.max(1.5, ph * 0.38);
+                  const gap = Math.max(1, pw * 0.5);
+                  const sw2 = Math.max(0.4, pw * 0.18);
+                  const isDoor    = tid.includes("door_closed") || tid.includes("door_conc") || tid.includes("door_wood") || tid.includes("door_brick") || tid.includes("door_metal") || tid === "door_base";
+                  const isAuto    = tid.includes("door_auto") || tid.includes("auto_");
+                  const isOpen    = tid.includes("regulator_open") || tid.includes("open_");
+                  const isWindow  = tid === "regulator_window" || tid.includes("win_") || tid === "bulkhead_window";
+                  const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
+                  const isWater   = tid.includes("water_dam");
+                  const isSailOv  = tid === "sail";
+                  const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
+                  const isFirePP  = tid === "fire_door_pp";
+                  const isProem   = tid.includes("proem_");
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+                      {isSailOv ? (<>
+                        <line x1={0} y1={-ph/2} x2={0} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
+                        <path d={`M0,${-ph*0.38} Q${ph*0.6},0 0,${ph*0.38}`} fill="none" stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
+                      </>) : isBarrier ? (<>
+                        <rect x={-pw} y={-ph/2} width={pw} height={ph} fill="#555" stroke="#222" strokeWidth={1.3} />
+                        <rect x={0} y={-ph/2} width={pw} height={ph} fill="#c00" stroke="#800" strokeWidth={1.3} />
+                      </>) : isFirePP ? (<>
+                        <rect x={-pw-gap/2} y={-ph/2} width={pw} height={ph} fill="#dc2626" stroke="#8b0000" strokeWidth={1.3} />
+                        <rect x={gap/2} y={-ph/2} width={pw} height={ph} fill="#dc2626" stroke="#8b0000" strokeWidth={1.3} />
+                      </>) : isOpen ? (<>
+                        <rect x={-pw/2} y={-ph/2} width={pw} height={ph*0.38} fill={fillOv} stroke={strokeOv} strokeWidth={sw2} />
+                        <rect x={-pw/2} y={ph*0.12} width={pw} height={ph*0.38} fill={fillOv} stroke={strokeOv} strokeWidth={sw2} />
+                        <line x1={-pw/2} y1={ph*0.12} x2={-pw/2-ph*0.45} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(1.8,pw*0.3)} strokeLinecap="round" />
+                      </>) : (isDoor || isAuto) ? (<>
+                        <rect x={-pw/2} y={-ph/2} width={pw} height={ph} fill={fillOv} stroke={strokeOv} strokeWidth={sw2} />
+                        <line x1={-pw/2} y1={-ph/2} x2={-pw/2} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(2,pw*0.35)} strokeLinecap="round" />
+                        {isAuto && <g transform={`translate(${pw/2+ph*0.28},0)`}><circle r={ph*0.2} fill="white" stroke={strokeOv} strokeWidth={1.2} /><text textAnchor="middle" dominantBaseline="central" fontSize={ph*0.2} fontWeight="bold" fill={strokeOv}>А</text></g>}
+                      </>) : (<>
+                        <rect x={-pw/2} y={-ph/2} width={pw} height={ph} fill={fillOv} stroke={strokeOv} strokeWidth={sw2} />
+                        {(isWindow || isProem) && <rect x={-pw*0.25} y={-ph*0.2} width={pw*0.5} height={ph*0.4} fill="white" stroke={strokeOv} strokeWidth={1} />}
+                        {isLattice && [[-1,0,1].map(i => <line key={`v${i}`} x1={pw*0.2*i} y1={-ph*0.45} x2={pw*0.2*i} y2={ph*0.45} stroke={strokeOv} strokeWidth={0.8} />), <line key="h0" x1={-pw*0.4} y1={0} x2={pw*0.4} y2={0} stroke={strokeOv} strokeWidth={0.8} />]}
+                        {isWater && <text textAnchor="middle" dominantBaseline="central" fontSize={ph*0.3} fontWeight="bold" fill={fillOv==="white"?"#1565c0":"white"}>D</text>}
+                        {tid==="fire_door" && <text textAnchor="middle" dominantBaseline="central" fontSize={ph*0.22} fontWeight="bold" fill="white">ПП</text>}
+                      </>)}
+                    </g>
+                  );
+                })() : sym.typeId === "valve_reduce" && hasBranchPts ? (() => {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brLen = Math.hypot(brDx, brDy);
                   const ax = brLen > 0 ? brDx / brLen : 1, ay = brLen > 0 ? brDy / brLen : 0;
@@ -3773,11 +3834,11 @@ export default function TopoCanvas(props: Props) {
                       <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`} fill="#1d4ed8" />
                     </g>
                   );
-                })() : (
+                })() : lt ? (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible" pointerEvents="none"
                     dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                )}
+                ) : null}
               </g>
             );
           })}
