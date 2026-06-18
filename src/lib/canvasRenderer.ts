@@ -544,7 +544,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const tailLen = w * 3.0;
       const tailW   = Math.max(0.5, w * 0.15);
       // Не показываем если стрелка не влезает в длину ветви (как в ПО Вентиляция 2.0)
-      if (segLen < (tailLen + tipH) * 2) return;   
+      if (segLen >= (tailLen + tipH) * 2) {
       ctx.save();
       ctx.setLineDash([]);
       ctx.translate(sxA + dx * 0.5, syA + dy * 0.5);
@@ -574,7 +574,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
       ctx.fill(); ctx.stroke();
       ctx.restore();
-    }
+      } // end segLen check
+    } // end showFlowArrows
 
     // Метки ветвей
     if (lodLabels) {
