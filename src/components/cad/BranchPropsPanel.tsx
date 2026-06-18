@@ -1201,6 +1201,14 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <InlineLabel label="КПД, %">
               <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
             </InlineLabel>
+            {(branch.fanWindowArea ?? 0) > 0 && (
+              <InlineLabel label="R окна, кМюрг">
+                <ComputedInput value={numFmt(
+                  (1.2 / (2 * Math.pow(branch.fanWindowArea!, 2))) / 9.81,
+                  4
+                )} />
+              </InlineLabel>
+            )}
             {(() => {
               const curve = getFanById(branch.fanCurveId);
               return curve ? (
