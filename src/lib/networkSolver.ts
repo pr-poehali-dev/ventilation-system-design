@@ -754,9 +754,15 @@ export function solveNetwork(
         const p  = parent.get(v);
         if (!p) continue;
         const e  = edges[p.edgeIdx];
-        if (e.hasFan) continue;
         const pN = p.node;
         const b  = syncBal.get(v) ?? 0;
+        if (e.hasFan) {
+          // Вентилятор: Q не перезаписываем, но баланс узла v ПЕРЕДАЁМ вверх —
+          // иначе вышестоящие ветви дерева не узнают о потоке через вентилятор
+          // и получат неверный Q (баг: трубопровод получал поток >  Q вентилятора).
+          syncBal.set(pN, (syncBal.get(pN) ?? 0) + b);
+          continue;
+        }
         if (e.b === v) {
           e.Q = -b;
           syncBal.set(pN, (syncBal.get(pN) ?? 0) + b);
