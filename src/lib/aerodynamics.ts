@@ -114,6 +114,26 @@ export const SURFACE_TYPES: SurfaceType[] = [
   { id: "lava",          name: "Очистной забой (лава)",                       alpha: 200,  roughness: 250 },
 ];
 
+// Справочные значения α для вентиляционных трубопроводов
+// α в единицах ×10⁻⁴ Н·с²/м⁴ (типовые значения для рудничной вентиляции)
+export interface PipeAlphaType {
+  id: string;
+  name: string;
+  alpha: number;   // среднее значение ×10⁻⁴ Н·с²/м⁴
+  alphaMin: number;
+  alphaMax: number;
+}
+
+export const PIPE_ALPHA_TYPES: PipeAlphaType[] = [
+  { id: "steel_new",       name: "Стальная труба новая, без коррозии",            alpha: 0.15,  alphaMin: 0.1,  alphaMax: 0.2  },
+  { id: "steel_light",     name: "Стальная труба, лёгкая коррозия",               alpha: 0.75,  alphaMin: 0.5,  alphaMax: 1.0  },
+  { id: "steel_moderate",  name: "Стальная труба, умеренная коррозия",            alpha: 1.5,   alphaMin: 1.0,  alphaMax: 2.0  },
+  { id: "steel_heavy",     name: "Стальная труба, сильная коррозия",              alpha: 3.5,   alphaMin: 2.0,  alphaMax: 5.0  },
+  { id: "flex_smooth",     name: "Гибкий рукав гладкий (новый)",                  alpha: 0.2,   alphaMin: 0.2,  alphaMax: 0.35 },
+  { id: "flex_standard",   name: "Гибкий рукав стандартный",                      alpha: 0.45,  alphaMin: 0.35, alphaMax: 0.55 },
+  { id: "flex_worn",       name: "Гибкий рукав б/у (повреждения, складки)",       alpha: 0.65,  alphaMin: 0.55, alphaMax: 0.7  },
+];
+
 // ─── Способ задания сопротивления ──────────────────────────────────────────
 export type ResistanceMode =
   | "alpha"        // По коэффициенту α

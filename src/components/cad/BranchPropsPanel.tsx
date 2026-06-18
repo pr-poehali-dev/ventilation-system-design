@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
-import { SURFACE_TYPES } from "@/lib/aerodynamics";
+import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
@@ -525,9 +525,26 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     onChange={(v) => onUpdate({ pipeDiameter: parseFloat(v) || 0 })}
                   />
                 </InlineLabel>
+                <InlineLabel label="Тип трубопровода">
+                  <select
+                    value={PIPE_ALPHA_TYPES.find(p => p.alpha === (branch.pipeAlpha ?? 9))?.id ?? ""}
+                    onChange={(e) => {
+                      const p = PIPE_ALPHA_TYPES.find(x => x.id === e.target.value);
+                      if (p) onUpdate({ pipeAlpha: p.alpha });
+                    }}
+                    className="w-full text-[11px] px-1"
+                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                    <option value="">— выбрать из справочника —</option>
+                    {PIPE_ALPHA_TYPES.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.alphaMin}–{p.alphaMax})
+                      </option>
+                    ))}
+                  </select>
+                </InlineLabel>
                 <InlineLabel label="Коэф. α, ×10⁻⁴">
                   <EditInput
-                    type="number" step="1"
+                    type="number" step="0.05"
                     value={branch.pipeAlpha ?? 9}
                     onChange={(v) => onUpdate({ pipeAlpha: parseFloat(v) || 0 })}
                   />
