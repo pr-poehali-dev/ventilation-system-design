@@ -2611,15 +2611,16 @@ export default function TopoCanvas(props: Props) {
               })()}
 
               {/* ── Стрелка направления воздуха (F9) — одна по центру, размер = f(w) ── */}
-              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 && (() => {
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && (() => {
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
-                // Размеры пропорциональны w → масштабируются вместе со схемой
-                const tipH    = w * 2.2;                       // длина наконечника
-                const tipW    = w * 0.5;                       // полуширина = вписана в ветвь
-                const tailLen = w * 3.0;                       // длина хвостика
-                const tailW   = Math.max(0.5, w * 0.15);      // тонкий хвостик
+                const tipH    = w * 2.2;
+                const tipW    = w * 0.5;
+                const tailLen = w * 3.0;
+                const tailW   = Math.max(0.5, w * 0.15);
+                // Не показываем если стрелка не влезает в ветвь (как в ПО Вентиляция 2.0)
+                if (segLen < (tailLen + tipH) * 2) return null;
                 const cx = sxA + dx * 0.5;
                 const cy = syA + dy * 0.5;
                 const pts = `0,-${tipW} ${tipH},0 0,${tipW}`;
