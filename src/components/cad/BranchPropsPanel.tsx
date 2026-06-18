@@ -463,6 +463,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 <option value="alpha">По коэф. α</option>
                 <option value="roughness">По шероховатости Δ</option>
                 <option value="manual">Вручную (R)</option>
+                <option value="pipe">Трубопровод (R=6.48αL/D⁵)</option>
               </select>
             </InlineLabel>
 
@@ -513,6 +514,25 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   onChange={(v) => onUpdate({ manualR: parseFloat(v) || 0 })}
                 />
               </InlineLabel>
+            )}
+
+            {branch.resistanceMode === "pipe" && (
+              <>
+                <InlineLabel label="Диаметр D, м">
+                  <EditInput
+                    type="number" step="0.05"
+                    value={branch.pipeDiameter ?? 0.5}
+                    onChange={(v) => onUpdate({ pipeDiameter: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+                <InlineLabel label="Коэф. α, ×10⁻⁴">
+                  <EditInput
+                    type="number" step="1"
+                    value={branch.pipeAlpha ?? 9}
+                    onChange={(v) => onUpdate({ pipeAlpha: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+              </>
             )}
 
             <InlineLabel label="Местные ξ (сумма)">

@@ -119,7 +119,8 @@ export type ResistanceMode =
   | "alpha"        // По коэффициенту α
   | "surface"      // По типу поверхности (таблица ВНИИ)
   | "roughness"    // По эквивалентной шероховатости Δ (Альтшуль/Никурадзе)
-  | "manual";      // Вручную (проектные данные / замеры)
+  | "manual"       // Вручную (проектные данные / замеры)
+  | "pipe";        // Вентиляционный трубопровод (формула 10.2: R = 6.48·α·L / D⁵)
 
 // ─── Расчёт сопротивления R (Н·с²/м⁸ = кмюрг) ──────────────────────────────
 //
@@ -129,6 +130,18 @@ export type ResistanceMode =
 //   L — длина, м
 //   S — площадь, м²
 //
+// Расчёт сопротивления вентиляционного трубопровода (круглое сечение).
+// Формула 10.2: R = 6.48 · α · L / D⁵
+//   α — коэффициент аэродинамического сопротивления, ×10⁻⁴ Н·с²/м⁴
+//   L — длина трубопровода, м
+//   D — диаметр трубопровода, м
+export function resistanceFromPipe(alphaPipe: number, L: number, D: number): number {
+  if (D <= 0 || L <= 0) return 0;
+  const a = alphaPipe * 1e-4;
+  const r = (6.48 * a * L) / Math.pow(D, 5);
+  return isFinite(r) ? Math.min(r, 1e6) : 0;
+}
+
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
   if (S <= 0.05 || L <= 0 || P <= 0) return 0;
   const a = alpha * 1e-4;
@@ -190,6 +203,8 @@ export interface ResistanceInput {
   L: number;              // м
   Q?: number;             // м³/с (опц., для уточнения по Re)
   rho?: number;           // кг/м³, плотность воздуха (по умолч. 1.2)
+  pipeAlpha?: number;     // ×10⁻⁴ Н·с²/м⁴ — α для трубопровода (режим "pipe")
+  pipeDiameter?: number;  // м — диаметр трубопровода (режим "pipe")
 }
 
 export function calcResistance(i: ResistanceInput): {
@@ -224,6 +239,9 @@ export function calcResistance(i: ResistanceInput): {
     }
     case "manual":
       Rfriction = i.manualR;
+      break;
+    case "pipe":
+      Rfriction = resistanceFromPipe(i.pipeAlpha ?? 9, i.L, i.pipeDiameter ?? 0.5);
       break;
   }
 

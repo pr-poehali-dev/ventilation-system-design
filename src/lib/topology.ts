@@ -67,12 +67,14 @@ export interface TopoBranch {
   manualLength: boolean;
   manualSection: boolean;   // S и P заданы вручную (mode=custom)
   // ─── Аэродинамика ────────────────────────────────────
-  resistanceMode: "alpha" | "surface" | "roughness" | "manual";
+  resistanceMode: "alpha" | "surface" | "roughness" | "manual" | "pipe";
   alphaCoef: number;        // ×10⁻⁴ Н·с²/м⁴ — коэффициент сопротивления крепи
   surfaceId: string;        // ID типа поверхности из справочника
   surface: string;          // подпись (для отображения)
   roughness: number;        // мм — эквивалентная шероховатость
   manualR: number;          // Н·с²/м⁸ — ручной ввод сопротивления
+  pipeAlpha: number;        // α для трубопровода (round), ×10⁻⁴ Н·с²/м⁴ (формула 10.2)
+  pipeDiameter: number;     // D — диаметр трубопровода, м (формула R = 6.48αL/D⁵)
   localXi: number;          // суммарный ξ местных сопротивлений
   vMax: number;             // м/с — макс. допустимая скорость
   // ─── Вентилятор (источник напора) ────────────────────
@@ -404,6 +406,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     surface: "Воздухоподающая выработка, без неровностей",
     roughness: 1,                               // мм
     manualR: 0,
+    pipeAlpha: 9,                               // ×10⁻⁴ Н·с²/м⁴ (гладкий металл)
+    pipeDiameter: 0.5,                          // м — диаметр трубопровода
     localXi: 0,
     vMax: 15,
     hasFan: false,
@@ -844,6 +848,8 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
     L: b.length,
     Q: b.flow,
     rho,
+    pipeAlpha: b.pipeAlpha,
+    pipeDiameter: b.pipeDiameter,
   });
 
 
