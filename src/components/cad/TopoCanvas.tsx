@@ -2610,36 +2610,25 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Стрелки направления воздуха (F9, после расчёта) ── */}
-              {/* Красные — свежая струя; синие — загрязнённый воздух (pollutesAir ниже по потоку) */}
-              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 80 && (() => {
-                const step = 130;
-                const count = Math.max(1, Math.floor(segLen / step));
+              {/* ── Стрелка направления воздуха (F9, после расчёта) — одна по центру ── */}
+              {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 && (() => {
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
-                const arrowLen = Math.min(28, Math.max(16, w * 4));
-                // Синие стрелки — для ветвей-источников загрязнения и всех ветвей ниже по потоку
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
+                // Размер зависит от толщины линии
+                const tipH = Math.max(6, Math.min(18, w * 2.2 + 4));   // длина наконечника
+                const tipW = Math.max(4, Math.min(12, w * 1.5 + 3));   // полуширина
+                const tailLen = Math.max(8, Math.min(20, w * 3));       // длина хвостика
+                const cx = sxA + dx * 0.5;
+                const cy = syA + dy * 0.5;
                 return (
-                  <g>
-                    {Array.from({ length: count }, (_, i) => {
-                      const t0 = (i + 1) / (count + 1);
-                      const cx = sxA + dx * t0;
-                      const cy = syA + dy * t0;
-                      const hw = arrowLen / 2;
-                      return (
-                        <g key={`fa${i}`} transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                          {/* Хвостик — тонкая линия */}
-                          <line x1={-hw} y1={0} x2={hw - 5} y2={0}
-                            stroke={arrowColor} strokeWidth="1"
-                            strokeLinecap="round" />
-                          {/* Наконечник — компактный треугольник */}
-                          <polygon points={`${hw - 7},-4 ${hw},0 ${hw - 7},4`}
-                            fill={arrowColor} stroke="white" strokeWidth="0.6"
-                            strokeLinejoin="round" />
-                        </g>
-                      );
-                    })}
+                  <g transform={`translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`}>
+                    {/* Тонкий хвостик */}
+                    <line x1={-(tailLen)} y1={0} x2={0} y2={0}
+                      stroke={arrowColor} strokeWidth="0.8" strokeLinecap="round" />
+                    {/* Наконечник-треугольник */}
+                    <polygon points={`0,-${tipW} ${tipH},0 0,${tipW}`}
+                      fill={arrowColor} />
                   </g>
                 );
               })()}

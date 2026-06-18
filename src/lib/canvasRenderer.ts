@@ -535,30 +535,33 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.beginPath(); ctx.arc(sxA, syA, 2.5, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Стрелка потока — одна по центру ветви, стиль Вентиляция 2.0
+    // Стрелка потока — одна по центру ветви с тонким хвостиком, стиль Вентиляция 2.0
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 * objSF) {
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      // Размер наконечника — зависит от толщины линии, но не меньше минимума
-      const tipH = Math.max(6, Math.min(18, w * 2.2 + 4));   // высота (вперёд)
-      const tipW = Math.max(4, Math.min(12, w * 1.5 + 3));   // полуширина
+      const tipH   = Math.max(6,  Math.min(18, w * 2.2 + 4));   // длина наконечника
+      const tipW   = Math.max(4,  Math.min(12, w * 1.5 + 3));   // полуширина наконечника
+      const tailLen = Math.max(8, Math.min(20, w * 3));          // длина хвостика
       ctx.save();
       ctx.setLineDash([]);
-      // Одна стрелка посередине ветви
-      const t0 = 0.5;
-      ctx.save();
-      ctx.translate(sxA + dx * t0, syA + dy * t0);
+      ctx.translate(sxA + dx * 0.5, syA + dy * 0.5);
       ctx.rotate(angle);
-      ctx.fillStyle = arrowColor;
-      ctx.strokeStyle = arrowColor;
-      ctx.lineWidth = 0;
       ctx.globalAlpha = 1;
+      // Тонкий хвостик
+      ctx.strokeStyle = arrowColor;
+      ctx.lineWidth = 0.8;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(-tipW, -tipW);
-      ctx.lineTo(tipH - tipW, 0);
-      ctx.lineTo(-tipW, tipW);
+      ctx.moveTo(-tailLen, 0);
+      ctx.lineTo(0, 0);
+      ctx.stroke();
+      // Наконечник-треугольник
+      ctx.fillStyle = arrowColor;
+      ctx.beginPath();
+      ctx.moveTo(0, -tipW);
+      ctx.lineTo(tipH, 0);
+      ctx.lineTo(0, tipW);
       ctx.closePath();
       ctx.fill();
-      ctx.restore();
       ctx.restore();
     }
 
