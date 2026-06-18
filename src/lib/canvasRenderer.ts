@@ -537,12 +537,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     // Стрелка потока — одна по центру ветви с тонким хвостиком, стиль Вентиляция 2.0
     // Размеры ПОЛНОСТЬЮ пропорциональны w (толщине ветви) → масштабируются вместе со схемой
-    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 * objSF) {
+    if (showFlowArrows && !thinLines && lodArrows && Q > 0.1) {
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const tipH    = w * 2.2;      // длина наконечника
-      const tipW    = w * 0.5;      // полуширина = ровно половина ветви → вписывается в неё
-      const tailLen = w * 3.0;      // длина хвостика
-      const tailW   = Math.max(0.5, w * 0.15);  // тонкий хвостик
+      const tipH    = w * 2.2;
+      const tipW    = w * 0.5;
+      const tailLen = w * 3.0;
+      const tailW   = Math.max(0.5, w * 0.15);
+      // Не показываем если стрелка не влезает в длину ветви (как в ПО Вентиляция 2.0)
+      if (segLen < (tailLen + tipH) * 2) return;   
       ctx.save();
       ctx.setLineDash([]);
       ctx.translate(sxA + dx * 0.5, syA + dy * 0.5);
