@@ -2836,7 +2836,14 @@ export default function TopoCanvas(props: Props) {
           const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
           const sc = sym.scale ?? 1;
           // Символы: базовый размер 32px при zoom=0.4, масштабируются пропорционально zoom
-          const symSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          // Та же логика что в canvas-оверлее (symScaleV)
+          let symSF: number;
+          if (fixedObjectScale) {
+            if (view.scale < 0.4) { symSF = view.scale / 0.4; }
+            else { const k = (view.scale - 0.4) / 0.4; symSF = 1 + 2 * (k / (k + 2)); }
+          } else {
+            symSF = view.scale / 0.4;
+          }
 
           // Авто-масштаб УО «Очаг пожара» и перемычек от ширины ветви
           let SZ: number;
@@ -2849,7 +2856,6 @@ export default function TopoCanvas(props: Props) {
             const bkBr = branches.find(b => b.id === sym.branchId);
             const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
             // ph = ширина ветви на экране * 2.0 (200%), SZ = ph / 0.85
-            // symSF учитывает fixedObjectScale — ветви рисуются с тем же коэффициентом
             SZ = Math.max(6, (bkBw * symSF * 2.0 / 0.85) * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
@@ -3769,7 +3775,9 @@ export default function TopoCanvas(props: Props) {
                     : tid.includes("brick") ? "#bf360c" : tid.includes("metal") ? "#4a148c"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800" : "#1a1a1a";
                   const bkBwOv = (bkBrOv?.lineWidth && bkBrOv.lineWidth > 0) ? bkBrOv.lineWidth : branchWidth;
-                  const symSFov = fixedObjectScale ? 1 : view.scale / 0.4;
+                  const symSFov = fixedObjectScale
+                    ? (view.scale < 0.4 ? view.scale / 0.4 : (() => { const k = (view.scale - 0.4) / 0.4; return 1 + 2 * (k / (k + 2)); })())
+                    : view.scale / 0.4;
                   const SZov = Math.max(6, (bkBwOv * symSFov * 2.0 / 0.85) * (sym.scale ?? 1));
                   const ph = Math.max(3, SZov * 0.85);
                   const pw = Math.max(1.5, ph * 0.38);
