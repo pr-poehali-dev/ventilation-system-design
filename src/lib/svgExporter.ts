@@ -522,19 +522,19 @@ export function generateSvg(opts: SvgExportOptions): string {
       const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
       if (allLines.length === 0) continue;
 
-      const lox = b.labelOffsetX ?? 0;
-      const loy = b.labelOffsetY ?? -16;
+      const lox = (b.labelOffsetX ?? 0) * objSF;
+      const loy = (b.labelOffsetY ?? -16) * objSF;
       const labelAng = ((b.labelAngle ?? 0) * Math.PI / 180);
       const anchorX = midX + lox;
       const anchorY = midY + loy;
 
       const bw = (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth) * objSF;
-      const textSc = Math.min(2.5, Math.max(0.6, bw * 0.28)) * (b.labelSize ?? 1);
+      const textSc = Math.max(0.6, bw * 0.28) * (b.labelSize ?? 1);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;
 
       // Выноска если сдвинута
-      if (Math.abs(lox) > 5 || Math.abs(loy + 16) > 5) {
+      if (Math.abs(lox) > 5 * objSF || Math.abs(loy + 16 * objSF) > 5 * objSF) {
         parts.push(`<line x1="${n(midX)}" y1="${n(midY)}" x2="${n(anchorX)}" y2="${n(anchorY)}" stroke="#555555" stroke-width="0.4" stroke-dasharray="2 3" opacity="0.7"/>`);
       }
 

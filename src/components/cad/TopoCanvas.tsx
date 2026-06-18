@@ -2680,15 +2680,15 @@ export default function TopoCanvas(props: Props) {
 
                 // Масштаб текста пропорционален ширине ветви, с лимитом [0.3..2.5]
                 const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
-                const textSc = Math.min(2.5, Math.max(0.3, branchPxLabel * 0.28)) * (b.labelSize ?? 1);
+                const textSc = Math.max(0.3, branchPxLabel * 0.28) * (b.labelSize ?? 1);
                 const lh = 11 * textSc;
                 const bh = allLines.length * lh + 4 * textSc;
-                const lox = b.labelOffsetX ?? 0;
-                const loy = b.labelOffsetY ?? -16;
+                const lox = (b.labelOffsetX ?? 0) * objSF;
+                const loy = (b.labelOffsetY ?? -16) * objSF;
                 const labelAng = b.labelAngle ?? 0;
                 const anchorX = midX + lox;
                 const anchorY = midY + loy;
-                const hasMoved = Math.abs(lox) > 5 || Math.abs(loy + 16) > 5;
+                const hasMoved = Math.abs(lox) > 5 * objSF || Math.abs(loy + 16 * objSF) > 5 * objSF;
 
                 return (
                   <g opacity={labelOpacity}>
@@ -2710,7 +2710,7 @@ export default function TopoCanvas(props: Props) {
                         const origOx = b.labelOffsetX ?? 0;
                         const origOy = b.labelOffsetY ?? -16;
                         const onMove = (me: MouseEvent) => {
-                          onBranchLabelOffset(b.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                          onBranchLabelOffset(b.id, origOx + (me.clientX - startX) / objSF, origOy + (me.clientY - startY) / objSF);
                         };
                         const onUp = () => {
                           window.removeEventListener("mousemove", onMove);
