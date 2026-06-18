@@ -2610,23 +2610,24 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Стрелка направления воздуха (F9, после расчёта) — одна по центру ── */}
+              {/* ── Стрелка направления воздуха (F9) — одна по центру, размер = f(w) ── */}
               {showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 && (() => {
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
                 const isPolluted = pollutedBranchIds.has(b.id);
                 const arrowColor = isPolluted ? "#2563eb" : "#dc2626";
-                // Размер зависит от толщины линии
-                const tipH = Math.max(6, Math.min(18, w * 2.2 + 4));   // длина наконечника
-                const tipW = Math.max(4, Math.min(12, w * 1.5 + 3));   // полуширина
-                const tailLen = Math.max(8, Math.min(20, w * 3));       // длина хвостика
+                // Размеры пропорциональны w → масштабируются вместе со схемой
+                const tipH    = w * 2.5;    // длина наконечника
+                const tipW    = w * 1.2;    // полуширина наконечника
+                const tailLen = w * 3.0;    // длина хвостика
+                const tailW   = w * 0.25;   // толщина хвостика
                 const cx = sxA + dx * 0.5;
                 const cy = syA + dy * 0.5;
                 return (
                   <g transform={`translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`}>
                     {/* Тонкий хвостик */}
-                    <line x1={-(tailLen)} y1={0} x2={0} y2={0}
-                      stroke={arrowColor} strokeWidth="0.8" strokeLinecap="round" />
-                    {/* Наконечник-треугольник */}
+                    <line x1={-tailLen} y1={0} x2={0} y2={0}
+                      stroke={arrowColor} strokeWidth={tailW} strokeLinecap="round" />
+                    {/* Наконечник-треугольник вписан в ширину ветви */}
                     <polygon points={`0,-${tipW} ${tipH},0 0,${tipW}`}
                       fill={arrowColor} />
                   </g>

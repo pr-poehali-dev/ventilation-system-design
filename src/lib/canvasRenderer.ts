@@ -536,11 +536,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
 
     // Стрелка потока — одна по центру ветви с тонким хвостиком, стиль Вентиляция 2.0
+    // Размеры ПОЛНОСТЬЮ пропорциональны w (толщине ветви) → масштабируются вместе со схемой
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1 && segLen > 30 * objSF) {
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const tipH   = Math.max(6,  Math.min(18, w * 2.2 + 4));   // длина наконечника
-      const tipW   = Math.max(4,  Math.min(12, w * 1.5 + 3));   // полуширина наконечника
-      const tailLen = Math.max(8, Math.min(20, w * 3));          // длина хвостика
+      const tipH    = w * 2.5;    // длина наконечника = 2.5× ширина ветви
+      const tipW    = w * 1.2;    // полуширина наконечника = 1.2× ширина
+      const tailLen = w * 3.0;    // длина хвостика = 3× ширина
+      const tailW   = w * 0.25;   // толщина хвостика = четверть ширины ветви
       ctx.save();
       ctx.setLineDash([]);
       ctx.translate(sxA + dx * 0.5, syA + dy * 0.5);
@@ -548,13 +550,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.globalAlpha = 1;
       // Тонкий хвостик
       ctx.strokeStyle = arrowColor;
-      ctx.lineWidth = 0.8;
+      ctx.lineWidth = tailW;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(-tailLen, 0);
       ctx.lineTo(0, 0);
       ctx.stroke();
-      // Наконечник-треугольник
+      // Наконечник-треугольник вписан в ширину ветви
       ctx.fillStyle = arrowColor;
       ctx.beginPath();
       ctx.moveTo(0, -tipW);
