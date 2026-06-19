@@ -364,13 +364,12 @@ export function calcFireMode(
     const fracToIn = 1 - fracToOut;
     const inTime = branchLen > 0 ? (branchLen * fracToIn) / smokeSpeed / 60 : 0;
 
-    // Оба узла очага получают задымление (выходной — быстрее, входной — через inTime)
+    // Только выходной узел очага получает время прихода задымления.
+    // Входной узел (inNodeId) — источник свежего воздуха, дым туда не идёт.
     if (!nodeArrivalTime.has(outNodeId) || nodeArrivalTime.get(outNodeId)! > outTime) {
       nodeArrivalTime.set(outNodeId, outTime);
     }
-    if (!nodeArrivalTime.has(inNodeId) || nodeArrivalTime.get(inNodeId)! > inTime) {
-      nodeArrivalTime.set(inNodeId, inTime);
-    }
+    void inTime;
 
     // Реальное опрокидывание: знак flow изменился после итеративного расчёта.
     // Сравниваем fb.flow (после итераций) с fb.originalFlow (до пожара).
@@ -434,11 +433,12 @@ export function calcFireMode(
       tempC:  nc.wTemp  / nc.smokedQ,
     };
     smokeAtNode.set(outNodeId, sp);
-    // Входной узел тоже получает задымление (дым от очага распространяется в обе стороны)
-    if (!smokeAtNode.has(inNodeId)) smokeAtNode.set(inNodeId, sp);
+    // inNodeId — входной узел очага (откуда приходит свежий воздух).
+    // Он НЕ должен попадать в BFS-очередь: дым не распространяется против потока.
+    void inNodeId;
   }
 
-  // BFS по очереди задымлённых узлов
+  // BFS по очереди задымлённых узлов (только выходные узлы очагов)
   const bfsQueue: string[] = [...smokeAtNode.keys()];
   const visitedNodes = new Set<string>(bfsQueue);
   let head = 0; // указатель — не создаём новый массив на каждом шаге
