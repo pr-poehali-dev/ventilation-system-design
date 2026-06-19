@@ -3036,19 +3036,18 @@ export default function TopoCanvas(props: Props) {
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
                       {isMeasureStation ? (() => {
-                        // Замерная станция: две красные полосы ПОПЕРЁК ветви
+                        // Замерная станция: две красные полосы ВДОЛЬ ветви
                         // После rotate(brAngle): X — вдоль ветви, Y — поперёк
-                        // Каждая полоса: тонкая вдоль X (mw), высокая вдоль Y (mh > ph)
-                        // Разнесены по X на расстояние gap
-                        const mh = ph * 1.35;          // высота полосы — чуть шире ветви
-                        const mw = Math.max(2, ph * 0.28); // толщина полосы вдоль ветви
-                        const mgap = Math.max(1.5, ph * 0.18); // зазор между полосами
-                        const sw = Math.max(0.5, mw * 0.1);
+                        // Полоса: длинная по X (ml), тонкая по Y (mt); разнесены по Y
+                        const ml = ph * 1.1;               // длина полосы вдоль ветви
+                        const mt = Math.max(1.5, ph * 0.22); // толщина полосы поперёк
+                        const moff = Math.max(1, ph * 0.17); // смещение от центра по Y
+                        const sw = Math.max(0.4, mt * 0.12);
                         return (
                           <>
-                            <rect x={-mgap / 2 - mw} y={-mh / 2} width={mw} height={mh}
+                            <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}
                               fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
-                            <rect x={mgap / 2} y={-mh / 2} width={mw} height={mh}
+                            <rect x={-ml / 2} y={moff} width={ml} height={mt}
                               fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
                           </>
                         );
@@ -3815,13 +3814,13 @@ export default function TopoCanvas(props: Props) {
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
                       {isMeasureStationOv ? (() => {
-                        const mh = ph * 1.35;
-                        const mw = Math.max(2, ph * 0.28);
-                        const mgap = Math.max(1.5, ph * 0.18);
-                        const sw = Math.max(0.5, mw * 0.1);
+                        const ml = ph * 1.1;
+                        const mt = Math.max(1.5, ph * 0.22);
+                        const moff = Math.max(1, ph * 0.17);
+                        const sw = Math.max(0.4, mt * 0.12);
                         return (<>
-                          <rect x={-mgap/2-mw} y={-mh/2} width={mw} height={mh} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
-                          <rect x={mgap/2} y={-mh/2} width={mw} height={mh} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                          <rect x={-ml/2} y={-moff-mt} width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                          <rect x={-ml/2} y={moff} width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
                         </>);
                       })() : isSailOv ? (<>
                         <line x1={0} y1={-ph/2} x2={0} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
