@@ -3035,16 +3035,24 @@ export default function TopoCanvas(props: Props) {
 
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-                      {isMeasureStation ? (
-                        // Замерная станция: две красные полосы поперёк ветви
-                        // X — вдоль ветви, Y — поперёк; ph — высота (поперёк), pw — ширина полосы (вдоль)
-                        <>
-                          <rect x={-pw * 1.1 - pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph}
-                            fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
-                          <rect x={pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph}
-                            fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
-                        </>
-                      ) : isSail ? (
+                      {isMeasureStation ? (() => {
+                        // Замерная станция: две красные полосы ПОПЕРЁК ветви
+                        // После rotate(brAngle): X — вдоль ветви, Y — поперёк
+                        // Каждая полоса: тонкая вдоль X (mw), высокая вдоль Y (mh > ph)
+                        // Разнесены по X на расстояние gap
+                        const mh = ph * 1.35;          // высота полосы — чуть шире ветви
+                        const mw = Math.max(2, ph * 0.28); // толщина полосы вдоль ветви
+                        const mgap = Math.max(1.5, ph * 0.18); // зазор между полосами
+                        const sw = Math.max(0.5, mw * 0.1);
+                        return (
+                          <>
+                            <rect x={-mgap / 2 - mw} y={-mh / 2} width={mw} height={mh}
+                              fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                            <rect x={mgap / 2} y={-mh / 2} width={mw} height={mh}
+                              fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                          </>
+                        );
+                      })() : isSail ? (
                         // Парус: вертикальная линия поперёк (по Y) + полукруг
                         <>
                           <line x1={0} y1={-ph/2} x2={0} y2={ph/2}
@@ -3806,10 +3814,16 @@ export default function TopoCanvas(props: Props) {
                   const isProem   = tid.includes("proem_");
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
-                      {isMeasureStationOv ? (<>
-                        <rect x={-pw * 1.1 - pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph} fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
-                        <rect x={pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph} fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
-                      </>) : isSailOv ? (<>
+                      {isMeasureStationOv ? (() => {
+                        const mh = ph * 1.35;
+                        const mw = Math.max(2, ph * 0.28);
+                        const mgap = Math.max(1.5, ph * 0.18);
+                        const sw = Math.max(0.5, mw * 0.1);
+                        return (<>
+                          <rect x={-mgap/2-mw} y={-mh/2} width={mw} height={mh} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                          <rect x={mgap/2} y={-mh/2} width={mw} height={mh} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                        </>);
+                      })() : isSailOv ? (<>
                         <line x1={0} y1={-ph/2} x2={0} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
                         <path d={`M0,${-ph*0.38} Q${ph*0.6},0 0,${ph*0.38}`} fill="none" stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
                       </>) : isBarrier ? (<>
