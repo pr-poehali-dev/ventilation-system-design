@@ -47,7 +47,7 @@ import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
-import { useRecentFiles, saveRecentData, loadRecentData } from "@/lib/useRecentFiles";
+import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
 import FUNC2URL from "../../backend/func2url.json";
@@ -1390,7 +1390,7 @@ export default function CadPage() {
   const [showLegend, setShowLegend] = useState(false);
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
-  const { recentFiles, addRecentFile, removeRecentFile, clearRecentFiles } = useRecentFiles();
+  const { recentFiles, addRecentFile, updateHasHandle, removeRecentFile, clearRecentFiles } = useRecentFiles();
   const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
   // Флаг несохранённых изменений
   const [isDirty, setIsDirty] = useState<boolean>(false);
@@ -1508,6 +1508,8 @@ export default function CadPage() {
         setProjectFileName(fname);
         await writeToHandle(handle, { ...data, name: fname });
         setIsDirty(false);
+        // Сохраняем handle в IndexedDB — чтобы файл появился в «Последние» с возможностью открыть
+        void saveHandleToIDB(fname, handle).then(() => updateHasHandle(fname, true));
         return;
       } catch {
         // Пользователь отменил — ничего не делаем
@@ -1551,6 +1553,8 @@ export default function CadPage() {
           }
           fileHandleRef.current = handle;
           applyProjectData(data, file.name);
+          // Сохраняем handle в IndexedDB — чтобы открывать из «Последние» без диалога
+          void saveHandleToIDB(file.name, handle).then(() => updateHasHandle(file.name, true));
         } else {
           alert("Файл не является проектом Вентиляция-CAD.");
         }
@@ -3082,18 +3086,54 @@ export default function CadPage() {
 
                 {/* ── Последние файлы ── */}
                 {fileSectionState === "recent" && (() => {
-                  const handleOpenRecent = (rf: typeof recentFiles[0]) => {
+                  const handleOpenRecent = async (rf: typeof recentFiles[0]) => {
+                    const confirmReplace = () =>
+                      (nodes.length > 0 || branchesRaw.length > 0)
+                        ? window.confirm("Открыть проект? Текущие данные будут заменены.")
+                        : true;
+
+                    // 1. Пробуем FileSystemFileHandle из IndexedDB (файл с диска)
+                    const handle = await loadHandleFromIDB(rf.name);
+                    if (handle) {
+                      try {
+                        // Запрашиваем разрешение на чтение (браузер покажет системный диалог один раз)
+                        const perm = await (handle as FileSystemFileHandle & {
+                          queryPermission: (o: { mode: string }) => Promise<string>;
+                          requestPermission: (o: { mode: string }) => Promise<string>;
+                        }).queryPermission({ mode: "read" });
+                        const granted = perm === "granted" ||
+                          (await (handle as FileSystemFileHandle & {
+                            requestPermission: (o: { mode: string }) => Promise<string>;
+                          }).requestPermission({ mode: "read" })) === "granted";
+                        if (granted) {
+                          const file = await handle.getFile();
+                          const data = JSON.parse(await file.text()) as Record<string, unknown>;
+                          if (!confirmReplace()) return;
+                          fileHandleRef.current = handle;
+                          applyProjectData(data, file.name);
+                          setActiveRibbon("home");
+                          return;
+                        }
+                      } catch (_e) {
+                        // handle устарел или доступ отклонён — fallback
+                      }
+                    }
+
+                    // 2. Fallback — данные из localStorage
                     const data = loadRecentData(rf.name);
-                    if (!data) {
-                      // Данных нет в кэше — предлагаем открыть вручную
-                      alert(`Файл «${rf.name}» не найден в кэше.\nОткройте его через «Открыть» и он снова появится в списке.`);
+                    if (data) {
+                      if (!confirmReplace()) return;
+                      applyProjectData(data, rf.name);
+                      setActiveRibbon("home");
                       return;
                     }
-                    if ((nodes.length > 0 || branchesRaw.length > 0) &&
-                        !window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
-                    applyProjectData(data, rf.name);
-                    setActiveRibbon("home");
+
+                    // 3. Ничего нет — предлагаем открыть вручную
+                    alert(`Файл «${rf.name}» недоступен.\nОткройте его через «Файл → Открыть» — он снова появится в списке.`);
                   };
+
+                  const canOpen = (rf: typeof recentFiles[0]) =>
+                    rf.hasHandle || !!loadRecentData(rf.name);
 
                   return (
                     <>
@@ -3118,26 +3158,28 @@ export default function CadPage() {
                             const d = new Date(rf.openedAt);
                             const dateStr = d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
                             const timeStr = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-                            const hasCached = !!loadRecentData(rf.name);
+                            const available = canOpen(rf);
                             return (
                               <div key={rf.name + rf.openedAt}
                                 className="group flex items-center gap-2 px-2 py-2 rounded border border-transparent hover:border-blue-200 hover:bg-blue-50 transition-colors cursor-pointer"
-                                onClick={() => handleOpenRecent(rf)}>
+                                onClick={() => void handleOpenRecent(rf)}>
                                 <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded border"
-                                  style={{ background: hasCached ? "#dbeafe" : "#f3f4f6", borderColor: hasCached ? "#93c5fd" : "#d1d5db" }}>
-                                  <Icon name="FileText" size={16} className={hasCached ? "text-blue-500" : "text-gray-400"} />
+                                  style={{ background: available ? "#dbeafe" : "#f3f4f6", borderColor: available ? "#93c5fd" : "#d1d5db" }}>
+                                  <Icon name="FileText" size={16} className={available ? "text-blue-500" : "text-gray-400"} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-[12px] font-medium text-gray-800 truncate group-hover:text-blue-700">{rf.name}</div>
+                                  <div className="text-[12px] font-medium truncate group-hover:text-blue-700"
+                                    style={{ color: available ? "#1e293b" : "#9ca3af" }}>{rf.name}</div>
                                   <div className="text-[10px] text-gray-400">
                                     {dateStr} {timeStr}
                                     {rf.nodeCount !== undefined && (
                                       <span className="ml-2">· Узлов: {rf.nodeCount} · Ветвей: {rf.branchCount ?? 0}</span>
                                     )}
-                                    {!hasCached && <span className="ml-2 text-amber-400">· не в кэше</span>}
+                                    {rf.hasHandle && <span className="ml-2 text-green-500">· с диска</span>}
+                                    {!available && <span className="ml-2 text-amber-400">· недоступен</span>}
                                   </div>
                                 </div>
-                                {hasCached && (
+                                {available && (
                                   <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
                                     <span className="text-[10px] text-blue-400">Открыть</span>
                                     <Icon name="FolderOpen" size={13} className="text-blue-400" />
@@ -3154,7 +3196,6 @@ export default function CadPage() {
                           })}
                         </div>
                       )}
-                      {/* Drag-and-drop подсказка */}
                       <div className="mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-400 flex items-center gap-1.5">
                         <Icon name="Info" size={12} className="text-gray-300 flex-shrink-0" />
                         <span>Также можно перетащить .vproj файл прямо на холст схемы</span>
