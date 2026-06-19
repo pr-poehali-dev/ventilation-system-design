@@ -1029,8 +1029,9 @@ export default function TopoCanvas(props: Props) {
     if (positionPlaceMode && onPositionPlace && e.button === 0) {
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      const w = unprojectToPlane(sx, sy, view, { axis: "z", value: 0 }) ?? unproject2D(sx, sy, view);
-      onPositionPlace(w.x, w.y);
+      // Используем screenToWorld (учитывает zLevel и тип проекции) вместо value:0
+      const w = screenToWorld(sx, sy);
+      if (w) onPositionPlace(w.x, w.y);
       e.stopPropagation();
       return;
     }

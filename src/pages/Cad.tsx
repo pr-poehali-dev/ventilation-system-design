@@ -6921,7 +6921,11 @@ export default function CadPage() {
                 const sx2 = e.clientX - rect.left;
                 const sy2 = e.clientY - rect.top;
                 const drawPos = positions.find(p => p.id === leaderDrawMode);
-                const pz = drawPos?.z ?? 0;
+                // Если z позиции = 0 и есть узлы — берём z ближайшего узла чтобы не улететь при больших координатах
+                let pz = drawPos?.z ?? 0;
+                if (pz === 0 && nodes.length > 0) {
+                  pz = nodes[0].z;
+                }
                 const w = unprojectToPlane(sx2, sy2, vs2, { axis: "z", value: pz });
                 if (w) {
                   setPositions(prev => prev.map(p =>
@@ -7246,7 +7250,17 @@ export default function CadPage() {
               onPositionPlace={(wx, wy) => {
                 const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
                 if (!sel) return;
-                const wz = activeHorizon ? activeHorizon.z : (sel.z ?? 0);
+                // Берём z из активного горизонта, иначе из ближайшего узла по XY, иначе из позиции
+                let wz = sel.z ?? 0;
+                if (activeHorizon) {
+                  wz = activeHorizon.z;
+                } else if (nodes.length > 0) {
+                  const nearest = nodes.reduce((best, n) => {
+                    const d = (n.x - wx) ** 2 + (n.y - wy) ** 2;
+                    return d < best.d ? { d, z: n.z } : best;
+                  }, { d: Infinity, z: nodes[0].z });
+                  wz = nearest.z;
+                }
                 setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz, placed: true } : p));
                 setPositionPlaceMode(false);
               }}
