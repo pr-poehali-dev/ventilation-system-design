@@ -3736,6 +3736,8 @@ export default function TopoCanvas(props: Props) {
           onMouseUp={(e) => onMouseUpCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
+          {/* Шаблоны слоя печати — под УО */}
+          {renderPrintLayers()}
           {schemaSymbols.map(sym => {
             const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
@@ -3948,8 +3950,6 @@ export default function TopoCanvas(props: Props) {
               </g>
             );
           })}
-          {/* Шаблоны слоя печати — поверх УО */}
-          {renderPrintLayers()}
         </svg>
       )}
 
