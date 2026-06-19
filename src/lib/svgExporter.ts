@@ -565,9 +565,10 @@ export function generateSvg(opts: SvgExportOptions): string {
     parts.push(`<g id="schema-symbols">`);
 
     for (const sym of schemaSymbols) {
-      const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+      const isMeasureStation = sym.typeId === "measure_station";
+      const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStation;
       const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
-      if (!lt && !isBulkhead) continue;
+      if (!lt && !isBulkhead && !isMeasureStation) continue;
 
       // Вычисляем позицию символа
       let px = 0, py = 0;
@@ -600,7 +601,16 @@ export function generateSvg(opts: SvgExportOptions): string {
       const brAngle = hasBranchPts ? Math.atan2(tsy2 - fsy, tsx2 - fsx) : 0;
       const angDeg = brAngle * 180 / Math.PI;
 
-      if (isBulkhead && hasBranchPts) {
+      if (isMeasureStation && hasBranchPts) {
+        // Замерная станция — две красные линии поперёк ветви
+        const ph = Math.max(3, SZ * 0.85);
+        const lw = Math.max(1.5, ph * 0.12);
+        const gap = Math.max(1.5, ph * 0.15);
+        parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})">`);
+        parts.push(`<line x1="${n(-ph/2)}" y1="${n(-gap)}" x2="${n(ph/2)}" y2="${n(-gap)}" stroke="#dc2626" stroke-width="${n(lw)}" stroke-linecap="round"/>`);
+        parts.push(`<line x1="${n(-ph/2)}" y1="${n(gap)}"  x2="${n(ph/2)}" y2="${n(gap)}"  stroke="#dc2626" stroke-width="${n(lw)}" stroke-linecap="round"/>`);
+        parts.push(`</g>`);
+      } else if (isBulkhead && hasBranchPts) {
         // Перемычка — рисуем SVG-примитивами поперёк ветви
         const tid = sym.typeId;
         const fill = tid.includes("concrete") ? "#4caf50"

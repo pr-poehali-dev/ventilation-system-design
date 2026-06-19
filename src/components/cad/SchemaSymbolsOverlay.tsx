@@ -82,7 +82,23 @@ export default function SchemaSymbolsOverlay({
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
         const isDestroyed = isBulkheadSym && (brForSym?.bulkheadDestroyedByExplosion ?? false);
 
-        const isBulkhead = isBulkheadSym;
+        const isMeasureStation = sym.typeId === "measure_station";
+        const isBulkhead = isBulkheadSym && !isMeasureStation;
+
+        const renderMeasureStation = () => {
+          if (!isMeasureStation || !hasBranchPts) return null;
+          const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+          const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+          const ph = Math.max(3, SZ * 0.85);
+          const lw = Math.max(1.5, ph * 0.12);
+          const gap = Math.max(1.5, ph * 0.15);
+          return (
+            <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
+              <line x1={-ph/2} y1={-gap} x2={ph/2} y2={-gap} stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+              <line x1={-ph/2} y1={gap}  x2={ph/2} y2={gap}  stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+            </g>
+          );
+        };
 
         const renderBulkhead = () => {
           if (!isBulkhead || !sym.branchId || !hasBranchPts) return null;
@@ -253,7 +269,8 @@ export default function SchemaSymbolsOverlay({
         return (
           <g key={sym.id}>
             {/* Символ */}
-            {isBulkhead && hasBranchPts ? renderBulkhead() : (
+            {isMeasureStation && hasBranchPts ? renderMeasureStation() :
+             isBulkhead && hasBranchPts ? renderBulkhead() : (
               lt ? <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"
                 opacity={isFanStopped ? 0.35 : 1}

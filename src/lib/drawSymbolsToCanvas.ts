@@ -78,7 +78,8 @@ export async function drawSymbolsToCanvas(
 
     const brForSym = brForSym2;
     const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
-    const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+    const isMeasureStation = sym.typeId === "measure_station";
+    const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStation;
     const isFireSource = sym.typeId === "fire_source";
 
     // Угол поворота по направлению ветви (для символов на трубах)
@@ -90,7 +91,20 @@ export async function drawSymbolsToCanvas(
     const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
 
     // ── Рисуем символ ─────────────────────────────────────────────────
-    if (isBulkhead && hasBranchPts) {
+    if (isMeasureStation && hasBranchPts) {
+      const ph = Math.max(3, SZ * 0.85);
+      const lw = Math.max(1.5, ph * 0.12);
+      const gap = Math.max(1.5, ph * 0.15);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(brAngleForSym);
+      ctx.strokeStyle = "#dc2626";
+      ctx.lineWidth = lw;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-ph/2, -gap); ctx.lineTo(ph/2, -gap); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-ph/2,  gap); ctx.lineTo(ph/2,  gap); ctx.stroke();
+      ctx.restore();
+    } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);
     } else if (isFireSource && hasBranchPts) {
       // Очаг пожара: рисуется поперёк ветви (как перемычка) + SVG-иконка сверху
