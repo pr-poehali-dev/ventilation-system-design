@@ -47,7 +47,7 @@ import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
-import { useRecentFiles } from "@/lib/useRecentFiles";
+import { useRecentFiles, saveRecentData, loadRecentData } from "@/lib/useRecentFiles";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
 import FUNC2URL from "../../backend/func2url.json";
@@ -1758,10 +1758,11 @@ export default function CadPage() {
     if (!data.view) {
       setImportNonce((n) => n + 1);
     }
-    // Сохраняем в список последних файлов
+    // Сохраняем в список последних файлов + JSON данные для открытия по клику
     const loadedNodes = Array.isArray(data.nodes) ? (data.nodes as unknown[]).length : 0;
     const loadedBranches = Array.isArray(data.branches) ? (data.branches as unknown[]).length : 0;
     addRecentFile({ name: resolvedName, openedAt: Date.now(), nodeCount: loadedNodes, branchCount: loadedBranches });
+    saveRecentData(resolvedName, data);
     setActiveRibbon("home");
   };
 
@@ -3080,57 +3081,87 @@ export default function CadPage() {
                 )}
 
                 {/* ── Последние файлы ── */}
-                {fileSectionState === "recent" && (
-                  <>
-                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300 flex items-center justify-between">
-                      <span>Последние файлы</span>
-                      {recentFiles.length > 0 && (
-                        <button onClick={clearRecentFiles}
-                          className="text-[11px] text-gray-400 hover:text-red-500 transition-colors">
-                          Очистить список
-                        </button>
-                      )}
-                    </div>
-                    {recentFiles.length === 0 ? (
-                      <div className="text-[12px] text-gray-400 pt-4 flex flex-col items-center gap-2">
-                        <Icon name="Clock" size={32} className="text-gray-300" />
-                        <span>Нет недавно открытых файлов</span>
+                {fileSectionState === "recent" && (() => {
+                  const handleOpenRecent = (rf: typeof recentFiles[0]) => {
+                    const data = loadRecentData(rf.name);
+                    if (!data) {
+                      // Данных нет в кэше — предлагаем открыть вручную
+                      alert(`Файл «${rf.name}» не найден в кэше.\nОткройте его через «Открыть» и он снова появится в списке.`);
+                      return;
+                    }
+                    if ((nodes.length > 0 || branchesRaw.length > 0) &&
+                        !window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
+                    applyProjectData(data, rf.name);
+                    setActiveRibbon("home");
+                  };
+
+                  return (
+                    <>
+                      <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300 flex items-center justify-between">
+                        <span>Последние файлы</span>
+                        {recentFiles.length > 0 && (
+                          <button onClick={clearRecentFiles}
+                            className="text-[11px] text-gray-400 hover:text-red-500 transition-colors">
+                            Очистить список
+                          </button>
+                        )}
                       </div>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        {recentFiles.map((rf) => {
-                          const d = new Date(rf.openedAt);
-                          const dateStr = d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
-                          const timeStr = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-                          return (
-                            <div key={rf.name + rf.openedAt}
-                              className="group flex items-center gap-2 px-2 py-2 rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors">
-                              <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded border border-gray-300"
-                                style={{ background: "#f0f4ff" }}>
-                                <Icon name="FileText" size={16} className="text-blue-500" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[12px] font-medium text-gray-800 truncate">{rf.name}</div>
-                                <div className="text-[10px] text-gray-400">
-                                  {dateStr} {timeStr}
-                                  {rf.nodeCount !== undefined && (
-                                    <span className="ml-2">· Узлов: {rf.nodeCount} · Ветвей: {rf.branchCount ?? 0}</span>
-                                  )}
+                      {recentFiles.length === 0 ? (
+                        <div className="text-[12px] text-gray-400 pt-6 flex flex-col items-center gap-2">
+                          <Icon name="Clock" size={32} className="text-gray-300" />
+                          <span>Нет недавно открытых файлов</span>
+                          <span className="text-[11px] text-center text-gray-300">Откройте проект через «Открыть»,<br/>и он появится здесь</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          {recentFiles.map((rf) => {
+                            const d = new Date(rf.openedAt);
+                            const dateStr = d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+                            const timeStr = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+                            const hasCached = !!loadRecentData(rf.name);
+                            return (
+                              <div key={rf.name + rf.openedAt}
+                                className="group flex items-center gap-2 px-2 py-2 rounded border border-transparent hover:border-blue-200 hover:bg-blue-50 transition-colors cursor-pointer"
+                                onClick={() => handleOpenRecent(rf)}>
+                                <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded border"
+                                  style={{ background: hasCached ? "#dbeafe" : "#f3f4f6", borderColor: hasCached ? "#93c5fd" : "#d1d5db" }}>
+                                  <Icon name="FileText" size={16} className={hasCached ? "text-blue-500" : "text-gray-400"} />
                                 </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[12px] font-medium text-gray-800 truncate group-hover:text-blue-700">{rf.name}</div>
+                                  <div className="text-[10px] text-gray-400">
+                                    {dateStr} {timeStr}
+                                    {rf.nodeCount !== undefined && (
+                                      <span className="ml-2">· Узлов: {rf.nodeCount} · Ветвей: {rf.branchCount ?? 0}</span>
+                                    )}
+                                    {!hasCached && <span className="ml-2 text-amber-400">· не в кэше</span>}
+                                  </div>
+                                </div>
+                                {hasCached && (
+                                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                                    <span className="text-[10px] text-blue-400">Открыть</span>
+                                    <Icon name="FolderOpen" size={13} className="text-blue-400" />
+                                  </div>
+                                )}
+                                <button
+                                  title="Убрать из списка"
+                                  onClick={(e) => { e.stopPropagation(); removeRecentFile(rf.name); }}
+                                  className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 transition-all ml-1">
+                                  <Icon name="X" size={12} className="text-gray-400 hover:text-red-500" />
+                                </button>
                               </div>
-                              <button
-                                title="Убрать из списка"
-                                onClick={() => removeRecentFile(rf.name)}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 transition-all">
-                                <Icon name="X" size={12} className="text-gray-400 hover:text-red-500" />
-                              </button>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* Drag-and-drop подсказка */}
+                      <div className="mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-400 flex items-center gap-1.5">
+                        <Icon name="Info" size={12} className="text-gray-300 flex-shrink-0" />
+                        <span>Также можно перетащить .vproj файл прямо на холст схемы</span>
                       </div>
-                    )}
-                  </>
-                )}
+                    </>
+                  );
+                })()}
 
                 {/* ── Остальные секции — заглушки ── */}
                 {!["new", "add", "open", "save", "saveas", "print", "export", "install", "license", "recent"].includes(fileSectionState) && (
@@ -6872,6 +6903,32 @@ export default function CadPage() {
               leaderDragRef.current = null; setDraggingLeaderPosId(null);
               setLeaderCursorScreen(null);
               setLeaderSnapBranch(null);
+            }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => {
+              e.preventDefault(); e.stopPropagation();
+              const file = e.dataTransfer.files?.[0];
+              if (!file) return;
+              if (!file.name.endsWith(".vproj") && !file.name.endsWith(".json")) {
+                alert("Поддерживаются только файлы .vproj");
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                try {
+                  const data = JSON.parse(reader.result as string);
+                  if (!data.nodes || !Array.isArray(data.nodes)) {
+                    alert("Файл не является проектом Вентиляция-CAD.");
+                    return;
+                  }
+                  if ((nodes.length > 0 || branchesRaw.length > 0) &&
+                      !window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
+                  applyProjectData(data, file.name);
+                } catch {
+                  alert("Ошибка чтения файла.");
+                }
+              };
+              reader.readAsText(file);
             }}>
             <TopoCanvas
               nodes={nodes}
