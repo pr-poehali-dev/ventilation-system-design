@@ -7110,28 +7110,25 @@ export default function CadPage() {
 
                   if (branch.hasFire) {
                     if (smokeTimeMinutes <= 0) return;
-                    // Очаг: дым распространяется ТОЛЬКО по направлению воздушной струи
-                    // (против потока дым не идёт — уносится вентиляционной струёй)
                     const ft = branch.fireT ?? 0.5;
                     const flowSpeed = fr.airSpeed > 0 ? fr.airSpeed : 0.3;
                     const len = branch.length > 0 ? branch.length : 1;
                     const elapsedSec = smokeTimeMinutes * 60;
-                    const flowDir = (branch.flow ?? 0) >= 0; // true = from→to
+                    // Используем flowSign из результата расчёта (не branch.flow из state — он может быть устаревшим)
+                    const flowDir = (fr.flowSign ?? 1) >= 0; // true = from→to
 
-                    // Только по направлению потока (от очага к выходному узлу)
                     const downLen = Math.min(
                       flowDir ? (1 - ft) * len : ft * len,
                       elapsedSec * flowSpeed
                     );
                     const downFrac = downLen / len;
 
-                    // fromT/toT: от точки очага ft до конца по потоку
                     const fromT = flowDir
-                      ? ft                              // начало = очаг (по потоку вправо)
-                      : Math.max(0, ft - downFrac);    // поток обратный → дым влево от очага
+                      ? ft
+                      : Math.max(0, ft - downFrac);
                     const toT = flowDir
-                      ? Math.min(1, ft + downFrac)     // конец по потоку вправо
-                      : ft;                             // конец = очаг (поток обратный)
+                      ? Math.min(1, ft + downFrac)
+                      : ft;
 
                     map.set(bid, { color: col, fromT, toT });
                     return;
@@ -7140,22 +7137,17 @@ export default function CadPage() {
                   // Обычная ветвь: дым входит начиная с smokeArrivalTime
                   if (smokeTimeMinutes <= 0 || fr.smokeArrivalTime > smokeTimeMinutes) return;
 
-                  // Сколько минут дым уже идёт по этой ветви
                   const elapsedInBranch = smokeTimeMinutes - fr.smokeArrivalTime;
-
-                  // Берём скорость из результата расчёта пожара (уже с min 0.3 м/с)
                   const speed = fr.airSpeed > 0 ? fr.airSpeed : 0.3;
-                  // Длина ветви, пройденная дымом за elapsedInBranch минут
                   const smokedLen = elapsedInBranch * 60 * speed;
                   const smokedFrac = branch.length > 0
                     ? Math.min(1, smokedLen / branch.length)
                     : 1;
 
-                  // Дым входит с той стороны ветви, откуда идёт поток
-                  // flow >= 0: воздух from→to, дым входит с fromT=0
-                  // flow < 0: воздух to→from, дым входит с toT=1 (fromT = 1 - frac)
-                  const flowPos = branch.flow ?? 0;
-                  if (flowPos >= 0) {
+                  // Используем flowSign из результата расчёта, а не branch.flow из React state
+                  // (React state обновляется асинхронно и может не совпадать с потоком на момент расчёта)
+                  const flowSign = fr.flowSign ?? (((branch.flow ?? 0) >= 0) ? 1 : -1);
+                  if (flowSign >= 0) {
                     map.set(bid, { color: col, fromT: 0, toT: smokedFrac });
                   } else {
                     map.set(bid, { color: col, fromT: 1 - smokedFrac, toT: 1 });

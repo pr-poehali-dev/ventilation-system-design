@@ -168,6 +168,9 @@ export interface FireBranchResult {
   smokeArrivalTime: number;
   // Скорость воздуха в ветви после расчёта пожара (м/с), мин. 0.3 для отображения fillTime
   airSpeed: number;
+  // Знак потока на момент расчёта: +1 = from→to, -1 = to→from
+  // Сохраняем чтобы избежать race condition со state React (branch.flow может быть устаревшим)
+  flowSign: 1 | -1;
 }
 
 export interface FireCalculationResult {
@@ -381,6 +384,7 @@ export function calcFireMode(
       : willReverse;
 
     // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
+    const fbFlow = fb.flow ?? 0;
     resultMap.set(fb.id, {
       branchId: fb.id,
       airTempOut: Math.round(fireTemp * 10) / 10,
@@ -395,6 +399,7 @@ export function calcFireMode(
       flowDelta: Math.round(flowDelta * 100) / 100,
       smokeArrivalTime: 0,
       airSpeed: Math.max(smokeSpeed, 0.3),
+      flowSign: fbFlow >= 0 ? 1 : -1,
     });
     if (willReverse || actuallyReversed) reversedBranches.add(fb.id);
 
@@ -442,21 +447,47 @@ export function calcFireMode(
     smokeAtNode.set(outNodeId, sp);
   }
 
-  // Dijkstra: очередь с приоритетом по времени прихода.
-  // Реализуем через отсортированный массив (для типичных сетей ≤2000 узлов достаточно).
-  // finalized[nodeId] = true когда узел обработан окончательно (кратчайший путь найден).
+  // Dijkstra: min-heap priority queue по времени прихода.
+  // Используем бинарную кучу для корректной работы на больших схемах (>800 ветвей).
+  // finalized[nodeId] = true когда узел обработан окончательно.
   const finalized = new Set<string>();
 
-  // priority queue: [arrivalTime, nodeId]
-  type PQEntry = [number, string];
+  type PQEntry = [number, string]; // [arrivalTime, nodeId]
   const pq: PQEntry[] = [];
+
   const pqPush = (entry: PQEntry) => {
     pq.push(entry);
-    // Сортируем по возрастанию времени (минимум в начале)
-    pq.sort((a, b2) => a[0] - b2[0]);
+    // Просеивание вверх (sift-up) для min-heap
+    let i = pq.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (pq[parent][0] <= pq[i][0]) break;
+      [pq[parent], pq[i]] = [pq[i], pq[parent]];
+      i = parent;
+    }
   };
 
-  // Добавляем стартовые узлы (выходы очагов)
+  const pqPop = (): PQEntry => {
+    const top = pq[0];
+    const last = pq.pop()!;
+    if (pq.length > 0) {
+      pq[0] = last;
+      // Просеивание вниз (sift-down) для min-heap
+      let i = 0;
+      while (true) {
+        let smallest = i;
+        const l = 2 * i + 1, r = 2 * i + 2;
+        if (l < pq.length && pq[l][0] < pq[smallest][0]) smallest = l;
+        if (r < pq.length && pq[r][0] < pq[smallest][0]) smallest = r;
+        if (smallest === i) break;
+        [pq[smallest], pq[i]] = [pq[i], pq[smallest]];
+        i = smallest;
+      }
+    }
+    return top;
+  };
+
+  // Добавляем стартовые узлы (выходные узлы очагов)
   for (const [nodeId, time] of nodeArrivalTime) {
     if (smokeAtNode.has(nodeId)) {
       pqPush([time, nodeId]);
@@ -464,7 +495,7 @@ export function calcFireMode(
   }
 
   while (pq.length > 0) {
-    const [, smokedNodeId] = pq.shift()!;
+    const [, smokedNodeId] = pqPop();
 
     // Пропускаем если уже обработан (Dijkstra гарантирует оптимальность)
     if (finalized.has(smokedNodeId)) continue;
@@ -481,18 +512,11 @@ export function calcFireMode(
       const flow = b.flow ?? 0;
       const outNodeId = flow >= 0 ? b.toId : b.fromId;
 
-      // Пропускаем если выходной узел уже финализирован (оптимальный путь найден)
-      if (finalized.has(outNodeId)) continue;
-
       const rawSpeed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
         ? Math.abs(flow) / b.area : 0;
       const speed = Math.max(rawSpeed, 0.3); // мин. 0.3 м/с
       const transitMin = (b.length ?? 0) > 0 ? b.length / speed / 60 : 0;
       const arrivalAtOut = Math.min(600, arrivalAtIn + transitMin);
-
-      // Релаксация: обновляем только если нашли более быстрый путь
-      const prevArrival = nodeArrivalTime.get(outNodeId);
-      if (prevArrival !== undefined && arrivalAtOut >= prevArrival) continue;
 
       // Затухание концентраций вдоль ветви
       const lf     = Math.max(0.5, Math.exp(-(b.length ?? 0) * 0.0005));
@@ -510,24 +534,32 @@ export function calcFireMode(
         : false;
       if (bActuallyReversed) reversedBranches.add(b.id);
 
-      // Сохраняем результат по ветви
-      // smokeArrivalTime = время прихода дыма на ВХОД этой ветви (для анимации)
-      resultMap.set(b.id, {
-        branchId: b.id,
-        airTempOut:        Math.round(tempOut  * 10)  / 10,
-        thermalDepression: 0,
-        willReverse:       false,
-        actuallyReversed:  bActuallyReversed,
-        coConc:            Math.round(coOut    * 1000) / 1000,
-        co2Conc:           Math.round(co2Out   * 100)  / 100,
-        smokeDensity:      Math.round(smokeOut * 100)  / 100,
-        visibility:        Math.round(visOut   * 10)   / 10,
-        hazardLevel:       hazard,
-        smokeArrivalTime:  Math.round(arrivalAtIn * 10) / 10,
-        airSpeed:          Math.round(speed * 100) / 100,
-      });
+      // Записываем результат по ветви:
+      // - если ветвь ещё не записана — записываем всегда
+      // - если уже записана — обновляем только при более раннем времени прихода
+      const existingResult = resultMap.get(b.id);
+      if (!existingResult || arrivalAtIn < existingResult.smokeArrivalTime) {
+        resultMap.set(b.id, {
+          branchId: b.id,
+          airTempOut:        Math.round(tempOut  * 10)  / 10,
+          thermalDepression: 0,
+          willReverse:       false,
+          actuallyReversed:  bActuallyReversed,
+          coConc:            Math.round(coOut    * 1000) / 1000,
+          co2Conc:           Math.round(co2Out   * 100)  / 100,
+          smokeDensity:      Math.round(smokeOut * 100)  / 100,
+          visibility:        Math.round(visOut   * 10)   / 10,
+          hazardLevel:       hazard,
+          smokeArrivalTime:  Math.round(arrivalAtIn * 10) / 10,
+          airSpeed:          Math.round(speed * 100) / 100,
+          flowSign:          flow >= 0 ? 1 : -1,
+        });
+      }
 
-      // Обновляем выходной узел и добавляем в очередь
+      // Обновляем выходной узел в Dijkstra только если путь быстрее
+      if (finalized.has(outNodeId)) continue;
+      const prevArrival = nodeArrivalTime.get(outNodeId);
+      if (prevArrival !== undefined && arrivalAtOut >= prevArrival) continue;
       nodeArrivalTime.set(outNodeId, arrivalAtOut);
       smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
       pqPush([arrivalAtOut, outNodeId]);
