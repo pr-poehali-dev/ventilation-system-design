@@ -3018,6 +3018,7 @@ export default function TopoCanvas(props: Props) {
                   const gap = Math.max(1, pw * 0.5);                  // зазор двери
 
                   // Флаги типа
+                  const isMeasureStation = tid === "measure_station";
                   const isDoor    = tid.includes("door_closed") || tid.includes("door_conc") ||
                                     tid.includes("door_wood")   || tid.includes("door_brick") ||
                                     tid.includes("door_metal")  || tid === "door_base";
@@ -3034,7 +3035,16 @@ export default function TopoCanvas(props: Props) {
 
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-                      {isSail ? (
+                      {isMeasureStation ? (
+                        // Замерная станция: две красные полосы поперёк ветви
+                        // X — вдоль ветви, Y — поперёк; ph — высота (поперёк), pw — ширина полосы (вдоль)
+                        <>
+                          <rect x={-pw * 1.1 - pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph}
+                            fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
+                          <rect x={pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph}
+                            fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
+                        </>
+                      ) : isSail ? (
                         // Парус: вертикальная линия поперёк (по Y) + полукруг
                         <>
                           <line x1={0} y1={-ph/2} x2={0} y2={ph/2}
@@ -3783,6 +3793,7 @@ export default function TopoCanvas(props: Props) {
                   const pw = Math.max(1.5, ph * 0.38);
                   const gap = Math.max(1, pw * 0.5);
                   const sw2 = Math.max(0.4, pw * 0.18);
+                  const isMeasureStationOv = tid === "measure_station";
                   const isDoor    = tid.includes("door_closed") || tid.includes("door_conc") || tid.includes("door_wood") || tid.includes("door_brick") || tid.includes("door_metal") || tid === "door_base";
                   const isAuto    = tid.includes("door_auto") || tid.includes("auto_");
                   const isOpen    = tid.includes("regulator_open") || tid.includes("open_");
@@ -3795,7 +3806,10 @@ export default function TopoCanvas(props: Props) {
                   const isProem   = tid.includes("proem_");
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
-                      {isSailOv ? (<>
+                      {isMeasureStationOv ? (<>
+                        <rect x={-pw * 1.1 - pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph} fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
+                        <rect x={pw * 0.3} y={-ph / 2} width={pw * 1.1} height={ph} fill="#dc2626" stroke="#8b0000" strokeWidth={Math.max(0.5, pw * 0.1)} />
+                      </>) : isSailOv ? (<>
                         <line x1={0} y1={-ph/2} x2={0} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
                         <path d={`M0,${-ph*0.38} Q${ph*0.6},0 0,${ph*0.38}`} fill="none" stroke={strokeOv} strokeWidth={Math.max(1.8, pw*0.4)} strokeLinecap="round" />
                       </>) : isBarrier ? (<>
