@@ -101,6 +101,12 @@ export interface SchemaSymbol {
   bkBulkheadName?: string;
   bkBulkheadR?: number;      // R из справочника (Мюрг)
   bkFailurePressure?: number;
+  // ─── Параметры замерной станции ──────────────────────
+  msNumber?: string;         // номер замерной станции
+  msLocation?: string;       // местоположение
+  msArea?: number;           // площадь сечения, м²
+  msFlow?: number;           // расход воздуха, м³/с
+  msVelocity?: number;       // скорость воздуха, м/с
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath";
 
@@ -4976,7 +4982,8 @@ export default function CadPage() {
             {activeSide === "params" && !selectedNode && !selectedBranch && selectedSymbolId && (() => {
               const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
               if (!sym) return null;
-              const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+              const isMeasureStationSym = sym.typeId === "measure_station";
+              const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStationSym;
               const isWindowBulkhead = WINDOW_BULKHEAD_IDS.has(sym.typeId);
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
               // ΔP перемычки = R_sym × Q × |Q| (не dP всей ветви, а только вклад этого символа)
@@ -5062,6 +5069,94 @@ export default function CadPage() {
                       placeholder="Введите описание объекта..."
                       style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
                   </div>
+
+                  {/* ── Замерная станция ── */}
+                  {isMeasureStationSym && (
+                    <>
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
+                        Замерная станция
+                      </div>
+
+                      {/* Номер */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Номер</span>
+                        <input type="text"
+                          value={sym.msNumber ?? ""}
+                          onChange={(e) => updSym({ msNumber: e.target.value })}
+                          placeholder="№"
+                          className="flex-1 px-1 py-0.5 text-[11px]"
+                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                      </div>
+
+                      {/* Местоположение */}
+                      <div className="flex items-start gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0 pt-0.5">Местоположение</span>
+                        <textarea
+                          value={sym.msLocation ?? ""}
+                          onChange={(e) => updSym({ msLocation: e.target.value })}
+                          rows={2}
+                          placeholder="Введите местоположение..."
+                          className="flex-1 px-1 py-0.5 text-[11px] resize-none"
+                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                      </div>
+
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
+                        Параметры воздуха
+                      </div>
+
+                      {/* Площадь сечения */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Сечение</span>
+                        <input type="number" min={0} step={0.1}
+                          value={sym.msArea ?? ""}
+                          onChange={(e) => updSym({ msArea: e.target.value === "" ? undefined : Number(e.target.value) })}
+                          placeholder="0.0"
+                          className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                        <span className="text-gray-400 flex-shrink-0">м²</span>
+                      </div>
+
+                      {/* Расход воздуха */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Расход</span>
+                        <input type="number" min={0} step={0.1}
+                          value={sym.msFlow ?? ""}
+                          onChange={(e) => updSym({ msFlow: e.target.value === "" ? undefined : Number(e.target.value) })}
+                          placeholder="0.0"
+                          className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                        <span className="text-gray-400 flex-shrink-0">м³/с</span>
+                      </div>
+
+                      {/* Скорость воздуха */}
+                      <div className="flex items-center gap-1 mb-2">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Скорость</span>
+                        <input type="number" min={0} step={0.1}
+                          value={sym.msVelocity ?? ""}
+                          onChange={(e) => updSym({ msVelocity: e.target.value === "" ? undefined : Number(e.target.value) })}
+                          placeholder="0.0"
+                          className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                        <span className="text-gray-400 flex-shrink-0">м/с</span>
+                      </div>
+
+                      {/* Вычисленные значения из расчёта сети */}
+                      {brForSym && (brForSym.flow != null || brForSym.velocity != null) && (
+                        <div className="text-[10px] text-gray-400 bg-gray-50 rounded p-1.5 mt-1">
+                          <div className="font-semibold text-gray-500 mb-0.5">Из расчёта сети:</div>
+                          {brForSym.flow != null && (
+                            <div>Расход: <span className="text-gray-600">{Math.abs(brForSym.flow).toFixed(2)} м³/с</span></div>
+                          )}
+                          {brForSym.velocity != null && (
+                            <div>Скорость: <span className="text-gray-600">{Math.abs(brForSym.velocity).toFixed(2)} м/с</span></div>
+                          )}
+                          {brForSym.area != null && brForSym.area > 0 && (
+                            <div>Сечение ветви: <span className="text-gray-600">{brForSym.area.toFixed(2)} м²</span></div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   {/* ── Аэродинамическое сопротивление (только для перемычек с привязкой к ветви) ── */}
                   {isBulkheadSym && brForSym && (
