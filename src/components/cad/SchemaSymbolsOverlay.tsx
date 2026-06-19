@@ -216,6 +216,55 @@ export default function SchemaSymbolsOverlay({
           );
         };
 
+        // Индикаторы замерной станции
+        const renderMeasureStationIndicators = () => {
+          if (!isMeasureStation || !hasBranchPts) return null;
+          const lines: string[] = [];
+          if (sym.msIndNumber && sym.msNumber)     lines.push(`№${sym.msNumber}`);
+          if (sym.msIndLocation && sym.msLocation) lines.push(sym.msLocation);
+          if (sym.msIndFlow) {
+            const q = sym.msFlow ?? (brForSym ? Math.abs(brForSym.flow ?? 0) : 0);
+            lines.push(`Q=${q.toFixed(2)} м³/с`);
+          }
+          if (sym.msIndArea) {
+            const a = sym.msArea ?? (brForSym?.area ?? 0);
+            lines.push(`S=${a.toFixed(2)} м²`);
+          }
+          if (sym.msIndVelocity) {
+            const v = sym.msVelocity ?? (brForSym ? Math.abs(brForSym.velocity ?? 0) : 0);
+            lines.push(`v=${v.toFixed(2)} м/с`);
+          }
+          if (!lines.length) return null;
+
+          const fSize = Math.max(6, Math.round((sym.msIndFontSize ?? 9) * sc * symScaleFactor));
+          const lineH = fSize + 3;
+          const boxW  = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
+          const boxH  = lines.length * lineH + 6;
+          const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
+          const brLen = Math.hypot(brDx, brDy);
+          const perpX = brLen > 0 ? -brDy / brLen : 0;
+          const perpY = brLen > 0 ?  brDx / brLen : 0;
+          const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
+          const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
+
+          return (
+            <g>
+              <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
+                stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+              {lines.map((line, i) => (
+                <text key={i}
+                  x={bx} y={by - boxH / 2 + (i + 1) * lineH}
+                  textAnchor="middle" fontSize={fSize}
+                  fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                  fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
+                  style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                  {line}
+                </text>
+              ))}
+            </g>
+          );
+        };
+
         // Индикаторы перемычки
         const renderBulkheadIndicators = () => {
           if (!BULKHEAD_SYMBOL_IDS.has(sym.typeId) || !sym.branchId) return null;
@@ -363,6 +412,9 @@ export default function SchemaSymbolsOverlay({
                 {sym.label}
               </text>
             )}
+
+            {/* Индикаторы замерной станции */}
+            {renderMeasureStationIndicators()}
 
             {/* Индикаторы перемычки */}
             {renderBulkheadIndicators()}

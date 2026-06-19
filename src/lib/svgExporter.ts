@@ -610,6 +610,42 @@ export function generateSvg(opts: SvgExportOptions): string {
         parts.push(`<line x1="${n(-ph/2)}" y1="${n(-gap)}" x2="${n(ph/2)}" y2="${n(-gap)}" stroke="#dc2626" stroke-width="${n(lw)}" stroke-linecap="round"/>`);
         parts.push(`<line x1="${n(-ph/2)}" y1="${n(gap)}"  x2="${n(ph/2)}" y2="${n(gap)}"  stroke="#dc2626" stroke-width="${n(lw)}" stroke-linecap="round"/>`);
         parts.push(`</g>`);
+
+        // Индикаторы замерной станции
+        const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const msLines: string[] = [];
+        if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
+        if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
+        if (sym.msIndFlow) {
+          const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
+          msLines.push(`Q=${q.toFixed(2)} м³/с`);
+        }
+        if (sym.msIndArea) {
+          const a = sym.msArea ?? (brMs?.area ?? 0);
+          msLines.push(`S=${a.toFixed(2)} м²`);
+        }
+        if (sym.msIndVelocity) {
+          const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
+          msLines.push(`v=${v.toFixed(2)} м/с`);
+        }
+        if (msLines.length > 0) {
+          const brDxMs = tsx2 - fsx, brDyMs = tsy2 - fsy;
+          const brLenMs = Math.hypot(brDxMs, brDyMs);
+          const perpXms = brLenMs > 0 ? -brDyMs / brLenMs : 0;
+          const perpYms = brLenMs > 0 ?  brDxMs / brLenMs : 0;
+          const fsMs = Math.max(6, (sym.msIndFontSize ?? 9) * sc * ss);
+          const lhMs = fsMs + 3;
+          const boxWMs = Math.max(...msLines.map(l => l.length)) * fsMs * 0.52 + 10;
+          const boxHMs = msLines.length * lhMs + 6;
+          const bxMs = px + perpXms * (16 + boxWMs / 2) + (sym.msIndOffsetX ?? 0);
+          const byMs = py + perpYms * (16 + boxHMs / 2) + (sym.msIndOffsetY ?? 0);
+          parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bxMs)}" y2="${n(byMs - boxHMs/2)}" stroke="#555555" stroke-width="0.4" stroke-dasharray="2 3"/>`);
+          msLines.forEach((line, i) => {
+            const tyMs = byMs - boxHMs/2 + i * lhMs + 3;
+            const fwMs = i === 0 && sym.msIndNumber ? "700" : "400";
+            parts.push(`<text x="${n(bxMs)}" y="${n(tyMs)}" text-anchor="middle" dominant-baseline="auto" font-size="${n(fsMs, 1)}" font-weight="${fwMs}" stroke="white" stroke-width="2" paint-order="stroke" fill="#1a2a4a">${esc(line)}</text>`);
+          });
+        }
       } else if (isBulkhead && hasBranchPts) {
         // Перемычка — рисуем SVG-примитивами поперёк ветви
         const tid = sym.typeId;

@@ -107,6 +107,15 @@ export interface SchemaSymbol {
   msArea?: number;           // площадь сечения, м²
   msFlow?: number;           // расход воздуха, м³/с
   msVelocity?: number;       // скорость воздуха, м/с
+  // ─── Индикаторы замерной станции (отображение на схеме) ───
+  msIndNumber?: boolean;     // показывать номер
+  msIndLocation?: boolean;   // показывать местоположение
+  msIndFlow?: boolean;       // показывать расход
+  msIndArea?: boolean;       // показывать площадь сечения
+  msIndVelocity?: boolean;   // показывать скорость
+  msIndOffsetX?: number;     // смещение бейджа по X (px экрана)
+  msIndOffsetY?: number;     // смещение бейджа по Y (px экрана)
+  msIndFontSize?: number;    // размер шрифта (мм мировых единиц)
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath";
 
@@ -5153,6 +5162,44 @@ export default function CadPage() {
                           {brForSym.area != null && brForSym.area > 0 && (
                             <div>Сечение ветви: <span className="text-gray-600">{brForSym.area.toFixed(2)} м²</span></div>
                           )}
+                        </div>
+                      )}
+
+                      {/* Отображаемые индикаторы */}
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-3 uppercase tracking-wide">
+                        Отображаемые индикаторы
+                      </div>
+                      {[
+                        { key: "msIndNumber"   as const, label: "Номер замерной станции" },
+                        { key: "msIndLocation" as const, label: "Местоположение" },
+                        { key: "msIndFlow"     as const, label: "Расход воздуха" },
+                        { key: "msIndArea"     as const, label: "Площадь сечения" },
+                        { key: "msIndVelocity" as const, label: "Скорость воздуха" },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-2 mb-1.5 cursor-pointer select-none">
+                          <input type="checkbox"
+                            checked={!!sym[key]}
+                            onChange={(e) => updSym({ [key]: e.target.checked })}
+                            style={{ width: 13, height: 13, accentColor: "#2563eb" }} />
+                          <span className="text-gray-700">{label}</span>
+                        </label>
+                      ))}
+
+                      {/* Настройки индикаторов (если хоть один включён) */}
+                      {(sym.msIndNumber || sym.msIndLocation || sym.msIndFlow || sym.msIndArea || sym.msIndVelocity) && (
+                        <div className="mt-2">
+                          <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 uppercase tracking-wide">
+                            Настройки
+                          </div>
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <span className="text-gray-500 w-20 flex-shrink-0">Размер</span>
+                            <input type="number" min={1} max={50} step={0.5}
+                              value={sym.msIndFontSize ?? 9}
+                              onChange={(e) => updSym({ msIndFontSize: Math.max(1, Math.min(50, Number(e.target.value) || 9)) })}
+                              className="w-16 border border-gray-300 rounded px-1 text-right"
+                              style={{ fontSize: 11 }} />
+                            <span className="text-gray-400">м</span>
+                          </div>
                         </div>
                       )}
                     </>

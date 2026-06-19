@@ -193,6 +193,57 @@ export async function drawSymbolsToCanvas(
       ctx.restore();
     }
 
+    // ── Индикаторы замерной станции ───────────────────────────────────
+    if (isMeasureStation && hasBranchPts) {
+      const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+      const msLines: string[] = [];
+      if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
+      if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
+      if (sym.msIndFlow) {
+        const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
+        msLines.push(`Q=${q.toFixed(2)} м³/с`);
+      }
+      if (sym.msIndArea) {
+        const a = sym.msArea ?? (brMs?.area ?? 0);
+        msLines.push(`S=${a.toFixed(2)} м²`);
+      }
+      if (sym.msIndVelocity) {
+        const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
+        msLines.push(`v=${v.toFixed(2)} м/с`);
+      }
+      if (msLines.length > 0) {
+        const fsMs = Math.max(6, Math.round((sym.msIndFontSize ?? 9) * sc * ss));
+        const lhMs = fsMs + 3;
+        const boxHMs = msLines.length * lhMs + 6;
+        const brDxMs = tsx2 - fsx, brDyMs = tsy2 - fsy;
+        const brLenMs = Math.hypot(brDxMs, brDyMs);
+        const perpXms = brLenMs > 0 ? -brDyMs / brLenMs : 0;
+        const perpYms = brLenMs > 0 ?  brDxMs / brLenMs : 0;
+        const maxLen = Math.max(...msLines.map(l => l.length));
+        const boxWMs = maxLen * fsMs * 0.52 + 10;
+        const bxMs = px + perpXms * (16 + boxWMs / 2) + (sym.msIndOffsetX ?? 0);
+        const byMs = py + perpYms * (16 + boxHMs / 2) + (sym.msIndOffsetY ?? 0);
+
+        ctx.save();
+        ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bxMs, byMs - boxHMs / 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        msLines.forEach((line, i) => {
+          const tyMs = byMs - boxHMs / 2 + i * lhMs + 3;
+          const fw = i === 0 && sym.msIndNumber ? "700" : "400";
+          ctx.font = `${fw} ${fsMs}px "Segoe UI", sans-serif`;
+          ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
+          ctx.strokeText(line, bxMs, tyMs);
+          ctx.fillStyle = "#1a2a4a";
+          ctx.fillText(line, bxMs, tyMs);
+        });
+        ctx.restore();
+      }
+    }
+
     // ── Индикаторы перемычки ──────────────────────────────────────────
     if (isBulkhead && sym.branchId && hasBranchPts) {
       drawBulkheadIndicators(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2, sc, ss, unitsConfig, branches);
