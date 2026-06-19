@@ -47,6 +47,7 @@ import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
+import { useRecentFiles } from "@/lib/useRecentFiles";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
 import FUNC2URL from "../../backend/func2url.json";
@@ -1389,6 +1390,7 @@ export default function CadPage() {
   const [showLegend, setShowLegend] = useState(false);
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
+  const { recentFiles, addRecentFile, removeRecentFile, clearRecentFiles } = useRecentFiles();
   const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
   // Флаг несохранённых изменений
   const [isDirty, setIsDirty] = useState<boolean>(false);
@@ -1743,7 +1745,8 @@ export default function CadPage() {
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
-    setProjectFileName((data.name as string) ?? fileName);
+    const resolvedName = (data.name as string) ?? fileName;
+    setProjectFileName(resolvedName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
     // Восстанавливаем вид ПОСЛЕ zScale/xyScale — иначе их useEffect перекроет offset
@@ -1755,6 +1758,10 @@ export default function CadPage() {
     if (!data.view) {
       setImportNonce((n) => n + 1);
     }
+    // Сохраняем в список последних файлов
+    const loadedNodes = Array.isArray(data.nodes) ? (data.nodes as unknown[]).length : 0;
+    const loadedBranches = Array.isArray(data.branches) ? (data.branches as unknown[]).length : 0;
+    addRecentFile({ name: resolvedName, openedAt: Date.now(), nodeCount: loadedNodes, branchCount: loadedBranches });
     setActiveRibbon("home");
   };
 
@@ -3072,8 +3079,61 @@ export default function CadPage() {
                   </>
                 )}
 
+                {/* ── Последние файлы ── */}
+                {fileSectionState === "recent" && (
+                  <>
+                    <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300 flex items-center justify-between">
+                      <span>Последние файлы</span>
+                      {recentFiles.length > 0 && (
+                        <button onClick={clearRecentFiles}
+                          className="text-[11px] text-gray-400 hover:text-red-500 transition-colors">
+                          Очистить список
+                        </button>
+                      )}
+                    </div>
+                    {recentFiles.length === 0 ? (
+                      <div className="text-[12px] text-gray-400 pt-4 flex flex-col items-center gap-2">
+                        <Icon name="Clock" size={32} className="text-gray-300" />
+                        <span>Нет недавно открытых файлов</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {recentFiles.map((rf) => {
+                          const d = new Date(rf.openedAt);
+                          const dateStr = d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+                          const timeStr = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+                          return (
+                            <div key={rf.name + rf.openedAt}
+                              className="group flex items-center gap-2 px-2 py-2 rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors">
+                              <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded border border-gray-300"
+                                style={{ background: "#f0f4ff" }}>
+                                <Icon name="FileText" size={16} className="text-blue-500" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[12px] font-medium text-gray-800 truncate">{rf.name}</div>
+                                <div className="text-[10px] text-gray-400">
+                                  {dateStr} {timeStr}
+                                  {rf.nodeCount !== undefined && (
+                                    <span className="ml-2">· Узлов: {rf.nodeCount} · Ветвей: {rf.branchCount ?? 0}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <button
+                                title="Убрать из списка"
+                                onClick={() => removeRecentFile(rf.name)}
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 transition-all">
+                                <Icon name="X" size={12} className="text-gray-400 hover:text-red-500" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+
                 {/* ── Остальные секции — заглушки ── */}
-                {!["new", "add", "open", "save", "saveas", "print", "export", "install", "license"].includes(fileSectionState) && (
+                {!["new", "add", "open", "save", "saveas", "print", "export", "install", "license", "recent"].includes(fileSectionState) && (
                   <div className="text-[12px] text-gray-400 pt-4">
                     Функция «{sections.find((s) => s.id === fileSectionState)?.label}» будет реализована.
                   </div>
