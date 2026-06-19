@@ -402,28 +402,35 @@ export function calcFireMode(
   }
 
   // ── Шаг 3: Строим карту inNodeId→ветви для быстрого поиска downstream ─────
-  // Для каждого узла — список ветвей, у которых он является входным
+  // Для каждого узла — список ветвей, у которых он является входным (по знаку потока)
   const fireBranchIds = new Set<string>(fireBranches.map(b => b.id));
+
+  // branchesByInNode[nodeId] = ветви ВНИЗ по потоку от этого узла (не очаги)
   const branchesByInNode = new Map<string, typeof branches>();
   for (const b of branches) {
     if (fireBranchIds.has(b.id)) continue;
     const flow = b.flow ?? 0;
     if (Math.abs(flow) < 0.001) continue;
+    // Входной узел = откуда приходит воздух
     const inNodeId = flow >= 0 ? b.fromId : b.toId;
     if (!branchesByInNode.has(inNodeId)) branchesByInNode.set(inNodeId, []);
     branchesByInNode.get(inNodeId)!.push(b);
   }
 
-  // ── Шаг 4: BFS распространения задымления ────────────────────────────────
-  // smokeAtNode[nodeId] = параметры задымления на выходе из этого узла
+  // ── Шаг 4: Dijkstra-BFS распространения задымления ────────────────────────
+  // Используем Dijkstra (priority queue по времени прихода) вместо простого BFS,
+  // чтобы корректно обрабатывать сети с циклами: каждый узел обрабатывается
+  // ТОЛЬКО ОДИН РАЗ — когда найден кратчайший путь к нему.
   interface SmokeParams { coC: number; co2C: number; smokeC: number; tempC: number; }
   const smokeAtNode = new Map<string, SmokeParams>();
 
-  // Инициализация: оба узла каждого очага получают задымление для BFS
-  // outNodeId — основное направление, inNodeId — обратное (диффузия / опрокидывание)
+  // Инициализация: только ВЫХОДНЫЕ узлы очагов попадают в начало обхода.
+  // Входной узел очага (inNodeId) — источник свежего воздуха, НЕ задымляется.
+  // При опрокидывании (actuallyReversed) очаг уже находится в reverserBranches,
+  // и его входной/выходной узлы поменяются местами по знаку flow.
   for (const fb of fireBranches) {
+    // outNodeId определяется знаком flow ПОСЛЕ итеративного расчёта
     const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
-    const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
     const nc = nodeContribs.get(outNodeId);
     if (!nc || nc.smokedQ < 0.0001) continue;
     const sp: SmokeParams = {
@@ -433,28 +440,61 @@ export function calcFireMode(
       tempC:  nc.wTemp  / nc.smokedQ,
     };
     smokeAtNode.set(outNodeId, sp);
-    // inNodeId — входной узел очага (откуда приходит свежий воздух).
-    // Он НЕ должен попадать в BFS-очередь: дым не распространяется против потока.
-    void inNodeId;
   }
 
-  // BFS по очереди задымлённых узлов (только выходные узлы очагов)
-  const bfsQueue: string[] = [...smokeAtNode.keys()];
-  const visitedNodes = new Set<string>(bfsQueue);
-  let head = 0; // указатель — не создаём новый массив на каждом шаге
+  // Dijkstra: очередь с приоритетом по времени прихода.
+  // Реализуем через отсортированный массив (для типичных сетей ≤2000 узлов достаточно).
+  // finalized[nodeId] = true когда узел обработан окончательно (кратчайший путь найден).
+  const finalized = new Set<string>();
 
-  while (head < bfsQueue.length) {
-    const smokedNodeId = bfsQueue[head++];
-    const sp = smokeAtNode.get(smokedNodeId)!;
+  // priority queue: [arrivalTime, nodeId]
+  type PQEntry = [number, string];
+  const pq: PQEntry[] = [];
+  const pqPush = (entry: PQEntry) => {
+    pq.push(entry);
+    // Сортируем по возрастанию времени (минимум в начале)
+    pq.sort((a, b2) => a[0] - b2[0]);
+  };
 
-    // Все ветви, для которых этот узел — входной
+  // Добавляем стартовые узлы (выходы очагов)
+  for (const [nodeId, time] of nodeArrivalTime) {
+    if (smokeAtNode.has(nodeId)) {
+      pqPush([time, nodeId]);
+    }
+  }
+
+  while (pq.length > 0) {
+    const [, smokedNodeId] = pq.shift()!;
+
+    // Пропускаем если уже обработан (Dijkstra гарантирует оптимальность)
+    if (finalized.has(smokedNodeId)) continue;
+    finalized.add(smokedNodeId);
+
+    const sp = smokeAtNode.get(smokedNodeId);
+    if (!sp) continue;
+    const arrivalAtIn = nodeArrivalTime.get(smokedNodeId) ?? 0;
+
+    // Все ветви, для которых этот узел — входной (дым идёт вниз по потоку)
     const downBranches = branchesByInNode.get(smokedNodeId) ?? [];
 
     for (const b of downBranches) {
       const flow = b.flow ?? 0;
       const outNodeId = flow >= 0 ? b.toId : b.fromId;
 
-      // Затухание вдоль ветви (минимальное)
+      // Пропускаем если выходной узел уже финализирован (оптимальный путь найден)
+      if (finalized.has(outNodeId)) continue;
+
+      const rawSpeed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
+        ? Math.abs(flow) / b.area : 0;
+      const speed = Math.max(rawSpeed, 0.3); // мин. 0.3 м/с
+      const transitMin = (b.length ?? 0) > 0 ? b.length / speed / 60 : 0;
+      const arrivalAtOut = Math.min(600, arrivalAtIn + transitMin);
+
+      // Релаксация: обновляем только если нашли более быстрый путь
+      const prevArrival = nodeArrivalTime.get(outNodeId);
+      if (prevArrival !== undefined && arrivalAtOut >= prevArrival) continue;
+
+      // Затухание концентраций вдоль ветви
       const lf     = Math.max(0.5, Math.exp(-(b.length ?? 0) * 0.0005));
       const coOut    = sp.coC    * lf;
       const smokeOut = sp.smokeC * lf;
@@ -463,64 +503,38 @@ export function calcFireMode(
       const visOut   = smokeOut > 0 ? Math.min(100, 3 / smokeOut) : 100;
       const hazard   = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
 
-      // Время прихода дыма к входу этой ветви
-      const arrivalAtIn = nodeArrivalTime.get(smokedNodeId) ?? 0;
-      const rawSpeed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
-        ? Math.abs(flow) / b.area : 0;
-      // Минимальная скорость дыма — 0.3 м/с (конвекция/диффузия при слабом потоке)
-      const speed = Math.max(rawSpeed, 0.3);
-      const transitMin = (b.length ?? 0) > 0 ? b.length / speed / 60 : 0;
-      const arrivalAtOut = Math.min(600, arrivalAtIn + transitMin);
-
-      // Обновляем время прихода в выходной узел (кратчайший путь)
-      const prev = nodeArrivalTime.get(outNodeId);
-      if (prev === undefined || arrivalAtOut < prev) {
-        nodeArrivalTime.set(outNodeId, arrivalAtOut);
-      }
-
       // Реальное опрокидывание: знак расхода изменился по сравнению с исходным
       const bOrigFlow = (b as TopoBranch & { originalFlow?: number }).originalFlow;
       const bActuallyReversed = bOrigFlow !== undefined
         ? (Math.sign(bOrigFlow || 1) !== Math.sign(flow || 1)) && Math.abs(flow) > 0.01
         : false;
-
       if (bActuallyReversed) reversedBranches.add(b.id);
 
-      // Результат по ветви
+      // Сохраняем результат по ветви
+      // smokeArrivalTime = время прихода дыма на ВХОД этой ветви (для анимации)
       resultMap.set(b.id, {
         branchId: b.id,
-        airTempOut:       Math.round(tempOut  * 10)  / 10,
+        airTempOut:        Math.round(tempOut  * 10)  / 10,
         thermalDepression: 0,
-        willReverse:      false,
-        actuallyReversed: bActuallyReversed,
-        coConc:           Math.round(coOut    * 1000) / 1000,
-        co2Conc:          Math.round(co2Out   * 100)  / 100,
-        smokeDensity:     Math.round(smokeOut * 100)  / 100,
-        visibility:       Math.round(visOut   * 10)   / 10,
-        hazardLevel:      hazard,
-        smokeArrivalTime: Math.round(arrivalAtIn * 10) / 10,
-        airSpeed:         Math.round(speed * 100) / 100,
+        willReverse:       false,
+        actuallyReversed:  bActuallyReversed,
+        coConc:            Math.round(coOut    * 1000) / 1000,
+        co2Conc:           Math.round(co2Out   * 100)  / 100,
+        smokeDensity:      Math.round(smokeOut * 100)  / 100,
+        visibility:        Math.round(visOut   * 10)   / 10,
+        hazardLevel:       hazard,
+        smokeArrivalTime:  Math.round(arrivalAtIn * 10) / 10,
+        airSpeed:          Math.round(speed * 100) / 100,
       });
 
-      // Выходной узел получает задымление
-      // Если узел ещё не посещён — добавляем в очередь
-      // Если уже посещён, но пришёл более быстрый путь — обновляем и добавляем снова (Dijkstra-like)
-      const prevArrival = nodeArrivalTime.get(outNodeId);
-      if (!visitedNodes.has(outNodeId)) {
-        visitedNodes.add(outNodeId);
-        smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
-        nodeArrivalTime.set(outNodeId, arrivalAtOut);
-        bfsQueue.push(outNodeId);
-      } else if (prevArrival !== undefined && arrivalAtOut < prevArrival) {
-        // Более быстрый путь — обновляем параметры и повторно обходим
-        smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
-        nodeArrivalTime.set(outNodeId, arrivalAtOut);
-        bfsQueue.push(outNodeId);
-      }
+      // Обновляем выходной узел и добавляем в очередь
+      nodeArrivalTime.set(outNodeId, arrivalAtOut);
+      smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
+      pqPush([arrivalAtOut, outNodeId]);
     }
   }
 
-  log.push(`BFS: задымлено узлов=${visitedNodes.size}, ветвей=${resultMap.size} из ${branches.length}`);
+  log.push(`Dijkstra: задымлено узлов=${finalized.size}, ветвей=${resultMap.size} из ${branches.length}`);
 
   // ── Итоговая статистика ───────────────────────────────────────────────────
   const smokedCount = resultMap.size;
