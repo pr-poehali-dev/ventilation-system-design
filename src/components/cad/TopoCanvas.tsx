@@ -134,6 +134,8 @@ interface Props {
   onSymbolOffset?: (id: string, ox: number, oy: number) => void;
   /** Смещение бейджа индикаторов (px offset) */
   onSymbolIndOffset?: (id: string, ox: number, oy: number) => void;
+  /** Смещение бейджа индикаторов замерной станции (px offset) */
+  onSymbolMsIndOffset?: (id: string, ox: number, oy: number) => void;
   /** Начало перемещения символа (для сохранения истории undo) */
   onSymbolDragStart?: (id: string) => void;
   /** Клик на символ (для открытия свойств — одиночный) */
@@ -236,7 +238,7 @@ export default function TopoCanvas(props: Props) {
     selectedNodeIds, onNodeMultiSelect,
     infoConfig, zScale = 1, xyScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
-    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
+    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolMsIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
     selectedSymbolIds, onSymbolMultiSelect,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
@@ -3296,8 +3298,77 @@ export default function TopoCanvas(props: Props) {
                   fill="transparent" stroke="none" />;
               })()}
 
+              {/* ── Индикаторы замерной станции на схеме ─────────────── */}
+              {view.scale > 0.05 && sym.typeId === "measure_station" && hasBranchPts && (() => {
+                const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+                const msLines: string[] = [];
+                if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
+                if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
+                if (sym.msIndFlow) {
+                  const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
+                  msLines.push(`Q=${q.toFixed(2)} м³/с`);
+                }
+                if (sym.msIndArea) {
+                  const a = sym.msArea ?? (brMs?.area ?? 0);
+                  msLines.push(`S=${a.toFixed(2)} м²`);
+                }
+                if (sym.msIndVelocity) {
+                  const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
+                  msLines.push(`v=${v.toFixed(2)} м/с`);
+                }
+                if (!msLines.length) return null;
+
+                const baseFontPx = sym.msIndFontSize ? sym.msIndFontSize * sc : 9 * sc;
+                const fSize = Math.max(6, Math.round(baseFontPx));
+                const lineH = fSize + 3;
+                const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
+                const boxH  = msLines.length * lineH + 6;
+                const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
+                const brLen = Math.hypot(brDx, brDy);
+                const perpX = brLen > 0 ? -brDy / brLen : 0;
+                const perpY = brLen > 0 ?  brDx / brLen : 0;
+                const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
+                const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
+                const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+
+                return (
+                  <g opacity={opacity}>
+                    <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
+                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                    <g style={{ cursor: "move" }}
+                      onMouseDown={(e) => {
+                        if (tool !== "select") return;
+                        e.stopPropagation();
+                        const startX = e.clientX, startY = e.clientY;
+                        const origOx = sym.msIndOffsetX ?? 0;
+                        const origOy = sym.msIndOffsetY ?? 0;
+                        const onMove = (me: MouseEvent) => {
+                          onSymbolMsIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                        };
+                        const onUp = () => {
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      }}>
+                      {msLines.map((line, i) => (
+                        <text key={i}
+                          x={bx} y={by - boxH / 2 + (i + 1) * lineH}
+                          textAnchor="middle" fontSize={fSize}
+                          fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                          fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                          {line}
+                        </text>
+                      ))}
+                    </g>
+                  </g>
+                );
+              })()}
+
               {/* ── Индикаторы перемычки на схеме ────────────────────── */}
-              {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && (() => {
+              {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station" && sym.branchId && (() => {
                 const br = branches.find(b => b.id === sym.branchId);
                 if (!br) return null;
                 const lines: string[] = [];
