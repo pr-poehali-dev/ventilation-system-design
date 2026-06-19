@@ -6835,13 +6835,14 @@ export default function CadPage() {
                 let bestT = 0.5;
                 let bestDist = SNAP_R;
                 let bestSx = sx, bestSy = sy;
+                const _xyS = xyScale ?? 1;
                 for (const b of branches) {
                   const fromN = nodes.find(n => n.id === b.fromId);
                   const toN   = nodes.find(n => n.id === b.toId);
                   if (!fromN || !toN) continue;
-                  const f = project3D({ x: fromN.x, y: fromN.y, z: fromN.z * (zScale ?? 1) },
+                  const f = project3D({ x: fromN.x * _xyS, y: fromN.y * _xyS, z: fromN.z * (zScale ?? 1) },
                     { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation });
-                  const t2 = project3D({ x: toN.x, y: toN.y, z: toN.z * (zScale ?? 1) },
+                  const t2 = project3D({ x: toN.x * _xyS, y: toN.y * _xyS, z: toN.z * (zScale ?? 1) },
                     { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation });
                   const C = t2.sx - f.sx, D = t2.sy - f.sy;
                   const A = sx - f.sx,   B = sy - f.sy;
@@ -6861,12 +6862,13 @@ export default function CadPage() {
               // Drag конца выноски — проецируем на плоскость z=pos.z
               if (leaderDragRef.current) {
                 const dragPos = positions.find(p => p.id === leaderDragRef.current!.posId);
-                const pz = dragPos?.z ?? 0;
+                const pz = (dragPos?.z ?? 0) * (zScale ?? 1);
                 const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
                 if (!w) return;
+                const xy = xyScale ?? 1;
                 setPositions(prev => prev.map(p =>
                   p.id === leaderDragRef.current!.posId
-                    ? { ...p, leaderEndX: w.x, leaderEndY: w.y }
+                    ? { ...p, leaderEndX: xy !== 1 ? w.x / xy : w.x, leaderEndY: xy !== 1 ? w.y / xy : w.y }
                     : p
                 ));
                 return;
@@ -6876,12 +6878,13 @@ export default function CadPage() {
               const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
               if (Math.hypot(sx - startSx, sy - startSy) < 4) return;
               const dragPos = positions.find(p => p.id === id);
-              const pz = dragPos?.z ?? 0;
+              const pz = (dragPos?.z ?? 0) * (zScale ?? 1);
               const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: pz });
               const wCur   = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
               if (!wStart || !wCur) return;
-              const dx = wCur.x - wStart.x;
-              const dy = wCur.y - wStart.y;
+              const xy = xyScale ?? 1;
+              const dx = xy !== 1 ? (wCur.x - wStart.x) / xy : wCur.x - wStart.x;
+              const dy = xy !== 1 ? (wCur.y - wStart.y) / xy : wCur.y - wStart.y;
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy, placed: true } : p));
             }}
             onClick={(e) => {
@@ -7247,20 +7250,9 @@ export default function CadPage() {
                 setPendingSymbol(null);
               }}
               positionPlaceMode={positionPlaceMode}
-              onPositionPlace={(wx, wy) => {
+              onPositionPlace={(wx, wy, wz) => {
                 const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
                 if (!sel) return;
-                // Берём z из активного горизонта, иначе из ближайшего узла по XY, иначе из позиции
-                let wz = sel.z ?? 0;
-                if (activeHorizon) {
-                  wz = activeHorizon.z;
-                } else if (nodes.length > 0) {
-                  const nearest = nodes.reduce((best, n) => {
-                    const d = (n.x - wx) ** 2 + (n.y - wy) ** 2;
-                    return d < best.d ? { d, z: n.z } : best;
-                  }, { d: Infinity, z: nodes[0].z });
-                  wz = nearest.z;
-                }
                 setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz, placed: true } : p));
                 setPositionPlaceMode(false);
               }}

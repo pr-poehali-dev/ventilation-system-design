@@ -171,7 +171,7 @@ interface Props {
   /** Режим размещения маркера позиции на схеме (клик = разместить) */
   positionPlaceMode?: boolean;
   /** Колбэк: пользователь кликнул на схему в режиме размещения позиции */
-  onPositionPlace?: (wx: number, wy: number) => void;
+  onPositionPlace?: (wx: number, wy: number, wz: number) => void;
   /** Режим привязки ветвей к позиции (F3) — все ветви подсвечиваются */
   branchBindMode?: boolean;
   /** Карта branchId → цвет позиции (для подсветки привязанных ветвей в F3) */
@@ -1029,9 +1029,18 @@ export default function TopoCanvas(props: Props) {
     if (positionPlaceMode && onPositionPlace && e.button === 0) {
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
-      // Используем screenToWorld (учитывает zLevel и тип проекции) вместо value:0
       const w = screenToWorld(sx, sy);
-      if (w) onPositionPlace(w.x, w.y);
+      if (w) {
+        // screenToWorld возвращает координаты в масштабированном пространстве (×xyScale),
+        // а позиции хранятся/рендерятся в реальных мировых координатах — делим обратно
+        const xy = xyScale ?? 1;
+        const zs = zScale ?? 1;
+        onPositionPlace(
+          xy !== 1 ? w.x / xy : w.x,
+          xy !== 1 ? w.y / xy : w.y,
+          zs !== 1 ? w.z / zs : w.z,
+        );
+      }
       e.stopPropagation();
       return;
     }
