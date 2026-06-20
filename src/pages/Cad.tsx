@@ -1666,7 +1666,9 @@ export default function CadPage() {
     setSurfaceTemp(20);
     // ── конец сброса ────────────────────────────────────────────────────
 
-    setNodes((data.nodes as TopoNode[]) ?? []);
+    // Каждый узел прогоняем через makeNode чтобы гарантировать все поля (как makeBranch для ветвей)
+    const rawNodes = (data.nodes as TopoNode[]) ?? [];
+    setNodes(rawNodes.map((n) => makeNode(n.id, n)));
     // Каждую ветвь прогоняем через makeBranch чтобы гарантировать все поля (fanRpm и т.д.)
     const rawBranches = (data.branches as TopoBranch[]) ?? [];
     const mergedBranches = rawBranches.map((b) =>
