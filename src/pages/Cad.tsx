@@ -509,21 +509,37 @@ export default function CadPage() {
         if (!ctx) return;
         ctx.drawImage(img, 0, 0, w, h);
         const compressed = cv.toDataURL("image/jpeg", 0.85);
-        // Центрируем bounds на текущем виде схемы (обратная проекция центра экрана)
-        const vs = savedViewStateRef.current;
-        const scale = vs?.scale ?? 1;
-        const offsetX = vs?.offsetX ?? 0;
-        const offsetY = vs?.offsetY ?? 0;
-        const xy = (xyScale ?? 1);
-        // Центр видимой области в мировых координатах (2D план, elevation=90)
-        const screenCx = window.innerWidth / 2;
-        const screenCy = window.innerHeight / 2;
-        const worldCx = ((screenCx - offsetX) / scale) / (xy || 1);
-        const worldCy = (-((screenCy - offsetY) / scale)) / (xy || 1);
-        // Размер подложки: ~30% от видимой области экрана в мировых единицах
         const aspect = w / h;
-        const halfH = Math.abs((window.innerHeight * 0.35) / scale) / (xy || 1);
-        const halfW = halfH * aspect;
+        // Вычисляем центр схемы из координат узлов (самый надёжный способ)
+        const curNodes = nodesRef.current;
+        let worldCx = 0, worldCy = 0, halfH = 1000, halfW = halfH * aspect;
+        if (curNodes.length > 0) {
+          const xs = curNodes.map(n => n.x);
+          const ys = curNodes.map(n => n.y);
+          const minX = Math.min(...xs), maxX = Math.max(...xs);
+          const minY = Math.min(...ys), maxY = Math.max(...ys);
+          worldCx = (minX + maxX) / 2;
+          worldCy = (minY + maxY) / 2;
+          // Размер подложки: покрываем всю схему с запасом
+          const spanX = Math.max(maxX - minX, 1000);
+          const spanY = Math.max(maxY - minY, 1000);
+          // Подбираем halfW и halfH чтобы схема вписалась с соотношением сторон картинки
+          halfW = Math.max(spanX, spanY * aspect) * 0.75;
+          halfH = halfW / aspect;
+        } else {
+          // Нет узлов — берём центр видимой области через savedViewState
+          const vs = savedViewStateRef.current;
+          const sc = vs?.scale ?? 1;
+          const ox = vs?.offsetX ?? 0;
+          const oy = vs?.offsetY ?? 0;
+          const xy = xyScale ?? 1;
+          const screenCx = window.innerWidth / 2;
+          const screenCy = window.innerHeight / 2;
+          worldCx = ((screenCx - ox) / sc) / (xy || 1);
+          worldCy = -((screenCy - oy) / sc) / (xy || 1);
+          halfH = Math.abs((window.innerHeight * 0.35) / sc) / (xy || 1);
+          halfW = halfH * aspect;
+        }
         setHorizons((p) => p.map((hz) => hz.id === horizonId ? {
           ...hz,
           image: {
@@ -6094,6 +6110,36 @@ export default function CadPage() {
                                       borderColor: editingHorizonImageId === h.id ? "#1d4ed8" : "#d1d5db",
                                     }}>
                                     {editingHorizonImageId === h.id ? "✓ Готово" : "✎ Растянуть"}
+                                  </button>
+                                  <button
+                                    title="Разместить план в центре схемы"
+                                    onClick={() => {
+                                      const curNodes = nodesRef.current;
+                                      if (!h.image) return;
+                                      const imgW = 1, imgH = 1; // пропорции из bounds
+                                      const bw = Math.abs(h.image.bounds.x2 - h.image.bounds.x1);
+                                      const bh = Math.abs(h.image.bounds.y2 - h.image.bounds.y1);
+                                      const aspect = bw > 0 && bh > 0 ? bw / bh : 1;
+                                      void imgW; void imgH;
+                                      let cx = 0, cy = 0, halfH2 = 1000;
+                                      if (curNodes.length > 0) {
+                                        const xs = curNodes.map(n => n.x);
+                                        const ys = curNodes.map(n => n.y);
+                                        cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+                                        cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+                                        const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 1000);
+                                        const spanY = Math.max(Math.max(...ys) - Math.min(...ys), 1000);
+                                        halfH2 = Math.max(spanX, spanY) * 0.75;
+                                      }
+                                      const halfW2 = halfH2 * aspect;
+                                      setHorizonImageBounds(h.id, {
+                                        x1: cx - halfW2, y1: cy - halfH2,
+                                        x2: cx + halfW2, y2: cy + halfH2,
+                                      });
+                                      setEditingHorizonImageId(h.id);
+                                    }}
+                                    className="px-2 py-1 text-[11px] border border-blue-300 text-blue-700 rounded hover:bg-blue-50">
+                                    ⌖
                                   </button>
                                   <button onClick={() => removeHorizonImage(h.id)}
                                     className="px-2 py-1 text-[11px] border border-red-300 text-red-700 rounded hover:bg-red-50">
