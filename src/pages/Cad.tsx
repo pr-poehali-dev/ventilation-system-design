@@ -889,10 +889,19 @@ export default function CadPage() {
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
   type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
-  // Текущий вид TopoCanvas (ref — не вызывает перерендер при каждом сдвиге камеры)
+  // Текущий вид TopoCanvas: ref для мгновенного доступа + state для перерисовки оверлея позиций
   const savedViewStateRef = useRef<SavedView | null>(null);
+  const viewTickRafRef = useRef<number | null>(null);
+  const [viewStateTick, setViewStateTick] = useState(0);
   const handleViewStateChange = useCallback((v: SavedView) => {
     savedViewStateRef.current = v;
+    // Throttle через rAF — перерисовка оверлея позиций не чаще 60fps
+    if (viewTickRafRef.current === null) {
+      viewTickRafRef.current = requestAnimationFrame(() => {
+        viewTickRafRef.current = null;
+        setViewStateTick(t => t + 1);
+      });
+    }
   }, []);
   // ─── Позиции ────────────────────────────────────────────────────────────
   const [positions, setPositions] = useState<Position[]>([]);
@@ -7750,6 +7759,7 @@ export default function CadPage() {
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && showPositions && (() => {
+              void viewStateTick; // подписка на обновления камеры через rAF-throttled state
               const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
               // xyScale и zScale применяем к осям, как это делает TopoCanvas
