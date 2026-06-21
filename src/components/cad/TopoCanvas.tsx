@@ -373,7 +373,11 @@ export default function TopoCanvas(props: Props) {
 
   // Перетаскивание угла подложки горизонта: какой именно угол тащим.
   const [draggingCorner, setDraggingCorner] = useState<
-    { horizonId: string; corner: "tl" | "tr" | "bl" | "br" } | null
+    { horizonId: string; corner: "tl" | "tr" | "bl" | "br"; shiftLocked: boolean; origBounds: { x1: number; y1: number; x2: number; y2: number } } | null
+  >(null);
+  // Перетаскивание тела подложки горизонта (перемещение целиком)
+  const [draggingImageBody, setDraggingImageBody] = useState<
+    { horizonId: string; startWx: number; startWy: number; startBounds: { x1: number; y1: number; x2: number; y2: number } } | null
   >(null);
   // Перетаскивание рамки слоя печати: corner = угол, "move" = всё тело рамки.
   const [draggingPrintCorner, setDraggingPrintCorner] = useState<
@@ -1353,6 +1357,24 @@ export default function TopoCanvas(props: Props) {
       onNodeMove(draggingNode.id, xWorld, yWorld, zWorld);
       return;
     }
+    if (draggingImageBody && onHorizonImageBoundsChange) {
+      // Перемещение всей подложки горизонта целиком
+      const hz = horizons?.find((hh) => hh.id === draggingImageBody.horizonId);
+      if (!hz || !hz.image) return;
+      const plane: WorkPlane = { axis: "z", value: hz.z };
+      const wp = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
+      if (!wp) return;
+      const xy = xyScale ?? 1;
+      const curWx = xy !== 1 ? wp.x / xy : wp.x;
+      const curWy = xy !== 1 ? wp.y / xy : wp.y;
+      const dx = curWx - draggingImageBody.startWx;
+      const dy = curWy - draggingImageBody.startWy;
+      const ob = draggingImageBody.startBounds;
+      onHorizonImageBoundsChange(draggingImageBody.horizonId, {
+        x1: ob.x1 + dx, y1: ob.y1 + dy, x2: ob.x2 + dx, y2: ob.y2 + dy,
+      });
+      return;
+    }
     if (draggingCorner && onHorizonImageBoundsChange) {
       // Перетаскивание угла подложки горизонта в плоскости z=z горизонта.
       const hz = horizons?.find((hh) => hh.id === draggingCorner.horizonId);
@@ -1360,12 +1382,46 @@ export default function TopoCanvas(props: Props) {
       const plane: WorkPlane = { axis: "z", value: hz.z };
       const wp = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
       if (!wp) return;
+      const xy = xyScale ?? 1;
+      const rawX = xy !== 1 ? wp.x / xy : wp.x;
+      const rawY = xy !== 1 ? wp.y / xy : wp.y;
+      const ob = draggingCorner.origBounds;
       const b = { ...hz.image.bounds };
-      switch (draggingCorner.corner) {
-        case "tl": b.x1 = wp.x; b.y2 = wp.y; break;   // мировой Y растёт вверх; подложка верх=y2
-        case "tr": b.x2 = wp.x; b.y2 = wp.y; break;
-        case "bl": b.x1 = wp.x; b.y1 = wp.y; break;
-        case "br": b.x2 = wp.x; b.y1 = wp.y; break;
+      // Без Shift — свободное перетаскивание угла
+      if (!e.shiftKey) {
+        switch (draggingCorner.corner) {
+          case "tl": b.x1 = rawX; b.y2 = rawY; break;
+          case "tr": b.x2 = rawX; b.y2 = rawY; break;
+          case "bl": b.x1 = rawX; b.y1 = rawY; break;
+          case "br": b.x2 = rawX; b.y1 = rawY; break;
+        }
+      } else {
+        // С Shift — сохраняем пропорции, фиксируем противоположный угол
+        const origW = Math.abs(ob.x2 - ob.x1);
+        const origH = Math.abs(ob.y2 - ob.y1);
+        const aspect = origH > 0 ? origW / origH : 1;
+        switch (draggingCorner.corner) {
+          case "tl": {
+            const newW = ob.x2 - rawX;
+            const newH = newW / aspect;
+            b.x1 = ob.x2 - newW; b.y2 = ob.y1 + newH; break;
+          }
+          case "tr": {
+            const newW = rawX - ob.x1;
+            const newH = newW / aspect;
+            b.x2 = ob.x1 + newW; b.y2 = ob.y1 + newH; break;
+          }
+          case "bl": {
+            const newW = ob.x2 - rawX;
+            const newH = newW / aspect;
+            b.x1 = ob.x2 - newW; b.y1 = ob.y2 - newH; break;
+          }
+          case "br": {
+            const newW = rawX - ob.x1;
+            const newH = newW / aspect;
+            b.x2 = ob.x1 + newW; b.y1 = ob.y2 - newH; break;
+          }
+        }
       }
       onHorizonImageBoundsChange(draggingCorner.horizonId, b);
     }
@@ -1377,6 +1433,7 @@ export default function TopoCanvas(props: Props) {
     setRotStart(null);
     setDraggingNode(null);
     setDraggingCorner(null);
+    setDraggingImageBody(null);
     setDraggingPrintCorner(null);
     setDraggingPrintTitle(null);
   };
@@ -2224,35 +2281,58 @@ export default function TopoCanvas(props: Props) {
         {!useCanvas && (horizons ?? []).map((h) => {
           if (!h.visible || !h.image || !h.image.visible) return null;
           const b = h.image.bounds;
-          // Для проекции углы лежат на плоскости z = h.z
-          const p1 = project3D({ x: b.x1, y: b.y1, z: h.z }, proj); // нижний-левый (мировой)
-          const p2 = project3D({ x: b.x2, y: b.y1, z: h.z }, proj);
-          const p3 = project3D({ x: b.x2, y: b.y2, z: h.z }, proj);
-          const p4 = project3D({ x: b.x1, y: b.y2, z: h.z }, proj);
-          // В 2D-плане можем использовать прямой <image> с поворотом 0; в 3D — clip-path/transform.
-          // Универсально рисуем через <image> + transform на четыре точки невозможно в SVG напрямую
-          // (нет 4-точечной перспективы). Поэтому: в 2D — <image> по габаритам;
-          // в 3D — упрощение: <image> по AABB углов p1..p4 (визуально приемлемо для плоских видов).
+          const xy = xyScale ?? 1;
+          // Для проекции углы лежат на плоскости z = h.z, с учётом xyScale
+          const p1 = project3D({ x: b.x1 * xy, y: b.y1 * xy, z: h.z }, proj);
+          const p2 = project3D({ x: b.x2 * xy, y: b.y1 * xy, z: h.z }, proj);
+          const p3 = project3D({ x: b.x2 * xy, y: b.y2 * xy, z: h.z }, proj);
+          const p4 = project3D({ x: b.x1 * xy, y: b.y2 * xy, z: h.z }, proj);
           const minSx = Math.min(p1.sx, p2.sx, p3.sx, p4.sx);
           const maxSx = Math.max(p1.sx, p2.sx, p3.sx, p4.sx);
           const minSy = Math.min(p1.sy, p2.sy, p3.sy, p4.sy);
           const maxSy = Math.max(p1.sy, p2.sy, p3.sy, p4.sy);
-          // В чистом плане (azimuth=0, elevation=90) AABB совпадает с реальным прямоугольником.
+          const isEditing = h.id === editingHorizonImageId;
           return (
-            <g key={`hi-${h.id}`} style={{ pointerEvents: "none" }}>
+            <g key={`hi-${h.id}`}>
               <image
                 href={h.image.dataUrl}
                 x={minSx} y={minSy}
                 width={Math.max(0, maxSx - minSx)}
                 height={Math.max(0, maxSy - minSy)}
                 opacity={h.image.opacity}
-                preserveAspectRatio="none" />
-              {/* Тонкая обводка горизонтового цвета — чтобы видно было границы подложки */}
+                preserveAspectRatio="none"
+                style={{ pointerEvents: "none" }} />
+              {/* Обводка — всегда, тело — кликабельно только в режиме редактирования */}
               <rect x={minSx} y={minSy}
                 width={Math.max(0, maxSx - minSx)}
                 height={Math.max(0, maxSy - minSy)}
-                fill="none" stroke={h.color} strokeOpacity="0.5"
-                strokeWidth="1" strokeDasharray="6 4" />
+                fill="none" stroke={h.color} strokeOpacity={isEditing ? 0.8 : 0.4}
+                strokeWidth={isEditing ? 1.5 : 1} strokeDasharray="6 4"
+                style={{ pointerEvents: "none" }} />
+              {/* Прозрачный прямоугольник для drag перемещения (только в режиме редактирования) */}
+              {isEditing && onHorizonImageBoundsChange && (
+                <rect x={minSx} y={minSy}
+                  width={Math.max(0, maxSx - minSx)}
+                  height={Math.max(0, maxSy - minSy)}
+                  fill="transparent"
+                  style={{ cursor: "move", pointerEvents: "all" }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    const plane: WorkPlane = { axis: "z", value: h.z };
+                    const esx = e.clientX - (e.currentTarget.closest("svg")?.getBoundingClientRect().left ?? 0);
+                    const esy = e.clientY - (e.currentTarget.closest("svg")?.getBoundingClientRect().top ?? 0);
+                    const wp = is3D ? unprojectToPlane(esx, esy, proj, plane) : unproject2D(esx, esy, proj, h.z);
+                    if (!wp) return;
+                    const xyS = xyScale ?? 1;
+                    setDraggingImageBody({
+                      horizonId: h.id,
+                      startWx: xyS !== 1 ? wp.x / xyS : wp.x,
+                      startWy: xyS !== 1 ? wp.y / xyS : wp.y,
+                      startBounds: { ...b },
+                    });
+                  }}
+                />
+              )}
             </g>
           );
         })}
@@ -2262,6 +2342,7 @@ export default function TopoCanvas(props: Props) {
           const h = (horizons ?? []).find((hh) => hh.id === editingHorizonImageId);
           if (!h || !h.image || !h.image.visible || !h.visible) return null;
           const b = h.image.bounds;
+          const xy = xyScale ?? 1;
           const corners: Array<{ key: "tl" | "tr" | "bl" | "br"; x: number; y: number; cur: string }> = [
             { key: "tl", x: b.x1, y: b.y2, cur: "nwse-resize" },
             { key: "tr", x: b.x2, y: b.y2, cur: "nesw-resize" },
@@ -2271,18 +2352,31 @@ export default function TopoCanvas(props: Props) {
           return (
             <g>
               {corners.map((c) => {
-                const p = project3D({ x: c.x, y: c.y, z: h.z }, proj);
+                const p = project3D({ x: c.x * xy, y: c.y * xy, z: h.z }, proj);
                 return (
-                  <g key={c.key} style={{ cursor: c.cur }}
+                  <g key={c.key} style={{ cursor: c.cur, pointerEvents: "all" }}
                     onMouseDown={(e) => {
                       e.stopPropagation();
-                      setDraggingCorner({ horizonId: h.id, corner: c.key });
+                      setDraggingCorner({ horizonId: h.id, corner: c.key, shiftLocked: false, origBounds: { ...b } });
                     }}>
-                    <circle cx={p.sx} cy={p.sy} r="9" fill="white" stroke={h.color} strokeWidth="2" />
+                    <circle cx={p.sx} cy={p.sy} r="10" fill="transparent" />
+                    <circle cx={p.sx} cy={p.sy} r="7" fill="white" stroke={h.color} strokeWidth="2" />
                     <circle cx={p.sx} cy={p.sy} r="3" fill={h.color} />
                   </g>
                 );
               })}
+              {/* Подсказка: Shift для сохранения пропорций */}
+              {(() => {
+                const cx = (b.x1 + b.x2) / 2 * xy;
+                const cy = (b.y1 + b.y2) / 2 * xy;
+                const pc = project3D({ x: cx, y: cy, z: h.z }, proj);
+                return (
+                  <text x={pc.sx} y={pc.sy} textAnchor="middle" dominantBaseline="middle"
+                    fontSize="11" fill={h.color} fillOpacity="0.7" style={{ pointerEvents: "none", userSelect: "none" }}>
+                    Shift — пропорции
+                  </text>
+                );
+              })()}
             </g>
           );
         })()}

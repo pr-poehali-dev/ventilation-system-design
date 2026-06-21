@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { useLicenseContext } from "@/context/LicenseContext";
 import LicenseDialog from "@/components/LicenseDialog";
@@ -509,15 +509,29 @@ export default function CadPage() {
         if (!ctx) return;
         ctx.drawImage(img, 0, 0, w, h);
         const compressed = cv.toDataURL("image/jpeg", 0.85);
-        // Подгоняем bounds под пропорции картинки и центр в (0,0)
+        // Центрируем bounds на текущем виде схемы (обратная проекция центра экрана)
+        const vs = savedViewStateRef.current;
+        const scale = vs?.scale ?? 1;
+        const offsetX = vs?.offsetX ?? 0;
+        const offsetY = vs?.offsetY ?? 0;
+        const xy = (xyScale ?? 1);
+        // Центр видимой области в мировых координатах (2D план, elevation=90)
+        const screenCx = window.innerWidth / 2;
+        const screenCy = window.innerHeight / 2;
+        const worldCx = ((screenCx - offsetX) / scale) / (xy || 1);
+        const worldCy = (-((screenCy - offsetY) / scale)) / (xy || 1);
+        // Размер подложки: ~30% от видимой области экрана в мировых единицах
         const aspect = w / h;
-        const halfH = 1000;
+        const halfH = Math.abs((window.innerHeight * 0.35) / scale) / (xy || 1);
         const halfW = halfH * aspect;
         setHorizons((p) => p.map((hz) => hz.id === horizonId ? {
           ...hz,
           image: {
             dataUrl: compressed,
-            bounds: { x1: -halfW, y1: -halfH, x2: halfW, y2: halfH },
+            bounds: {
+              x1: worldCx - halfW, y1: worldCy - halfH,
+              x2: worldCx + halfW, y2: worldCy + halfH,
+            },
             opacity: 0.6,
             visible: true,
           },
@@ -859,6 +873,13 @@ export default function CadPage() {
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
   type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
+  // Текущий вид TopoCanvas (обновляется без перерендера через ref + setter)
+  const savedViewStateRef = useRef<SavedView | null>(null);
+  const [savedViewState, setSavedViewState] = useState<SavedView | null>(null);
+  const handleViewStateChange = useCallback((v: SavedView) => {
+    savedViewStateRef.current = v;
+    setSavedViewState(v);
+  }, []);
   // ─── Позиции ────────────────────────────────────────────────────────────
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedPositionId, setSelectedPositionId] = useState<string | null>(null);
@@ -7016,7 +7037,7 @@ export default function CadPage() {
               onRegisterSvgEl={(el) => { liveSvgRef.current = el; }}
               restoreView={savedViewToRestore}
               onRestoreViewDone={() => setSavedViewToRestore(null)}
-              onViewStateChange={setSavedViewState}
+              onViewStateChange={handleViewStateChange}
               editingHorizonImageId={editingHorizonImageId}
               onHorizonImageBoundsChange={setHorizonImageBounds}
               editingPrintLayerId={editingPrintLayerId}
