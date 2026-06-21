@@ -873,12 +873,10 @@ export default function CadPage() {
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
   type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
-  // Текущий вид TopoCanvas (обновляется без перерендера через ref + setter)
+  // Текущий вид TopoCanvas (ref — не вызывает перерендер при каждом сдвиге камеры)
   const savedViewStateRef = useRef<SavedView | null>(null);
-  const [savedViewState, setSavedViewState] = useState<SavedView | null>(null);
   const handleViewStateChange = useCallback((v: SavedView) => {
     savedViewStateRef.current = v;
-    setSavedViewState(v);
   }, []);
   // ─── Позиции ────────────────────────────────────────────────────────────
   const [positions, setPositions] = useState<Position[]>([]);
@@ -1064,7 +1062,7 @@ export default function CadPage() {
     if (svgEl) {
       const w = svgEl.clientWidth || 1600;
       const h = svgEl.clientHeight || 900;
-      const vs = savedViewState;
+      const vs = savedViewStateRef.current;
       let vx = 0, vy = 0, vw = w, vh = h;
       if (vs && vs.scale > 0) {
         vx = -vs.offsetX / vs.scale;
@@ -1456,7 +1454,7 @@ export default function CadPage() {
     flowDisplay,
     zScale,
     xyScale,
-    view: savedViewState ?? undefined,
+    view: savedViewStateRef.current ?? undefined,
     positions,
     scaleLimitsEnabled,
   });
@@ -6845,7 +6843,7 @@ export default function CadPage() {
           <div className="flex-1 relative"
             style={{ cursor: leaderDrawMode ? "crosshair" : undefined }}
             onMouseMove={(e) => {
-              const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
               const sx = e.clientX - rect.left;
               const sy = e.clientY - rect.top;
@@ -6942,7 +6940,7 @@ export default function CadPage() {
                 }));
               } else {
                 // Свободная точка
-                const vs2 = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+                const vs2 = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
                 const rect = e.currentTarget.getBoundingClientRect();
                 const sx2 = e.clientX - rect.left;
                 const sy2 = e.clientY - rect.top;
@@ -7706,7 +7704,7 @@ export default function CadPage() {
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && showPositions && (() => {
-              const vs = savedViewState ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
               // xyScale и zScale применяем к осям, как это делает TopoCanvas
               const proj = (wx: number, wy: number, wz = 0) => {
