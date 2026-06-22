@@ -3661,22 +3661,20 @@ export default function TopoCanvas(props: Props) {
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
-          // nodeSF: та же логика что у objSF — учитываем xyScale, без жёсткого потолка
+          // nodeSF: те же правила что у objSF ветвей — узел масштабируется синхронно с ветвью
           const _xyScaleNode = xyScale ?? 1;
-          const rawNodeSF = fixedObjectScale ? 1 : (view.scale / (_xyScaleNode * 0.4));
+          const _rawNodeSF = fixedObjectScale ? 1 : (view.scale / (_xyScaleNode * 0.4));
           const nodeSF = fixedObjectScale && scaleLimits
-            ? Math.min(scaleLimits.symbolMax / 100, Math.max(scaleLimits.symbolMin / 100, rawNodeSF))
-            : Math.max(0.25, rawNodeSF);
+            ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, _rawNodeSF))
+            : Math.max(0.25, _rawNodeSF);
           // Средняя ширина прилегающих ветвей для синхронного масштабирования узла
           const adjBr = branches.filter(b => b.fromId === node.id || b.toId === node.id);
           const adjAvgW = adjBr.length > 0
             ? adjBr.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBr.length
             : branchWidth;
           const branchPx = (thinLines ? 1 : adjAvgW) * nodeSF;
-          const rawNodeR = Math.max(1.5, branchPx * 0.55);
-          const baseNodeR = (fixedObjectScale && scaleLimits)
-            ? Math.min(scaleLimits.symbolMax / 100 * 10, Math.max(scaleLimits.symbolMin / 100 * 10, rawNodeR))
-            : rawNodeR;
+          // Узел = половина ширины ветви, минимум 1.5px
+          const baseNodeR = Math.max(1.5, branchPx * 0.55);
           const r = isSel ? baseNodeR * 1.5 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";

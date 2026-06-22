@@ -740,11 +740,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
         : branchWidth;
       const branchPx = (thinLines ? 1 : adjAvgW) * objSF;
-      // При включённом fixedObjectScale — ограничиваем и размер узла (symbolMin/Max)
-      const rawNodeR = Math.max(1.5, branchPx * 0.55);
-      const baseNodeR = (fixedObjectScale && _sl)
-        ? Math.min(_sl.symbolMax / 100 * 10, Math.max(_sl.symbolMin / 100 * 10, rawNodeR))
-        : rawNodeR;
+      // Узел = половина ширины ветви, минимум 1.5px
+      const baseNodeR = Math.max(1.5, branchPx * 0.55);
       const r = isSel ? baseNodeR * 1.5 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
