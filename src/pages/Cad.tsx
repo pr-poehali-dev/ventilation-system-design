@@ -7816,7 +7816,9 @@ export default function CadPage() {
               // По ГОСТ позиции ПЛА: диаметр 13 мм на чертеже.
               // Режим 1 (scaleLimitsEnabled=true, fixedObjectScale): фиксированный размер — posSF=1.
               // Режим 2 (!scaleLimitsEnabled): объекты масштабируются — posSF пропорционален зуму.
-              const posSF = scaleLimitsEnabled ? 1 : Math.max(0.25, vs.scale / 0.5);
+              // Нормируем на xyScale: при реальных координатах «нормальный» vs.scale меньше в xyScale раз.
+              const _xySFPos = xyScale ?? 1;
+              const posSF = scaleLimitsEnabled ? 1 : Math.min(8, Math.max(0.25, vs.scale / (_xySFPos * 0.5)));
               const PX_PER_MM = 3.78 * posSF;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви

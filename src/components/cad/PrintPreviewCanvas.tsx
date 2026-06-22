@@ -159,9 +159,10 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     // Шаг 2: если слой печати — вычисляем рамку при sc/ox/oy
     // и подгоняем view чтобы рамка = весь canvas
     const proj0: ProjOptions = { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
+    const _xySF0 = xyScale ?? 1;
     const pNodes0: ProjNode[] = nodes.map(n => ({
       node: n,
-      ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0),
+      ...project3D({ x: n.x * _xySF0, y: n.y * _xySF0, z: n.z * zScale }, proj0),
       depth: 0,
     }));
     const pl = activePrintLayers[0].printLayer!;
@@ -184,10 +185,10 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
 
   const proj = useMemo<ProjOptions>(() => activeView, [activeView]);
 
-  const projNodes = useMemo<ProjNode[]>(
-    () => nodes.map(n => ({ node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj), depth: 0 })),
-    [nodes, proj, zScale],
-  );
+  const projNodes = useMemo<ProjNode[]>(() => {
+    const _xySFN = xyScale ?? 1;
+    return nodes.map(n => ({ node: n, ...project3D({ x: n.x * _xySFN, y: n.y * _xySFN, z: n.z * zScale }, proj), depth: 0 }));
+  }, [nodes, proj, zScale, xyScale]);
 
   const projNodesMap = useMemo(() => {
     const m = new Map<string, ProjNode>();
@@ -272,12 +273,12 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
           {positions.map(pos => {
             if (pos.visible === false || pos.x == null) return null;
-            const p = project3D({ x: pos.x, y: pos.y, z: (pos.z ?? 0) * zScale }, proj);
+            const _xySF = xyScale ?? 1;
+            const p = project3D({ x: pos.x * _xySF, y: pos.y * _xySF, z: (pos.z ?? 0) * zScale }, proj);
             // posSF: при фиксированном масштабе (fixedObjectScale=true) — posSF=1 (эталонный размер).
             // При нефиксированном — пропорционально зуму рабочей области.
-            // Используем viewState.scale (зум рабочей области), а не activeView.scale
-            // (который может быть сильно занижен при вписывании в окно превью).
-            const posSF = fixedObjectScale ? 1 : Math.max(0.25, viewState.scale / 0.5);
+            // Нормируем на xyScale: при реальных координатах «нормальный» viewState.scale меньше в xyScale раз.
+            const posSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.5)));
             // Переводим posSF в единицы превью (activeView.scale / viewState.scale = коэффициент вписывания)
             const previewK = viewState.scale > 0 ? activeView.scale / viewState.scale : 1;
             const r = (pos.diameter ?? 13) * 3.78 * posSF * previewK / 2;
