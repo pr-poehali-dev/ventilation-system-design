@@ -3,7 +3,7 @@ import {
   type TopoNode, type TopoBranch, type Horizon, type ProjOptions,
 } from "@/lib/topology";
 import {
-  renderCanvas, hitNodeCanvas, hitBranchCanvas,
+  renderCanvas,
   type FlowDisplayMode, type ProjNode,
   CANVAS_THRESHOLD,
 } from "@/lib/canvasRenderer";

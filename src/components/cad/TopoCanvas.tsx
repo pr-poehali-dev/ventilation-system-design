@@ -8,7 +8,7 @@ import {
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import CanvasLayer from "@/components/cad/CanvasLayer";
-import { CANVAS_THRESHOLD } from "@/components/cad/CanvasLayerExports";
+import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/cad/CanvasLayerExports";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -684,12 +684,15 @@ export default function TopoCanvas(props: Props) {
 
   // Refs для touch hit-test — заполняются ниже после объявления projNodes/projNodesMap
   const touchHitRef = useRef<{
-    projNodes: Parameters<typeof hitNodeR>[2];
-    projNodesMap: Parameters<typeof hitBranchR>[1];
-    branches: typeof branches;
+    projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[];
+    projNodesMap: Map<string, { node: TopoNode; sx: number; sy: number; depth: number }>;
+    branches: TopoBranch[];
     onSelectNode: typeof onSelectNode;
     onSelectBranch: typeof onSelectBranch;
     onScaleChange?: typeof onScaleChange;
+    view: { scale: number };
+    xyScale: number;
+    branchWidth: number;
   } | null>(null);
 
   // Флаг: после применения пресета вписать схему в экран
@@ -831,7 +834,7 @@ export default function TopoCanvas(props: Props) {
   }, [branches]);
 
   // Обновляем ref для touch hit-test (всегда актуальные данные без пересоздания listeners)
-  touchHitRef.current = { projNodes, projNodesMap, branches, onSelectNode, onSelectBranch, onScaleChange };
+  touchHitRef.current = { projNodes, projNodesMap, branches, onSelectNode, onSelectBranch, onScaleChange, view, xyScale: xyScale ?? 1, branchWidth: branchWidth ?? 2.5 };
 
   // Нативные touch-listeners на SVG с {passive:false}
   useEffect(() => {
@@ -887,9 +890,12 @@ export default function TopoCanvas(props: Props) {
         const sx = t.clientX - rect.left, sy = t.clientY - rect.top;
         const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
         if (moved < 10 && touchHitRef.current) {
-          const { projNodes: pn, projNodesMap: pnm, branches: br, onSelectNode: selN, onSelectBranch: selB } = touchHitRef.current;
-          const hitN = hitNodeR(sx, sy, pn, 16);
-          const hitB = !hitN ? hitBranchR(sx, sy, pnm, br, 12) : null;
+          const { projNodes: pn, projNodesMap: pnm, branches: br, onSelectNode: selN, onSelectBranch: selB, view: v, xyScale: xys, branchWidth: bw } = touchHitRef.current;
+          const sf = Math.max(0.25, v.scale / ((xys ?? 1) * 0.4));
+          const nodeR = Math.max(16, bw * sf * 0.55);
+          const branchTol = Math.max(12, bw * sf * 0.5);
+          const hitN = hitNodeCanvas(sx, sy, pn, nodeR);
+          const hitB = !hitN ? hitBranchCanvas(sx, sy, pnm, br, branchTol) : null;
           if (hitN) { selN(hitN); selB(null); }
           else if (hitB) { selB(hitB); selN(null); }
           else { selN(null); selB(null); }
@@ -964,6 +970,27 @@ export default function TopoCanvas(props: Props) {
     return { x: w.x / xy, y: w.y / xy, z: w.z / zs };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proj, zLevel, is3D, effPlane.axis, effPlane.value, xyScale, zScale]);
+
+  // ─── Hit-тесты с масштабированием по zoom ───────────────────────────────
+  // Радиус/толерантность растут вместе с objSF чтобы при любом зуме было легко попасть.
+  // Минимум: 8px для узла, 5px для ветви (удобный клик при мелком масштабе).
+  // Максимум: реальный размер объекта × 0.55 (не выходим за границы соседних объектов).
+  const _xyHit = xyScale ?? 1;
+  const _objSF = Math.max(0.25, view.scale / (_xyHit * 0.4));
+  // Радиус попадания в узел: не меньше 8px, но не больше половины размера узла
+  const hitNodeR = (sx: number, sy: number, pn: typeof projNodes, extraR = 0) => {
+    const baseW = branchWidth ?? 2.5;
+    const nodeR = Math.max(8, baseW * _objSF * 0.55) + extraR;
+    return hitNodeCanvas(sx, sy, pn, nodeR);
+  };
+  // Толерантность попадания в ветвь: не меньше 5px, растёт с zoom
+  const hitBranchR = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches, extraTol = 0) => {
+    const baseW = branchWidth ?? 2.5;
+    const tol = Math.max(5, baseW * _objSF * 0.5) + extraTol;
+    return hitBranchCanvas(sx, sy, pnm, br, tol);
+  };
+  const hitNode  = (sx: number, sy: number, pn: typeof projNodes)                               => hitNodeR(sx, sy, pn);
+  const hitBranch = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches)     => hitBranchR(sx, sy, pnm, br);
 
   // ─── Контекстное меню по правой кнопке ─────────────────────────────────
   const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
