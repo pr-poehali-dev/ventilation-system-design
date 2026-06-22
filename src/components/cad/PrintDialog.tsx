@@ -338,11 +338,18 @@ export default function PrintDialog({
     if (viewInitDone.current) return;
     if (nodes.length === 0) return;
 
-    // Вычисляем bbox при scale=1
+    // Вычисляем bbox при scale=1 — только по видимым ветвям/узлам
     const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
       azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    const initHorizonMap = new Map(horizons.map(h => [h.id, h]));
+    const initVisibleNodeIds = new Set<string>();
+    branches.forEach(b => {
+      if (b.horizonId) { const h = initHorizonMap.get(b.horizonId); if (h && h.visible === false) return; }
+      initVisibleNodeIds.add(b.fromId); initVisibleNodeIds.add(b.toId);
+    });
+    const initNodes = initVisibleNodeIds.size > 0 ? nodes.filter(n => initVisibleNodeIds.has(n.id)) : nodes;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of nodes) {
+    for (const n of initNodes) {
       const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
       if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
       if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
@@ -403,18 +410,34 @@ export default function PrintDialog({
   const px = (mm: number) => mm * (prevW / paper.w);
 
   // ─── Bbox схемы в проекции при scale=1 ───────────────────────────────
+  // Если активен слой печати — берём bbox только по узлам видимого горизонта
   const schemaBbox = useMemo(() => {
     if (nodes.length === 0) return { minX: 0, maxX: 1, minY: 0, maxY: 1, w: 1, h: 1 };
     const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
       azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    // Собираем ID узлов только из видимых ветвей (ветви скрытых горизонтов исключены)
+    const horizonMap = new Map(horizons.map(h => [h.id, h]));
+    const activePL = horizons.find(h => h.printLayer?.visible) ?? null;
+    const visibleBranchesForBbox = branches.filter(b => {
+      if (!b.horizonId) return true;
+      const h = horizonMap.get(b.horizonId);
+      return !h || h.visible !== false;
+    });
+    const visibleNodeIds = new Set<string>();
+    visibleBranchesForBbox.forEach(b => { visibleNodeIds.add(b.fromId); visibleNodeIds.add(b.toId); });
+    // При активном слое печати — только узлы этого горизонта; иначе — все видимые
+    const nodesToUse = activePL
+      ? nodes.filter(n => visibleNodeIds.has(n.id))
+      : nodes;
+    const bboxNodes = (nodesToUse.length > 0 ? nodesToUse : nodes);
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of nodes) {
+    for (const n of bboxNodes) {
       const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
       if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
       if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
     }
     return { minX, maxX, minY, maxY, w: maxX - minX || 1, h: maxY - minY || 1 };
-  }, [nodes, viewState.azimuth, viewState.elevation, zScale]);
+  }, [nodes, branches, horizons, viewState.azimuth, viewState.elevation, zScale]);
 
   // ─── Активный слой печати (если есть) ────────────────────────────────
   const activePrintHorizon = useMemo(
@@ -620,10 +643,15 @@ export default function PrintDialog({
       const ox0 = viewState.offsetX * k + (oc.width - cw * k) / 2;
       const oy0 = viewState.offsetY * k + (oc.height - ch * k) / 2;
 
-      // Шаг 2: bbox рамки при sc0/ox0/oy0
+      // Шаг 2: bbox рамки при sc0/ox0/oy0 — только по узлам видимых ветвей горизонта
       const proj0 = { scale: sc0, offsetX: ox0, offsetY: oy0,
         azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
-      const pNodes0 = nodes.map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0));
+      // Собираем ID узлов только из видимых ветвей (горизонт отфильтрован выше)
+      const visibleNodeIds0 = new Set<string>();
+      visibleBranches.forEach(b => { visibleNodeIds0.add(b.fromId); visibleNodeIds0.add(b.toId); });
+      const nodesForBbox = nodes.filter(n => visibleNodeIds0.has(n.id));
+      const pNodes0 = (nodesForBbox.length > 0 ? nodesForBbox : nodes)
+        .map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0));
       let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
       pNodes0.forEach(p => {
         if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;

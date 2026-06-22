@@ -159,8 +159,13 @@ export function generateSvg(opts: SvgExportOptions): string {
     const rh = canvasH - padPx * 2;
     frameRect = { rx, ry, rw, rh };
   } else {
+    // bbox только по узлам видимых ветвей (горизонт уже отфильтрован в visibleBranches)
+    const visibleNodeIdsForBbox = new Set<string>();
+    visibleBranches.forEach(b => { visibleNodeIdsForBbox.add(b.fromId); visibleNodeIdsForBbox.add(b.toId); });
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of projMap.values()) {
+    for (const [id, p] of projMap.entries()) {
+      // если видимых ветвей нет — берём все узлы (fallback)
+      if (visibleNodeIdsForBbox.size > 0 && !visibleNodeIdsForBbox.has(id)) continue;
       if (p.sx < minX) minX = p.sx;
       if (p.sx > maxX) maxX = p.sx;
       if (p.sy < minY) minY = p.sy;
