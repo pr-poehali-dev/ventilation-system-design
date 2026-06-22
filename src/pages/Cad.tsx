@@ -1161,7 +1161,8 @@ export default function CadPage() {
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
-  const [checkThreshold, setCheckThreshold] = useState<number>(50);
+  const [checkThreshold, setCheckThreshold] = useState<number>(1);
+  const [checkTab, setCheckTab] = useState<"near" | "isolated" | "dupes">("near");
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
   const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
@@ -4610,106 +4611,234 @@ export default function CadPage() {
             {/* ═══ ВКЛАДКА: ПРОВЕРКА СХЕМЫ ═══════════════════════════════ */}
             {activeSide === "check" && (() => {
               type NearPair = { a: TopoNode; b: TopoNode; dist: number };
+
+              // ── Множество соединённых пар ──────────────────────────────
               const branchPairs = new Set<string>();
+              const nodeBranchCount = new Map<string, number>();
               for (const br of branches) {
                 branchPairs.add(`${br.fromId}|${br.toId}`);
                 branchPairs.add(`${br.toId}|${br.fromId}`);
+                nodeBranchCount.set(br.fromId, (nodeBranchCount.get(br.fromId) ?? 0) + 1);
+                nodeBranchCount.set(br.toId,   (nodeBranchCount.get(br.toId)   ?? 0) + 1);
               }
-              const pairs: NearPair[] = [];
+
+              // ── 1. Близкие несоединённые узлы ────────────────────────
+              const nearPairs: NearPair[] = [];
               for (let i = 0; i < nodes.length; i++) {
                 for (let j = i + 1; j < nodes.length; j++) {
                   const a = nodes[i], b = nodes[j];
                   if (branchPairs.has(`${a.id}|${b.id}`)) continue;
-                  const dx = (a.x - b.x), dy = (a.y - b.y);
+                  const dx = a.x - b.x, dy = a.y - b.y;
                   const dist = Math.sqrt(dx * dx + dy * dy);
-                  if (dist < checkThreshold) {
-                    pairs.push({ a, b, dist });
+                  if (dist <= checkThreshold) nearPairs.push({ a, b, dist });
+                }
+              }
+              nearPairs.sort((x, y) => x.dist - y.dist);
+
+              // ── 2. Изолированные узлы (нет ни одной ветви) ───────────
+              const isolated = nodes.filter(n => (nodeBranchCount.get(n.id) ?? 0) === 0);
+
+              // ── 3. Дубликаты координат (совпадают x,y с точностью 0.01 м) ─
+              type DupePair = { a: TopoNode; b: TopoNode };
+              const dupes: DupePair[] = [];
+              for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                  const a = nodes[i], b = nodes[j];
+                  if (Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01) {
+                    dupes.push({ a, b });
                   }
                 }
               }
-              pairs.sort((x, y) => x.dist - y.dist);
+
+              const tabCounts = { near: nearPairs.length, isolated: isolated.length, dupes: dupes.length };
+              const totalIssues = nearPairs.length + isolated.length + dupes.length;
+
+              const NavBtn = ({ id, label, count, icon }: { id: typeof checkTab; label: string; count: number; icon: string }) => (
+                <button
+                  onClick={() => setCheckTab(id)}
+                  className="flex-1 flex flex-col items-center py-1.5 gap-0.5 text-[10px] font-medium transition-colors relative"
+                  style={{
+                    background: checkTab === id ? "#fff" : "transparent",
+                    color: checkTab === id ? "#1e40af" : "#6b7280",
+                    borderBottom: checkTab === id ? "2px solid #2563eb" : "2px solid transparent",
+                  }}
+                >
+                  <Icon name={icon as Parameters<typeof Icon>[0]["name"]} size={13} />
+                  <span>{label}</span>
+                  {count > 0 && (
+                    <span className="absolute top-0.5 right-1 text-[9px] font-bold px-1 rounded-full"
+                      style={{ background: "#fee2e2", color: "#dc2626" }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+
+              const focusNode = (id: string) => {
+                setSelectedNodeId(id);
+                setSelectedBranchId(null);
+                setFocusNodeId(id);
+                setFocusNonce(Date.now());
+              };
+
+              const NodeBtn = ({ n }: { n: TopoNode }) => (
+                <button
+                  className="text-[11px] font-medium text-blue-700 hover:underline text-left"
+                  onClick={e => { e.stopPropagation(); focusNode(n.id); }}
+                >
+                  {n.name || `Узел ${n.number || n.id}`}
+                </button>
+              );
+
+              const EmptyOk = ({ text }: { text: string }) => (
+                <div className="flex flex-col items-center justify-center py-10 gap-2">
+                  <Icon name="CheckCircle" size={28} className="text-green-500" />
+                  <span className="text-[11px] text-gray-500 text-center">{text}</span>
+                </div>
+              );
 
               return (
                 <div className="flex flex-col h-full overflow-hidden" style={{ fontSize: 11 }}>
-                  {/* Секция: близкие несоединённые узлы */}
-                  <div className="px-2 py-1.5" style={{ background: "#f0f4ff", borderBottom: "1px solid #c7d2fe" }}>
-                    <div className="flex items-center gap-1 mb-1">
-                      <Icon name="AlertTriangle" size={13} className="text-amber-600 flex-shrink-0" />
-                      <span className="font-semibold text-[11px] text-gray-800">Несоединённые близкие узлы</span>
-                    </div>
-                    <div className="text-[10px] text-gray-500 mb-1.5">Узлы, расположенные рядом, но не соединённые ветвью. Возможно, требуется слияние или добавление ветви.</div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-gray-600 flex-shrink-0">Порог расстояния:</span>
-                      <input
-                        type="number" min={1} max={10000} step={1}
-                        value={checkThreshold}
-                        onChange={e => setCheckThreshold(Math.max(1, Number(e.target.value) || 50))}
-                        className="w-16 text-right border border-gray-300 rounded px-1 bg-white"
-                        style={{ fontSize: 11, height: 20 }}
-                      />
-                      <span className="text-[10px] text-gray-500">м</span>
-                    </div>
+
+                  {/* Шапка */}
+                  <div className="px-2 py-1.5 flex items-center gap-1.5" style={{ background: totalIssues > 0 ? "#fff7ed" : "#f0fdf4", borderBottom: "1px solid #e5e7eb" }}>
+                    <Icon name={totalIssues > 0 ? "AlertTriangle" : "CheckCircle"} size={13}
+                      className={totalIssues > 0 ? "text-amber-500" : "text-green-500"} />
+                    <span className="text-[11px] font-semibold text-gray-700">
+                      {totalIssues > 0 ? `Найдено нарушений: ${totalIssues}` : "Нарушений не найдено"}
+                    </span>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto">
-                    {pairs.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 gap-2 text-gray-400">
-                        <Icon name="CheckCircle" size={28} className="text-green-500" />
-                        <span className="text-[11px] text-center text-gray-500">Близких несоединённых узлов не найдено</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col">
-                        <div className="px-2 py-1 text-[10px] text-gray-500" style={{ borderBottom: "1px solid #eee" }}>
-                          Найдено пар: <b className="text-amber-700">{pairs.length}</b>
+                  {/* Навигация по разделам */}
+                  <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
+                    <NavBtn id="near"     label="Несоед." icon="GitMerge"   count={tabCounts.near} />
+                    <NavBtn id="isolated" label="Тупики"  icon="Unlink"     count={tabCounts.isolated} />
+                    <NavBtn id="dupes"    label="Дубли"   icon="Copy"       count={tabCounts.dupes} />
+                  </div>
+
+                  {/* ── Вкладка: Несоединённые близкие узлы ── */}
+                  {checkTab === "near" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1">Узлы расположены рядом, но не соединены ветвью.</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-600 flex-shrink-0">Порог:</span>
+                          <input
+                            type="number" min={0.01} max={1000} step={0.1}
+                            value={checkThreshold}
+                            onChange={e => setCheckThreshold(Math.max(0.01, parseFloat(e.target.value) || 1))}
+                            className="w-16 text-right border border-gray-300 rounded px-1 bg-white"
+                            style={{ fontSize: 11, height: 20 }}
+                          />
+                          <span className="text-[10px] text-gray-500">м</span>
                         </div>
-                        {pairs.map(({ a, b, dist }) => {
-                          const keyA = `${a.id}|${b.id}`;
-                          const isSelA = selectedNodeId === a.id || selectedNodeId === b.id;
-                          return (
-                            <div key={keyA}
-                              className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                              style={{
-                                borderBottom: "1px solid #f0f0f0",
-                                background: isSelA ? "#fef3c7" : "transparent",
-                              }}
-                              onClick={() => {
-                                setSelectedNodeId(a.id);
-                                setSelectedBranchId(null);
-                                setFocusNodeId(a.id);
-                                setFocusNonce(Date.now());
-                              }}
-                              onMouseEnter={e => { if (!isSelA) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                              onMouseLeave={e => { if (!isSelA) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                            >
-                              <Icon name="AlertTriangle" size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1 flex-wrap">
-                                  <button
-                                    className="text-[11px] font-medium text-blue-700 hover:underline"
-                                    onClick={e => { e.stopPropagation(); setSelectedNodeId(a.id); setSelectedBranchId(null); setFocusNodeId(a.id); setFocusNonce(Date.now()); }}
-                                  >
-                                    {a.name || `Узел ${a.number || a.id}`}
-                                  </button>
-                                  <span className="text-gray-400 text-[10px]">↔</span>
-                                  <button
-                                    className="text-[11px] font-medium text-blue-700 hover:underline"
-                                    onClick={e => { e.stopPropagation(); setSelectedNodeId(b.id); setSelectedBranchId(null); setFocusNodeId(b.id); setFocusNonce(Date.now()); }}
-                                  >
-                                    {b.name || `Узел ${b.number || b.id}`}
-                                  </button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {nearPairs.length === 0 ? <EmptyOk text="Близких несоединённых узлов не найдено" /> : (
+                          <div className="flex flex-col">
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              Пар: <b className="text-amber-700">{nearPairs.length}</b>
+                            </div>
+                            {nearPairs.map(({ a, b, dist }) => {
+                              const isSel = selectedNodeId === a.id || selectedNodeId === b.id;
+                              return (
+                                <div key={`${a.id}|${b.id}`}
+                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                  onClick={() => focusNode(a.id)}
+                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                >
+                                  <Icon name="AlertTriangle" size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-baseline gap-1 flex-wrap">
+                                      <NodeBtn n={a} />
+                                      <span className="text-gray-300">↔</span>
+                                      <NodeBtn n={b} />
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      {dist < 0.1 ? dist.toFixed(3) : dist < 1 ? dist.toFixed(2) : dist.toFixed(1)} м
+                                      <span className="mx-1">·</span>№{a.number || "—"} и №{b.number || "—"}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="text-[10px] text-gray-500 mt-0.5">
-                                  Расстояние: <b className="text-amber-700">{dist < 1 ? dist.toFixed(2) : dist.toFixed(1)} м</b>
-                                  <span className="mx-1 text-gray-300">·</span>
-                                  <span className="text-gray-400">№{a.number || "—"} и №{b.number || "—"}</span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Изолированные узлы (тупики) ── */}
+                  {checkTab === "isolated" && (
+                    <div className="flex-1 overflow-y-auto">
+                      {isolated.length === 0 ? <EmptyOk text="Изолированных узлов нет" /> : (
+                        <div className="flex flex-col">
+                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            Узлов без ветвей: <b className="text-red-600">{isolated.length}</b>
+                          </div>
+                          {isolated.map(n => {
+                            const isSel = selectedNodeId === n.id;
+                            return (
+                              <div key={n.id}
+                                className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer"
+                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                onClick={() => focusNode(n.id)}
+                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                              >
+                                <Icon name="Unlink" size={12} className="text-red-400 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-gray-800 truncate">{n.name || `Узел ${n.number || n.id}`}</div>
+                                  <div className="text-[10px] text-gray-400">№{n.number || "—"} · X={n.x.toFixed(0)} Y={n.y.toFixed(0)}</div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Дубликаты координат ── */}
+                  {checkTab === "dupes" && (
+                    <div className="flex-1 overflow-y-auto">
+                      {dupes.length === 0 ? <EmptyOk text="Узлов с одинаковыми координатами нет" /> : (
+                        <div className="flex flex-col">
+                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            Дублей: <b className="text-red-600">{dupes.length}</b>
+                          </div>
+                          {dupes.map(({ a, b }) => {
+                            const isSel = selectedNodeId === a.id || selectedNodeId === b.id;
+                            return (
+                              <div key={`${a.id}|${b.id}`}
+                                className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                onClick={() => focusNode(a.id)}
+                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                              >
+                                <Icon name="Copy" size={12} className="text-purple-400 flex-shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline gap-1 flex-wrap">
+                                    <NodeBtn n={a} />
+                                    <span className="text-gray-300">↔</span>
+                                    <NodeBtn n={b} />
+                                  </div>
+                                  <div className="text-[10px] text-gray-400 mt-0.5">
+                                    X={a.x.toFixed(2)} Y={a.y.toFixed(2)}
+                                    <span className="mx-1">·</span>№{a.number || "—"} и №{b.number || "—"}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
               );
             })()}
