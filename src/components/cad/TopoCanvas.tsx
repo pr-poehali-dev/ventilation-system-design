@@ -2415,17 +2415,21 @@ export default function TopoCanvas(props: Props) {
         {/* ─── ВЕТВИ (отсортированы по глубине) ────────────────────────── */}
         {/* Пороги LOD: при отдалении отключаем дорогостоящие элементы */}
         {!useCanvas && (() => {
-          const lodChevrons  = view.scale >= 0.25;
-          const lodArrows    = view.scale >= 0.15;
-          const lodLabels    = view.scale >= 0.04;
-          const lodBorder    = view.scale >= 0.10;
+          const _xySF = xyScale ?? 1;
+          const lodChevrons  = view.scale >= _xySF * 0.25;
+          const lodArrows    = view.scale >= _xySF * 0.15;
+          const lodLabels    = view.scale >= _xySF * 0.04;
+          const lodBorder    = view.scale >= _xySF * 0.10;
           // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный.
           // При наличии xyScale нормируем: схема масштабирована в xyScale раз,
           // поэтому «нормальный» view.scale при котором objSF=1 тоже в xyScale раз меньше.
-          // Дополнительно ограничиваем сверху (8) — при очень крупном зуме объекты не должны быть огромными.
+          // При fixedObjectScale — зажимаем по scaleLimits; иначе растём неограниченно (только минимум 0.25).
           const _xySF = xyScale ?? 1;
           const rawObjSF = fixedObjectScale ? 1 : (view.scale / (_xySF * 0.4));
-          const objSF = Math.min(8, Math.max(0.25, rawObjSF));
+          // Пределы масштабов применяем только при fixedObjectScale, иначе растём неограниченно
+          const objSF = fixedObjectScale && scaleLimits
+            ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, rawObjSF))
+            : Math.max(0.25, rawObjSF);
           // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
           // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
           const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {
@@ -3631,14 +3635,22 @@ export default function TopoCanvas(props: Props) {
           const isMultiSel = selectedNodeIds?.has(node.id) ?? false;
           const isBranchFrom = branchFrom === node.id;
           const isRescuePath = rescuePathNodeIds?.has(node.id) ?? false;
-          const nodeSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          // nodeSF: та же логика что у objSF — учитываем xyScale, без жёсткого потолка
+          const _xyScaleNode = xyScale ?? 1;
+          const rawNodeSF = fixedObjectScale ? 1 : (view.scale / (_xyScaleNode * 0.4));
+          const nodeSF = fixedObjectScale && scaleLimits
+            ? Math.min(scaleLimits.symbolMax / 100, Math.max(scaleLimits.symbolMin / 100, rawNodeSF))
+            : Math.max(0.25, rawNodeSF);
           // Средняя ширина прилегающих ветвей для синхронного масштабирования узла
           const adjBr = branches.filter(b => b.fromId === node.id || b.toId === node.id);
           const adjAvgW = adjBr.length > 0
             ? adjBr.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBr.length
             : branchWidth;
           const branchPx = (thinLines ? 1 : adjAvgW) * nodeSF;
-          const baseNodeR = Math.min(10, Math.max(1.5, branchPx * 0.55));
+          const rawNodeR = Math.max(1.5, branchPx * 0.55);
+          const baseNodeR = (fixedObjectScale && scaleLimits)
+            ? Math.min(scaleLimits.symbolMax / 100 * 10, Math.max(scaleLimits.symbolMin / 100 * 10, rawNodeR))
+            : rawNodeR;
           const r = isSel ? baseNodeR * 1.5 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
