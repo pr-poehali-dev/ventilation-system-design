@@ -229,8 +229,8 @@ def natural_draft_h(from_z, to_z, from_temp, to_temp):
     Если температуры одинаковые — тяга = 0.
     """
     g = 9.81
-    rho_from = 353.0 / (273.0 + max(-30.0, min(100.0, from_temp)))
-    rho_to   = 353.0 / (273.0 + max(-30.0, min(100.0, to_temp)))
+    rho_from = 353.0 / (273.0 + max(-60.0, min(100.0, from_temp)))
+    rho_to   = 353.0 / (273.0 + max(-60.0, min(100.0, to_temp)))
     return g * (from_z - to_z) * (rho_to - rho_from)
 
 

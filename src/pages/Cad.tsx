@@ -4260,7 +4260,7 @@ export default function CadPage() {
                     {useNaturalDraft && (
                       <>
                         <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности (°C)</label>
-                        <input type="number" value={surfaceTemp} step="1" min="-40" max="50"
+                        <input type="number" value={surfaceTemp} step="1" min="-60" max="50"
                           onChange={e => setSurfaceTemp(Number(e.target.value))}
                           className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
                         <label className="text-[10px] text-gray-500 block mb-1">
