@@ -950,7 +950,7 @@ export default function TopoCanvas(props: Props) {
   // ─── Контекстное меню по правой кнопке ─────────────────────────────────
   const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const rect = (e.currentTarget as Element).getBoundingClientRect();
+    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
     const hitN = hitNode(sx, sy, projNodes);
@@ -1027,7 +1027,10 @@ export default function TopoCanvas(props: Props) {
       return;
     }
 
-    const rect = (e.currentTarget as Element).getBoundingClientRect();
+    // containerRef всегда отражает реальный размер/позицию холста —
+    // используем его вместо e.currentTarget, чтобы корректно работать
+    // и в SVG-режиме, и в Canvas-режиме (asS-cast меняет тип currentTarget)
+    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
 
     // ─── РЕЖИМ РАЗМЕЩЕНИЯ МАРКЕРА ПОЗИЦИИ ──────────────────────────────
     if (positionPlaceMode && onPositionPlace && e.button === 0) {
@@ -1246,7 +1249,7 @@ export default function TopoCanvas(props: Props) {
   };
 
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = (e.currentTarget as Element).getBoundingClientRect();
+    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
