@@ -824,6 +824,10 @@ export default function CadPage() {
   const [solverAlpha, setSolverAlpha] = useState(0.8);
   // Температура воздуха на поверхности (для расчёта естественной тяги)
   const [surfaceTemp, setSurfaceTemp] = useState(20);
+  // Учитывать естественную тягу (галочка как в Аэросети)
+  const [useNaturalDraft, setUseNaturalDraft] = useState(true);
+  // Геотермический градиент °C / 100 м глубины (стандарт 3°C/100м)
+  const [geoGradient, setGeoGradient] = useState(3.0);
   const [showSolverParams, setShowSolverParams] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -1466,6 +1470,8 @@ export default function CadPage() {
     solverMaxIter,
     solverAlpha,
     surfaceTemp,
+    useNaturalDraft,
+    geoGradient,
     infoConfig,
     unitsConfig,
     branchWidth,
@@ -1708,6 +1714,8 @@ export default function CadPage() {
     setSolverMaxIter(2000);
     setSolverAlpha(0.8);
     setSurfaceTemp(20);
+    setUseNaturalDraft(true);
+    setGeoGradient(3.0);
     // ── конец сброса ────────────────────────────────────────────────────
 
     // Каждый узел прогоняем через makeNode чтобы гарантировать все поля (как makeBranch для ветвей)
@@ -1774,6 +1782,8 @@ export default function CadPage() {
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
     if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
     if (data.surfaceTemp !== undefined) setSurfaceTemp(data.surfaceTemp as number);
+    if (data.useNaturalDraft !== undefined) setUseNaturalDraft(data.useNaturalDraft as boolean);
+    if (data.geoGradient !== undefined) setGeoGradient(data.geoGradient as number);
     if (data.infoConfig) setInfoConfig(data.infoConfig as InfoDisplayConfig);
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
@@ -2091,8 +2101,11 @@ export default function CadPage() {
         isAtm: n.atmosphereLink,
         z: n.z ?? 0,
         airTemp: n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal),
+        userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
       })),
       surfaceTemp: surfaceTempVal,
+      useNaturalDraft,
+      geoGradient,
       branches: buildBranchPayload(branchesWithFire, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
     };
@@ -2126,9 +2139,13 @@ export default function CadPage() {
             id: n.id,
             isAtm: n.atmosphereLink,
             z: n.z ?? 0,
+            // userTemp=true — пользователь задал температуру вручную (не дефолт 20°C)
             airTemp: n.atmosphereLink ? surfaceTemp : (n.airTemp ?? surfaceTemp),
+            userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
           })),
           surfaceTemp,
+          useNaturalDraft,
+          geoGradient,
           branches: buildBranchPayload(branches, surfaceTemp),
           options: {
             tolerance: solverTolerance,
@@ -4228,15 +4245,41 @@ export default function CadPage() {
                     </div>
                   )}
                   <div className="border-t border-gray-200 pt-2 mt-1 mb-2">
-                    <div className="text-[10px] font-semibold text-gray-600 mb-1.5">Естественная тяга</div>
-                    <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности (°C)</label>
-                    <input type="number" value={surfaceTemp} step="1" min="-40" max="50"
-                      onChange={e => setSurfaceTemp(Number(e.target.value))}
-                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                    <div className="text-[9px] text-gray-400 mt-1">
-                      Влияет на ρ·g·Δz для каждой ветви.<br/>
-                      Температура узлов задаётся в свойствах узла.
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <input
+                        id="useNaturalDraft"
+                        type="checkbox"
+                        checked={useNaturalDraft}
+                        onChange={e => setUseNaturalDraft(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                      />
+                      <label htmlFor="useNaturalDraft" className="text-[11px] font-semibold text-gray-700 cursor-pointer select-none">
+                        Учитывать естественную тягу
+                      </label>
                     </div>
+                    {useNaturalDraft && (
+                      <>
+                        <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности (°C)</label>
+                        <input type="number" value={surfaceTemp} step="1" min="-40" max="50"
+                          onChange={e => setSurfaceTemp(Number(e.target.value))}
+                          className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
+                        <label className="text-[10px] text-gray-500 block mb-1">
+                          Геотерм. градиент (°C / 100 м глубины)
+                        </label>
+                        <input type="number" value={geoGradient} step="0.5" min="0" max="10"
+                          onChange={e => setGeoGradient(Number(e.target.value))}
+                          className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                        <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
+                          Температура каждого узла рассчитывается автоматически<br/>
+                          по глубине: T = T_пов + градиент × глубина / 100
+                        </div>
+                      </>
+                    )}
+                    {!useNaturalDraft && (
+                      <div className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Все узлы получают T = T_пов, разность плотностей = 0, тяга = 0 Па
+                      </div>
+                    )}
                   </div>
                   <button onClick={() => setShowSolverParams(false)}
                     className="w-full mt-1 py-1 bg-blue-600 text-white text-[11px] rounded hover:bg-blue-700">

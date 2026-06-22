@@ -32,21 +32,62 @@ def handler(event: dict, context) -> dict:
     except BaseException:
         return err(400, "Ошибка парсинга JSON")
 
-    nodes_in     = body.get("nodes", [])
-    branches_in  = body.get("branches", [])
-    options      = body.get("options", {})
-    normal_flows = body.get("normalFlows", {})
-    surface_temp = float(body.get("surfaceTemp", 20.0))
-    method       = body.get("method", "cross")  # "cross" или "mkr"
+    nodes_in          = body.get("nodes", [])
+    branches_in       = body.get("branches", [])
+    options           = body.get("options", {})
+    normal_flows      = body.get("normalFlows", {})
+    surface_temp      = float(body.get("surfaceTemp", 20.0))
+    method            = body.get("method", "cross")  # "cross" или "mkr"
+    use_natural_draft = bool(body.get("useNaturalDraft", True))
+    geo_gradient      = float(body.get("geoGradient", 3.0))   # °C / 100 м глубины
 
     if not branches_in:
         return ok(empty_result("Нет ветвей"))
+
+    # Автоматический расчёт температуры узлов по геотермическому градиенту.
+    # Применяется ТОЛЬКО для узлов у которых airTemp не задан вручную (userTemp=False).
+    # Атмосферные узлы всегда получают surface_temp.
+    # Формула: T(z) = surface_temp + gradient * (z_surface - z_node) / 100
+    # где z_surface — высотная отметка самого высокого узла (поверхность),
+    # z_node — высотная отметка текущего узла, gradient °C/100 м.
+    if use_natural_draft and geo_gradient > 0:
+        z_vals = [float(n.get("z", 0) or 0) for n in nodes_in]
+        z_surface = max(z_vals) if z_vals else 0.0
+        nodes_in_patched = []
+        for n in nodes_in:
+            n2 = dict(n)
+            if n2.get("isAtm") or n2.get("atmosphereLink"):
+                n2["airTemp"] = surface_temp
+            elif not n2.get("userTemp"):
+                # узел под землёй — считаем температуру по глубине
+                depth = max(0.0, z_surface - float(n2.get("z", 0) or 0))
+                n2["airTemp"] = surface_temp + geo_gradient * depth / 100.0
+            nodes_in_patched.append(n2)
+        nodes_in = nodes_in_patched
+    elif not use_natural_draft:
+        # Галочка снята — обнуляем тягу: все узлы получают одинаковую температуру
+        nodes_in = [dict(n, airTemp=surface_temp) for n in nodes_in]
+
+    # Формируем информационный лог о тяге для передачи на фронтенд
+    nat_draft_log = []
+    if not use_natural_draft:
+        nat_draft_log.append("Естественная тяга: ОТКЛЮЧЕНА (все узлы T=T_пов)")
+    elif geo_gradient > 0:
+        nat_draft_log.append(
+            f"Естественная тяга: T_пов={surface_temp:.1f}°C, "
+            f"геотерм.градиент={geo_gradient:.1f}°C/100м — "
+            f"температуры узлов рассчитаны автоматически по глубине"
+        )
+    else:
+        nat_draft_log.append("Естественная тяга: геотерм.градиент=0, используются температуры узлов")
 
     try:
         if method == "mkr":
             result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp)
         else:
             result = solve(nodes_in, branches_in, options, normal_flows, surface_temp)
+        # Добавляем лог о тяге в начало
+        result["log"] = nat_draft_log + result.get("log", [])
     except BaseException as ex:
         import traceback
         return err(500, f"Ошибка: {ex}\n{traceback.format_exc()}")

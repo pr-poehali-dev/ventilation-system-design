@@ -10,6 +10,56 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Естественная тяга — геотерм. градиент 3°C/100м",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "surfaceTemp": 4,
+        "useNaturalDraft": true,
+        "geoGradient": 3.0,
+        "nodes": [
+          {"id": "ATM_IN",  "isAtm": true,  "z": 1200},
+          {"id": "N_DEEP",                  "z": 1000},
+          {"id": "ATM_OUT", "isAtm": true,  "z": 1200}
+        ],
+        "branches": [
+          {"id": "stvol_in",  "fromId": "ATM_IN",  "toId": "N_DEEP",  "R": 0.05,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 800},
+          {"id": "stvol_out", "fromId": "N_DEEP",  "toId": "ATM_OUT", "R": 0.05}
+        ],
+        "options": {"tolerance": 0.001, "maxIter": 2000, "alpha": 0.8}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Естественная тяга ОТКЛЮЧЕНА — H_nat=0",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "surfaceTemp": 4,
+        "useNaturalDraft": false,
+        "geoGradient": 3.0,
+        "nodes": [
+          {"id": "ATM_IN",  "isAtm": true,  "z": 1200},
+          {"id": "N_DEEP",                  "z": 1000},
+          {"id": "ATM_OUT", "isAtm": true,  "z": 1200}
+        ],
+        "branches": [
+          {"id": "stvol_in",  "fromId": "ATM_IN",  "toId": "N_DEEP",  "R": 0.05,
+           "hasFan": true, "fanMode": "constant", "fanPressure": 800},
+          {"id": "stvol_out", "fromId": "N_DEEP",  "toId": "ATM_OUT", "R": 0.05}
+        ],
+        "options": {"tolerance": 0.001, "maxIter": 2000, "alpha": 0.8}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Линейная цепь — метод Кросса",
       "method": "POST",
       "path": "/",
