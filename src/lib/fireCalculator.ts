@@ -224,10 +224,10 @@ export function calcGasConcentrations(
   const airFlow_Nm3s = airFlow_m3s * (RHO_AIR_0 / 1.293);
 
   const coVolRate = (burnRate_kgs * combustible.coYield) / 1.25;
-  const coConc = Math.min(2.0, (coVolRate / (airFlow_Nm3s + coVolRate)) * 100);
+  const coConc = (coVolRate / (airFlow_Nm3s + coVolRate)) * 100;
 
   const co2VolRate = (burnRate_kgs * combustible.co2Yield) / 1.977;
-  const co2Conc = Math.min(20.0, (co2VolRate / (airFlow_Nm3s + co2VolRate)) * 100 + 0.04);
+  const co2Conc = (co2VolRate / (airFlow_Nm3s + co2VolRate)) * 100 + 0.04;
 
   const smokeMassRate = burnRate_kgs * combustible.smokeYield;
   const smokeSpec = 7700;
@@ -334,12 +334,10 @@ export function calcFireMode(
     const isDescending = signedAngle < -1;
     const willReverse = isDescending && Math.abs(thermalDep) > Math.abs(fb.dP ?? 0) * 0.5;
 
-    // Оценка изменения расхода из-за тепловой депрессии
-    // ΔQ ≈ h_t / (2 * R * Q) — линеаризованная формула для малых изменений
-    const R = fb.resistance ?? 0;
-    const flowDelta = (R > 0 && airQ > 0)
-      ? Math.abs(thermalDep) / (2 * R * airQ) * (isDescending ? -1 : 1)
-      : 0;
+    // Фактическое изменение расхода: разница между расходом после расчёта пожара и до пожара
+    // originalFlow передаётся из итеративного расчёта в Cad.tsx
+    const originalFlow = fb.originalFlow ?? fb.flow ?? 0;
+    const flowDelta = (fb.flow ?? 0) - originalFlow;
 
     const hazard = calcHazardLevel(coConc, co2Conc, smokeDensity, fireTemp);
 
