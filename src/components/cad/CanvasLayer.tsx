@@ -61,6 +61,7 @@ interface CanvasLayerProps {
   reversedBranchIds?: Set<string>;
   fixedObjectScale?: boolean;
   pollutedBranchIds?: Set<string>;
+  xyScale?: number;
 
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -188,6 +189,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         reversedBranchIds: p.reversedBranchIds,
         fixedObjectScale: p.fixedObjectScale,
         pollutedBranchIds: p.pollutedBranchIds,
+        xyScale: p.xyScale,
       });
     } catch (err) {
       console.error("[CanvasLayer] renderCanvas error:", err);

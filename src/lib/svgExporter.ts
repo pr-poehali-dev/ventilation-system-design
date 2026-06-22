@@ -61,6 +61,8 @@ export interface SvgExportOptions {
 
   /** Ветви с загрязнённым воздухом (синие стрелки) */
   pollutedBranchIds?: Set<string>;
+  /** Масштаб по осям XY — для нормализации objSF при реальных координатах */
+  xyScale?: number;
 }
 
 // ── Цвет ветви ────────────────────────────────────────────────────────────────
@@ -109,6 +111,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     fixedObjectScale = true,
     schemaSymbols = [],
     paperWidthMm,
+    xyScale,
   } = opts;
 
   // Коэффициент px/мм для физического размера позиций ПЛА.
@@ -117,9 +120,10 @@ export function generateSvg(opts: SvgExportOptions): string {
   const pxPerMm = paperWidthMm && paperWidthMm > 0 ? canvasW / paperWidthMm : 3.78;
 
   // В режиме 2 (fixedObjectScale=false) объекты масштабируются вместе со схемой.
-  // objSF = proj.scale / 0.4 — тот же коэффициент что в canvasRenderer.
-  // В режиме 1 и для печати objSF = 1 (ширины не зависят от зума).
-  const objSF = fixedObjectScale ? 1 : Math.max(0.25, proj.scale / 0.4);
+  // Нормируем на xyScale: при реальных координатах «нормальный» proj.scale в xyScale раз меньше.
+  // Ограничиваем сверху (8) — при крупном зуме объекты не должны вырастать в исполинов.
+  const _xySFExport = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
+  const objSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, proj.scale / (_xySFExport * 0.4)));
 
   // Проецируем все узлы
   const projMap = new Map<string, { sx: number; sy: number }>();

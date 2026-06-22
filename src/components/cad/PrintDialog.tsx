@@ -38,6 +38,7 @@ interface PrintDialogProps {
   positions?: Position[];
   showPositions?: boolean;
   fixedObjectScale?: boolean;
+  xyScale?: number;
   initialOpenExport?: boolean;
   onExportDialogOpened?: () => void;
 }
@@ -97,6 +98,7 @@ export default function PrintDialog({
   positions = [],
   showPositions = true,
   fixedObjectScale = false,
+  xyScale,
   initialOpenExport = false,
   onExportDialogOpened,
 }: PrintDialogProps) {
@@ -698,7 +700,7 @@ export default function PrintDialog({
         thinLines, colorByHorizon,
         showFlowArrows: false, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        printMode: true, fixedObjectScale,
+        printMode: true, fixedObjectScale, xyScale,
         colorMode, posInnerColors, posOuterColors,
       });
 
@@ -745,7 +747,7 @@ export default function PrintDialog({
         thinLines, colorByHorizon,
         showFlowArrows: false, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        printMode: true, fixedObjectScale,
+        printMode: true, fixedObjectScale, xyScale,
         colorMode, posInnerColors, posOuterColors,
       });
       ctx.restore();
@@ -892,7 +894,7 @@ body{background:white;font-family:Arial,sans-serif}
           canvasW, canvasH,
           paperWidthMm: paper.w,
           title: projectName,
-          fixedObjectScale,
+          fixedObjectScale, xyScale,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
         });
@@ -944,7 +946,7 @@ body{background:white;font-family:Arial,sans-serif}
         canvasH: Math.round(paper.h * 3.78),
         paperWidthMm: paper.w,
         title: projectName,
-        fixedObjectScale,
+        fixedObjectScale, xyScale,
         pollutedBranchIds,
         schemaSymbols: schemaSymbols ?? [],
       });
@@ -970,7 +972,7 @@ body{background:white;font-family:Arial,sans-serif}
           canvasH: Math.round(paper.h * 3.78),
           paperWidthMm: paper.w,
           title: projectName,
-          fixedObjectScale,
+          fixedObjectScale, xyScale,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
         });
@@ -1416,6 +1418,7 @@ body{background:white;font-family:Arial,sans-serif}
                         positions={positions}
                         showPositions={showPositions}
                         fixedObjectScale={fixedObjectScale}
+                        xyScale={xyScale}
                       />
                     </div>
 

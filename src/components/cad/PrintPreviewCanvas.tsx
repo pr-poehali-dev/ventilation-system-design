@@ -45,6 +45,7 @@ interface Props {
   positions?: Position[];
   showPositions?: boolean;
   fixedObjectScale?: boolean;
+  xyScale?: number;
 }
 
 // Вычисляет bbox рамки из projNodes — точно как TopoCanvas.renderPrintLayers
@@ -106,6 +107,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   positions = [],
   showPositions = true,
   fixedObjectScale = false,
+  xyScale,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -220,6 +222,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         colorMode, posInnerColors, posOuterColors,
         printMode: true,
         fixedObjectScale,
+        xyScale,
       });
     } catch (err) {
       console.error("PrintPreviewCanvas renderCanvas error:", err);

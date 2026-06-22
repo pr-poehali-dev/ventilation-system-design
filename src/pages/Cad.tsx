@@ -8863,6 +8863,7 @@ export default function CadPage() {
         positions={positions}
         showPositions={showPositions}
         fixedObjectScale={scaleLimitsEnabled}
+        xyScale={xyScale}
         initialOpenExport={printDialogOpenExport}
         onExportDialogOpened={() => setPrintDialogOpenExport(false)}
       />

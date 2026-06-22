@@ -2233,6 +2233,7 @@ export default function TopoCanvas(props: Props) {
           branchExplosionColors={branchExplosionColors}
           reversedBranchIds={reversedBranchIds}
           pollutedBranchIds={pollutedBranchIds}
+          xyScale={xyScale}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -2409,8 +2410,13 @@ export default function TopoCanvas(props: Props) {
           const lodArrows    = view.scale >= 0.15;
           const lodLabels    = view.scale >= 0.04;
           const lodBorder    = view.scale >= 0.10;
-          // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный
-          const objSF = fixedObjectScale ? 1 : view.scale / 0.4;
+          // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный.
+          // При наличии xyScale нормируем: схема масштабирована в xyScale раз,
+          // поэтому «нормальный» view.scale при котором objSF=1 тоже в xyScale раз меньше.
+          // Дополнительно ограничиваем сверху (8) — при очень крупном зуме объекты не должны быть огромными.
+          const _xySF = xyScale ?? 1;
+          const rawObjSF = fixedObjectScale ? 1 : (view.scale / (_xySF * 0.4));
+          const objSF = Math.min(8, Math.max(0.25, rawObjSF));
           // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
           // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
           const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {

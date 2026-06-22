@@ -72,6 +72,8 @@ export interface CanvasRenderOptions {
   printMode?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме */
   fixedObjectScale?: boolean;
+  /** Масштаб по осям XY — нужен для нормализации objSF при реальных координатах */
+  xyScale?: number;
   /** ID ветвей, загрязнённых воздухом (pollutesAir + все ниже по потоку) — стрелки синие */
   pollutedBranchIds?: Set<string>;
   /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
@@ -238,6 +240,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
     fixedObjectScale = false, pollutedBranchIds, reversedBranchIds,
+    xyScale,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
     // чтобы при случайном обращении к ним не было ReferenceError.
     nodes: _nodes, horizons: _horizons, hiddenBranchIds: _hiddenBranchIds,
@@ -252,9 +255,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // В режиме печати / fixedObjectScale — фиксированный размер (1).
   // В обычном режиме — пропорционально масштабу, но не меньше минимума
   // чтобы ветви и узлы были видимы при любом удалении (координаты могут быть в метрах → sc очень мал).
-  const rawObjSF = (fixedObjectScale || printMode) ? 1 : sc / 0.4;
+  // При наличии xyScale нормируем: «нормальный» scale при xyScale=N в N раз меньше.
+  // Ограничиваем сверху (8) чтобы при крупном зуме объекты не вырастали в исполинов.
+  const _xyScaleCR = xyScale ?? 1;
+  const rawObjSF = (fixedObjectScale || printMode) ? 1 : sc / (_xyScaleCR * 0.4);
   // Минимальный objSF: ветвь всегда не менее 0.5px, при branchWidth=2 → objSF >= 0.25
-  const objSF = Math.max(rawObjSF, 0.25);
+  const objSF = Math.min(8, Math.max(rawObjSF, 0.25));
   // LOD: в режиме печати все элементы видны; иначе — только при достаточном масштабе.
   // Используем objSF-скорректированный sc для LOD чтобы учесть минимальный размер объектов.
   const lodChevrons = printMode || sc >= 0.25;
