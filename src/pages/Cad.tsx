@@ -1161,7 +1161,7 @@ export default function CadPage() {
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
-  const [checkThreshold, setCheckThreshold] = useState<number>(1);
+  const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
   const [checkTab, setCheckTab] = useState<"near" | "isolated" | "dupes">("near");
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
@@ -4622,14 +4622,14 @@ export default function CadPage() {
                 nodeBranchCount.set(br.toId,   (nodeBranchCount.get(br.toId)   ?? 0) + 1);
               }
 
-              // ── 1. Близкие несоединённые узлы ────────────────────────
+              // ── 1. Близкие несоединённые узлы (3D расстояние: X, Y, Z) ──
               const nearPairs: NearPair[] = [];
               for (let i = 0; i < nodes.length; i++) {
                 for (let j = i + 1; j < nodes.length; j++) {
                   const a = nodes[i], b = nodes[j];
                   if (branchPairs.has(`${a.id}|${b.id}`)) continue;
-                  const dx = a.x - b.x, dy = a.y - b.y;
-                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+                  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
                   if (dist <= checkThreshold) nearPairs.push({ a, b, dist });
                 }
               }
@@ -4720,7 +4720,7 @@ export default function CadPage() {
                   {checkTab === "near" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
                       <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
-                        <div className="text-[10px] text-gray-500 mb-1">Узлы расположены рядом, но не соединены ветвью.</div>
+                        <div className="text-[10px] text-gray-500 mb-1">Узлы близки в пространстве (X, Y, Z), но не соединены ветвью.</div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-gray-600 flex-shrink-0">Порог:</span>
                           <input
