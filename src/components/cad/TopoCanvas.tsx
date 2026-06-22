@@ -2246,6 +2246,21 @@ export default function TopoCanvas(props: Props) {
         />
       )}
 
+      {/* ── Canvas-режим: overlay SVG для интерактивных элементов (preview ветви, ghost) ── */}
+      {useCanvas && tool === "branch" && branchFrom && hoverScreenPos && (() => {
+        const from = projNodesMap.get(branchFrom);
+        if (!from) return null;
+        return (
+          <svg style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 3 }}
+            width={size.w} height={size.h}>
+            <line x1={from.sx} y1={from.sy} x2={hoverScreenPos.sx} y2={hoverScreenPos.sy}
+              stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.8" />
+            <circle cx={hoverScreenPos.sx} cy={hoverScreenPos.sy} r={4}
+              fill="white" stroke="#2563eb" strokeWidth="1.5" opacity="0.8" />
+          </svg>
+        );
+      })()}
+
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}
         style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? (editingPrintLayerId ? 1 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
@@ -2870,19 +2885,19 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* Превью создания ветви */}
-        {tool === "branch" && branchFrom && hoverPos && (() => {
+        {tool === "branch" && branchFrom && hoverScreenPos && (() => {
           const from = projNodesMap.get(branchFrom);
           if (!from) return null;
-          // Z для превью берём из активной плоскости (если фикс по Z) или у узла-начала
-          const fromNode = from.node;
-          const previewZ = effPlane.axis === "z" ? effPlane.value : fromNode.z;
-          const previewX = effPlane.axis === "x" ? effPlane.value : hoverPos.x;
-          const previewY = effPlane.axis === "y" ? effPlane.value : hoverPos.y;
-          const to = project3D({ x: previewX, y: previewY, z: previewZ }, proj);
-          return (
-            <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+          // В SVG-режиме используем экранные координаты курсора напрямую —
+          // они уже в пространстве SVG и не требуют пересчёта через project3D.
+          // hoverPos хранит мировые координаты (после деления на xyScale),
+          // а project3D ожидает масштабированные (×xyScale) — поэтому используем hoverScreenPos.
+          return (<>
+            <line x1={from.sx} y1={from.sy} x2={hoverScreenPos.sx} y2={hoverScreenPos.sy}
               stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.7" />
-          );
+            <circle cx={hoverScreenPos.sx} cy={hoverScreenPos.sy} r={4}
+              fill="white" stroke="#2563eb" strokeWidth="1.5" opacity="0.8" />
+          </>);
         })()}
 
         {/* Ghost-символ в режиме ожидания привязки (Ctrl+V / Ctrl+D) */}
