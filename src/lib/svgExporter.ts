@@ -125,10 +125,10 @@ export function generateSvg(opts: SvgExportOptions): string {
   const _xySFExport = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
   const objSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, proj.scale / (_xySFExport * 0.4)));
 
-  // Проецируем все узлы
+  // Проецируем все узлы (координаты умножаем на xyScale для реальных схем)
   const projMap = new Map<string, { sx: number; sy: number }>();
   for (const nd of nodes) {
-    const p = project3D({ x: nd.x, y: nd.y, z: nd.z * zScale }, proj);
+    const p = project3D({ x: nd.x * _xySFExport, y: nd.y * _xySFExport, z: nd.z * zScale }, proj);
     projMap.set(nd.id, { sx: p.sx, sy: p.sy });
   }
 
@@ -837,6 +837,35 @@ export function generateSvg(opts: SvgExportOptions): string {
       parts.push(bodyMatch[1]);
       parts.push(`</g>`);
     }
+  }
+
+  // ── Маркеры позиций ПЛА (кружки с номерами) ──────────────────────────────
+  const visiblePositions = positions.filter(pos => pos.visible !== false && pos.x != null);
+  if (visiblePositions.length > 0) {
+    // posSF: в режиме 1 (fixedObjectScale) — pxPerMm фиксированный,
+    // в режиме 2 — масштабируется как objSF (тот же коэффициент).
+    const posSVGSF = fixedObjectScale ? 1 : objSF;
+    const PX_PER_MM = pxPerMm * posSVGSF;
+    parts.push(`<g id="positions">`);
+    for (const pos of visiblePositions) {
+      const p = project3D({ x: pos.x * _xySFExport, y: pos.y * _xySFExport, z: (pos.z ?? 0) * zScale }, proj);
+      const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
+      const isReverse = pos.positionType === "reverse";
+      const fill = esc(pos.color ?? "#ffffff");
+      const border = esc(pos.borderColor ?? "#000000");
+      const sw = Math.max(0.5, r * 0.12);
+      const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
+      const cx = n(p.sx), cy = n(p.sy);
+      parts.push(`<g transform="translate(${cx},${cy})">`);
+      if (isReverse) {
+        parts.push(`<circle r="${n(r + 7)}" fill="none" stroke="#e53e3e" stroke-width="2.5"/>`);
+        parts.push(`<circle r="${n(r + 4)}" fill="none" stroke="#ffffff" stroke-width="3"/>`);
+      }
+      parts.push(`<circle r="${n(r)}" fill="${fill}" stroke="${border}" stroke-width="${n(sw)}"/>`);
+      parts.push(`<text text-anchor="middle" dominant-baseline="central" font-size="${n(fontSize)}" font-weight="bold" font-family="Arial,sans-serif" fill="#000000">${pos.number}</text>`);
+      parts.push(`</g>`);
+    }
+    parts.push(`</g>`);
   }
 
   // ── Закрываем SVG ─────────────────────────────────────────────────────────
