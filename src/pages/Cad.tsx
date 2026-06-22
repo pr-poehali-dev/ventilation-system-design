@@ -4638,13 +4638,13 @@ export default function CadPage() {
               // ── 2. Изолированные узлы (нет ни одной ветви) ───────────
               const isolated = nodes.filter(n => (nodeBranchCount.get(n.id) ?? 0) === 0);
 
-              // ── 3. Дубликаты координат (совпадают x,y с точностью 0.01 м) ─
+              // ── 3. Дубликаты координат (совпадают x,y,z с точностью 0.01 м) ─
               type DupePair = { a: TopoNode; b: TopoNode };
               const dupes: DupePair[] = [];
               for (let i = 0; i < nodes.length; i++) {
                 for (let j = i + 1; j < nodes.length; j++) {
                   const a = nodes[i], b = nodes[j];
-                  if (Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01) {
+                  if (Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01 && Math.abs(a.z - b.z) < 0.01) {
                     dupes.push({ a, b });
                   }
                 }
@@ -4827,7 +4827,7 @@ export default function CadPage() {
                                     <NodeBtn n={b} />
                                   </div>
                                   <div className="text-[10px] text-gray-400 mt-0.5">
-                                    X={a.x.toFixed(2)} Y={a.y.toFixed(2)}
+                                    X={a.x.toFixed(2)} Y={a.y.toFixed(2)} Z={a.z.toFixed(2)}
                                     <span className="mx-1">·</span>№{a.number || "—"} и №{b.number || "—"}
                                   </div>
                                 </div>
