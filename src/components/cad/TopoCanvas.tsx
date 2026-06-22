@@ -2424,7 +2424,6 @@ export default function TopoCanvas(props: Props) {
           // При наличии xyScale нормируем: схема масштабирована в xyScale раз,
           // поэтому «нормальный» view.scale при котором objSF=1 тоже в xyScale раз меньше.
           // При fixedObjectScale — зажимаем по scaleLimits; иначе растём неограниченно (только минимум 0.25).
-          const _xySF = xyScale ?? 1;
           const rawObjSF = fixedObjectScale ? 1 : (view.scale / (_xySF * 0.4));
           // Пределы масштабов применяем только при fixedObjectScale, иначе растём неограниченно
           const objSF = fixedObjectScale && scaleLimits
