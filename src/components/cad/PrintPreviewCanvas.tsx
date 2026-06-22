@@ -136,52 +136,72 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   const hasPrintLayer = activePrintLayers.length > 0;
 
   // Пересчитываем viewState рабочей области под размер превью.
-  // Принцип: то же масштабирование что в рабочей области, но сжатое под prevW×prevH.
-  // Если слой печати — вписываем рамку в весь canvas.
+  // Всегда делаем fit-to-screen по узлам — так схема всегда отображается по центру превью
+  // в том же ракурсе (azimuth/elevation) что и рабочая область.
   const activeView = useMemo((): ProjOptions & { scale: number; offsetX: number; offsetY: number } => {
     if (width <= 0 || height <= 0) {
       return { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
     }
 
-    // Шаг 1: масштабируем viewState рабочей области под размер превью
-    // Коэффициент = min(prevW/canvasW, prevH/canvasH) — вписать рабочую область в превью
-    const cw = canvasSize.w > 0 ? canvasSize.w : width;
-    const ch = canvasSize.h > 0 ? canvasSize.h : height;
-    const k = Math.min(width / cw, height / ch);
-    const sc = viewState.scale * k;
-    const ox = viewState.offsetX * k + (width - cw * k) / 2;
-    const oy = viewState.offsetY * k + (height - ch * k) / 2;
-
-    if (!hasPrintLayer) {
-      return { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
-    }
-
-    // Шаг 2: если слой печати — вычисляем рамку при sc/ox/oy
-    // и подгоняем view чтобы рамка = весь canvas
-    const proj0: ProjOptions = { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
     const _xySF0 = xyScale ?? 1;
-    const pNodes0: ProjNode[] = nodes.map(n => ({
-      node: n,
-      ...project3D({ x: n.x * _xySF0, y: n.y * _xySF0, z: n.z * zScale }, proj0),
-      depth: 0,
-    }));
-    const pl = activePrintLayers[0].printLayer!;
-    const rect = computeFrameRect(pl, pNodes0, visibleBranches);
 
-    if (!rect || rect.rw <= 0 || rect.rh <= 0) {
-      return { scale: sc, offsetX: ox, offsetY: oy, azimuth, elevation, zScale };
+    // ── Если есть слой печати: вписываем рамку ────────────────────────────
+    if (hasPrintLayer) {
+      // Шаг 1: масштабируем viewState под размер превью
+      const cw = canvasSize.w > 0 ? canvasSize.w : width;
+      const ch = canvasSize.h > 0 ? canvasSize.h : height;
+      const k = Math.min(width / cw, height / ch);
+      const sc0 = viewState.scale * k;
+      const ox0 = viewState.offsetX * k + (width - cw * k) / 2;
+      const oy0 = viewState.offsetY * k + (height - ch * k) / 2;
+
+      const proj0: ProjOptions = { scale: sc0, offsetX: ox0, offsetY: oy0, azimuth, elevation, zScale };
+      const pNodes0: ProjNode[] = nodes.map(n => ({
+        node: n,
+        ...project3D({ x: n.x * _xySF0, y: n.y * _xySF0, z: n.z * zScale }, proj0),
+        depth: 0,
+      }));
+      const pl = activePrintLayers[0].printLayer!;
+      const rect = computeFrameRect(pl, pNodes0, visibleBranches);
+
+      if (!rect || rect.rw <= 0 || rect.rh <= 0) {
+        return { scale: sc0, offsetX: ox0, offsetY: oy0, azimuth, elevation, zScale };
+      }
+      const fitS = Math.min(width / rect.rw, height / rect.rh);
+      return {
+        scale: sc0 * fitS,
+        offsetX: (ox0 - rect.rx) * fitS,
+        offsetY: (oy0 - rect.ry) * fitS,
+        azimuth, elevation, zScale,
+      };
     }
 
-    // Подгоняем: рамка (rx,ry,rw,rh) → (0,0,width,height)
-    const fitS = Math.min(width / rect.rw, height / rect.rh);
+    // ── Без слоя печати: fit-to-screen по bbox узлов ──────────────────────
+    // Проецируем с scale=1, offset=0 чтобы получить bbox в нормальных координатах
+    if (nodes.length === 0) {
+      return { scale: 1, offsetX: width / 2, offsetY: height / 2, azimuth, elevation, zScale };
+    }
+    const proj1: ProjOptions = { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
+    let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
+    for (const n of nodes) {
+      const p = project3D({ x: n.x * _xySF0, y: n.y * _xySF0, z: n.z * zScale }, proj1);
+      if (p.sx < minSx) minSx = p.sx; if (p.sx > maxSx) maxSx = p.sx;
+      if (p.sy < minSy) minSy = p.sy; if (p.sy > maxSy) maxSy = p.sy;
+    }
+    const bw = Math.max(1, maxSx - minSx);
+    const bh = Math.max(1, maxSy - minSy);
+    const pad = 0.08;
+    const fitSc = Math.min((width * (1 - pad * 2)) / bw, (height * (1 - pad * 2)) / bh);
+    const cx = (minSx + maxSx) / 2;
+    const cy = (minSy + maxSy) / 2;
     return {
-      scale: sc * fitS,
-      offsetX: (ox - rect.rx) * fitS,
-      offsetY: (oy - rect.ry) * fitS,
+      scale: fitSc,
+      offsetX: width / 2 - cx * fitSc,
+      offsetY: height / 2 - cy * fitSc,
       azimuth, elevation, zScale,
     };
   }, [viewState, canvasSize, width, height, azimuth, elevation, zScale,
-      hasPrintLayer, activePrintLayers, nodes, visibleBranches]);
+      hasPrintLayer, activePrintLayers, nodes, visibleBranches, xyScale]);
 
   const proj = useMemo<ProjOptions>(() => activeView, [activeView]);
 

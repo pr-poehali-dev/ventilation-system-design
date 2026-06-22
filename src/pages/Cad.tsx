@@ -9097,7 +9097,7 @@ export default function CadPage() {
         branches={branches}
         horizons={horizons}
         schemaSymbols={schemaSymbols}
-        viewState={savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
+        viewState={savedViewStateRef.current ?? savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
         canvasSize={canvasSize}
         branchWidth={branchWidth}
         branchBorder={branchBorder}
