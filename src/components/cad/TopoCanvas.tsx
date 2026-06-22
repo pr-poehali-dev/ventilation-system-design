@@ -937,15 +937,25 @@ export default function TopoCanvas(props: Props) {
     z: zLevel, y: 0, x: 0,
   });
 
-  // Универсальная обратная проекция: screen → world через рабочую плоскость
+  // Универсальная обратная проекция: screen → world (реальные координаты, без масштаба xyScale/zScale).
+  // proj содержит offsetX/offsetY в масштабированном пространстве (×xyScale),
+  // поэтому после unproject делим обратно на xyScale/zScale чтобы получить мировые координаты.
   const screenToWorld = useCallback((sx: number, sy: number, fixedZ?: number): { x: number; y: number; z: number } | null => {
-    // В 2D-плане используем простую формулу с zLevel (или явно переданным fixedZ)
-    if (!is3D) return unproject2D(sx, sy, proj, fixedZ ?? zLevel);
-    // В 3D — пересечение луча с рабочей плоскостью
-    const plane: WorkPlane = fixedZ !== undefined ? { axis: "z", value: fixedZ } : effPlane;
-    return unprojectToPlane(sx, sy, proj, plane);
+    const xy = xyScale ?? 1;
+    const zs = zScale ?? 1;
+    if (!is3D) {
+      const w = unproject2D(sx, sy, proj, (fixedZ ?? zLevel) * zs);
+      return { x: w.x / xy, y: w.y / xy, z: w.z / zs };
+    }
+    // В 3D — пересечение луча с рабочей плоскостью (плоскость задана в масштабированных координатах)
+    const plane: WorkPlane = fixedZ !== undefined
+      ? { axis: "z", value: fixedZ * zs }
+      : { ...effPlane, value: effPlane.value * (effPlane.axis === "z" ? zs : xy) };
+    const w = unprojectToPlane(sx, sy, proj, plane);
+    if (!w) return null;
+    return { x: w.x / xy, y: w.y / xy, z: w.z / zs };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proj, zLevel, is3D, effPlane.axis, effPlane.value]);
+  }, [proj, zLevel, is3D, effPlane.axis, effPlane.value, xyScale, zScale]);
 
   // ─── Контекстное меню по правой кнопке ─────────────────────────────────
   const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -1038,15 +1048,8 @@ export default function TopoCanvas(props: Props) {
       const sy = e.clientY - rect.top;
       const w = screenToWorld(sx, sy);
       if (w) {
-        // screenToWorld возвращает координаты в масштабированном пространстве (×xyScale),
-        // а позиции хранятся/рендерятся в реальных мировых координатах — делим обратно
-        const xy = xyScale ?? 1;
-        const zs = zScale ?? 1;
-        onPositionPlace(
-          xy !== 1 ? w.x / xy : w.x,
-          xy !== 1 ? w.y / xy : w.y,
-          zs !== 1 ? w.z / zs : w.z,
-        );
+        // screenToWorld уже возвращает реальные мировые координаты (делённые на xyScale/zScale)
+        onPositionPlace(w.x, w.y, w.z);
       }
       e.stopPropagation();
       return;
