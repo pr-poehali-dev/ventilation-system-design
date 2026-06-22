@@ -60,6 +60,13 @@ interface CanvasLayerProps {
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   reversedBranchIds?: Set<string>;
   fixedObjectScale?: boolean;
+  scaleLimits?: {
+    textMin: number; textMax: number;
+    branchMin: number; branchMax: number;
+    symbolMin: number; symbolMax: number;
+    branchMode: "relative" | "fixed";
+    singleLineAt: number;
+  };
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
 
@@ -188,6 +195,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         branchExplosionColors: p.branchExplosionColors,
         reversedBranchIds: p.reversedBranchIds,
         fixedObjectScale: p.fixedObjectScale,
+        scaleLimits: p.scaleLimits,
         pollutedBranchIds: p.pollutedBranchIds,
         xyScale: p.xyScale,
       });

@@ -75,6 +75,14 @@ interface Props {
   thinLines?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме. */
   fixedObjectScale?: boolean;
+  /** Пределы масштабов объектов (активны при fixedObjectScale=true). */
+  scaleLimits?: {
+    textMin: number; textMax: number;
+    branchMin: number; branchMax: number;
+    symbolMin: number; symbolMax: number;
+    branchMode: "relative" | "fixed";
+    singleLineAt: number;
+  };
   /** Окрашивать ветви по цвету горизонта (вместо цвета по скорости/потоку). */
   colorByHorizon?: boolean;
   /** Показывать стрелки направления свежей струи после расчёта (F9). */
@@ -227,7 +235,7 @@ export default function TopoCanvas(props: Props) {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
-    horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false,
+    horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, scaleLimits,
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId,
@@ -2223,6 +2231,7 @@ export default function TopoCanvas(props: Props) {
           branchBorder={branchBorder}
           thinLines={thinLines}
           fixedObjectScale={fixedObjectScale}
+          scaleLimits={scaleLimits}
           colorByHorizon={colorByHorizon}
           showFlowArrows={showFlowArrows}
           flowDisplay={flowDisplay}

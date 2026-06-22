@@ -7145,6 +7145,17 @@ export default function CadPage() {
               title="Масштаб 1:1000 (1 px = 1 м)">
               1:1000
             </button>
+            <button
+              onClick={() => setScaleSettingsOpen(true)}
+              className="h-6 px-2 text-[11px] border rounded hover:bg-blue-50 flex items-center gap-1"
+              style={{
+                borderColor: scaleLimitsEnabled ? "#2563eb" : "#d1d5db",
+                background: scaleLimitsEnabled ? "#dbeafe" : "white",
+                color: scaleLimitsEnabled ? "#1d4ed8" : "#374151",
+              }}
+              title="Пределы масштабов объектов на схеме">
+              <Icon name="Scaling" size={11} /> Масштаб
+            </button>
 
             <div className="ml-auto flex items-center gap-2 text-[11px] text-gray-600">
               <span className={viewInfo.is3D ? "text-purple-700 font-semibold" : ""}>
@@ -7356,6 +7367,13 @@ export default function CadPage() {
               branchBorder={branchBorder}
               thinLines={thinLines}
               fixedObjectScale={scaleLimitsEnabled}
+              scaleLimits={scaleLimitsEnabled ? {
+                textMin: scaleTextMin, textMax: scaleTextMax,
+                branchMin: scaleBranchMin, branchMax: scaleBranchMax,
+                symbolMin: scaleSymbolMin, symbolMax: scaleSymbolMax,
+                branchMode: scaleBranchMode,
+                singleLineAt: scaleSingleLineAt,
+              } : undefined}
               colorByHorizon={colorMode === "horizon"}
               showFlowArrows={showFlowArrows}
               scaleOverride={viewScale}

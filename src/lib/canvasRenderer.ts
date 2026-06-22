@@ -72,6 +72,14 @@ export interface CanvasRenderOptions {
   printMode?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме */
   fixedObjectScale?: boolean;
+  /** Пределы масштабов (%, 80 = 80%) для объектов при fixedObjectScale=true */
+  scaleLimits?: {
+    textMin: number; textMax: number;
+    branchMin: number; branchMax: number;
+    symbolMin: number; symbolMax: number;
+    branchMode: "relative" | "fixed";
+    singleLineAt: number;
+  };
   /** Масштаб по осям XY — нужен для нормализации objSF при реальных координатах */
   xyScale?: number;
   /** ID ветвей, загрязнённых воздухом (pollutesAir + все ниже по потоку) — стрелки синие */
@@ -239,7 +247,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
-    fixedObjectScale = false, pollutedBranchIds, reversedBranchIds,
+    fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     xyScale,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
     // чтобы при случайном обращении к ним не было ReferenceError.
@@ -252,15 +260,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // ─── LOD пороги ───────────────────────────────────────────────────────────
   const sc = view.scale;
   // Коэффициент масштабирования объектов.
-  // В режиме печати / fixedObjectScale — фиксированный размер (1).
-  // В обычном режиме — пропорционально масштабу, но не меньше минимума
-  // чтобы ветви и узлы были видимы при любом удалении (координаты могут быть в метрах → sc очень мал).
+  // В режиме печати — фиксированный размер (1).
+  // fixedObjectScale=true (пределы масштабов включены) → objSF зажимается по min/max из scaleLimits.
+  // fixedObjectScale=false (нормальный режим) → objSF растёт неограниченно вместе со zoom,
+  //   только снизу ограничен 0.25 чтобы ветви были видимы при любом удалении.
   // При наличии xyScale нормируем: «нормальный» scale при xyScale=N в N раз меньше.
-  // Ограничиваем сверху (8) чтобы при крупном зуме объекты не вырастали в исполинов.
   const _xyScaleCR = xyScale ?? 1;
-  const rawObjSF = (fixedObjectScale || printMode) ? 1 : sc / (_xyScaleCR * 0.4);
-  // Минимальный objSF: ветвь всегда не менее 0.5px, при branchWidth=2 → objSF >= 0.25
-  const objSF = Math.min(8, Math.max(rawObjSF, 0.25));
+  const rawObjSF = printMode ? 1 : sc / (_xyScaleCR * 0.4);
+  // Применяем пределы масштабов если включён режим fixedObjectScale
+  const _sl = scaleLimits;
+  const objSF = printMode
+    ? 1
+    : fixedObjectScale && _sl
+      // Пределы заданы в % от «нормального» размера (100% = objSF=1)
+      ? Math.min(_sl.branchMax / 100, Math.max(_sl.branchMin / 100, rawObjSF))
+      // Нет ограничений — только минимум чтобы объекты были видимы
+      : Math.max(rawObjSF, 0.25);
   // LOD: в режиме печати все элементы видны; иначе — только при достаточном масштабе.
   // Используем objSF-скорректированный sc для LOD чтобы учесть минимальный размер объектов.
   const lodChevrons = printMode || sc >= 0.25;
@@ -725,7 +740,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
         : branchWidth;
       const branchPx = (thinLines ? 1 : adjAvgW) * objSF;
-      const baseNodeR = Math.min(10, Math.max(1.5, branchPx * 0.55));
+      // При включённом fixedObjectScale — ограничиваем и размер узла (symbolMin/Max)
+      const rawNodeR = Math.max(1.5, branchPx * 0.55);
+      const baseNodeR = (fixedObjectScale && _sl)
+        ? Math.min(_sl.symbolMax / 100 * 10, Math.max(_sl.symbolMin / 100 * 10, rawNodeR))
+        : rawNodeR;
       const r = isSel ? baseNodeR * 1.5 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
@@ -875,9 +894,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       // Метки узла (как SVG: смещение +8,-8, fontSize=9)
-      if (sc > 0.08) {
+      const _scThresh = _xyScaleCR * 0.04;
+      if (sc > _scThresh) {
         const ic = infoConfig;
-        const nodeOpacity = Math.min(1, (sc - 0.08) / 0.12);
+        const nodeOpacity = Math.min(1, (sc - _scThresh) / (_scThresh * 1.5));
         const nlines: string[] = [];
         if (!ic) {
           if (n.name) nlines.push(n.name);
@@ -885,13 +905,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           if (ic.nodeNumber && n.number) nlines.push(`${n.number}`);
         }
         if (nlines.length > 0) {
-          ctx.font = `500 9px "Segoe UI",sans-serif`;
+          // Размер текста масштабируется как objSF, но с отдельными пределами textMin/Max
+          const rawTextSF = printMode ? 1 : sc / (_xyScaleCR * 0.4);
+          const textSF = printMode
+            ? 1
+            : fixedObjectScale && _sl
+              ? Math.min(_sl.textMax / 100, Math.max(_sl.textMin / 100, rawTextSF))
+              : Math.max(rawTextSF, 0.25);
+          const fontSize = Math.max(6, Math.round(9 * textSF));
+          ctx.font = `500 ${fontSize}px "Segoe UI",sans-serif`;
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
           ctx.globalAlpha = nodeOpacity;
           ctx.fillStyle = "#6b7280";
+          const lineH = fontSize * 1.25;
           nlines.forEach((ln, li) => {
-            ctx.fillText(ln, pn.sx + 8, pn.sy - 8 + (li + 1) * 11);
+            ctx.fillText(ln, pn.sx + fontSize * 0.9, pn.sy - fontSize * 0.9 + (li + 1) * lineH);
           });
           ctx.globalAlpha = 1;
         }
