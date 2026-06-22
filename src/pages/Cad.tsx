@@ -118,7 +118,7 @@ export interface SchemaSymbol {
   msIndOffsetY?: number;     // смещение бейджа по Y (px экрана)
   msIndFontSize?: number;    // размер шрифта (мм мировых единиц)
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ";
 
 interface Excavation {
   id: string;
@@ -1161,6 +1161,7 @@ export default function CadPage() {
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
+  const [checkThreshold, setCheckThreshold] = useState<number>(50);
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
   const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
@@ -4397,12 +4398,13 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "check" ? "check" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
                   else if (e.target.value === "search") setActiveSide("search");
                   else if (e.target.value === "positions") setActiveSide("positions");
                   else if (e.target.value === "flowQ") { setActiveSide("flowQ"); setColorMode("flowQ"); }
+                  else if (e.target.value === "check") setActiveSide("check");
                   else { setActiveSide("general"); }
                 }}>
                 <option value="props">Свойства</option>
@@ -4434,6 +4436,7 @@ export default function CadPage() {
               {activeSide === "positions" && "Позиции"}
               {activeSide === "flowQ" && "Расход воздуха"}
               {activeSide === "rescue" && "Расчёт горноспасателей"}
+              {activeSide === "check" && "Проверка схемы"}
             </span>
             <div className="flex items-center gap-1">
               {activeSide === "params" && selectedNode && (
@@ -4603,6 +4606,113 @@ export default function CadPage() {
               );
             })()}
 
+
+            {/* ═══ ВКЛАДКА: ПРОВЕРКА СХЕМЫ ═══════════════════════════════ */}
+            {activeSide === "check" && (() => {
+              type NearPair = { a: TopoNode; b: TopoNode; dist: number };
+              const branchPairs = new Set<string>();
+              for (const br of branches) {
+                branchPairs.add(`${br.fromId}|${br.toId}`);
+                branchPairs.add(`${br.toId}|${br.fromId}`);
+              }
+              const pairs: NearPair[] = [];
+              for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                  const a = nodes[i], b = nodes[j];
+                  if (branchPairs.has(`${a.id}|${b.id}`)) continue;
+                  const dx = (a.x - b.x), dy = (a.y - b.y);
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  if (dist < checkThreshold) {
+                    pairs.push({ a, b, dist });
+                  }
+                }
+              }
+              pairs.sort((x, y) => x.dist - y.dist);
+
+              return (
+                <div className="flex flex-col h-full overflow-hidden" style={{ fontSize: 11 }}>
+                  {/* Секция: близкие несоединённые узлы */}
+                  <div className="px-2 py-1.5" style={{ background: "#f0f4ff", borderBottom: "1px solid #c7d2fe" }}>
+                    <div className="flex items-center gap-1 mb-1">
+                      <Icon name="AlertTriangle" size={13} className="text-amber-600 flex-shrink-0" />
+                      <span className="font-semibold text-[11px] text-gray-800">Несоединённые близкие узлы</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500 mb-1.5">Узлы, расположенные рядом, но не соединённые ветвью. Возможно, требуется слияние или добавление ветви.</div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-gray-600 flex-shrink-0">Порог расстояния:</span>
+                      <input
+                        type="number" min={1} max={10000} step={1}
+                        value={checkThreshold}
+                        onChange={e => setCheckThreshold(Math.max(1, Number(e.target.value) || 50))}
+                        className="w-16 text-right border border-gray-300 rounded px-1 bg-white"
+                        style={{ fontSize: 11, height: 20 }}
+                      />
+                      <span className="text-[10px] text-gray-500">м</span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto">
+                    {pairs.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 gap-2 text-gray-400">
+                        <Icon name="CheckCircle" size={28} className="text-green-500" />
+                        <span className="text-[11px] text-center text-gray-500">Близких несоединённых узлов не найдено</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col">
+                        <div className="px-2 py-1 text-[10px] text-gray-500" style={{ borderBottom: "1px solid #eee" }}>
+                          Найдено пар: <b className="text-amber-700">{pairs.length}</b>
+                        </div>
+                        {pairs.map(({ a, b, dist }) => {
+                          const keyA = `${a.id}|${b.id}`;
+                          const isSelA = selectedNodeId === a.id || selectedNodeId === b.id;
+                          return (
+                            <div key={keyA}
+                              className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                              style={{
+                                borderBottom: "1px solid #f0f0f0",
+                                background: isSelA ? "#fef3c7" : "transparent",
+                              }}
+                              onClick={() => {
+                                setSelectedNodeId(a.id);
+                                setSelectedBranchId(null);
+                                setFocusNodeId(a.id);
+                                setFocusNonce(Date.now());
+                              }}
+                              onMouseEnter={e => { if (!isSelA) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                              onMouseLeave={e => { if (!isSelA) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                            >
+                              <Icon name="AlertTriangle" size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <button
+                                    className="text-[11px] font-medium text-blue-700 hover:underline"
+                                    onClick={e => { e.stopPropagation(); setSelectedNodeId(a.id); setSelectedBranchId(null); setFocusNodeId(a.id); setFocusNonce(Date.now()); }}
+                                  >
+                                    {a.name || `Узел ${a.number || a.id}`}
+                                  </button>
+                                  <span className="text-gray-400 text-[10px]">↔</span>
+                                  <button
+                                    className="text-[11px] font-medium text-blue-700 hover:underline"
+                                    onClick={e => { e.stopPropagation(); setSelectedNodeId(b.id); setSelectedBranchId(null); setFocusNodeId(b.id); setFocusNonce(Date.now()); }}
+                                  >
+                                    {b.name || `Узел ${b.number || b.id}`}
+                                  </button>
+                                </div>
+                                <div className="text-[10px] text-gray-500 mt-0.5">
+                                  Расстояние: <b className="text-amber-700">{dist < 1 ? dist.toFixed(2) : dist.toFixed(1)} м</b>
+                                  <span className="mx-1 text-gray-300">·</span>
+                                  <span className="text-gray-400">№{a.number || "—"} и №{b.number || "—"}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (узел) ════════════════════════════ */}
             {activeSide === "params" && selectedNode && (
