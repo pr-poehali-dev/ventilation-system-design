@@ -622,10 +622,10 @@ export default function TopoCanvas(props: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Нативный wheel-listener:
-  //   Ctrl+колесо       → зум к курсору
+  // Нативный wheel-listener (как в Вентиляция 2.0 / АэроСеть):
+  //   Обычное колесо    → зум к курсору
   //   Shift+колесо      → панорама по горизонтали
-  //   Обычное колесо    → панорама по вертикали
+  //   Ctrl+колесо       → панорама по вертикали
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -646,10 +646,23 @@ export default function TopoCanvas(props: Props) {
 
       const v = viewRef.current;
 
-      if (e.ctrlKey || e.metaKey) {
-        // ── ЗУМ К КУРСОРУ ────────────────────────────────────────────
-        const capped = Math.max(-80, Math.min(80, normY));
-        const factor = Math.pow(0.999, capped);
+      if (e.shiftKey) {
+        // ── ПАНОРАМА ПО ГОРИЗОНТАЛИ (Shift+колесо) ───────────────────
+        const pan = Math.max(-200, Math.min(200, normY + normX));
+        const newView: ViewState = { ...v, offsetX: v.offsetX - pan };
+        viewRef.current = newView;
+        setView(newView);
+      } else if (e.ctrlKey || e.metaKey) {
+        // ── ПАНОРАМА ПО ВЕРТИКАЛИ (Ctrl+колесо) ──────────────────────
+        const panY = Math.max(-200, Math.min(200, normY));
+        const panX = Math.max(-200, Math.min(200, normX));
+        const newView: ViewState = { ...v, offsetX: v.offsetX - panX, offsetY: v.offsetY - panY };
+        viewRef.current = newView;
+        setView(newView);
+      } else {
+        // ── ЗУМ К КУРСОРУ (обычное колесо — как в Вентиляция 2.0 / АэроСеть) ──
+        const capped = Math.max(-150, Math.min(150, normY));
+        const factor = Math.pow(0.998, capped);
         const newScale = Math.max(0.0005, Math.min(5000, v.scale * factor));
         if (newScale === v.scale) return;
         const wx = (px - v.offsetX) / v.scale;
@@ -660,19 +673,6 @@ export default function TopoCanvas(props: Props) {
           offsetX: px - wx * newScale,
           offsetY: py - wy * newScale,
         };
-        viewRef.current = newView;
-        setView(newView);
-      } else if (e.shiftKey) {
-        // ── ПАНОРАМА ПО ГОРИЗОНТАЛИ (Shift+колесо) ───────────────────
-        const pan = Math.max(-120, Math.min(120, normY + normX));
-        const newView: ViewState = { ...v, offsetX: v.offsetX - pan };
-        viewRef.current = newView;
-        setView(newView);
-      } else {
-        // ── ПАНОРАМА ПО ВЕРТИКАЛИ (обычное колесо) ───────────────────
-        const panY = Math.max(-120, Math.min(120, normY));
-        const panX = Math.max(-120, Math.min(120, normX));
-        const newView: ViewState = { ...v, offsetX: v.offsetX - panX, offsetY: v.offsetY - panY };
         viewRef.current = newView;
         setView(newView);
       }
