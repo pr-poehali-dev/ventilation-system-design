@@ -51,15 +51,16 @@ export async function drawSymbolsToCanvas(
       const br = branches.find(b => b.id === sym.branchId);
       const fN = br ? projNodesMap.get(br.fromId) : null;
       const tN = br ? projNodesMap.get(br.toId)   : null;
-      if (fN && tN) {
-        fsx = fN.sx; fsy = fN.sy; tsx2 = tN.sx; tsy2 = tN.sy;
-        hasBranchPts = true;
-        const t = sym.t ?? 0.5;
-        basePx = fsx + (tsx2 - fsx) * t;
-        basePy = fsy + (tsy2 - fsy) * t;
-      }
+      if (!fN || !tN) continue; // ветвь/узлы не найдены — пропускаем символ
+      fsx = fN.sx; fsy = fN.sy; tsx2 = tN.sx; tsy2 = tN.sy;
+      hasBranchPts = true;
+      const t = sym.t ?? 0.5;
+      basePx = fsx + (tsx2 - fsx) * t;
+      basePy = fsy + (tsy2 - fsy) * t;
+    } else {
+      // Свободный символ без привязки к ветви — пропускаем (не поддерживается в canvas)
+      if (!hasBranchPts) continue;
     }
-    if (!hasBranchPts && !sym.branchId) continue;
 
     const px = basePx + (sym.offsetX ?? 0);
     const py = basePy + (sym.offsetY ?? 0);

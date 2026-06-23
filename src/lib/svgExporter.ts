@@ -587,15 +587,15 @@ export function generateSvg(opts: SvgExportOptions): string {
         const br = branches.find(b => b.id === sym.branchId);
         const fPt = br ? projMap.get(br.fromId) : null;
         const tPt = br ? projMap.get(br.toId)   : null;
-        if (fPt && tPt) {
-          fsx = fPt.sx; fsy = fPt.sy; tsx2 = tPt.sx; tsy2 = tPt.sy;
-          hasBranchPts = true;
-          const t = sym.t ?? 0.5;
-          px = fsx + (tsx2 - fsx) * t;
-          py = fsy + (tsy2 - fsy) * t;
-        }
+        if (!fPt || !tPt) continue; // ветвь/узлы не найдены — пропускаем символ
+        fsx = fPt.sx; fsy = fPt.sy; tsx2 = tPt.sx; tsy2 = tPt.sy;
+        hasBranchPts = true;
+        const t = sym.t ?? 0.5;
+        px = fsx + (tsx2 - fsx) * t;
+        py = fsy + (tsy2 - fsy) * t;
       } else {
-        const p3 = project3D({ x: sym.x, y: sym.y, z: 0 }, proj);
+        // Свободный символ: применяем xyScale к мировым координатам
+        const p3 = project3D({ x: sym.x * _xySFExport, y: sym.y * _xySFExport, z: 0 }, proj);
         px = p3.sx; py = p3.sy;
         hasBranchPts = false;
       }
