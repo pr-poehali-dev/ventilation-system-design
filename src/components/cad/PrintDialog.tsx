@@ -11,7 +11,7 @@ import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 import { jsPDF } from "jspdf";
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
-import { computePrintLayerRect } from "@/lib/printLayerSvg";
+
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -959,98 +959,28 @@ body{background:white;font-family:Arial,sans-serif}
     }
 
     // ── PDF векторный (SVG → PDF через бэкенд, идеально для плоттера) ────
-    // Используем живой SVG из рабочей области (getSvgRaw) — он содержит всё:
-    // символы, выноски, позиции ПЛА — именно то что видит пользователь.
-    // Пересчитываем viewBox чтобы вписать схему в лист.
+    // Оба режима (SVG и Canvas) используют generateSvg — единый рендерер
+    // с правильной поддержкой рамки слоя печати и вписыванием в лист.
     if (exportFormat === "pdf-vector") {
       setPdfExporting(true);
       try {
-        const rawSvg = getSvgRaw?.() ?? "";
-
-        // В Canvas-режиме (>800 ветвей) getSvgRaw() возвращает PNG base64 — не SVG.
-        // Определяем режим по наличию PNG prefix и используем generateSvg как fallback.
-        const isCanvasMode = !rawSvg || rawSvg.startsWith("data:image/png") || rawSvg.startsWith("data:image/");
-
-        let svgStr: string;
-        if (isCanvasMode) {
-          // Canvas-режим: генерируем SVG через отдельный рендерер
-          const proj = buildProjForExport();
-          svgStr = generateSvg({
-            nodes, branches, horizons, horizonMap: baseView.horizonMap,
-            proj, viewState, zScale,
-            is3D: baseView.isScene3D,
-            branchWidth, branchBorder, thinLines, colorByHorizon,
-            infoConfig, unitsConfig, colorMode,
-            posInnerColors, posOuterColors,
-            positions: showPositions ? positions : [],
-            canvasW: Math.round(paper.w * 3.78),
-            canvasH: Math.round(paper.h * 3.78),
-            paperWidthMm: paper.w,
-            title: "",
-            fixedObjectScale, xyScale,
-            pollutedBranchIds,
-            schemaSymbols: schemaSymbols ?? [],
-          });
-        } else {
-          // SVG-режим: используем живой SVG из рабочей области
-          svgStr = rawSvg;
-
-          // Убираем grid-паттерны из <defs>
-          svgStr = svgStr.replace(/<pattern[^>]+id="topo-grid[^"]*"[\s\S]*?<\/pattern>/g, '');
-          // Убираем rect с заливкой сетки
-          svgStr = svgStr.replace(/<rect[^>]+fill="url\(#topo-grid[^"]*\)"[^/]*\/>/g, '');
-          // Убираем белый фон-rect
-          svgStr = svgStr.replace(/<rect width="100%" height="100%" fill="white"[^/]*\/>/g, '');
-          // Убираем элементы отмеченные как исключённые из экспорта (линейка масштаба, UI-элементы)
-          svgStr = svgStr.replace(/<g[^>]+data-export-exclude="true"[\s\S]*?<\/g>/g, '');
-
-          // Вычисляем viewBox чтобы вписать схему/рамку в лист
-          const { minX, minY, w: bw, h: bh } = schemaBbox;
-          const vs = viewState;
-          const screenMinX = minX * vs.scale + vs.offsetX;
-          const screenMinY = minY * vs.scale + vs.offsetY;
-          const screenW = bw * vs.scale;
-          const screenH = bh * vs.scale;
-
-          let vbX: number, vbY: number, vbW: number, vbH: number;
-
-          if (hasPrintLayer && activePrintHorizon?.printLayer) {
-            // Если есть слой печати — извлекаем координаты рамки прямо из SVG строки.
-            // Рамка рендерится в <g data-printlayer="..."> → первый <rect x=... y=... width=... height=...>
-            const plMatch = svgStr.match(/data-printlayer="[^"]*"[^>]*>[\s\S]*?<rect[^>]+x="([^"]+)"[^>]+y="([^"]+)"[^>]+width="([^"]+)"[^>]+height="([^"]+)"/);
-            if (plMatch) {
-              vbX = parseFloat(plMatch[1]);
-              vbY = parseFloat(plMatch[2]);
-              vbW = parseFloat(plMatch[3]);
-              vbH = parseFloat(plMatch[4]);
-            } else {
-              // Fallback: поля вокруг схемы
-              const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
-              vbX = screenMinX - padPx; vbY = screenMinY - padPx;
-              vbW = screenW + padPx * 2; vbH = screenH + padPx * 2;
-            }
-          } else {
-            // Без слоя печати — поля вокруг схемы
-            const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
-            vbX = screenMinX - padPx; vbY = screenMinY - padPx;
-            vbW = screenW + padPx * 2; vbH = screenH + padPx * 2;
-          }
-
-          // Целевой размер листа в px @ 96dpi
-          const pxPerMm = 96 / 25.4;
-          const targetW = Math.round(paper.w * pxPerMm);
-          const targetH = Math.round(paper.h * pxPerMm);
-
-          // Заменяем width/height/viewBox
-          svgStr = svgStr
-            .replace(/\s+width="[^"]*"/, ` width="${targetW}"`)
-            .replace(/\s+height="[^"]*"/, ` height="${targetH}"`);
-          if (svgStr.includes('viewBox=')) {
-            svgStr = svgStr.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`);
-          } else {
-            svgStr = svgStr.replace('<svg ', `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" `);
-          }
-        }
+        const proj = buildProjForExport();
+        const svgStr = generateSvg({
+          nodes, branches, horizons, horizonMap: baseView.horizonMap,
+          proj, viewState, zScale,
+          is3D: baseView.isScene3D,
+          branchWidth, branchBorder, thinLines, colorByHorizon,
+          infoConfig, unitsConfig, colorMode,
+          posInnerColors, posOuterColors,
+          positions: showPositions ? positions : [],
+          canvasW: Math.round(paper.w * 3.78),
+          canvasH: Math.round(paper.h * 3.78),
+          paperWidthMm: paper.w,
+          title: projectName,
+          fixedObjectScale, xyScale,
+          pollutedBranchIds,
+          schemaSymbols: schemaSymbols ?? [],
+        });
 
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
@@ -1144,14 +1074,13 @@ body{background:white;font-family:Arial,sans-serif}
     } finally {
       setPdfExporting(false);
     }
-  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, schemaBbox,
+  }, [exportFormat, exportDpi, exportQuality, projectName,
       renderTileToCanvas, tiles, paper, showPageNumbers,
       marginLeft, marginRight, marginBottom,
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
       posInnerColors, posOuterColors, positions, showPositions,
-      fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols,
-      hasPrintLayer, activePrintHorizon, canvasSize]);
+      fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
