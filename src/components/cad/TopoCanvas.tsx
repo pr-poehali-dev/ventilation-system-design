@@ -2446,7 +2446,8 @@ export default function TopoCanvas(props: Props) {
           const lodChevrons  = view.scale >= _xySF * 0.25;
           const lodArrows    = view.scale >= _xySF * 0.15;
           const lodLabels    = view.scale >= _xySF * 0.04;
-          const lodBorder    = view.scale >= _xySF * 0.10;
+          // Border всегда включён (как в canvas) — без обводки ветви сливаются при отдалении
+          const lodBorder    = true;
           // Коэффициент масштабирования объектов: 1 = фиксированный, view.scale/0.4 = пропорциональный.
           // При наличии xyScale нормируем: схема масштабирована в xyScale раз,
           // поэтому «нормальный» view.scale при котором objSF=1 тоже в xyScale раз меньше.
@@ -2488,8 +2489,8 @@ export default function TopoCanvas(props: Props) {
             const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
             const baseW = isSel ? bw + 1 : bw;
-            const w = (thinLines ? 1 : baseW) * objSF;
-            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
+            const w = thinLines ? 1 : Math.max(baseW * objSF, 1.0);
+            const borderW = (thinLines || !lodBorder) ? 0 : Math.max(Math.max(0, bb) * objSF, 0.5);
             if (borderW === 0) return null;
             return (
               <line key={`border-${b.id}`}
@@ -2577,9 +2578,10 @@ export default function TopoCanvas(props: Props) {
           const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
           const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
           const baseW = isSel ? bw + 1 : bw;
-          const w = (thinLines ? 1 : baseW) * objSF;
-          // Обводка (контур вокруг линии): ширина = w + 2*border
-          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
+          // Минимум 1px чтобы ветви оставались читаемыми при любом масштабе
+          const w = thinLines ? 1 : Math.max(baseW * objSF, 1.0);
+          // Border: минимум 0.5px чтобы обводка не пропадала при отдалении
+          const borderW = (thinLines || !lodBorder) ? 0 : Math.max(Math.max(0, bb) * objSF, 0.5);
           const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");

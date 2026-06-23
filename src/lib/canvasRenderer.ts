@@ -345,8 +345,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
     const baseW = isSel ? bw + 1 : bw;
-    const w = (thinLines ? 1 : baseW) * objSF;
-    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
+    // Минимальная абсолютная толщина ветви в px экрана — чтобы при малом масштабе
+    // ветви оставались читаемыми (не субпиксельными)
+    const w = thinLines ? 1 : Math.max(baseW * objSF, 1.0);
+    // Border: минимум 0.5px в абсолютных координатах экрана, чтобы обводка не пропадала
+    const bwBorder = (thinLines || !lodBorder) ? 0 : Math.max(Math.max(0, bb) * objSF, 0.5);
     const flowVisible = !thinLines && lodChevrons && Q > 0.1 && flowDisplay !== "off";
     const showDashes   = flowVisible && (flowDisplay === "flow"     || flowDisplay === "both");
     const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
