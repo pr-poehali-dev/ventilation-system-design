@@ -2806,9 +2806,7 @@ export default function CadPage() {
         <RibbonTabBtn label="Аварии" active={activeRibbon === "involve"}
           onClick={() => { if (isDemo) { setShowLicenseDialog(true); return; } setActiveRibbon("involve"); }}
           title={isDemo ? "Аварийные расчёты — только в полной версии" : undefined} />
-        <RibbonTabBtn label="Трубы" active={activeRibbon === "costs"} onClick={() => setActiveRibbon("costs")} />
         <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => setActiveRibbon("general")} />
-        <RibbonTabBtn label="Общее" active={false} onClick={() => {}} highlight />
         <RibbonTabBtn label="Печать" active={false} onClick={() => setShowPrintDialog(true)} />
         <RibbonTabBtn label="Помощь" active={false} onClick={() => setShowHelpDialog(true)} />
         <div className="ml-auto pr-2 pb-0.5">
