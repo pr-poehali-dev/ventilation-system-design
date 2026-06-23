@@ -415,6 +415,8 @@ export default function PrintDialog({
   // Если активен слой печати — берём bbox только по узлам видимого горизонта
   const schemaBbox = useMemo(() => {
     if (nodes.length === 0) return { minX: 0, maxX: 1, minY: 0, maxY: 1, w: 1, h: 1 };
+    // Применяем xyScale к координатам — ровно так же как generateSvg и renderCanvas
+    const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
     const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
       azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
     // Собираем ID узлов только из видимых ветвей (ветви скрытых горизонтов исключены)
@@ -434,12 +436,12 @@ export default function PrintDialog({
     const bboxNodes = (nodesToUse.length > 0 ? nodesToUse : nodes);
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const n of bboxNodes) {
-      const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
+      const p = project3D({ x: n.x * _xySF, y: n.y * _xySF, z: n.z * zScale }, tmpProj);
       if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
       if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
     }
     return { minX, maxX, minY, maxY, w: maxX - minX || 1, h: maxY - minY || 1 };
-  }, [nodes, branches, horizons, viewState.azimuth, viewState.elevation, zScale]);
+  }, [nodes, branches, horizons, viewState.azimuth, viewState.elevation, zScale, xyScale]);
 
   // ─── Активный слой печати (если есть) ────────────────────────────────
   const activePrintHorizon = useMemo(
@@ -765,7 +767,7 @@ export default function PrintDialog({
   }, [baseView, paper, workArea, marginLeft, marginTop, canvasSize,
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
-      colorMode, posInnerColors, posOuterColors, fixedObjectScale,
+      colorMode, posInnerColors, posOuterColors, fixedObjectScale, xyScale,
       hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect]);
 
 
@@ -1075,7 +1077,7 @@ body{background:white;font-family:Arial,sans-serif}
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
       posInnerColors, posOuterColors, positions, showPositions,
-      fixedObjectScale, pollutedBranchIds, schemaSymbols]);
+      fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
