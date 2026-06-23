@@ -3999,18 +3999,21 @@ export default function TopoCanvas(props: Props) {
             return (
               <g key={sym.id} data-sym={sym.id}
                 style={{ cursor: tool === "select" ? "move" : undefined }}
-                onClick={(e) => { if (tool !== "select") return; e.stopPropagation(); onSelectSymbol?.(isSel ? null : sym.id); onSymbolClick?.(sym.id); }}
                 onMouseDown={(e) => {
                   if (e.button !== 0 || tool !== "select") return;
                   e.stopPropagation(); e.preventDefault();
                   onSelectSymbol?.(sym.id);
                   const startX = e.clientX, startY = e.clientY;
+                  let didDrag = false;
                   if (sym.branchId && hasBranchPts) {
                     const snapFsx = fsx, snapFsy = fsy, snapTsx = tsx2, snapTsy = tsy2;
                     const brLen2 = (snapTsx - snapFsx) ** 2 + (snapTsy - snapFsy) ** 2;
                     const origOx = sym.offsetX ?? 0, origOy = sym.offsetY ?? 0;
                     const svgEl = (e.currentTarget as SVGElement).closest("svg")!;
                     const onMove = (me: MouseEvent) => {
+                      if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+                      if (!didDrag) onSymbolDragStart?.(sym.id);
+                      didDrag = true;
                       me.preventDefault();
                       const dx = me.clientX - startX, dy = me.clientY - startY;
                       if (me.ctrlKey || me.altKey) {
@@ -4023,14 +4026,34 @@ export default function TopoCanvas(props: Props) {
                         onSymbolMoveAlongBranch?.(sym.id, Math.max(0.02, Math.min(0.98, raw)));
                       }
                     };
-                    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                    const onUp = (ue: MouseEvent) => {
+                      window.removeEventListener("mousemove", onMove);
+                      window.removeEventListener("mouseup", onUp);
+                      if (!didDrag) handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
+                    };
                     window.addEventListener("mousemove", onMove);
                     window.addEventListener("mouseup", onUp);
                   } else if (!sym.branchId) {
                     const origX = sym.x, origY = sym.y;
-                    const onMove = (me: MouseEvent) => { me.preventDefault(); onSymbolMove?.(sym.id, origX + (me.clientX - startX) / view.scale, origY - (me.clientY - startY) / view.scale); };
-                    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+                    const onMove = (me: MouseEvent) => {
+                      if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+                      if (!didDrag) onSymbolDragStart?.(sym.id);
+                      didDrag = true;
+                      me.preventDefault();
+                      onSymbolMove?.(sym.id, origX + (me.clientX - startX) / view.scale, origY - (me.clientY - startY) / view.scale);
+                    };
+                    const onUp = (ue: MouseEvent) => {
+                      window.removeEventListener("mousemove", onMove);
+                      window.removeEventListener("mouseup", onUp);
+                      if (!didDrag) handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
+                    };
                     window.addEventListener("mousemove", onMove);
+                    window.addEventListener("mouseup", onUp);
+                  } else {
+                    const onUp = (ue: MouseEvent) => {
+                      window.removeEventListener("mouseup", onUp);
+                      handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
+                    };
                     window.addEventListener("mouseup", onUp);
                   }
                 }}>
