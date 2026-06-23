@@ -121,6 +121,33 @@ export interface SchemaSymbol {
 }
 type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ";
 
+export interface TextBlock {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  background: string;
+  borderColor: string;
+}
+function makeTextBlock(partial?: Partial<TextBlock>): TextBlock {
+  return {
+    id: Math.random().toString(36).slice(2, 10),
+    text: "Текст",
+    x: 0, y: 0,
+    fontSize: 10,
+    color: "#1a1a1a",
+    bold: false,
+    italic: false,
+    background: "none",
+    borderColor: "none",
+    ...partial,
+  };
+}
+
 interface Excavation {
   id: string;
   type: string;
@@ -228,17 +255,26 @@ export default function CadPage() {
   const [nodes, setNodes] = useState<TopoNode[]>([]);
   const [branchesRaw, setBranches] = useState<TopoBranch[]>([]);
 
+  // ─── Текстовые блоки ────────────────────────────────────────────────────
+  const [textBlocks, setTextBlocks] = useState<TextBlock[]>([]);
+  const [selectedTextBlockId, setSelectedTextBlockId] = useState<string | null>(null);
+  const [editingTextBlockId, setEditingTextBlockId] = useState<string | null>(null);
+  const textDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number } | null>(null);
+  const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
+
   // ─── История изменений (undo) ───────────────────────────────────────────
-  const historyRef = useRef<Array<{ nodes: TopoNode[]; branches: TopoBranch[]; symbols: SchemaSymbol[] }>>([]);
-  const nodesRef   = useRef(nodes);
-  const branchesRef = useRef(branchesRaw);
-  const symbolsRef  = useRef<SchemaSymbol[]>([]);
+  const historyRef = useRef<Array<{ nodes: TopoNode[]; branches: TopoBranch[]; symbols: SchemaSymbol[]; textBlocks: TextBlock[] }>>([]);
+  const nodesRef      = useRef(nodes);
+  const branchesRef   = useRef(branchesRaw);
+  const symbolsRef    = useRef<SchemaSymbol[]>([]);
+  const textBlocksRef = useRef<TextBlock[]>([]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { branchesRef.current = branchesRaw; }, [branchesRaw]);
+  useEffect(() => { textBlocksRef.current = textBlocks; }, [textBlocks]);
 
   const pushHistory = () => {
     historyRef.current = [...historyRef.current.slice(-49),
-      { nodes: nodesRef.current, branches: branchesRef.current, symbols: symbolsRef.current }];
+      { nodes: nodesRef.current, branches: branchesRef.current, symbols: symbolsRef.current, textBlocks: textBlocksRef.current }];
   };
   const handleUndo = () => {
     const snap = historyRef.current.pop();
@@ -246,7 +282,34 @@ export default function CadPage() {
     setNodes(snap.nodes);
     setBranches(snap.branches);
     setSchemaSymbols(snap.symbols);
+    setTextBlocks(snap.textBlocks ?? []);
   };
+
+  // Keydown: Esc сбрасывает режим textblock/редактирование, Delete удаляет выбранный блок
+  const selectedTextBlockIdRef = useRef<string | null>(null);
+  const editingTextBlockIdRef  = useRef<string | null>(null);
+  useEffect(() => { selectedTextBlockIdRef.current = selectedTextBlockId; }, [selectedTextBlockId]);
+  useEffect(() => { editingTextBlockIdRef.current  = editingTextBlockId;  }, [editingTextBlockId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "Escape") {
+        if (editingTextBlockIdRef.current) { setEditingTextBlockId(null); return; }
+        setTool(t => t === "textblock" ? "select" : t);
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedTextBlockIdRef.current && !editingTextBlockIdRef.current) {
+        e.preventDefault();
+        const id = selectedTextBlockIdRef.current;
+        pushHistory();
+        setTextBlocks(prev => prev.filter(t => t.id !== id));
+        setSelectedTextBlockId(null);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+   
+  }, []);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [tool, setTool] = useState<CadTool>("select");
@@ -1496,6 +1559,7 @@ export default function CadPage() {
     xyScale,
     view: savedViewStateRef.current ?? undefined,
     positions,
+    textBlocks,
     scaleLimitsEnabled,
   });
 
@@ -1814,6 +1878,8 @@ export default function CadPage() {
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
+    if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
+    else setTextBlocks([]);
     const resolvedName = (data.name as string) ?? fileName;
     setProjectFileName(resolvedName);
     setSelectedNodeId(null);
@@ -1850,6 +1916,7 @@ export default function CadPage() {
     setBranches([]);
     setSchemaSymbols([]);
     setPositions([]);
+    setTextBlocks([]);
 
     // ── Горизонты — сброс к одному «Общий вид» ──
     setHorizons([{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
@@ -3862,19 +3929,42 @@ export default function CadPage() {
                 handleSplitBranchAt(selectedBranchId, mx, my, mz);
               }} />
           </div>
-          <div className="flex flex-col gap-0.5">
-            <div className="flex gap-0.5">
-              <RibbonSmallBtn>
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold"
-                  style={{ background: "#5fb3d9", color: "white" }}>59</div>
-              </RibbonSmallBtn>
-              <RibbonSmallBtn><span className="font-serif text-base">T</span></RibbonSmallBtn>
-              <RibbonSmallBtn><PentagonIcon /></RibbonSmallBtn>
-              <RibbonSmallBtn><RectIcon /></RibbonSmallBtn>
-            </div>
-            <div className="flex gap-0.5">
-              {[1, 2, 3, 4].map((i) => <RibbonSmallBtn key={i}><MiniSquareIcon variant={i} /></RibbonSmallBtn>)}
-            </div>
+          <div className="flex flex-col gap-1">
+            {/* УО Позиции ПЛА */}
+            <RibbonSmallBtn
+              title="Разместить маркер выбранной позиции ПЛА на схеме"
+              active={positionPlaceMode}
+              onClick={() => {
+                if (!selectedPositionId) {
+                  setActiveSide("positions");
+                } else {
+                  setPositionPlaceMode(v => !v);
+                }
+              }}>
+              <div className="flex items-center gap-1">
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
+                  style={{ background: positionPlaceMode ? "#2563eb" : "#e53e3e", color: "white" }}>
+                  {selectedPositionId ? (positions.find(p => p.id === selectedPositionId)?.number ?? "?") : "?"}
+                </div>
+                <span className="text-[9px] leading-tight" style={{ color: positionPlaceMode ? "#2563eb" : "#374151" }}>
+                  Поз.<br />ПЛА
+                </span>
+              </div>
+            </RibbonSmallBtn>
+            {/* Текстовый блок */}
+            <RibbonSmallBtn
+              title="Добавить текстовый блок (кликните на схеме)"
+              active={tool === "textblock"}
+              onClick={() => setTool(tool === "textblock" ? "select" : "textblock")}>
+              <div className="flex items-center gap-1">
+                <span className="font-serif text-[16px] font-bold leading-none"
+                  style={{ color: tool === "textblock" ? "#2563eb" : "#374151" }}>T</span>
+                <span className="text-[9px] leading-tight"
+                  style={{ color: tool === "textblock" ? "#2563eb" : "#374151" }}>
+                  Текст<br />блок
+                </span>
+              </div>
+            </RibbonSmallBtn>
           </div>
         </RibbonGroup>
 
@@ -7199,7 +7289,7 @@ export default function CadPage() {
 
           {/* Холст топологии */}
           <div className="flex-1 relative"
-            style={{ cursor: leaderDrawMode ? "crosshair" : undefined }}
+            style={{ cursor: leaderDrawMode || tool === "textblock" ? "crosshair" : undefined }}
             onMouseMove={(e) => {
               const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
@@ -7252,6 +7342,19 @@ export default function CadPage() {
                 ));
                 return;
               }
+              // Drag текстового блока
+              if (textDragRef.current) {
+                const { id, startSx, startSy, startWx, startWy } = textDragRef.current;
+                if (Math.hypot(sx - startSx, sy - startSy) < 4) return;
+                const wStart = unprojectToPlane(startSx, startSy, vs, { axis: "z", value: 0 });
+                const wCur   = unprojectToPlane(sx, sy, vs, { axis: "z", value: 0 });
+                if (!wStart || !wCur) return;
+                const xy = xyScale ?? 1;
+                const dx = xy !== 1 ? (wCur.x - wStart.x) / xy : wCur.x - wStart.x;
+                const dy = xy !== 1 ? (wCur.y - wStart.y) / xy : wCur.y - wStart.y;
+                setTextBlocks(prev => prev.map(t => t.id === id ? { ...t, x: startWx + dx, y: startWy + dy } : t));
+                return;
+              }
               // Drag маркера позиции — только если мышь реально сдвинулась (порог 4px)
               if (!posDragRef.current) return;
               const { id, startSx, startSy, startWx, startWy } = posDragRef.current;
@@ -7267,12 +7370,29 @@ export default function CadPage() {
               setPositions(prev => prev.map(p => p.id === id ? { ...p, x: startWx + dx, y: startWy + dy, placed: true } : p));
             }}
             onClick={(e) => {
-              // Клик на пустое место — снять выбор позиции
+              // Режим текстового блока — создаём блок в точке клика
+              if (tool === "textblock") {
+                const vs2 = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+                const rect = e.currentTarget.getBoundingClientRect();
+                const sx2 = e.clientX - rect.left;
+                const sy2 = e.clientY - rect.top;
+                const w = unprojectToPlane(sx2, sy2, vs2, { axis: "z", value: 0 });
+                if (w) {
+                  const xy = xyScale ?? 1;
+                  const nb = makeTextBlock({ x: xy !== 1 ? w.x / xy : w.x, y: xy !== 1 ? w.y / xy : w.y });
+                  pushHistory();
+                  setTextBlocks(prev => [...prev, nb]);
+                  setSelectedTextBlockId(nb.id);
+                  setEditingTextBlockId(nb.id);
+                  setTool("select");
+                }
+                return;
+              }
+              // Клик на пустое место — снять выбор позиции и текстового блока
               if (!leaderDrawMode) {
-                // В режиме привязки ветвей не сбрасываем позицию при кликах по схеме
                 if (posBranchBindMode) return;
-                // e.target — сам div-контейнер или TopoCanvas, не маркер позиции
                 setSelectedPositionId(null);
+                setSelectedTextBlockId(null);
                 return;
               }
               if (leaderSnapBranch) {
@@ -7324,10 +7444,12 @@ export default function CadPage() {
             onMouseUp={() => {
               posDragRef.current = null; setDraggingPosId(null);
               leaderDragRef.current = null; setDraggingLeaderPosId(null);
+              textDragRef.current = null; setDraggingTextId(null);
             }}
             onMouseLeave={() => {
               posDragRef.current = null; setDraggingPosId(null);
               leaderDragRef.current = null; setDraggingLeaderPosId(null);
+              textDragRef.current = null; setDraggingTextId(null);
               setLeaderCursorScreen(null);
               setLeaderSnapBranch(null);
             }}
@@ -8290,9 +8412,131 @@ export default function CadPage() {
                       </g>
                     );
                   })}
+
+                  {/* ── Текстовые блоки ── */}
+                  {(() => {
+                    const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+                    const _xySF = xyScale ?? 1;
+                    const pxPerMm = 3.78 * Math.min(8, Math.max(0.25, vs.scale / (_xySF * 0.5)));
+                    return textBlocks.map((tb) => {
+                      const { sx, sy } = project3D(
+                        { x: tb.x * _xySF, y: tb.y * _xySF, z: 0 },
+                        { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation }
+                      );
+                      const fsPx = tb.fontSize * pxPerMm;
+                      const isSel = tb.id === selectedTextBlockId;
+                      const lines = tb.text.split("\n");
+                      const lineH = fsPx * 1.35;
+                      const maxLen = Math.max(...lines.map(l => l.length), 4);
+                      const estW = Math.max(60, maxLen * fsPx * 0.58 + 16);
+                      const estH = lines.length * lineH + 12;
+                      return (
+                        <g key={tb.id}
+                          transform={`translate(${sx},${sy})`}
+                          style={{ cursor: draggingTextId === tb.id ? "grabbing" : isSel ? "grab" : "pointer", pointerEvents: "all" }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            const cr = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
+                            if (!cr) return;
+                            const startSx = e.clientX - cr.left;
+                            const startSy = e.clientY - cr.top;
+                            const now = Date.now();
+                            const el = e.currentTarget as SVGGElement & { _lastClick?: number };
+                            const isDbl = now - (el._lastClick ?? 0) < 350;
+                            el._lastClick = now;
+                            if (isDbl) { setEditingTextBlockId(tb.id); setSelectedTextBlockId(tb.id); return; }
+                            setSelectedTextBlockId(tb.id);
+                            setEditingTextBlockId(null);
+                            setDraggingTextId(tb.id);
+                            textDragRef.current = { id: tb.id, startSx, startSy, startWx: tb.x, startWy: tb.y };
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {tb.background !== "none" && (
+                            <rect x={-estW/2} y={-estH/2} width={estW} height={estH} fill={tb.background} rx={3} />
+                          )}
+                          {isSel && (
+                            <rect x={-estW/2-3} y={-estH/2-3} width={estW+6} height={estH+6}
+                              fill="none" stroke="#2563eb" strokeWidth={1.5} strokeDasharray="5,2.5" rx={4} />
+                          )}
+                          {tb.borderColor !== "none" && (
+                            <rect x={-estW/2} y={-estH/2} width={estW} height={estH}
+                              fill="none" stroke={tb.borderColor} strokeWidth={1} rx={3} />
+                          )}
+                          {lines.map((line, li) => (
+                            <text key={li}
+                              x={0} y={(-estH/2 + 8) + li * lineH + fsPx * 0.8}
+                              textAnchor="middle" fill={tb.color} fontSize={fsPx}
+                              fontWeight={tb.bold ? "bold" : "normal"}
+                              fontStyle={tb.italic ? "italic" : "normal"}
+                              fontFamily="sans-serif"
+                              style={{ userSelect: "none" }}
+                            >{line}</text>
+                          ))}
+                        </g>
+                      );
+                    });
+                  })()}
                 </svg>
               );
             })()}
+
+            {/* ── Inline-редактор текстового блока ── */}
+            {editingTextBlockId && (() => {
+              const tb = textBlocks.find(t => t.id === editingTextBlockId);
+              if (!tb) return null;
+              const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const _xySF = xyScale ?? 1;
+              const { sx, sy } = project3D(
+                { x: tb.x * _xySF, y: tb.y * _xySF, z: 0 },
+                { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation }
+              );
+              const pxPerMm = 3.78 * Math.min(8, Math.max(0.25, vs.scale / (_xySF * 0.5)));
+              const fsPx = tb.fontSize * pxPerMm;
+              return (
+                <textarea
+                  autoFocus
+                  defaultValue={tb.text}
+                  onBlur={(e) => {
+                    setTextBlocks(prev => prev.map(t => t.id === editingTextBlockId ? { ...t, text: e.target.value } : t));
+                    setEditingTextBlockId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") { setEditingTextBlockId(null); }
+                    e.stopPropagation();
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: sx - 80, top: sy - fsPx * 1.2,
+                    minWidth: 160, minHeight: fsPx * 2.5,
+                    fontSize: fsPx,
+                    fontWeight: tb.bold ? "bold" : "normal",
+                    fontStyle: tb.italic ? "italic" : "normal",
+                    fontFamily: "sans-serif",
+                    color: tb.color,
+                    background: tb.background !== "none" ? tb.background : "rgba(255,255,255,0.97)",
+                    border: "2px solid #2563eb",
+                    borderRadius: 4, padding: "4px 8px",
+                    outline: "none", resize: "both",
+                    zIndex: 200,
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.18)",
+                    lineHeight: 1.4,
+                  }}
+                />
+              );
+            })()}
+
+            {/* Подсказка в режиме текстового блока */}
+            {tool === "textblock" && (
+              <div style={{
+                position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)",
+                background: "rgba(0,0,0,0.72)", color: "#fff", fontSize: 12, fontWeight: 500,
+                padding: "5px 14px", borderRadius: 6, pointerEvents: "none", zIndex: 100,
+                letterSpacing: 0.2, boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+              }}>
+                T Кликните на схеме для добавления текста  [Esc — отмена]
+              </div>
+            )}
 
             {/* Подсказка при drag/draw выноски */}
             {(draggingLeaderPosId || leaderDrawMode) && (
@@ -9587,13 +9831,13 @@ function RibbonGroup({ label, children }: { label: string; children: React.React
   );
 }
 
-function RibbonBigBtn({ icon, label, sublabel, disabled, onClick }: {
-  icon: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void;
+function RibbonBigBtn({ icon, label, sublabel, disabled, onClick, active, title }: {
+  icon: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void; active?: boolean; title?: string;
 }) {
   return (
-    <button disabled={disabled} onClick={onClick}
-      className="px-1.5 py-0.5 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded flex flex-col items-center justify-start gap-0.5 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-transparent min-w-[50px]"
-      style={{ height: "100%" }}>
+    <button disabled={disabled} onClick={onClick} title={title}
+      className="px-1.5 py-0.5 hover:bg-blue-100 hover:border-blue-400 border rounded flex flex-col items-center justify-start gap-0.5 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-transparent min-w-[50px]"
+      style={{ height: "100%", borderColor: active ? "#3b82f6" : "transparent", background: active ? "#dbeafe" : undefined }}>
       <Icon name={icon} size={22} className="text-gray-700 mt-0.5" fallback="Square" />
       <div className="text-[10px] leading-tight text-center text-gray-800">
         <div>{label}</div>
@@ -9603,9 +9847,13 @@ function RibbonBigBtn({ icon, label, sublabel, disabled, onClick }: {
   );
 }
 
-function RibbonSmallBtn({ children }: { children: React.ReactNode }) {
+function RibbonSmallBtn({ children, active, title, onClick }: {
+  children: React.ReactNode; active?: boolean; title?: string; onClick?: () => void;
+}) {
   return (
-    <button className="w-7 h-7 hover:bg-blue-100 hover:border-blue-400 border border-transparent rounded flex items-center justify-center">
+    <button title={title} onClick={onClick}
+      className="w-[54px] h-[38px] hover:bg-blue-100 hover:border-blue-400 border rounded flex items-center justify-center px-1"
+      style={{ borderColor: active ? "#3b82f6" : "transparent", background: active ? "#dbeafe" : undefined }}>
       {children}
     </button>
   );
@@ -9796,6 +10044,7 @@ function toolLabel(t: CadTool): string {
     case "branch": return "Соединить ветвью";
     case "pan": return "Панорама";
     case "rotate": return "Вращение 3D";
+    case "textblock": return "Текстовый блок";
     default: return "—";
   }
 }

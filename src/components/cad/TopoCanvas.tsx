@@ -30,7 +30,7 @@ function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: 
   return `${v.toFixed(decimals)}${unit.symbol}`;
 }
 
-export type CadTool = "select" | "node" | "branch" | "pan" | "rotate" | "symbol";
+export type CadTool = "select" | "node" | "branch" | "pan" | "rotate" | "symbol" | "textblock";
 
 interface Props {
   nodes: TopoNode[];
