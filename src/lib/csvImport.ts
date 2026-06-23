@@ -630,3 +630,226 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
 export function parseCsv(content: string, filename = "file.csv"): CsvImportResult {
   return parseCsvMulti([{ name: filename, content }]);
 }
+
+// ── Импорт CSV из ПО Вентиляция 2.0 с настраиваемым маппингом столбцов ─────
+// Столбцы нумеруются с 1 (как в интерфейсе ПО).
+// Если столбец = 0 — поле не импортируется (не задано).
+
+export interface Vent2ColMap {
+  // Выработки
+  id: number;        // Ид выработки
+  from: number;      // Начальная вершина
+  to: number;        // Конечная вершина
+  name: number;      // Название (0 = не задано)
+  length: number;    // Длина
+  type: number;      // Тип
+  area: number;      // Сечение
+  perimeter: number; // Периметр
+  flow: number;      // Расход
+  resistance: number;// Сопротивление выработки
+  sumR: number;      // Суммарное сопротивление (0 = не задано)
+  layer: number;     // Слой
+  // Перемычки
+  bk_branchId: number;  // Ид выработки перемычки
+  bk_offset: number;    // Смещение
+  bk_type: number;      // Тип перемычки
+  bk_resistance: number;// Сопротивление
+  // Источники тяги (вентиляторы)
+  fan_branchId: number; // Ид выработки вентилятора
+  fan_offset: number;   // Смещение
+  fan_pressure: number; // Напор
+}
+
+export const VENT2_DEFAULT_COLS: Vent2ColMap = {
+  id: 1, from: 2, to: 3, name: 4, length: 5, type: 6,
+  area: 7, perimeter: 8, flow: 9, resistance: 10, sumR: 10, layer: 11,
+  bk_branchId: 1, bk_offset: 2, bk_type: 3, bk_resistance: 4,
+  fan_branchId: 1, fan_offset: 2, fan_pressure: 4,
+};
+
+export interface Vent2ParseOptions {
+  cols: Vent2ColMap;
+  sep: ";" | "," | "\t";
+  resistanceUnit: "kmu" | "si" | "auto";
+  hasBulkheads: boolean;
+  bulkheadContent?: string;
+  hasFans: boolean;
+  fanContent?: string;
+}
+
+function col(row: string[], idx: number): string {
+  if (idx <= 0) return "";
+  return (row[idx - 1] ?? "").trim();
+}
+
+export function parseVent2Csv(
+  branchContent: string,
+  opts: Vent2ParseOptions
+): CsvImportResult {
+  const { cols, sep, resistanceUnit } = opts;
+  const warnings: string[] = [];
+  const debug: string[] = [];
+  const ts = Date.now();
+
+  // ── Парсинг строк выработок ──────────────────────────────────────────────
+  const brLines = branchContent
+    .replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+
+  // Пропускаем строку заголовка (если первый символ не число)
+  let brStart = 0;
+  if (brLines.length > 0) {
+    const first = brLines[0].split(sep)[0].trim();
+    if (isNaN(parseFloat(first.replace(",", ".")))) brStart = 1;
+  }
+
+  // Собираем ID вершин
+  const nodeIds = new Set<string>();
+  const rawBranches: Array<{
+    id: string; from: string; to: string; name: string; length: number;
+    type: string; area: number; perimeter: number; flow: number;
+    resistance: number; layer: string;
+  }> = [];
+
+  for (let i = brStart; i < brLines.length; i++) {
+    const row = brLines[i].split(sep);
+    const id  = col(row, cols.id);
+    const frm = col(row, cols.from);
+    const to  = col(row, cols.to);
+    if (!id || !frm || !to) continue;
+    nodeIds.add(frm);
+    nodeIds.add(to);
+    rawBranches.push({
+      id, from: frm, to,
+      name:       cols.name      > 0 ? col(row, cols.name)      : "",
+      length:     parseNum(col(row, cols.length)),
+      type:       cols.type      > 0 ? col(row, cols.type)       : "",
+      area:       parseNum(col(row, cols.area)),
+      perimeter:  parseNum(col(row, cols.perimeter)),
+      flow:       parseNum(col(row, cols.flow)),
+      resistance: cols.resistance > 0 ? parseNum(col(row, cols.resistance)) : 0,
+      layer:      cols.layer     > 0 ? col(row, cols.layer)      : "",
+    });
+  }
+  debug.push(`Выработок: ${rawBranches.length}, узлов: ${nodeIds.size}`);
+
+  // ── Перевод R ────────────────────────────────────────────────────────────
+  let rUnit: "kmu" | "si" = "si";
+  if (resistanceUnit === "auto") {
+    const allR = rawBranches.map(b => b.resistance).filter(r => r > 0);
+    rUnit = detectResistanceUnit(allR);
+  } else {
+    rUnit = resistanceUnit;
+  }
+
+  // ── Создаём узлы (без координат — автораскладка) ─────────────────────────
+  const nodeMap = new Map<string, TopoNode>();
+  const allIds = [...nodeIds];
+  const cols2 = Math.ceil(Math.sqrt(allIds.length));
+  allIds.forEach((nid, i) => {
+    const x = (i % cols2) * 200;
+    const y = -Math.floor(i / cols2) * 200;
+    nodeMap.set(nid, makeNode(`NV2_${ts}_${nid}`, {
+      number: nid, name: nid, x, y, z: 0,
+    }));
+  });
+
+  // ── Создаём ветви ────────────────────────────────────────────────────────
+  const branchOriginalIdMap: Record<string, string> = {};
+  const branches: TopoBranch[] = [];
+  let bi = 0;
+  for (const rb of rawBranches) {
+    const fn = nodeMap.get(rb.from);
+    const tn = nodeMap.get(rb.to);
+    if (!fn || !tn) { warnings.push(`Ветвь ${rb.id}: узлы не найдены`); continue; }
+    const rNsm8 = rUnit === "kmu" ? rb.resistance * 9.81e-3 : rb.resistance;
+    const brId = `BV2_${ts}_${bi++}`;
+    branchOriginalIdMap[rb.id] = brId;
+    branches.push(makeBranch(brId, fn.id, tn.id, {
+      type:         rb.name || rb.type || rb.id,
+      length:       rb.length,
+      manualLength: rb.length > 0,
+      area:         rb.area,
+      perimeter:    rb.perimeter,
+      manualSection: rb.area > 0,
+      flow:         rb.flow,
+      resistanceMode: rNsm8 > 0 ? "manual" : "surface",
+      manualR:      rNsm8 > 0 ? rNsm8 / 9.81 : 0,
+      resistance:   rNsm8,
+      layer:        rb.layer,
+    }));
+  }
+
+  // ── Перемычки ────────────────────────────────────────────────────────────
+  const bulkheads: RawBulkhead[] = [];
+  if (opts.hasBulkheads && opts.bulkheadContent) {
+    const bkLines = opts.bulkheadContent
+      .replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+      .split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    let bkStart = 0;
+    if (bkLines.length > 0) {
+      const f = bkLines[0].split(sep)[0].trim();
+      if (isNaN(parseFloat(f.replace(",", ".")))) bkStart = 1;
+    }
+    for (let i = bkStart; i < bkLines.length; i++) {
+      const row = bkLines[i].split(sep);
+      const origId = col(row, cols.bk_branchId);
+      const brId = branchOriginalIdMap[origId];
+      if (!brId) continue;
+      bulkheads.push({
+        branchId: brId,
+        typeName: cols.bk_type > 0 ? col(row, cols.bk_type) : "",
+        rKmu: cols.bk_resistance > 0 ? parseNum(col(row, cols.bk_resistance)) : 0,
+        airPerm: 0,
+      });
+    }
+    debug.push(`Перемычек: ${bulkheads.length}`);
+  }
+
+  // ── Вентиляторы ──────────────────────────────────────────────────────────
+  const fans: RawFan[] = [];
+  if (opts.hasFans && opts.fanContent) {
+    const fanLines = opts.fanContent
+      .replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+      .split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    let fStart = 0;
+    if (fanLines.length > 0) {
+      const f = fanLines[0].split(sep)[0].trim();
+      if (isNaN(parseFloat(f.replace(",", ".")))) fStart = 1;
+    }
+    for (let i = fStart; i < fanLines.length; i++) {
+      const row = fanLines[i].split(sep);
+      const origId = col(row, cols.fan_branchId);
+      const brId = branchOriginalIdMap[origId];
+      if (!brId) continue;
+      fans.push({
+        branchId: brId,
+        name: "Вентилятор",
+        pressure: cols.fan_pressure > 0 ? parseNum(col(row, cols.fan_pressure)) : 0,
+        flow: 0,
+      });
+    }
+    debug.push(`Вентиляторов: ${fans.length}`);
+  }
+
+  return {
+    nodes: [...nodeMap.values()],
+    branches,
+    fans,
+    bulkheads,
+    positions: [],
+    branchOriginalIdMap,
+    warnings,
+    stats: {
+      nodes: nodeMap.size,
+      branches: branches.length,
+      nodesWithZ: 0,
+      fans: fans.length,
+      bulkheads: bulkheads.length,
+      positions: 0,
+    },
+    debug: debug.join("\n"),
+  };
+}
