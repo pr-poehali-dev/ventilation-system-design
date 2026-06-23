@@ -958,40 +958,69 @@ body{background:white;font-family:Arial,sans-serif}
     }
 
     // ── PDF векторный (SVG → PDF через бэкенд, идеально для плоттера) ────
+    // Используем живой SVG из рабочей области (getSvgRaw) — он содержит всё:
+    // символы, выноски, позиции ПЛА — именно то что видит пользователь.
+    // Пересчитываем viewBox чтобы вписать схему в лист.
     if (exportFormat === "pdf-vector") {
       setPdfExporting(true);
       try {
-        const proj = buildProjForExport();
-        const svgStr = generateSvg({
-          nodes, branches, horizons, horizonMap: baseView.horizonMap,
-          proj, viewState, zScale,
-          is3D: baseView.isScene3D,
-          branchWidth, branchBorder, thinLines, colorByHorizon,
-          infoConfig, unitsConfig, colorMode,
-          posInnerColors, posOuterColors,
-          positions: showPositions ? positions : [],
-          canvasW: Math.round(paper.w * 3.78),
-          canvasH: Math.round(paper.h * 3.78),
-          paperWidthMm: paper.w,
-          title: projectName,
-          fixedObjectScale, xyScale,
-          pollutedBranchIds,
-          schemaSymbols: schemaSymbols ?? [],
-        });
+        const rawSvg = getSvgRaw?.() ?? "";
+        if (!rawSvg) throw new Error("SVG рабочей области недоступен");
+
+        // bbox схемы в нормализованных координатах (scale=1, offset=0)
+        const { minX, minY, w: bw, h: bh } = schemaBbox;
+
+        // Переводим bbox в экранные координаты текущего вида
+        const vs = viewState;
+        const screenMinX = minX * vs.scale + vs.offsetX;
+        const screenMinY = minY * vs.scale + vs.offsetY;
+        const screenW = bw * vs.scale;
+        const screenH = bh * vs.scale;
+
+        // Добавляем поля (5% от меньшей стороны bbox или минимум 20px)
+        const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
+        const vbX = screenMinX - padPx;
+        const vbY = screenMinY - padPx;
+        const vbW = screenW + padPx * 2;
+        const vbH = screenH + padPx * 2;
+
+        // Целевой размер листа в px @ 96dpi
+        const pxPerMm = 96 / 25.4;
+        const targetW = Math.round(paper.w * pxPerMm);
+        const targetH = Math.round(paper.h * pxPerMm);
+
+        // Заменяем width/height/viewBox в SVG строке чтобы вписать в лист
+        let svgStr = rawSvg
+          .replace(/\s+width="[^"]*"/, ` width="${targetW}"`)
+          .replace(/\s+height="[^"]*"/, ` height="${targetH}"`);
+
+        // Добавляем или заменяем viewBox
+        if (svgStr.includes('viewBox=')) {
+          svgStr = svgStr.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`);
+        } else {
+          svgStr = svgStr.replace('<svg ', `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" `);
+        }
+
+        // Убираем grid-паттерны из <defs> — для чистого PDF без сетки
+        svgStr = svgStr.replace(/<pattern[^>]+id="topo-grid[^"]*"[\s\S]*?<\/pattern>/g, '');
+        // Убираем rect с заливкой сетки
+        svgStr = svgStr.replace(/<rect[^>]+fill="url\(#topo-grid[^"]*\)"[^/]*\/>/g, '');
+        // Убираем белый фон-rect (первый rect без атрибутов fill кроме white/#fff)
+        svgStr = svgStr.replace(/<rect width="100%" height="100%" fill="white"[^/]*\/>/g, '');
+
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             svg: svgStr,
-            paper: "A3", // используем A3 как базу, cairosvg масштабирует
+            paper: "A3",
             orientation: isLandscape ? "landscape" : "portrait",
           }),
         });
         if (!res.ok) throw new Error("Ошибка сервера");
         const data = await res.json() as { pdf?: string; error?: string };
         if (!data.pdf) throw new Error(data.error ?? "Нет данных");
-        // base64 → Blob → скачать
         const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
         const blob = new Blob([bytes], { type: "application/pdf" });
         const a = document.createElement("a");
@@ -1071,7 +1100,7 @@ body{background:white;font-family:Arial,sans-serif}
     } finally {
       setPdfExporting(false);
     }
-  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw,
+  }, [exportFormat, exportDpi, exportQuality, projectName, getSvgRaw, schemaBbox,
       renderTileToCanvas, tiles, paper, showPageNumbers,
       marginLeft, marginRight, marginBottom,
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
