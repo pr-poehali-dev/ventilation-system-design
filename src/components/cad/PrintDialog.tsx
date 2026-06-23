@@ -966,65 +966,91 @@ body{background:white;font-family:Arial,sans-serif}
       setPdfExporting(true);
       try {
         const rawSvg = getSvgRaw?.() ?? "";
-        if (!rawSvg) throw new Error("SVG рабочей области недоступен");
 
-        // bbox схемы в нормализованных координатах (scale=1, offset=0)
-        const { minX, minY, maxX, maxY, w: bw, h: bh } = schemaBbox;
+        // В Canvas-режиме (>800 ветвей) getSvgRaw() возвращает PNG base64 — не SVG.
+        // Определяем режим по наличию PNG prefix и используем generateSvg как fallback.
+        const isCanvasMode = !rawSvg || rawSvg.startsWith("data:image/png") || rawSvg.startsWith("data:image/");
 
-        // Переводим bbox в экранные координаты текущего вида
-        const vs = viewState;
-        const screenMinX = minX * vs.scale + vs.offsetX;
-        const screenMinY = minY * vs.scale + vs.offsetY;
-        const screenMaxX = maxX * vs.scale + vs.offsetX;
-        const screenMaxY = maxY * vs.scale + vs.offsetY;
-        const screenW = bw * vs.scale;
-        const screenH = bh * vs.scale;
-
-        let vbX: number, vbY: number, vbW: number, vbH: number;
-
-        if (hasPrintLayer && activePrintHorizon?.printLayer) {
-          // Если есть слой печати — viewBox = bbox рамки печати в экранных координатах
-          const screenBbox = { minSx: screenMinX, maxSx: screenMaxX, minSy: screenMinY, maxSy: screenMaxY };
-          // Для вычисления рамки нужен размер canvas — берём из canvasSize или fallback
-          const cw = canvasSize?.w ?? 1920;
-          const ch = canvasSize?.h ?? 1080;
-          const { rx, ry, rw, rh } = computePrintLayerRect(activePrintHorizon.printLayer, screenBbox, cw, ch);
-          // viewBox = точно по рамке (без доп. полей — рамка уже содержит отступы)
-          vbX = rx; vbY = ry; vbW = rw; vbH = rh;
+        let svgStr: string;
+        if (isCanvasMode) {
+          // Canvas-режим: генерируем SVG через отдельный рендерер
+          const proj = buildProjForExport();
+          svgStr = generateSvg({
+            nodes, branches, horizons, horizonMap: baseView.horizonMap,
+            proj, viewState, zScale,
+            is3D: baseView.isScene3D,
+            branchWidth, branchBorder, thinLines, colorByHorizon,
+            infoConfig, unitsConfig, colorMode,
+            posInnerColors, posOuterColors,
+            positions: showPositions ? positions : [],
+            canvasW: Math.round(paper.w * 3.78),
+            canvasH: Math.round(paper.h * 3.78),
+            paperWidthMm: paper.w,
+            title: "",
+            fixedObjectScale, xyScale,
+            pollutedBranchIds,
+            schemaSymbols: schemaSymbols ?? [],
+          });
         } else {
-          // Без слоя печати — добавляем поля вокруг схемы
-          const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
-          vbX = screenMinX - padPx;
-          vbY = screenMinY - padPx;
-          vbW = screenW + padPx * 2;
-          vbH = screenH + padPx * 2;
+          // SVG-режим: используем живой SVG из рабочей области
+          svgStr = rawSvg;
+
+          // Убираем grid-паттерны из <defs>
+          svgStr = svgStr.replace(/<pattern[^>]+id="topo-grid[^"]*"[\s\S]*?<\/pattern>/g, '');
+          // Убираем rect с заливкой сетки
+          svgStr = svgStr.replace(/<rect[^>]+fill="url\(#topo-grid[^"]*\)"[^/]*\/>/g, '');
+          // Убираем белый фон-rect
+          svgStr = svgStr.replace(/<rect width="100%" height="100%" fill="white"[^/]*\/>/g, '');
+          // Убираем элементы отмеченные как исключённые из экспорта (линейка масштаба, UI-элементы)
+          svgStr = svgStr.replace(/<g[^>]+data-export-exclude="true"[\s\S]*?<\/g>/g, '');
+
+          // Вычисляем viewBox чтобы вписать схему/рамку в лист
+          const { minX, minY, w: bw, h: bh } = schemaBbox;
+          const vs = viewState;
+          const screenMinX = minX * vs.scale + vs.offsetX;
+          const screenMinY = minY * vs.scale + vs.offsetY;
+          const screenW = bw * vs.scale;
+          const screenH = bh * vs.scale;
+
+          let vbX: number, vbY: number, vbW: number, vbH: number;
+
+          if (hasPrintLayer && activePrintHorizon?.printLayer) {
+            // Если есть слой печати — извлекаем координаты рамки прямо из SVG строки.
+            // Рамка рендерится в <g data-printlayer="..."> → первый <rect x=... y=... width=... height=...>
+            const plMatch = svgStr.match(/data-printlayer="[^"]*"[^>]*>[\s\S]*?<rect[^>]+x="([^"]+)"[^>]+y="([^"]+)"[^>]+width="([^"]+)"[^>]+height="([^"]+)"/);
+            if (plMatch) {
+              vbX = parseFloat(plMatch[1]);
+              vbY = parseFloat(plMatch[2]);
+              vbW = parseFloat(plMatch[3]);
+              vbH = parseFloat(plMatch[4]);
+            } else {
+              // Fallback: поля вокруг схемы
+              const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
+              vbX = screenMinX - padPx; vbY = screenMinY - padPx;
+              vbW = screenW + padPx * 2; vbH = screenH + padPx * 2;
+            }
+          } else {
+            // Без слоя печати — поля вокруг схемы
+            const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
+            vbX = screenMinX - padPx; vbY = screenMinY - padPx;
+            vbW = screenW + padPx * 2; vbH = screenH + padPx * 2;
+          }
+
+          // Целевой размер листа в px @ 96dpi
+          const pxPerMm = 96 / 25.4;
+          const targetW = Math.round(paper.w * pxPerMm);
+          const targetH = Math.round(paper.h * pxPerMm);
+
+          // Заменяем width/height/viewBox
+          svgStr = svgStr
+            .replace(/\s+width="[^"]*"/, ` width="${targetW}"`)
+            .replace(/\s+height="[^"]*"/, ` height="${targetH}"`);
+          if (svgStr.includes('viewBox=')) {
+            svgStr = svgStr.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`);
+          } else {
+            svgStr = svgStr.replace('<svg ', `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" `);
+          }
         }
-
-        // Целевой размер листа в px @ 96dpi
-        const pxPerMm = 96 / 25.4;
-        const targetW = Math.round(paper.w * pxPerMm);
-        const targetH = Math.round(paper.h * pxPerMm);
-
-        // Заменяем width/height/viewBox в SVG строке чтобы вписать в лист
-        let svgStr = rawSvg
-          .replace(/\s+width="[^"]*"/, ` width="${targetW}"`)
-          .replace(/\s+height="[^"]*"/, ` height="${targetH}"`);
-
-        // Добавляем или заменяем viewBox
-        if (svgStr.includes('viewBox=')) {
-          svgStr = svgStr.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${vbY} ${vbW} ${vbH}"`);
-        } else {
-          svgStr = svgStr.replace('<svg ', `<svg viewBox="${vbX} ${vbY} ${vbW} ${vbH}" `);
-        }
-
-        // Убираем grid-паттерны из <defs> — для чистого PDF без сетки
-        svgStr = svgStr.replace(/<pattern[^>]+id="topo-grid[^"]*"[\s\S]*?<\/pattern>/g, '');
-        // Убираем rect с заливкой сетки
-        svgStr = svgStr.replace(/<rect[^>]+fill="url\(#topo-grid[^"]*\)"[^/]*\/>/g, '');
-        // Убираем белый фон-rect
-        svgStr = svgStr.replace(/<rect width="100%" height="100%" fill="white"[^/]*\/>/g, '');
-        // Убираем элементы отмеченные как исключённые из экспорта (линейка масштаба, UI-элементы)
-        svgStr = svgStr.replace(/<g[^>]+data-export-exclude="true"[\s\S]*?<\/g>/g, '');
 
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
