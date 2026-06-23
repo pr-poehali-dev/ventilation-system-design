@@ -3992,6 +3992,10 @@ export default function TopoCanvas(props: Props) {
               vSZ = Math.max(4, vbw * view.scale * 4) * 1.2;
             }
 
+            // Вентилятор: остановлен ли (берём из branch.fanStopped)
+            const brForSymOv = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+            const isFanStoppedOv = sym.typeId === "fan" && (brForSymOv?.fanStopped ?? false);
+
             return (
               <g key={sym.id} data-sym={sym.id}
                 style={{ cursor: tool === "select" ? "move" : undefined }}
@@ -4130,8 +4134,44 @@ export default function TopoCanvas(props: Props) {
                 })() : lt ? (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible" pointerEvents="none"
+                    opacity={isFanStoppedOv ? 0.35 : 1}
+                    style={isFanStoppedOv ? { filter: "grayscale(1)" } : undefined}
                     dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                 ) : null}
+                {/* Крестик на остановленном вентиляторе */}
+                {isFanStoppedOv && (
+                  <g opacity={0.7} pointerEvents="none">
+                    <line x1={HX + SZ * 0.2} y1={HY + SZ * 0.2} x2={HX + SZ * 0.8} y2={HY + SZ * 0.8}
+                      stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
+                    <line x1={HX + SZ * 0.8} y1={HY + SZ * 0.2} x2={HX + SZ * 0.2} y2={HY + SZ * 0.8}
+                      stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
+                  </g>
+                )}
+                {/* Стрелка направления тяги вентилятора */}
+                {!isFanStoppedOv && sym.typeId === "fan" && sym.branchId && hasBranchPts
+                  && (sym.showFanArrow ?? true) && (() => {
+                  const brDxOv = tsx2 - fsx, brDyOv = tsy2 - fsy;
+                  const brAngleOv = Math.atan2(brDyOv, brDxOv) * 180 / Math.PI;
+                  const arrowAngleOv = sym.airDirection === "reverse"
+                    ? brAngleOv + 180 : brAngleOv;
+                  const iconCxOv = HX + SZ / 2;
+                  const iconCyOv = HY + SZ * (20 / 48);
+                  const rIconOv = SZ * (16 / 48);
+                  const aLenOv = SZ * 0.32;
+                  const strokeOv2 = Math.max(0.8, SZ * 0.045);
+                  const headOv = Math.max(3, SZ * 0.13);
+                  const x0Ov = rIconOv;
+                  const x1Ov = rIconOv + aLenOv;
+                  return (
+                    <g transform={`translate(${iconCxOv},${iconCyOv}) rotate(${arrowAngleOv})`} pointerEvents="none">
+                      <line x1={x0Ov} y1={0} x2={x1Ov - headOv * 0.5} y2={0}
+                        stroke="#111" strokeWidth={strokeOv2} strokeLinecap="round" />
+                      <polygon
+                        points={`${x1Ov - headOv},${-headOv * 0.55} ${x1Ov},0 ${x1Ov - headOv},${headOv * 0.55}`}
+                        fill="#111" />
+                    </g>
+                  );
+                })()}
               </g>
             );
           })}
