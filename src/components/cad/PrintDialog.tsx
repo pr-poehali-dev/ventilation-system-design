@@ -11,6 +11,7 @@ import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 import { jsPDF } from "jspdf";
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
+import { computePrintLayerRect } from "@/lib/printLayerSvg";
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -968,21 +969,36 @@ body{background:white;font-family:Arial,sans-serif}
         if (!rawSvg) throw new Error("SVG рабочей области недоступен");
 
         // bbox схемы в нормализованных координатах (scale=1, offset=0)
-        const { minX, minY, w: bw, h: bh } = schemaBbox;
+        const { minX, minY, maxX, maxY, w: bw, h: bh } = schemaBbox;
 
         // Переводим bbox в экранные координаты текущего вида
         const vs = viewState;
         const screenMinX = minX * vs.scale + vs.offsetX;
         const screenMinY = minY * vs.scale + vs.offsetY;
+        const screenMaxX = maxX * vs.scale + vs.offsetX;
+        const screenMaxY = maxY * vs.scale + vs.offsetY;
         const screenW = bw * vs.scale;
         const screenH = bh * vs.scale;
 
-        // Добавляем поля (5% от меньшей стороны bbox или минимум 20px)
-        const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
-        const vbX = screenMinX - padPx;
-        const vbY = screenMinY - padPx;
-        const vbW = screenW + padPx * 2;
-        const vbH = screenH + padPx * 2;
+        let vbX: number, vbY: number, vbW: number, vbH: number;
+
+        if (hasPrintLayer && activePrintHorizon?.printLayer) {
+          // Если есть слой печати — viewBox = bbox рамки печати в экранных координатах
+          const screenBbox = { minSx: screenMinX, maxSx: screenMaxX, minSy: screenMinY, maxSy: screenMaxY };
+          // Для вычисления рамки нужен размер canvas — берём из canvasSize или fallback
+          const cw = canvasSize?.w ?? 1920;
+          const ch = canvasSize?.h ?? 1080;
+          const { rx, ry, rw, rh } = computePrintLayerRect(activePrintHorizon.printLayer, screenBbox, cw, ch);
+          // viewBox = точно по рамке (без доп. полей — рамка уже содержит отступы)
+          vbX = rx; vbY = ry; vbW = rw; vbH = rh;
+        } else {
+          // Без слоя печати — добавляем поля вокруг схемы
+          const padPx = Math.max(20, Math.min(screenW, screenH) * 0.05);
+          vbX = screenMinX - padPx;
+          vbY = screenMinY - padPx;
+          vbW = screenW + padPx * 2;
+          vbH = screenH + padPx * 2;
+        }
 
         // Целевой размер листа в px @ 96dpi
         const pxPerMm = 96 / 25.4;
@@ -1005,8 +1021,10 @@ body{background:white;font-family:Arial,sans-serif}
         svgStr = svgStr.replace(/<pattern[^>]+id="topo-grid[^"]*"[\s\S]*?<\/pattern>/g, '');
         // Убираем rect с заливкой сетки
         svgStr = svgStr.replace(/<rect[^>]+fill="url\(#topo-grid[^"]*\)"[^/]*\/>/g, '');
-        // Убираем белый фон-rect (первый rect без атрибутов fill кроме white/#fff)
+        // Убираем белый фон-rect
         svgStr = svgStr.replace(/<rect width="100%" height="100%" fill="white"[^/]*\/>/g, '');
+        // Убираем элементы отмеченные как исключённые из экспорта (линейка масштаба, UI-элементы)
+        svgStr = svgStr.replace(/<g[^>]+data-export-exclude="true"[\s\S]*?<\/g>/g, '');
 
         const isLandscape = paper.w > paper.h;
         const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
@@ -1106,7 +1124,8 @@ body{background:white;font-family:Arial,sans-serif}
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
       posInnerColors, posOuterColors, positions, showPositions,
-      fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols]);
+      fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols,
+      hasPrintLayer, activePrintHorizon, canvasSize]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {

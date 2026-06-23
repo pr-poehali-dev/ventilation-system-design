@@ -3846,7 +3846,7 @@ export default function TopoCanvas(props: Props) {
           const segPx = barPx / segments;
           void exp;
           return (
-            <g style={{ pointerEvents: "none" }}>
+            <g style={{ pointerEvents: "none" }} data-export-exclude="true">
               {/* Белая подложка */}
               <rect x={bx - 4} y={by - 18} width={barPx + 8} height={36}
                 fill="white" fillOpacity="0.88" rx="3"
