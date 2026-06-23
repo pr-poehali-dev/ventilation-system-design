@@ -636,6 +636,12 @@ export function parseCsv(content: string, filename = "file.csv"): CsvImportResul
 // Если столбец = 0 — поле не импортируется (не задано).
 
 export interface Vent2ColMap {
+  // Вершины (узлы)
+  node_id: number;   // Ид вершины
+  node_x: number;   // Координата X
+  node_y: number;   // Координата Y
+  node_z: number;   // Координата Z
+  node_atm: number; // Атмосфера (столбец-флаг, 0 = нет)
   // Выработки
   id: number;        // Ид выработки
   from: number;      // Начальная вершина
@@ -661,6 +667,7 @@ export interface Vent2ColMap {
 }
 
 export const VENT2_DEFAULT_COLS: Vent2ColMap = {
+  node_id: 1, node_x: 2, node_y: 3, node_z: 4, node_atm: 5,
   id: 1, from: 2, to: 3, name: 4, length: 5, type: 6,
   area: 7, perimeter: 8, flow: 9, resistance: 10, sumR: 10, layer: 11,
   bk_branchId: 1, bk_offset: 2, bk_type: 3, bk_resistance: 4,
@@ -671,6 +678,8 @@ export interface Vent2ParseOptions {
   cols: Vent2ColMap;
   sep: ";" | "," | "\t";
   resistanceUnit: "kmu" | "si" | "auto";
+  hasNodes: boolean;
+  nodeContent?: string;
   hasBulkheads: boolean;
   bulkheadContent?: string;
   hasFans: boolean;
@@ -691,6 +700,34 @@ export function parseVent2Csv(
   const debug: string[] = [];
   const ts = Date.now();
 
+  // ── Парсинг вершин (узлов) из отдельного файла ───────────────────────────
+  // Карта: ID вершины → { x, y, z, atmosphereLink }
+  const nodeCoordMap = new Map<string, { x: number; y: number; z: number; atm: boolean }>();
+
+  if (opts.hasNodes && opts.nodeContent) {
+    const ndLines = opts.nodeContent
+      .replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+      .split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    // Пропускаем заголовок
+    let ndStart = 0;
+    if (ndLines.length > 0) {
+      const first = ndLines[0].split(sep)[0].trim();
+      if (isNaN(parseFloat(first.replace(",", ".")))) ndStart = 1;
+    }
+    for (let i = ndStart; i < ndLines.length; i++) {
+      const row = ndLines[i].split(sep);
+      const nid = col(row, cols.node_id);
+      if (!nid) continue;
+      const x   = cols.node_x > 0 ? parseNum(col(row, cols.node_x)) : 0;
+      const y   = cols.node_y > 0 ? parseNum(col(row, cols.node_y)) : 0;
+      const z   = cols.node_z > 0 ? parseNum(col(row, cols.node_z)) : 0;
+      const atmRaw = cols.node_atm > 0 ? col(row, cols.node_atm).toLowerCase() : "";
+      const atm = atmRaw === "да" || atmRaw === "yes" || atmRaw === "true" || atmRaw === "1";
+      nodeCoordMap.set(nid, { x, y, z, atm });
+    }
+    debug.push(`Вершин из файла: ${nodeCoordMap.size}`);
+  }
+
   // ── Парсинг строк выработок ──────────────────────────────────────────────
   const brLines = branchContent
     .replace(/\r\n/g, "\n").replace(/\r/g, "\n")
@@ -705,8 +742,8 @@ export function parseVent2Csv(
     if (isNaN(parseFloat(first.replace(",", ".")))) brStart = 1;
   }
 
-  // Собираем ID вершин
-  const nodeIds = new Set<string>();
+  // Собираем ID вершин из ветвей (для автораскладки если нет файла вершин)
+  const nodeIdsFromBranches = new Set<string>();
   const rawBranches: Array<{
     id: string; from: string; to: string; name: string; length: number;
     type: string; area: number; perimeter: number; flow: number;
@@ -719,8 +756,8 @@ export function parseVent2Csv(
     const frm = col(row, cols.from);
     const to  = col(row, cols.to);
     if (!id || !frm || !to) continue;
-    nodeIds.add(frm);
-    nodeIds.add(to);
+    nodeIdsFromBranches.add(frm);
+    nodeIdsFromBranches.add(to);
     rawBranches.push({
       id, from: frm, to,
       name:       cols.name      > 0 ? col(row, cols.name)      : "",
@@ -733,7 +770,7 @@ export function parseVent2Csv(
       layer:      cols.layer     > 0 ? col(row, cols.layer)      : "",
     });
   }
-  debug.push(`Выработок: ${rawBranches.length}, узлов: ${nodeIds.size}`);
+  debug.push(`Выработок: ${rawBranches.length}, вершин в ветвях: ${nodeIdsFromBranches.size}`);
 
   // ── Перевод R ────────────────────────────────────────────────────────────
   let rUnit: "kmu" | "si" = "si";
@@ -744,17 +781,38 @@ export function parseVent2Csv(
     rUnit = resistanceUnit;
   }
 
-  // ── Создаём узлы (без координат — автораскладка) ─────────────────────────
+  // ── Создаём узлы ────────────────────────────────────────────────────────
+  // Если есть файл вершин — используем реальные координаты.
+  // Иначе — автораскладка по ID из ветвей.
   const nodeMap = new Map<string, TopoNode>();
-  const allIds = [...nodeIds];
-  const cols2 = Math.ceil(Math.sqrt(allIds.length));
-  allIds.forEach((nid, i) => {
-    const x = (i % cols2) * 200;
-    const y = -Math.floor(i / cols2) * 200;
+  const hasCoords = nodeCoordMap.size > 0;
+
+  // Объединяем ID: из файла вершин + из ветвей (на случай если какой-то узел не в файле)
+  const allNodeIds = new Set([...nodeCoordMap.keys(), ...nodeIdsFromBranches]);
+  const allNodeArr = [...allNodeIds];
+  const gridCols   = Math.ceil(Math.sqrt(allNodeArr.length));
+
+  allNodeArr.forEach((nid, i) => {
+    const coord = nodeCoordMap.get(nid);
+    let x: number, y: number, z: number, atm: boolean;
+    if (coord) {
+      x = coord.x; y = coord.y; z = coord.z; atm = coord.atm;
+    } else {
+      // Автораскладка для узлов без координат
+      x = (i % gridCols) * 200;
+      y = -Math.floor(i / gridCols) * 200;
+      z = 0; atm = false;
+    }
     nodeMap.set(nid, makeNode(`NV2_${ts}_${nid}`, {
-      number: nid, name: nid, x, y, z: 0,
+      number: nid, name: nid, x, y, z,
+      atmosphereLink: atm,
     }));
   });
+
+  if (!hasCoords) {
+    warnings.push("Файл вершин не загружен — координаты расставлены автоматически. Для получения реальной схемы загрузите файл вершин.");
+  }
+  debug.push(`Узлов создано: ${nodeMap.size} (${hasCoords ? "с координатами из файла" : "автораскладка"}`);
 
   // ── Создаём ветви ────────────────────────────────────────────────────────
   const branchOriginalIdMap: Record<string, string> = {};
