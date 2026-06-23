@@ -168,6 +168,7 @@ export function resistanceFromAlpha(alpha: number, P: number, L: number, S: numb
   if (S <= 0.05 || L <= 0 || P <= 0) return 0;
   const a = alpha * 1e-4;
   const r = (a * P * L) / Math.pow(S, 3);
+  console.log(`[resistanceFromAlpha] alpha=${alpha} a=${a} P=${P} L=${L} S=${S} S3=${Math.pow(S,3).toFixed(2)} r=${r} r/9.81=${r/9.81}`);
   // Ограничение разумным пределом (типичные R шахтных выработок < 10000 кмюрг = 98100 Нс²/м⁸)
   return isFinite(r) ? Math.min(r, 1000) : 0;
 }
