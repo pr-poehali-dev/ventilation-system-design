@@ -3473,46 +3473,10 @@ export default function CadPage() {
         );
       })()}
 
-      {/* ═══ RIBBON CONTENT: ВЕНТИЛЯЦИЯ ══════════════════════════════════ */}
+      {/* ═══ RIBBON CONTENT: ВЕНТИЛЯЦИЯ (заглушка) ═══════════════════════ */}
       {activeRibbon === "thermo" && (
-      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
-        style={{ background: "linear-gradient(180deg,#f0f7ff,#e4effa)", borderBottom: "1px solid #b0c4de" }}>
-        <RibbonGroup label="Анализ">
-          <RibbonBigBtn
-            icon="GitCompare"
-            label="Сравнение"
-            sublabel="схем"
-            title="Сравнить текущую схему с другим файлом проекта"
-            active={activeSide === "compare" && leftPanelOpen}
-            onClick={() => setCompareShowDialog(true)}
-          />
-        </RibbonGroup>
-        {compareResult && (
-          <RibbonGroup label="Результат">
-            <div className="flex flex-col justify-center px-2 text-[10px] gap-0.5 min-w-[140px]">
-              <div className="font-semibold text-blue-700">↔ {compareResult.fileName}</div>
-              <div className="flex gap-2">
-                <span style={{ color: "#f59e0b" }}>● {compareResult.branches.filter(b => b.status === "changed").length} изм.</span>
-                <span style={{ color: "#22c55e" }}>● {compareResult.branches.filter(b => b.status === "added").length} доб.</span>
-                <span style={{ color: "#ef4444" }}>● {compareResult.branches.filter(b => b.status === "removed").length} уд.</span>
-              </div>
-              <div className="flex gap-1 mt-0.5">
-                <button
-                  onClick={() => { setActiveSide("compare"); setLeftPanelOpen(true); }}
-                  className="px-1.5 py-0.5 rounded text-[9px] font-medium"
-                  style={{ background: activeSide === "compare" ? "#2563eb" : "#e5e7eb", color: activeSide === "compare" ? "white" : "#374151" }}>
-                  Показать панель
-                </button>
-                <button
-                  onClick={() => { setCompareResult(null); setCompareSelectedId(null); }}
-                  className="px-1.5 py-0.5 rounded text-[9px] font-medium"
-                  style={{ background: "#fee2e2", color: "#dc2626" }}>
-                  Сбросить
-                </button>
-              </div>
-            </div>
-          </RibbonGroup>
-        )}
+      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0"
+        style={{ background: "linear-gradient(180deg,#f5f5f5,#e8e8e8)", borderBottom: "1px solid #b0b0b0" }}>
       </div>
       )}
 
@@ -4542,6 +4506,46 @@ export default function CadPage() {
               </div>
             )}
         </RibbonGroup>
+
+        {/* ── Группа: Сравнение схем (только во вкладке Схема) ── */}
+        {activeRibbon === "vent" && (<>
+          <RibbonGroup label="Сравнение">
+            <RibbonBigBtn
+              icon="GitCompare"
+              label="Сравнение"
+              sublabel="схем"
+              title="Сравнить текущую схему с другим файлом проекта"
+              active={activeSide === "compare" && leftPanelOpen}
+              onClick={() => setCompareShowDialog(true)}
+            />
+          </RibbonGroup>
+          {compareResult && (
+            <RibbonGroup label="Результат сравнения">
+              <div className="flex flex-col justify-center px-2 text-[10px] gap-0.5 min-w-[140px]">
+                <div className="font-semibold text-blue-700 truncate max-w-[130px]" title={compareResult.fileName}>↔ {compareResult.fileName}</div>
+                <div className="flex gap-2">
+                  <span style={{ color: "#f59e0b" }}>● {compareResult.branches.filter(b => b.status === "changed").length} изм.</span>
+                  <span style={{ color: "#22c55e" }}>● {compareResult.branches.filter(b => b.status === "added").length} доб.</span>
+                  <span style={{ color: "#ef4444" }}>● {compareResult.branches.filter(b => b.status === "removed").length} уд.</span>
+                </div>
+                <div className="flex gap-1 mt-0.5">
+                  <button
+                    onClick={() => { setActiveSide("compare"); setLeftPanelOpen(true); }}
+                    className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                    style={{ background: activeSide === "compare" ? "#2563eb" : "#e5e7eb", color: activeSide === "compare" ? "white" : "#374151" }}>
+                    Показать панель
+                  </button>
+                  <button
+                    onClick={() => { setCompareResult(null); setCompareSelectedId(null); }}
+                    className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                    style={{ background: "#fee2e2", color: "#dc2626" }}>
+                    Сбросить
+                  </button>
+                </div>
+              </div>
+            </RibbonGroup>
+          )}
+        </>)}
 
         {/* ── Группа: Анализ ── */}
         <RibbonGroup label="Анализ">
@@ -10079,7 +10083,7 @@ export default function CadPage() {
                         setActiveSide("compare");
                         setLeftPanelOpen(true);
                         setCompareShowDialog(false);
-                        setActiveRibbon("thermo");
+                        setActiveRibbon("vent");
                       } catch {
                         alert("Ошибка чтения файла.");
                       } finally {
