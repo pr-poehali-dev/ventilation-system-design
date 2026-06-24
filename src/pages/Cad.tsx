@@ -3478,22 +3478,7 @@ export default function CadPage() {
         );
       })()}
 
-      {/* ═══ RIBBON CONTENT: ВЕНТИЛЯЦИЯ ══════════════════════════════════ */}
-      {activeRibbon === "thermo" && (
-      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
-        style={{ background: "linear-gradient(180deg,#f0f7ff,#e4effa)", borderBottom: "1px solid #b0c4de" }}>
-        <RibbonGroup label="Анализ">
-          <RibbonBigBtn
-            icon="TrendingDown"
-            label="Депрессио-"
-            sublabel="грамма"
-            title="Построить депрессиограмму главного маршрута"
-            disabled={!solveResult}
-            onClick={() => setShowDepressogram(true)}
-          />
-        </RibbonGroup>
-      </div>
-      )}
+      {/* Вкладка Вентиляция использует общий ribbon-блок с условием activeRibbon === "thermo" */}
 
       {/* ═══ RIBBON CONTENT: СПРАВОЧНИКИ ══════════════════════════════════ */}
       {activeRibbon === "general" && (
@@ -4523,6 +4508,20 @@ export default function CadPage() {
               </div>
             )}
         </RibbonGroup>
+
+        {/* ── Группа: Депрессиограмма (только во вкладке Вентиляция) ── */}
+        {activeRibbon === "thermo" && (
+          <RibbonGroup label="Анализ">
+            <RibbonBigBtn
+              icon="TrendingDown"
+              label="Депрессио-"
+              sublabel="грамма"
+              title="Построить депрессиограмму главного маршрута"
+              disabled={!solveResult}
+              onClick={() => setShowDepressogram(true)}
+            />
+          </RibbonGroup>
+        )}
 
         {/* ── Группа: Сравнение схем (только во вкладке Схема) ── */}
         {activeRibbon === "vent" && (<>
