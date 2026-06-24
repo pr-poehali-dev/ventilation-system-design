@@ -3957,7 +3957,7 @@ export default function CadPage() {
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn
               icon="PersonStanding"
-              label="Время хода"
+              label="Время"
               sublabel="горнорабочего"
               active={activeSide === "workerPath"}
               onClick={() => {
