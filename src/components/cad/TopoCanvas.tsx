@@ -988,10 +988,10 @@ export default function TopoCanvas(props: Props) {
     const nodeR = Math.max(8, baseW * _objSF * 0.55) + extraR;
     return hitNodeCanvas(sx, sy, pn, nodeR);
   };
-  // Толерантность попадания в ветвь: не меньше 6px, растёт с zoom
+  // Толерантность попадания в ветвь: не меньше 8px (в SVG — хитбокс 12px, здесь запас)
   const hitBranchR = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches, extraTol = 0) => {
     const baseW = branchWidth ?? 2.5;
-    const tol = Math.max(6, baseW * _objSF * 0.5) + extraTol;
+    const tol = Math.max(8, baseW * _objSF * 0.5) + extraTol;
     return hitBranchCanvas(sx, sy, pnm, br, tol);
   };
   const hitNode  = (sx: number, sy: number, pn: typeof projNodes)                               => hitNodeR(sx, sy, pn);
@@ -2956,9 +2956,15 @@ export default function TopoCanvas(props: Props) {
                   </g>
                 );
               })()}
-
-
-
+              {/* ── Невидимый хитбокс — широкая прозрачная линия для захвата кликов ── */}
+              {/* Минимум 12px, чтобы короткие и тонкие ветви легко кликались */}
+              <line
+                x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                stroke="transparent"
+                strokeWidth={Math.max(12, w + 8)}
+                strokeLinecap="round"
+                style={{ cursor: "pointer" }}
+              />
 
             </g>
           );
