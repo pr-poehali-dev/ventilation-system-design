@@ -461,52 +461,7 @@ def find_spanning_tree_and_loops(edges):
 # МЕТОД КРОССА
 # ══════════════════════════════════════════════════════════════════════
 
-def check_reverse(edges, Q_result, normal_flows, diag):
-    """
-    Проверка норматива реверса по ПБ: расход в каждой выработке при реверсе
-    должен быть не менее 60% от прямого режима.
-    Проверяем только ветви с ненулевым прямым расходом.
-    """
-    has_reverse = any(e.get("fanReverse") for e in edges)
-    if not has_reverse or not normal_flows:
-        return
 
-    failed = []
-    warned = []
-    for e in edges:
-        bid = e["id"]
-        q_normal = float(normal_flows.get(bid, 0))
-        if q_normal < 0.1:  # тупиковые и нулевые пропускаем
-            continue
-        q_rev = abs(Q_result.get(bid, 0))
-        k_rev = q_rev / q_normal
-        if k_rev < 0.6:
-            failed.append((bid, k_rev))
-        elif k_rev < 0.8:
-            warned.append((bid, k_rev))
-
-    if failed:
-        ids = ", ".join(f"{b} ({k:.0%})" for b, k in failed)
-        diag.append({
-            "level": "error",
-            "category": "fan",
-            "message": f"Реверс не соответствует нормативу ПБ (Q_рев < 60% от Q_прям): {ids}",
-            "objectId": failed[0][0],
-            "value": failed[0][1],
-        })
-    elif warned:
-        ids = ", ".join(f"{b} ({k:.0%})" for b, k in warned)
-        diag.append({
-            "level": "warning",
-            "category": "fan",
-            "message": f"Реверс выполнен, но расход в ветвях ниже 80% от нормального: {ids}",
-        })
-    else:
-        diag.append({
-            "level": "info",
-            "category": "fan",
-            "message": "Реверс выполнен успешно — расход во всех ветвях ≥ 60% от прямого режима",
-        })
 
 
 def check_kirchhoff(edges, Q_map, diag, tol=0.5, dead_end_ids=None):
@@ -1123,9 +1078,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
 
     # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
     check_kirchhoff(edges, Q_map, diag, dead_end_ids=dead_end_ids)
-
-    # ── Проверка норматива реверса ───────────────────────────────────────
-    check_reverse(edges, Q_map, normal_flows or {}, diag)
 
     return make_result(edges, Q_map, it, converged, max_dq, log, diag, dead_end_ids=dead_end_ids, R_net=R_net, nodes_in=nodes_in)
 
@@ -2098,9 +2050,6 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
     # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
     check_kirchhoff(edges, Q_map, diag, dead_end_ids=dead_end_ids)
-
-    # Проверка реверса
-    check_reverse(edges, Q_map, normal_flows or {}, diag)
 
     return make_result(edges, Q_map, it, converged, max_dh, log, diag, dead_end_ids=dead_end_ids, R_net=r_total, nodes_in=nodes_in)
 
