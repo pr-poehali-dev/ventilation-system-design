@@ -86,6 +86,8 @@ export interface CanvasRenderOptions {
   pollutedBranchIds?: Set<string>;
   /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
   reversedBranchIds?: Set<string>;
+  /** Карта branchId → цвет сравнения схем (#f59e0b=изменена, #22c55e=добавлена, #ef4444=удалена) */
+  compareBranchColors?: Map<string, string>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -248,6 +250,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", posInnerColors, posOuterColors, printMode = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
+    compareBranchColors,
     xyScale,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
     // чтобы при случайном обращении к ним не было ReferenceError.
@@ -367,6 +370,27 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // Устанавливаем lineCap один раз перед циклами — большинство ветвей используют "round"
   ctx.lineCap = "round";
+
+  // ── ПРОХОД −1: Сравнение схем — аура под всеми слоями ────────────────────
+  if (compareBranchColors && compareBranchColors.size > 0) {
+    ctx.setLineDash([]);
+    for (const { b } of sorted) {
+      const p = bParamsMap.get(b.id);
+      if (!p) continue;
+      const col = compareBranchColors.get(b.id);
+      if (!col) continue;
+      // Широкая полупрозрачная аура
+      ctx.strokeStyle = col;
+      ctx.lineWidth = p.w + 10;
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      // Узкая яркая обводка
+      ctx.lineWidth = p.w + 4;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
 
   // ── ПРОХОД 0: ПЛА цвет снаружи — под border и fill ───────────────────────
   if (posOuterColors) {

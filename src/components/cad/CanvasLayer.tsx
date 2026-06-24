@@ -69,6 +69,7 @@ interface CanvasLayerProps {
   };
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
+  compareBranchColors?: Map<string, string>;
 
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -99,6 +100,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     onMouseDown, onMouseMove, onMouseUp, onWheel, onContextMenu,
     onTouchStart, onTouchMove, onTouchEnd,
     onRegisterGetCanvas, onRegisterCanvasEl,
+    compareBranchColors,
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -198,6 +200,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         scaleLimits: p.scaleLimits,
         pollutedBranchIds: p.pollutedBranchIds,
         xyScale: p.xyScale,
+        compareBranchColors: p.compareBranchColors,
       });
     } catch (err) {
       console.error("[CanvasLayer] renderCanvas error:", err);
@@ -242,6 +245,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.infoConfig, props.unitsConfig,
     props.waterNodeResults, props.branchFireColors, props.branchExplosionColors,
     props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,
+    props.compareBranchColors,
     props.width, props.height,
   ]);
 

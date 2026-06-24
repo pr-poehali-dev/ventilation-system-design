@@ -214,6 +214,8 @@ interface Props {
   flowColorMax?: number;
   /** Цветовая гамма шкалы расхода */
   flowColorHue?: "red" | "blue" | "green";
+  /** Карта branchId → цвет для сравнения схем (added/removed/changed) */
+  compareBranchColors?: Map<string, string>;
 }
 
 export type FlowDisplayMode =
@@ -276,6 +278,7 @@ export default function TopoCanvas(props: Props) {
     flowColorMin = 0,
     flowColorMax = 75,
     flowColorHue = "red",
+    compareBranchColors,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -2270,6 +2273,7 @@ export default function TopoCanvas(props: Props) {
           reversedBranchIds={reversedBranchIds}
           pollutedBranchIds={pollutedBranchIds}
           xyScale={xyScale}
+          compareBranchColors={compareBranchColors}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -2457,6 +2461,29 @@ export default function TopoCanvas(props: Props) {
           const objSF = fixedObjectScale && scaleLimits
             ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, rawObjSF))
             : Math.max(0.25, rawObjSF);
+          // ── ПРОХОД −1: Сравнение схем — аура под всеми слоями ───────────
+          const comparePass = compareBranchColors && compareBranchColors.size > 0
+            ? branchesSorted.map(({ branch: b }) => {
+                const from = projNodesMap.get(b.fromId);
+                const to   = projNodesMap.get(b.toId);
+                if (!from || !to) return null;
+                const col = compareBranchColors.get(b.id);
+                if (!col) return null;
+                const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+                const w = (thinLines ? 1 : bw) * objSF;
+                return (
+                  <g key={`cmp-${b.id}`}>
+                    <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                      stroke={col} strokeWidth={w + 10 * objSF}
+                      strokeLinecap="round" opacity="0.3" />
+                    <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                      stroke={col} strokeWidth={w + 4 * objSF}
+                      strokeLinecap="round" opacity="0.85" />
+                  </g>
+                );
+              })
+            : null;
+
           // ── ПРОХОД 0: ПЛА — цвет позиции снаружи (под border и fill) ────
           // Рисуем ВСЕ ветви позиции одним слоем → смотрятся как единый контур
           const posOuterPass = posOuterColors ? branchesSorted.map(({ branch: b }) => {
@@ -2928,7 +2955,7 @@ export default function TopoCanvas(props: Props) {
             </g>
           );
         });
-          return <>{posOuterPass}{borderPass}{fillPass}</>;
+          return <>{comparePass}{posOuterPass}{borderPass}{fillPass}</>;
         })()}
 
         {/* Превью создания ветви */}

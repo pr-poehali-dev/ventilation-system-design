@@ -119,7 +119,114 @@ export interface SchemaSymbol {
   msIndOffsetY?: number;     // смещение бейджа по Y (px экрана)
   msIndFontSize?: number;    // размер шрифта (мм мировых единиц)
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "compare";
+
+// ── Сравнение схем ────────────────────────────────────────────────────────────
+export type CompareStatus = "added" | "removed" | "changed" | "unchanged";
+export interface CompareBranchDiff {
+  id: string;
+  status: CompareStatus;
+  name?: string;
+  fromId: string;
+  toId: string;
+  changes?: { field: string; label: string; oldVal: string; newVal: string }[];
+}
+export interface CompareNodeDiff {
+  id: string;
+  status: CompareStatus;
+  name?: string;
+  changes?: { field: string; label: string; oldVal: string; newVal: string }[];
+}
+export interface CompareResult {
+  branches: CompareBranchDiff[];
+  nodes: CompareNodeDiff[];
+  fileName: string;
+}
+
+function formatVal(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "boolean") return v ? "Да" : "Нет";
+  if (typeof v === "number") return isNaN(v) ? "—" : String(Math.round(v * 1000) / 1000);
+  return String(v).slice(0, 40);
+}
+
+const BRANCH_COMPARE_FIELDS: { field: keyof import("@/lib/topology").TopoBranch; label: string }[] = [
+  { field: "type",        label: "Тип выработки" },
+  { field: "length",      label: "Длина, м" },
+  { field: "area",        label: "Сечение, м²" },
+  { field: "manualR",     label: "Сопр. R (вручную)" },
+  { field: "alphaCoef",   label: "Коэф. α" },
+  { field: "hasFan",      label: "Вентилятор" },
+  { field: "fanPressure", label: "Давление вент., Па" },
+  { field: "fanName",     label: "Наименование вент." },
+  { field: "fanStopped",  label: "Вент. остановлен" },
+  { field: "hasBulkhead", label: "Перемычка" },
+  { field: "bulkheadR",   label: "R перемычки" },
+  { field: "name",        label: "Название" },
+  { field: "horizonId",   label: "Горизонт" },
+];
+
+function compareBranches(
+  oldBranches: import("@/lib/topology").TopoBranch[],
+  newBranches: import("@/lib/topology").TopoBranch[],
+): CompareBranchDiff[] {
+  const result: CompareBranchDiff[] = [];
+  const oldMap = new Map(oldBranches.map(b => [b.id, b]));
+  const newMap = new Map(newBranches.map(b => [b.id, b]));
+  // Удалённые
+  for (const [id, ob] of oldMap) {
+    if (!newMap.has(id)) {
+      result.push({ id, status: "removed", name: ob.name || ob.id, fromId: ob.fromId, toId: ob.toId });
+    }
+  }
+  // Добавленные и изменённые
+  for (const [id, nb] of newMap) {
+    const ob = oldMap.get(id);
+    if (!ob) {
+      result.push({ id, status: "added", name: nb.name || nb.id, fromId: nb.fromId, toId: nb.toId });
+    } else {
+      const changes: CompareBranchDiff["changes"] = [];
+      for (const { field, label } of BRANCH_COMPARE_FIELDS) {
+        const ov = ob[field], nv = nb[field];
+        if (JSON.stringify(ov) !== JSON.stringify(nv)) {
+          changes.push({ field: field as string, label, oldVal: formatVal(ov), newVal: formatVal(nv) });
+        }
+      }
+      if (changes.length > 0) {
+        result.push({ id, status: "changed", name: nb.name || nb.id, fromId: nb.fromId, toId: nb.toId, changes });
+      }
+    }
+  }
+  return result;
+}
+
+function compareNodes(
+  oldNodes: import("@/lib/topology").TopoNode[],
+  newNodes: import("@/lib/topology").TopoNode[],
+): CompareNodeDiff[] {
+  const result: CompareNodeDiff[] = [];
+  const oldMap = new Map(oldNodes.map(n => [n.id, n]));
+  const newMap = new Map(newNodes.map(n => [n.id, n]));
+  for (const [id, on] of oldMap) {
+    if (!newMap.has(id)) result.push({ id, status: "removed", name: on.name || id });
+  }
+  for (const [id, nn] of newMap) {
+    const on = oldMap.get(id);
+    if (!on) {
+      result.push({ id, status: "added", name: nn.name || id });
+    } else {
+      const changes: CompareNodeDiff["changes"] = [];
+      (["name", "atmosphereLink", "x", "y", "z"] as const).forEach(f => {
+        const ov = on[f], nv = nn[f];
+        if (JSON.stringify(ov) !== JSON.stringify(nv)) {
+          changes.push({ field: f, label: f, oldVal: formatVal(ov), newVal: formatVal(nv) });
+        }
+      });
+      if (changes.length > 0) result.push({ id, status: "changed", name: nn.name || id, changes });
+    }
+  }
+  return result;
+}
 
 export interface TextBlock {
   id: string;
@@ -935,6 +1042,14 @@ export default function CadPage() {
   const [scaleSymbolMax, setScaleSymbolMax] = useState(220);
   const [scaleBranchMode, setScaleBranchMode] = useState<"relative" | "fixed">("relative");
   const [scaleSingleLineAt, setScaleSingleLineAt] = useState(10);
+
+  // ─── Сравнение схем ─────────────────────────────────────────────────
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareFilter, setCompareFilter] = useState<"all" | "changed" | "added" | "removed">("all");
+  const [compareSelectedId, setCompareSelectedId] = useState<string | null>(null);
+  const [compareShowDialog, setCompareShowDialog] = useState(false);
+
   // Сигнал «центрировать камеру на узле/ветви»
   const [focusNonce, setFocusNonce] = useState<number>(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
@@ -3357,6 +3472,49 @@ export default function CadPage() {
           </div>
         );
       })()}
+
+      {/* ═══ RIBBON CONTENT: ВЕНТИЛЯЦИЯ ══════════════════════════════════ */}
+      {activeRibbon === "thermo" && (
+      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
+        style={{ background: "linear-gradient(180deg,#f0f7ff,#e4effa)", borderBottom: "1px solid #b0c4de" }}>
+        <RibbonGroup label="Анализ">
+          <RibbonBigBtn
+            icon="GitCompare"
+            label="Сравнение"
+            sublabel="схем"
+            title="Сравнить текущую схему с другим файлом проекта"
+            active={activeSide === "compare" && leftPanelOpen}
+            onClick={() => setCompareShowDialog(true)}
+          />
+        </RibbonGroup>
+        {compareResult && (
+          <RibbonGroup label="Результат">
+            <div className="flex flex-col justify-center px-2 text-[10px] gap-0.5 min-w-[140px]">
+              <div className="font-semibold text-blue-700">↔ {compareResult.fileName}</div>
+              <div className="flex gap-2">
+                <span style={{ color: "#f59e0b" }}>● {compareResult.branches.filter(b => b.status === "changed").length} изм.</span>
+                <span style={{ color: "#22c55e" }}>● {compareResult.branches.filter(b => b.status === "added").length} доб.</span>
+                <span style={{ color: "#ef4444" }}>● {compareResult.branches.filter(b => b.status === "removed").length} уд.</span>
+              </div>
+              <div className="flex gap-1 mt-0.5">
+                <button
+                  onClick={() => { setActiveSide("compare"); setLeftPanelOpen(true); }}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                  style={{ background: activeSide === "compare" ? "#2563eb" : "#e5e7eb", color: activeSide === "compare" ? "white" : "#374151" }}>
+                  Показать панель
+                </button>
+                <button
+                  onClick={() => { setCompareResult(null); setCompareSelectedId(null); }}
+                  className="px-1.5 py-0.5 rounded text-[9px] font-medium"
+                  style={{ background: "#fee2e2", color: "#dc2626" }}>
+                  Сбросить
+                </button>
+              </div>
+            </div>
+          </RibbonGroup>
+        )}
+      </div>
+      )}
 
       {/* ═══ RIBBON CONTENT: СПРАВОЧНИКИ ══════════════════════════════════ */}
       {activeRibbon === "general" && (
@@ -6904,6 +7062,143 @@ export default function CadPage() {
               />
             )}
 
+            {/* ═══ СРАВНЕНИЕ СХЕМ ══════════════════════════════════════ */}
+            {activeSide === "compare" && (() => {
+              const allDiffs = [
+                ...((compareResult?.branches ?? []).filter(b => b.status !== "unchanged")),
+              ];
+              const filtered = compareFilter === "all" ? allDiffs : allDiffs.filter(b => b.status === compareFilter);
+              const added   = compareResult?.branches.filter(b => b.status === "added").length ?? 0;
+              const removed = compareResult?.branches.filter(b => b.status === "removed").length ?? 0;
+              const changed = compareResult?.branches.filter(b => b.status === "changed").length ?? 0;
+              const statusColor = (s: CompareStatus) => s === "added" ? "#16a34a" : s === "removed" ? "#dc2626" : "#d97706";
+              const statusLabel = (s: CompareStatus) => s === "added" ? "Добавлена" : s === "removed" ? "Удалена" : "Изменена";
+              const statusBg   = (s: CompareStatus) => s === "added" ? "#f0fdf4" : s === "removed" ? "#fef2f2" : "#fffbeb";
+              return (
+                <div className="flex flex-col h-full">
+                  {/* Шапка */}
+                  <div className="px-2 py-1.5 border-b border-gray-200 flex-shrink-0"
+                    style={{ background: "linear-gradient(180deg,#eff6ff,#dbeafe)" }}>
+                    <div className="text-[11px] font-semibold text-blue-800">↔ Сравнение схем</div>
+                    {compareResult ? (
+                      <div className="text-[10px] text-blue-600 mt-0.5 truncate" title={compareResult.fileName}>
+                        с: {compareResult.fileName}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-gray-400 mt-0.5">Файл не выбран</div>
+                    )}
+                  </div>
+
+                  {!compareResult ? (
+                    <div className="flex flex-col items-center justify-center flex-1 gap-3 px-4">
+                      <Icon name="GitCompare" size={32} style={{ color: "#93c5fd" }} />
+                      <div className="text-[11px] text-center text-gray-500">
+                        Загрузите предыдущую версию схемы для сравнения
+                      </div>
+                      <button
+                        onClick={() => setCompareShowDialog(true)}
+                        className="px-3 py-1.5 rounded text-[11px] font-medium text-white"
+                        style={{ background: "#2563eb" }}>
+                        Выбрать файл...
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Счётчики */}
+                      <div className="flex gap-1 px-2 py-1.5 flex-shrink-0 border-b border-gray-100">
+                        {[
+                          { key: "all",     label: `Все (${allDiffs.length})`,     color: "#374151", bg: "#f3f4f6" },
+                          { key: "changed", label: `Изм. (${changed})`,            color: "#d97706", bg: "#fffbeb" },
+                          { key: "added",   label: `Доб. (${added})`,              color: "#16a34a", bg: "#f0fdf4" },
+                          { key: "removed", label: `Уд. (${removed})`,             color: "#dc2626", bg: "#fef2f2" },
+                        ].map(f => (
+                          <button key={f.key}
+                            onClick={() => setCompareFilter(f.key as typeof compareFilter)}
+                            className="flex-1 px-1 py-0.5 rounded text-[9px] font-medium border transition-all"
+                            style={{
+                              background: compareFilter === f.key ? f.bg : "white",
+                              color: f.color,
+                              borderColor: compareFilter === f.key ? f.color : "#e5e7eb",
+                              fontWeight: compareFilter === f.key ? 700 : 500,
+                            }}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Список */}
+                      <div className="flex-1 overflow-y-auto">
+                        {filtered.length === 0 ? (
+                          <div className="p-4 text-center text-[11px] text-gray-400">Нет объектов</div>
+                        ) : (
+                          filtered.map(diff => (
+                            <div key={diff.id}
+                              className="border-b border-gray-100 cursor-pointer"
+                              style={{ background: compareSelectedId === diff.id ? statusBg(diff.status) : "white" }}
+                              onClick={() => {
+                                setCompareSelectedId(diff.id === compareSelectedId ? null : diff.id);
+                                // Центрируем камеру на ветви если она есть в текущей схеме
+                                const br = branches.find(b => b.id === diff.id);
+                                if (br) { setFocusBranchId(diff.id); setFocusNonce(n => n + 1); setSelectedBranchId(diff.id); }
+                              }}>
+                              {/* Строка ветви */}
+                              <div className="flex items-center gap-1.5 px-2 py-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                  style={{ background: statusColor(diff.status) }} />
+                                <span className="text-[10px] font-medium flex-1 truncate" style={{ color: "#1f2937" }}>
+                                  {diff.name || diff.id}
+                                </span>
+                                <span className="text-[9px] px-1 rounded flex-shrink-0"
+                                  style={{ background: statusBg(diff.status), color: statusColor(diff.status), border: `1px solid ${statusColor(diff.status)}40` }}>
+                                  {statusLabel(diff.status)}
+                                </span>
+                              </div>
+                              {/* Изменения — раскрываются при выборе */}
+                              {compareSelectedId === diff.id && diff.changes && diff.changes.length > 0 && (
+                                <div className="mx-2 mb-1.5 rounded overflow-hidden border border-amber-200"
+                                  style={{ background: "#fffbeb" }}>
+                                  <div className="px-2 py-0.5 text-[9px] font-semibold text-amber-700"
+                                    style={{ background: "#fef3c7", borderBottom: "1px solid #fde68a" }}>
+                                    Изменённые поля
+                                  </div>
+                                  {diff.changes.map(ch => (
+                                    <div key={ch.field} className="px-2 py-0.5 border-b border-amber-100 last:border-0">
+                                      <div className="text-[9px] text-gray-500 font-medium">{ch.label}</div>
+                                      <div className="flex items-center gap-1 text-[9px]">
+                                        <span className="line-through text-red-500">{ch.oldVal}</span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="font-semibold text-green-700">{ch.newVal}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Нижняя кнопка сброса */}
+                      <div className="px-2 py-1.5 border-t border-gray-200 flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => setCompareShowDialog(true)}
+                          className="flex-1 py-1 rounded text-[10px] font-medium border"
+                          style={{ background: "white", color: "#374151", borderColor: "#d1d5db" }}>
+                          Сменить файл
+                        </button>
+                        <button
+                          onClick={() => { setCompareResult(null); setCompareSelectedId(null); }}
+                          className="flex-1 py-1 rounded text-[10px] font-medium"
+                          style={{ background: "#fee2e2", color: "#dc2626" }}>
+                          Сбросить
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ═══ РАСЧЁТ ГОРНОСПАСАТЕЛЕЙ ══════════════════════════════ */}
             {activeSide === "rescue" && (
               <RescuePanel
@@ -7955,6 +8250,16 @@ export default function CadPage() {
                 });
                 return map.size > 0 ? map : undefined;
               })()}
+              compareBranchColors={(() => {
+                if (!compareResult || compareResult.branches.length === 0) return undefined;
+                const map = new Map<string, string>();
+                compareResult.branches.forEach(diff => {
+                  if (diff.status === "added")   map.set(diff.id, "#22c55e"); // зелёный
+                  if (diff.status === "removed")  map.set(diff.id, "#ef4444"); // красный
+                  if (diff.status === "changed")  map.set(diff.id, "#f59e0b"); // жёлтый
+                });
+                return map.size > 0 ? map : undefined;
+              })()}
               rescuePathBranchIds={
                 workerPathBranchIds.size > 0 ? workerPathBranchIds
                 : rescuePathBranchIds.size > 0 ? rescuePathBranchIds
@@ -8517,6 +8822,23 @@ export default function CadPage() {
                 letterSpacing: 0.2, boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
               }}>
                 T Кликните на схеме для добавления текста  [Esc — отмена]
+              </div>
+            )}
+
+            {/* Легенда сравнения схем */}
+            {compareResult && compareResult.branches.some(b => b.status !== "unchanged") && (
+              <div style={{
+                position: "absolute", bottom: 8, left: "50%", transform: "translateX(-50%)",
+                background: "rgba(15,23,42,0.88)", color: "#fff", fontSize: 11,
+                padding: "5px 14px", borderRadius: 6, pointerEvents: "none", zIndex: 50,
+                display: "flex", alignItems: "center", gap: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                backdropFilter: "blur(4px)",
+              }}>
+                <span style={{ color: "#a5b4fc", fontWeight: 600, marginRight: 4 }}>↔ Сравнение:</span>
+                <span><span style={{ color: "#f59e0b" }}>●</span> есть изменения</span>
+                <span><span style={{ color: "#22c55e" }}>●</span> добавленный объект</span>
+                <span><span style={{ color: "#ef4444" }}>●</span> удалённый объект</span>
               </div>
             )}
 
@@ -9690,6 +10012,116 @@ export default function CadPage() {
         />
       );
     })()}
+
+    {/* ── Диалог сравнения схем ──────────────────────────────────────── */}
+    {compareShowDialog && (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.45)" }}
+        onClick={() => setCompareShowDialog(false)}>
+        <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[480px]"
+          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
+          onClick={e => e.stopPropagation()}>
+          {/* Шапка */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
+            style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)" }}>
+            <span className="text-[12px] font-semibold text-gray-800">↔ Сравнение схем</span>
+            <button onClick={() => setCompareShowDialog(false)}
+              className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
+          </div>
+
+          <div className="px-6 py-4 space-y-4">
+            {/* Текущая схема */}
+            <div>
+              <div className="text-[11px] text-gray-500 mb-1 font-medium">Исходный файл:</div>
+              <div className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200"
+                style={{ background: "#f9fafb" }}>
+                <Icon name="FileText" size={18} style={{ color: "#2563eb" }} />
+                <span className="text-[12px] font-medium text-gray-800">{projectFileName}</span>
+                <span className="ml-auto text-[10px] text-gray-400">{nodes.length} уз. / {branches.length} вет.</span>
+              </div>
+            </div>
+
+            {/* Выбор файла для сравнения */}
+            <div>
+              <div className="text-[11px] text-gray-500 mb-1 font-medium">Изменённая схема:</div>
+              <button
+                disabled={compareLoading}
+                onClick={() => {
+                  const inp = document.createElement("input");
+                  inp.type = "file";
+                  inp.accept = ".vproj,.json,application/json,text/plain";
+                  inp.onchange = () => {
+                    const file = inp.files?.[0];
+                    if (!file) return;
+                    setCompareLoading(true);
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      try {
+                        const data = JSON.parse(reader.result as string) as Record<string, unknown>;
+                        if (!data.nodes || !Array.isArray(data.nodes)) {
+                          alert("Файл не является проектом ПВ-Система.");
+                          setCompareLoading(false);
+                          return;
+                        }
+                        const oldBranches = branchesRaw;
+                        const oldNodes    = nodes;
+                        const newBranches = (data.branches as typeof branchesRaw) ?? [];
+                        const newNodes    = (data.nodes    as typeof nodes) ?? [];
+                        const branchDiffs = compareBranches(oldBranches, newBranches);
+                        const nodeDiffs   = compareNodes(oldNodes, newNodes);
+                        setCompareResult({
+                          branches: branchDiffs,
+                          nodes:    nodeDiffs,
+                          fileName: file.name,
+                        });
+                        setCompareFilter("all");
+                        setCompareSelectedId(null);
+                        setActiveSide("compare");
+                        setLeftPanelOpen(true);
+                        setCompareShowDialog(false);
+                        setActiveRibbon("thermo");
+                      } catch {
+                        alert("Ошибка чтения файла.");
+                      } finally {
+                        setCompareLoading(false);
+                      }
+                    };
+                    reader.readAsText(file);
+                  };
+                  inp.click();
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded border-2 border-dashed transition-colors"
+                style={{
+                  borderColor: compareLoading ? "#93c5fd" : "#d1d5db",
+                  background: compareLoading ? "#eff6ff" : "#f9fafb",
+                  cursor: compareLoading ? "wait" : "pointer",
+                }}>
+                <Icon name={compareLoading ? "Loader" : "FolderOpen"} size={22}
+                  style={{ color: "#2563eb" }} className={compareLoading ? "animate-spin" : ""} />
+                <div className="text-left">
+                  <div className="text-[12px] font-medium text-gray-800">
+                    {compareLoading ? "Загрузка..." : "Выбрать файл для сравнения"}
+                  </div>
+                  <div className="text-[10px] text-gray-400">Формат .vproj</div>
+                </div>
+              </button>
+            </div>
+
+            <div className="text-[10px] text-gray-400 leading-relaxed">
+              Сравнение покажет: добавленные, удалённые и изменённые выработки.
+              Жёлтым выделяются изменённые, зелёным — добавленные, красным — удалённые.
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <button onClick={() => setCompareShowDialog(false)}
+              className="h-7 px-4 text-[12px] rounded border border-gray-300 text-gray-700 hover:bg-gray-100">
+              Отмена
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     </>
   );
