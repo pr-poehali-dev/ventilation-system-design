@@ -1302,6 +1302,14 @@ def compute_node_pressures(edges, Q, nodes_in):
 def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, dead_end_ids=None, R_net=0.0, nodes_in=None):
     # dead_end_ids передаётся из solve() (уже вычислено), иначе пересчитываем
     dead_ends = dead_end_ids if dead_end_ids is not None else find_dead_ends(edges)
+
+    # Карта: узел → список активных (не тупиковых) ветвей, инцидентных ему.
+    # Используется для поиска питающей струи ВМП.
+    active_adj = collections.defaultdict(list)
+    for e in edges:
+        if e["id"] not in dead_ends:
+            active_adj[e["a"]].append(e)
+            active_adj[e["b"]].append(e)
     out = []
     for e in edges:
         is_dead = e["id"] in dead_ends
@@ -1344,6 +1352,29 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             else:
                 q = q_hi
             # Q > 0: поток всегда в направлении a→b (fromId→toId)
+
+            # ── Ограничение по подходящей струе ─────────────────────────
+            # ВМП всасывает воздух из узла a (вход). Питающая ветвь — активная
+            # ветвь, инцидентная узлу a. Расход ВМП не может превышать расход,
+            # который подводит питающая струя к этому узлу.
+            inlet_node = e["a"]
+            q_supply = 0.0
+            for feed in active_adj.get(inlet_node, []):
+                fq = abs(Q.get(feed["id"], 0.0))
+                if fq > q_supply:
+                    q_supply = fq
+            if q_supply > 0.1 and q > q_supply:
+                diag.append({
+                    "level": "warning",
+                    "category": "vmp_supply",
+                    "objectId": e["id"],
+                    "message": (
+                        f"ВМП (ветвь {e['id']}): производительность {q:.2f} м³/с "
+                        f"превышает подходящую струю {q_supply:.2f} м³/с. "
+                        f"Расход ограничен до {q_supply:.2f} м³/с."
+                    ),
+                })
+                q = q_supply
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):

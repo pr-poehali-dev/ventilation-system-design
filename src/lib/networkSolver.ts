@@ -132,7 +132,7 @@ function fanH(e: Edge, Q: number): number {
 
     // Прямая характеристика (или реверс без отдельной кривой)
     const af = angleFactor(c, e.fanBladeAngle);
-    if (Qn > c.qMax) return 0;
+    if (Qn > c.qMax * af) return 0;
     return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
