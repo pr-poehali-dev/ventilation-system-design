@@ -204,6 +204,8 @@ interface Props {
   rescuePathNodeIds?: Set<string>;
   /** Callback при клике по узлу в режиме pick (rescuePickMode) */
   onRescueNodePick?: (nodeId: string) => void;
+  /** Callback при клике по ветви в режиме pick (rescuePickMode) */
+  onRescueBranchPick?: (branchId: string) => void;
   /** Режим выбора узла для горноспасателей */
   rescuePickMode?: string | null;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
@@ -273,6 +275,7 @@ export default function TopoCanvas(props: Props) {
     rescuePathBranchDirs,
     rescuePathNodeIds,
     onRescueNodePick,
+    onRescueBranchPick,
     rescuePickMode,
     colorMode = "none",
     flowColorMin = 0,
@@ -1104,6 +1107,12 @@ export default function TopoCanvas(props: Props) {
     // ─── РЕЖИМ ВЫБОРА УЗЛА ДЛЯ ГОРНОСПАСАТЕЛЕЙ (pick-mode) ────────────
     if (rescuePickMode && onRescueNodePick && hitN && e.button === 0) {
       onRescueNodePick(hitN);
+      e.stopPropagation();
+      return;
+    }
+    // ─── РЕЖИМ ВЫБОРА ВЕТВИ (pick-mode) ────────────────────────────────
+    if (rescuePickMode && onRescueBranchPick && hitB && !hitN && e.button === 0) {
+      onRescueBranchPick(hitB);
       e.stopPropagation();
       return;
     }

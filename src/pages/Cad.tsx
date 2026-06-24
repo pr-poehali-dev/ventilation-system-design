@@ -1638,6 +1638,8 @@ export default function CadPage() {
   const [showHelpDialog, setShowHelpDialog] = useState<boolean>(false);
   const [showDepressogram, setShowDepressogram] = useState<boolean>(false);
   const [depressogramHighlight, setDepressogramHighlight] = useState<string[]>([]);
+  const [depressogramPickMode, setDepressogramPickMode] = useState<boolean>(false);
+  const [depressogramManualBranches, setDepressogramManualBranches] = useState<Set<string>>(new Set());
 
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -8280,12 +8282,15 @@ export default function CadPage() {
                 return map.size > 0 ? map : undefined;
               })()}
               rescuePathBranchIds={
-                workerPathBranchIds.size > 0 ? workerPathBranchIds
+                depressogramPickMode && depressogramManualBranches.size > 0 ? depressogramManualBranches
+                : depressogramHighlight.length > 0 ? new Set(depressogramHighlight)
+                : workerPathBranchIds.size > 0 ? workerPathBranchIds
                 : rescuePathBranchIds.size > 0 ? rescuePathBranchIds
                 : undefined
               }
               rescuePathBranchDirs={
-                workerPathBranchDirs.size > 0 ? workerPathBranchDirs
+                depressogramHighlight.length > 0 ? undefined
+                : workerPathBranchDirs.size > 0 ? workerPathBranchDirs
                 : rescuePathBranchDirs.size > 0 ? rescuePathBranchDirs
                 : undefined
               }
@@ -8294,10 +8299,17 @@ export default function CadPage() {
                 : rescuePathNodeIds.size > 0 ? rescuePathNodeIds
                 : undefined
               }
-              rescuePickMode={rescuePickMode ?? workerPickMode}
+              rescuePickMode={depressogramPickMode ? "depress" : (rescuePickMode ?? workerPickMode)}
               onRescueNodePick={(nodeId) => {
                 if (rescuePickMode) rescuePickHandlerRef.current?.(nodeId);
                 else if (workerPickMode) workerPickHandlerRef.current?.(nodeId);
+              }}
+              onRescueBranchPick={(branchId) => {
+                if (depressogramPickMode) setDepressogramManualBranches(prev => {
+                  const next = new Set(prev);
+                  if (next.has(branchId)) { next.delete(branchId); } else { next.add(branchId); }
+                  return next;
+                });
               }}
               onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {
@@ -9985,8 +9997,20 @@ export default function CadPage() {
       <DepressogramDialog
         nodes={nodes}
         branches={branches}
-        onClose={() => { setShowDepressogram(false); setDepressogramHighlight([]); }}
+        onClose={() => {
+          setShowDepressogram(false);
+          setDepressogramHighlight([]);
+          setDepressogramPickMode(false);
+          setDepressogramManualBranches(new Set());
+        }}
         onHighlightPath={ids => setDepressogramHighlight(ids)}
+        pickMode={depressogramPickMode}
+        onPickModeChange={active => {
+          setDepressogramPickMode(active);
+          if (!active) setDepressogramManualBranches(new Set());
+        }}
+        manualBranchIds={depressogramManualBranches}
+        onClearManual={() => setDepressogramManualBranches(new Set())}
       />
     )}
 
