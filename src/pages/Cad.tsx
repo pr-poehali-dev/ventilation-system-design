@@ -3959,6 +3959,7 @@ export default function CadPage() {
               icon="PersonStanding"
               label="Время"
               sublabel="горнорабочего"
+              style={{ width: 64 }}
               active={activeSide === "workerPath"}
               onClick={() => {
                 if (activeSide === "workerPath") {
@@ -10245,8 +10246,8 @@ function RibbonGroup({ children }: { label?: string; children: React.ReactNode }
   );
 }
 
-function RibbonBigBtn({ icon, label, sublabel, disabled, onClick, active, title }: {
-  icon: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void; active?: boolean; title?: string;
+function RibbonBigBtn({ icon, label, sublabel, disabled, onClick, active, title, style }: {
+  icon: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void; active?: boolean; title?: string; style?: React.CSSProperties;
 }) {
   return (
     <button disabled={disabled} onClick={onClick} title={title ?? `${label}${sublabel ? " " + sublabel : ""}`}
@@ -10257,6 +10258,7 @@ function RibbonBigBtn({ icon, label, sublabel, disabled, onClick, active, title 
         background: active ? "#dbeafe" : "transparent",
         color: active ? "#1d4ed8" : "#374151",
         flexShrink: 0,
+        ...style,
       }}
       onMouseEnter={e => { if (!disabled && !active) (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; }}
       onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
