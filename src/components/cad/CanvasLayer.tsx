@@ -233,7 +233,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.nodes, props.branches, props.horizons, props.horizonMap,
     props.visibleBranches, props.hiddenBranchIds,
     props.projNodes, props.projNodesMap, props.proj, props.view,
-    props.is3D, props.zScale, props.zLevel,
+    props.is3D, props.zScale, props.xyScale, props.zLevel,
     props.selectedBranchId, props.selectedBranchIds,
     props.selectedNodeId, props.selectedNodeIds,
     props.hoverBranchId,

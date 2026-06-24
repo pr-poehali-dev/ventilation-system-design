@@ -444,7 +444,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       if (pos.visible === false) continue;
       if (!pos.placed) continue;
 
-      const pp = project3D({ x: pos.x, y: pos.y, z: pos.z * zScale }, proj);
+      const pp = project3D({ x: pos.x * _xySFExport, y: pos.y * _xySFExport, z: pos.z * zScale }, proj);
       const cx = pp.sx, cy = pp.sy;
 
       // Радиус позиции ПЛА — физический размер в мм → пиксели SVG.
@@ -472,7 +472,7 @@ export function generateSvg(opts: SvgExportOptions): string {
           }
         }
       } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
-        const lp = project3D({ x: pos.leaderEndX, y: pos.leaderEndY, z: pos.z * zScale }, proj);
+        const lp = project3D({ x: pos.leaderEndX * _xySFExport, y: pos.leaderEndY * _xySFExport, z: pos.z * zScale }, proj);
         parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${esc(borderColor)}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.85"/>`);
       }
 

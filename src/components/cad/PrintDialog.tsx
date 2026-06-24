@@ -351,9 +351,10 @@ export default function PrintDialog({
       initVisibleNodeIds.add(b.fromId); initVisibleNodeIds.add(b.toId);
     });
     const initNodes = initVisibleNodeIds.size > 0 ? nodes.filter(n => initVisibleNodeIds.has(n.id)) : nodes;
+    const _xySFInit = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const n of initNodes) {
-      const p = project3D({ x: n.x, y: n.y, z: n.z * zScale }, tmpProj);
+      const p = project3D({ x: n.x * _xySFInit, y: n.y * _xySFInit, z: n.z * zScale }, tmpProj);
       if (p.sx < minX) minX = p.sx; if (p.sx > maxX) maxX = p.sx;
       if (p.sy < minY) minY = p.sy; if (p.sy > maxY) maxY = p.sy;
     }
@@ -655,8 +656,9 @@ export default function PrintDialog({
       const visibleNodeIds0 = new Set<string>();
       visibleBranches.forEach(b => { visibleNodeIds0.add(b.fromId); visibleNodeIds0.add(b.toId); });
       const nodesForBbox = nodes.filter(n => visibleNodeIds0.has(n.id));
+      const _xySFTile = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
       const pNodes0 = (nodesForBbox.length > 0 ? nodesForBbox : nodes)
-        .map(n => project3D({ x: n.x, y: n.y, z: n.z * zScale }, proj0));
+        .map(n => project3D({ x: n.x * _xySFTile, y: n.y * _xySFTile, z: n.z * zScale }, proj0));
       let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
       pNodes0.forEach(p => {
         if (p.sx < mnSx) mnSx = p.sx; if (p.sx > mxSx) mxSx = p.sx;
@@ -685,8 +687,9 @@ export default function PrintDialog({
       const scaledOffY = (oy0 - fRy) * fitF;
       const sv = { scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
         azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+      const _xySFPL = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
       const projNodes = nodes.map(n => ({
-        node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
+        node: n, ...project3D({ x: n.x * _xySFPL, y: n.y * _xySFPL, z: n.z * zScale }, sv), depth: 0,
       }));
       const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
@@ -727,8 +730,9 @@ export default function PrintDialog({
         scale: scaledSc, offsetX: scaledOffX, offsetY: scaledOffY,
         azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
       };
+      const _xySFStd = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
       const projNodes = nodes.map(n => ({
-        node: n, ...project3D({ x: n.x, y: n.y, z: n.z * zScale }, sv), depth: 0,
+        node: n, ...project3D({ x: n.x * _xySFStd, y: n.y * _xySFStd, z: n.z * zScale }, sv), depth: 0,
       }));
       const projNodesMap = new Map(projNodes.map(p => [p.node.id, p]));
 
