@@ -3906,55 +3906,46 @@ export default function CadPage() {
 
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
       {activeRibbon !== "general" && activeRibbon !== "involve" && (
-      <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5 overflow-x-auto"
-        style={{ background: "linear-gradient(180deg,#fafafa,#ececec)", borderBottom: "1px solid #b8b8b8" }}>
+      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
+        style={{ background: "linear-gradient(180deg,#f5f5f5,#e8e8e8)", borderBottom: "1px solid #b0b0b0" }}>
 
         {/* ── Группа: Объекты ── */}
         <RibbonGroup label="Объекты">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Plus" label="Добавить" sublabel="выработку"
-              onClick={() => setTool("branch")} />
-            <RibbonBigBtn icon="Scissors" label="Разделить" sublabel="выработку"
-              disabled={!selectedBranchId}
-              onClick={() => {
-                if (!selectedBranchId) return;
-                const b = branches.find(br => br.id === selectedBranchId);
-                if (!b) return;
-                const fromN = nodes.find(n => n.id === b.fromId);
-                const toN = nodes.find(n => n.id === b.toId);
-                if (!fromN || !toN) return;
-                const mx = (fromN.x + toN.x) / 2;
-                const my = (fromN.y + toN.y) / 2;
-                const mz = (fromN.z + toN.z) / 2;
-                handleSplitBranchAt(selectedBranchId, mx, my, mz);
-              }} />
-          </div>
-          <div className="flex flex-col gap-1">
-            {/* УО Позиции ПЛА */}
-            <RibbonSmallBtn
-              title="Разместить маркер выбранной позиции ПЛА на схеме"
-              active={positionPlaceMode}
-              onClick={() => {
-                if (!selectedPositionId) {
-                  setActiveSide("positions");
-                } else {
-                  setPositionPlaceMode(v => !v);
-                }
-              }}>
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold"
-                style={{ background: positionPlaceMode ? "#2563eb" : "#e53e3e", color: "white" }}>
-                {selectedPositionId ? (positions.find(p => p.id === selectedPositionId)?.number ?? "?") : "?"}
-              </div>
-            </RibbonSmallBtn>
-            {/* Текстовый блок */}
-            <RibbonSmallBtn
-              title="Добавить текстовый блок (кликните на схеме)"
-              active={tool === "textblock"}
-              onClick={() => setTool(tool === "textblock" ? "select" : "textblock")}>
-              <span className="font-serif text-[17px] font-bold leading-none"
-                style={{ color: tool === "textblock" ? "#2563eb" : "#374151" }}>T</span>
-            </RibbonSmallBtn>
-          </div>
+          <RibbonBigBtn icon="Plus" label="Добавить" sublabel="выработку"
+            onClick={() => setTool("branch")} />
+          <RibbonBigBtn icon="Scissors" label="Разделить" sublabel="выработку"
+            disabled={!selectedBranchId}
+            onClick={() => {
+              if (!selectedBranchId) return;
+              const b = branches.find(br => br.id === selectedBranchId);
+              if (!b) return;
+              const fromN = nodes.find(n => n.id === b.fromId);
+              const toN = nodes.find(n => n.id === b.toId);
+              if (!fromN || !toN) return;
+              const mx = (fromN.x + toN.x) / 2;
+              const my = (fromN.y + toN.y) / 2;
+              const mz = (fromN.z + toN.z) / 2;
+              handleSplitBranchAt(selectedBranchId, mx, my, mz);
+            }} />
+          {/* УО Позиции ПЛА */}
+          <RibbonBigBtn
+            icon="MapPin"
+            label="Позиция"
+            sublabel="ПЛА"
+            active={positionPlaceMode}
+            title="Разместить маркер выбранной позиции ПЛА на схеме"
+            onClick={() => {
+              if (!selectedPositionId) { setActiveSide("positions"); }
+              else { setPositionPlaceMode(v => !v); }
+            }} />
+          {/* Текстовый блок */}
+          <RibbonBigBtn
+            icon="Type"
+            label="Текст"
+            sublabel="блок"
+            active={tool === "textblock"}
+            title="Добавить текстовый блок (кликните на схеме)"
+            onClick={() => setTool(tool === "textblock" ? "select" : "textblock")} />
         </RibbonGroup>
 
         {/* ── УО: компактная кнопка + выпадающая панель ── */}
@@ -4133,23 +4124,23 @@ export default function CadPage() {
 
         {/* ── Группа: Действия с объектами ── */}
         <RibbonGroup label="Действия">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие"
-              onClick={handleUndo}
-              disabled={historyRef.current.length === 0} />
-          </div>
+          <RibbonBigBtn icon="Undo2" label="Отменить" sublabel="действие"
+            onClick={handleUndo}
+            disabled={historyRef.current.length === 0} />
         </RibbonGroup>
 
         {/* ── Группа: Команды вентилятора (main_loop: calc/reverse/off/report) ── */}
         {selectedBranch?.hasFan && (
           <RibbonGroup label="Вентилятор">
-            <div className="flex items-stretch gap-1">
               {/* calc — пересчитать сеть */}
               <button onClick={handleSolve} disabled={vcSolving}
-                className="flex flex-col items-center justify-center px-2 py-1 hover:bg-green-50 border border-transparent hover:border-green-400 rounded min-w-[52px] disabled:opacity-50"
+                className="flex flex-col items-center justify-center rounded disabled:opacity-50 transition-colors"
+                style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: "pointer" }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
                 title="Пересчитать (F9)">
-                <Icon name="RefreshCw" size={18} className="text-green-600" />
-                <div className="text-[10px] mt-0.5">Расчёт</div>
+                <Icon name="RefreshCw" size={20} className="text-green-600" />
+                <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#15803d", marginTop: 2 }}>Расчёт</div>
               </button>
               {/* reverse — переключить реверс */}
               <button
@@ -4194,29 +4185,28 @@ export default function CadPage() {
                 <Icon name="FileText" size={18} className="text-blue-600" />
                 <div className="text-[10px] mt-0.5 text-blue-700">Отчёт</div>
               </button>
-            </div>
           </RibbonGroup>
         )}
 
         {/* ── Группа: ПЛА ── */}
         <RibbonGroup label="ПЛА">
-          <div className="relative flex flex-col h-full justify-center">
+          <div className="relative">
             <button
               onClick={() => setShowPlaPanel(v => !v)}
               title="План ликвидации аварии — настройки отображения позиций"
               style={{
-                width: 58, height: 62,
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+                width: 52, height: 60,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
                 borderRadius: 4,
-                border: showPlaPanel ? "1.5px solid #2563eb" : (showPositions || posColorInner || posColorOuter) ? "1.5px solid #7c3aed" : "1px solid #c8c8c8",
-                background: showPlaPanel ? "#dbeafe" : (showPositions || posColorInner || posColorOuter) ? "#f5f3ff" : "white",
+                border: showPlaPanel ? "1.5px solid #2563eb" : (showPositions || posColorInner || posColorOuter) ? "1.5px solid #7c3aed" : "1px solid transparent",
+                background: showPlaPanel ? "#dbeafe" : (showPositions || posColorInner || posColorOuter) ? "#f5f3ff" : "transparent",
                 cursor: "pointer", padding: 0, flexShrink: 0,
               }}>
-              <Icon name="MapPin" size={22} style={{ color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#374151" }} />
-              <div style={{ fontSize: 9, lineHeight: "1.1", textAlign: "center", color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#374151", fontWeight: 500 }}>
-                <div>План</div><div>ликв.</div><div>аварии</div>
+              <Icon name="MapPin" size={20} style={{ color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#4b5563" }} />
+              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#374151", fontWeight: 500 }}>
+                <div>ПЛА</div>
               </div>
-              <Icon name="ChevronDown" size={10} style={{ color: "#6b7280", marginTop: -2 }} />
+              <Icon name="ChevronDown" size={9} style={{ color: "#9ca3af", marginTop: -1 }} />
             </button>
 
             {showPlaPanel && (
@@ -4277,26 +4267,29 @@ export default function CadPage() {
 
         {/* ── Группа: Расчёт сети ── */}
         <RibbonGroup label="Расчёт сети">
-          <div className="flex items-stretch gap-1">
             {/* Кнопка запуска */}
             <button onClick={handleSolve} disabled={vcSolving}
-              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-green-50 hover:border-green-400 border border-transparent rounded min-w-[64px] disabled:opacity-50"
+              className="flex flex-col items-center justify-center rounded disabled:opacity-50 transition-colors"
+              style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: "pointer" }}
+              onMouseEnter={e => { if (!vcSolving) { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; } }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
               title="Запустить расчёт воздухораспределения (F9)">
-              <Icon name={vcSolving ? "Loader" : "Play"} size={22} className={vcSolving ? "text-gray-400 animate-spin" : "text-green-600"} />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">
+              <Icon name={vcSolving ? "Loader" : "Play"} size={20} className={vcSolving ? "text-gray-400 animate-spin" : "text-green-600"} />
+              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#15803d", marginTop: 2 }}>
                 <div>Расчёт</div><div>сети</div>
               </div>
             </button>
 
-
-
             {/* Кнопка параметров */}
-            <div className="relative flex flex-col justify-center border-l border-gray-200 pl-1">
+            <div className="relative">
               <button onClick={() => setShowSolverParams(v => !v)}
-                className="flex flex-col items-center justify-center px-2 py-1 hover:bg-gray-100 border border-transparent hover:border-gray-300 rounded min-w-[44px]"
+                className="flex flex-col items-center justify-center rounded transition-colors"
+                style={{ width: 52, height: 60, border: showSolverParams ? "1.5px solid #3b82f6" : "1px solid transparent", background: showSolverParams ? "#dbeafe" : "transparent", flexShrink: 0, cursor: "pointer" }}
+                onMouseEnter={e => { if (!showSolverParams) { (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; } }}
+                onMouseLeave={e => { if (!showSolverParams) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}
                 title="Параметры расчёта">
-                <Icon name="Settings" size={18} className="text-gray-500" />
-                <div className="text-[9px] mt-0.5 text-gray-500">Параметры</div>
+                <Icon name="Settings" size={20} className="text-gray-500" />
+                <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#6b7280", marginTop: 2 }}>Параметры</div>
               </button>
               {showSolverParams && (
                 <div className="fixed top-[160px] right-4 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 min-w-[240px]">
@@ -4382,30 +4375,30 @@ export default function CadPage() {
 
             {/* Результат */}
             {solveResult && (
-              <div className="flex flex-col justify-center px-2 text-[10px] border-l border-gray-300 ml-1 min-w-[90px]">
+              <div className="flex flex-col justify-center px-2 text-[9.5px] border-l border-gray-300 ml-1" style={{ minWidth: 80 }}>
                 <div className={`font-semibold ${solveResult.ok ? "text-green-700" : "text-red-600"}`}>
                   {solveResult.ok ? "✔ Сошлось" : "✘ Не сошлось"}
                 </div>
-                <div className="text-gray-500">Итераций: {solveResult.iterations}</div>
+                <div className="text-gray-500">Ит: {solveResult.iterations}</div>
                 <div className="text-gray-500">|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
               </div>
             )}
-          </div>
         </RibbonGroup>
 
         {/* ── Группа: Анализ ── */}
         <RibbonGroup label="Анализ">
-          <div className="flex items-stretch gap-1">
             <button
               onClick={() => setShowExcelExport(true)}
-              className="flex flex-col items-center justify-center px-3 py-1 hover:bg-green-50 hover:border-green-400 border border-transparent rounded min-w-[64px]"
+              className="flex flex-col items-center justify-center rounded transition-colors"
+              style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: "pointer" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
               title="Экспорт параметров выработок в Excel">
-              <Icon name="FileSpreadsheet" size={22} className="text-green-700" />
-              <div className="text-[10px] leading-tight mt-0.5 text-center">
+              <Icon name="FileSpreadsheet" size={20} className="text-green-700" />
+              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#15803d", marginTop: 2 }}>
                 <div>Экспорт</div><div>в Excel</div>
               </div>
             </button>
-          </div>
         </RibbonGroup>
 
       </div>
@@ -9810,11 +9803,9 @@ function RibbonTabBtn({ label, active, onClick, fileStyle, highlight }: {
 
 function RibbonGroup({ children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 flex items-stretch gap-1 px-1.5 pb-0.5">
-        {children}
-      </div>
-      <div style={{ width: "1px", background: "#d0d0d0", position: "absolute" }} />
+    <div className="flex items-center gap-0.5 h-full pr-2 mr-1"
+      style={{ borderRight: "1px solid #c4c4c4" }}>
+      {children}
     </div>
   );
 }
@@ -9823,13 +9814,21 @@ function RibbonBigBtn({ icon, label, sublabel, disabled, onClick, active, title 
   icon: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void; active?: boolean; title?: string;
 }) {
   return (
-    <button disabled={disabled} onClick={onClick} title={title}
-      className="px-1.5 py-0.5 hover:bg-blue-100 hover:border-blue-400 border rounded flex flex-col items-center justify-start gap-0.5 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:border-transparent min-w-[50px]"
-      style={{ height: "100%", borderColor: active ? "#3b82f6" : "transparent", background: active ? "#dbeafe" : undefined }}>
-      <Icon name={icon} size={22} className="text-gray-700 mt-0.5" fallback="Square" />
-      <div className="text-[10px] leading-tight text-center text-gray-800">
+    <button disabled={disabled} onClick={onClick} title={title ?? `${label}${sublabel ? " " + sublabel : ""}`}
+      className="flex flex-col items-center justify-center gap-0.5 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      style={{
+        width: 52, height: 60,
+        border: active ? "1.5px solid #3b82f6" : "1px solid transparent",
+        background: active ? "#dbeafe" : "transparent",
+        color: active ? "#1d4ed8" : "#374151",
+        flexShrink: 0,
+      }}
+      onMouseEnter={e => { if (!disabled && !active) (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; }}
+      onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
+      <Icon name={icon} size={20} fallback="Square" style={{ color: active ? "#2563eb" : "#4b5563" }} />
+      <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500 }}>
         <div>{label}</div>
-        {sublabel && <div>{sublabel}</div>}
+        {sublabel && <div style={{ color: active ? "#1d4ed8" : "#6b7280" }}>{sublabel}</div>}
       </div>
     </button>
   );
@@ -9840,8 +9839,15 @@ function RibbonSmallBtn({ children, active, title, onClick }: {
 }) {
   return (
     <button title={title} onClick={onClick}
-      className="w-[54px] h-[38px] hover:bg-blue-100 hover:border-blue-400 border rounded flex items-center justify-center px-1"
-      style={{ borderColor: active ? "#3b82f6" : "transparent", background: active ? "#dbeafe" : undefined }}>
+      className="flex items-center justify-center rounded transition-colors"
+      style={{
+        width: 40, height: 40,
+        border: active ? "1.5px solid #3b82f6" : "1px solid transparent",
+        background: active ? "#dbeafe" : "transparent",
+        flexShrink: 0,
+      }}
+      onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; } }}
+      onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
       {children}
     </button>
   );
