@@ -120,7 +120,7 @@ export interface SchemaSymbol {
   msIndOffsetY?: number;     // смещение бейджа по Y (px экрана)
   msIndFontSize?: number;    // размер шрифта (мм мировых единиц)
 }
-type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "compare";
+type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "compare" | "bulkhead";
 
 // ── Сравнение схем ────────────────────────────────────────────────────────────
 export type CompareStatus = "added" | "removed" | "changed" | "unchanged";
@@ -4620,6 +4620,7 @@ export default function CadPage() {
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "coords", label: "Координаты" },
+                ...(selectedBranch?.hasBulkhead ? [{ id: "bulkhead" as SideTab, label: "Перемычка" }] : []),
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
                 ...(selectedBranch?.hasExplosion ? [{ id: "blast" as SideTab, label: "💥 Взрыв" }] : []),
               ] as { id: SideTab; label: string }[])
@@ -5645,7 +5646,7 @@ export default function CadPage() {
             })()}
 
             {/* ═══ ВКЛАДКИ ВЕТВИ (Топология / Вентилятор / Трубы: вода / Конвейер) ══ */}
-            {(["topology","fan","waterpipes","conveyor","params"].includes(activeSide)) && !selectedNode && selectedBranch && (
+            {(["topology","fan","waterpipes","conveyor","params","bulkhead"].includes(activeSide)) && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}

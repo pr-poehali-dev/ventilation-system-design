@@ -65,7 +65,7 @@ const PLA_OPTIONS = ["— нет —", "ПЛА-1", "ПЛА-2", "ПЛА-3"];
 const POLE_OPTIONS = ["— нет —", "Северное", "Южное", "Западное"];
 
 const INNER_TABS = [
-  "Топология", "Вентилятор", "Трубы: вода", "Конвейер",
+  "Топология", "Вентилятор", "Трубы: вода", "Конвейер", "Перемычка",
 ] as const;
 type InnerTab = typeof INNER_TABS[number];
 
@@ -241,6 +241,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
     fan: "Вентилятор",
     waterpipes: "Трубы: вода",
     conveyor: "Конвейер",
+    bulkhead: "Перемычка",
   };
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
