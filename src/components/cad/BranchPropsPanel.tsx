@@ -1391,11 +1391,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
-                    {(branch.bulkheadFailurePressure ?? 0) > 0 && (
-                      <InlineLabel label="P разр.:">
-                        <ComputedInput value={(() => { const u = getUnit(unitsConfig, "failurePressure"); return `${u.fromBase(branch.bulkheadFailurePressure ?? 0).toFixed(u.decimals)} ${u.symbol}`; })()} />
-                      </InlineLabel>
-                    )}
+                    <InlineLabel label="P разр., МПа:">
+                      <EditInput
+                        type="number" step="0.01"
+                        value={branch.bulkheadFailurePressure ?? 0}
+                        onChange={v => onUpdate({ bulkheadFailurePressure: parseFloat(v) || 0 })}
+                      />
+                    </InlineLabel>
                   </>
                 )}
 
@@ -1439,6 +1441,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
+                    <InlineLabel label="P разр., МПа:">
+                      <EditInput
+                        type="number" step="0.01"
+                        value={branch.bulkheadFailurePressure ?? 0}
+                        onChange={v => onUpdate({ bulkheadFailurePressure: parseFloat(v) || 0 })}
+                      />
+                    </InlineLabel>
                   </>
                 )}
 
@@ -1468,6 +1477,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
                         return `${u.fromBase(dp).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
+                    </InlineLabel>
+                    <InlineLabel label="P разр., МПа:">
+                      <EditInput
+                        type="number" step="0.01"
+                        value={branch.bulkheadFailurePressure ?? 0}
+                        onChange={v => onUpdate({ bulkheadFailurePressure: parseFloat(v) || 0 })}
+                      />
                     </InlineLabel>
                   </>
                 )}
