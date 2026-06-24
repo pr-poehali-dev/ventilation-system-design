@@ -897,9 +897,11 @@ export default function TopoCanvas(props: Props) {
         const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
         if (moved < 10 && touchHitRef.current) {
           const { projNodes: pn, projNodesMap: pnm, branches: br, onSelectNode: selN, onSelectBranch: selB, view: v, xyScale: xys, branchWidth: bw } = touchHitRef.current;
-          const sf = Math.max(0.25, v.scale / 0.4);
+          const xySF = Math.max(1, xys ?? 1);
+          const sf = Math.min(8, Math.max(0.25, v.scale / (xySF * 0.4)));
           const nodeR = Math.max(16, bw * sf * 0.55);
-          const branchTol = Math.max(12, bw * sf * 0.5);
+          const lineW = Math.max(1, bw * sf);
+          const branchTol = Math.max(14, lineW / 2 + 6);
           const hitN = hitNodeCanvas(sx, sy, pn, nodeR);
           const hitB = !hitN ? hitBranchCanvas(sx, sy, pnm, br, branchTol) : null;
           if (hitN) { selN(hitN); selB(null); }
@@ -977,25 +979,32 @@ export default function TopoCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proj, zLevel, is3D, effPlane.axis, effPlane.value, xyScale, zScale]);
 
-  // ─── Hit-тесты с масштабированием по zoom ───────────────────────────────
-  // _objSF зависит ТОЛЬКО от view.scale (zoom), без xyScale —
-  // иначе при растяжении схемы по X/Y допуск падал до минимума и ветви не ловились.
-  // Минимум: 8px для узла, 6px для ветви.
-  const _objSF = Math.max(0.25, view.scale / 0.4);
-  // Радиус попадания в узел: не меньше 8px, но не больше половины размера узла
+  // ─── Hit-тесты ─────────────────────────────────────────────────────────
+  // objSF считается так же, как в canvasRenderer: scale / (xyScale * 0.4),
+  // зажат между 0.25 и 8. Это даёт реальный пиксельный размер объектов.
+  const _xySF = Math.max(1, xyScale ?? 1);
+  const _objSF = Math.min(8, Math.max(0.25, view.scale / (_xySF * 0.4)));
+
+  // Радиус попадания в узел — пропорционален реальному размеру, минимум 8px
   const hitNodeR = (sx: number, sy: number, pn: typeof projNodes, extraR = 0) => {
     const baseW = branchWidth ?? 2.5;
     const nodeR = Math.max(8, baseW * _objSF * 0.55) + extraR;
     return hitNodeCanvas(sx, sy, pn, nodeR);
   };
-  // Толерантность попадания в ветвь: не меньше 8px (в SVG — хитбокс 12px, здесь запас)
+
+  // Толерантность попадания в ветвь:
+  // - берём реальную толщину линии в пикселях (baseW * _objSF)
+  // - добавляем фиксированный бонус 6px чтобы ловить даже субпиксельные ветви
+  // - итоговый минимум 12px — независимо от масштаба
   const hitBranchR = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches, extraTol = 0) => {
     const baseW = branchWidth ?? 2.5;
-    const tol = Math.max(8, baseW * _objSF * 0.5) + extraTol;
+    const lineW = Math.max(1, baseW * _objSF);   // реальная толщина линии в px
+    const tol = Math.max(12, lineW / 2 + 6) + extraTol;
     return hitBranchCanvas(sx, sy, pnm, br, tol);
   };
-  const hitNode  = (sx: number, sy: number, pn: typeof projNodes)                               => hitNodeR(sx, sy, pn);
-  const hitBranch = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches)     => hitBranchR(sx, sy, pnm, br);
+
+  const hitNode   = (sx: number, sy: number, pn: typeof projNodes)                            => hitNodeR(sx, sy, pn);
+  const hitBranch = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches)   => hitBranchR(sx, sy, pnm, br);
 
   // ─── Контекстное меню по правой кнопке ─────────────────────────────────
   const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
