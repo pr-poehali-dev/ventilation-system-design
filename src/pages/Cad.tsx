@@ -9808,13 +9808,12 @@ function RibbonTabBtn({ label, active, onClick, fileStyle, highlight }: {
   );
 }
 
-function RibbonGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function RibbonGroup({ children }: { label?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 flex items-stretch gap-1 px-1.5 pb-0.5">
         {children}
       </div>
-      <div className="text-[10px] text-center text-gray-600 border-t border-gray-300 pt-0.5">{label}</div>
       <div style={{ width: "1px", background: "#d0d0d0", position: "absolute" }} />
     </div>
   );
