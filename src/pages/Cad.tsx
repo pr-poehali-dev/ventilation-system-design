@@ -51,6 +51,7 @@ import VentPipeDialog from "@/components/cad/VentPipeDialog";
 import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
+import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FUNC2URL from "../../backend/func2url.json";
 
 const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
@@ -1635,6 +1636,8 @@ export default function CadPage() {
   const [showAbout, setShowAbout] = useState<boolean>(false);
   // Диалог руководства пользователя
   const [showHelpDialog, setShowHelpDialog] = useState<boolean>(false);
+  const [showDepressogram, setShowDepressogram] = useState<boolean>(false);
+  const [depressogramHighlight, setDepressogramHighlight] = useState<string[]>([]);
 
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
@@ -3473,10 +3476,20 @@ export default function CadPage() {
         );
       })()}
 
-      {/* ═══ RIBBON CONTENT: ВЕНТИЛЯЦИЯ (заглушка) ═══════════════════════ */}
+      {/* ═══ RIBBON CONTENT: ВЕНТИЛЯЦИЯ ══════════════════════════════════ */}
       {activeRibbon === "thermo" && (
-      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0"
-        style={{ background: "linear-gradient(180deg,#f5f5f5,#e8e8e8)", borderBottom: "1px solid #b0b0b0" }}>
+      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
+        style={{ background: "linear-gradient(180deg,#f0f7ff,#e4effa)", borderBottom: "1px solid #b0c4de" }}>
+        <RibbonGroup label="Анализ">
+          <RibbonBigBtn
+            icon="TrendingDown"
+            label="Депрессио-"
+            sublabel="грамма"
+            title="Построить депрессиограмму главного маршрута"
+            disabled={!solveResult}
+            onClick={() => setShowDepressogram(true)}
+          />
+        </RibbonGroup>
       </div>
       )}
 
@@ -9966,6 +9979,15 @@ export default function CadPage() {
     {/* ── Руководство пользователя ────────────────────────────────────── */}
     {showHelpDialog && (
       <HelpDialog onClose={() => setShowHelpDialog(false)} />
+    )}
+
+    {showDepressogram && (
+      <DepressogramDialog
+        nodes={nodes}
+        branches={branches}
+        onClose={() => { setShowDepressogram(false); setDepressogramHighlight([]); }}
+        onHighlightPath={ids => setDepressogramHighlight(ids)}
+      />
     )}
 
     {/* ── Диалог лицензии ─────────────────────────────────────────────── */}
