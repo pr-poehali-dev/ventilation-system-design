@@ -3941,14 +3941,9 @@ export default function CadPage() {
                   setPositionPlaceMode(v => !v);
                 }
               }}>
-              <div className="flex items-center gap-1">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold flex-shrink-0"
-                  style={{ background: positionPlaceMode ? "#2563eb" : "#e53e3e", color: "white" }}>
-                  {selectedPositionId ? (positions.find(p => p.id === selectedPositionId)?.number ?? "?") : "?"}
-                </div>
-                <span className="text-[9px] leading-tight" style={{ color: positionPlaceMode ? "#2563eb" : "#374151" }}>
-                  Поз.<br />ПЛА
-                </span>
+              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold"
+                style={{ background: positionPlaceMode ? "#2563eb" : "#e53e3e", color: "white" }}>
+                {selectedPositionId ? (positions.find(p => p.id === selectedPositionId)?.number ?? "?") : "?"}
               </div>
             </RibbonSmallBtn>
             {/* Текстовый блок */}
@@ -3956,14 +3951,8 @@ export default function CadPage() {
               title="Добавить текстовый блок (кликните на схеме)"
               active={tool === "textblock"}
               onClick={() => setTool(tool === "textblock" ? "select" : "textblock")}>
-              <div className="flex items-center gap-1">
-                <span className="font-serif text-[16px] font-bold leading-none"
-                  style={{ color: tool === "textblock" ? "#2563eb" : "#374151" }}>T</span>
-                <span className="text-[9px] leading-tight"
-                  style={{ color: tool === "textblock" ? "#2563eb" : "#374151" }}>
-                  Текст<br />блок
-                </span>
-              </div>
+              <span className="font-serif text-[17px] font-bold leading-none"
+                style={{ color: tool === "textblock" ? "#2563eb" : "#374151" }}>T</span>
             </RibbonSmallBtn>
           </div>
         </RibbonGroup>
