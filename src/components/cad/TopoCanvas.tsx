@@ -897,7 +897,7 @@ export default function TopoCanvas(props: Props) {
         const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
         if (moved < 10 && touchHitRef.current) {
           const { projNodes: pn, projNodesMap: pnm, branches: br, onSelectNode: selN, onSelectBranch: selB, view: v, xyScale: xys, branchWidth: bw } = touchHitRef.current;
-          const sf = Math.max(0.25, v.scale / ((xys ?? 1) * 0.4));
+          const sf = Math.max(0.25, v.scale / 0.4);
           const nodeR = Math.max(16, bw * sf * 0.55);
           const branchTol = Math.max(12, bw * sf * 0.5);
           const hitN = hitNodeCanvas(sx, sy, pn, nodeR);
@@ -978,21 +978,20 @@ export default function TopoCanvas(props: Props) {
   }, [proj, zLevel, is3D, effPlane.axis, effPlane.value, xyScale, zScale]);
 
   // ─── Hit-тесты с масштабированием по zoom ───────────────────────────────
-  // Радиус/толерантность растут вместе с objSF чтобы при любом зуме было легко попасть.
-  // Минимум: 8px для узла, 5px для ветви (удобный клик при мелком масштабе).
-  // Максимум: реальный размер объекта × 0.55 (не выходим за границы соседних объектов).
-  const _xyHit = xyScale ?? 1;
-  const _objSF = Math.max(0.25, view.scale / (_xyHit * 0.4));
+  // _objSF зависит ТОЛЬКО от view.scale (zoom), без xyScale —
+  // иначе при растяжении схемы по X/Y допуск падал до минимума и ветви не ловились.
+  // Минимум: 8px для узла, 6px для ветви.
+  const _objSF = Math.max(0.25, view.scale / 0.4);
   // Радиус попадания в узел: не меньше 8px, но не больше половины размера узла
   const hitNodeR = (sx: number, sy: number, pn: typeof projNodes, extraR = 0) => {
     const baseW = branchWidth ?? 2.5;
     const nodeR = Math.max(8, baseW * _objSF * 0.55) + extraR;
     return hitNodeCanvas(sx, sy, pn, nodeR);
   };
-  // Толерантность попадания в ветвь: не меньше 5px, растёт с zoom
+  // Толерантность попадания в ветвь: не меньше 6px, растёт с zoom
   const hitBranchR = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches, extraTol = 0) => {
     const baseW = branchWidth ?? 2.5;
-    const tol = Math.max(5, baseW * _objSF * 0.5) + extraTol;
+    const tol = Math.max(6, baseW * _objSF * 0.5) + extraTol;
     return hitBranchCanvas(sx, sy, pnm, br, tol);
   };
   const hitNode  = (sx: number, sy: number, pn: typeof projNodes)                               => hitNodeR(sx, sy, pn);
