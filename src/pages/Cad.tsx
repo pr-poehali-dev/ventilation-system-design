@@ -3516,24 +3516,25 @@ export default function CadPage() {
 
       {/* ═══ RIBBON CONTENT: АВАРИИ ════════════════════════════════════════ */}
       {activeRibbon === "involve" && (
-      <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5 overflow-x-auto"
+      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
         style={{ background: "linear-gradient(180deg,#fff5f5,#fce8e8)", borderBottom: "1px solid #fca5a5" }}>
 
-        {/* ── Группа: Очаг пожара ── */}
-        <RibbonGroup label="Очаг пожара">
+        {/* ── Группа: Пожар ── */}
+        <RibbonGroup label="Пожар">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn
               icon="Flame"
               label="Установить"
               sublabel="очаг пожара"
               onClick={() => { handlePickSymbol("fire_source"); setActiveRibbon("involve"); }}
+              active={schemaSymbols.some(s => s.typeId === "fire_source")}
               style={{ background: schemaSymbols.some(s => s.typeId === "fire_source") ? "#fee2e2" : undefined,
                        borderColor: schemaSymbols.some(s => s.typeId === "fire_source") ? "#fca5a5" : undefined }}
             />
             <RibbonBigBtn
               icon="Trash2"
               label="Убрать"
-              sublabel="очаги пожара"
+              sublabel="очаги"
               disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
               onClick={() => {
                 schemaSymbols.filter(s => FIRE_SYMBOL_IDS.has(s.typeId)).forEach(s => {
@@ -3547,36 +3548,8 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
-        {/* ── Группа: Взрыв ── */}
-        <RibbonGroup label="Взрыв">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn
-              icon="Zap"
-              label="Установить"
-              sublabel="место взрыва"
-              onClick={() => { handlePickSymbol("explosion_source"); setActiveRibbon("involve"); }}
-              style={{ background: schemaSymbols.some(s => s.typeId === "explosion_source") ? "#fef3c7" : undefined,
-                       borderColor: schemaSymbols.some(s => s.typeId === "explosion_source") ? "#fcd34d" : undefined }}
-            />
-            <RibbonBigBtn
-              icon="Trash2"
-              label="Убрать"
-              sublabel="взрывы"
-              disabled={!schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId))}
-              onClick={() => {
-                schemaSymbols.filter(s => EXPLOSION_SYMBOL_IDS.has(s.typeId)).forEach(s => {
-                  if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
-                  removeSymbol(s.id);
-                });
-                setExplosionResult(null);
-                setExplosionCalcDone(false);
-              }}
-            />
-          </div>
-        </RibbonGroup>
-
-        {/* ── Группа: Расчёт ── */}
-        <RibbonGroup label="Расчёт">
+        {/* ── Группа: Расчёт пожара ── */}
+        <RibbonGroup label="Расчёт пожара">
           <div className="flex items-stretch gap-1">
             <button
               onClick={async () => {
@@ -3707,11 +3680,11 @@ export default function CadPage() {
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
               }}
               disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
-              className="flex flex-col items-center justify-center px-3 py-1 rounded border min-w-[64px] disabled:opacity-40"
-              style={{ background: "#dc2626", color: "white", border: "1px solid #b91c1c", cursor: "pointer" }}
+              className="flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] disabled:opacity-40"
+              style={{ width: 52, height: 60, background: "#dc2626", color: "white", borderColor: "#b91c1c", cursor: "pointer", flexShrink: 0 }}
               title="Расчёт распространения задымления и тепловой депрессии">
-              <Icon name="Flame" size={22} />
-              <div className="text-[10px] leading-tight mt-0.5 text-center"><div>Расчёт</div><div>пожара</div></div>
+              <Icon name="Flame" size={20} />
+              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2 }}><div>Расчёт</div><div>пожара</div></div>
             </button>
             <RibbonBigBtn
               icon={showSmoke ? "EyeOff" : "Eye"}
@@ -3722,11 +3695,40 @@ export default function CadPage() {
               onClick={() => setShowSmoke(v => !v)}
             />
             <RibbonBigBtn
-              icon="X"
+              icon="RotateCcw"
               label="Сбросить"
-              sublabel="результаты"
+              sublabel="пожар"
               disabled={!fireCalcDone}
               onClick={() => { setFireResult(null); setFireCalcDone(false); setBranches(prev => prev.map(b => ({ ...b, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 }))); }}
+            />
+          </div>
+        </RibbonGroup>
+
+        {/* ── Группа: Взрыв ── */}
+        <RibbonGroup label="Взрыв">
+          <div className="flex items-stretch gap-1">
+            <RibbonBigBtn
+              icon="Zap"
+              label="Установить"
+              sublabel="место взрыва"
+              onClick={() => { handlePickSymbol("explosion_source"); setActiveRibbon("involve"); }}
+              active={schemaSymbols.some(s => s.typeId === "explosion_source")}
+              style={{ background: schemaSymbols.some(s => s.typeId === "explosion_source") ? "#fef3c7" : undefined,
+                       borderColor: schemaSymbols.some(s => s.typeId === "explosion_source") ? "#fcd34d" : undefined }}
+            />
+            <RibbonBigBtn
+              icon="Trash2"
+              label="Убрать"
+              sublabel="очаги"
+              disabled={!schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId))}
+              onClick={() => {
+                schemaSymbols.filter(s => EXPLOSION_SYMBOL_IDS.has(s.typeId)).forEach(s => {
+                  if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
+                  removeSymbol(s.id);
+                });
+                setExplosionResult(null);
+                setExplosionCalcDone(false);
+              }}
             />
           </div>
         </RibbonGroup>
@@ -3914,11 +3916,11 @@ export default function CadPage() {
                 }
               }}
               disabled={!schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId))}
-              className="flex flex-col items-center justify-center px-3 py-1 rounded border min-w-[64px] disabled:opacity-40"
-              style={{ background: "#f59e0b", color: "white", border: "1px solid #d97706", cursor: "pointer" }}
+              className="flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] disabled:opacity-40"
+              style={{ width: 52, height: 60, background: "#d97706", color: "white", borderColor: "#b45309", cursor: "pointer", flexShrink: 0 }}
               title="Расчёт параметров воздушной ударной волны">
-              <Icon name="Zap" size={22} />
-              <div className="text-[10px] leading-tight mt-0.5 text-center"><div>Расчёт</div><div>взрыва</div></div>
+              <Icon name="Zap" size={20} />
+              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2 }}><div>Расчёт</div><div>взрыва</div></div>
             </button>
             <RibbonBigBtn
               icon={showExplosionZones ? "EyeOff" : "Eye"}
@@ -3936,9 +3938,9 @@ export default function CadPage() {
               onClick={() => setBranches(prev => prev.map(b => ({ ...b, bulkheadDestroyedByExplosion: false })))}
             />
             <RibbonBigBtn
-              icon="X"
+              icon="RotateCcw"
               label="Сбросить"
-              sublabel="результаты"
+              sublabel="взрыв"
               disabled={!explosionCalcDone}
               onClick={() => {
                 setExplosionResult(null);
@@ -3950,25 +3952,13 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
-        {/* ── Статус взрыва ── */}
-        {explosionCalcDone && explosionResult && (
-          <RibbonGroup label="Результат взрыва">
-            <div className="flex flex-col justify-center px-2 text-[10px] min-w-[160px] gap-0.5">
-              <div className="font-semibold text-amber-700">💥 Q_тнт: {explosionResult.q_tnt_kg} кг</div>
-              <div className="text-orange-700">ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
-              <div className="text-gray-700">D = {explosionResult.waveFrontSpeed_ms} м/с</div>
-              <div className="text-red-700">R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
-            </div>
-          </RibbonGroup>
-        )}
-
         {/* ── Группа: Пути движения ── */}
         <RibbonGroup label="Пути движения">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn
               icon="PersonStanding"
-              label="Вычислить время"
-              sublabel="хода горнорабочего"
+              label="Время хода"
+              sublabel="горнорабочего"
               active={activeSide === "workerPath"}
               onClick={() => {
                 if (activeSide === "workerPath") {
@@ -3986,8 +3976,8 @@ export default function CadPage() {
             />
             <RibbonBigBtn
               icon="ShieldCheck"
-              label="Расчёт"
-              sublabel="горноспасателей"
+              label="Горноспа-"
+              sublabel="сатели"
               active={activeSide === "rescue"}
               onClick={() => {
                 if (activeSide === "rescue") {
@@ -4006,20 +3996,29 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
-        {/* ── Группа: Статус ── */}
+        {/* ── Результат пожара ── */}
         {fireCalcDone && fireResult && (
-          <RibbonGroup label="Результат расчёта">
-            <div className="flex flex-col justify-center px-2 text-[10px] min-w-[160px] gap-0.5">
-              <div className="font-semibold text-red-700">🔥 T очага: {fireResult.fireTemp.toFixed(1)} °C</div>
-              <div className="text-orange-700">h_t = {fireResult.fireThermalDep.toFixed(1)} Па</div>
-              <div className="text-gray-700">Задымлено ветвей: {fireResult.branches.size}</div>
-              {fireResult.reversedBranches.size > 0 ? (
-                <div className="font-semibold px-1 rounded" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}>
-                  ⚠️ Опрокидывание: {fireResult.reversedBranches.size} вет.
-                </div>
-              ) : (
-                <div className="text-green-700">✓ Струя устойчива</div>
-              )}
+          <RibbonGroup label="Результат: пожар">
+            <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
+              <div className="font-semibold" style={{ color: "#b91c1c" }}>T очага: {fireResult.fireTemp.toFixed(1)} °C</div>
+              <div style={{ color: "#c2410c" }}>h_t = {fireResult.fireThermalDep.toFixed(1)} Па</div>
+              <div style={{ color: "#374151" }}>Задымлено: {fireResult.branches.size} вет.</div>
+              {fireResult.reversedBranches.size > 0
+                ? <div className="font-semibold px-1 rounded" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}>⚠ Опрокид.: {fireResult.reversedBranches.size}</div>
+                : <div style={{ color: "#15803d" }}>✓ Струя устойчива</div>
+              }
+            </div>
+          </RibbonGroup>
+        )}
+
+        {/* ── Результат взрыва ── */}
+        {explosionCalcDone && explosionResult && (
+          <RibbonGroup label="Результат: взрыв">
+            <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
+              <div className="font-semibold" style={{ color: "#92400e" }}>Q_тнт: {explosionResult.q_tnt_kg} кг</div>
+              <div style={{ color: "#c2410c" }}>ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
+              <div style={{ color: "#374151" }}>D = {explosionResult.waveFrontSpeed_ms} м/с</div>
+              <div style={{ color: "#b91c1c" }}>R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
             </div>
           </RibbonGroup>
         )}
