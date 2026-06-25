@@ -356,8 +356,9 @@ export function calcRescue(
       const o2_clean       = time_clean       * o2c;
       const o2_smoky_low   = time_smoky_low  * o2c;
       const o2_smoky_high  = time_smoky_high * o2c;
-      // Расход O₂ на 100 м: o2c (л/мин) * 100 (м) / speed (м/мин)
-      const o2_per_100m = speed > 0 ? o2c * 100 / speed : 0;
+      // Расход O₂ на 100 м при чистом воздухе (k3=1): o2c * 100 / speed_clean
+      // Так считает ПО Вентиляция — нормативный расход без учёта задымления
+      const o2_per_100m = speed_cl > 0 ? o2c * 100 / speed_cl : 0;
 
       const vis = smokeDens > 0 ? 2 / smokeDens : 999;
 

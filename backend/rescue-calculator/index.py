@@ -182,7 +182,8 @@ def build_segments(edges, branch_map, node_map, o2c):
         o2_clean       = time_clean       * o2c
         o2_smoky_low   = time_smoky_low  * o2c
         o2_smoky_high  = time_smoky_high * o2c
-        o2_per_100m    = o2c * 100.0 / speed if speed > 0 else 0.0
+        # Расход O₂ на 100 м при чистом воздухе (k3=1) — как в ПО Вентиляция
+        o2_per_100m    = o2c * 100.0 / speed_cl if speed_cl > 0 else 0.0
 
         vis = 2.0 / smoke_dens if smoke_dens > 0 else 999
 
