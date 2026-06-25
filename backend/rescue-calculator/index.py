@@ -199,7 +199,8 @@ def build_segments(edges, branch_map, node_map, o2c):
         time_back  = length / speed_back if speed_back > 0 and length > 0 else 0
         o2_back    = time_back * o2c
 
-        branch_label = (b.get("name") or "").strip()
+        # Название: type (тип выработки из схемы) → name → fallback узлы
+        branch_label = (b.get("type") or b.get("name") or "").strip()
         node_from = from_node.get("name") or (f"Узел {from_node.get('number')}" if from_node.get("number") else from_node_id)
         node_to   = to_node.get("name")   or (f"Узел {to_node.get('number')}"   if to_node.get("number")   else to_node_id)
         branch_name = f"{branch_label} ({node_from} → {node_to})" if branch_label else f"{node_from} → {node_to}"

@@ -15,6 +15,7 @@ interface NodeLite { id: string; name: string; number: string; x: number; y: num
 interface BranchLite {
   id: string; fromId: string; toId: string;
   number?: string;  // номер ветви из схемы
+  type?: string;    // тип/название выработки из схемы
   length: number; angle: number; area: number;
   name?: string;
   fireComputedSmokeDens?: number;

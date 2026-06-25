@@ -188,6 +188,7 @@ export interface TopoBranchLite {
   length: number;
   angle: number;
   area: number;
+  type?: string;     // тип/название выработки из схемы (TopoBranch.type)
   name?: string;
   fireComputedSmokeDens?: number;
   fireComputedCO?: number;
@@ -377,9 +378,8 @@ export function calcRescue(
       const time_back = b.length > 0 ? b.length / speedBack : 0;
       const o2_back   = time_back * o2c;
 
-      // Название выработки: если есть поле name — используем его;
-      // иначе собираем «Узел X → Узел Y»
-      const branchLabel = b.name?.trim() || "";
+      // Название выработки: type (тип выработки из схемы) → name → fallback узлы
+      const branchLabel = b.type?.trim() || b.name?.trim() || "";
       const nodeFrom = fromNode?.name || (fromNode?.number ? `Узел ${fromNode.number}` : fromNodeId);
       const nodeTo   = toNode?.name   || (toNode?.number   ? `Узел ${toNode.number}`   : toNodeId);
       const branchName = branchLabel
