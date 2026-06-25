@@ -108,14 +108,14 @@ function findMainRoute(
     // Исключаем поверхностный конец ВГП из обхода
     visited.add(surfNodeId);
 
-    const MAX_STEPS = 600;
+    const MAX_STEPS = 800;
     let steps = 0;
 
     while (steps < MAX_STEPS) {
       steps++;
       const neighbors = adj.get(current) ?? [];
 
-      // Кандидаты: не посещённые, не перемычки (в приоритете)
+      // Кандидаты: не посещённые, не перемычки (в приоритете), без других ВГП
       const candidatesNoBulk = neighbors
         .filter(n => !visited.has(n.neighborId) && !n.hasBulkhead && !n.hasFan)
         .sort((a, b) => b.flow - a.flow);
@@ -125,7 +125,9 @@ function findMainRoute(
         .sort((a, b) => b.flow - a.flow);
 
       const chosen = candidatesNoBulk[0] ?? candidatesAll[0];
-      if (!chosen || chosen.flow < 0.001) break; // нет расхода — тупик
+      // Останавливаемся только если вообще нет доступных соседей
+      // (не по порогу расхода — на длинных маршрутах расход дробится на разветвлениях)
+      if (!chosen) break;
 
       visited.add(chosen.neighborId);
       nodePath.push(chosen.neighborId);
