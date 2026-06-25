@@ -552,6 +552,54 @@ export default function DepressogramDialog({
     });
     totRow.height = 20;
 
+    // ── Лист 2: данные для построения графика в Excel ──────────────────────────
+    const ws2 = wb.addWorksheet("Данные графика", { views: [{ showGridLines: true }] });
+    ws2.columns = [
+      { key: "len", header: "Длина, м", width: 14 },
+      { key: "pres", header: "Напор, Па", width: 14 },
+      { key: "node", header: "Узел", width: 12 },
+      { key: "branch", header: "Выработка", width: 38 },
+      { key: "dp", header: "ΔP, Па", width: 12 },
+    ];
+    // Заголовок
+    const h2 = ws2.getRow(1);
+    h2.eachCell(cell => {
+      cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D4ED8" } };
+      cell.alignment = { horizontal: "center" };
+    });
+    h2.height = 20;
+    // Данные
+    points.forEach(p => {
+      const row = ws2.addRow({
+        len: +p.cumulativeLength.toFixed(2),
+        pres: +p.pressure.toFixed(2),
+        node: p.nodeNumber || p.nodeId,
+        branch: p.branchName,
+        dp: +p.dP.toFixed(2),
+      });
+      row.getCell("len").numFmt  = "#,##0.00";
+      row.getCell("pres").numFmt = "#,##0.00";
+      row.getCell("dp").numFmt   = "#,##0.00";
+      row.height = 17;
+    });
+    // Встроенная диаграмма (линейный график Напор → Длина)
+    const dataRowCount = points.length;
+    ws2.addChart({
+      type: "line",
+      series: [{
+        name: "Напор, Па",
+        xValues: { sheet: "Данные графика", ref: `A2:A${dataRowCount + 1}` },
+        yValues: { sheet: "Данные графика", ref: `B2:B${dataRowCount + 1}` },
+        color: "2563eb",
+      }],
+      title: { name: "Депрессиограмма" },
+      plotArea: { numFmt: "0" },
+      legend: { position: "b" },
+      tl: { col: 6, row: 0 },
+      br: { col: 16, row: 20 },
+    } as Parameters<typeof ws2.addChart>[0]);
+
     // ── Скачиваем файл ──
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
