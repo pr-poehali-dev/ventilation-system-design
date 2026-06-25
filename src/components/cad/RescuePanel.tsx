@@ -73,12 +73,13 @@ function MetricRow({ label, value, sub, warn }: { label: string; value: string; 
 
 // Мини-график времени/кислорода
 function ChartTab({
-  segments, segmentsBack, type, careTime
+  segments, segmentsBack, type, careTime, showBack
 }: {
   segments: RescueSegment[];
   segmentsBack: RescueSegment[];
   type: "time" | "oxygen";
   careTime: number;
+  showBack: boolean;
 }) {
   const W = 320; const H = 120; const PAD = 30;
   const fw = W - PAD * 2; const fh = H - PAD * 1.5;
@@ -88,12 +89,12 @@ function ChartTab({
     y: type === "time" ? s.cumulTime : s.cumulO2,
   }));
   const lastFwd = fwdPoints[fwdPoints.length - 1];
-  const bwdPoints = segmentsBack.map((s, i) => ({
+  const bwdPoints = showBack ? segmentsBack.map(s => ({
     x: (lastFwd?.x ?? 0) + careTime + s.cumulTime,
     y: type === "time"
       ? (lastFwd?.y ?? 0) + careTime + s.cumulTime
       : (lastFwd?.y ?? 0) + careTime * 1.4 + s.cumulO2,
-  }));
+  })) : [];
 
   const allPts = [{ x: 0, y: 0 }, ...fwdPoints, ...bwdPoints];
   const maxX = Math.max(...allPts.map(p => p.x), 1);
@@ -104,9 +105,10 @@ function ChartTab({
     sy: PAD + fh - (p.y / maxY) * fh,
   });
 
-  const pts = allPts.map(toSvg);
   const fwdPts = [{ sx: PAD, sy: PAD + fh }, ...fwdPoints.map(toSvg)];
-  const bwdPts = [(fwdPoints.length > 0 ? toSvg(fwdPoints[fwdPoints.length - 1]) : { sx: PAD, sy: PAD + fh }), ...bwdPoints.map(toSvg)];
+  const bwdPts = showBack
+    ? [(fwdPoints.length > 0 ? toSvg(fwdPoints[fwdPoints.length - 1]) : { sx: PAD, sy: PAD + fh }), ...bwdPoints.map(toSvg)]
+    : [];
 
   const poly = (arr: Array<{ sx: number; sy: number }>) =>
     arr.map(p => `${p.sx.toFixed(1)},${p.sy.toFixed(1)}`).join(" ");
@@ -143,8 +145,10 @@ function ChartTab({
 
       {/* Линия туда — красная */}
       <polyline points={poly(fwdPts)} fill="none" stroke="#dc2626" strokeWidth={1.5} />
-      {/* Линия обратно — серая */}
-      <polyline points={poly(bwdPts)} fill="none" stroke="#6b7280" strokeWidth={1.5} strokeDasharray="4 2" />
+      {/* Линия обратно — серая (только если есть обратный путь) */}
+      {showBack && bwdPts.length > 1 && (
+        <polyline points={poly(bwdPts)} fill="none" stroke="#6b7280" strokeWidth={1.5} strokeDasharray="4 2" />
+      )}
 
       {/* Оси подписи */}
       <text x={PAD - 25} y={PAD + fh / 2} fontSize={8} fill="#6b7280"
@@ -251,6 +255,7 @@ function RescueResultDialog({
 }) {
   const [chartTab, setChartTab] = useState<"time" | "oxygen">("time");
   const [tableTab, setTableTab] = useState<"forward" | "back">("forward");
+  const hasBack = result.operationType !== "scout" && result.operationType !== "liquidation";
 
   return (
     <div
@@ -310,8 +315,8 @@ function RescueResultDialog({
                 {result.ok ? "✓ Выполнимо" : "✗ Превышение ресурса"}
               </div>
               <MetricRow label="Туда" value={`${result.totalTimeForward.toFixed(1)} мин`} />
-              <MetricRow label="Помощь" value={`${result.careTime.toFixed(1)} мин`} />
-              <MetricRow label="Обратно" value={`${result.totalTimeBack.toFixed(1)} мин`} />
+              {hasBack && <MetricRow label="Помощь" value={`${result.careTime.toFixed(1)} мин`} />}
+              {hasBack && <MetricRow label="Обратно" value={`${result.totalTimeBack.toFixed(1)} мин`} />}
             </div>
           </div>
 
@@ -372,6 +377,7 @@ function RescueResultDialog({
                 segmentsBack={result.segmentsBack}
                 type={chartTab}
                 careTime={result.careTime}
+                showBack={hasBack}
               />
             </div>
             <div className="flex gap-4 justify-center mt-1">
@@ -379,27 +385,36 @@ function RescueResultDialog({
                 <svg width={20} height={4}><line x1={0} y1={2} x2={20} y2={2} stroke="#dc2626" strokeWidth={2} /></svg>
                 Туда
               </div>
-              <div className="flex items-center gap-1 text-[10px] text-gray-600">
-                <svg width={20} height={4}><line x1={0} y1={2} x2={20} y2={2} stroke="#6b7280" strokeWidth={2} strokeDasharray="4 2" /></svg>
-                Обратно
-              </div>
+              {hasBack && (
+                <div className="flex items-center gap-1 text-[10px] text-gray-600">
+                  <svg width={20} height={4}><line x1={0} y1={2} x2={20} y2={2} stroke="#6b7280" strokeWidth={2} strokeDasharray="4 2" /></svg>
+                  Обратно
+                </div>
+              )}
             </div>
           </div>
 
           {/* Таблица сегментов */}
           <div>
             <div className="flex gap-1 mb-2">
-              {(["forward", "back"] as const).map(t => (
-                <button key={t}
-                  onClick={() => setTableTab(t)}
-                  className={`text-[11px] px-2 py-0.5 rounded border ${tableTab === t ? "bg-blue-600 text-white border-blue-700" : "bg-white text-gray-700 border-gray-300"}`}>
-                  {t === "forward" ? `Туда (${result.segments.length} уч.)` : `Обратно (${result.segmentsBack.length} уч.)`}
+              <button
+                onClick={() => setTableTab("forward")}
+                className={`text-[11px] px-2 py-0.5 rounded border ${tableTab === "forward" ? "bg-blue-600 text-white border-blue-700" : "bg-white text-gray-700 border-gray-300"}`}>
+                {`Туда (${result.segments.length} уч.)`}
+              </button>
+              {hasBack && (
+                <button
+                  onClick={() => setTableTab("back")}
+                  className={`text-[11px] px-2 py-0.5 rounded border ${tableTab === "back" ? "bg-blue-600 text-white border-blue-700" : "bg-white text-gray-700 border-gray-300"}`}>
+                  {`Обратно (${result.segmentsBack.length} уч.)`}
                 </button>
-              ))}
+              )}
             </div>
             {tableTab === "forward"
               ? <SegmentsTable segments={result.segments} title="Маршрут туда" />
-              : <SegmentsTable segments={result.segmentsBack} title="Маршрут обратно" />
+              : hasBack
+                ? <SegmentsTable segments={result.segmentsBack} title="Маршрут обратно" />
+                : null
             }
           </div>
         </div>
@@ -431,6 +446,7 @@ function zoneLabel(zone: "clean" | "smoky_low" | "smoky_high") {
 function exportToCSV(result: RescueResult) {
   const rows: string[][] = [];
   const op = OP_LABELS[result.operationType];
+  const hasBack = result.operationType !== "scout" && result.operationType !== "liquidation";
 
   rows.push([`График времени движения горноспасателей — ${op}`]);
   rows.push([]);
@@ -441,31 +457,35 @@ function exportToCSV(result: RescueResult) {
   rows.push(["", "", "Слабое задымление (видим. 5-10 м)", result.totalTime_smoky_low.toFixed(1), result.totalO2_smoky_low.toFixed(1)]);
   rows.push(["", "", "Густое задымление (видим. <5 м)", result.totalTime_smoky_high.toFixed(1), result.totalO2_smoky_high.toFixed(1)]);
   rows.push([]);
-  rows.push(["Туда, мин", result.totalTimeForward.toFixed(1), "Помощь, мин", result.careTime.toFixed(1), "Обратно, мин", result.totalTimeBack.toFixed(1)]);
+
+  if (hasBack) {
+    rows.push(["Туда, мин", result.totalTimeForward.toFixed(1), "Помощь, мин", result.careTime.toFixed(1), "Обратно, мин", result.totalTimeBack.toFixed(1)]);
+  } else {
+    rows.push(["Туда, мин", result.totalTimeForward.toFixed(1)]);
+  }
   rows.push([]);
 
   const header = [
     "Выработка", "Сегм.", "Длина, м", "Угол, °",
-    // Фактическая зона
     "Зона (факт.)", "V факт., м/мин", "t факт., мин", "O2 факт., л", "Σt факт., мин", "ΣO2 факт., л",
-    // Слабое задымление
     "V слаб., м/мин", "t слаб., мин", "O2 слаб., л",
-    // Густое задымление
     "V густ., м/мин", "t густ., мин", "O2 густ., л",
   ];
 
   const segRow = (s: RescueSegment) => [
     s.branchName, String(s.segmentNumber), String(Math.round(s.length)), s.angle.toFixed(0),
-    zoneLabel(s.zone), String(s.speed_mpm), s.time_min.toFixed(2), s.o2_liters.toFixed(2),
+    zoneLabel(s.zone), String(s.speed_mpm.toFixed ? s.speed_mpm.toFixed(2) : s.speed_mpm),
+    s.time_min.toFixed(2), s.o2_liters.toFixed(2),
     s.cumulTime.toFixed(2), s.cumulO2.toFixed(2),
-    String(s.speed_smoky_low), s.time_smoky_low.toFixed(2), s.o2_smoky_low.toFixed(2),
-    String(s.speed_smoky_high), s.time_smoky_high.toFixed(2), s.o2_smoky_high.toFixed(2),
+    String(s.speed_smoky_low.toFixed ? s.speed_smoky_low.toFixed(2) : s.speed_smoky_low),
+    s.time_smoky_low.toFixed(2), s.o2_smoky_low.toFixed(2),
+    String(s.speed_smoky_high.toFixed ? s.speed_smoky_high.toFixed(2) : s.speed_smoky_high),
+    s.time_smoky_high.toFixed(2), s.o2_smoky_high.toFixed(2),
   ];
 
   rows.push(["=== МАРШРУТ ТУДА ==="]);
   rows.push(header);
   for (const s of result.segments) rows.push(segRow(s));
-  // Итоговая строка туда
   rows.push([
     "ИТОГО ТУДА", "", String(Math.round(result.segments.reduce((a, s) => a + s.length, 0))), "",
     "", "", result.totalTimeForward.toFixed(2), result.totalO2Forward.toFixed(2), "", "",
@@ -475,18 +495,20 @@ function exportToCSV(result: RescueResult) {
     result.segments.reduce((a, s) => a + s.o2_smoky_high, 0).toFixed(2),
   ]);
 
-  rows.push([]);
-  rows.push(["=== МАРШРУТ ОБРАТНО ==="]);
-  rows.push(header);
-  for (const s of result.segmentsBack) rows.push(segRow(s));
-  rows.push([
-    "ИТОГО ОБРАТНО", "", String(Math.round(result.segmentsBack.reduce((a, s) => a + s.length, 0))), "",
-    "", "", result.totalTimeBack.toFixed(2), result.totalO2Back.toFixed(2), "", "",
-    "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_low, 0).toFixed(2),
-    result.segmentsBack.reduce((a, s) => a + s.o2_smoky_low, 0).toFixed(2),
-    "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_high, 0).toFixed(2),
-    result.segmentsBack.reduce((a, s) => a + s.o2_smoky_high, 0).toFixed(2),
-  ]);
+  if (hasBack) {
+    rows.push([]);
+    rows.push(["=== МАРШРУТ ОБРАТНО ==="]);
+    rows.push(header);
+    for (const s of result.segmentsBack) rows.push(segRow(s));
+    rows.push([
+      "ИТОГО ОБРАТНО", "", String(Math.round(result.segmentsBack.reduce((a, s) => a + s.length, 0))), "",
+      "", "", result.totalTimeBack.toFixed(2), result.totalO2Back.toFixed(2), "", "",
+      "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_low, 0).toFixed(2),
+      result.segmentsBack.reduce((a, s) => a + s.o2_smoky_low, 0).toFixed(2),
+      "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_high, 0).toFixed(2),
+      result.segmentsBack.reduce((a, s) => a + s.o2_smoky_high, 0).toFixed(2),
+    ]);
+  }
 
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
