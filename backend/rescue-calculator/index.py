@@ -27,36 +27,56 @@ CORS = {
 }
 
 
-# ─── Нормативные скорости (РД 15-11-2007, Приложение 4) ───────────────────────
+# ─── Нормативные скорости ─────────────────────────────────────────────────────
+# Источник: Инструкция по локализации и ликвидации последствий аварий
+# (пр. Ростехнадзора от 11.12.2020 N 520), Приложение 4.
+#
+# Базовые скорости в чистом воздухе (м/мин) — линейная интерполяция по углу:
+#   подъём:  0°=45, 5°=37.5, 10°=30, 15°=24, 20°=20, 30°=14, 45°=10, 90°=6
+#   спуск:   0°=45, 5°=42,   10°=39, 15°=34, 20°=28, 30°=22, 45°=15, 90°=10
+#
+# Коэффициент k3 по зонам задымления (Рв = 2 / smoke_density):
+#   k3 = 1.00 — чистый воздух (Рв > 10 м)
+#   k3 = 1.43 — слабое задымление (Рв 5–10 м)
+#   k3 = 2.00 — густое задымление (Рв < 5 м)
+
+_SPEED_TABLE = [
+    # (angle, v_up, v_down)
+    (0,   45.0, 45.0),
+    (5,   37.5, 42.0),
+    (10,  30.0, 39.0),
+    (15,  24.0, 34.0),
+    (20,  20.0, 28.0),
+    (30,  14.0, 22.0),
+    (45,  10.0, 15.0),
+    (90,   6.0, 10.0),
+]
+
+def get_base_speed(angle_deg: float) -> float:
+    a = abs(angle_deg)
+    is_down = angle_deg < 0
+    for i in range(len(_SPEED_TABLE) - 1):
+        a0, u0, d0 = _SPEED_TABLE[i]
+        a1, u1, d1 = _SPEED_TABLE[i + 1]
+        if a0 <= a <= a1:
+            t = (a - a0) / (a1 - a0)
+            return (d0 + t * (d1 - d0)) if is_down else (u0 + t * (u1 - u0))
+    return 10.0 if is_down else 6.0
 
 def get_speed(zone: str, angle_deg: float) -> float:
-    a = abs(angle_deg)
-    if zone == "clean":
-        if a <= 5:  return 54
-        if a <= 10: return 46
-        if a <= 15: return 40
-        if a <= 20: return 34
-        if a <= 30: return 26
-        if a <= 45: return 18
-        return 16
-    if zone == "smoky_low":
-        if a <= 5:  return 45
-        if a <= 10: return 39
-        if a <= 20: return 28
-        if a <= 30: return 23
-        return 18
-    # smoky_high
-    if a <= 5:  return 31
-    if a <= 10: return 28
-    if a <= 20: return 22
-    return 18
+    v = get_base_speed(angle_deg)
+    if zone == "clean":      return v
+    if zone == "smoky_low":  return v / 1.43
+    return v / 2.0
 
 
 def get_zone(smoke_density: float) -> str:
     if smoke_density <= 0.001:
         return "clean"
-    vis = 2.0 / smoke_density if smoke_density > 0 else 999
-    return "smoky_low" if vis >= 5 else "smoky_high"
+    vis = 2.0 / smoke_density
+    if vis >= 10: return "clean"
+    if vis >= 5:  return "smoky_low"
+    return "smoky_high"
 
 
 # ─── Проходимость перемычки ────────────────────────────────────────────────────
@@ -259,29 +279,40 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
     # Направления ветвей для подсветки
     branch_dirs = {e["branchId"]: e["forward"] for e in all_path_edges}
 
-    # Суммирование
+    # ── Логика включения обратного пути по типу операции ──────────────────────
+    # "scout"       — только разведка туда, без обратного пути и помощи
+    # "liquidation" — туда + работы на месте (care), без обратного пути
+    # остальные     — туда + помощь + обратно
+    op_type = params.get("operationType", "scout_and_transport")
+    include_back = op_type not in ("scout", "liquidation")
+    include_care = op_type != "scout"
+
     total_time_fwd = sum(s["time_min"] for s in segments)
     total_time_bck = sum(s["time_min"] for s in segments_back)
     total_o2_fwd   = sum(s["o2_liters"] for s in segments)
     total_o2_bck   = sum(s["o2_liters"] for s in segments_back)
-    care = float(params.get("careTime") or 10) if params.get("provideCare") else 0.0
+    care_raw = float(params.get("careTime") or 10) if params.get("provideCare") else 0.0
+    care = care_raw if include_care else 0.0
+    eff_time_bck = total_time_bck if include_back else 0.0
+    eff_o2_bck   = total_o2_bck   if include_back else 0.0
 
-    ida_time_in_smoke = sum(s["time_min"] for s in segments + segments_back if s["zone"] != "clean")
-    ida_o2_in_smoke   = sum(s["o2_liters"] for s in segments + segments_back if s["zone"] != "clean")
+    smoke_segs = segments + (segments_back if include_back else [])
+    ida_time_in_smoke = sum(s["time_min"]   for s in smoke_segs if s["zone"] != "clean")
+    ida_o2_in_smoke   = sum(s["o2_liters"]  for s in smoke_segs if s["zone"] != "clean")
 
-    total_time = total_time_fwd + care + total_time_bck
-    total_o2   = total_o2_fwd + care * o2c + total_o2_bck
+    total_time = total_time_fwd + care + eff_time_bck
+    total_o2   = total_o2_fwd + care * o2c + eff_o2_bck
 
     fwd_sl = sum(s["time_smoky_low"]  for s in segments)
     fwd_sh = sum(s["time_smoky_high"] for s in segments)
-    bck_sl = sum(s["time_smoky_low"]  for s in segments_back)
-    bck_sh = sum(s["time_smoky_high"] for s in segments_back)
+    bck_sl = sum(s["time_smoky_low"]  for s in segments_back) if include_back else 0.0
+    bck_sh = sum(s["time_smoky_high"] for s in segments_back) if include_back else 0.0
     total_time_sl = fwd_sl + care + bck_sl
     total_time_sh = fwd_sh + care + bck_sh
     total_o2_sl = (sum(s["o2_smoky_low"]  for s in segments) + care * o2c
-                   + sum(s["o2_smoky_low"]  for s in segments_back))
+                   + (sum(s["o2_smoky_low"]  for s in segments_back) if include_back else 0.0))
     total_o2_sh = (sum(s["o2_smoky_high"] for s in segments) + care * o2c
-                   + sum(s["o2_smoky_high"] for s in segments_back))
+                   + (sum(s["o2_smoky_high"] for s in segments_back) if include_back else 0.0))
 
     ida_work_time = float(params.get("idaWorkTime") or 400)
     o2_volume     = float(params.get("oxygenVolume") or 400)
@@ -290,7 +321,8 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
     ida_time_pct = total_time / ida_work_time * 100 if use_ida_time and ida_work_time > 0 else 0
     ida_o2_pct   = total_o2 / o2_volume * 100 if o2_volume > 0 else 0
 
-    ok = (not use_ida_time or total_time <= ida_work_time) and total_o2 <= o2_volume
+    route_found = len(segments) > 0
+    ok = route_found and (not use_ida_time or total_time <= ida_work_time) and total_o2 <= o2_volume
 
     if not ok:
         if use_ida_time and total_time > ida_work_time:
@@ -345,5 +377,6 @@ def handler(event: dict, context) -> dict:
                 "body": json.dumps({"error": "startNodeId и targetNodeId обязательны"})}
 
     result = calc_rescue(nodes, branches, start_node_id, target_node_id, params)
-    return {"statusCode": 200, "headers": CORS,
-            "body": json.dumps(result, ensure_ascii=False)}
+    return {"statusCode": 200,
+            "headers": {**CORS, "Content-Type": "application/json"},
+            "body": result}

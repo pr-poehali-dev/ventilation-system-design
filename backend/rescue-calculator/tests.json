@@ -28,7 +28,7 @@
         }
       },
       "expectedStatus": 200,
-      "expectedBody": {"ok": true, "totalTimeForward": 5.56},
+      "expectedBody": {"ok": true, "totalTimeForward": 6.67},
       "bodyMatcher": "partial"
     },
     {

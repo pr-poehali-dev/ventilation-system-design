@@ -100,38 +100,66 @@ export interface RescueResult {
 }
 
 // ─── Нормативные скорости движения ────────────────────────────────────────────
-// Источник: РД 15-11-2007, Приложение 4, таблица скоростей движения ВГСЧ
+// Источник: РД 15-11-2007 / Инструкция по локализации и ликвидации последствий
+// аварий (пр. Ростехнадзора от 11.12.2020 N 520), Приложение 4.
 // Знак угла: + подъём, - спуск; горизонт = 0
+//
+// Базовые скорости в чистом воздухе (м/мин) при подъёме — линейная интерполяция:
+//   0°: 45,  5°: 37,5,  10°: 30,  15°: 24,  20°: 20,  30°: 14,  45°: 10
+// При спуске скорость выше (множитель ≈1.2):
+//   0°: 45,  5°: 42,    10°: 39,  15°: 34,  20°: 28,  30°: 22,  45°: 15
+//
+// Зоны задымления (коэффициент k3 по Инструкции N 520):
+//   k3 = 1,00 — чистый воздух (Рв > 10 м)
+//   k3 = 1,43 — слабое задымление (Рв 5–10 м)   → V_sl = V_clean / 1.43
+//   k3 = 2,00 — густое задымление (Рв < 5 м)    → V_sh = V_clean / 2.00
 
-function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number): number {
+function getBaseSpeed(angleDeg: number): number {
   const a = Math.abs(angleDeg);
-  if (zone === "clean") {
-    if (a <= 5)  return 54;
-    if (a <= 10) return 46;
-    if (a <= 15) return 40;
-    if (a <= 20) return 34;
-    if (a <= 30) return 26;
-    if (a <= 45) return 18;
-    return 16;
+  const isDown = angleDeg < 0;
+
+  // Опорные точки [угол, скорость_подъём, скорость_спуск]
+  const table: [number, number, number][] = [
+    [0,  45.0, 45.0],
+    [5,  37.5, 42.0],
+    [10, 30.0, 39.0],
+    [15, 24.0, 34.0],
+    [20, 20.0, 28.0],
+    [30, 14.0, 22.0],
+    [45, 10.0, 15.0],
+    [90,  6.0, 10.0],
+  ];
+
+  // Линейная интерполяция между соседними точками
+  for (let i = 0; i < table.length - 1; i++) {
+    const [a0, u0, d0] = table[i];
+    const [a1, u1, d1] = table[i + 1];
+    if (a >= a0 && a <= a1) {
+      const t = (a - a0) / (a1 - a0);
+      if (isDown) return d0 + t * (d1 - d0);
+      return u0 + t * (u1 - u0);
+    }
   }
-  if (zone === "smoky_low") {
-    if (a <= 5)  return 45;
-    if (a <= 10) return 39;
-    if (a <= 20) return 28;
-    if (a <= 30) return 23;
-    return 18;
-  }
-  // smoky_high
-  if (a <= 5)  return 31;
-  if (a <= 10) return 28;
-  if (a <= 20) return 22;
-  return 18;
+  return isDown ? 10.0 : 6.0;
 }
 
+function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number): number {
+  const vClean = getBaseSpeed(angleDeg);
+  if (zone === "clean")      return vClean;
+  if (zone === "smoky_low")  return vClean / 1.43;
+  return vClean / 2.0;
+}
+
+// Зона задымления по плотности дыма (коэффициент k3):
+//   smoke_density (м⁻¹): 0 → Рв = ∞; Рв = 2 / smoke_density
+//   k3 = 1    : Рв > 10 м (чистый воздух)
+//   k3 = 1.43 : Рв 5–10 м (слабое задымление)
+//   k3 = 2.0  : Рв < 5 м  (густое задымление)
 function getZone(smokeDensity: number): "clean" | "smoky_low" | "smoky_high" {
   if (smokeDensity <= 0.001) return "clean";
-  const vis = smokeDensity > 0 ? 2 / smokeDensity : Infinity;
-  if (vis >= 5) return "smoky_low";
+  const vis = 2.0 / smokeDensity;
+  if (vis >= 10) return "clean";
+  if (vis >= 5)  return "smoky_low";
   return "smoky_high";
 }
 
@@ -396,22 +424,34 @@ export function calcRescue(
     .filter(s => s.zone !== "clean")
     .reduce((s, seg) => s + seg.o2_liters, 0);
 
-  const totalTime = totalTimeForward + care + totalTimeBack;
-  const totalO2   = totalO2Forward + care * o2c + totalO2Back;
+  // ── Логика включения обратного пути по типу операции ──────────────────────
+  // "scout"       — только разведка туда, без обратного пути и помощи
+  // "liquidation" — туда + работы (care), без обратного пути
+  // остальные     — туда + помощь + обратно
+  const opType = params.operationType ?? "scout_and_transport";
+  const includeBack = opType !== "scout" && opType !== "liquidation";
+  const includeCare = opType !== "scout";
+
+  const effectiveCare = includeCare ? care : 0;
+  const effectiveTimeBack = includeBack ? totalTimeBack : 0;
+  const effectiveO2Back   = includeBack ? totalO2Back   : 0;
+
+  const totalTime = totalTimeForward + effectiveCare + effectiveTimeBack;
+  const totalO2   = totalO2Forward + effectiveCare * o2c + effectiveO2Back;
 
   // Альтернативные зоны (весь маршрут туда + обратно в одной зоне)
   const fwdSL  = segments.reduce((s, seg) => s + seg.time_smoky_low, 0);
   const fwdSH  = segments.reduce((s, seg) => s + seg.time_smoky_high, 0);
   const bckSL  = segmentsBack.reduce((s, seg) => s + seg.time_smoky_low, 0);
   const bckSH  = segmentsBack.reduce((s, seg) => s + seg.time_smoky_high, 0);
-  const totalTime_smoky_low  = fwdSL + care + bckSL;
-  const totalTime_smoky_high = fwdSH + care + bckSH;
+  const totalTime_smoky_low  = fwdSL + effectiveCare + (includeBack ? bckSL : 0);
+  const totalTime_smoky_high = fwdSH + effectiveCare + (includeBack ? bckSH : 0);
   const totalO2_smoky_low  = segments.reduce((s, seg) => s + seg.o2_smoky_low, 0)
-    + care * o2c
-    + segmentsBack.reduce((s, seg) => s + seg.o2_smoky_low, 0);
+    + effectiveCare * o2c
+    + (includeBack ? segmentsBack.reduce((s, seg) => s + seg.o2_smoky_low, 0) : 0);
   const totalO2_smoky_high = segments.reduce((s, seg) => s + seg.o2_smoky_high, 0)
-    + care * o2c
-    + segmentsBack.reduce((s, seg) => s + seg.o2_smoky_high, 0);
+    + effectiveCare * o2c
+    + (includeBack ? segmentsBack.reduce((s, seg) => s + seg.o2_smoky_high, 0) : 0);
 
   const idaTimePct = params.useIdaTime ? totalTime / (params.idaWorkTime ?? 400) * 100 : 0;
   const idaO2Pct   = (params.oxygenVolume ?? 400) > 0
