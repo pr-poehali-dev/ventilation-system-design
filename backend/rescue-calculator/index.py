@@ -168,15 +168,18 @@ def build_segments(edges, branch_map, node_map, o2c):
         signed_angle = float(b.get("angle") or 0) * (1 if is_forward else -1)
 
         speed    = get_speed(zone, signed_angle)
-        speed_sl = get_speed("smoky_low", signed_angle)
+        speed_cl = get_speed("clean",      signed_angle)
+        speed_sl = get_speed("smoky_low",  signed_angle)
         speed_sh = get_speed("smoky_high", signed_angle)
         length   = float(b.get("length") or 0)
 
-        time_min       = length / speed    if speed > 0 and length > 0 else 0
+        time_min        = length / speed    if speed > 0 and length > 0 else 0
+        time_clean      = length / speed_cl if speed_cl > 0 and length > 0 else 0
         time_smoky_low  = length / speed_sl if speed_sl > 0 and length > 0 else 0
         time_smoky_high = length / speed_sh if speed_sh > 0 and length > 0 else 0
 
         o2_liters      = time_min * o2c
+        o2_clean       = time_clean       * o2c
         o2_smoky_low   = time_smoky_low  * o2c
         o2_smoky_high  = time_smoky_high * o2c
 
@@ -219,6 +222,9 @@ def build_segments(edges, branch_map, node_map, o2c):
             "o2_back_liters":  round(o2_back, 3),
             "cumulTime":       round(cum_time, 3),
             "cumulO2":         round(cum_o2, 3),
+            "speed_clean":      speed_cl,
+            "time_clean":       round(time_clean, 3),
+            "o2_clean":         round(o2_clean, 3),
             "speed_smoky_low":  speed_sl,
             "time_smoky_low":   round(time_smoky_low, 3),
             "o2_smoky_low":     round(o2_smoky_low, 3),
@@ -303,12 +309,17 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
     total_time = total_time_fwd + care + eff_time_bck
     total_o2   = total_o2_fwd + care * o2c + eff_o2_bck
 
+    fwd_cl = sum(s["time_clean"]      for s in segments)
     fwd_sl = sum(s["time_smoky_low"]  for s in segments)
     fwd_sh = sum(s["time_smoky_high"] for s in segments)
+    bck_cl = sum(s["time_clean"]      for s in segments_back) if include_back else 0.0
     bck_sl = sum(s["time_smoky_low"]  for s in segments_back) if include_back else 0.0
     bck_sh = sum(s["time_smoky_high"] for s in segments_back) if include_back else 0.0
+    total_time_cl = fwd_cl + care + bck_cl
     total_time_sl = fwd_sl + care + bck_sl
     total_time_sh = fwd_sh + care + bck_sh
+    total_o2_cl = (sum(s["o2_clean"]     for s in segments) + care * o2c
+                   + (sum(s["o2_clean"]     for s in segments_back) if include_back else 0.0))
     total_o2_sl = (sum(s["o2_smoky_low"]  for s in segments) + care * o2c
                    + (sum(s["o2_smoky_low"]  for s in segments_back) if include_back else 0.0))
     total_o2_sh = (sum(s["o2_smoky_high"] for s in segments) + care * o2c
@@ -350,6 +361,8 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
         "timeIdaPercent":       round(ida_time_pct, 1),
         "idaTimeInSmoke":       round(ida_time_in_smoke, 2),
         "idaO2InSmoke":         round(ida_o2_in_smoke, 2),
+        "totalTime_clean":       round(total_time_cl, 2),
+        "totalO2_clean":         round(total_o2_cl, 2),
         "totalTime_smoky_low":  round(total_time_sl, 2),
         "totalTime_smoky_high": round(total_time_sh, 2),
         "totalO2_smoky_low":    round(total_o2_sl, 2),

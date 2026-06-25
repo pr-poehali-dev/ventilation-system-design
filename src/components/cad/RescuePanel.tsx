@@ -55,9 +55,9 @@ const OP_LABELS: Record<RescueOperationType, string> = {
 };
 
 function ZoneBadge({ zone }: { zone: "clean" | "smoky_low" | "smoky_high" }) {
-  if (zone === "clean") return <span className="text-green-700 font-medium">Чистая</span>;
-  if (zone === "smoky_low") return <span className="text-orange-600 font-medium">Задымл. 5-10</span>;
-  return <span className="text-red-700 font-medium">Задымл. &lt;5</span>;
+  if (zone === "clean")      return <span className="text-green-700 font-medium">Чистая</span>;
+  if (zone === "smoky_low")  return <span className="text-orange-600 font-medium">Средн. 5-10 м</span>;
+  return <span className="text-red-700 font-medium">Сильн. &lt;5 м</span>;
 }
 
 function MetricRow({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
@@ -183,19 +183,22 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>O₂, л</th>
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>Σt, мин</th>
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>ΣO₂, л</th>
-              {/* Слабое задымление */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>t слаб.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>O₂ слаб.</th>
-              {/* Густое задымление */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>t густ.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>O₂ густ.</th>
+              {/* Слабая задымлённость k3=1 */}
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#dcfce7", color: "#166534" }}>t слаб.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#dcfce7", color: "#166534" }}>O₂ слаб.</th>
+              {/* Средняя задымлённость k3=1,43 */}
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>t сред.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>O₂ сред.</th>
+              {/* Сильная задымлённость k3=2 */}
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>t сильн.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>O₂ сильн.</th>
             </tr>
           </thead>
           <tbody>
             {segments.map((s, i) => (
               <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
-                <td className="border border-gray-200 px-1 py-0.5 max-w-[160px] truncate" title={s.branchName}>
-                  {s.branchLabel || s.branchName}
+                <td className="border border-gray-200 px-1 py-0.5 max-w-[120px] truncate" title={s.branchName}>
+                  {s.branchLabel || `${s.fromNodeId} → ${s.toNodeId}`}
                 </td>
                 <td className="border border-gray-200 px-1 py-0.5 text-center">{s.segmentNumber}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right">{Math.round(s.length)}</td>
@@ -208,6 +211,8 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
                 <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.o2_liters.toFixed(1)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>{s.cumulTime.toFixed(1)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>{s.cumulO2.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#dcfce7" }}>{s.time_clean.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#dcfce7" }}>{s.o2_clean.toFixed(1)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fff7ed" }}>{s.time_smoky_low.toFixed(1)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fff7ed" }}>{s.o2_smoky_low.toFixed(1)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fef2f2" }}>{s.time_smoky_high.toFixed(1)}</td>
@@ -225,6 +230,12 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
                 {segments.reduce((s, seg) => s + seg.o2_liters, 0).toFixed(1)}
               </td>
               <td colSpan={2} />
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#dcfce7" }}>
+                {segments.reduce((s, seg) => s + seg.time_clean, 0).toFixed(1)}
+              </td>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#dcfce7" }}>
+                {segments.reduce((s, seg) => s + seg.o2_clean, 0).toFixed(1)}
+              </td>
               <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fff7ed" }}>
                 {segments.reduce((s, seg) => s + seg.time_smoky_low, 0).toFixed(1)}
               </td>
@@ -336,13 +347,18 @@ function RescueResultDialog({
                   <td className="px-2 py-1 text-right font-semibold">{result.totalTime.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right font-semibold">{result.totalO2.toFixed(1)}</td>
                 </tr>
+                <tr style={{ background: "#f0fdf4" }}>
+                  <td className="px-2 py-1 text-green-700">Слабая задымлённость k3=1 (Рв &gt; 10 м)</td>
+                  <td className="px-2 py-1 text-right">{result.totalTime_clean.toFixed(1)}</td>
+                  <td className="px-2 py-1 text-right">{result.totalO2_clean.toFixed(1)}</td>
+                </tr>
                 <tr style={{ background: "#fff7ed" }}>
-                  <td className="px-2 py-1 text-orange-700">Слабое задымление (видимость 5–10 м)</td>
+                  <td className="px-2 py-1 text-orange-700">Средняя задымлённость k3=1,43 (Рв 5–10 м)</td>
                   <td className="px-2 py-1 text-right">{result.totalTime_smoky_low.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right">{result.totalO2_smoky_low.toFixed(1)}</td>
                 </tr>
                 <tr style={{ background: "#fef2f2" }}>
-                  <td className="px-2 py-1 text-red-700">Густое задымление (видимость &lt;5 м)</td>
+                  <td className="px-2 py-1 text-red-700">Сильная задымлённость k3=2 (Рв &lt; 5 м)</td>
                   <td className="px-2 py-1 text-right">{result.totalTime_smoky_high.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right">{result.totalO2_smoky_high.toFixed(1)}</td>
                 </tr>
@@ -438,9 +454,9 @@ function RescueResultDialog({
 }
 
 function zoneLabel(zone: "clean" | "smoky_low" | "smoky_high") {
-  if (zone === "clean") return "Чистая";
-  if (zone === "smoky_low") return "Задымл. 5-10 м";
-  return "Задымл. <5 м";
+  if (zone === "clean")      return "Чистая (>10 м)";
+  if (zone === "smoky_low")  return "Средняя (5-10 м)";
+  return "Сильная (<5 м)";
 }
 
 function exportToCSV(result: RescueResult) {
@@ -454,8 +470,9 @@ function exportToCSV(result: RescueResult) {
   // Итоги по зонам задымления
   rows.push(["Итого:", "", "Зона задымления", "Время хода, мин", "Кислород, л"]);
   rows.push(["", "", "Фактическая (расчёт пожара)", result.totalTime.toFixed(1), result.totalO2.toFixed(1)]);
-  rows.push(["", "", "Слабое задымление (видим. 5-10 м)", result.totalTime_smoky_low.toFixed(1), result.totalO2_smoky_low.toFixed(1)]);
-  rows.push(["", "", "Густое задымление (видим. <5 м)", result.totalTime_smoky_high.toFixed(1), result.totalO2_smoky_high.toFixed(1)]);
+  rows.push(["", "", "При k3=1 (Рв > 10 м) — слабая задымлённость", result.totalTime_clean.toFixed(1), result.totalO2_clean.toFixed(1)]);
+  rows.push(["", "", "При k3=1,43 (Рв 5–10 м) — средняя задымлённость", result.totalTime_smoky_low.toFixed(1), result.totalO2_smoky_low.toFixed(1)]);
+  rows.push(["", "", "При k3=2 (Рв < 5 м) — сильная задымлённость", result.totalTime_smoky_high.toFixed(1), result.totalO2_smoky_high.toFixed(1)]);
   rows.push([]);
 
   if (hasBack) {
@@ -468,19 +485,21 @@ function exportToCSV(result: RescueResult) {
   const header = [
     "Выработка", "Сегм.", "Длина, м", "Угол, °",
     "Зона (факт.)", "V факт., м/мин", "t факт., мин", "O2 факт., л", "Σt факт., мин", "ΣO2 факт., л",
-    "V слаб., м/мин", "t слаб., мин", "O2 слаб., л",
-    "V густ., м/мин", "t густ., мин", "O2 густ., л",
+    "V слаб. к3=1, м/мин", "t слаб., мин", "O2 слаб., л",
+    "V сред. к3=1,43, м/мин", "t сред., мин", "O2 сред., л",
+    "V сильн. к3=2, м/мин", "t сильн., мин", "O2 сильн., л",
   ];
 
+  const fmt = (v: number) => v.toFixed(2);
   const segRow = (s: RescueSegment) => [
-    s.branchName, String(s.segmentNumber), String(Math.round(s.length)), s.angle.toFixed(0),
-    zoneLabel(s.zone), String(s.speed_mpm.toFixed ? s.speed_mpm.toFixed(2) : s.speed_mpm),
-    s.time_min.toFixed(2), s.o2_liters.toFixed(2),
-    s.cumulTime.toFixed(2), s.cumulO2.toFixed(2),
-    String(s.speed_smoky_low.toFixed ? s.speed_smoky_low.toFixed(2) : s.speed_smoky_low),
-    s.time_smoky_low.toFixed(2), s.o2_smoky_low.toFixed(2),
-    String(s.speed_smoky_high.toFixed ? s.speed_smoky_high.toFixed(2) : s.speed_smoky_high),
-    s.time_smoky_high.toFixed(2), s.o2_smoky_high.toFixed(2),
+    s.branchLabel || s.branchName,
+    String(s.segmentNumber), String(Math.round(s.length)), s.angle.toFixed(0),
+    zoneLabel(s.zone), fmt(s.speed_mpm),
+    fmt(s.time_min), fmt(s.o2_liters),
+    fmt(s.cumulTime), fmt(s.cumulO2),
+    fmt(s.speed_clean), fmt(s.time_clean), fmt(s.o2_clean),
+    fmt(s.speed_smoky_low), fmt(s.time_smoky_low), fmt(s.o2_smoky_low),
+    fmt(s.speed_smoky_high), fmt(s.time_smoky_high), fmt(s.o2_smoky_high),
   ];
 
   rows.push(["=== МАРШРУТ ТУДА ==="]);
@@ -489,6 +508,8 @@ function exportToCSV(result: RescueResult) {
   rows.push([
     "ИТОГО ТУДА", "", String(Math.round(result.segments.reduce((a, s) => a + s.length, 0))), "",
     "", "", result.totalTimeForward.toFixed(2), result.totalO2Forward.toFixed(2), "", "",
+    "", result.segments.reduce((a, s) => a + s.time_clean, 0).toFixed(2),
+    result.segments.reduce((a, s) => a + s.o2_clean, 0).toFixed(2),
     "", result.segments.reduce((a, s) => a + s.time_smoky_low, 0).toFixed(2),
     result.segments.reduce((a, s) => a + s.o2_smoky_low, 0).toFixed(2),
     "", result.segments.reduce((a, s) => a + s.time_smoky_high, 0).toFixed(2),
@@ -503,6 +524,8 @@ function exportToCSV(result: RescueResult) {
     rows.push([
       "ИТОГО ОБРАТНО", "", String(Math.round(result.segmentsBack.reduce((a, s) => a + s.length, 0))), "",
       "", "", result.totalTimeBack.toFixed(2), result.totalO2Back.toFixed(2), "", "",
+      "", result.segmentsBack.reduce((a, s) => a + s.time_clean, 0).toFixed(2),
+      result.segmentsBack.reduce((a, s) => a + s.o2_clean, 0).toFixed(2),
       "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_low, 0).toFixed(2),
       result.segmentsBack.reduce((a, s) => a + s.o2_smoky_low, 0).toFixed(2),
       "", result.segmentsBack.reduce((a, s) => a + s.time_smoky_high, 0).toFixed(2),

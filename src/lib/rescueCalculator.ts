@@ -55,12 +55,16 @@ export interface RescueSegment {
   cumulTime: number;        // мин накопленное время от базы
   cumulO2: number;          // л накопленный O₂
 
-  // Расчёты для альтернативных зон задымления
-  // Слабое задымление (smoky_low): видимость 5-10 м
+  // Расчёты для трёх нормативных зон задымления (по Инструкции N 520):
+  // Слабая (k3=1,00): Рв > 10 м — чистый воздух
+  speed_clean: number;
+  time_clean: number;
+  o2_clean: number;
+  // Средняя (k3=1,43): Рв 5–10 м
   speed_smoky_low: number;
   time_smoky_low: number;
   o2_smoky_low: number;
-  // Густое задымление (smoky_high): видимость <5 м
+  // Сильная (k3=2,00): Рв < 5 м
   speed_smoky_high: number;
   time_smoky_high: number;
   o2_smoky_high: number;
@@ -87,9 +91,11 @@ export interface RescueResult {
   idaTimeInSmoke: number;          // мин время в задымлённой зоне
   idaO2InSmoke: number;            // л O₂ в задымлённой зоне
 
-  // Суммарное время/O₂ для альтернативных зон задымления
-  totalTime_smoky_low: number;
-  totalTime_smoky_high: number;
+  // Суммарное время/O₂ для трёх нормативных зон задымления
+  totalTime_clean: number;       // k3=1.00, Рв > 10 м (слабая)
+  totalO2_clean: number;
+  totalTime_smoky_low: number;   // k3=1.43, Рв 5–10 м (средняя)
+  totalTime_smoky_high: number;  // k3=2.00, Рв < 5 м (сильная)
   totalO2_smoky_low: number;
   totalO2_smoky_high: number;
 
@@ -335,15 +341,18 @@ export function calcRescue(
       const signedAngle = isForward ? (b.angle ?? 0) : -(b.angle ?? 0);
 
       const speed     = getSpeed(zone, signedAngle);
+      const speed_cl  = getSpeed("clean",      signedAngle);
       const speed_sl  = getSpeed("smoky_low",  signedAngle);
       const speed_sh  = getSpeed("smoky_high", signedAngle);
 
       const time_min      = b.length > 0 ? b.length / speed    : 0;
+      const time_clean      = b.length > 0 ? b.length / speed_cl  : 0;
       const time_smoky_low  = b.length > 0 ? b.length / speed_sl : 0;
       const time_smoky_high = b.length > 0 ? b.length / speed_sh : 0;
 
       const o2c   = params.oxygenConsumption ?? 1.4;
       const o2_liters      = time_min * o2c;
+      const o2_clean       = time_clean       * o2c;
       const o2_smoky_low   = time_smoky_low  * o2c;
       const o2_smoky_high  = time_smoky_high * o2c;
 
@@ -390,6 +399,9 @@ export function calcRescue(
         o2_back_liters: o2_back,
         cumulTime: cumTime,
         cumulO2: cumO2,
+        speed_clean: speed_cl,
+        time_clean,
+        o2_clean,
         speed_smoky_low:  speed_sl,
         time_smoky_low,
         o2_smoky_low,
@@ -439,13 +451,19 @@ export function calcRescue(
   const totalTime = totalTimeForward + effectiveCare + effectiveTimeBack;
   const totalO2   = totalO2Forward + effectiveCare * o2c + effectiveO2Back;
 
-  // Альтернативные зоны (весь маршрут туда + обратно в одной зоне)
+  // Нормативные зоны задымления (весь маршрут туда + обратно)
+  const fwdCL  = segments.reduce((s, seg) => s + seg.time_clean, 0);
   const fwdSL  = segments.reduce((s, seg) => s + seg.time_smoky_low, 0);
   const fwdSH  = segments.reduce((s, seg) => s + seg.time_smoky_high, 0);
+  const bckCL  = segmentsBack.reduce((s, seg) => s + seg.time_clean, 0);
   const bckSL  = segmentsBack.reduce((s, seg) => s + seg.time_smoky_low, 0);
   const bckSH  = segmentsBack.reduce((s, seg) => s + seg.time_smoky_high, 0);
+  const totalTime_clean      = fwdCL + effectiveCare + (includeBack ? bckCL : 0);
   const totalTime_smoky_low  = fwdSL + effectiveCare + (includeBack ? bckSL : 0);
   const totalTime_smoky_high = fwdSH + effectiveCare + (includeBack ? bckSH : 0);
+  const totalO2_clean = segments.reduce((s, seg) => s + seg.o2_clean, 0)
+    + effectiveCare * o2c
+    + (includeBack ? segmentsBack.reduce((s, seg) => s + seg.o2_clean, 0) : 0);
   const totalO2_smoky_low  = segments.reduce((s, seg) => s + seg.o2_smoky_low, 0)
     + effectiveCare * o2c
     + (includeBack ? segmentsBack.reduce((s, seg) => s + seg.o2_smoky_low, 0) : 0);
@@ -488,6 +506,8 @@ export function calcRescue(
     timeIdaPercent: idaTimePct,
     idaTimeInSmoke,
     idaO2InSmoke,
+    totalTime_clean,
+    totalO2_clean,
     totalTime_smoky_low,
     totalTime_smoky_high,
     totalO2_smoky_low,
