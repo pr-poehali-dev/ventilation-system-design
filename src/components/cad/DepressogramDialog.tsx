@@ -346,15 +346,217 @@ export default function DepressogramDialog({
     if (m === "auto") onClearManual();
   };
 
-  const handleExport = () => {
-    const header = ["Нач. узел", "Кон. узел", "Название выработки", "Номер", "Длина, м", "ΔP, Па", "Напор, Па"].join("\t");
-    const rows = points.map((p, i) => {
-      const prev = i > 0 ? points[i - 1] : null;
-      return [prev ? prev.nodeNumber || prev.nodeId : "—", p.nodeNumber || p.nodeId, p.branchName || "(старт)", p.branchNumber ?? "", p.cumulativeLength.toFixed(2), p.dP.toFixed(2), p.pressure.toFixed(2)].join("\t");
+  const handleExport = async () => {
+    // ── 1. Рисуем график в canvas (800×380) ──────────────────────────────────
+    const CW = 800, CH = 380;
+    const padL = 65, padR = 24, padT = 24, padB = 50;
+    const GW = CW - padL - padR, GH = CH - padT - padB;
+    const canvas = document.createElement("canvas");
+    canvas.width = CW; canvas.height = CH;
+    const ctx = canvas.getContext("2d")!;
+
+    // Фон
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, CW, CH);
+    ctx.fillStyle = "#f0f6ff"; ctx.fillRect(padL, padT, GW, GH);
+
+    const maxLen = Math.max(...points.map(p => p.cumulativeLength), 1);
+    const allP = points.map(p => p.pressure);
+    const maxP = Math.max(...allP, 0);
+    const minP = Math.min(...allP, 0);
+    const pRange = (maxP - minP) || 1;
+    const toX = (l: number) => padL + (l / maxLen) * GW;
+    const toY = (p: number) => padT + ((maxP - p) / pRange) * GH;
+
+    // Сетка
+    ctx.strokeStyle = "#dde4f0"; ctx.lineWidth = 1;
+    for (let i = 0; i <= 6; i++) {
+      const val = minP + (pRange * i) / 6;
+      const y = toY(val);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + GW, y); ctx.stroke();
+      ctx.fillStyle = "#64748b"; ctx.font = "11px Arial"; ctx.textAlign = "right";
+      ctx.fillText(val.toFixed(1), padL - 6, y + 4);
+    }
+    for (let i = 0; i <= 8; i++) {
+      const val = (maxLen * i) / 8;
+      const x = toX(val);
+      ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + GH); ctx.stroke();
+      ctx.fillStyle = "#64748b"; ctx.font = "11px Arial"; ctx.textAlign = "center";
+      ctx.fillText(Math.round(val).toString(), x, padT + GH + 18);
+    }
+
+    // Оси
+    ctx.strokeStyle = "#64748b"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + GH + 1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL - 1, padT + GH); ctx.lineTo(padL + GW, padT + GH); ctx.stroke();
+
+    // Подписи осей
+    ctx.fillStyle = "#374151"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+    ctx.save(); ctx.translate(16, padT + GH / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText("Напор, Па", 0, 0); ctx.restore();
+    ctx.fillText("Длина, м", padL + GW / 2, CH - 8);
+
+    // Площадь под кривой
+    if (points.length > 1) {
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = toX(p.cumulativeLength), y = toY(p.pressure);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      const last = points[points.length - 1];
+      ctx.lineTo(toX(last.cumulativeLength), toY(minP));
+      ctx.lineTo(toX(0), toY(minP));
+      ctx.closePath();
+      const grad = ctx.createLinearGradient(0, padT, 0, padT + GH);
+      grad.addColorStop(0, "rgba(59,130,246,0.22)");
+      grad.addColorStop(1, "rgba(59,130,246,0.02)");
+      ctx.fillStyle = grad; ctx.fill();
+    }
+
+    // Линия
+    ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 2.5;
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      const x = toX(p.cumulativeLength), y = toY(p.pressure);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
-    const blob = new Blob(["\uFEFF" + [header, ...rows].join("\n")], { type: "text/plain;charset=utf-8" });
+    ctx.stroke();
+
+    // Точки и номера узлов
+    points.forEach(p => {
+      const x = toX(p.cumulativeLength), y = toY(p.pressure);
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "#3b82f6"; ctx.fill();
+      ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.stroke();
+      if (p.nodeNumber) {
+        ctx.fillStyle = "#1e40af"; ctx.font = "bold 9px Arial"; ctx.textAlign = "center";
+        ctx.fillText(p.nodeNumber, x, y - 8);
+      }
+    });
+
+    const pngBase64 = canvas.toDataURL("image/png").split(",")[1];
+
+    // ── 2. Собираем Excel через ExcelJS ────────────────────────────────────────
+    const ExcelJS = await import("exceljs");
+    const wb = new ExcelJS.default.Workbook();
+    wb.creator = "ПВ-Система";
+    wb.created = new Date();
+
+    const ws = wb.addWorksheet("Депрессиограмма", { views: [{ showGridLines: false }] });
+
+    // Ширины колонок
+    ws.columns = [
+      { key: "A", width: 14 },
+      { key: "B", width: 14 },
+      { key: "C", width: 40 },
+      { key: "D", width: 12 },
+      { key: "E", width: 14 },
+      { key: "F", width: 14 },
+      { key: "G", width: 14 },
+    ];
+
+    // ── Заголовок ──
+    ws.mergeCells("A1:G1");
+    const titleCell = ws.getCell("A1");
+    titleCell.value = "ДЕПРЕССИОГРАММА";
+    titleCell.font = { name: "Arial", size: 16, bold: true, color: { argb: "FF1E3A5F" } };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8F0FB" } };
+    ws.getRow(1).height = 36;
+
+    ws.mergeCells("A2:G2");
+    const subCell = ws.getCell("A2");
+    subCell.value = `ПВ-Система  |  Дата: ${new Date().toLocaleDateString("ru-RU")}  |  h = ${totalDep.toFixed(1)} Па  ·  L = ${totalLength.toFixed(0)} м  ·  ${points.length - 1} участков`;
+    subCell.font = { name: "Arial", size: 11, color: { argb: "FF475569" } };
+    subCell.alignment = { horizontal: "center" };
+    subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F6FF" } };
+    ws.getRow(2).height = 20;
+
+    ws.addRow([]); // строка 3 — пустая
+
+    // ── Вставляем изображение (строка 4) ──
+    const imgId = wb.addImage({ base64: pngBase64, extension: "png" });
+    ws.addImage(imgId, { tl: { col: 0, row: 3 }, br: { col: 7, row: 23 } });
+    for (let r = 4; r <= 23; r++) ws.getRow(r).height = 18;
+
+    ws.addRow([]); // строка 24 — пустая
+
+    // ── Заголовок таблицы (строка 25) ──
+    const headers = ["Нач. узел", "Кон. узел", "Название выработки", "Ветвь №", "Длина, м", "ΔP, Па", "Напор, Па"];
+    const hRow = ws.addRow(headers);
+    hRow.eachCell(cell => {
+      cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D4ED8" } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF93C5FD" } },
+        bottom: { style: "thin", color: { argb: "FF93C5FD" } },
+        left: { style: "thin", color: { argb: "FF93C5FD" } },
+        right: { style: "thin", color: { argb: "FF93C5FD" } },
+      };
+    });
+    hRow.height = 22;
+
+    // ── Строки данных ──
+    points.forEach((p, i) => {
+      const prev = i > 0 ? points[i - 1] : null;
+      const isEven = i % 2 === 0;
+      const row = ws.addRow([
+        prev ? (prev.nodeNumber || prev.nodeId) : "—",
+        p.nodeNumber || p.nodeId,
+        p.branchName || (i === 0 ? "(начало маршрута)" : "—"),
+        p.branchNumber ?? "",
+        +p.cumulativeLength.toFixed(2),
+        p.dP > 0 ? +p.dP.toFixed(2) : 0,
+        +p.pressure.toFixed(2),
+      ]);
+
+      const bgColor = isEven ? "FFFAFCFF" : "FFF0F6FF";
+      row.eachCell((cell, colNum) => {
+        cell.font = { name: "Arial", size: 10 };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bgColor } };
+        cell.border = {
+          bottom: { style: "hair", color: { argb: "FFE2E8F0" } },
+          left: { style: "hair", color: { argb: "FFE2E8F0" } },
+          right: { style: "hair", color: { argb: "FFE2E8F0" } },
+        };
+        if (colNum === 3) { cell.alignment = { horizontal: "left" }; }
+        else if (colNum >= 5) {
+          cell.alignment = { horizontal: "right" };
+          cell.numFmt = "#,##0.00";
+          if (colNum === 6 && (cell.value as number) > 0) cell.font = { name: "Arial", size: 10, color: { argb: "FFDC2626" } };
+          if (colNum === 7) cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FF1D4ED8" } };
+        } else {
+          cell.alignment = { horizontal: "center" };
+        }
+      });
+      row.height = 18;
+    });
+
+    // ── Итоговая строка ──
+    const totRow = ws.addRow([
+      "", "ИТОГО", "", "",
+      +totalLength.toFixed(2),
+      +points.reduce((s, p) => s + p.dP, 0).toFixed(2),
+      "",
+    ]);
+    totRow.eachCell((cell, colNum) => {
+      cell.font = { name: "Arial", size: 10, bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
+      cell.border = {
+        top: { style: "medium", color: { argb: "FF3B82F6" } },
+        bottom: { style: "medium", color: { argb: "FF3B82F6" } },
+      };
+      if (colNum >= 5) { cell.alignment = { horizontal: "right" }; cell.numFmt = "#,##0.00"; }
+      else { cell.alignment = { horizontal: "center" }; }
+    });
+    totRow.height = 20;
+
+    // ── Скачиваем файл ──
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "депрессиограмма.xls"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = "депрессиограмма.xlsx"; a.click();
     URL.revokeObjectURL(url);
   };
 
