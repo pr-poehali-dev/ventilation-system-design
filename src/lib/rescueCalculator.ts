@@ -30,6 +30,8 @@ export interface RescueParams {
 
 export interface RescueSegment {
   branchId: string;
+  /** Номер ветви из схемы (b.id или b.number) */
+  branchNumber: string;
   /** Название выработки (из поля name ветви, иначе «Узел X → Узел Y») */
   branchName: string;
   /** Отображаемое имя выработки (только поле name, без узлов) */
@@ -180,6 +182,7 @@ export interface TopoNodeLite {
 }
 export interface TopoBranchLite {
   id: string;
+  number?: string;   // номер ветви для отображения (= id ветви из схемы)
   fromId: string;
   toId: string;
   length: number;
@@ -385,6 +388,7 @@ export function calcRescue(
 
       result.push({
         branchId: b.id,
+        branchNumber: b.number || b.id,
         branchName,
         branchLabel,
         segmentNumber: i + 1,

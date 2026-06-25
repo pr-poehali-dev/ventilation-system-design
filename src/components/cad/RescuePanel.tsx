@@ -14,6 +14,7 @@ const RESCUE_URL = (FUNC2URL as Record<string, string>)["rescue-calculator"];
 interface NodeLite { id: string; name: string; number: string; x: number; y: number; z: number; }
 interface BranchLite {
   id: string; fromId: string; toId: string;
+  number?: string;  // номер ветви из схемы
   length: number; angle: number; area: number;
   name?: string;
   fireComputedSmokeDens?: number;
@@ -173,6 +174,7 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
           <thead>
             <tr style={{ background: "#f3f4f6" }}>
               <th className="border border-gray-200 px-1 py-0.5 text-left font-medium">Выработка</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">Ветвь №</th>
               <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">Сег.</th>
               <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">От узла</th>
               <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">До узла</th>
@@ -204,6 +206,7 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
                 <td className="border border-gray-200 px-1 py-0.5 max-w-[110px] truncate" title={s.branchName}>
                   {s.branchLabel || s.branchName}
                 </td>
+                <td className="border border-gray-200 px-1 py-0.5 text-center text-gray-400 font-mono text-[9px]">{s.branchNumber}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-center">{s.segmentNumber}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-center text-gray-500">{s.fromNodeId}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-center text-gray-500">{s.toNodeId}</td>
@@ -233,7 +236,7 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
           </tbody>
           <tfoot>
             <tr style={{ background: "#eff6ff" }}>
-              <td colSpan={8} className="border border-gray-200 px-1 py-0.5 font-semibold text-right">Итого:</td>
+              <td colSpan={9} className="border border-gray-200 px-1 py-0.5 font-semibold text-right">Итого:</td>
               <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold">
                 {segments.reduce((s, seg) => s + seg.time_min, 0).toFixed(1)}
               </td>
@@ -528,7 +531,7 @@ function exportToCSV(result: RescueResult) {
   rows.push([]);
 
   const header: Cell[] = [
-    "Ветвь", "От узла", "До узла", "Длина, м", "Угол, °",
+    "Ветвь", "Ветвь №", "От узла", "До узла", "Длина, м", "Угол, °",
     "Зона (факт.)", "V факт., м/мин", "t факт., мин", "O2 факт., л", "Σt факт., мин", "ΣO2 факт., л",
     "Расх.O2 на 100м, л",
     "V слаб. к3=1, м/мин", "t слаб., мин", "O2 слаб., л",
@@ -545,6 +548,7 @@ function exportToCSV(result: RescueResult) {
 
   const segRow = (s: RescueSegment): Cell[] => [
     s.branchLabel || s.branchName,
+    s.branchNumber,
     s.fromNodeId, s.toNodeId,
     n(s.length, 2), n(s.angle, 1),
     zoneLabel(s.zone),
@@ -558,7 +562,7 @@ function exportToCSV(result: RescueResult) {
   ];
 
   const totalRow = (segs: RescueSegment[], label: string, tTotal: number, o2Total: number): Cell[] => [
-    label, "", "", n(segs.reduce((a, s) => a + s.length, 0), 2), "",
+    label, "", "", "", n(segs.reduce((a, s) => a + s.length, 0), 2), "",
     "", "", n(tTotal), n(o2Total), "", "", "",
     "", n(segs.reduce((a, s) => a + s.time_clean, 0)),     n(segs.reduce((a, s) => a + s.o2_clean, 0)),
     "", n(segs.reduce((a, s) => a + s.time_smoky_low, 0)), n(segs.reduce((a, s) => a + s.o2_smoky_low, 0)),

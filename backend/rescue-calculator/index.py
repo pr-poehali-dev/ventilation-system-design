@@ -206,6 +206,7 @@ def build_segments(edges, branch_map, node_map, o2c):
 
         result.append({
             "branchId":        b["id"],
+            "branchNumber":    b.get("number") or b["id"],
             "branchName":      branch_name,
             "branchLabel":     branch_label,
             "segmentNumber":   i + 1,
