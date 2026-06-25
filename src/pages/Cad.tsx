@@ -5926,42 +5926,216 @@ export default function CadPage() {
                     </>
                   )}
 
-                  {/* ── Ссылка на вкладку Перемычка + краткий показ R ── */}
+                  {/* ── Аэродинамическое сопротивление (только для перемычек с привязкой к ветви) ── */}
                   {isBulkheadSym && brForSym && (
                     <>
                       <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
                         Аэродинамическое сопротивление
                       </div>
-                      <div className="flex items-center justify-between mb-1.5 px-1 py-1 rounded cursor-pointer"
-                        style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}
-                        onClick={() => {
-                          if (sym.branchId) {
-                            setSelectedBranchId(sym.branchId);
-                            setSelectedNodeId(null);
-                            setActiveSide("bulkhead");
-                          }
-                        }}>
-                        <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
+
+                      {/* R = ... кМюрг — вычисленное сопротивление этой перемычки */}
+                      <div className="flex items-center justify-center py-1 mb-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
                           R = {(() => {
                             const mode = sym.bkResMode ?? "project";
-                            if (mode === "manual") return `${(sym.bkManualR ?? 0).toFixed(4)} кМюрг`;
-                            if (mode === "survey") {
-                              const q = sym.bkSurveyQ ?? 0, dp = sym.bkSurveyDP ?? 0;
-                              return q > 0 ? `${(dp / (q * q) / 1000).toFixed(4)} кМюрг` : "— кМюрг";
+                            const fnFrom = nodes.find(n => n.id === brForSym.fromId);
+                            const fnTo   = nodes.find(n => n.id === brForSym.toId);
+                            const tF = fnFrom ? (fnFrom.atmosphereLink ? surfaceTemp : (fnFrom.airTemp ?? surfaceTemp)) : surfaceTemp;
+                            const tT = fnTo   ? (fnTo.atmosphereLink   ? surfaceTemp : (fnTo.airTemp   ?? surfaceTemp)) : surfaceTemp;
+                            const rho = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF + tT) / 2)));
+                            let rKmu = 0;
+                            if (mode === "manual") {
+                              rKmu = sym.bkManualR ?? 0;
+                            } else if (mode === "survey") {
+                              // ΔP/Q² → Па/(м³/с)² = Па·с²/м⁶ = Мюрг → /1000 = кМюрг
+                              const q = sym.bkSurveyQ ?? 0;
+                              const dp = sym.bkSurveyDP ?? 0;
+                              const rMkyurg = q > 0 ? dp / (q * q) : 0;
+                              rKmu = rMkyurg / 1000; // Мюрг → кМюрг
+                            } else {
+                              const sw = sym.bkWindowArea ?? 0;
+                              const branchArea = brForSym?.area ?? 0;
+                              const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
+                                || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
+                              if (isFullyOpen) {
+                                rKmu = 0;
+                              } else if (sw > 0.001) {
+                                // ρ/(2μ²S²) → кг·с²/м⁷ = Н·с²/м⁸; /9.81e-3 → кМюрг
+                                const mu = 0.65;
+                                const rNsm8w = rho / (2 * mu * mu * sw * sw);
+                                rKmu = rNsm8w / 9.81e-3; // Н·с²/м⁸ → кМюрг
+                              } else {
+                                const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
+                                  : (sym.bkAirPerm
+                                    ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
+                                    ?? brForSym?.bulkheadAirPerm ?? 0);
+                                if (kAir > 0) {
+                                  // 1/A² → Мюрг → /1000 → кМюрг
+                                  rKmu = (1 / (kAir * kAir)) / 1000;
+                                } else {
+                                  // rMin/rMax в каталоге хранятся в Мюрг → /1000 = кМюрг
+                                  const rRefMkyurg = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMin ?? 0) : 0;
+                                  rKmu = sym.bkBulkheadR ?? (rRefMkyurg > 0 ? rRefMkyurg / 1000 : (brForSym?.bulkheadR ?? 0) / 1000);
+                                }
+                              }
                             }
-                            const sw = sym.bkWindowArea ?? 0;
-                            if (sw > 0.001) {
-                              const mu = 0.65, rho = 1.2;
-                              return `${(rho / (2 * mu * mu * sw * sw) / 9.81e-3).toFixed(2)} кМюрг`;
-                            }
-                            const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? brForSym.bulkheadAirPerm ?? 0);
-                            if (kAir > 0) return `${(1 / (kAir * kAir) / 1000).toFixed(4)} кМюрг`;
-                            return `${((sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000).toFixed(4)} кМюрг`;
+                            if (rKmu === 0) return "0 кМюрг";
+                            const mag = Math.floor(Math.log10(Math.abs(rKmu)));
+                            const d = Math.max(4, -mag + 2);
+                            return `${rKmu.toFixed(d)} кМюрг`;
                           })()}
                         </span>
-                        <span className="text-[10px]" style={{ color: "#2563eb" }}>✎ Настроить →</span>
                       </div>
 
+                      {/* Задается */}
+                      <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                        <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Задается:</span>
+                        <select
+                          value={sym.bkResMode ?? "project"}
+                          onChange={e => updSym({ bkResMode: e.target.value as "project" | "survey" | "manual" })}
+                          className="flex-1 text-[11px] px-1"
+                          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                          <option value="project">Проектными данными</option>
+                          <option value="survey">Воздушной съемкой</option>
+                          <option value="manual">Вручную</option>
+                        </select>
+                      </div>
+
+                      {/* Режим: Проектными данными */}
+                      {(sym.bkResMode ?? "project") === "project" && (
+                        <>
+                          {isWindowBulkhead ? (
+                            <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                              <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>S вентокна:</span>
+                              <input type="number" step="0.1" min="0"
+                                value={sym.bkWindowArea ?? 0}
+                                onChange={e => updSym({ bkWindowArea: parseFloat(e.target.value) || 0 })}
+                                className="flex-1 text-[11px] px-1 text-right"
+                                style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                              <span className="text-[11px] text-gray-400 flex-shrink-0">м²</span>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Тип перемычки из справочника */}
+                              {mineBulkheads.length > 0 && (
+                                <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                                  <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип:</span>
+                                  <select
+                                    value={sym.bkBulkheadId ?? brForSym?.bulkheadId ?? ""}
+                                    onChange={e => {
+                                      const sel = mineBulkheads.find(b => b.id === e.target.value);
+                                      updSym({
+                                        bkBulkheadId: e.target.value || undefined,
+                                        bkBulkheadName: sel?.name ?? undefined,
+                                        bkAirPerm: sel?.airPermeability ?? 0,
+                                        bkBulkheadR: sel?.rMkyurg ?? 0,
+                                        bkFailurePressure: sel?.failurePressure ?? 0,
+                                      });
+                                      // Синхронизируем failurePressure и name в ветвь
+                                      if (sym.branchId) {
+                                        updateBranch(sym.branchId, {
+                                          bulkheadFailurePressure: sel?.failurePressure ?? 0,
+                                          bulkheadName: sel?.name ?? "",
+                                        });
+                                      }
+                                    }}
+                                    className="flex-1 text-[11px] px-1"
+                                    style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                                    <option value="">— не выбрано —</option>
+                                    {mineBulkheads.map(b => (
+                                      <option key={b.id} value={b.id}>{b.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+                              <div className="font-semibold text-[10px] text-gray-500 mb-1 mt-0.5" style={{ letterSpacing: "0.03em" }}>
+                                Воздухопроницаемость
+                              </div>
+                              <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                                <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Тип:</span>
+                                <input type="checkbox"
+                                  checked={sym.bkManualAirPerm ?? false}
+                                  onChange={e => updSym({ bkManualAirPerm: e.target.checked })}
+                                  style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
+                                <span className="text-[11px] text-gray-600">Задается вручную</span>
+                              </div>
+                              <div className="flex items-center gap-1 mb-1.5" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                                <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Значение:</span>
+                                {sym.bkManualAirPerm ? (
+                                  <input type="number" step="0.0001"
+                                    value={sym.bkCustomAirPerm ?? 0}
+                                    onChange={e => updSym({ bkCustomAirPerm: parseFloat(e.target.value) || 0 })}
+                                    className="flex-1 text-[11px] px-1 text-right"
+                                    style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                                ) : (
+                                  <span className="flex-1 text-right text-gray-700 text-[11px]">
+                                    {(() => {
+                                      const ap = sym.bkAirPerm
+                                        ?? (sym.bkBulkheadId ? mineBulkheads.find(b => b.id === sym.bkBulkheadId)?.airPermeability : undefined)
+                                        ?? brForSym?.bulkheadAirPerm;
+                                      return ap ? `${ap.toFixed(4)} м²/(с·√Па)` : "—";
+                                    })()}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
+                            <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
+                              {symDeltaP != null ? `${Math.round(symDeltaP)} Па` : "— Па"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Режим: Воздушной съемкой */}
+                      {(sym.bkResMode ?? "project") === "survey" && (
+                        <>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Расход:</span>
+                            <input type="number" step="0.1"
+                              value={sym.bkSurveyQ ?? 0}
+                              onChange={e => updSym({ bkSurveyQ: parseFloat(e.target.value) || 0 })}
+                              className="flex-1 text-[11px] px-1 text-right"
+                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          </div>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Падение Р:</span>
+                            <input type="number" step="1"
+                              value={sym.bkSurveyDP ?? 0}
+                              onChange={e => updSym({ bkSurveyDP: parseFloat(e.target.value) || 0 })}
+                              className="flex-1 text-[11px] px-1 text-right"
+                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
+                            <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
+                              {symDeltaP != null ? `${Math.round(symDeltaP)} Па` : "— Па"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Режим: Вручную */}
+                      {(sym.bkResMode ?? "project") === "manual" && (
+                        <>
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>R (кМюрг):</span>
+                            <input type="number" step="0.0001"
+                              value={sym.bkManualR ?? 0}
+                              onChange={e => updSym({ bkManualR: parseFloat(e.target.value) || 0 })}
+                              className="flex-1 text-[11px] px-1 text-right"
+                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
+                            <span className="flex-1 text-right font-semibold" style={{ color: "#1a3a6b" }}>
+                              {symDeltaP != null ? `${Math.round(symDeltaP)} Па` : "— Па"}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
 
@@ -7846,12 +8020,13 @@ export default function CadPage() {
                   setFanSymbolBranchId(null);
                   setActiveSide("waterpipes");
                 } else if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
-                  // Двойной клик на перемычку — открываем ветвь сразу на вкладке «Перемычка»
+                  // Двойной клик на перемычку — открываем ветвь и переходим на вкладку Топология
+                  // (там находится блок настроек перемычки)
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setSelectedSymbolId(symId);
                   setFanSymbolBranchId(null);
-                  setActiveSide("bulkhead");
+                  setActiveSide("topology");
                 } else {
                   setSelectedBranchId(null);
                   setSelectedNodeId(null);

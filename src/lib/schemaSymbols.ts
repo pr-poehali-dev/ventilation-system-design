@@ -451,4 +451,5 @@ export const BULKHEAD_SYMBOL_IDS = new Set([
   "lat_base", "lat_conc", "lat_wood", "lat_brick", "lat_metal",
   "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
   "bulkhead_barrier", "fire_door", "barrier", "fire_door_pp",
+  "measure_station",
 ]);
