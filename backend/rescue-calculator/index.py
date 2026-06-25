@@ -182,6 +182,7 @@ def build_segments(edges, branch_map, node_map, o2c):
         o2_clean       = time_clean       * o2c
         o2_smoky_low   = time_smoky_low  * o2c
         o2_smoky_high  = time_smoky_high * o2c
+        o2_per_100m    = o2c * 100.0 / speed if speed > 0 else 0.0
 
         vis = 2.0 / smoke_dens if smoke_dens > 0 else 999
 
@@ -220,6 +221,7 @@ def build_segments(edges, branch_map, node_map, o2c):
             "time_back_min":   round(time_back, 3),
             "o2_liters":       round(o2_liters, 3),
             "o2_back_liters":  round(o2_back, 3),
+            "o2_per_100m":     round(o2_per_100m, 3),
             "cumulTime":       round(cum_time, 3),
             "cumulO2":         round(cum_o2, 3),
             "speed_clean":      speed_cl,

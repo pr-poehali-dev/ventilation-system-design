@@ -52,6 +52,7 @@ export interface RescueSegment {
   time_back_min: number;    // мин время прохождения обратно
   o2_liters: number;        // л затраты кислорода (туда)
   o2_back_liters: number;   // л затраты кислорода (обратно)
+  o2_per_100m: number;      // л расход O₂ на 100 м (= o2c * 100 / speed_mpm)
   cumulTime: number;        // мин накопленное время от базы
   cumulO2: number;          // л накопленный O₂
 
@@ -355,6 +356,8 @@ export function calcRescue(
       const o2_clean       = time_clean       * o2c;
       const o2_smoky_low   = time_smoky_low  * o2c;
       const o2_smoky_high  = time_smoky_high * o2c;
+      // Расход O₂ на 100 м: o2c (л/мин) * 100 (м) / speed (м/мин)
+      const o2_per_100m = speed > 0 ? o2c * 100 / speed : 0;
 
       const vis = smokeDens > 0 ? 2 / smokeDens : 999;
 
@@ -397,6 +400,7 @@ export function calcRescue(
         time_back_min: time_back,
         o2_liters,
         o2_back_liters: o2_back,
+        o2_per_100m,
         cumulTime: cumTime,
         cumulO2: cumO2,
         speed_clean: speed_cl,
