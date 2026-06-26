@@ -858,8 +858,6 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
   // Примечание: сопротивление перемычек считается отдельно в Cad.tsx
   // (параметры хранятся в SchemaSymbol.bk* для каждого символа независимо)
   const totalR = r.R;
-  // DEBUG
-  if (b.alphaCoef === 4 && b.length > 100) console.log(`[TOPO-DEBUG] id=${b.id} alpha=${b.alphaCoef} area=${area} perimeter=${perimeter} L=${b.length} rho=${rho} Rfriction=${r.Rfriction} Rlocal=${r.Rlocal} totalR=${totalR}`);
 
 
   // 3) Поток
@@ -886,5 +884,5 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
 
 // Пересчёт всех ветвей: длины + аэродинамика
 export function recalcAll(nodes: TopoNode[], branches: TopoBranch[]): TopoBranch[] {
-  return recalcLengths(nodes, branches).map(recalcBranchAero);
+  return recalcLengths(nodes, branches).map(b => recalcBranchAero(b));
 }
