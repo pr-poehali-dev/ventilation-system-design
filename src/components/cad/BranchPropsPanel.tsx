@@ -278,6 +278,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
   // Перевод resistance [Н·с²/м⁸] → выбранная единица: сначала Н·с²/м⁸ → Мюрг (* 1/9.81e-3), затем fromBase
   const rToDisplay = (rNsm8: number) => uRes.fromBase(rNsm8 / 9.81e-3);
 
+
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
 
@@ -673,6 +674,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 );
               })()}
             </ParamRow>
+
+            {/* DEBUG: raw resistance value */}
+            <div style={{ fontSize: 9, color: "#888", padding: "1px 4px", background: "#fffbea", borderBottom: "1px solid #e5e7eb" }}>
+              raw R={branch.resistance.toFixed(8)} Н·с²/м⁸ | α={branch.alphaCoef} | S={branch.area} | P={branch.perimeter} | L={branch.length} | mode={branch.resistanceMode} | ms={String(branch.manualSection)}
+            </div>
 
             <ParamRow id="v_geom_r" label={`Геометр. сопр. R, ${uRes.symbol}`} visible={visible.has("v_geom_r")} onToggle={toggle}>
               <ComputedInput value={fmtR(rToDisplay(branch.rFriction), uRes.decimals)} />
