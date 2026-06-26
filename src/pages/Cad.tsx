@@ -101,7 +101,7 @@ export default function CadPage() {
       name: item.name,
       type: item.type,
       airPermeability: item.airPermeability,
-      rMkyurg: airPermToR(item.airPermeability),
+      rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
       failurePressure: item.failurePressure,
       note: item.note,
       color: item.color,
@@ -1724,7 +1724,7 @@ export default function CadPage() {
           name: item.name,
           type: item.type,
           airPermeability: item.airPermeability,
-          rMkyurg: airPermToR(item.airPermeability),
+          rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
           failurePressure: item.failurePressure,
           note: item.note,
           color: item.color,
@@ -1880,7 +1880,7 @@ export default function CadPage() {
       name: item.name,
       type: item.type,
       airPermeability: item.airPermeability,
-      rMkyurg: airPermToR(item.airPermeability),
+      rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
       failurePressure: item.failurePressure,
       note: item.note,
       color: item.color,
@@ -1986,7 +1986,8 @@ export default function CadPage() {
                 ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
                 ?? b.bulkheadAirPerm ?? 0);
             const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-            r = kAir > 0 ? 1 / (kAir * kAir) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
+            // 1/A² → Мюрг → /1000 → кМюрг; rRef/bkBulkheadR/bulkheadR уже в кМюрг
+            r = kAir > 0 ? (1 / (kAir * kAir)) / 1000 : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
           }
         }
         return sum + r;
@@ -1999,10 +2000,11 @@ export default function CadPage() {
           const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
           return q > 0 ? dp / (q * q) : 0;
         }
+        // 1/A² → Мюрг → /1000 → кМюрг; bulkheadR уже в кМюрг
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
-          return 1 / (b.bulkheadCustomAirPerm! * b.bulkheadCustomAirPerm!);
+          return (1 / (b.bulkheadCustomAirPerm! * b.bulkheadCustomAirPerm!)) / 1000;
         if ((b.bulkheadAirPerm ?? 0) > 0)
-          return 1 / (b.bulkheadAirPerm * b.bulkheadAirPerm);
+          return (1 / (b.bulkheadAirPerm * b.bulkheadAirPerm)) / 1000;
         return b.bulkheadR ?? 0;
       })() : 0;
       const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
@@ -5516,9 +5518,9 @@ export default function CadPage() {
                       ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                       ?? brForSym.bulkheadAirPerm ?? 0);
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  // 1/A² и rMkyurg в кМюрг = Па·с²/м⁶
+                  // 1/A² → Мюрг → /1000 → кМюрг; rMkyurg/bkBulkheadR/bulkheadR в кМюрг
                   if (kAir > 0) {
-                    r = 1 / (kAir * kAir);
+                    r = (1 / (kAir * kAir)) / 1000;
                   } else {
                     r = sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0;
                   }
@@ -5733,8 +5735,8 @@ export default function CadPage() {
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
                                 const rRefKmu = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                // 1/A² = кМюрг; rMkyurg = кМюрг; bkBulkheadR = кМюрг
-                                rKmu = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
+                                // 1/A² → Мюрг → /1000 → кМюрг; rMkyurg/bkBulkheadR/bulkheadR в кМюрг
+                                rKmu = kAir > 0 ? (1 / (kAir * kAir)) / 1000 : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
                             if (rKmu === 0) return "0 кМюрг";

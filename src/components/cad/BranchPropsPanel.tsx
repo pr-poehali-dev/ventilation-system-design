@@ -1307,7 +1307,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                           ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
                           : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
                         const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
-                        rBase = A > 0 ? (1 / (A * A)) * 1e3 : rFallback * 1e3;
+                        // 1/A² уже в Мюрг (baseUnit); rFallback в кМюрг → ×1000 → Мюрг
+                        rBase = A > 0 ? (1 / (A * A)) : rFallback * 1e3;
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
                       return `${uRes.fromBase(rBase).toFixed(uRes.decimals)} ${uRes.symbol}`;
@@ -1385,11 +1386,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const customAirPerm = sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0;
                         const airPerm = sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0;
                         const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
+                        // 1/A² → Мюрг → /1000 → кМюрг; rFallback/bkBulkheadR/bulkheadR в кМюрг
                         let rBulk = 0;
                         if (isManualAirPerm && customAirPerm > 0) {
-                          rBulk = 1 / (customAirPerm * customAirPerm);
+                          rBulk = (1 / (customAirPerm * customAirPerm)) / 1000;
                         } else if (airPerm > 0) {
-                          rBulk = 1 / (airPerm * airPerm);
+                          rBulk = (1 / (airPerm * airPerm)) / 1000;
                         } else {
                           rBulk = rFallback; // кМюрг = Па·с²/м⁶
                         }
