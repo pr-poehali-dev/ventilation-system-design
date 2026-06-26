@@ -159,6 +159,8 @@ function fanDH(e: Edge, Q: number): number {
  * Работаем с |H| и |Q| — знак реверса учтём при инициализации отдельно.
  */
 function estimateQ0(edges: Edge[], Rtotal: number): number {
+  console.log(`[NET-DEBUG] edges count=${edges.length} Rtotal=${Rtotal}`);
+  edges.forEach(e => console.log(`[NET-DEBUG] edge id=${e.id} R=${e.R} hasFan=${e.hasFan} fanH0=${e.fanH0}`));
   // Берём главный вентилятор (ГВУ/ВВУ) для оценки рабочей точки.
   // ВМП не должен влиять на глобальную оценку Q₀ сети.
   const fan = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
