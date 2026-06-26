@@ -1669,7 +1669,9 @@ export default function CadPage() {
     const mergedBranches = rawBranches.map((b) =>
       makeBranch(b.id, b.fromId, b.toId, b)
     );
-    setBranches(mergedBranches);
+    // Пересчитываем R всех ветвей при загрузке — чтобы не использовать устаревшие кешированные значения
+    const recalcedBranches = recalcAll(rawNodes.map((n) => makeNode(n.id, n)), mergedBranches);
+    setBranches(recalcedBranches);
     if (data.horizons) {
       const loaded = data.horizons as Horizon[];
       // Гарантируем наличие "Общего вида" при открытии любого проекта
