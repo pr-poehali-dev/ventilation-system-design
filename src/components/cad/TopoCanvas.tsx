@@ -3269,14 +3269,16 @@ export default function TopoCanvas(props: Props) {
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
                       {isMeasureStation ? (() => {
-                        // Замерная станция: две красные полосы ВДОЛЬ ветви
+                        // Замерная станция: две красные полосы ВДОЛЬ ветви, вписанные в ветвь
                         // После rotate(brAngle): X — вдоль ветви, Y — поперёк
-                        // ph — вся ширина ветви (поперёк, Y)
-                        // Две полосы + зазор заполняют всю ширину ветви
-                        const ml = ph * 0.75;                // длина вдоль ветви ~75% ширины
-                        const mt = Math.max(2, ph * 0.36);   // толщина полосы: 2 полосы ~72% + зазор ~28%
-                        const moff = Math.max(1, ph * 0.07); // зазор между полосами от центра
-                        const sw = Math.max(0.5, mt * 0.08);
+                        // Используем objSF (как ветвь) чтобы полосы не вылезали за края
+                        const msBr = brForSym;
+                        const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
+                        const msW  = Math.max(4, msBw * objSF * sc);  // полная ширина ветви на экране
+                        const ml   = msW * 0.75;                       // длина полосы вдоль ветви
+                        const mt   = Math.max(1.5, msW * 0.34);        // толщина каждой полосы
+                        const moff = Math.max(0.5, msW * 0.06);        // зазор от центра
+                        const sw   = Math.max(0.4, mt * 0.08);
                         return (
                           <>
                             <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}

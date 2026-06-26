@@ -90,11 +90,12 @@ export default function SchemaSymbolsOverlay({
           if (!isMeasureStation || !hasBranchPts) return null;
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-          const ph = Math.max(3, SZ * 0.85);
-          const ml   = ph * 0.75;
-          const mt   = Math.max(2, ph * 0.36);
-          const moff = Math.max(1, ph * 0.07);
-          const sw   = Math.max(0.5, mt * 0.08);
+          const msBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
+          const msW  = Math.max(4, msBw * viewScale * sc);
+          const ml   = msW * 0.75;
+          const mt   = Math.max(1.5, msW * 0.34);
+          const moff = Math.max(0.5, msW * 0.06);
+          const sw   = Math.max(0.4, mt * 0.08);
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
               <rect x={-ml/2} y={-moff - mt} width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />

@@ -94,11 +94,13 @@ export async function drawSymbolsToCanvas(
 
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
-      const ph   = Math.max(3, SZ * 0.85);
-      const ml   = ph * 0.75;
-      const mt   = Math.max(2, ph * 0.36);
-      const moff = Math.max(1, ph * 0.07);
-      const sw   = Math.max(0.5, mt * 0.08);
+      const msBr = branches.find(b => b.id === sym.branchId);
+      const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : defaultBranchWidth;
+      const msW  = Math.max(4, msBw * viewScale * sc);
+      const ml   = msW * 0.75;
+      const mt   = Math.max(1.5, msW * 0.34);
+      const moff = Math.max(0.5, msW * 0.06);
+      const sw   = Math.max(0.4, mt * 0.08);
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(brAngleForSym);
