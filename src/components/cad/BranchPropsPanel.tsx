@@ -4,6 +4,7 @@ import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
+import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
@@ -38,6 +39,8 @@ interface BranchPropsPanelProps {
   onOpenTypesLibrary?: () => void;
   /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
   bulkheadSymTypeId?: string;
+  /** Символ перемычки на схеме (для чтения bkManualR, bkResMode и т.д.) */
+  bulkheadSymbol?: SchemaSymbol;
   /** Синхронизировать изменения режима/R перемычки из вкладки ветви в символ на схеме */
   onUpdateBulkheadSym?: (patch: Record<string, unknown>) => void;
   /** Конфигурация единиц измерения */
@@ -230,7 +233,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -1288,25 +1291,23 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
                     R = {(() => {
                       const uRes = getUnit(unitsConfig, "resistance");
-                      const mode = branch.bulkheadResMode ?? "project";
-                      // rBase в Мюрг — базовая единица resistance (fromBase ожидает Мюрг)
-                      // 1 кМюрг = 1 Па·с²/м⁶ = 1000 Мюрг
-                      let rBase = 0;
+                      // Читаем параметры из символа перемычки (приоритет) или из полей ветви
+                      const sym = bulkheadSymbol;
+                      const mode = sym?.bkResMode ?? branch.bulkheadResMode ?? "project";
+                      let rBase = 0; // в Мюрг (baseUnit resistance)
                       if (mode === "manual") {
-                        rBase = (branch.bulkheadManualR ?? 0) * 1e3; // кМюрг → Мюрг
+                        const r = sym?.bkManualR ?? branch.bulkheadManualR ?? 0;
+                        rBase = r * 1e3; // кМюрг → Мюрг
                       } else if (mode === "survey") {
-                        const q = branch.bulkheadSurveyQ ?? 0;
-                        const dp = branch.bulkheadSurveyDP ?? 0;
-                        // ΔP/Q² = Па·с²/м⁶ = кМюрг → × 1000 → Мюрг
+                        const q = sym?.bkSurveyQ ?? branch.bulkheadSurveyQ ?? 0;
+                        const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
                         rBase = q > 0 ? (dp / (q * q)) * 1e3 : 0;
                       } else {
-                        const A = branch.bulkheadManualAirPerm
-                          ? (branch.bulkheadCustomAirPerm ?? 0)
-                          : (branch.bulkheadAirPerm ?? 0);
-                        // 1/A² = кМюрг → × 1000 → Мюрг
-                        rBase = A > 0
-                          ? (1 / (A * A)) * 1e3
-                          : (branch.bulkheadR ?? 0) * 1e3; // кМюрг → Мюрг
+                        const A = (sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm)
+                          ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
+                          : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
+                        const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
+                        rBase = A > 0 ? (1 / (A * A)) * 1e3 : rFallback * 1e3;
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
                       return `${uRes.fromBase(rBase).toFixed(uRes.decimals)} ${uRes.symbol}`;
@@ -1379,18 +1380,22 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        // rBulk в Н·с²/м⁸ для расчёта ΔP = R × Q × |Q| [Па]
+                        const sym = bulkheadSymbol;
+                        const isManualAirPerm = sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm;
+                        const customAirPerm = sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0;
+                        const airPerm = sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0;
+                        const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
                         let rBulk = 0;
-                        if (branch.bulkheadManualAirPerm && (branch.bulkheadCustomAirPerm ?? 0) > 0) {
-                          rBulk = 1 / (branch.bulkheadCustomAirPerm! * branch.bulkheadCustomAirPerm!); // Н·с²/м⁸
-                        } else if ((branch.bulkheadAirPerm ?? 0) > 0) {
-                          rBulk = 1 / (branch.bulkheadAirPerm * branch.bulkheadAirPerm); // Н·с²/м⁸
+                        if (isManualAirPerm && customAirPerm > 0) {
+                          rBulk = 1 / (customAirPerm * customAirPerm);
+                        } else if (airPerm > 0) {
+                          rBulk = 1 / (airPerm * airPerm);
                         } else {
-                          rBulk = (branch.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸ (1 Мюрг = 9.81e-3 Н·с²/м⁸)
+                          rBulk = rFallback; // кМюрг = Па·с²/м⁶
                         }
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);
-                        if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        if (rBulk === 0 || Q === 0) return "—";
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
@@ -1435,12 +1440,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        const q = branch.bulkheadSurveyQ ?? 0;
-                        const dp = branch.bulkheadSurveyDP ?? 0;
+                        const sym = bulkheadSymbol;
+                        const q = sym?.bkSurveyQ ?? branch.bulkheadSurveyQ ?? 0;
+                        const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
                         const rBulk = q > 0 ? dp / (q * q) : 0;
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);
-                        if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        if (rBulk === 0 || Q === 0) return "—";
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
@@ -1474,10 +1480,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        const rBulk = (branch.bulkheadManualR ?? 0); // кМюрг = Па·с²/м⁶
+                        // R берём из символа перемычки (bkManualR) если он есть, иначе из поля ветви
+                        const rBulk = (bulkheadSymbol?.bkManualR ?? branch.bulkheadManualR ?? 0);
                         const Q = branch.flow ?? 0;
                         const dp = rBulk * Q * Math.abs(Q);
-                        if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";
+                        if (rBulk === 0 || Q === 0) return "—";
                         return `${u.fromBase(dp).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
                     </InlineLabel>
