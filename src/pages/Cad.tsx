@@ -2007,7 +2007,7 @@ export default function CadPage() {
       })() : 0;
       const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
         ? (b.fanCrossingR ?? 0) : 0;
-      if (rBulkheads > 0 || rBranchBulkhead > 0) console.log(`[PAYLOAD] id=${b.id} mode=${b.resistanceMode} manualR=${b.manualR} b.resistance=${b.resistance} rBulkheads=${rBulkheads} rBranch=${rBranchBulkhead} R_total=${b.resistance + rBulkheads + rBranchBulkhead}`);
+
       return {
         id: b.id,
         fromId: b.fromId,
