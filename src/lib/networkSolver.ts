@@ -364,19 +364,18 @@ export function solveNetwork(
           const dp = b.bulkheadSurveyDP ?? 0;
           return q > 0 ? dp / (q * q) : 1e9; // Па/м⁶·с² = Н·с²/м⁸ ✓
         }
-        // project: если задана воздухопроницаемость вручную — R = 1/A²
-        // airPermToR возвращает Па·с²/м⁴ = Н·с²/м⁸
+        // project: если задана воздухопроницаемость вручную — R = 1/A² Мюрг → /1000 → кМюрг
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadCustomAirPerm!);
+          return airPermToR(b.bulkheadCustomAirPerm!) / 1000;
         }
-        // project: воздухопроницаемость из справочника — R = 1/A²
+        // project: воздухопроницаемость из справочника — R = 1/A² Мюрг → /1000 → кМюрг
         if ((b.bulkheadAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadAirPerm!);
+          return airPermToR(b.bulkheadAirPerm!) / 1000;
         }
-        // fallback: bulkheadR в кМюрг = Н·с²/м⁸
+        // fallback: bulkheadR в кМюрг
         return (b.bulkheadR ?? 0);
       })() : 0)
-      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) * 9.81e-3 : 0)
+      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) / 1000 : 0) // Мюрг → кМюрг
       // R вентиляционного окна: R = ρ/(2·ΔS²), ΔS — площадь окна вентсооружения
       // rho здесь = airRho(T)/1.2 (поправочный коэф.), фактическая ρ = rho*1.2
       + (b.hasFan && (b.fanWindowArea ?? 0) > 0 ? (rho * 1.2) / (2 * Math.pow(b.fanWindowArea!, 2)) : 0)),

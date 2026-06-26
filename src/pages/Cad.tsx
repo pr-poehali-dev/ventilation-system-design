@@ -2008,13 +2008,13 @@ export default function CadPage() {
         return b.bulkheadR ?? 0;
       })() : 0;
       const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-        ? (b.fanCrossingR ?? 0) : 0;
+        ? (b.fanCrossingR ?? 0) / 1000 : 0; // Мюрг → кМюрг
 
       return {
         id: b.id,
         fromId: b.fromId,
         toId: b.toId,
-        R: b.resistance + rBulkheads + rBranchBulkhead + fanCrossingR,
+        R: b.resistance + rBulkheads + rBranchBulkhead, // fanCrossingR Python добавляет сам в get_R
         area: b.area,
         angle: b.angle ?? 0,
         hasFan: b.hasFan,
@@ -2022,7 +2022,7 @@ export default function CadPage() {
         fanMode: b.fanMode,
         fanPressure: b.fanPressure,
         fanInstall:  b.fanInstall ?? "Внутри перемычки",
-        fanCrossingR: b.fanCrossingR ?? 0,
+        fanCrossingR: (b.fanCrossingR ?? 0) / 1000, // Мюрг → кМюрг (для get_R в Python)
         fanReverse:  b.fanReverse ?? false,
         fanStopped:  b.fanStopped ?? false,
         fanParallel: Math.max(1, b.fanParallel ?? 1),
