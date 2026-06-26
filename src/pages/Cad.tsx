@@ -6149,6 +6149,21 @@ export default function CadPage() {
                     </>
                   )}
 
+                  {/* ── Давление разрушения (только для перемычек с ветвью) ── */}
+                  {isBulkheadSym && brForSym && !isWindowBulkhead && (() => {
+                    const fp = sym.bkFailurePressure
+                      ?? (sym.bkBulkheadId ? mineBulkheads.find(b => b.id === sym.bkBulkheadId)?.failurePressure : undefined)
+                      ?? brForSym?.bulkheadFailurePressure;
+                    return fp != null && fp > 0 ? (
+                      <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                        <span className="text-gray-500 flex-shrink-0" style={{ width: 120 }}>Р разр.:</span>
+                        <span className="flex-1 text-right text-[11px]" style={{ color: "#b91c1c" }}>
+                          {fp} МПа
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
+
                   {/* Направление (вентилятор) */}
                   {sym.typeId === "fan" && (
                     <>
