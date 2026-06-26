@@ -148,14 +148,16 @@ export const PHYSICAL_QUANTITIES: PhysicalQuantity[] = [
     ],
   },
   // ─── Коэффициент аэродинамического трения (альфа) ───────────────
+  // Значения хранятся в ×10⁻⁴ кг/м³ (например 9, 18, 55).
+  // В функции resistanceFromAlpha умножается на 1e-4 для расчёта.
   {
     id: "alpha",
     label: "Коэффициент аэродинамического трения α",
-    baseUnit: "кг/м³",
-    defaultUnitId: "kgm3",
+    baseUnit: "·10⁻⁴ кг/м³",
+    defaultUnitId: "kgm3x4",
     units: [
-      { id: "kgm3",   label: "Килограмм на метр кубический", symbol: "кг/м³",   fromBase: v => v,       toBase: v => v,       decimals: 4 },
-      { id: "kgm3x4", label: "×10⁻⁴ кг/м³",                 symbol: "·10⁻⁴кг/м³",fromBase: v => v * 1e4,toBase: v => v / 1e4, decimals: 2 },
+      { id: "kgm3x4", label: "×10⁻⁴ кг/м³",                 symbol: "·10⁻⁴кг/м³", fromBase: v => v,         toBase: v => v,         decimals: 2 },
+      { id: "kgm3",   label: "Килограмм на метр кубический", symbol: "кг/м³",       fromBase: v => v / 1e4,   toBase: v => v * 1e4,   decimals: 8 },
     ],
   },
   // ─── Газоносность ───────────────────────────────────────────────
