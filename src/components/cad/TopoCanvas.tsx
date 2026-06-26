@@ -4022,7 +4022,7 @@ export default function TopoCanvas(props: Props) {
               const fireBw = (fireBr?.lineWidth && fireBr.lineWidth > 0) ? fireBr.lineWidth : branchWidth;
               const autoSZ = Math.max(8, fireBw * view.scale * 4);
               SZ = Math.max(8, autoSZ * sc);
-            } else if (sym.typeId === "measure_station" && sym.branchId && hasBranchPts) {
+            } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
               const msBr = branches.find(b => b.id === sym.branchId);
               const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
               SZ = Math.max(6, (msBw * symScaleV * 2.0 / 0.85) * sc);
