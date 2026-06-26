@@ -1964,7 +1964,7 @@ export default function CadPage() {
         const mode = s.bkResMode ?? "project";
         let r = 0;
         if (mode === "manual") {
-          r = (s.bkManualR ?? 0) * 1e3;
+          r = (s.bkManualR ?? 0); // кМюрг = Па·с²/м⁶, коэффициент = 1
         } else if (mode === "survey") {
           const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
           r = q > 0 ? dp / (q * q) : 0;
@@ -1992,7 +1992,7 @@ export default function CadPage() {
       // Перемычка задана через вкладку ветви (без символа на схеме)
       const rBranchBulkhead = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
         const mode = b.bulkheadResMode ?? "project";
-        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 1e3;
+        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг = Па·с²/м⁶
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
           return q > 0 ? dp / (q * q) : 0;

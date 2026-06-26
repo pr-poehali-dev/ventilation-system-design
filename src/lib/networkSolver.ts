@@ -159,8 +159,6 @@ function fanDH(e: Edge, Q: number): number {
  * Работаем с |H| и |Q| — знак реверса учтём при инициализации отдельно.
  */
 function estimateQ0(edges: Edge[], Rtotal: number): number {
-  console.log(`[NET-DEBUG] edges count=${edges.length} Rtotal=${Rtotal}`);
-  edges.forEach(e => console.log(`[NET-DEBUG] edge id=${e.id} R=${e.R} hasFan=${e.hasFan} fanH0=${e.fanH0}`));
   // Берём главный вентилятор (ГВУ/ВВУ) для оценки рабочей точки.
   // ВМП не должен влиять на глобальную оценку Q₀ сети.
   const fan = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
@@ -383,8 +381,6 @@ export function solveNetwork(
       // rho здесь = airRho(T)/1.2 (поправочный коэф.), фактическая ρ = rho*1.2
       + (b.hasFan && (b.fanWindowArea ?? 0) > 0 ? (rho * 1.2) / (2 * Math.pow(b.fanWindowArea!, 2)) : 0)),
       Q:             0,
-      // UNITS-DEBUG
-      ...(() => { if (b.hasBulkhead || b.hasFan) { const _R = Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => { const mode = b.bulkheadResMode ?? "project"; if (mode === "manual") return (b.bulkheadManualR ?? 0); if (mode === "survey") { const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0; return q > 0 ? dp / (q * q) : 1e9; } const A = b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0 ? b.bulkheadCustomAirPerm! : (b.bulkheadAirPerm ?? 0); if (A > 0) return 1/(A*A); return (b.bulkheadR ?? 0); })() : 0)); console.log(`[UNITS-DEBUG] id=${b.id} hasBulkhead=${b.hasBulkhead} bulkheadMode=${b.bulkheadResMode} bulkheadManualR=${b.bulkheadManualR} b.resistance=${b.resistance} Edge.R=${_R} fanH0=${b.fanPressure}`); } return {}; })(),
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",
       fanMode:       b.fanMode,
