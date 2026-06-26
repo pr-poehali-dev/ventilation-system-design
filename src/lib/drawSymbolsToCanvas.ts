@@ -67,8 +67,9 @@ export async function drawSymbolsToCanvas(
     const sc = sym.scale ?? 1;
     const ss = symScale(viewScale);
     const brForSym2 = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+    const isMeasureStationSym = sym.typeId === "measure_station";
     let SZ: number;
-    if (isBulkheadSym && hasBranchPts) {
+    if ((isBulkheadSym || isMeasureStationSym) && hasBranchPts) {
       const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
       SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
     } else {
@@ -79,8 +80,8 @@ export async function drawSymbolsToCanvas(
 
     const brForSym = brForSym2;
     const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
-    const isMeasureStation = sym.typeId === "measure_station";
-    const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStation;
+    const isMeasureStation = isMeasureStationSym;
+    const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
     const isFireSource = sym.typeId === "fire_source";
 
     // Угол поворота по направлению ветви (для символов на трубах)
@@ -93,17 +94,28 @@ export async function drawSymbolsToCanvas(
 
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
-      const ph = Math.max(3, SZ * 0.85);
-      const lw = Math.max(1.5, ph * 0.12);
-      const gap = Math.max(1.5, ph * 0.15);
+      // Замерная станция: красный прямоугольник с двумя полосами, вписанный в ширину ветви
+      const halfW = SZ * 0.85 / 2;       // полуширина (поперёк ветви)
+      const halfL = halfW * 1.6;          // полудлина (вдоль ветви)
+      const stripeGap = halfW * 0.35;     // расстояние между полосами
+      const stripeW = Math.max(1, halfW * 0.22); // толщина полос
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(brAngleForSym);
+      // Прямоугольная заливка
+      ctx.fillStyle = "rgba(220,38,38,0.15)";
       ctx.strokeStyle = "#dc2626";
-      ctx.lineWidth = lw;
-      ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(-ph/2, -gap); ctx.lineTo(ph/2, -gap); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-ph/2,  gap); ctx.lineTo(ph/2,  gap); ctx.stroke();
+      ctx.lineWidth = Math.max(1, halfW * 0.18);
+      ctx.beginPath();
+      ctx.rect(-halfL, -halfW, halfL * 2, halfW * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Две горизонтальные полосы внутри
+      ctx.strokeStyle = "#dc2626";
+      ctx.lineWidth = stripeW;
+      ctx.lineCap = "square";
+      ctx.beginPath(); ctx.moveTo(-halfL * 0.7, -stripeGap); ctx.lineTo(halfL * 0.7, -stripeGap); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-halfL * 0.7,  stripeGap); ctx.lineTo(halfL * 0.7,  stripeGap); ctx.stroke();
       ctx.restore();
     } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);

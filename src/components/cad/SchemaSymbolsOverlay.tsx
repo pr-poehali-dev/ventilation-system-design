@@ -70,8 +70,9 @@ export default function SchemaSymbolsOverlay({
           symScaleFactor = 1 + 2 * (k / (k + 2));
         }
         const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const isMeasureStationSym2 = sym.typeId === "measure_station";
         let SZ: number;
-        if (isBulkheadSym && hasBranchPts) {
+        if ((isBulkheadSym || isMeasureStationSym2) && hasBranchPts) {
           const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
           SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
         } else {
@@ -82,20 +83,26 @@ export default function SchemaSymbolsOverlay({
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
         const isDestroyed = isBulkheadSym && (brForSym?.bulkheadDestroyedByExplosion ?? false);
 
-        const isMeasureStation = sym.typeId === "measure_station";
-        const isBulkhead = isBulkheadSym && !isMeasureStation;
+        const isMeasureStation = isMeasureStationSym2;
+        const isBulkhead = isBulkheadSym;
 
         const renderMeasureStation = () => {
           if (!isMeasureStation || !hasBranchPts) return null;
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-          const ph = Math.max(3, SZ * 0.85);
-          const lw = Math.max(1.5, ph * 0.12);
-          const gap = Math.max(1.5, ph * 0.15);
+          const halfW = SZ * 0.85 / 2;
+          const halfL = halfW * 1.6;
+          const stripeGap = halfW * 0.35;
+          const stripeW = Math.max(1, halfW * 0.22);
+          const rectSW = Math.max(1, halfW * 0.18);
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-              <line x1={-ph/2} y1={-gap} x2={ph/2} y2={-gap} stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
-              <line x1={-ph/2} y1={gap}  x2={ph/2} y2={gap}  stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+              <rect x={-halfL} y={-halfW} width={halfL * 2} height={halfW * 2}
+                fill="rgba(220,38,38,0.15)" stroke="#dc2626" strokeWidth={rectSW} />
+              <line x1={-halfL * 0.7} y1={-stripeGap} x2={halfL * 0.7} y2={-stripeGap}
+                stroke="#dc2626" strokeWidth={stripeW} strokeLinecap="square" />
+              <line x1={-halfL * 0.7} y1={stripeGap}  x2={halfL * 0.7} y2={stripeGap}
+                stroke="#dc2626" strokeWidth={stripeW} strokeLinecap="square" />
             </g>
           );
         };
