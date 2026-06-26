@@ -70,8 +70,9 @@ export default function SchemaSymbolsOverlay({
           symScaleFactor = 1 + 2 * (k / (k + 2));
         }
         const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const isMeasureStationSym = sym.typeId === "measure_station";
         let SZ: number;
-        if (isBulkheadSym && hasBranchPts) {
+        if ((isBulkheadSym || isMeasureStationSym) && hasBranchPts) {
           const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
           SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
         } else {
@@ -82,7 +83,7 @@ export default function SchemaSymbolsOverlay({
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
         const isDestroyed = isBulkheadSym && (brForSym?.bulkheadDestroyedByExplosion ?? false);
 
-        const isMeasureStation = sym.typeId === "measure_station";
+        const isMeasureStation = isMeasureStationSym;
         const isBulkhead = isBulkheadSym && !isMeasureStation;
 
         const renderMeasureStation = () => {

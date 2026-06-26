@@ -67,8 +67,9 @@ export async function drawSymbolsToCanvas(
     const sc = sym.scale ?? 1;
     const ss = symScale(viewScale);
     const brForSym2 = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+    const isMeasureStationSym2 = sym.typeId === "measure_station";
     let SZ: number;
-    if (isBulkheadSym && hasBranchPts) {
+    if ((isBulkheadSym || isMeasureStationSym2) && hasBranchPts) {
       const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
       SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
     } else {
