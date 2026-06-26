@@ -7915,7 +7915,7 @@ export default function CadPage() {
               schemaSymbols={schemaSymbols}
               selectedSymbolId={selectedSymbolId}
               selectedSymbolIds={selectedSymbolIds}
-              onSelectSymbol={(id) => { setSelectedSymbolId(id); setSelectedSymbolIds(new Set()); }}
+              onSelectSymbol={(id) => { setSelectedSymbolId(id); setSelectedSymbolIds(new Set()); if (id) setActiveSide("params"); }}
               onSymbolMultiSelect={(id) => {
                 setSelectedSymbolIds(prev => {
                   const next = new Set(prev);
