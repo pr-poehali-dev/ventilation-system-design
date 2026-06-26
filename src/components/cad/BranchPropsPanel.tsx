@@ -275,8 +275,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   // Единица отображения аэродинамического сопротивления (по умолчанию кМюрг)
   const uRes = getUnit(unitsConfig, "resistance");
-  // Перевод resistance [Н·с²/м⁸] → выбранная единица: сначала Н·с²/м⁸ → Мюрг (* 1/9.81e-3), затем fromBase
-  const rToDisplay = (rNsm8: number) => uRes.fromBase(rNsm8 / 9.81e-3);
+  // branch.resistance хранится в кМюрг (= Па·с²/м⁶). BaseUnit = Мюрг = кМюрг/1000.
+  // Перевод: кМюрг → Мюрг (* 1000) → fromBase → выбранная единица
+  const rToDisplay = (rKmurg: number) => uRes.fromBase(rKmurg * 1000);
 
 
   return (
@@ -1289,23 +1290,23 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       const uRes = getUnit(unitsConfig, "resistance");
                       const mode = branch.bulkheadResMode ?? "project";
                       // rBase в Мюрг — базовая единица resistance (fromBase ожидает Мюрг)
-                      // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
+                      // 1 кМюрг = 1 Па·с²/м⁶ = 1000 Мюрг
                       let rBase = 0;
                       if (mode === "manual") {
                         rBase = (branch.bulkheadManualR ?? 0) * 1e3; // кМюрг → Мюрг
                       } else if (mode === "survey") {
                         const q = branch.bulkheadSurveyQ ?? 0;
                         const dp = branch.bulkheadSurveyDP ?? 0;
-                        // ΔP/Q² = Па/(м³/с)² = Мюрг (базовая единица resistance)
-                        rBase = q > 0 ? dp / (q * q) : 0;
+                        // ΔP/Q² = Па·с²/м⁶ = кМюрг → × 1000 → Мюрг
+                        rBase = q > 0 ? (dp / (q * q)) * 1e3 : 0;
                       } else {
                         const A = branch.bulkheadManualAirPerm
                           ? (branch.bulkheadCustomAirPerm ?? 0)
                           : (branch.bulkheadAirPerm ?? 0);
-                        // 1/A² = Мюрг (базовая единица resistance)
+                        // 1/A² = кМюрг → × 1000 → Мюрг
                         rBase = A > 0
-                          ? 1 / (A * A)
-                          : (branch.bulkheadR ?? 0); // уже Мюрг
+                          ? (1 / (A * A)) * 1e3
+                          : (branch.bulkheadR ?? 0) * 1e3; // кМюрг → Мюрг
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
                       return `${uRes.fromBase(rBase).toFixed(uRes.decimals)} ${uRes.symbol}`;
@@ -1473,7 +1474,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     <InlineLabel label="ΔP:">
                       <ComputedInput value={(() => {
                         const u = getUnit(unitsConfig, "pressure");
-                        const rBulk = (branch.bulkheadManualR ?? 0) * 1e3;
+                        const rBulk = (branch.bulkheadManualR ?? 0); // кМюрг = Па·с²/м⁶
                         const Q = branch.flow ?? 0;
                         const dp = rBulk * Q * Math.abs(Q);
                         if (rBulk === 0 || Q === 0) return branch.dP != null && branch.dP !== 0 ? `${u.fromBase(branch.dP).toFixed(u.decimals)} ${u.symbol}` : "—";

@@ -356,31 +356,33 @@ export function solveNetwork(
       b:             toGnd(b.toId),
       R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => {
         const mode = b.bulkheadResMode ?? "project";
-        // В этой кодовой базе: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
-        // b.resistance хранится в Н·с²/м⁸ (от calcResistance)
-        if (mode === "manual") return (b.bulkheadManualR ?? 0) * 9.81; // кМюрг → Н·с²/м⁸
+        // Единицы: 1 кМюрг = 1 Па·с²/м⁴ = 1 Н·с²/м⁸ (в системе расчёта коэффициент = 1)
+        // b.resistance хранится в кМюрг/Н·с²/м⁸ (от calcResistance)
+        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг = Н·с²/м⁸
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0;
           const dp = b.bulkheadSurveyDP ?? 0;
-          return q > 0 ? dp / (q * q) : 1e9; // Па·с²/м⁶ = Н·с²/м⁸ ✓
+          return q > 0 ? dp / (q * q) : 1e9; // Па/м⁶·с² = Н·с²/м⁸ ✓
         }
-        // project: если задана воздухопроницаемость вручную — пересчитываем R = 1/A²
-        // airPermToR возвращает Мюрг → × 9.81e-3 = Н·с²/м⁸
+        // project: если задана воздухопроницаемость вручную — R = 1/A²
+        // airPermToR возвращает Па·с²/м⁴ = Н·с²/м⁸
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadCustomAirPerm!) * 9.81e-3; // Мюрг → Н·с²/м⁸
+          return airPermToR(b.bulkheadCustomAirPerm!);
         }
-        // project: воздухопроницаемость из справочника — пересчитываем R = 1/A²
+        // project: воздухопроницаемость из справочника — R = 1/A²
         if ((b.bulkheadAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadAirPerm!) * 9.81e-3; // Мюрг → Н·с²/м⁸
+          return airPermToR(b.bulkheadAirPerm!);
         }
-        // fallback: bulkheadR хранится в Мюрг → Н·с²/м⁸
-        return (b.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸
+        // fallback: bulkheadR в кМюрг = Н·с²/м⁸
+        return (b.bulkheadR ?? 0);
       })() : 0)
       + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) * 9.81e-3 : 0)
       // R вентиляционного окна: R = ρ/(2·ΔS²), ΔS — площадь окна вентсооружения
       // rho здесь = airRho(T)/1.2 (поправочный коэф.), фактическая ρ = rho*1.2
       + (b.hasFan && (b.fanWindowArea ?? 0) > 0 ? (rho * 1.2) / (2 * Math.pow(b.fanWindowArea!, 2)) : 0)),
       Q:             0,
+      // UNITS-DEBUG
+      ...(() => { if (b.hasBulkhead || b.hasFan) { const _R = Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => { const mode = b.bulkheadResMode ?? "project"; if (mode === "manual") return (b.bulkheadManualR ?? 0); if (mode === "survey") { const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0; return q > 0 ? dp / (q * q) : 1e9; } const A = b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0 ? b.bulkheadCustomAirPerm! : (b.bulkheadAirPerm ?? 0); if (A > 0) return 1/(A*A); return (b.bulkheadR ?? 0); })() : 0)); console.log(`[UNITS-DEBUG] id=${b.id} hasBulkhead=${b.hasBulkhead} bulkheadMode=${b.bulkheadResMode} bulkheadManualR=${b.bulkheadManualR} b.resistance=${b.resistance} Edge.R=${_R} fanH0=${b.fanPressure}`); } return {}; })(),
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",
       fanMode:       b.fanMode,

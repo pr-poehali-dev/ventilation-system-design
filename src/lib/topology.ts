@@ -838,12 +838,12 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
   }
 
   // 2) Сопротивление с учётом плотности воздуха
-  // manualR хранится в кМюрг (ввод пользователя), переводим в Н·с²/м⁸: × g = × 9.81
+  // manualR хранится в кМюрг (ввод пользователя). 1 кМюрг = 1 Н·с²/м⁸ в системе расчёта.
   const r = calcResistance({
     mode: b.resistanceMode,
     alpha: b.alphaCoef,
     roughness: b.roughness,
-    manualR: b.manualR * 9.81,
+    manualR: b.manualR,
     localXi: b.localXi,
     S: area,
     P: perimeter,

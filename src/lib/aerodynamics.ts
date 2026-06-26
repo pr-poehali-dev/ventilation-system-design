@@ -161,7 +161,7 @@ export function resistanceFromPipe(alphaPipe: number, L: number, D: number): num
   if (D <= 0 || L <= 0) return 0;
   const a = alphaPipe * 1e-4;
   const rKmurg = (6.48 * a * L) / Math.pow(D, 5);
-  return isFinite(rKmurg) ? Math.min(rKmurg * 9.81, 1e6) : 0;
+  return isFinite(rKmurg) ? Math.min(rKmurg, 1e6) : 0;
 }
 
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
