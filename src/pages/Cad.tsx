@@ -4630,7 +4630,7 @@ export default function CadPage() {
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "coords", label: "Координаты" },
-                ...(selectedBranch?.hasBulkhead && !schemaSymbols.some(s => s.typeId === "measure_station" && s.branchId === selectedBranch?.id) ? [{ id: "bulkhead" as SideTab, label: "Перемычка" }] : []),
+
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
                 ...(selectedBranch?.hasExplosion ? [{ id: "blast" as SideTab, label: "💥 Взрыв" }] : []),
               ] as { id: SideTab; label: string }[])
