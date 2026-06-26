@@ -91,8 +91,7 @@ export default function SchemaSymbolsOverlay({
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
           const msBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
-          // viewScale = activeView.scale; ветвь рисуется как baseW * (scale / 0.4)
-          const msW  = Math.max(4, msBw * (viewScale / 0.4) * sc);
+          const msW  = Math.max(4, msBw * viewScale * sc);
           const ml   = msW * 0.75;
           const mt   = Math.max(1.5, msW * 0.34);
           const moff = Math.max(0.5, msW * 0.06);

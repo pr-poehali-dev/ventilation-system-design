@@ -3251,6 +3251,7 @@ export default function TopoCanvas(props: Props) {
                   const gap = Math.max(1, pw * 0.5);                  // зазор двери
 
                   // Флаги типа
+                  const isMeasureStation = tid === "measure_station";
                   const isDoor    = tid.includes("door_closed") || tid.includes("door_conc") ||
                                     tid.includes("door_wood")   || tid.includes("door_brick") ||
                                     tid.includes("door_metal")  || tid === "door_base";
@@ -3267,7 +3268,26 @@ export default function TopoCanvas(props: Props) {
 
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-                      {isSail ? (
+                      {isMeasureStation ? (() => {
+                        // Замерная станция: две красные полосы ВДОЛЬ ветви, вписанные в ветвь
+                        // После rotate(brAngle): X — вдоль ветви, Y — поперёк
+                        // Используем objSF (как ветвь) чтобы полосы не вылезали за края
+                        const msBr = brForSym;
+                        const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
+                        const msW  = Math.max(4, msBw * objSF * sc);  // полная ширина ветви на экране
+                        const ml   = msW * 0.75;                       // длина полосы вдоль ветви
+                        const mt   = Math.max(1.5, msW * 0.34);        // толщина каждой полосы
+                        const moff = Math.max(0.5, msW * 0.06);        // зазор от центра
+                        const sw   = Math.max(0.4, mt * 0.08);
+                        return (
+                          <>
+                            <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}
+                              fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                            <rect x={-ml / 2} y={moff} width={ml} height={mt}
+                              fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+                          </>
+                        );
+                      })() : isSail ? (
                         // Парус: вертикальная линия поперёк (по Y) + полукруг
                         <>
                           <line x1={0} y1={-ph/2} x2={0} y2={ph/2}
@@ -3390,25 +3410,6 @@ export default function TopoCanvas(props: Props) {
                         fill="white" stroke="#1d4ed8" strokeWidth={lw} />
                       <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`}
                         fill="#1d4ed8" />
-                    </g>
-                  );
-                }
-                // ── Замерная станция: две красные полосы параллельно ветви, внутри ветви ──
-                if (sym.typeId === "measure_station" && hasBranchPts) {
-                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
-                  const brAngleMs = Math.atan2(brDy, brDx) * 180 / Math.PI;
-                  const msBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : branchWidth;
-                  const msW  = Math.max(4, msBw * objSF * sc);  // ширина ветви на экране
-                  const ml   = msW * 0.75;                       // длина полосы вдоль ветви
-                  const mt   = Math.max(1.5, msW * 0.34);        // толщина каждой полосы
-                  const moff = Math.max(0.5, msW * 0.06);        // зазор от центра (поперёк)
-                  const msw  = Math.max(0.4, mt * 0.08);
-                  return (
-                    <g transform={`translate(${px},${py}) rotate(${brAngleMs})`} pointerEvents="none">
-                      <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}
-                        fill="#dc2626" stroke="#8b0000" strokeWidth={msw} />
-                      <rect x={-ml / 2} y={moff} width={ml} height={mt}
-                        fill="#dc2626" stroke="#8b0000" strokeWidth={msw} />
                     </g>
                   );
                 }

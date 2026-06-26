@@ -96,9 +96,7 @@ export async function drawSymbolsToCanvas(
     if (isMeasureStation && hasBranchPts) {
       const msBr = branches.find(b => b.id === sym.branchId);
       const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : defaultBranchWidth;
-      // viewScale = scaledSc; ветвь в renderCanvas рисуется как baseW * (sc / 0.4),
-      // поэтому ширина ветви на canvas = msBw * viewScale / 0.4
-      const msW  = Math.max(4, msBw * (viewScale / 0.4) * sc);
+      const msW  = Math.max(4, msBw * viewScale * sc);
       const ml   = msW * 0.75;
       const mt   = Math.max(1.5, msW * 0.34);
       const moff = Math.max(0.5, msW * 0.06);
