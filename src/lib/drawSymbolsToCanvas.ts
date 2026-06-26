@@ -94,28 +94,21 @@ export async function drawSymbolsToCanvas(
 
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
-      // Замерная станция: красный прямоугольник с двумя полосами, вписанный в ширину ветви
-      const halfW = SZ * 0.85 / 2;       // полуширина (поперёк ветви)
-      const halfL = halfW * 1.6;          // полудлина (вдоль ветви)
-      const stripeGap = halfW * 0.35;     // расстояние между полосами
-      const stripeW = Math.max(1, halfW * 0.22); // толщина полос
+      // Замерная станция: две красные полосы вдоль ветви, вписанные в её ширину
+      // После rotate(brAngle): ось X — вдоль ветви, ось Y — поперёк
+      const halfH = SZ * 0.85 / 2;        // полувысота (поперёк ветви, по Y)
+      const halfLen = halfH * 1.8;         // полудлина (вдоль ветви, по X)
+      const gap = halfH * 0.32;            // расстояние от центра до каждой полосы (по Y)
+      const stripeW = Math.max(1, halfH * 0.28); // толщина каждой полосы
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(brAngleForSym);
-      // Прямоугольная заливка
-      ctx.fillStyle = "rgba(220,38,38,0.15)";
-      ctx.strokeStyle = "#dc2626";
-      ctx.lineWidth = Math.max(1, halfW * 0.18);
-      ctx.beginPath();
-      ctx.rect(-halfL, -halfW, halfL * 2, halfW * 2);
-      ctx.fill();
-      ctx.stroke();
-      // Две горизонтальные полосы внутри
+      // Две параллельные полосы вдоль ветви
       ctx.strokeStyle = "#dc2626";
       ctx.lineWidth = stripeW;
       ctx.lineCap = "square";
-      ctx.beginPath(); ctx.moveTo(-halfL * 0.7, -stripeGap); ctx.lineTo(halfL * 0.7, -stripeGap); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-halfL * 0.7,  stripeGap); ctx.lineTo(halfL * 0.7,  stripeGap); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-halfLen, -gap); ctx.lineTo(halfLen, -gap); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-halfLen,  gap); ctx.lineTo(halfLen,  gap); ctx.stroke();
       ctx.restore();
     } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);

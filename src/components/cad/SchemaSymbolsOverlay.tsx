@@ -90,18 +90,16 @@ export default function SchemaSymbolsOverlay({
           if (!isMeasureStation || !hasBranchPts) return null;
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-          const halfW = SZ * 0.85 / 2;
-          const halfL = halfW * 1.6;
-          const stripeGap = halfW * 0.35;
-          const stripeW = Math.max(1, halfW * 0.22);
-          const rectSW = Math.max(1, halfW * 0.18);
+          // После rotate(brAngle): ось X — вдоль ветви, ось Y — поперёк
+          const halfH = SZ * 0.85 / 2;        // полувысота (поперёк, по Y)
+          const halfLen = halfH * 1.8;         // полудлина (вдоль, по X)
+          const gap = halfH * 0.32;            // расстояние от центра до каждой полосы
+          const stripeW = Math.max(1, halfH * 0.28);
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-              <rect x={-halfL} y={-halfW} width={halfL * 2} height={halfW * 2}
-                fill="rgba(220,38,38,0.15)" stroke="#dc2626" strokeWidth={rectSW} />
-              <line x1={-halfL * 0.7} y1={-stripeGap} x2={halfL * 0.7} y2={-stripeGap}
+              <line x1={-halfLen} y1={-gap} x2={halfLen} y2={-gap}
                 stroke="#dc2626" strokeWidth={stripeW} strokeLinecap="square" />
-              <line x1={-halfL * 0.7} y1={stripeGap}  x2={halfL * 0.7} y2={stripeGap}
+              <line x1={-halfLen} y1={gap}  x2={halfLen} y2={gap}
                 stroke="#dc2626" strokeWidth={stripeW} strokeLinecap="square" />
             </g>
           );
