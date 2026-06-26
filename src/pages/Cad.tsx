@@ -7982,8 +7982,8 @@ export default function CadPage() {
                 // Одиночный клик: выбрать УО и показать свойства (панель params)
                 const sym = schemaSymbols.find(s => s.id === symId);
                 setSelectedSymbolId(symId);
-                // Для перемычек — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
-                if (sym?.branchId && !BULKHEAD_SYMBOL_IDS.has(sym.typeId)) {
+                // Для перемычек и замерной станции — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
+                if (sym?.branchId && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                 } else {
