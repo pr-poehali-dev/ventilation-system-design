@@ -5486,13 +5486,14 @@ export default function CadPage() {
                 const q = brForSym.flow ?? 0;
                 const mode = sym.bkResMode ?? "project";
                 if (mode === "manual") {
-                  const rNsm8 = (sym.bkManualR ?? 0) * 1e3; // кМюрг → Н·с²/м⁸ (аналогично networkSolver)
-                  return rNsm8 * q * Math.abs(q);
+                  // кМюрг = Па·с²/м⁶, коэффициент = 1
+                  const r = (sym.bkManualR ?? 0);
+                  return r * q * Math.abs(q);
                 }
                 if (mode === "survey") {
                   const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                  const rNsm8 = sq > 0 ? dp / (sq * sq) : 0;
-                  return rNsm8 * q * Math.abs(q);
+                  const r = sq > 0 ? dp / (sq * sq) : 0;
+                  return r * q * Math.abs(q);
                 }
                 // project
                 const sw = sym.bkWindowArea ?? 0;
@@ -5500,7 +5501,7 @@ export default function CadPage() {
                 const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
                   || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
                 if (isFullyOpen) return 0;
-                let rNsm8 = 0;
+                let r = 0;
                 if (sw > 0.001) {
                   const fnFrom2 = nodes.find(n => n.id === brForSym.fromId);
                   const fnTo2   = nodes.find(n => n.id === brForSym.toId);
@@ -5508,22 +5509,21 @@ export default function CadPage() {
                   const tT2 = fnTo2   ? (fnTo2.atmosphereLink   ? surfaceTemp : (fnTo2.airTemp   ?? surfaceTemp)) : surfaceTemp;
                   const rho2 = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF2 + tT2) / 2)));
                   const mu = 0.65;
-                  rNsm8 = rho2 / (2 * mu * mu * sw * sw);
+                  r = rho2 / (2 * mu * mu * sw * sw);
                 } else {
                   const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                     : (sym.bkAirPerm
                       ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                       ?? brForSym.bulkheadAirPerm ?? 0);
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+                  // 1/A² и rMkyurg в кМюрг = Па·с²/м⁶
                   if (kAir > 0) {
-                    rNsm8 = 1 / (kAir * kAir); // уже Н·с²/м⁸
-                  } else if ((sym.bkBulkheadR ?? rRefSym) > 0) {
-                    rNsm8 = (sym.bkBulkheadR ?? rRefSym) * 9.81; // кМюрг → Н·с²/м⁸
+                    r = 1 / (kAir * kAir);
                   } else {
-                    rNsm8 = (brForSym.bulkheadR ?? 0) * 9.81e-3; // Мюрг → Н·с²/м⁸
+                    r = sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0;
                   }
                 }
-                return rNsm8 * q * Math.abs(q);
+                return r * q * Math.abs(q);
               })();
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
@@ -5707,15 +5707,15 @@ export default function CadPage() {
                             const tF = fnFrom ? (fnFrom.atmosphereLink ? surfaceTemp : (fnFrom.airTemp ?? surfaceTemp)) : surfaceTemp;
                             const tT = fnTo   ? (fnTo.atmosphereLink   ? surfaceTemp : (fnTo.airTemp   ?? surfaceTemp)) : surfaceTemp;
                             const rho = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF + tT) / 2)));
+                            // Все R в кМюрг = Па·с²/м⁶ (коэффициент = 1)
                             let rKmu = 0;
                             if (mode === "manual") {
-                              rKmu = sym.bkManualR ?? 0;
+                              rKmu = sym.bkManualR ?? 0; // кМюрг
                             } else if (mode === "survey") {
-                              // ΔP/Q² → Па/(м³/с)² = Па·с²/м⁶ = Мюрг → /1000 = кМюрг
+                              // ΔP/Q² = Па/(м³/с)² = Па·с²/м⁶ = кМюрг
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              const rMkyurg = q > 0 ? dp / (q * q) : 0;
-                              rKmu = rMkyurg / 1000; // Мюрг → кМюрг
+                              rKmu = q > 0 ? dp / (q * q) : 0;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               const branchArea = brForSym?.area ?? 0;
@@ -5724,23 +5724,17 @@ export default function CadPage() {
                               if (isFullyOpen) {
                                 rKmu = 0;
                               } else if (sw > 0.001) {
-                                // ρ/(2μ²S²) → кг·с²/м⁷ = Н·с²/м⁸; /9.81e-3 → кМюрг
+                                // ρ/(2μ²S²) = кМюрг (Па·с²/м⁶)
                                 const mu = 0.65;
-                                const rNsm8w = rho / (2 * mu * mu * sw * sw);
-                                rKmu = rNsm8w / 9.81e-3; // Н·с²/м⁸ → кМюрг
+                                rKmu = rho / (2 * mu * mu * sw * sw);
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
-                                if (kAir > 0) {
-                                  // 1/A² → Мюрг → /1000 → кМюрг
-                                  rKmu = (1 / (kAir * kAir)) / 1000;
-                                } else {
-                                  // rMin/rMax в каталоге хранятся в Мюрг → /1000 = кМюрг
-                                  const rRefMkyurg = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMin ?? 0) : 0;
-                                  rKmu = sym.bkBulkheadR ?? (rRefMkyurg > 0 ? rRefMkyurg / 1000 : (brForSym?.bulkheadR ?? 0) / 1000);
-                                }
+                                const rRefKmu = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+                                // 1/A² = кМюрг; rMkyurg = кМюрг; bkBulkheadR = кМюрг
+                                rKmu = kAir > 0 ? 1 / (kAir * kAir) : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
                             if (rKmu === 0) return "0 кМюрг";
