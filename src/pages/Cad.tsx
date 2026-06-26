@@ -1951,13 +1951,14 @@ export default function CadPage() {
     // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)
     const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
-    // Миграция: сбрасываем hasBulkhead на ветвях где только measure_station (без настоящих перемычек)
+    // Миграция: если на ветви hasBulkhead=true, но нет ни одного настоящего символа перемычки
+    // (только measure_station — которая раньше ошибочно входила в BULKHEAD_SYMBOL_IDS), сбрасываем флаг
     setBranches(prev => prev.map(br => {
       if (!br.hasBulkhead) return br;
       const hasRealBulkhead = loadedSymbols.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === br.id);
       if (hasRealBulkhead) return br;
-      const hasMeasureSt = loadedSymbols.some(s => s.typeId === "measure_station" && s.branchId === br.id);
-      if (!hasMeasureSt) return br;
+      const hasMeasureStation = loadedSymbols.some(s => s.typeId === "measure_station" && s.branchId === br.id);
+      if (!hasMeasureStation) return br;
       return { ...br, hasBulkhead: false };
     }));
     if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
