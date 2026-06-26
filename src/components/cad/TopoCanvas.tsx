@@ -3085,7 +3085,7 @@ export default function TopoCanvas(props: Props) {
             const fireBwSvg = (fireBrSvg?.lineWidth && fireBrSvg.lineWidth > 0) ? fireBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
-          } else if (BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
+          } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
             const bkBr = branches.find(b => b.id === sym.branchId);
             const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
             // ph = ширина ветви на экране * 2.0 (200%), SZ = ph / 0.85
@@ -3212,7 +3212,7 @@ export default function TopoCanvas(props: Props) {
               {/* SVG-символ (pointerEvents=none — события только через hitbox) */}
               <g style={{ pointerEvents: "none" }}>
               {(() => {
-                const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+                const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
                 if (isBulkhead && sym.branchId && hasBranchPts) {
                   // ── Перемычка на ветви: рисуем напрямую примитивами ──
                   // Координатная система после rotate: X вдоль ветви, Y поперёк
