@@ -3413,6 +3413,25 @@ export default function TopoCanvas(props: Props) {
                     </g>
                   );
                 }
+                // ── Замерная станция: две красные полосы параллельно ветви, внутри ветви ──
+                if (sym.typeId === "measure_station" && hasBranchPts) {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brAngleMs = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                  const msBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : branchWidth;
+                  const msW  = Math.max(4, msBw * objSF * sc);
+                  const ml   = msW * 0.75;
+                  const mt   = Math.max(1.5, msW * 0.34);
+                  const moff = Math.max(0.5, msW * 0.06);
+                  const msw  = Math.max(0.4, mt * 0.08);
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngleMs})`} pointerEvents="none">
+                      <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}
+                        fill="#dc2626" stroke="#8b0000" strokeWidth={msw} />
+                      <rect x={-ml / 2} y={moff} width={ml} height={mt}
+                        fill="#dc2626" stroke="#8b0000" strokeWidth={msw} />
+                    </g>
+                  );
+                }
                 // Остальные символы — через SVG viewBox без поворота
                 if (!lt) return null;
                 return (
