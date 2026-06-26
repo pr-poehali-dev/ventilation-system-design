@@ -3974,7 +3974,7 @@ export default function TopoCanvas(props: Props) {
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
           {schemaSymbols.map(sym => {
-            const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
+            const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
             if (!lt && !isBulkheadOv) return null;
             if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
@@ -4022,6 +4022,10 @@ export default function TopoCanvas(props: Props) {
               const fireBw = (fireBr?.lineWidth && fireBr.lineWidth > 0) ? fireBr.lineWidth : branchWidth;
               const autoSZ = Math.max(8, fireBw * view.scale * 4);
               SZ = Math.max(8, autoSZ * sc);
+            } else if (sym.typeId === "measure_station" && sym.branchId && hasBranchPts) {
+              const msBr = branches.find(b => b.id === sym.branchId);
+              const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
+              SZ = Math.max(6, (msBw * symScaleV * 2.0 / 0.85) * sc);
             } else {
               SZ = Math.max(4, 32 * sc * symScaleV);
             }
