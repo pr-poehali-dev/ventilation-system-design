@@ -94,17 +94,21 @@ export async function drawSymbolsToCanvas(
 
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
-      const ph = Math.max(3, SZ * 0.85);
-      const lw = Math.max(1.5, ph * 0.12);
-      const gap = Math.max(1.5, ph * 0.15);
+      const ph   = Math.max(3, SZ * 0.85);
+      const ml   = ph * 0.75;
+      const mt   = Math.max(2, ph * 0.36);
+      const moff = Math.max(1, ph * 0.07);
+      const sw   = Math.max(0.5, mt * 0.08);
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(brAngleForSym);
-      ctx.strokeStyle = "#dc2626";
-      ctx.lineWidth = lw;
-      ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(-ph/2, -gap); ctx.lineTo(ph/2, -gap); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-ph/2,  gap); ctx.lineTo(ph/2,  gap); ctx.stroke();
+      ctx.fillStyle = "#dc2626";
+      ctx.strokeStyle = "#8b0000";
+      ctx.lineWidth = sw;
+      ctx.fillRect(-ml / 2, -moff - mt, ml, mt);
+      ctx.strokeRect(-ml / 2, -moff - mt, ml, mt);
+      ctx.fillRect(-ml / 2, moff, ml, mt);
+      ctx.strokeRect(-ml / 2, moff, ml, mt);
       ctx.restore();
     } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);

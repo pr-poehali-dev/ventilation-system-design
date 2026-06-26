@@ -91,12 +91,14 @@ export default function SchemaSymbolsOverlay({
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
           const ph = Math.max(3, SZ * 0.85);
-          const lw = Math.max(1.5, ph * 0.12);
-          const gap = Math.max(1.5, ph * 0.15);
+          const ml   = ph * 0.75;
+          const mt   = Math.max(2, ph * 0.36);
+          const moff = Math.max(1, ph * 0.07);
+          const sw   = Math.max(0.5, mt * 0.08);
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-              <line x1={-ph/2} y1={-gap} x2={ph/2} y2={-gap} stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
-              <line x1={-ph/2} y1={gap}  x2={ph/2} y2={gap}  stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+              <rect x={-ml/2} y={-moff - mt} width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+              <rect x={-ml/2} y={moff}       width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
             </g>
           );
         };
