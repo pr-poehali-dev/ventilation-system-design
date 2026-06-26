@@ -67,9 +67,8 @@ export async function drawSymbolsToCanvas(
     const sc = sym.scale ?? 1;
     const ss = symScale(viewScale);
     const brForSym2 = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
-    const isMeasureStationSym2 = sym.typeId === "measure_station";
     let SZ: number;
-    if ((isBulkheadSym || isMeasureStationSym2) && hasBranchPts) {
+    if (isBulkheadSym && hasBranchPts) {
       const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
       SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
     } else {
@@ -94,24 +93,17 @@ export async function drawSymbolsToCanvas(
 
     // ── Рисуем символ ─────────────────────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
-      const msBr = branches.find(b => b.id === sym.branchId);
-      const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : defaultBranchWidth;
-      // ветвь рисуется как baseW * (scale / 0.4) → используем тот же коэффициент
-      const msW  = Math.max(4, msBw * (viewScale / 0.4) * sc);
-      const ml   = msW * 0.75;
-      const mt   = Math.max(1.5, msW * 0.34);
-      const moff = Math.max(0.5, msW * 0.06);
-      const sw   = Math.max(0.4, mt * 0.08);
+      const ph = Math.max(3, SZ * 0.85);
+      const lw = Math.max(1.5, ph * 0.12);
+      const gap = Math.max(1.5, ph * 0.15);
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(brAngleForSym);
-      ctx.fillStyle = "#dc2626";
-      ctx.strokeStyle = "#8b0000";
-      ctx.lineWidth = sw;
-      ctx.fillRect(-ml / 2, -moff - mt, ml, mt);
-      ctx.strokeRect(-ml / 2, -moff - mt, ml, mt);
-      ctx.fillRect(-ml / 2, moff, ml, mt);
-      ctx.strokeRect(-ml / 2, moff, ml, mt);
+      ctx.strokeStyle = "#dc2626";
+      ctx.lineWidth = lw;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-ph/2, -gap); ctx.lineTo(ph/2, -gap); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-ph/2,  gap); ctx.lineTo(ph/2,  gap); ctx.stroke();
       ctx.restore();
     } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);

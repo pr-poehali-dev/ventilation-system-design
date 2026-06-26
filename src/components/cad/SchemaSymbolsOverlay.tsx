@@ -70,9 +70,8 @@ export default function SchemaSymbolsOverlay({
           symScaleFactor = 1 + 2 * (k / (k + 2));
         }
         const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
-        const isMeasureStationSym = sym.typeId === "measure_station";
         let SZ: number;
-        if ((isBulkheadSym || isMeasureStationSym) && hasBranchPts) {
+        if (isBulkheadSym && hasBranchPts) {
           const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
           SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
         } else {
@@ -83,23 +82,20 @@ export default function SchemaSymbolsOverlay({
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
         const isDestroyed = isBulkheadSym && (brForSym?.bulkheadDestroyedByExplosion ?? false);
 
-        const isMeasureStation = isMeasureStationSym;
+        const isMeasureStation = sym.typeId === "measure_station";
         const isBulkhead = isBulkheadSym && !isMeasureStation;
 
         const renderMeasureStation = () => {
           if (!isMeasureStation || !hasBranchPts) return null;
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-          const msBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
-          const msW  = Math.max(4, msBw * (viewScale / 0.4) * sc);
-          const ml   = msW * 0.75;
-          const mt   = Math.max(1.5, msW * 0.34);
-          const moff = Math.max(0.5, msW * 0.06);
-          const sw   = Math.max(0.4, mt * 0.08);
+          const ph = Math.max(3, SZ * 0.85);
+          const lw = Math.max(1.5, ph * 0.12);
+          const gap = Math.max(1.5, ph * 0.15);
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-              <rect x={-ml/2} y={-moff - mt} width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
-              <rect x={-ml/2} y={moff}       width={ml} height={mt} fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
+              <line x1={-ph/2} y1={-gap} x2={ph/2} y2={-gap} stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
+              <line x1={-ph/2} y1={gap}  x2={ph/2} y2={gap}  stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" />
             </g>
           );
         };

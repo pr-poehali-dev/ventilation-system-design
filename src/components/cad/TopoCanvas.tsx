@@ -3085,7 +3085,7 @@ export default function TopoCanvas(props: Props) {
             const fireBwSvg = (fireBrSvg?.lineWidth && fireBrSvg.lineWidth > 0) ? fireBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
-          } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
+          } else if (BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
             const bkBr = branches.find(b => b.id === sym.branchId);
             const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
             // ph = ширина ветви на экране * 2.0 (200%), SZ = ph / 0.85
@@ -3269,16 +3269,13 @@ export default function TopoCanvas(props: Props) {
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
                       {isMeasureStation ? (() => {
-                        // Замерная станция: две красные полосы ВДОЛЬ ветви, вписанные в ветвь
+                        // Замерная станция: две красные полосы ВДОЛЬ ветви
                         // После rotate(brAngle): X — вдоль ветви, Y — поперёк
-                        // Используем objSF (как ветвь) чтобы полосы не вылезали за края
-                        const msBr = brForSym;
-                        const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
-                        const msW  = Math.max(4, msBw * objSF * sc);  // полная ширина ветви на экране
-                        const ml   = msW * 0.75;                       // длина полосы вдоль ветви
-                        const mt   = Math.max(1.5, msW * 0.34);        // толщина каждой полосы
-                        const moff = Math.max(0.5, msW * 0.06);        // зазор от центра
-                        const sw   = Math.max(0.4, mt * 0.08);
+                        // Полоса: длинная по X (ml), тонкая по Y (mt); разнесены по Y
+                        const ml = ph * 1.1;               // длина полосы вдоль ветви
+                        const mt = Math.max(1.5, ph * 0.22); // толщина полосы поперёк
+                        const moff = Math.max(1, ph * 0.17); // смещение от центра по Y
+                        const sw = Math.max(0.4, mt * 0.12);
                         return (
                           <>
                             <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}
@@ -3410,25 +3407,6 @@ export default function TopoCanvas(props: Props) {
                         fill="white" stroke="#1d4ed8" strokeWidth={lw} />
                       <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`}
                         fill="#1d4ed8" />
-                    </g>
-                  );
-                }
-                // ── Замерная станция: две красные полосы параллельно ветви, внутри ветви ──
-                if (sym.typeId === "measure_station" && hasBranchPts) {
-                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
-                  const brAngleMs = Math.atan2(brDy, brDx) * 180 / Math.PI;
-                  const msBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : branchWidth;
-                  const msW  = Math.max(4, msBw * objSF * sc);
-                  const ml   = msW * 0.75;
-                  const mt   = Math.max(1.5, msW * 0.34);
-                  const moff = Math.max(0.5, msW * 0.06);
-                  const msw  = Math.max(0.4, mt * 0.08);
-                  return (
-                    <g transform={`translate(${px},${py}) rotate(${brAngleMs})`} pointerEvents="none">
-                      <rect x={-ml / 2} y={-moff - mt} width={ml} height={mt}
-                        fill="#dc2626" stroke="#8b0000" strokeWidth={msw} />
-                      <rect x={-ml / 2} y={moff} width={ml} height={mt}
-                        fill="#dc2626" stroke="#8b0000" strokeWidth={msw} />
                     </g>
                   );
                 }
