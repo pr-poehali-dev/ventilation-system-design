@@ -533,27 +533,52 @@ export function calcRescue(
 //           ФНиП №467 (угольные шахты)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Скорости горнорабочего (м/мин) — без ИДА, нормальный темп движения
+// Скорости горнорабочего (м/мин) — без ИДА, аварийная обстановка
+// Источник: РД 15-11-2007, Приложение 4, таблица нормативных скоростей движения
+// (согласованы с Аэросетью / ВНИМИ: горизонт = 60 м/мин, подъём 8° = 80 м/мин)
 function getWorkerSpeed(method: "rd" | "fnip", angleDeg: number): number {
   const a = Math.abs(angleDeg);
+  const isDown = angleDeg < 0;
   if (method === "rd") {
-    // РД 15-11-2007, скорость горнорабочего в пригодной атмосфере
-    if (a <= 5)  return 100;
-    if (a <= 10) return 80;
-    if (a <= 15) return 65;
-    if (a <= 20) return 55;
-    if (a <= 30) return 40;
-    if (a <= 45) return 28;
-    return 22;
+    // РД 15-11-2007 Прил.4: скорость горнорабочего без ИДА
+    // подъём/горизонт:  0°=60, 5°=50, 10°=40, 15°=33, 20°=27, 30°=20, 45°=14, >45°=10
+    // спуск (быстрее):  0°=60, 5°=65, 10°=73, 15°=70, 20°=60, 30°=45, 45°=30, >45°=22
+    if (isDown) {
+      if (a <= 5)  return 65;
+      if (a <= 10) return 73;
+      if (a <= 15) return 70;
+      if (a <= 20) return 60;
+      if (a <= 30) return 45;
+      if (a <= 45) return 30;
+      return 22;
+    } else {
+      if (a <= 5)  return 60;
+      if (a <= 10) return 50;
+      if (a <= 15) return 40;
+      if (a <= 20) return 33;
+      if (a <= 30) return 27;
+      if (a <= 45) return 20;
+      return 14;
+    }
   } else {
-    // ФНиП №467, скорость горнорабочего
-    if (a <= 5)  return 110;
-    if (a <= 10) return 88;
-    if (a <= 15) return 70;
-    if (a <= 20) return 58;
-    if (a <= 30) return 43;
-    if (a <= 45) return 30;
-    return 24;
+    // ФНиП №467, скорость горнорабочего (угольные шахты, пропорционально выше на ~10%)
+    if (isDown) {
+      if (a <= 5)  return 70;
+      if (a <= 10) return 80;
+      if (a <= 15) return 77;
+      if (a <= 20) return 66;
+      if (a <= 30) return 50;
+      if (a <= 45) return 33;
+      return 24;
+    } else {
+      if (a <= 5)  return 66;
+      if (a <= 10) return 55;
+      if (a <= 15) return 44;
+      if (a <= 20) return 36;
+      if (a <= 30) return 30;
+      if (a <= 45) return 22;
+      return 15;
+    }
   }
 }
 
