@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
@@ -7,6 +7,7 @@ import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { calcVehicleFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 
 interface BranchPropsPanelProps {
@@ -1771,35 +1772,110 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
           </div>
         )}
 
-        {innerTab === "Пож.нагрузка" && (
-          <div>
-            <SectionHeader title="Пожарная нагрузка" />
-            <InlineLabel label="Техника">
-              <CheckField
-                checked={branch.fireLoadTech ?? false}
-                onChange={(v) => onUpdate({ fireLoadTech: v })}
-              />
-            </InlineLabel>
-            <InlineLabel label="Конвейерная лента">
-              <CheckField
-                checked={branch.fireLoadConveyor ?? false}
-                onChange={(v) => onUpdate({ fireLoadConveyor: v })}
-              />
-            </InlineLabel>
-            <InlineLabel label="Кабель">
-              <CheckField
-                checked={branch.fireLoadCable ?? false}
-                onChange={(v) => onUpdate({ fireLoadCable: v })}
-              />
-            </InlineLabel>
-            <InlineLabel label="Деревянная крепь">
-              <CheckField
-                checked={branch.fireLoadWoodSupport ?? false}
-                onChange={(v) => onUpdate({ fireLoadWoodSupport: v })}
-              />
-            </InlineLabel>
-          </div>
-        )}
+        {innerTab === "Пож.нагрузка" && (() => {
+          const airFlow = Math.abs(branch.flow ?? 0);
+          const massRubber  = branch.fireVehicleMassRubber  ?? 1200;
+          const massDiesel  = branch.fireVehicleMassDiesel  ?? 400;
+          const massOil     = branch.fireVehicleMassOil     ?? 200;
+          const vfr = (branch.fireLoadTech ?? false)
+            ? calcVehicleFire([massRubber, massDiesel, massOil], airFlow)
+            : null;
+
+          return (
+            <div>
+              <SectionHeader title="Пожарная нагрузка" />
+              <InlineLabel label="Техника">
+                <CheckField
+                  checked={branch.fireLoadTech ?? false}
+                  onChange={(v) => onUpdate({ fireLoadTech: v })}
+                />
+              </InlineLabel>
+
+              {(branch.fireLoadTech ?? false) && (
+                <div className="mx-1 mt-1 mb-2">
+                  <div className="text-[10px] font-semibold text-orange-700 mb-1 px-0.5">
+                    Исходные данные — состав техники
+                  </div>
+                  <table className="w-full text-[11px] border-collapse">
+                    <thead>
+                      <tr style={{ background: "#f3f4f6" }}>
+                        <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "55%" }}>Материал</th>
+                        <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Масса, кг</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { label: "Резина",  key: "fireVehicleMassRubber" as const, val: massRubber },
+                        { label: "Дизель",  key: "fireVehicleMassDiesel" as const, val: massDiesel },
+                        { label: "Масло",   key: "fireVehicleMassOil"    as const, val: massOil    },
+                      ].map(({ label, key, val }) => (
+                        <tr key={key}>
+                          <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
+                          <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                            <EditInput
+                              type="number" step="10"
+                              value={val}
+                              onChange={(v) => onUpdate({ [key]: parseFloat(v) || 0 })}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {vfr && (
+                    <div className="mt-1">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr style={{ background: "#fef9c3" }}>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>t прод., °C</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>
+                              {vfr.power_MW.toFixed(2)}
+                            </td>
+                            <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>
+                              {airFlow > 0 ? airFlow.toFixed(1) : "—"}
+                            </td>
+                            <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>
+                              {vfr.deltaT_C > 0 ? (20 + vfr.deltaT_C).toFixed(1) : "—"}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="text-[10px] text-gray-500 mt-0.5 px-0.5">
+                        Время горения: {vfr.burnTime_h.toFixed(2)} ч или {vfr.burnTime_min.toFixed(1)} мин
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <InlineLabel label="Конвейерная лента">
+                <CheckField
+                  checked={branch.fireLoadConveyor ?? false}
+                  onChange={(v) => onUpdate({ fireLoadConveyor: v })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Кабель">
+                <CheckField
+                  checked={branch.fireLoadCable ?? false}
+                  onChange={(v) => onUpdate({ fireLoadCable: v })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Деревянная крепь">
+                <CheckField
+                  checked={branch.fireLoadWoodSupport ?? false}
+                  onChange={(v) => onUpdate({ fireLoadWoodSupport: v })}
+                />
+              </InlineLabel>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
