@@ -1472,52 +1472,52 @@ function VehicleCatalogSection() {
     v.type.toLowerCase().includes(search.toLowerCase())
   );
   return (
-    <div style={{ background: "#1a1d23", minHeight: "100%", padding: "12px" }}>
+    <div style={{ background: "#fff", minHeight: "100%", padding: "12px" }}>
       <div style={{ position: "relative", marginBottom: 12 }}>
-        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#6b7280", fontSize: 14 }}>🔍</span>
+        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14 }}>🔍</span>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Поиск по названию или типу..."
           style={{
             width: "100%", boxSizing: "border-box",
-            background: "#2a2d35", border: "1px solid #3a3d45", borderRadius: 8,
-            color: "#e5e7eb", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
+            background: "#f3f4f6", border: "1px solid #d1d5db", borderRadius: 8,
+            color: "#111827", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
           }}
         />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {filtered.map((v, i) => (
           <div key={i} style={{
-            background: "#23262e", border: "1px solid #2e3138", borderRadius: 10, padding: "10px 12px",
+            background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px",
             cursor: "default",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <div style={{ color: "#f3f4f6", fontWeight: 600, fontSize: 13 }}>{v.name}</div>
-                <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 1 }}>
+                <div style={{ color: "#111827", fontWeight: 600, fontSize: 13 }}>{v.name}</div>
+                <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
                   {v.type}{v.tonnage ? ` · ${v.tonnage}` : ""}
                 </div>
               </div>
-              <span style={{ color: "#4b5563", fontSize: 14 }}>›</span>
+              <span style={{ color: "#d1d5db", fontSize: 14 }}>›</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
               {[
-                { label: "РЕЗИНА", val: v.rubber, color: "#f3f4f6" },
-                { label: "ДИЗЕЛЬ", val: v.diesel, color: "#60a5fa" },
-                { label: "МАСЛО",  val: v.oil,    color: "#fb923c" },
+                { label: "РЕЗИНА", val: v.rubber, color: "#374151" },
+                { label: "ДИЗЕЛЬ", val: v.diesel, color: "#2563eb" },
+                { label: "МАСЛО",  val: v.oil,    color: "#ea580c" },
               ].map(({ label, val, color }) => (
-                <div key={label} style={{ background: "#1a1d23", borderRadius: 6, padding: "5px 6px" }}>
-                  <div style={{ color: "#6b7280", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
+                <div key={label} style={{ background: "#eef2f7", borderRadius: 6, padding: "5px 6px" }}>
+                  <div style={{ color: "#9ca3af", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
                   <div style={{ color, fontSize: 16, fontWeight: 700, lineHeight: 1.1 }}>{val}</div>
-                  <div style={{ color: "#6b7280", fontSize: 9 }}>КГ</div>
+                  <div style={{ color: "#9ca3af", fontSize: 9 }}>КГ</div>
                 </div>
               ))}
             </div>
           </div>
         ))}
       </div>
-      <div style={{ color: "#6b7280", fontSize: 10, marginTop: 12, textAlign: "center", fontStyle: "italic" }}>
+      <div style={{ color: "#9ca3af", fontSize: 10, marginTop: 12, textAlign: "center", fontStyle: "italic" }}>
         Данные приблизительные. После выбора можно скорректировать значения вручную.
       </div>
     </div>
