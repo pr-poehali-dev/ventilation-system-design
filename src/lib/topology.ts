@@ -183,6 +183,12 @@ export interface TopoBranch {
   fireThermalDepression?: number;  // Па — тепловая депрессия пожара (передаётся в solver)
   originalFlow?: number;           // м³/с — расход до итераций (для обнаружения опрокидывания)
 
+  // ─── Пожарная нагрузка ────────────────────────────────────────────────
+  fireLoadTech: boolean;           // Техника (самоходная, ДВС)
+  fireLoadConveyor: boolean;       // Конвейерная лента
+  fireLoadCable: boolean;          // Кабель (электро/связи)
+  fireLoadWoodSupport: boolean;    // Деревянная крепь
+
   // ─── Вентиляционный трубопровод (ВМП / тупиковые забои) ─────────────
   hasVentPipe: boolean;            // ветвь содержит вентрубопровод
   vpDiameter: number;              // мм — внутренний диаметр трубы
@@ -511,6 +517,11 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireComputedSmokeDens: 0,
     fireComputedCO: 0,
     fireComputedCO2: 0,
+    // Пожарная нагрузка
+    fireLoadTech: false,
+    fireLoadConveyor: false,
+    fireLoadCable: false,
+    fireLoadWoodSupport: false,
     // Взрыв
     hasExplosion: false,
     explosionT: 0.5,

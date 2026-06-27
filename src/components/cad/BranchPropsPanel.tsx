@@ -68,7 +68,7 @@ const PLA_OPTIONS = ["— нет —", "ПЛА-1", "ПЛА-2", "ПЛА-3"];
 const POLE_OPTIONS = ["— нет —", "Северное", "Южное", "Западное"];
 
 const INNER_TABS = [
-  "Топология", "Вентилятор", "Трубы: вода", "Конвейер", "Перемычка",
+  "Топология", "Вентилятор", "Трубы: вода", "Конвейер", "Пож.нагрузка", "Перемычка",
 ] as const;
 type InnerTab = typeof INNER_TABS[number];
 
@@ -244,6 +244,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
     fan: "Вентилятор",
     waterpipes: "Трубы: вода",
     conveyor: "Конвейер",
+    fireload: "Пож.нагрузка",
     bulkhead: "Перемычка",
   };
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
@@ -1766,6 +1767,36 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </InlineLabel>
             <InlineLabel label="Производительность, т/ч">
               <EditInput type="number" step="10" value={0} onChange={() => {}} />
+            </InlineLabel>
+          </div>
+        )}
+
+        {innerTab === "Пож.нагрузка" && (
+          <div>
+            <SectionHeader title="Пожарная нагрузка" />
+            <InlineLabel label="Техника">
+              <CheckField
+                checked={branch.fireLoadTech ?? false}
+                onChange={(v) => onUpdate({ fireLoadTech: v })}
+              />
+            </InlineLabel>
+            <InlineLabel label="Конвейерная лента">
+              <CheckField
+                checked={branch.fireLoadConveyor ?? false}
+                onChange={(v) => onUpdate({ fireLoadConveyor: v })}
+              />
+            </InlineLabel>
+            <InlineLabel label="Кабель">
+              <CheckField
+                checked={branch.fireLoadCable ?? false}
+                onChange={(v) => onUpdate({ fireLoadCable: v })}
+              />
+            </InlineLabel>
+            <InlineLabel label="Деревянная крепь">
+              <CheckField
+                checked={branch.fireLoadWoodSupport ?? false}
+                onChange={(v) => onUpdate({ fireLoadWoodSupport: v })}
+              />
             </InlineLabel>
           </div>
         )}

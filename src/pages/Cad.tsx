@@ -4390,6 +4390,7 @@ export default function CadPage() {
                 { id: "areas", label: "Участки" },
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
+                { id: "fireload", label: "Пож.нагрузка" },
                 { id: "coords", label: "Координаты" },
 
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
