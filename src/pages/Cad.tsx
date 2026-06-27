@@ -6734,7 +6734,7 @@ export default function CadPage() {
                     <IndRow k="branchNatDragC"       label="Гарантированный расход воздуха" />
                   </Section>
 
-                  <Section title="Аварии — модельные данные">
+                  <Section title="Авария">
                     <IndRow k="branchMethane"       label="Концентрация метана" />
                     <IndRow k="branchCOEmission"    label="Концентрация угарного газа" />
                     <IndRow k="branchGasEmission"   label="Концентрация водорода" />
