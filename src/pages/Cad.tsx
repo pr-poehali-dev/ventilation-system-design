@@ -3542,15 +3542,18 @@ export default function CadPage() {
                     const _wfRaw = area <= 0 ? 1.5 : area < 10 ? 2.0 : area < 20 ? 1.8 : area < 40 ? 1.5 : 1.3;
                     const _wf   = _considerWalls ? _wfRaw : 1.0;
                     const _meth = b.explosionMethod ?? "gas_dynamics";
+                    // Формулы согласованы с explosionCalculator.ts
                     const sadovsky = (r: number): number => {
                       if (_qTnt <= 0 || r <= 0) return 0;
                       const rBar = r / Math.pow(_qTnt, 1 / 3);
                       if (rBar < 0.1) return 10000;
-                      return Math.round(101.3 * (0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar)) * 10) / 10;
+                      // P0 НЕ умножаем — коэффициенты уже в кПа (Садовский)
+                      return Math.round((0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar)) * 10) / 10;
                     };
                     const fnip494 = (r: number): number => {
                       if (_qTnt <= 0 || r <= 0) return 0;
-                      return Math.round(1.07 * Math.pow(_qTnt / (r * r * r), 1 / 3) * 101.3 * 10) / 10;
+                      // Коэф. 1.5 согласован с Аэросетью (ВНИМИ) для горных выработок
+                      return Math.round(1.5 * Math.pow(_qTnt / (r * r * r), 1 / 3) * 101.3 * 10) / 10;
                     };
                     res = {
                       ...data,
@@ -7979,6 +7982,9 @@ export default function CadPage() {
                   for (const e of edges) {
                     const nd = curD + e.len;
                     if (nd > blastWaveRadius) continue; // волна не дошла
+                    // Волна останавливается на атмосферных узлах (выход на поверхность)
+                    const toNode = nodes.find(n => n.id === e.to);
+                    if (toNode?.atmosphereLink) continue;
                     if (!distNode.has(e.to) || distNode.get(e.to)! > nd) {
                       distNode.set(e.to, nd);
                       pq.push({ id: e.to, d: nd });
@@ -8011,6 +8017,8 @@ export default function CadPage() {
                   // (точная интерполяция: ближайшая точка на ветви = min(dF, dT) - len*t_closest)
                   // Но это усложняет код, берём просто min расстояний до узлов
                   const dp = explosionResult.pressureAtDistance(minNodeD);
+                  // Не красим ветви с давлением ниже порога "лёгкие" (< 10 кПа) — они нейтральные
+                  if (dp < 10) return;
                   map.set(b.id, zoneColor(dp));
                 });
 
