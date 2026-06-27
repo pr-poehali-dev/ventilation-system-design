@@ -170,6 +170,7 @@ export interface TopoBranch {
   fireCombustible: string;         // вид горючего (уголь, масло, дерево, кабель, vehicle=техника)
   fireStartTime: number;           // мин — время начала от старта расчёта
   // Параметры для горючего материала «Техника» (3 составляющих)
+  fireVehicleName: string;         // название/марка техники
   fireVehicleMassRubber: number;   // кг — масса резины
   fireVehicleMassDiesel: number;   // кг — масса дизельного топлива
   fireVehicleMassOil: number;      // кг — масса масла
@@ -509,6 +510,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireTemperature: 300,
     fireCombustible: "vehicle",
     fireStartTime: 0,
+    fireVehicleName: "",
     fireVehicleMassRubber: 1200,
     fireVehicleMassDiesel: 400,
     fireVehicleMassOil: 200,

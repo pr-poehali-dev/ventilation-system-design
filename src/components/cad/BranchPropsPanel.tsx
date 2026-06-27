@@ -1793,9 +1793,14 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               {(branch.fireLoadTech ?? false) && (
                 <div className="mx-1 mt-1 mb-2">
-                  <div className="text-[10px] font-semibold text-orange-700 mb-1 px-0.5">
-                    Исходные данные — состав техники
-                  </div>
+                  <input
+                    type="text"
+                    value={branch.fireVehicleName ?? ""}
+                    onChange={(e) => onUpdate({ fireVehicleName: e.target.value })}
+                    placeholder="Название техники..."
+                    className="w-full text-[11px] font-semibold text-orange-700 mb-1 px-1"
+                    style={{ border: "none", borderBottom: "1px dashed #f97316", outline: "none", background: "transparent" }}
+                  />
                   <table className="w-full text-[11px] border-collapse">
                     <thead>
                       <tr style={{ background: "#f3f4f6" }}>
