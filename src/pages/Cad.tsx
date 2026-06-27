@@ -3639,6 +3639,9 @@ export default function CadPage() {
                   if (vis2.has(cur)) continue; vis2.add(cur);
                   for (const e of (adjMap.get(cur) ?? [])) {
                     const nd = curD + e.len;
+                    // Волна останавливается на атмосферных узлах (выход на поверхность)
+                    const toNode = nodes.find(n => n.id === e.to);
+                    if (toNode?.atmosphereLink) continue;
                     if (nd < (netDist.get(e.to) ?? Infinity)) { netDist.set(e.to, nd); pq2.push({id: e.to, d: nd}); }
                   }
                 }
