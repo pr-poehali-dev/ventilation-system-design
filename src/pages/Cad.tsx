@@ -8020,8 +8020,7 @@ export default function CadPage() {
                   // (точная интерполяция: ближайшая точка на ветви = min(dF, dT) - len*t_closest)
                   // Но это усложняет код, берём просто min расстояний до узлов
                   const dp = explosionResult.pressureAtDistance(minNodeD);
-                  // Не красим ветви с давлением ниже порога "лёгкие" (< 10 кПа) — они нейтральные
-                  if (dp < 10) return;
+                  // Ветви достигнутые волной (узел в distNode) — красим всегда, включая зелёную безопасную зону
                   map.set(b.id, zoneColor(dp));
                 });
 
