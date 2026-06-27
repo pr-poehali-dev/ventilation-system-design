@@ -593,7 +593,8 @@ export interface WorkerSegment {
   toNodeId: string;
   zone: "clean" | "smoky_low" | "smoky_high";
   smokeDensity: number;    // м⁻¹
-  speed_mpm: number;       // м/мин
+  speed_mpm: number;       // м/мин (туда)
+  speed_back_mpm: number;  // м/мин (обратно)
   time_min: number;        // мин (туда)
   time_back_min: number;   // мин (обратно)
   cumulTime: number;       // накопленное время туда
@@ -729,7 +730,7 @@ export function calcWorkerPath(
       length: b.length, angle: signedAngle,
       fromNodeId, toNodeId,
       zone, smokeDensity,
-      speed_mpm: speed, time_min, time_back_min,
+      speed_mpm: speed, speed_back_mpm: speedBack, time_min, time_back_min,
       cumulTime: cumTime, cumulTimeBack: 0,
     });
   }

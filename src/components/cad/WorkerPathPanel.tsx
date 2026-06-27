@@ -178,7 +178,8 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Длина, м</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Угол, °</th>
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">Зона</th>
-                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V, м/мин</th>
+                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V туда, м/мин</th>
+                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V обр., м/мин</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t туда, мин</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t обр., мин</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Σt, мин</th>
@@ -202,6 +203,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                         </span>
                       </td>
                       <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "#b45309" : "#1d4ed8" }}>{s.speed_mpm}</td>
+                      <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "#b45309" : "#059669" }}>{s.speed_back_mpm}</td>
                       <td className="px-2 py-0.5 text-right font-medium">{numFmt(s.time_min, 2)}</td>
                       <td className="px-2 py-0.5 text-right">{numFmt(s.time_back_min, 2)}</td>
                       <td className="px-2 py-0.5 text-right font-semibold text-blue-800">{numFmt(s.cumulTime, 2)}</td>
@@ -213,6 +215,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                   <tr style={{ background: "#e0f2fe", borderTop: "2px solid #bae6fd" }}>
                     <td className="px-2 py-1 font-bold text-blue-900" colSpan={2}>ИТОГО</td>
                     <td className="px-2 py-1 text-right font-bold text-blue-900">{totalLen}</td>
+                    <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
