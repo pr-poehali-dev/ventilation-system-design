@@ -285,17 +285,23 @@ export default function WorkerPathPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const nodeLabel = (n: { id: string; name: string; number: string }) => {
+    const num = n.number ? `№${n.number}` : "";
+    const nm  = n.name  ? n.name        : "";
+    if (num && nm)  return `${num} — ${nm}`;
+    if (num)        return num;
+    if (nm)         return nm;
+    return n.id.slice(0, 8);
+  };
+
   const nodeOptions = useMemo(() => {
-    return nodes.map(n => ({
-      id: n.id,
-      label: n.name ? n.name : n.number ? `Узел ${n.number}` : n.id.slice(0, 8),
-    }));
+    return nodes.map(n => ({ id: n.id, label: nodeLabel(n) }));
   }, [nodes]);
 
   const nodeName = (id: string) => {
     const n = nodes.find(n2 => n2.id === id);
     if (!n) return id.slice(0, 8);
-    return n.name || (n.number ? `Узел ${n.number}` : id.slice(0, 8));
+    return nodeLabel(n);
   };
 
   const canCalc = pickedStartId && pickedTargetId && pickedStartId !== pickedTargetId;

@@ -75,6 +75,9 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
       <Row label="Номер узла">
         <EditInput value={node.number} onChange={(v) => onUpdate({ number: v })} />
       </Row>
+      <Row label="Название">
+        <EditInput value={node.name} onChange={(v) => onUpdate({ name: v })} />
+      </Row>
       <Row label="X, м">
         <EditInput type="number" step="0.1" value={node.x} onChange={(v) => onUpdate({ x: parseFloat(v) || 0 })} />
       </Row>
