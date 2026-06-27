@@ -6715,26 +6715,23 @@ export default function CadPage() {
                     <IndRow k="branchNumber" label="Номер" />
                   </Section>
 
-                  <Section title="Вентиляция — исходные данные">
-                    <IndRow k="branchVelocity"    label="Макс. допустимая скорость воздуха" />
-                    <IndRow k="branchAlpha"        label="Коэффициент шероховатости (α)" />
-                    <IndRow k="branchLocalXi"      label="Мин. допустимая скорость воздуха" />
-                    <IndRow k="branchResistance"   label="Аэродинамическое сопротивление" />
-                    <IndRow k="branchAngle"        label="Уклон" />
-                    <IndRow k="branchFlow"         label="Фактический расход воздуха" />
-                    <IndRow k="branchDepression"   label="Фактический перепад давления" />
-                    <IndRow k="branchLength"       label="Длина" />
-                    <IndRow k="branchHeight"       label="Объём" />
-                    <IndRow k="branchSection"      label="Поперечное сечение" />
-                  </Section>
-
-                  <Section title="Вентиляция — модельные данные">
-                    <IndRow k="branchFlowCalc"    label="Расход воздуха" />
-                    <IndRow k="branchVelocity"    label="Скорость воздуха" />
-                    <IndRow k="branchDepression"  label="Перепад давления" />
-                    <IndRow k="branchExtraFan"    label="Энергозатраты на единицу длины" />
-                    <IndRow k="branchResistanceSum" label="Финзатраты на единицу длины" />
-                    <IndRow k="branchNatDragC"    label="Гарантированный расход воздуха" />
+                  <Section title="Вентиляция">
+                    <IndRow k="branchVelocity"      label="Макс. допустимая скорость воздуха" />
+                    <IndRow k="branchAlpha"          label="Коэффициент шероховатости (α)" />
+                    <IndRow k="branchLocalXi"        label="Мин. допустимая скорость воздуха" />
+                    <IndRow k="branchResistance"     label="Аэродинамическое сопротивление" />
+                    <IndRow k="branchAngle"          label="Уклон" />
+                    <IndRow k="branchFlow"           label="Фактический расход воздуха" />
+                    <IndRow k="branchDepression"     label="Фактический перепад давления" />
+                    <IndRow k="branchLength"         label="Длина" />
+                    <IndRow k="branchHeight"         label="Объём" />
+                    <IndRow k="branchSection"        label="Поперечное сечение" />
+                    <IndRow k="branchFlowCalc"       label="Расход воздуха" />
+                    <IndRow k="branchVelocityModel"  label="Скорость воздуха" />
+                    <IndRow k="branchDepressionModel" label="Перепад давления" />
+                    <IndRow k="branchExtraFan"       label="Энергозатраты на единицу длины" />
+                    <IndRow k="branchResistanceSum"  label="Финзатраты на единицу длины" />
+                    <IndRow k="branchNatDragC"       label="Гарантированный расход воздуха" />
                   </Section>
 
                   <Section title="Аварии — модельные данные">
