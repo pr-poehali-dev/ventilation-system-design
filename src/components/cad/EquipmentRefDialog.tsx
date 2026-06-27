@@ -1434,6 +1434,96 @@ const DEMO_PIPES = [
   { name: "Сталь Ст20", dn: "DN100", wall: "5 мм", p: "16 бар" },
   { name: "ПВД (полиэтилен)", dn: "DN50", wall: "4.6 мм", p: "10 бар" },
 ];
+interface MineVehicle {
+  name: string;
+  type: string;
+  tonnage?: string;
+  rubber: number;
+  diesel: number;
+  oil: number;
+}
+
+const MINE_VEHICLES: MineVehicle[] = [
+  { name: "Sandvik TH315",        type: "Самосвал",          tonnage: "15 т",  rubber: 780,  diesel: 260, oil: 160 },
+  { name: "Sandvik TH430",        type: "Самосвал",          tonnage: "30 т",  rubber: 1200, diesel: 400, oil: 220 },
+  { name: "Sandvik TH540",        type: "Самосвал",          tonnage: "40 т",  rubber: 1500, diesel: 520, oil: 280 },
+  { name: "Sandvik LH203",        type: "ПДМ",               tonnage: "2 т",   rubber: 260,  diesel: 100, oil: 70  },
+  { name: "Sandvik LH307",        type: "ПДМ",               tonnage: "7 т",   rubber: 520,  diesel: 180, oil: 110 },
+  { name: "Sandvik LH514",        type: "ПДМ",               tonnage: "14 т",  rubber: 900,  diesel: 280, oil: 180 },
+  { name: "Epiroc ST7 Scooptram", type: "ПДМ",               tonnage: "6.8 т", rubber: 480,  diesel: 170, oil: 120 },
+  { name: "Epiroc ST14 Scooptram",type: "ПДМ",               tonnage: "14 т",  rubber: 900,  diesel: 280, oil: 200 },
+  { name: "Epiroc MT42",          type: "Самосвал",          tonnage: "42 т",  rubber: 1600, diesel: 550, oil: 300 },
+  { name: "Caterpillar R1300G",   type: "ПДМ",               tonnage: "13 т",  rubber: 850,  diesel: 260, oil: 180 },
+  { name: "Caterpillar R1600H",   type: "ПДМ",               tonnage: "16 т",  rubber: 950,  diesel: 290, oil: 210 },
+  { name: "Caterpillar AD22",     type: "Самосвал",          tonnage: "22 т",  rubber: 1000, diesel: 340, oil: 200 },
+  { name: "Caterpillar AD45B",    type: "Самосвал",          tonnage: "41 т",  rubber: 1500, diesel: 530, oil: 290 },
+  { name: "Komatsu WJ-5",         type: "ПДМ",               tonnage: "5 т",   rubber: 400,  diesel: 150, oil: 95  },
+  { name: "Normet Spraymec",      type: "Набрызг-машина",    tonnage: undefined, rubber: 360, diesel: 140, oil: 90  },
+  { name: "Epiroc Boomer T1D",    type: "Буровая установка", tonnage: undefined, rubber: 800, diesel: 290, oil: 240 },
+  { name: "Epiroc Boltec LC",     type: "Анкеровщик",       tonnage: undefined, rubber: 480, diesel: 180, oil: 140 },
+  { name: "TH-545",               type: "Самосвал",          tonnage: "45 т",  rubber: 1200, diesel: 400, oil: 200 },
+  { name: "БелАЗ-7555",           type: "Самосвал карьерный",tonnage: "55 т",  rubber: 2000, diesel: 700, oil: 400 },
+];
+
+function VehicleCatalogSection() {
+  const [search, setSearch] = useState("");
+  const filtered = MINE_VEHICLES.filter(v =>
+    v.name.toLowerCase().includes(search.toLowerCase()) ||
+    v.type.toLowerCase().includes(search.toLowerCase())
+  );
+  return (
+    <div style={{ background: "#1a1d23", minHeight: "100%", padding: "12px" }}>
+      <div style={{ position: "relative", marginBottom: 12 }}>
+        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#6b7280", fontSize: 14 }}>🔍</span>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Поиск по названию или типу..."
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: "#2a2d35", border: "1px solid #3a3d45", borderRadius: 8,
+            color: "#e5e7eb", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
+          }}
+        />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {filtered.map((v, i) => (
+          <div key={i} style={{
+            background: "#23262e", border: "1px solid #2e3138", borderRadius: 10, padding: "10px 12px",
+            cursor: "default",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ color: "#f3f4f6", fontWeight: 600, fontSize: 13 }}>{v.name}</div>
+                <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 1 }}>
+                  {v.type}{v.tonnage ? ` · ${v.tonnage}` : ""}
+                </div>
+              </div>
+              <span style={{ color: "#4b5563", fontSize: 14 }}>›</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
+              {[
+                { label: "РЕЗИНА", val: v.rubber, color: "#f3f4f6" },
+                { label: "ДИЗЕЛЬ", val: v.diesel, color: "#60a5fa" },
+                { label: "МАСЛО",  val: v.oil,    color: "#fb923c" },
+              ].map(({ label, val, color }) => (
+                <div key={label} style={{ background: "#1a1d23", borderRadius: 6, padding: "5px 6px" }}>
+                  <div style={{ color: "#6b7280", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
+                  <div style={{ color, fontSize: 16, fontWeight: 700, lineHeight: 1.1 }}>{val}</div>
+                  <div style={{ color: "#6b7280", fontSize: 9 }}>КГ</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ color: "#6b7280", fontSize: 10, marginTop: 12, textAlign: "center", fontStyle: "italic" }}>
+        Данные приблизительные. После выбора можно скорректировать значения вручную.
+      </div>
+    </div>
+  );
+}
+
 const DEMO_TRANSPORT = [
   { name: "Вагонетка ВГ-3.3", type: "Рельсовый", cap: "3.3 м³", v: "3.5 м/с" },
   { name: "Конвейер 1Л100У", type: "Ленточный", cap: "250 т/ч", v: "2.5 м/с" },
@@ -1487,9 +1577,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   if (tab === "pipes") return <SimpleTable
     headers={["Материал", "DN", "Стенка", "Давление"]}
     rows={DEMO_PIPES.map(r => [r.name, r.dn, r.wall, r.p])} />;
-  if (tab === "transport") return <SimpleTable
-    headers={["Наименование", "Тип", "Ёмкость", "Скорость"]}
-    rows={DEMO_TRANSPORT.map(r => [r.name, r.type, r.cap, r.v])} />;
+  if (tab === "transport") return <VehicleCatalogSection />;
   return null;
 }
 
