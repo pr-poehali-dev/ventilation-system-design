@@ -5418,7 +5418,7 @@ export default function CadPage() {
             })()}
 
             {/* ═══ ВКЛАДКИ ВЕТВИ (Топология / Вентилятор / Трубы: вода / Конвейер) ══ */}
-            {(["topology","fan","waterpipes","conveyor","params","bulkhead"].includes(activeSide)) && !selectedNode && selectedBranch && (
+            {(["topology","fan","waterpipes","conveyor","fireload","params","bulkhead"].includes(activeSide)) && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}
