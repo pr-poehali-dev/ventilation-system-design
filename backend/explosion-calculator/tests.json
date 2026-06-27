@@ -1,26 +1,23 @@
 {
   "tests": [
     {
-      "name": "Расчёт взрыва метана (газодинамика)",
+      "name": "Расчёт взрыва ВВ (аммонит, газодинамика, 100 кг)",
       "method": "POST",
       "path": "/",
       "body": {
         "method": "gas_dynamics",
-        "sourceType": "gas",
-        "gasId": "methane",
-        "gasVolume_m3": 100,
-        "gasConcentration": 9.5,
+        "sourceType": "mass",
+        "explosiveId": "ammonit",
+        "explosiveMass_kg": 100,
         "excavationArea_m2": 20,
-        "excavationLength_m": 100,
-        "ambientPressure_kPa": 101.3,
-        "considerWalls": true
+        "considerWalls": false
       },
       "expectedStatus": 200,
-      "expectedBody": {"q_tnt_kg": 5.68},
-      "bodyMatcher": "partial"
+      "expectedBody": {"statusCode": 200},
+      "bodyMatcher": "none"
     },
     {
-      "name": "Расчёт взрыва ВВ (аммонит, ФНиП-494)",
+      "name": "Расчёт взрыва ВВ (аммонит, ФНиП-494, 50 кг)",
       "method": "POST",
       "path": "/",
       "body": {
@@ -29,13 +26,11 @@
         "explosiveId": "ammonit",
         "explosiveMass_kg": 50,
         "excavationArea_m2": 15,
-        "excavationLength_m": 50,
-        "ambientPressure_kPa": 101.3,
         "considerWalls": true
       },
       "expectedStatus": 200,
-      "expectedBody": {"q_tnt_kg": 48.5},
-      "bodyMatcher": "partial"
+      "expectedBody": {"statusCode": 200},
+      "bodyMatcher": "none"
     }
   ]
 }

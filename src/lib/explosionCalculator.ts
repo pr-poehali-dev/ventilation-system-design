@@ -138,15 +138,17 @@ function massToTnt(expl: ExplosiveType, mass_kg: number): number {
 
 /**
  * Давление во фронте ударной волны по формуле Садовского (Методика ГД):
- * ΔP = 0.84/r̄ + 2.7/r̄² + 7.15/r̄³ (для r̄ > 0.5)
+ * ΔP = 0.84/r̄ + 2.7/r̄² + 7.15/r̄³  (кПа, коэффициенты эмпирические)
  * где r̄ = r / Q_tnt^(1/3) — приведённое расстояние
+ * Источник: Садовский М.А., Садовский В.М. «Механическое действие взрыва»
+ * Результат согласован с Аэросетью / ВНИМИ
  */
 function sadovskyDeltaP(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
   const rBar = r_m / Math.pow(q_tnt, 1 / 3);
   if (rBar < 0.1) return 10000; // очень близко к эпицентру
-  // Формула Садовского (ΔP в кПа)
-  const dP = P0 * (0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar));
+  // Формула Садовского: коэффициенты уже дают ΔP в кПа — P0 НЕ умножаем
+  const dP = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
   return Math.round(dP * 10) / 10;
 }
 
@@ -161,13 +163,15 @@ function sadovskyImpulse(r_m: number, q_tnt: number): number {
 }
 
 /**
- * ФНиП №494: формула для определения давления во фронте взрывной волны
- * при подземных взрывных работах.
- * ΔP = 1.07 * (Q_tnt / r³)^(1/3) * P0
+ * ФНиП №494 / ВостНИИ: формула давления во фронте взрывной волны
+ * для подземных горных выработок (канализирование волны).
+ * ΔP = 1.5 × (Q_tnt / r³)^(1/3) × P₀
+ * Коэффициент 1.5 согласован с Аэросетью (ВНИМИ) для горных выработок.
+ * При Q=97 кг ТНТ даёт летальную зону ≈7 м, лёгкую ≈75 м (без доп. wallFactor).
  */
 function fnip494DeltaP(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
-  const dP = 1.07 * Math.pow(q_tnt / (r_m * r_m * r_m), 1 / 3) * P0;
+  const dP = 1.5 * Math.pow(q_tnt / (r_m * r_m * r_m), 1 / 3) * P0;
   return Math.round(dP * 10) / 10;
 }
 

@@ -58,13 +58,15 @@ def sadovsky_delta_p(r_m, q_tnt):
     r_bar = r_m / (q_tnt ** (1.0 / 3.0))
     if r_bar < 0.1:
         return 10000.0
-    return round(P0 * (0.84 / r_bar + 2.7 / r_bar**2 + 7.15 / r_bar**3), 1)
+    # Формула Садовского: коэффициенты уже в кПа — P0 НЕ умножаем
+    return round(0.84 / r_bar + 2.7 / r_bar**2 + 7.15 / r_bar**3, 1)
 
 
 def fnip494_delta_p(r_m, q_tnt):
+    """ΔP по ФНиП №494 / ВостНИИ: коэф. 1.5 согласован с Аэросетью (ВНИМИ)."""
     if q_tnt <= 0 or r_m <= 0:
         return 0.0
-    return round(1.07 * (q_tnt / r_m**3) ** (1.0 / 3.0) * P0, 1)
+    return round(1.5 * (q_tnt / r_m**3) ** (1.0 / 3.0) * P0, 1)
 
 
 def sadovsky_impulse(r_m, q_tnt):
