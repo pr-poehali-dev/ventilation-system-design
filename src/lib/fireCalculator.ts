@@ -209,11 +209,14 @@ export function calcBelt(inp: BeltInputs, airFlow: number): BeltFireResult | nul
   const power30   = rows.find(r => r.t === 30)?.powerMW ?? 0;
   const power60   = rows.find(r => r.t === 60)?.powerMW ?? 0;
   const powerMax  = Math.max(power30, power60);
-  const deltaT_C  = (airFlow > 0)
+  const deltaTRaw = (airFlow > 0)
     ? powerMax * 1_000_000 / (airFlow * 1.25 * 1005)
     : 0;
+  const deltaT_C  = Math.min(deltaTRaw, 1200);
 
-  const burnTime_h   = heatTotal / (powerMax * 3600);
+  // burnTime: масса / (ψ × S_макс × 3600) → часы; S_макс = max area по всем шагам
+  const areaMax      = Math.max(...rows.map(r => r.area));
+  const burnTime_h   = (psi > 0 && areaMax > 0) ? mass / (psi * areaMax * 3600) : 0;
   const burnTime_min = burnTime_h * 60;
 
   return { rows, volume, mass, heatTotal, power30, power60, powerMax, deltaT_C, burnTime_h, burnTime_min };
@@ -255,10 +258,15 @@ export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFi
   const volume      = L * a * b;
   const mass        = volume * rho;
   const heatTotal   = mass * Q_н;
-  const surfaceArea = L * (2 * a + 2 * b);   // периметр сечения × длина
+  // Площадь горения = периметр поперечного сечения × длина
+  const surfaceArea = (2 * a + 2 * b) * L;   // м²
+  // Мощность: Q = ψ [кг/(м²·с)] × S [м²] × Q_н [МДж/кг] = МДж/с = МВт
   const powerMW     = psi * surfaceArea * Q_н;
-  const deltaT_C    = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
-  const burnTime_h  = powerMW > 0 ? heatTotal / (powerMW * 3600) : 0;
+  // ΔT воздушного потока, ограниченная 1200°C
+  const deltaTRaw   = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
+  const deltaT_C    = Math.min(deltaTRaw, 1200);
+  // Время горения: масса / (ψ × S) → секунды → часы
+  const burnTime_h  = powerMW > 0 ? mass / (psi * surfaceArea * 3600) : 0;
   const burnTime_min = burnTime_h * 60;
 
   return { mass, heatTotal, surfaceArea, powerMW, deltaT_C, burnTime_h, burnTime_min };
