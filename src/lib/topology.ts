@@ -174,6 +174,13 @@ export interface TopoBranch {
   fireVehicleMassRubber: number;   // кг — масса резины
   fireVehicleMassDiesel: number;   // кг — масса дизельного топлива
   fireVehicleMassOil: number;      // кг — масса масла
+  // Параметры для горючего материала «Конвейерная лента»
+  fireBeltBurnRate: string;        // ψ, кг/(м²·с)
+  fireBeltDensity: string;         // ρ, кг/м³
+  fireBeltWidth: string;           // ширина ленты, м
+  fireBeltLength: string;          // длина конвейера, м
+  fireBeltThickness: string;       // толщина ленты, м
+  fireBeltFlameSpeed: string;      // скорость пламени, м/с
   // Вычисленные результаты расчёта пожара
   fireComputedTemp: number;        // °C — вычисленная температура продуктов горения
   fireComputedNatDep: number;      // Па — тепловая депрессия пожара
@@ -514,6 +521,12 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireVehicleMassRubber: 1200,
     fireVehicleMassDiesel: 400,
     fireVehicleMassOil: 200,
+    fireBeltBurnRate: "0.013",
+    fireBeltDensity: "1200",
+    fireBeltWidth: "1.2",
+    fireBeltLength: "100",
+    fireBeltThickness: "0.016",
+    fireBeltFlameSpeed: "0.013",
     fireComputedTemp: 0,
     fireComputedNatDep: 0,
     fireComputedSmokeDens: 0,

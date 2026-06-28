@@ -7,7 +7,7 @@ import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
-import { calcVehicleFire } from "@/lib/fireCalculator";
+import { calcVehicleFire, calcBelt } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 
 interface BranchPropsPanelProps {
@@ -1780,6 +1780,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
           const vfr = (branch.fireLoadTech ?? false)
             ? calcVehicleFire([massRubber, massDiesel, massOil], airFlow)
             : null;
+          const beltResult = (branch.fireLoadConveyor ?? false)
+            ? calcBelt({
+                burnRate:   branch.fireBeltBurnRate   ?? "0.013",
+                density:    branch.fireBeltDensity    ?? "1200",
+                width:      branch.fireBeltWidth      ?? "1.2",
+                length:     branch.fireBeltLength     ?? "100",
+                thickness:  branch.fireBeltThickness  ?? "0.016",
+                flameSpeed: branch.fireBeltFlameSpeed ?? "0.013",
+              }, airFlow)
+            : null;
 
           return (
             <div>
@@ -1866,6 +1876,86 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   onChange={(v) => onUpdate({ fireLoadConveyor: v })}
                 />
               </InlineLabel>
+
+              {(branch.fireLoadConveyor ?? false) && (
+                <div className="mx-1 mt-1 mb-2">
+                  <div className="text-[10px] font-semibold text-orange-700 mb-1" style={{ borderBottom: "1px dashed #f97316", paddingBottom: 2 }}>
+                    Исходные данные — конвейерная лента
+                  </div>
+                  <table className="w-full text-[11px] border-collapse mb-1">
+                    <thead>
+                      <tr style={{ background: "#f3f4f6" }}>
+                        <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "60%" }}>Параметр</th>
+                        <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Значение</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {([
+                        { label: "ψ, кг/(м²·с)",    key: "fireBeltBurnRate"   as const, def: "0.013" },
+                        { label: "ρ, кг/м³",         key: "fireBeltDensity"    as const, def: "1200"  },
+                        { label: "Ширина, м",        key: "fireBeltWidth"      as const, def: "1.2"   },
+                        { label: "Длина, м",         key: "fireBeltLength"     as const, def: "100"   },
+                        { label: "Толщина, м",       key: "fireBeltThickness"  as const, def: "0.016" },
+                        { label: "v пламени, м/с",   key: "fireBeltFlameSpeed" as const, def: "0.013" },
+                      ] as const).map(({ label, key, def }) => (
+                        <tr key={key}>
+                          <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
+                          <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                            <EditInput
+                              type="number" step="any"
+                              value={branch[key] ?? def}
+                              onChange={(v) => onUpdate({ [key]: v })}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {beltResult && (
+                    <div className="mt-1">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr style={{ background: "#fef9c3" }}>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>
+                              {beltResult.powerMax.toFixed(2)}
+                            </td>
+                            <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>
+                              {airFlow > 0 ? airFlow.toFixed(1) : "—"}
+                            </td>
+                            <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>
+                              {beltResult.deltaT_C > 0 ? beltResult.deltaT_C.toFixed(1) : "—"}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="text-[10px] text-gray-500 mt-0.5 px-0.5">
+                        Масса ленты: {beltResult.mass.toFixed(0)} кг · Теплозапас: {beltResult.heatTotal.toFixed(0)} МДж
+                      </div>
+                      <div className="text-[10px] text-gray-500 px-0.5">
+                        Q₃₀={beltResult.power30.toFixed(2)} МВт · Q₆₀={beltResult.power60.toFixed(2)} МВт
+                      </div>
+                      {!isNaN(beltResult.burnTime_h) && isFinite(beltResult.burnTime_h) && (
+                        <div className="text-[10px] text-gray-500 px-0.5">
+                          Время горения: {beltResult.burnTime_h.toFixed(2)} ч или {beltResult.burnTime_min.toFixed(1)} мин
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(branch.fireLoadConveyor && !beltResult) && (
+                    <div className="text-[10px] text-orange-500 px-0.5 mt-0.5">
+                      Заполните все параметры для расчёта
+                    </div>
+                  )}
+                </div>
+              )}
               <InlineLabel label="Кабель">
                 <CheckField
                   checked={branch.fireLoadCable ?? false}

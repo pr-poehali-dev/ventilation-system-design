@@ -140,6 +140,85 @@ export function getCombustible(id: string): CombustibleProps {
   return COMBUSTIBLES.find(c => c.id === id) ?? COMBUSTIBLES[COMBUSTIBLES.length - 1];
 }
 
+// ─── Расчёт пожара конвейерной ленты ─────────────────────────────────────────
+
+export interface BeltInputs {
+  burnRate: string;       // ψ — скорость выгорания, кг/(м²·с)
+  density: string;        // ρ — плотность ленточного полотна, кг/м³
+  width: string;          // w — ширина ленты, м
+  length: string;         // L — общая длина конвейера, м
+  thickness: string;      // h — толщина ленты, м
+  flameSpeed: string;     // скорость продвижения пламени, м/с
+}
+
+export interface BeltRow {
+  t: number;
+  dist: number;
+  area: number;
+  massBurned: number;
+  lengthBurned: number;
+  powerMW: number;
+}
+
+export interface BeltFireResult {
+  rows: BeltRow[];
+  volume: number;
+  mass: number;
+  heatTotal: number;
+  power30: number;
+  power60: number;
+  powerMax: number;
+  deltaT_C: number;
+  burnTime_h: number;
+  burnTime_min: number;
+}
+
+const BELT_STEPS = [
+  1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+  21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+  41,42,45,48,51,54,57,60,
+];
+
+export function calcBelt(inp: BeltInputs, airFlow: number): BeltFireResult | null {
+  const psi    = parseFloat(inp.burnRate.replace(",", "."));
+  const rho    = parseFloat(inp.density.replace(",", "."));
+  const w      = parseFloat(inp.width.replace(",", "."));
+  const L      = parseFloat(inp.length.replace(",", "."));
+  const h      = parseFloat(inp.thickness.replace(",", "."));
+  const vFlame = parseFloat(inp.flameSpeed.replace(",", ".")) * 60; // м/с → м/мин
+
+  if ([psi, rho, w, L, h, vFlame].some(isNaN) || psi <= 0 || rho <= 0 || w <= 0 || L <= 0 || h <= 0 || vFlame <= 0) return null;
+
+  const Q_н    = 33.5; // МДж/кг — НТС резины конвейерной ленты
+  const volume  = L * w * h * 2;   // два слоя: верхняя + нижняя ветвь
+  const mass    = volume * rho;
+  const heatTotal = mass * Q_н;
+
+  // k — параметр затухания
+  const k = (psi * 60) / (2 * rho * h * 2 * vFlame);
+
+  const rows: BeltRow[] = BELT_STEPS.map(t => {
+    const dist         = Math.min(vFlame * t, L);
+    const lengthBurned = Math.min(dist * (1 - Math.exp(-k * t)), dist);
+    const area         = Math.max(dist - lengthBurned, 0) * w;
+    const massBurned   = Math.min(lengthBurned * w * h * 2 * rho, mass);
+    const powerMW      = psi * area * Q_н;
+    return { t, dist, area, massBurned, lengthBurned, powerMW };
+  });
+
+  const power30   = rows.find(r => r.t === 30)?.powerMW ?? 0;
+  const power60   = rows.find(r => r.t === 60)?.powerMW ?? 0;
+  const powerMax  = Math.max(power30, power60);
+  const deltaT_C  = (airFlow > 0)
+    ? powerMax * 1_000_000 / (airFlow * 1.25 * 1005)
+    : 0;
+
+  const burnTime_h   = heatTotal / (powerMax * 3600);
+  const burnTime_min = burnTime_h * 60;
+
+  return { rows, volume, mass, heatTotal, power30, power60, powerMax, deltaT_C, burnTime_h, burnTime_min };
+}
+
 // ─── Типы результатов ─────────────────────────────────────────────────────────
 
 export interface SmokeState {
