@@ -7,7 +7,7 @@ import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
-import { calcVehicleFire, calcBelt } from "@/lib/fireCalculator";
+import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 
 interface BranchPropsPanelProps {
@@ -1790,6 +1790,26 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 flameSpeed: branch.fireBeltFlameSpeed ?? "0.013",
               }, airFlow)
             : null;
+          const cableResult = (branch.fireLoadCable ?? false)
+            ? calcLinearFire({
+                heatValue:    branch.fireCableHeatValue ?? "25",
+                burnRate:     branch.fireCableBurnRate  ?? "0.007",
+                density:      branch.fireCableDensity   ?? "900",
+                length:       branch.fireCableLength    ?? "100",
+                sectionWidth: branch.fireCableWidth     ?? "0.05",
+                sectionThick: branch.fireCableThick     ?? "0.05",
+              }, airFlow)
+            : null;
+          const woodResult = (branch.fireLoadWoodSupport ?? false)
+            ? calcLinearFire({
+                heatValue:    branch.fireWoodHeatValue ?? "18.5",
+                burnRate:     branch.fireWoodBurnRate  ?? "0.027",
+                density:      branch.fireWoodDensity   ?? "500",
+                length:       branch.fireWoodLength    ?? "50",
+                sectionWidth: branch.fireWoodWidth     ?? "0.15",
+                sectionThick: branch.fireWoodThick     ?? "0.15",
+              }, airFlow)
+            : null;
 
           return (
             <div>
@@ -1962,12 +1982,139 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   onChange={(v) => onUpdate({ fireLoadCable: v })}
                 />
               </InlineLabel>
+
+              {(branch.fireLoadCable ?? false) && (
+                <div className="mx-1 mt-1 mb-2">
+                  <div className="text-[10px] font-semibold text-orange-700 mb-1" style={{ borderBottom: "1px dashed #f97316", paddingBottom: 2 }}>
+                    Исходные данные — электрокабель
+                  </div>
+                  <table className="w-full text-[11px] border-collapse mb-1">
+                    <thead>
+                      <tr style={{ background: "#f3f4f6" }}>
+                        <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "60%" }}>Параметр</th>
+                        <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Значение</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {([
+                        { label: "Q_н, МДж/кг",       key: "fireCableHeatValue" as const, def: "25"   },
+                        { label: "ψ, кг/(м²·с)",      key: "fireCableBurnRate"  as const, def: "0.007"},
+                        { label: "ρ, кг/м³",          key: "fireCableDensity"   as const, def: "900"  },
+                        { label: "Длина, м",           key: "fireCableLength"    as const, def: "100"  },
+                        { label: "Ширина сеч., м",     key: "fireCableWidth"     as const, def: "0.05" },
+                        { label: "Толщина сеч., м",    key: "fireCableThick"     as const, def: "0.05" },
+                      ] as const).map(({ label, key, def }) => (
+                        <tr key={key}>
+                          <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
+                          <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                            <EditInput type="number" step="any" value={branch[key] ?? def} onChange={(v) => onUpdate({ [key]: v })} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {cableResult ? (
+                    <div className="mt-1">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr style={{ background: "#fef9c3" }}>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>{cableResult.powerMW.toFixed(2)}</td>
+                            <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                            <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>{cableResult.deltaT_C > 0 ? cableResult.deltaT_C.toFixed(1) : "—"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="text-[10px] text-gray-500 mt-0.5 px-0.5">
+                        Масса: {cableResult.mass.toFixed(0)} кг · Теплозапас: {cableResult.heatTotal.toFixed(0)} МДж
+                      </div>
+                      {!isNaN(cableResult.burnTime_h) && isFinite(cableResult.burnTime_h) && (
+                        <div className="text-[10px] text-gray-500 px-0.5">
+                          Время горения: {cableResult.burnTime_h.toFixed(2)} ч или {cableResult.burnTime_min.toFixed(1)} мин
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-orange-500 px-0.5 mt-0.5">Заполните все параметры для расчёта</div>
+                  )}
+                </div>
+              )}
+
               <InlineLabel label="Деревянная крепь">
                 <CheckField
                   checked={branch.fireLoadWoodSupport ?? false}
                   onChange={(v) => onUpdate({ fireLoadWoodSupport: v })}
                 />
               </InlineLabel>
+
+              {(branch.fireLoadWoodSupport ?? false) && (
+                <div className="mx-1 mt-1 mb-2">
+                  <div className="text-[10px] font-semibold text-orange-700 mb-1" style={{ borderBottom: "1px dashed #f97316", paddingBottom: 2 }}>
+                    Исходные данные — деревянная крепь
+                  </div>
+                  <table className="w-full text-[11px] border-collapse mb-1">
+                    <thead>
+                      <tr style={{ background: "#f3f4f6" }}>
+                        <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "60%" }}>Параметр</th>
+                        <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Значение</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {([
+                        { label: "Q_н, МДж/кг",       key: "fireWoodHeatValue" as const, def: "18.5" },
+                        { label: "ψ, кг/(м²·с)",      key: "fireWoodBurnRate"  as const, def: "0.027"},
+                        { label: "ρ, кг/м³",          key: "fireWoodDensity"   as const, def: "500"  },
+                        { label: "Длина, м",           key: "fireWoodLength"    as const, def: "50"   },
+                        { label: "Ширина сеч., м",     key: "fireWoodWidth"     as const, def: "0.15" },
+                        { label: "Толщина сеч., м",    key: "fireWoodThick"     as const, def: "0.15" },
+                      ] as const).map(({ label, key, def }) => (
+                        <tr key={key}>
+                          <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
+                          <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                            <EditInput type="number" step="any" value={branch[key] ?? def} onChange={(v) => onUpdate({ [key]: v })} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {woodResult ? (
+                    <div className="mt-1">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr style={{ background: "#fef9c3" }}>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
+                            <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>{woodResult.powerMW.toFixed(2)}</td>
+                            <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                            <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>{woodResult.deltaT_C > 0 ? woodResult.deltaT_C.toFixed(1) : "—"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="text-[10px] text-gray-500 mt-0.5 px-0.5">
+                        Масса: {woodResult.mass.toFixed(0)} кг · Теплозапас: {woodResult.heatTotal.toFixed(0)} МДж
+                      </div>
+                      {!isNaN(woodResult.burnTime_h) && isFinite(woodResult.burnTime_h) && (
+                        <div className="text-[10px] text-gray-500 px-0.5">
+                          Время горения: {woodResult.burnTime_h.toFixed(2)} ч или {woodResult.burnTime_min.toFixed(1)} мин
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-orange-500 px-0.5 mt-0.5">Заполните все параметры для расчёта</div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()}

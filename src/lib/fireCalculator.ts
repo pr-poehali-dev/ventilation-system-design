@@ -219,6 +219,51 @@ export function calcBelt(inp: BeltInputs, airFlow: number): BeltFireResult | nul
   return { rows, volume, mass, heatTotal, power30, power60, powerMax, deltaT_C, burnTime_h, burnTime_min };
 }
 
+// ─── Расчёт линейной пожарной нагрузки (кабель, деревянная крепь) ────────────
+// Модель: линейный источник тепловыделения вдоль выработки
+// Q = ψ × S × Q_н, S = sectionArea × length; время горения = mass / (ψ × S)
+
+export interface LinearFireInputs {
+  heatValue: string;      // Q_н, МДж/кг — низшая теплота сгорания
+  burnRate: string;       // ψ, кг/(м²·с) — скорость выгорания
+  density: string;        // ρ, кг/м³ — плотность материала
+  length: string;         // L, м — длина вдоль выработки
+  sectionWidth: string;   // a, м — ширина/диаметр поперечного сечения горючего
+  sectionThick: string;   // b, м — толщина/высота поперечного сечения горючего
+}
+
+export interface LinearFireResult {
+  mass: number;           // кг — масса горючего
+  heatTotal: number;      // МДж — теплозапас
+  surfaceArea: number;    // м² — площадь горения
+  powerMW: number;        // МВт — мощность пожара
+  deltaT_C: number;       // °C — нагрев воздушного потока
+  burnTime_h: number;     // ч — время горения
+  burnTime_min: number;   // мин
+}
+
+export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFireResult | null {
+  const Q_н  = parseFloat(inp.heatValue.replace(",", "."));
+  const psi  = parseFloat(inp.burnRate.replace(",", "."));
+  const rho  = parseFloat(inp.density.replace(",", "."));
+  const L    = parseFloat(inp.length.replace(",", "."));
+  const a    = parseFloat(inp.sectionWidth.replace(",", "."));
+  const b    = parseFloat(inp.sectionThick.replace(",", "."));
+
+  if ([Q_н, psi, rho, L, a, b].some(isNaN) || [Q_н, psi, rho, L, a, b].some(v => v <= 0)) return null;
+
+  const volume      = L * a * b;
+  const mass        = volume * rho;
+  const heatTotal   = mass * Q_н;
+  const surfaceArea = L * (2 * a + 2 * b);   // периметр сечения × длина
+  const powerMW     = psi * surfaceArea * Q_н;
+  const deltaT_C    = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
+  const burnTime_h  = powerMW > 0 ? heatTotal / (powerMW * 3600) : 0;
+  const burnTime_min = burnTime_h * 60;
+
+  return { mass, heatTotal, surfaceArea, powerMW, deltaT_C, burnTime_h, burnTime_min };
+}
+
 // ─── Типы результатов ─────────────────────────────────────────────────────────
 
 export interface SmokeState {

@@ -181,6 +181,20 @@ export interface TopoBranch {
   fireBeltLength: string;          // длина конвейера, м
   fireBeltThickness: string;       // толщина ленты, м
   fireBeltFlameSpeed: string;      // скорость пламени, м/с
+  // Параметры для горючего материала «Электрокабель»
+  fireCableHeatValue: string;      // Q_н, МДж/кг
+  fireCableBurnRate: string;       // ψ, кг/(м²·с)
+  fireCableDensity: string;        // ρ, кг/м³
+  fireCableLength: string;         // длина, м
+  fireCableWidth: string;          // диаметр/ширина, м
+  fireCableThick: string;          // толщина, м
+  // Параметры для горючего материала «Деревянная крепь»
+  fireWoodHeatValue: string;       // Q_н, МДж/кг
+  fireWoodBurnRate: string;        // ψ, кг/(м²·с)
+  fireWoodDensity: string;         // ρ, кг/м³
+  fireWoodLength: string;          // длина, м
+  fireWoodWidth: string;           // ширина сечения, м
+  fireWoodThick: string;           // толщина сечения, м
   // Вычисленные результаты расчёта пожара
   fireComputedTemp: number;        // °C — вычисленная температура продуктов горения
   fireComputedNatDep: number;      // Па — тепловая депрессия пожара
@@ -527,6 +541,18 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireBeltLength: "100",
     fireBeltThickness: "0.016",
     fireBeltFlameSpeed: "0.013",
+    fireCableHeatValue: "25",
+    fireCableBurnRate: "0.007",
+    fireCableDensity: "900",
+    fireCableLength: "100",
+    fireCableWidth: "0.05",
+    fireCableThick: "0.05",
+    fireWoodHeatValue: "18.5",
+    fireWoodBurnRate: "0.027",
+    fireWoodDensity: "500",
+    fireWoodLength: "50",
+    fireWoodWidth: "0.15",
+    fireWoodThick: "0.15",
     fireComputedTemp: 0,
     fireComputedNatDep: 0,
     fireComputedSmokeDens: 0,
