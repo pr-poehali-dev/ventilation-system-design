@@ -69,6 +69,7 @@ export const BRANCH_COLUMNS: ExportColumn[] = [
   { key: "thermalCrit",   label: "Тепловая критическая депрессия Па",      group: "Пожар" },
   { key: "thermalFire",   label: "Тепловая депрессия пожара Па",           group: "Пожар" },
   { key: "reverseRisk",   label: "Опасная по опрокидыванию",               group: "Пожар" },
+  { key: "fireLoad",      label: "Пожарная нагрузка",                      group: "Пожар" },
   // Замерные станции
   { key: "measStation",   label: "Номер замерной станции",                 group: "Замеры" },
   { key: "measFlow",      label: "Расход на замерной станции м³/с",        group: "Замеры" },
@@ -179,6 +180,14 @@ function getBranchValue(
     case "thermalCrit":    return 0;
     case "thermalFire":    return 0;
     case "reverseRisk":    return b.fanReverse ? "Да" : "Нет";
+    case "fireLoad": {
+      const parts: string[] = [];
+      if (b.fireLoadTech)         parts.push(b.fireVehicleName ? b.fireVehicleName : "Техника");
+      if (b.fireLoadConveyor)     parts.push(b.fireBeltName    ? b.fireBeltName    : "Конвейерная лента");
+      if (b.fireLoadCable)        parts.push(b.fireCableName   ? b.fireCableName   : "Электрокабель");
+      if (b.fireLoadWoodSupport)  parts.push(b.fireWoodName    ? b.fireWoodName    : "Деревянная крепь");
+      return parts.join("; ");
+    }
     case "measStation":    return "";
     case "measFlow":       return 0;
     case "measVelocity":   return 0;
