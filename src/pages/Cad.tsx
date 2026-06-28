@@ -9456,6 +9456,7 @@ export default function CadPage() {
         onMineFansChange={setMineFans}
         onMineBulkheadsChange={setMineBulkheads}
         onBranchTypesChange={setMineTypes}
+        initialMineFans={mineFans}
         initialBranchTypes={mineTypes}
         initialMineBulkheads={mineBulkheads}
         unitsConfig={unitsConfig}

@@ -38,6 +38,7 @@ interface Props {
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (bulkheads: MineBulkheadExport[]) => void;
   onBranchTypesChange?: (types: BranchType[]) => void;
+  initialMineFans?: MineFanExport[];
   initialBranchTypes?: BranchType[];
   initialMineBulkheads?: MineBulkheadExport[];
   unitsConfig?: UnitsConfig;
@@ -450,9 +451,35 @@ function catalogToMineFan(c: FanCurve): MineFan {
 
 
 
+function exportToMineFan(exp: MineFanExport): MineFan {
+  const catalog = FAN_CATALOG.find(c => c.id === exp.catalogId);
+  const defaultAngles = catalog && catalog.bladeAngles.length > 0 ? catalog.bladeAngles : [0];
+  return {
+    id: `mf_${exp.catalogId}_restored`,
+    catalogId: exp.catalogId,
+    name: exp.name,
+    type: catalog ? (catalog.type === "axial" ? "Осевой" : "Центробежный") : "Осевой",
+    diameter: exp.diameter,
+    rpmMin: exp.rpmMin,
+    rpmMax: exp.rpmMax,
+    bladeAngles: defaultAngles.map((a, i) => ({
+      id: `a${i}`,
+      angle: a,
+      reverse: false,
+      rpm: catalog?.rpmNominal ?? exp.rpmMax,
+      color: CURVE_COLORS[i % CURVE_COLORS.length],
+    })),
+    note: "",
+  };
+}
+
 // ─── Секция вентиляторов ──────────────────────────────────────────────────
-function FansSection({ onMineFansChange }: { onMineFansChange?: (fans: MineFanExport[]) => void }) {
-  const [fans, setFans] = useState<MineFan[]>([]);
+function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?: (fans: MineFanExport[]) => void; initialMineFans?: MineFanExport[] }) {
+  const [fans, setFans] = useState<MineFan[]>(() =>
+    initialMineFans && initialMineFans.length > 0
+      ? initialMineFans.map(exportToMineFan)
+      : []
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [addAngleFor, setAddAngleFor] = useState<MineFan | null>(null);
@@ -1551,17 +1578,18 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: {
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
   onBranchTypesChange?: (types: BranchType[]) => void;
+  initialMineFans?: MineFanExport[];
   initialBranchTypes?: BranchType[];
   initialMineBulkheads?: MineBulkheadExport[];
   unitsConfig?: UnitsConfig;
   onUnitsConfigChange?: (cfg: UnitsConfig) => void;
 }) {
-  if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} />;
+  if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} initialMineFans={initialMineFans} />;
   if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
   if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads} />;
   if (tab === "units") return <UnitsConfigPanel unitsConfig={unitsConfig ?? DEFAULT_UNITS_CONFIG} onChange={onUnitsConfigChange ?? (() => {})} />;
@@ -1581,7 +1609,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1633,7 +1661,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик
