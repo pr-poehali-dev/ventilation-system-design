@@ -175,6 +175,7 @@ export interface TopoBranch {
   fireVehicleMassDiesel: number;   // кг — масса дизельного топлива
   fireVehicleMassOil: number;      // кг — масса масла
   // Параметры для горючего материала «Конвейерная лента»
+  fireBeltName: string;            // пользовательское название
   fireBeltBurnRate: string;        // ψ, кг/(м²·с)
   fireBeltDensity: string;         // ρ, кг/м³
   fireBeltWidth: string;           // ширина ленты, м
@@ -182,6 +183,7 @@ export interface TopoBranch {
   fireBeltThickness: string;       // толщина ленты, м
   fireBeltFlameSpeed: string;      // скорость пламени, м/с
   // Параметры для горючего материала «Электрокабель»
+  fireCableName: string;           // пользовательское название
   fireCableHeatValue: string;      // Q_н, МДж/кг
   fireCableBurnRate: string;       // ψ, кг/(м²·с)
   fireCableDensity: string;        // ρ, кг/м³
@@ -189,6 +191,7 @@ export interface TopoBranch {
   fireCableWidth: string;          // диаметр/ширина, м
   fireCableThick: string;          // толщина, м
   // Параметры для горючего материала «Деревянная крепь»
+  fireWoodName: string;            // пользовательское название
   fireWoodHeatValue: string;       // Q_н, МДж/кг
   fireWoodBurnRate: string;        // ψ, кг/(м²·с)
   fireWoodDensity: string;         // ρ, кг/м³
@@ -535,18 +538,21 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireVehicleMassRubber: 1200,
     fireVehicleMassDiesel: 400,
     fireVehicleMassOil: 200,
+    fireBeltName: "Конвейерная лента",
     fireBeltBurnRate: "0.013",
     fireBeltDensity: "1200",
     fireBeltWidth: "1.2",
     fireBeltLength: "100",
     fireBeltThickness: "0.016",
     fireBeltFlameSpeed: "0.013",
+    fireCableName: "Электрокабель",
     fireCableHeatValue: "25",
     fireCableBurnRate: "0.007",
     fireCableDensity: "900",
     fireCableLength: "100",
     fireCableWidth: "0.05",
     fireCableThick: "0.05",
+    fireWoodName: "Деревянная крепь",
     fireWoodHeatValue: "18.5",
     fireWoodBurnRate: "0.027",
     fireWoodDensity: "500",

@@ -1899,9 +1899,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               {(branch.fireLoadConveyor ?? false) && (
                 <div className="mx-1 mt-1 mb-2">
-                  <div className="text-[10px] font-semibold text-orange-700 mb-1" style={{ borderBottom: "1px dashed #f97316", paddingBottom: 2 }}>
-                    Исходные данные — конвейерная лента
-                  </div>
+                  <input
+                    type="text"
+                    value={branch.fireBeltName ?? "Конвейерная лента"}
+                    onChange={(e) => onUpdate({ fireBeltName: e.target.value })}
+                    className="w-full text-[10px] font-semibold text-orange-700 mb-1 px-0"
+                    style={{ border: "none", borderBottom: "1px dashed #f97316", outline: "none", background: "transparent", paddingBottom: 2 }}
+                  />
                   <table className="w-full text-[11px] border-collapse mb-1">
                     <thead>
                       <tr style={{ background: "#f3f4f6" }}>
@@ -1985,9 +1989,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               {(branch.fireLoadCable ?? false) && (
                 <div className="mx-1 mt-1 mb-2">
-                  <div className="text-[10px] font-semibold text-orange-700 mb-1" style={{ borderBottom: "1px dashed #f97316", paddingBottom: 2 }}>
-                    Исходные данные — электрокабель
-                  </div>
+                  <input
+                    type="text"
+                    value={branch.fireCableName ?? "Электрокабель"}
+                    onChange={(e) => onUpdate({ fireCableName: e.target.value })}
+                    className="w-full text-[10px] font-semibold text-orange-700 mb-1 px-0"
+                    style={{ border: "none", borderBottom: "1px dashed #f97316", outline: "none", background: "transparent", paddingBottom: 2 }}
+                  />
                   <table className="w-full text-[11px] border-collapse mb-1">
                     <thead>
                       <tr style={{ background: "#f3f4f6" }}>
@@ -2055,9 +2063,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
               {(branch.fireLoadWoodSupport ?? false) && (
                 <div className="mx-1 mt-1 mb-2">
-                  <div className="text-[10px] font-semibold text-orange-700 mb-1" style={{ borderBottom: "1px dashed #f97316", paddingBottom: 2 }}>
-                    Исходные данные — деревянная крепь
-                  </div>
+                  <input
+                    type="text"
+                    value={branch.fireWoodName ?? "Деревянная крепь"}
+                    onChange={(e) => onUpdate({ fireWoodName: e.target.value })}
+                    className="w-full text-[10px] font-semibold text-orange-700 mb-1 px-0"
+                    style={{ border: "none", borderBottom: "1px dashed #f97316", outline: "none", background: "transparent", paddingBottom: 2 }}
+                  />
                   <table className="w-full text-[11px] border-collapse mb-1">
                     <thead>
                       <tr style={{ background: "#f3f4f6" }}>
