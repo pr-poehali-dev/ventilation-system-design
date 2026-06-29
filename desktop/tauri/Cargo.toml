@@ -5,10 +5,6 @@ description = "ПВ-Система — система проветривания
 authors = ["PV-Sistema"]
 edition = "2021"
 
-[lib]
-name = "pv_sistema_desktop_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
