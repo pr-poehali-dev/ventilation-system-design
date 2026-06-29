@@ -66,7 +66,9 @@ for fn in [
 
 # ─── Кэш лицензии (offline, HMAC + привязка к железу) ────────────────────────
 
-LICENSE_CACHE_PATH = os.path.join(BASE_DIR, "license_cache.json")
+LICENSE_CACHE_PATH  = os.path.join(BASE_DIR, "license_cache.json")
+OFFLINE_TTL_DAYS    = 14                          # максимум дней без интернета
+OFFLINE_TTL_SECONDS = OFFLINE_TTL_DAYS * 86400
 
 def load_license_cache() -> dict:
     """
@@ -269,12 +271,35 @@ class Handler(BaseHTTPRequestHandler):
         # если файл скопирован с другой машины — load_license_cache() вернул {}
         if action == "check" and fingerprint in cache:
             cached = cache[fingerprint]
+
+            # Проверяем срок действия оффлайн-кэша
+            import datetime as _dt
+            cached_at_str = cached.get("cached_at", "")
+            try:
+                cached_at = _dt.datetime.fromisoformat(cached_at_str)
+                age_seconds = (_dt.datetime.now() - cached_at).total_seconds()
+            except Exception:
+                age_seconds = OFFLINE_TTL_SECONDS + 1  # считаем просроченным
+
+            if age_seconds > OFFLINE_TTL_SECONDS:
+                days_ago = int(age_seconds // 86400)
+                print(f"[server] License: оффлайн-кэш просрочен ({days_ago} дн. без интернета, лимит {OFFLINE_TTL_DAYS} дн.)")
+                self.send_json(200, {
+                    "licensed": False,
+                    "reason":   "offline_cache_expired",
+                    "days_ago": days_ago,
+                    "ttl_days": OFFLINE_TTL_DAYS,
+                })
+                return
+
+            days_left = int((OFFLINE_TTL_SECONDS - age_seconds) // 86400)
             self.send_json(200, {
-                "licensed": cached.get("licensed", False),
-                "key":      cached.get("key"),
-                "owner":    cached.get("owner"),
-                "seats":    cached.get("seats"),
-                "offline":  True,
+                "licensed":  cached.get("licensed", False),
+                "key":       cached.get("key"),
+                "owner":     cached.get("owner"),
+                "seats":     cached.get("seats"),
+                "offline":   True,
+                "days_left": days_left,   # сколько дней осталось
             })
             return
 

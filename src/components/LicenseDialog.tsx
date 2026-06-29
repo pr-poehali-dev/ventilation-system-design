@@ -44,7 +44,11 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
     setKey(parts.join("-"));
   };
 
-  const isLicensed = license.status === "licensed";
+  const isLicensed       = license.status === "licensed";
+  const isExpired        = license.status === "offline_expired";
+  const daysLeft         = license.info?.daysLeft;
+  const isOffline        = license.info?.offline;
+  const warnDaysLeft     = isOffline && typeof daysLeft === "number" && daysLeft <= 3;
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
@@ -60,7 +64,9 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
             <div>
               <div className="text-white font-bold text-[14px]">ПВ-Система — Лицензия</div>
               <div className="text-blue-200 text-[11px]">
-                {isLicensed ? "Полная версия активна" : "Демо-режим"}
+                {isLicensed ? (isOffline ? "Оффлайн-режим" : "Полная версия активна")
+                  : isExpired ? "Требуется интернет"
+                  : "Демо-режим"}
               </div>
             </div>
           </div>
@@ -73,12 +79,42 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
         </div>
 
         <div className="p-5">
+          {/* Кэш просрочен — нужен интернет */}
+          {isExpired && (
+            <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50">
+              <div className="flex items-center gap-2 text-red-800 font-semibold text-[13px]">
+                <Icon name="WifiOff" size={16} className="text-red-600" />
+                Требуется подключение к интернету
+              </div>
+              <div className="mt-1.5 text-[12px] text-red-700">
+                Прошло более 14 дней без проверки лицензии. Подключитесь к сети и перезапустите приложение.
+              </div>
+            </div>
+          )}
+
+          {/* Предупреждение — осталось мало дней offline */}
+          {warnDaysLeft && (
+            <div className="mb-4 p-3 rounded-lg border border-amber-300 bg-amber-50">
+              <div className="flex items-center gap-2 text-amber-800 font-semibold text-[13px]">
+                <Icon name="Clock" size={16} className="text-amber-600" />
+                {daysLeft === 0
+                  ? "Последний день offline-режима"
+                  : `Offline-режим истекает через ${daysLeft} ${daysLeft === 1 ? "день" : "дня"}`}
+              </div>
+              <div className="mt-1 text-[11px] text-amber-700">
+                Подключитесь к интернету для продления. Без подключения через{" "}
+                {daysLeft === 0 ? "сегодня" : `${daysLeft} ${daysLeft === 1 ? "день" : "дня"}`} приложение
+                перейдёт в демо-режим.
+              </div>
+            </div>
+          )}
+
           {/* Активная лицензия */}
           {isLicensed && license.info && (
             <div className="mb-4 p-3 rounded-lg border border-green-200 bg-green-50">
               <div className="flex items-center gap-2 text-green-800 font-semibold text-[13px]">
                 <Icon name="CheckCircle2" size={16} className="text-green-600" />
-                Лицензия активирована
+                {isOffline ? "Лицензия (оффлайн-режим)" : "Лицензия активирована"}
               </div>
               <div className="mt-2 space-y-1">
                 <div className="text-[12px] text-green-700">Организация: <b>{license.info.owner}</b></div>
@@ -86,6 +122,11 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 {license.info.seats && (
                   <div className="text-[11px] text-green-600">
                     Рабочих мест: {license.info.seats.used} / {license.info.seats.max}
+                  </div>
+                )}
+                {isOffline && typeof daysLeft === "number" && (
+                  <div className="text-[11px] text-amber-600">
+                    Оффлайн-режим: осталось {daysLeft} {daysLeft === 1 ? "день" : daysLeft < 5 ? "дня" : "дней"}
                   </div>
                 )}
               </div>

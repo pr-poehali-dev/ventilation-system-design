@@ -9,7 +9,7 @@ import {
   type MachineInfo,
 } from "@/lib/license";
 
-export type LicenseStatus = "loading" | "demo" | "licensed";
+export type LicenseStatus = "loading" | "demo" | "licensed" | "offline_expired";
 
 export interface UseLicenseReturn {
   status: LicenseStatus;
@@ -51,7 +51,12 @@ export function useLicense(): UseLicenseReturn {
         const fresh = await checkLicense(mi.fingerprint, mi);
         if (cancelled) return;
         setInfo(fresh);
-        setStatus(fresh.licensed ? "licensed" : "demo");
+        if (fresh.offlineExpired) {
+          // Оффлайн-кэш просрочен — требуется подключение к интернету
+          setStatus("offline_expired");
+        } else {
+          setStatus(fresh.licensed ? "licensed" : "demo");
+        }
       } catch {
         if (cancelled) return;
         // Нет сети — используем кэш или демо

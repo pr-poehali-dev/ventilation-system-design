@@ -11,6 +11,9 @@ export interface LicenseInfo {
   owner?: string;
   seats?: { max: number; used: number };
   checkedAt?: number;
+  offline?: boolean;       // true — ответ из оффлайн-кэша
+  daysLeft?: number;       // дней до истечения оффлайн-кэша (только при offline=true)
+  offlineExpired?: boolean; // кэш просрочен (>14 дней без интернета)
 }
 
 export interface MachineInfo {
@@ -164,11 +167,18 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
   // Если сервер обновил fingerprint (восстановление после переустановки) — сбрасываем кэш
   if (data.fingerprint_updated) clearFingerprintCache();
 
+  // Кэш просрочен (>14 дней без интернета)
+  if (data.reason === "offline_cache_expired") {
+    return { licensed: false, offlineExpired: true, daysLeft: 0 };
+  }
+
   const info: LicenseInfo = {
-    licensed: !!data.licensed,
-    key: data.key,
-    owner: data.owner,
-    seats: data.seats,
+    licensed:  !!data.licensed,
+    key:       data.key,
+    owner:     data.owner,
+    seats:     data.seats,
+    offline:   !!data.offline,
+    daysLeft:  data.days_left,
   };
   saveCache(info);
   return info;
