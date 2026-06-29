@@ -82,7 +82,6 @@ export default defineConfig({
   plugins: [
     react(),
     antiDebugPlugin(),
-    stringObfuscatorPlugin(),
   ],
   resolve: {
     alias: {
