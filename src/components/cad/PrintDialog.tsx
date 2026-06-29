@@ -13,6 +13,25 @@ import { jsPDF } from "jspdf";
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
 
+// ── Печать через скрытый iframe (работает в Electron и браузере без всплывающих окон) ──
+function printViaIframe(html: string) {
+  const existing = document.getElementById("__pvs_print_frame__");
+  if (existing) existing.remove();
+  const iframe = document.createElement("iframe");
+  iframe.id = "__pvs_print_frame__";
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  iframe.contentWindow?.focus();
+  setTimeout(() => {
+    iframe.contentWindow?.print();
+    setTimeout(() => iframe.remove(), 2000);
+  }, 500);
+}
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -816,15 +835,9 @@ body{background:white;font-family:Arial,sans-serif}
 .page-img{position:absolute;top:0;left:0;width:${paper.w}mm;height:${paper.h}mm;display:block}
 .page-num{position:absolute;bottom:${marginBottom+2}mm;right:${marginRight+2}mm;font-size:9pt;color:#555}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body>${pageHtmls.join("")}
-<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
-</body></html>`;
+</style></head><body>${pageHtmls.join("")}</body></html>`;
 
-    const win = window.open("", "_blank", "width=1400,height=900");
-    if (!win) { alert("Разрешите всплывающие окна"); return; }
-    win.document.open();
-    win.document.write(html);
-    win.document.close();
+    printViaIframe(html);
   }, [paper, marginTop, marginBottom, marginRight,
       showPageNumbers, copies, reverseOrder, projectName,
       tiles, totalPages, renderTileToCanvas]);
@@ -851,11 +864,8 @@ body{background:white;font-family:Arial,sans-serif}
   <img src="${png}" class="page-img" />
   ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
 </div>
-<script>window.onload=()=>setTimeout(()=>window.print(),400)</script>
 </body></html>`;
-    const win = window.open("", "_blank", "width=1400,height=900");
-    if (!win) { alert("Разрешите всплывающие окна"); return; }
-    win.document.open(); win.document.write(html); win.document.close();
+    printViaIframe(html);
   }, [tiles, paper, marginBottom, marginRight, projectName,
       showPageNumbers, renderTileToCanvas, closeCtxMenu]);
 

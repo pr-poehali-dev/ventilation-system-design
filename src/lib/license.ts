@@ -5,6 +5,51 @@ const HW_FP_KEY        = "pvs_hw_fp";
 const MACHINE_UUID_KEY = "pvs_machine_uuid";
 const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
 
+// ── Слой хранилища: electron-store (десктоп) или localStorage (веб) ──────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const eAPI = (window as any).electronAPI as {
+  storeGet: (key: string) => Promise<unknown>;
+  storeSet: (key: string, value: unknown) => Promise<void>;
+  storeDelete: (key: string) => Promise<void>;
+} | undefined;
+
+const storage = {
+  get(key: string): string | null {
+    if (eAPI) {
+      // В электроне читаем синхронно из кэша — реальный get асинхронный,
+      // поэтому используем localStorage как синхронный прокси, а electron-store — как постоянный
+      return localStorage.getItem(key);
+    }
+    return localStorage.getItem(key);
+  },
+  set(key: string, value: string): void {
+    localStorage.setItem(key, value);
+    if (eAPI) eAPI.storeSet(key, value).catch(() => {});
+  },
+  remove(key: string): void {
+    localStorage.removeItem(key);
+    if (eAPI) eAPI.storeDelete(key).catch(() => {});
+  },
+  async init(key: string): Promise<void> {
+    if (!eAPI) return;
+    try {
+      const val = await eAPI.storeGet(key);
+      if (val && typeof val === "string" && !localStorage.getItem(key)) {
+        localStorage.setItem(key, val);
+      }
+    } catch { /* ignore */ }
+  },
+};
+
+// Инициализируем постоянное хранилище при загрузке (восстанавливаем в localStorage)
+if (eAPI) {
+  Promise.all([
+    storage.init(STORAGE_KEY),
+    storage.init(HW_FP_KEY),
+    storage.init(MACHINE_UUID_KEY),
+  ]).catch(() => {});
+}
+
 export interface LicenseInfo {
   licensed: boolean;
   key?: string;
@@ -55,10 +100,10 @@ function detectPlatform(): string {
 // для точного fingerprint — чтобы различать два одинаковых ПК.
 function getMachineUUID(): string {
   try {
-    const existing = localStorage.getItem(MACHINE_UUID_KEY);
+    const existing = storage.get(MACHINE_UUID_KEY);
     if (existing) return existing;
     const uuid = crypto.randomUUID();
-    localStorage.setItem(MACHINE_UUID_KEY, uuid);
+    storage.set(MACHINE_UUID_KEY, uuid);
     return uuid;
   } catch {
     return "fallback";
@@ -85,7 +130,7 @@ function getHwComponents(): string[] {
 export async function getMachineInfo(): Promise<MachineInfo> {
   // Кэш на 30 дней
   try {
-    const cached = localStorage.getItem(HW_FP_KEY);
+    const cached = storage.get(HW_FP_KEY);
     if (cached) {
       const parsed = JSON.parse(cached) as MachineInfo & { cachedAt: number };
       if (Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000 && parsed.hwFingerprint) {
@@ -114,7 +159,7 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   const info: MachineInfo = { fingerprint, hwFingerprint, hostname, platform, screen: scr };
 
   try {
-    localStorage.setItem(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
+    storage.set(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
   } catch { /* ignore */ }
 
   return info;
@@ -123,7 +168,7 @@ export async function getMachineInfo(): Promise<MachineInfo> {
 // ── Кэш лицензии ─────────────────────────────────────────────────────────────
 export function loadCachedLicense(): LicenseInfo | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = storage.get(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as LicenseInfo & { checkedAt?: number };
     if (Date.now() - (data.checkedAt ?? 0) > CACHE_TTL_MS) return null;
@@ -133,19 +178,19 @@ export function loadCachedLicense(): LicenseInfo | null {
 
 function saveCache(info: LicenseInfo) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...info, checkedAt: Date.now() }));
+    storage.set(STORAGE_KEY, JSON.stringify({ ...info, checkedAt: Date.now() }));
   } catch { /* ignore */ }
 }
 
 export function clearLicenseCache() {
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(HW_FP_KEY);
+    storage.remove(STORAGE_KEY);
+    storage.remove(HW_FP_KEY);
   } catch { /* ignore */ }
 }
 
 export function clearFingerprintCache() {
-  try { localStorage.removeItem(HW_FP_KEY); } catch { /* ignore */ }
+  try { storage.remove(HW_FP_KEY); } catch { /* ignore */ }
 }
 
 // ── Проверка лицензии ─────────────────────────────────────────────────────────

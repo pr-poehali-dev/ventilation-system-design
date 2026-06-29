@@ -1,0 +1,49 @@
+appId: ru.pvs.desktop
+productName: PV-Sistema
+copyright: Copyright © 2024 PV-Sistema
+
+directories:
+  output: dist-installer
+  buildResources: desktop/electron/icons
+
+files:
+  - dist-electron/**/*
+  - desktop/electron/main.js
+  - desktop/electron/preload.js
+  - node_modules/electron-store/**/*
+  - node_modules/conf/**/*
+  - node_modules/env-paths/**/*
+  - node_modules/dot-prop/**/*
+  - node_modules/json-schema-typed/**/*
+  - node_modules/pkg-up/**/*
+  - node_modules/find-up/**/*
+  - node_modules/locate-path/**/*
+  - node_modules/path-exists/**/*
+  - node_modules/semver/**/*
+  - node_modules/type-fest/**/*
+
+extraResources:
+  - from: desktop/server/dist/python-server.exe
+    to: python-server.exe
+
+win:
+  target:
+    - nsis
+  icon: desktop/electron/icons/icon.ico
+  fileAssociations:
+    - ext: vproj
+      name: PV-Sistema Project
+      description: Файл проекта PV-Sistema
+      icon: desktop/electron/icons/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: PV-Sistema
+  language: "1049"
+
+publish:
+  provider: generic
+  url: https://updates.pvs.ru/releases/

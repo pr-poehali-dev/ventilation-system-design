@@ -89,6 +89,24 @@ export default function CadPage() {
     if (license.status === "demo") setShowLicenseDialog(true);
   }, [license.status]);
 
+  // Открытие .vproj файла из Electron (двойной клик в проводнике)
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const eAPI = (window as any).electronAPI;
+    if (!eAPI?.onOpenFile) return;
+    const handler = ({ content }: { path: string; content: string }) => {
+      try {
+        const data = JSON.parse(content);
+        if (data.nodes && Array.isArray(data.nodes)) {
+          applyProjectData(data, data.name || "project.vproj");
+        }
+      } catch { /* ignore */ }
+    };
+    eAPI.onOpenFile(handler);
+    return () => eAPI.offOpenFile?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
   const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
