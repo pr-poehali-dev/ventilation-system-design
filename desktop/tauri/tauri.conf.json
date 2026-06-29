@@ -38,12 +38,7 @@
     ],
     "externalBin": [
       "binaries/python-server"
-    ],
-    "nsis": {
-      "languages": ["Russian"],
-      "displayLanguageSelector": false,
-      "installMode": "currentUser"
-    }
+    ]
   },
   "plugins": {
     "shell": {
