@@ -231,8 +231,8 @@ export interface LinearFireInputs {
   burnRate: string;       // ψ, кг/(м²·с) — скорость выгорания
   density: string;        // ρ, кг/м³ — плотность материала
   length: string;         // L, м — длина вдоль выработки
-  sectionWidth: string;   // a, м — ширина/диаметр поперечного сечения горючего
-  sectionThick: string;   // b, м — толщина/высота поперечного сечения горючего
+  sectionWidth: string;   // периметр выработки, м (для деревянной крепи)
+  sectionThick: string;   // толщина доски/элемента крепи, м
 }
 
 export interface LinearFireResult {
@@ -250,23 +250,26 @@ export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFi
   const psi  = parseFloat(inp.burnRate.replace(",", "."));
   const rho  = parseFloat(inp.density.replace(",", "."));
   const L    = parseFloat(inp.length.replace(",", "."));
-  const a    = parseFloat(inp.sectionWidth.replace(",", "."));
-  const b    = parseFloat(inp.sectionThick.replace(",", "."));
+  const perim = parseFloat(inp.sectionWidth.replace(",", "."));  // периметр выработки, м
+  const b    = parseFloat(inp.sectionThick.replace(",", "."));   // толщина доски крепи, м
 
-  if ([Q_н, psi, rho, L, a, b].some(isNaN) || [Q_н, psi, rho, L, a, b].some(v => v <= 0)) return null;
+  if ([Q_н, psi, rho, L, perim, b].some(isNaN) || [Q_н, psi, rho, L, perim, b].some(v => v <= 0)) return null;
 
-  const volume      = L * a * b;
+  // Объём = периметр сечения (как 2a) × длина × толщина (суммарный объём древесины крепи)
+  const volume      = perim * L * b;
   const mass        = volume * rho;
   const heatTotal   = mass * Q_н;
-  // Площадь горения = периметр поперечного сечения × длина
-  const surfaceArea = (2 * a + 2 * b) * L;   // м²
+  // Площадь горения = Периметр выработки × длина крепи
+  // Деревянная крепь закрывает весь периметр выработки, горит с внутренней поверхности
+  const surfaceArea = perim * L;
   // Мощность: Q = ψ [кг/(м²·с)] × S [м²] × Q_н [МДж/кг] = МДж/с = МВт
   const powerMW     = psi * surfaceArea * Q_н;
   // ΔT воздушного потока, ограниченная 1200°C
   const deltaTRaw   = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
   const deltaT_C    = Math.min(deltaTRaw, 1200);
-  // Время горения: масса / (ψ × S) → секунды → часы
-  const burnTime_h  = powerMW > 0 ? mass / (psi * surfaceArea * 3600) : 0;
+  // Время горения: суммарная теплота / мощность → секунды → часы
+  const burnTime_s  = powerMW > 0 ? (heatTotal * 1_000_000) / (powerMW * 1_000_000) : 0;
+  const burnTime_h  = burnTime_s / 3600;
   const burnTime_min = burnTime_h * 60;
 
   return { mass, heatTotal, surfaceArea, powerMW, deltaT_C, burnTime_h, burnTime_min };

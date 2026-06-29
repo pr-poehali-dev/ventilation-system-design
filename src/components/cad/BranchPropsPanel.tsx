@@ -1802,12 +1802,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             : null;
           const woodResult = (branch.fireLoadWoodSupport ?? false)
             ? calcLinearFire({
-                heatValue:    branch.fireWoodHeatValue ?? "18.5",
+                heatValue:    branch.fireWoodHeatValue ?? "13.8",
                 burnRate:     branch.fireWoodBurnRate  ?? "0.027",
                 density:      branch.fireWoodDensity   ?? "500",
                 length:       branch.fireWoodLength    ?? "50",
-                sectionWidth: branch.fireWoodWidth     ?? "0.15",
-                sectionThick: branch.fireWoodThick     ?? "0.15",
+                sectionWidth: branch.fireWoodWidth     ?? "8.9",
+                sectionThick: branch.fireWoodThick     ?? "0.08",
               }, airFlow)
             : null;
 
@@ -2079,12 +2079,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     </thead>
                     <tbody>
                       {([
-                        { label: "Q_н, МДж/кг",       key: "fireWoodHeatValue" as const, def: "18.5" },
+                        { label: "Q_н, МДж/кг",       key: "fireWoodHeatValue" as const, def: "13.8" },
                         { label: "ψ, кг/(м²·с)",      key: "fireWoodBurnRate"  as const, def: "0.027"},
                         { label: "ρ, кг/м³",          key: "fireWoodDensity"   as const, def: "500"  },
                         { label: "Длина, м",           key: "fireWoodLength"    as const, def: "50"   },
-                        { label: "Ширина сеч., м",     key: "fireWoodWidth"     as const, def: "0.15" },
-                        { label: "Толщина сеч., м",    key: "fireWoodThick"     as const, def: "0.15" },
+                        { label: "Периметр сеч., м",   key: "fireWoodWidth"     as const, def: "8.9"  },
+                        { label: "Толщина сеч., м",    key: "fireWoodThick"     as const, def: "0.08" },
                       ] as const).map(({ label, key, def }) => (
                         <tr key={key}>
                           <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
