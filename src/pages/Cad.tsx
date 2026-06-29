@@ -52,7 +52,7 @@ import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHa
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
-import FUNC2URL from "../../backend/func2url.json";
+import { API_URLS } from "@/lib/api-urls";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
   type CompareBranchDiff, type CompareNodeDiff,
@@ -70,9 +70,9 @@ import {
   nodeContextItems, branchContextItems, canvasContextItems,
 } from "./cad/cadComponents";
 
-const AIRFLOW_URL      = (FUNC2URL as Record<string, string>)["airflow"];
-const EXPLOSION_URL    = (FUNC2URL as Record<string, string>)["explosion-calculator"];
-const WATER_URL        = (FUNC2URL as Record<string, string>)["water-hydraulics"];
+const AIRFLOW_URL      = API_URLS.airflow;
+const EXPLOSION_URL    = API_URLS.explosionCalculator;
+const WATER_URL        = API_URLS.waterHydraulics;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО

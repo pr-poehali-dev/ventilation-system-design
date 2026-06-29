@@ -1,4 +1,5 @@
-const LICENSE_URL = "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023";
+import { API_URLS } from "@/lib/api-urls";
+const LICENSE_URL = API_URLS.license;
 const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
 const MACHINE_UUID_KEY = "pvs_machine_uuid";

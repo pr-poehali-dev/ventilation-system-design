@@ -15,6 +15,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.join(BASE_DIR, "functions")
 sys.path.insert(0, BACKEND_DIR)
 
+# ─── Проверка целостности при старте ─────────────────────────────────────────
+from integrity import check_exe_integrity, write_exe_signature, save_cache_signed, load_cache_signed
+
+write_exe_signature()
+if not check_exe_integrity():
+    sys.exit(1)
+
 PORT = 54321
 
 # ─── Импорт обработчиков из backend-функций ───────────────────────────────────
@@ -47,21 +54,17 @@ for fn in [
 ]:
     try_load(fn)
 
-# ─── Кэш лицензии (offline) ───────────────────────────────────────────────────
+# ─── Кэш лицензии (offline, подписанный HMAC) ────────────────────────────────
 
 LICENSE_CACHE_PATH = os.path.join(BASE_DIR, "license_cache.json")
 
 def load_license_cache() -> dict:
-    try:
-        with open(LICENSE_CACHE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    result = load_cache_signed(LICENSE_CACHE_PATH)
+    return result if result is not None else {}
 
 def save_license_cache(data: dict):
     try:
-        with open(LICENSE_CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        save_cache_signed(LICENSE_CACHE_PATH, data)
     except Exception as e:
         print(f"[server] Ошибка сохранения кэша лицензии: {e}")
 

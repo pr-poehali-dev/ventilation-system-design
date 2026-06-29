@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
+import { API_URLS } from "@/lib/api-urls";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
 import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
@@ -987,7 +988,7 @@ body{background:white;font-family:Arial,sans-serif}
         });
 
         const isLandscape = paper.w > paper.h;
-        const res = await fetch("https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61", {
+        const res = await fetch(API_URLS.svgToPdf, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

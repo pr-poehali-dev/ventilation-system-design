@@ -7,9 +7,9 @@ import {
   RescueResult,
   RescueSegment,
 } from "@/lib/rescueCalculator";
-import FUNC2URL from "../../../backend/func2url.json";
+import { API_URLS } from "@/lib/api-urls";
 
-const RESCUE_URL = (FUNC2URL as Record<string, string>)["rescue-calculator"];
+const RESCUE_URL = API_URLS.rescueCalculator;
 
 interface NodeLite { id: string; name: string; number: string; x: number; y: number; z: number; }
 interface BranchLite {

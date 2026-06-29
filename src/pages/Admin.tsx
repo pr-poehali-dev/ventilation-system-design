@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+import { API_URLS } from "@/lib/api-urls";
 
-const ADMIN_URL = "https://functions.poehali.dev/bd72524f-fb9c-4866-8bcd-69ced85263d4";
+const ADMIN_URL = API_URLS.adminLicenses;
 
 interface License {
   id: number;
