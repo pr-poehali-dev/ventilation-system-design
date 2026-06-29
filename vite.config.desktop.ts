@@ -81,7 +81,6 @@ function stringObfuscatorPlugin(): Plugin {
 export default defineConfig({
   plugins: [
     react(),
-    antiDebugPlugin(),
   ],
   resolve: {
     alias: {
