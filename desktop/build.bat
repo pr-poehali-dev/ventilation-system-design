@@ -51,9 +51,14 @@ pyinstaller ^
   --onefile ^
   --name python-server ^
   --add-data "functions;functions" ^
+  --add-data "integrity.py;." ^
+  --add-data "machine_id.py;." ^
   --hidden-import numpy ^
   --hidden-import cairosvg ^
   --hidden-import psycopg2 ^
+  --hidden-import uuid ^
+  --hidden-import socket ^
+  --hidden-import subprocess ^
   --noconsole ^
   --distpath "%TAURI_DIR%\binaries" ^
   main.py

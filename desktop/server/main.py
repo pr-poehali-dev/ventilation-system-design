@@ -6,7 +6,7 @@
 import sys
 import os
 import json
-import threading
+import base64
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
@@ -16,11 +16,21 @@ BACKEND_DIR = os.path.join(BASE_DIR, "functions")
 sys.path.insert(0, BACKEND_DIR)
 
 # ─── Проверка целостности при старте ─────────────────────────────────────────
-from integrity import check_exe_integrity, write_exe_signature, save_cache_signed, load_cache_signed
+from integrity import (
+    check_exe_integrity, write_exe_signature,
+    save_cache_signed, load_cache_signed,
+    get_machine_info_for_log,
+)
+from machine_id import get_hardware_fingerprint, get_machine_summary
 
 write_exe_signature()
 if not check_exe_integrity():
     sys.exit(1)
+
+# Вычисляем железный отпечаток один раз при старте
+HW_FINGERPRINT = get_hardware_fingerprint()
+print(f"[server] Машина: {get_machine_summary()}")
+print(f"[server] HW-fingerprint: {HW_FINGERPRINT[:16]}...")
 
 PORT = 54321
 
@@ -54,15 +64,28 @@ for fn in [
 ]:
     try_load(fn)
 
-# ─── Кэш лицензии (offline, подписанный HMAC) ────────────────────────────────
+# ─── Кэш лицензии (offline, HMAC + привязка к железу) ────────────────────────
 
 LICENSE_CACHE_PATH = os.path.join(BASE_DIR, "license_cache.json")
 
 def load_license_cache() -> dict:
+    """
+    Загружает кэш лицензии.
+    Если файл подделан или скопирован с другой машины — возвращает {}.
+    """
     result = load_cache_signed(LICENSE_CACHE_PATH)
-    return result if result is not None else {}
+    if result is None:
+        # Кэш недействителен — удаляем чтобы не накапливать мусор
+        try:
+            if os.path.exists(LICENSE_CACHE_PATH):
+                os.remove(LICENSE_CACHE_PATH)
+        except Exception:
+            pass
+        return {}
+    return result
 
 def save_license_cache(data: dict):
+    """Сохраняет кэш с HMAC-подписью привязанной к железу текущей машины."""
     try:
         save_cache_signed(LICENSE_CACHE_PATH, data)
     except Exception as e:
@@ -71,26 +94,26 @@ def save_license_cache(data: dict):
 # ─── Роутинг ──────────────────────────────────────────────────────────────────
 
 ROUTES = {
-    "/aerodynamics":       "aerodynamics",
-    "/airflow":            "airflow",
-    "/rescue-calculator":  "rescue-calculator",
-    "/water-hydraulics":   "water-hydraulics",
+    "/aerodynamics":         "aerodynamics",
+    "/airflow":              "airflow",
+    "/rescue-calculator":    "rescue-calculator",
+    "/water-hydraulics":     "water-hydraulics",
     "/explosion-calculator": "explosion-calculator",
-    "/svg-to-pdf":         "svg-to-pdf",
-    "/license":            "license",
+    "/svg-to-pdf":           "svg-to-pdf",
+    "/license":              "license",
 }
 
 CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin":  "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Authorization",
-    "Access-Control-Max-Age": "86400",
+    "Access-Control-Max-Age":       "86400",
 }
 
 class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
-        pass  # Отключаем стандартный лог, слишком шумный
+        pass  # Отключаем стандартный лог
 
     def send_json(self, status: int, body: dict, extra_headers: dict = None):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -133,11 +156,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
 
-        # Читаем body
         length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(length) if length > 0 else b""
 
-        # Строим event в формате cloud function
         event = {
             "httpMethod": "POST",
             "path": path,
@@ -147,18 +168,15 @@ class Handler(BaseHTTPRequestHandler):
             "isBase64Encoded": False,
         }
 
-        # Проверяем маршрут
         fn_name = ROUTES.get(path)
         if not fn_name:
             self.send_json(404, {"error": "route_not_found", "path": path})
             return
 
-        # Специальная обработка лицензии с кэшем
         if fn_name == "license":
             self._handle_license(event, raw_body)
             return
 
-        # Вызываем обработчик
         handler_fn = handlers.get(fn_name)
         if not handler_fn:
             self.send_json(503, {"error": "handler_not_loaded", "function": fn_name})
@@ -171,12 +189,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": str(e)})
             return
 
-        # Если функция вернула PDF (bytes в body)
         body = result.get("body", "")
         status = result.get("statusCode", 200)
 
         if result.get("isBase64Encoded") and isinstance(body, str):
-            import base64
             raw = base64.b64decode(body)
             ct = (result.get("headers") or {}).get("Content-Type", "application/octet-stream")
             self.send_raw(status, ct, raw)
@@ -187,7 +203,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_raw(status, ct, body)
             return
 
-        # Обычный JSON-ответ
         try:
             parsed = json.loads(body) if isinstance(body, str) else body
         except Exception:
@@ -196,7 +211,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(status, parsed)
 
     def _handle_license(self, event: dict, raw_body: bytes):
-        """Лицензия с offline-кэшем: если нет БД — используем кэш."""
+        """
+        Лицензия с offline-кэшем привязанным к железу.
+
+        Схема:
+          1. Добавляем hw_fingerprint машины к запросу (облако его сохранит)
+          2. Пробуем облако — при успехе кэшируем с привязкой к железу
+          3. При отсутствии интернета — отдаём кэш (только если железо совпадает)
+          4. Если кэш скопирован с другой машины — отклоняем
+        """
         handler_fn = handlers.get("license")
         cache = load_license_cache()
 
@@ -205,44 +228,57 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             body = {}
 
-        action = body.get("action", "")
+        action      = body.get("action", "")
         fingerprint = body.get("fingerprint", "")
+
+        # Инжектируем железный fingerprint — сервер его сохранит в license_seats
+        body["hw_fingerprint"] = HW_FINGERPRINT
+        body["platform"] = body.get("platform") or f"Desktop/{sys.platform}"
+
+        # Перестраиваем event с обновлённым body
+        patched_event = {**event, "body": json.dumps(body, ensure_ascii=False)}
 
         # Пробуем облако
         if handler_fn:
             try:
-                result = handler_fn(event, None)
+                result = handler_fn(patched_event, None)
                 parsed = json.loads(result.get("body", "{}"))
 
-                # Успешная проверка/активация — сохраняем в кэш
+                # При успешной проверке/активации — кэшируем (с железом машины)
                 if parsed.get("licensed") and action in ("check", "activate"):
                     cache[fingerprint] = {
-                        "licensed": True,
-                        "key": parsed.get("key"),
-                        "owner": parsed.get("owner"),
-                        "seats": parsed.get("seats"),
+                        "licensed":  True,
+                        "key":       parsed.get("key"),
+                        "owner":     parsed.get("owner"),
+                        "seats":     parsed.get("seats"),
                         "cached_at": __import__("datetime").datetime.now().isoformat(),
+                        # hw_fingerprint вшит в HMAC-подпись кэша через integrity.py
+                        # здесь для явности
+                        "hw_hint":   HW_FINGERPRINT[:16],
                     }
                     save_license_cache(cache)
 
                 self.send_json(result.get("statusCode", 200), parsed)
                 return
+
             except Exception as e:
                 print(f"[server] License: облако недоступно ({e}), используем кэш")
 
-        # Облако недоступно — проверяем кэш
+        # Облако недоступно — проверяем offline-кэш
+        # Кэш уже проверён на железо в load_cache_signed():
+        # если файл скопирован с другой машины — load_license_cache() вернул {}
         if action == "check" and fingerprint in cache:
             cached = cache[fingerprint]
             self.send_json(200, {
                 "licensed": cached.get("licensed", False),
-                "key": cached.get("key"),
-                "owner": cached.get("owner"),
-                "seats": cached.get("seats"),
-                "offline": True,
+                "key":      cached.get("key"),
+                "owner":    cached.get("owner"),
+                "seats":    cached.get("seats"),
+                "offline":  True,
             })
             return
 
-        # Ничего нет
+        # Кэша нет или не прошёл проверку железа
         self.send_json(200, {"licensed": False, "reason": "offline_no_cache"})
 
 
@@ -251,6 +287,7 @@ class Handler(BaseHTTPRequestHandler):
 def run():
     server = HTTPServer(("127.0.0.1", PORT), Handler)
     print(f"[server] ПВ-Система Backend запущен на http://127.0.0.1:{PORT}")
+    print(f"[server] Модули: {list(handlers.keys())}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
