@@ -36,24 +36,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    },
-    "linux": {
-      "deb": {
-        "depends": []
-      },
-      "appimage": {
-        "bundleMediaFramework": false
-      }
-    }
+    "externalBin": [
+      "binaries/python-server"
+    ]
   },
   "plugins": {
     "shell": {
       "all": false,
-      "execute": true,
+      "execute": false,
       "sidecar": true,
       "open": false,
       "scope": [
