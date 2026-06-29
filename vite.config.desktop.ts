@@ -96,22 +96,7 @@ export default defineConfig({
     outDir: "dist-desktop",
     emptyOutDir: true,
     minify: "esbuild",
-    rollupOptions: {
-      output: {
-        // Разбиваем на чанки — затрудняет понимание структуры
-        manualChunks(id) {
-          if (id.includes("node_modules/react")) return "r";
-          if (id.includes("node_modules/@radix-ui")) return "x";
-          if (id.includes("node_modules/recharts")) return "c";
-          if (id.includes("node_modules/exceljs") || id.includes("node_modules/jspdf")) return "d";
-          if (id.includes("node_modules/")) return "v";
-        },
-        // Короткие имена файлов (без семантики)
-        chunkFileNames: "a/[hash].js",
-        entryFileNames: "e/[hash].js",
-        assetFileNames: "s/[hash].[ext]",
-      },
-    },
+    rollupOptions: {},
     // Не генерировать sourcemap — исключает возможность восстановления кода
     sourcemap: false,
     // Предупреждения о размере чанков (10MB для большого приложения)
