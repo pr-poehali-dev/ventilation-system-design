@@ -38,6 +38,11 @@
     ],
     "resources": [
       "binaries/python-server.exe"
-    ]
+    ],
+    "nsis": {
+      "languages": ["Russian"],
+      "displayLanguageSelector": false,
+      "installMode": "currentUser"
+    }
   }
 }
