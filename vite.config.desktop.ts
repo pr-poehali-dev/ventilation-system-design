@@ -95,35 +95,7 @@ export default defineConfig({
   build: {
     outDir: "dist-desktop",
     emptyOutDir: true,
-    // Terser — агрессивное сжатие и переименование
-    minify: "terser",
-    terserOptions: {
-      compress: {
-        // Удаляет console.log, предупреждения
-        drop_console: true,
-        drop_debugger: false,   // debugger нужен для anti-debug ловушки
-        passes: 3,              // 3 прохода компрессии
-        dead_code: true,
-        collapse_vars: true,
-        reduce_vars: true,
-        pure_funcs: ["console.info", "console.warn", "console.debug"],
-      },
-      mangle: {
-        // Переименовывает все переменные/функции в короткие имена
-        toplevel: true,
-        eval: true,
-        properties: {
-          // Переименовывает свойства объектов (кроме зарезервированных)
-          regex: /^_[a-z]/,   // только _camelCase свойства (внутренние)
-        },
-      },
-      format: {
-        // Убирает комментарии, пробелы, переводы строк
-        comments: false,
-        beautify: false,
-        ascii_only: true,       // Все unicode → \uXXXX
-      },
-    },
+    minify: "esbuild",
     rollupOptions: {
       output: {
         // Разбиваем на чанки — затрудняет понимание структуры
