@@ -10,15 +10,16 @@ fn get_server_url() -> String {
 }
 
 fn get_server_path() -> PathBuf {
-    // Ищем python-server.exe рядом с основным .exe
     let exe = std::env::current_exe().unwrap();
     let dir = exe.parent().unwrap();
-    // Пробуем оба варианта имени
-    let with_triple = dir.join("python-server-x86_64-pc-windows-msvc.exe");
-    if with_triple.exists() {
-        return with_triple;
-    }
-    dir.join("python-server.exe")
+    // Tauri кладёт resources в подпапку binaries/
+    let in_binaries = dir.join("binaries").join("python-server.exe");
+    if in_binaries.exists() { return in_binaries; }
+    // Рядом с exe
+    let next_to_exe = dir.join("python-server.exe");
+    if next_to_exe.exists() { return next_to_exe; }
+    // С суффиксом платформы
+    dir.join("python-server-x86_64-pc-windows-msvc.exe")
 }
 
 fn start_server() {
