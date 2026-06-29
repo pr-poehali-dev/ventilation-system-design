@@ -196,8 +196,10 @@ export interface TopoBranch {
   fireWoodBurnRate: string;        // ψ, кг/(м²·с)
   fireWoodDensity: string;         // ρ, кг/м³
   fireWoodLength: string;          // длина, м
-  fireWoodWidth: string;           // ширина сечения, м
-  fireWoodThick: string;           // толщина сечения, м
+  fireWoodWidth: string;           // периметр сечения выработки, м
+  fireWoodThick: string;           // толщина доски крепи, м
+  fireWoodFlameSpeed: string;      // v_пл, м/с — скорость продвижения пламени
+  fireWoodCalcTime: string;        // t, мин — время расчёта (нарастающий пожар)
   // Вычисленные результаты расчёта пожара
   fireComputedTemp: number;        // °C — вычисленная температура продуктов горения
   fireComputedNatDep: number;      // Па — тепловая депрессия пожара

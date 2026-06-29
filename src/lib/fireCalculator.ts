@@ -233,6 +233,8 @@ export interface LinearFireInputs {
   length: string;         // L, м — длина вдоль выработки
   sectionWidth: string;   // периметр выработки, м (для деревянной крепи)
   sectionThick: string;   // толщина доски/элемента крепи, м
+  flameSpeed?: string;    // v_пл, м/с — скорость продвижения пламени
+  calcTime?: string;      // t, мин — время расчёта (нарастающий пожар)
 }
 
 export interface LinearFireResult {
@@ -246,30 +248,47 @@ export interface LinearFireResult {
 }
 
 export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFireResult | null {
-  const Q_н  = parseFloat(inp.heatValue.replace(",", "."));
-  const psi  = parseFloat(inp.burnRate.replace(",", "."));
-  const rho  = parseFloat(inp.density.replace(",", "."));
-  const L    = parseFloat(inp.length.replace(",", "."));
+  const Q_н   = parseFloat(inp.heatValue.replace(",", "."));
+  const psi   = parseFloat(inp.burnRate.replace(",", "."));
+  const rho   = parseFloat(inp.density.replace(",", "."));
+  const L     = parseFloat(inp.length.replace(",", "."));
   const perim = parseFloat(inp.sectionWidth.replace(",", "."));  // периметр выработки, м
-  const b    = parseFloat(inp.sectionThick.replace(",", "."));   // толщина доски крепи, м
+  const b     = parseFloat(inp.sectionThick.replace(",", "."));  // толщина доски крепи, м
 
   if ([Q_н, psi, rho, L, perim, b].some(isNaN) || [Q_н, psi, rho, L, perim, b].some(v => v <= 0)) return null;
 
-  // Объём = периметр сечения (как 2a) × длина × толщина (суммарный объём древесины крепи)
-  const volume      = perim * L * b;
-  const mass        = volume * rho;
-  const heatTotal   = mass * Q_н;
-  // Площадь горения = Периметр выработки × длина крепи
-  // Деревянная крепь закрывает весь периметр выработки, горит с внутренней поверхности
-  const surfaceArea = perim * L;
-  // Мощность: Q = ψ [кг/(м²·с)] × S [м²] × Q_н [МДж/кг] = МДж/с = МВт
-  const powerMW     = psi * surfaceArea * Q_н;
+  // Суммарный объём и масса деревянной крепи (периметр × длина × толщина доски)
+  const volume    = perim * L * b;
+  const mass      = volume * rho;
+  const heatTotal = mass * Q_н;
+
+  // Скорость продвижения пламени и время расчёта
+  const v_пл = inp.flameSpeed ? parseFloat(inp.flameSpeed.replace(",", ".")) : null;
+  const t_мин = inp.calcTime ? parseFloat(inp.calcTime.replace(",", ".")) : null;
+
+  // Площадь горения
+  let surfaceArea: number;
+  if (v_пл && v_пл > 0 && t_мин && t_мин > 0) {
+    // Нарастающий пожар: площадь горения нарастает по мере продвижения фронта пламени
+    // S(t) = Периметр × (v_пл × t_с), ограниченная длиной крепи L
+    const l_горения = Math.min(v_пл * t_мин * 60, L); // длина охваченного участка, м
+    surfaceArea = perim * l_горения;
+  } else {
+    // Установившийся режим: вся крепь охвачена огнём
+    surfaceArea = perim * L;
+  }
+
+  // Мощность: N = ψ × S × Q_н [МВт]
+  const powerMW = psi * surfaceArea * Q_н;
+
   // ΔT воздушного потока, ограниченная 1200°C
-  const deltaTRaw   = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
-  const deltaT_C    = Math.min(deltaTRaw, 1200);
-  // Время горения: суммарная теплота / мощность → секунды → часы
-  const burnTime_s  = powerMW > 0 ? (heatTotal * 1_000_000) / (powerMW * 1_000_000) : 0;
-  const burnTime_h  = burnTime_s / 3600;
+  const deltaTRaw = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
+  const deltaT_C  = Math.min(deltaTRaw, 1200);
+
+  // Время полного выгорания: масса / (ψ × S_макс)
+  const surfaceFull  = perim * L;
+  const burnTime_s   = psi * surfaceFull > 0 ? mass / (psi * surfaceFull) : 0;
+  const burnTime_h   = burnTime_s / 3600;
   const burnTime_min = burnTime_h * 60;
 
   return { mass, heatTotal, surfaceArea, powerMW, deltaT_C, burnTime_h, burnTime_min };
