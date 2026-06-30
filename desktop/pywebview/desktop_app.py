@@ -305,7 +305,7 @@ def main():
     )
     _window.events.loaded += on_loaded
 
-    webview.start()
+    webview.start(debug=True)
 
 
 if __name__ == "__main__":
