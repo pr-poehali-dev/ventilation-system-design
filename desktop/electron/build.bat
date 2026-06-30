@@ -65,9 +65,9 @@ if %errorlevel% neq 0 (
 set APP=dist-installer\win-unpacked\resources\app
 echo.
 echo [patching] Fixing app files in win-unpacked...
-copy /Y desktop\electron\main.cjs "%APP%\main.cjs"
-copy /Y desktop\electron\preload.cjs "%APP%\preload.cjs"
-node -e "var fs=require('fs'),p='%APP%\\package.json',j=JSON.parse(fs.readFileSync(p,'utf8'));delete j.type;j.main='main.cjs';fs.writeFileSync(p,JSON.stringify(j,null,2),'utf8');console.log('package.json fixed: main=main.cjs, type removed');"
+copy /Y electron-app\main.cjs "%APP%\main.cjs"
+copy /Y electron-app\preload.cjs "%APP%\preload.cjs"
+node -e "var fs=require('fs'),p='%APP%\\package.json',j=JSON.parse(fs.readFileSync(p,'utf8'));delete j.type;j.main='main.cjs';fs.writeFileSync(p,JSON.stringify(j,null,2),'utf8');console.log('package.json fixed');"
 echo // entry point > "%APP%\main.js"
 echo require('./main.cjs'); >> "%APP%\main.js"
 echo [patching] Done.
