@@ -2,6 +2,11 @@ appId: ru.pvs.desktop
 productName: PV-Sistema
 copyright: Copyright © 2024 PV-Sistema
 
+# Точка входа Electron
+extraMetadata:
+  main: desktop/electron/main.js
+  version: "1.0.0"
+
 directories:
   output: dist-installer
   buildResources: desktop/electron/icons
@@ -16,6 +21,12 @@ files:
   - "!node_modules/.bin/**/*"
   - "!node_modules/electron/**/*"
   - "!node_modules/electron-builder/**/*"
+  - "!node_modules/.vite/**/*"
+  - "!node_modules/vite/**/*"
+  - "!node_modules/typescript/**/*"
+  - "!node_modules/@vitejs/**/*"
+  - "!node_modules/esbuild/**/*"
+  - "!node_modules/rollup/**/*"
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
