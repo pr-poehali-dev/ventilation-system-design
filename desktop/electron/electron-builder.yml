@@ -5,6 +5,7 @@ copyright: Copyright © 2024 PV-Sistema
 extraMetadata:
   main: main.js
   version: "1.0.0"
+  type: commonjs
 
 asar: false
 
