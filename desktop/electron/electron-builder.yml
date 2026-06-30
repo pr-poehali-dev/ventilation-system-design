@@ -11,12 +11,13 @@ asar: false
 directories:
   output: dist-installer
   buildResources: desktop/electron/icons
+  app: desktop/electron
 
 files:
   - package.json
   - main.cjs
   - preload.cjs
-  - dist-electron/**/*
+  - "../../dist-electron/**/*"
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
