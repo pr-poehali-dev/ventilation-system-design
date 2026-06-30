@@ -1,57 +1,56 @@
-// PV-Sistema — Electron main process
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
-const Store = require('electron-store').default;
+// PV-Sistema — Electron main process (no external deps)
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 
-// ── Постоянное хранилище (выживает при переустановке) ──────────────────────
-const store = new Store({ name: 'pvs-data' });
+// Simple in-memory store (survives session, not reinstall)
+const store = {};
 
-// ── Python сервер ─────────────────────────────────────────────────────────────
+// ── Python server ─────────────────────────────────────────────────────────────
 let pythonServer = null;
 
 function getServerPath() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'python-server.exe');
   }
-  // Dev режим — ищем рядом
   return path.join(__dirname, '..', 'server', 'dist', 'python-server.exe');
 }
 
 function startPythonServer() {
   const serverPath = getServerPath();
   if (!fs.existsSync(serverPath)) {
-    console.error('[electron] python-server не найден:', serverPath);
+    console.error('[electron] python-server not found:', serverPath);
     return;
   }
   pythonServer = spawn(serverPath, [], { detached: false });
   pythonServer.stderr.on('data', d => console.error('[server]', d.toString()));
-  pythonServer.on('exit', code => console.log('[server] завершился, код:', code));
+  pythonServer.on('exit', code => console.log('[server] exited, code:', code));
 }
 
-function waitForServer(url, timeoutMs = 15000) {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const check = () => {
-      http.get(url, (res) => {
+function waitForServer(url, timeoutMs) {
+  timeoutMs = timeoutMs || 15000;
+  return new Promise(function(resolve) {
+    var start = Date.now();
+    function check() {
+      http.get(url, function(res) {
         if (res.statusCode === 200) return resolve(true);
+        retry();
+      }).on('error', retry);
+      function retry() {
         if (Date.now() - start > timeoutMs) return resolve(false);
         setTimeout(check, 400);
-      }).on('error', () => {
-        if (Date.now() - start > timeoutMs) return resolve(false);
-        setTimeout(check, 400);
-      });
-    };
+      }
+    }
     check();
   });
 }
 
-// ── Главное окно ──────────────────────────────────────────────────────────────
-let mainWindow = null;
+// ── Main window ───────────────────────────────────────────────────────────────
+var mainWindow = null;
 
-function createWindow(fileToOpen = null) {
+function createWindow(fileToOpen) {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -59,7 +58,6 @@ function createWindow(fileToOpen = null) {
     minHeight: 700,
     center: true,
     title: 'PV-Sistema',
-    icon: path.join(__dirname, 'icons', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -67,11 +65,9 @@ function createWindow(fileToOpen = null) {
     },
   });
 
-  // Убираем меню
   Menu.setApplicationMenu(null);
 
-  // В packaged: main.js лежит в корне app.asar, dist-electron рядом
-  const indexPath = app.isPackaged
+  var indexPath = app.isPackaged
     ? path.join(__dirname, 'dist-electron', 'index.html')
     : 'http://localhost:5174';
 
@@ -81,103 +77,75 @@ function createWindow(fileToOpen = null) {
     mainWindow.loadURL(indexPath);
   }
 
-  // Передаём файл на открытие после загрузки
-  mainWindow.webContents.on('did-finish-load', () => {
-    if (fileToOpen) {
-      sendFileToOpen(fileToOpen);
-    }
+  mainWindow.webContents.on('did-finish-load', function() {
+    if (fileToOpen) sendFileToOpen(fileToOpen);
   });
-
-  // Печать — открываем системный диалог
-  mainWindow.webContents.on('did-finish-load', () => {});
 }
 
-// ── Открытие .vproj файлов ────────────────────────────────────────────────────
+// ── File open ─────────────────────────────────────────────────────────────────
 function sendFileToOpen(filePath) {
   if (!mainWindow || !filePath) return;
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    mainWindow.webContents.send('open-file', { path: filePath, content });
-  } catch (e) {
-    console.error('[electron] Ошибка чтения файла:', e);
+    var content = fs.readFileSync(filePath, 'utf-8');
+    mainWindow.webContents.send('open-file', { path: filePath, content: content });
+  } catch(e) {
+    console.error('[electron] read error:', e);
   }
 }
 
-// Файл передан через argv (двойной клик в проводнике)
 function getFileFromArgv(argv) {
-  return argv.find(a => a.endsWith('.vproj') && fs.existsSync(a)) || null;
+  for (var i = 0; i < argv.length; i++) {
+    if (argv[i].endsWith('.vproj') && fs.existsSync(argv[i])) return argv[i];
+  }
+  return null;
 }
 
-// ── IPC обработчики ───────────────────────────────────────────────────────────
+// ── IPC handlers ──────────────────────────────────────────────────────────────
+ipcMain.handle('get-server-url', function() { return 'http://127.0.0.1:54321'; });
 
-// URL сервера
-ipcMain.handle('get-server-url', () => 'http://127.0.0.1:54321');
+ipcMain.handle('store-get', function(_, key) { return store[key] !== undefined ? store[key] : null; });
+ipcMain.handle('store-set', function(_, key, value) { store[key] = value; });
+ipcMain.handle('store-delete', function(_, key) { delete store[key]; });
 
-// Лицензия — постоянное хранилище
-ipcMain.handle('store-get', (_, key) => store.get(key));
-ipcMain.handle('store-set', (_, key, value) => store.set(key, value));
-ipcMain.handle('store-delete', (_, key) => store.delete(key));
-
-// Печать
-ipcMain.handle('print', (_, options = {}) => {
+ipcMain.handle('print', function() {
   if (!mainWindow) return;
-  mainWindow.webContents.print(
-    { silent: false, printBackground: true, ...options },
-    (success, err) => { if (!success) console.error('[print]', err); }
-  );
+  mainWindow.webContents.print({ silent: false, printBackground: true }, function() {});
 });
 
-// Диалог сохранения файла
-ipcMain.handle('save-file', async (_, { defaultName, content }) => {
-  const { filePath } = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: defaultName || 'project.vproj',
+ipcMain.handle('save-file', async function(_, opts) {
+  var result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: opts.defaultName || 'project.vproj',
     filters: [{ name: 'PV-Sistema Project', extensions: ['vproj'] }],
   });
-  if (!filePath) return null;
-  fs.writeFileSync(filePath, content, 'utf-8');
-  return filePath;
+  if (!result.filePath) return null;
+  fs.writeFileSync(result.filePath, opts.content, 'utf-8');
+  return result.filePath;
 });
 
-// Диалог открытия файла
-ipcMain.handle('open-file-dialog', async () => {
-  const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle('open-file-dialog', async function() {
+  var result = await dialog.showOpenDialog(mainWindow, {
     filters: [{ name: 'PV-Sistema Project', extensions: ['vproj'] }],
     properties: ['openFile'],
   });
-  if (!filePaths.length) return null;
-  const content = fs.readFileSync(filePaths[0], 'utf-8');
-  return { path: filePaths[0], content };
+  if (!result.filePaths.length) return null;
+  var content = fs.readFileSync(result.filePaths[0], 'utf-8');
+  return { path: result.filePaths[0], content: content };
 });
 
-// Версия приложения
-ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('get-version', function() { return app.getVersion(); });
+ipcMain.handle('check-for-updates', function() { return null; });
+ipcMain.handle('download-update', function() { return null; });
+ipcMain.handle('install-update', function() { return null; });
 
-// ── Автообновление (подключается позже через отдельный модуль) ────────────────
-function setupAutoUpdater() {
-  try {
-    const { autoUpdater } = require('electron-updater');
-    autoUpdater.autoDownload = false;
-    autoUpdater.on('update-available', (info) => mainWindow?.webContents.send('update-available', info));
-    autoUpdater.on('download-progress', (p) => mainWindow?.webContents.send('update-progress', p));
-    autoUpdater.on('update-downloaded', () => mainWindow?.webContents.send('update-downloaded'));
-    ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
-    ipcMain.handle('download-update', () => autoUpdater.downloadUpdate());
-    ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
-  } catch (e) {
-    console.log('[updater] electron-updater not available, skipping');
-  }
-}
+// ── App start ─────────────────────────────────────────────────────────────────
+var fileToOpenOnStart = getFileFromArgv(process.argv.slice(1));
+var gotLock = app.requestSingleInstanceLock();
 
-// ── Запуск приложения ─────────────────────────────────────────────────────────
-const fileToOpenOnStart = getFileFromArgv(process.argv.slice(1));
-
-// Один экземпляр приложения
-const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_, argv) => {
-    const file = getFileFromArgv(argv.slice(1));
+  app.on('second-instance', function(_, argv) {
+    var file = getFileFromArgv(argv.slice(1));
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -185,19 +153,18 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(async () => {
+  app.whenReady().then(async function() {
     startPythonServer();
     await waitForServer('http://127.0.0.1:54321/health');
     createWindow(fileToOpenOnStart);
-    if (app.isPackaged) setupAutoUpdater();
   });
 }
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', function() {
   if (pythonServer) pythonServer.kill();
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('activate', () => {
+app.on('activate', function() {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
