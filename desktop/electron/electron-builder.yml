@@ -3,6 +3,7 @@ productName: PV-Sistema
 copyright: Copyright © 2024 PV-Sistema
 
 extraMetadata:
+  main: main.cjs
   version: "1.0.0"
 
 asar: false
@@ -12,6 +13,7 @@ directories:
   buildResources: desktop/electron/icons
 
 files:
+  - main.js
   - main.cjs
   - preload.cjs
   - dist-electron/**/*
