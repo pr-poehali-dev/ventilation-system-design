@@ -11,45 +11,24 @@ directories:
   buildResources: desktop/electron/icons
 
 files:
-  - from: desktop/electron
-    to: .
-    filter:
-      - main.js
-      - preload.js
-  - from: dist-electron
-    to: dist-electron
-    filter:
-      - "**/*"
-  - from: node_modules/electron-store
-    to: node_modules/electron-store
-  - from: node_modules/conf
-    to: node_modules/conf
-  - from: node_modules/env-paths
-    to: node_modules/env-paths
-  - from: node_modules/dot-prop
-    to: node_modules/dot-prop
-  - from: node_modules/type-fest
-    to: node_modules/type-fest
-  - from: node_modules/semver
-    to: node_modules/semver
-  - from: node_modules/electron-updater
-    to: node_modules/electron-updater
-  - from: node_modules/builder-util-runtime
-    to: node_modules/builder-util-runtime
-  - from: node_modules/fs-extra
-    to: node_modules/fs-extra
-  - from: node_modules/graceful-fs
-    to: node_modules/graceful-fs
-  - from: node_modules/jsonfile
-    to: node_modules/jsonfile
-  - from: node_modules/universalify
-    to: node_modules/universalify
-  - from: node_modules/js-yaml
-    to: node_modules/js-yaml
-  - from: node_modules/argparse
-    to: node_modules/argparse
-  - from: node_modules/lodash
-    to: node_modules/lodash
+  - main.js
+  - preload.js
+  - dist-electron/**/*
+  - node_modules/electron-store/**/*
+  - node_modules/conf/**/*
+  - node_modules/env-paths/**/*
+  - node_modules/dot-prop/**/*
+  - node_modules/type-fest/**/*
+  - node_modules/semver/**/*
+  - node_modules/electron-updater/**/*
+  - node_modules/builder-util-runtime/**/*
+  - node_modules/fs-extra/**/*
+  - node_modules/graceful-fs/**/*
+  - node_modules/jsonfile/**/*
+  - node_modules/universalify/**/*
+  - node_modules/js-yaml/**/*
+  - node_modules/argparse/**/*
+  - node_modules/lodash/**/*
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
