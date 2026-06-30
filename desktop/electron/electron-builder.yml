@@ -13,15 +13,17 @@ afterPack: desktop/electron/afterPack.cjs
 directories:
   output: dist-installer
   buildResources: desktop/electron/icons
-  app: electron-app
 
 files:
-  - main.cjs
-  - main.js
-  - preload.cjs
-  - preload.js
+  - from: desktop/electron
+    filter:
+      - main.cjs
+      - preload.cjs
+  - from: dist-electron
+    to: dist-electron
+    filter:
+      - "**/*"
   - package.json
-  - dist-electron/**/*
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
