@@ -5,22 +5,17 @@ copyright: Copyright © 2024 PV-Sistema
 directories:
   output: dist-installer
   buildResources: desktop/electron/icons
+  app: .
 
 files:
   - dist-electron/**/*
   - desktop/electron/main.js
   - desktop/electron/preload.js
-  - node_modules/electron-store/**/*
-  - node_modules/conf/**/*
-  - node_modules/env-paths/**/*
-  - node_modules/dot-prop/**/*
-  - node_modules/json-schema-typed/**/*
-  - node_modules/pkg-up/**/*
-  - node_modules/find-up/**/*
-  - node_modules/locate-path/**/*
-  - node_modules/path-exists/**/*
-  - node_modules/semver/**/*
-  - node_modules/type-fest/**/*
+  - node_modules/**/*
+  - "!node_modules/.cache/**/*"
+  - "!node_modules/.bin/**/*"
+  - "!node_modules/electron/**/*"
+  - "!node_modules/electron-builder/**/*"
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
@@ -34,7 +29,6 @@ win:
     - ext: vproj
       name: PV-Sistema Project
       description: Файл проекта PV-Sistema
-      icon: desktop/electron/icons/icon.ico
 
 nsis:
   oneClick: false
@@ -43,6 +37,8 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: PV-Sistema
   language: "1049"
+  installerLanguages:
+    - ru
 
 publish:
   provider: generic
