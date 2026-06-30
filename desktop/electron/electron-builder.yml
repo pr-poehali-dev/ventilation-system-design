@@ -5,19 +5,18 @@ copyright: Copyright © 2024 PV-Sistema
 extraMetadata:
   main: main.cjs
   version: "1.0.0"
+  type: commonjs
 
 asar: false
 
 directories:
   output: dist-installer
   buildResources: desktop/electron/icons
-  app: desktop/electron
 
 files:
-  - package.json
   - main.cjs
   - preload.cjs
-  - "../../dist-electron/**/*"
+  - dist-electron/**/*
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
