@@ -5,9 +5,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, HashRouter, Routes, Route } from "react-router-dom";
 
-// В десктопе (Electron/file://) используем HashRouter, в браузере — BrowserRouter
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const isDesktop = typeof (window as any).electronAPI !== 'undefined';
+// В десктопе (file://) используем HashRouter, в браузере — BrowserRouter
+// __IS_DESKTOP__ инжектируется Vite при сборке через vite.config.electron.ts
+declare const __IS_DESKTOP__: boolean | undefined;
+const isDesktop = typeof __IS_DESKTOP__ !== 'undefined' ? __IS_DESKTOP__ : window.location.protocol === 'file:';
 const Router = isDesktop ? HashRouter : BrowserRouter;
 import { useEffect, useState } from "react";
 import Index from "./pages/Index";
