@@ -14,7 +14,7 @@ def resource(path):
 
 sys.path.insert(0, resource("pvs-core"))
 
-from pvs_core.server import app as flask_app  # noqa: E402
+from server import app as flask_app  # noqa: E402
 
 PORT = 5173
 URL  = f"http://127.0.0.1:{PORT}"
