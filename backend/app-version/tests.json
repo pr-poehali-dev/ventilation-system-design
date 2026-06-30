@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Получить текущую версию",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"version": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
