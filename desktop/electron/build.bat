@@ -49,7 +49,15 @@ if %errorlevel% neq 0 (
 )
 echo     Frontend built to dist-electron\
 
-:: Step 4: Один шаг — electron-builder сам включит main.cjs из desktop/electron/
+:: Step 3b: Синхронизируем electron-app\ — builder берёт файлы оттуда!
+echo.
+echo [3b] Syncing electron-app\ with latest main.cjs + preload.cjs...
+if not exist "electron-app" mkdir "electron-app"
+copy /Y "desktop\electron\main.cjs" "electron-app\main.cjs"
+copy /Y "desktop\electron\preload.cjs" "electron-app\preload.cjs"
+echo     Done.
+
+:: Step 4: Сборка установщика
 echo.
 echo [4/4] Building installer...
 call bunx electron-builder --config desktop/electron/electron-builder.yml --win --x64
@@ -63,7 +71,7 @@ if %errorlevel% neq 0 (
 set APP=%CD%\dist-installer\win-unpacked\resources\app
 echo.
 echo [check] Files in app\:
-dir "%APP%" 2>nul
+dir "%APP%"
 
 echo.
 echo ===================================================
