@@ -5,8 +5,29 @@ const { spawn } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 
-// Simple in-memory store (survives session, not reinstall)
-const store = {};
+// File-based store — survives restarts
+var storePath = null;
+var store = {};
+
+function getStorePath() {
+  if (!storePath) {
+    storePath = path.join(app.getPath('userData'), 'pvs-store.json');
+  }
+  return storePath;
+}
+
+function loadStore() {
+  try {
+    var data = fs.readFileSync(getStorePath(), 'utf-8');
+    store = JSON.parse(data);
+  } catch(e) { store = {}; }
+}
+
+function saveStore() {
+  try {
+    fs.writeFileSync(getStorePath(), JSON.stringify(store), 'utf-8');
+  } catch(e) {}
+}
 
 // ── Python server ─────────────────────────────────────────────────────────────
 let pythonServer = null;
@@ -80,6 +101,25 @@ function createWindow(fileToOpen) {
   mainWindow.webContents.on('did-finish-load', function() {
     if (fileToOpen) sendFileToOpen(fileToOpen);
   });
+
+  mainWindow.on('close', function(e) {
+    e.preventDefault();
+    mainWindow.webContents.executeJavaScript('window.__unsavedChanges || false')
+      .then(function(dirty) {
+        if (dirty) {
+          var choice = require('electron').dialog.showMessageBoxSync(mainWindow, {
+            type: 'question',
+            buttons: ['Выйти без сохранения', 'Отмена'],
+            defaultId: 1,
+            title: 'Несохранённые изменения',
+            message: 'Есть несохранённые изменения. Выйти?',
+          });
+          if (choice === 0) { mainWindow.destroy(); }
+        } else {
+          mainWindow.destroy();
+        }
+      }).catch(function() { mainWindow.destroy(); });
+  });
 }
 
 // ── File open ─────────────────────────────────────────────────────────────────
@@ -104,8 +144,8 @@ function getFileFromArgv(argv) {
 ipcMain.handle('get-server-url', function() { return 'http://127.0.0.1:54321'; });
 
 ipcMain.handle('store-get', function(_, key) { return store[key] !== undefined ? store[key] : null; });
-ipcMain.handle('store-set', function(_, key, value) { store[key] = value; });
-ipcMain.handle('store-delete', function(_, key) { delete store[key]; });
+ipcMain.handle('store-set', function(_, key, value) { store[key] = value; saveStore(); });
+ipcMain.handle('store-delete', function(_, key) { delete store[key]; saveStore(); });
 
 ipcMain.handle('print', function() {
   if (!mainWindow) return;
@@ -154,6 +194,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async function() {
+    loadStore();
     startPythonServer();
     await waitForServer('http://127.0.0.1:54321/health');
     createWindow(fileToOpenOnStart);
