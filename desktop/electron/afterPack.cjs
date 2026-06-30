@@ -3,15 +3,20 @@ const path = require('path');
 
 exports.default = async function(context) {
   const appDir = path.join(context.appOutDir, 'resources', 'app');
-  
+  // Ищем main.cjs — сначала в electron-app, потом рядом с этим файлом
+  const projectRoot = path.join(__dirname, '..', '..');
+  const electronAppDir = path.join(projectRoot, 'electron-app');
+  const sourceDir = fs.existsSync(path.join(electronAppDir, 'main.cjs')) ? electronAppDir : __dirname;
+  console.log('[afterPack] source dir:', sourceDir);
+
   // Копируем main.cjs
-  const src = path.join(__dirname, 'main.cjs');
+  const src = path.join(sourceDir, 'main.cjs');
   const dst = path.join(appDir, 'main.cjs');
   fs.copyFileSync(src, dst);
   console.log('[afterPack] main.cjs copied');
 
   // Копируем preload.cjs  
-  const src2 = path.join(__dirname, 'preload.cjs');
+  const src2 = path.join(sourceDir, 'preload.cjs');
   const dst2 = path.join(appDir, 'preload.cjs');
   fs.copyFileSync(src2, dst2);
   console.log('[afterPack] preload.cjs copied');
