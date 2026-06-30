@@ -187,10 +187,13 @@ def api_save_file():
             root = tk.Tk()
             root.withdraw()
             root.attributes("-topmost", True)
+            root.focus_force()
+            root.lift()
             path = filedialog.asksaveasfilename(
+                parent=root,
                 defaultextension=ext,
                 initialfile=filename,
-                filetypes=[(filter_map.get(ext, "Все файлы"), "*" + ext)],
+                filetypes=[(filter_map.get(ext, "Все файлы"), "*" + ext), ("Все файлы", "*.*")],
             )
             root.destroy()
             save_path_holder[0] = path or None
