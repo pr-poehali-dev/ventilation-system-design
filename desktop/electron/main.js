@@ -45,8 +45,14 @@ function startPythonServer() {
     console.error('[electron] python-server not found:', serverPath);
     return;
   }
-  pythonServer = spawn(serverPath, [], { detached: false });
-  pythonServer.stderr.on('data', d => console.error('[server]', d.toString()));
+  pythonServer = spawn(serverPath, [], {
+    detached: false,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+  });
+  pythonServer.stdout && pythonServer.stdout.on('data', d => console.log('[server]', d.toString().trim()));
+  pythonServer.stderr && pythonServer.stderr.on('data', d => console.error('[server]', d.toString().trim()));
   pythonServer.on('exit', code => console.log('[server] exited, code:', code));
 }
 

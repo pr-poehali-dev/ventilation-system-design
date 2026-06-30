@@ -22,25 +22,21 @@ if not exist "desktop\electron\icons\icon.ico" (
   echo     icon.ico OK
 )
 
-:: Step 2: Python server
+:: Step 2: Python server (always rebuild to pick up latest code)
 echo.
-echo [2/4] Checking python-server.exe...
-if not exist "desktop\server\dist\python-server.exe" (
-  echo     Not found - building now...
-  cd desktop\server
-  pip install pyinstaller >nul 2>&1
-  pyinstaller --onefile main.py -n python-server --distpath dist
-  if %errorlevel% neq 0 (
-    echo ERROR: Failed to build python-server.exe
-    cd ..\..
-    pause
-    exit /b 1
-  )
+echo [2/4] Building python-server.exe...
+cd desktop\server
+pip install pyinstaller >nul 2>&1
+if exist dist\python-server.exe del /F /Q dist\python-server.exe
+pyinstaller --onefile main.py -n python-server --distpath dist --noconfirm
+if %errorlevel% neq 0 (
+  echo ERROR: Failed to build python-server.exe
   cd ..\..
-  echo     python-server.exe built OK
-) else (
-  echo     python-server.exe OK
+  pause
+  exit /b 1
 )
+cd ..\..
+echo     python-server.exe built OK
 
 :: Step 3: Frontend
 echo.
