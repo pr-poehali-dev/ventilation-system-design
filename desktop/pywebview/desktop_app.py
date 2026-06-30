@@ -184,60 +184,74 @@ def on_loaded():
 
     js_static = """
 (function() {
-    window.electronAPI = {
-        onOpenFile: function(handler) {
-            window._pvs_open_handler = handler;
-            window.pywebview.api.get_pending_file().then(function(result) {
-                if (result && result.content) {
-                    handler({ path: result.path, content: result.content });
-                }
+    var SAVE_URL = 'http://127.0.0.1:5173/api/save-file';
+
+    function saveViaApi(filename, dataUrl) {
+        fetch(SAVE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: filename, data: dataUrl })
+        });
+    }
+
+    function interceptAnchor(a) {
+        if (!a.download) return false;
+        var href = a.href;
+        var filename = a.download || 'file';
+        if (href.startsWith('data:')) {
+            saveViaApi(filename, href);
+            return true;
+        }
+        if (href.startsWith('blob:')) {
+            fetch(href).then(function(r) { return r.blob(); }).then(function(blob) {
+                var reader = new FileReader();
+                reader.onload = function() { saveViaApi(filename, reader.result); };
+                reader.readAsDataURL(blob);
             });
-        },
-        offOpenFile: function() { window._pvs_open_handler = null; },
-        readFile:  function(path)          { return window.pywebview.api.read_file(path); },
-        writeFile: function(path, content) { return window.pywebview.api.write_file(path, content); },
-        getVersion:    function() { return window.pywebview.api.get_version(); },
-        installUpdate: function() { return window.pywebview.api.install_update(); }
-    };
+            return true;
+        }
+        return false;
+    }
 
     var _origClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function() {
-        if (this.download && this.href) {
-            var a = this;
-            var filename = a.download || 'file';
-            window.pywebview.api.save_file_dialog(filename).then(function(savePath) {
-                if (!savePath) return;
-                var href = a.href;
-                if (href.startsWith('blob:') || href.startsWith('data:')) {
-                    fetch(href).then(function(r) { return r.blob(); }).then(function(blob) {
-                        var reader = new FileReader();
-                        reader.onload = function() {
-                            var b64 = reader.result.split(',')[1];
-                            window.pywebview.api.save_binary(savePath, b64);
-                        };
-                        reader.readAsDataURL(blob);
-                    });
-                }
-            });
-            return;
-        }
+        if (interceptAnchor(this)) return;
         _origClick.call(this);
     };
 
+    document.addEventListener('click', function(e) {
+        var a = e.target.closest('a[download]');
+        if (a && interceptAnchor(a)) e.preventDefault();
+    }, true);
+
     var _xlsxInterval = setInterval(function() {
         if (typeof XLSX !== 'undefined' && XLSX.writeFile) {
-            var _origWrite = XLSX.writeFile;
-            XLSX.writeFile = function(wb, filename, opts) {
-                window.pywebview.api.save_file_dialog(filename).then(function(savePath) {
-                    if (!savePath) return;
-                    var ext = filename.split('.').pop();
-                    var data = XLSX.write(wb, { bookType: ext, type: 'base64' });
-                    window.pywebview.api.save_binary(savePath, data);
-                });
+            XLSX.writeFile = function(wb, filename) {
+                var ext = filename.split('.').pop();
+                var data = XLSX.write(wb, { bookType: ext, type: 'base64' });
+                saveViaApi(filename, 'data:application/octet-stream;base64,' + data);
             };
             clearInterval(_xlsxInterval);
         }
-    }, 500);
+    }, 300);
+
+    window.electronAPI = {
+        onOpenFile: function(handler) {
+            window._pvs_open_handler = handler;
+            if (window.pywebview && window.pywebview.api) {
+                window.pywebview.api.get_pending_file().then(function(result) {
+                    if (result && result.content) {
+                        handler({ path: result.path, content: result.content });
+                    }
+                });
+            }
+        },
+        offOpenFile: function() { window._pvs_open_handler = null; },
+        readFile:  function(path)          { return window.pywebview && window.pywebview.api.read_file(path); },
+        writeFile: function(path, content) { return window.pywebview && window.pywebview.api.write_file(path, content); },
+        getVersion:    function() { return window.pywebview && window.pywebview.api.get_version(); },
+        installUpdate: function() { return window.pywebview && window.pywebview.api.install_update(); }
+    };
 })();
 """
 
