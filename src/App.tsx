@@ -3,7 +3,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route } from "react-router-dom";
+
+// В десктопе (Electron/file://) используем HashRouter, в браузере — BrowserRouter
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isDesktop = typeof (window as any).electronAPI !== 'undefined';
+const Router = isDesktop ? HashRouter : BrowserRouter;
 import { useEffect, useState } from "react";
 import Index from "./pages/Index";
 import Cad from "./pages/Cad";
@@ -72,7 +77,7 @@ const App = () => {
       <Toaster />
       <Sonner />
       <LicenseProvider>
-        <BrowserRouter>
+        <Router>
           <Routes>
             <Route path="/" element={<Cad />} />
             <Route path="/admin" element={<Admin />} />
@@ -80,7 +85,7 @@ const App = () => {
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </BrowserRouter>
+        </Router>
         <InstallPwaButton />
         <PwaUpdateBanner />
         <UpdateNotification />
