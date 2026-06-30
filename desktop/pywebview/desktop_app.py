@@ -109,6 +109,43 @@ class PvsApi:
         except Exception as e:
             return {"error": str(e)}
 
+    def save_file_dialog(self, filename):
+        """Открывает диалог сохранения файла, возвращает выбранный путь."""
+        import webview
+        ext = os.path.splitext(filename)[1].lower()
+        type_map = {
+            ".png":  "PNG файлы (*.png)|*.png",
+            ".jpg":  "JPEG файлы (*.jpg)|*.jpg",
+            ".jpeg": "JPEG файлы (*.jpg)|*.jpg",
+            ".bmp":  "BMP файлы (*.bmp)|*.bmp",
+            ".tiff": "TIFF файлы (*.tiff)|*.tiff",
+            ".svg":  "SVG файлы (*.svg)|*.svg",
+            ".pdf":  "PDF файлы (*.pdf)|*.pdf",
+            ".xlsx": "Excel файлы (*.xlsx)|*.xlsx",
+            ".dxf":  "DXF файлы (*.dxf)|*.dxf",
+            ".csv":  "CSV файлы (*.csv)|*.csv",
+        }
+        file_types = (type_map.get(ext, "Все файлы (*.*)"),)
+        result = _window.create_file_dialog(
+            webview.SAVE_DIALOG,
+            save_filename=filename,
+            file_types=file_types,
+        )
+        if result:
+            return result if isinstance(result, str) else result[0]
+        return None
+
+    def save_binary(self, path, data_base64):
+        """Сохраняет бинарный файл (base64) на диск."""
+        import base64
+        try:
+            data = base64.b64decode(data_base64)
+            with open(path, "wb") as f:
+                f.write(data)
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
     def get_version(self):
         return {"current": CURRENT_VERSION, "update": _update_info}
 
@@ -170,6 +207,49 @@ def on_loaded():
                 return window.pywebview.api.install_update();
             }}
         }};
+
+        // Перехват всех скачиваний через <a download> и XLSX.writeFile
+        (function() {
+            // Перехват <a>.click() с download атрибутом
+            var _origClick = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function() {
+                if (this.download && this.href) {
+                    var a = this;
+                    var filename = a.download || 'file';
+                    window.pywebview.api.save_file_dialog(filename).then(function(savePath) {
+                        if (!savePath) return;
+                        var href = a.href;
+                        if (href.startsWith('blob:') || href.startsWith('data:')) {
+                            fetch(href).then(function(r) {{ return r.blob(); }}).then(function(blob) {{
+                                var reader = new FileReader();
+                                reader.onload = function() {{
+                                    var b64 = reader.result.split(',')[1];
+                                    window.pywebview.api.save_binary(savePath, b64);
+                                }};
+                                reader.readAsDataURL(blob);
+                            }});
+                        }
+                    }});
+                    return;
+                }
+                _origClick.call(this);
+            }};
+
+            // Перехват XLSX.writeFile
+            var _xlsxInterval = setInterval(function() {{
+                if (typeof XLSX !== 'undefined' && XLSX.writeFile) {{
+                    var _origWrite = XLSX.writeFile;
+                    XLSX.writeFile = function(wb, filename, opts) {{
+                        window.pywebview.api.save_file_dialog(filename).then(function(savePath) {{
+                            if (!savePath) return;
+                            var data = XLSX.write(wb, {{ bookType: filename.split('.').pop(), type: 'base64' }});
+                            window.pywebview.api.save_binary(savePath, data);
+                        }});
+                    }};
+                    clearInterval(_xlsxInterval);
+                }}
+            }}, 500);
+        }})();
 
         // Уведомление об обновлении
         var updateInfo = {update_json};
