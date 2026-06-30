@@ -75,7 +75,8 @@ echo [patching] Done.
 :: Теперь собираем установщик из уже пропатченного win-unpacked
 echo.
 echo [4b] Building NSIS installer from patched dir...
-call bunx electron-builder --config desktop/electron/electron-builder.yml --win nsis --x64 --prepackaged dist-installer\win-unpacked
+set ELECTRON_BUILDER_SKIP_UNPACK=true
+call bunx electron-builder --config desktop/electron/electron-builder.yml --win nsis --prepackaged dist-installer\win-unpacked
 if %errorlevel% neq 0 (
   echo ERROR: NSIS build failed
   pause
