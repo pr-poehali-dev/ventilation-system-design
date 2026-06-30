@@ -62,14 +62,17 @@ if %errorlevel% neq 0 (
 )
 
 :: Патчим app/ в win-unpacked — заменяем старые файлы нашими
-set APP=dist-installer\win-unpacked\resources\app
+set ROOT=%~dp0..\..
+set APP=%ROOT%\dist-installer\win-unpacked\resources\app
+set SRC=%ROOT%\desktop\electron
 echo.
+echo [patching] ROOT=%ROOT%
+echo [patching] APP=%APP%
+echo [patching] SRC=%SRC%
 echo [patching] Fixing app files in win-unpacked...
-copy /Y desktop\electron\main.cjs "%APP%\main.cjs"
-copy /Y desktop\electron\preload.cjs "%APP%\preload.cjs"
-node -e "var fs=require('fs'),p='%APP%\\package.json',j=JSON.parse(fs.readFileSync(p,'utf8'));delete j.type;j.main='main.cjs';fs.writeFileSync(p,JSON.stringify(j,null,2),'utf8');console.log('package.json fixed');"
-echo // entry point > "%APP%\main.js"
-echo require('./main.cjs'); >> "%APP%\main.js"
+copy /Y "%SRC%\main.cjs" "%APP%\main.cjs"
+copy /Y "%SRC%\preload.cjs" "%APP%\preload.cjs"
+node -e "var fs=require('fs'),p='%APP%\\package.json'.replace(/\\\\/g,'\\\\'),j=JSON.parse(fs.readFileSync(p,'utf8'));delete j.type;j.main='main.cjs';fs.writeFileSync(p,JSON.stringify(j,null,2),'utf8');console.log('package.json fixed');"
 echo [patching] Done.
 
 :: Теперь собираем установщик из уже пропатченного win-unpacked
