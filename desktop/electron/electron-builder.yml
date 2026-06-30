@@ -8,20 +8,14 @@ extraMetadata:
 
 asar: false
 
+afterPack: desktop/electron/afterPack.cjs
+
 directories:
   output: dist-installer
   buildResources: desktop/electron/icons
 
 files:
-  - from: desktop/electron
-    to: .
-    filter:
-      - main.cjs
-      - preload.cjs
-  - from: dist-electron
-    to: dist-electron
-    filter:
-      - "**/*"
+  - dist-electron/**/*
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
