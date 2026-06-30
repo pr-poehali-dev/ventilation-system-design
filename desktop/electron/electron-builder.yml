@@ -13,11 +13,15 @@ directories:
   buildResources: desktop/electron/icons
 
 files:
-  - main.js
-  - main.cjs
-  - preload.cjs
-  - dist-electron/**/*
-  - "!node_modules"
+  - from: desktop/electron
+    to: .
+    filter:
+      - main.cjs
+      - preload.cjs
+  - from: dist-electron
+    to: dist-electron
+    filter:
+      - "**/*"
 
 extraResources:
   - from: desktop/server/dist/python-server.exe
