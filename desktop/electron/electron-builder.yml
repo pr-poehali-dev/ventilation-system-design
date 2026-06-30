@@ -13,6 +13,7 @@ directories:
   buildResources: desktop/electron/icons
 
 files:
+  - package.json
   - main.cjs
   - preload.cjs
   - dist-electron/**/*
