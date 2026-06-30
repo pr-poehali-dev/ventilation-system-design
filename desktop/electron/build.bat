@@ -52,8 +52,19 @@ echo     Frontend built to dist-electron\
 :: Step 4: Installer
 echo.
 echo [4/4] Building Windows installer...
+
+:: Патчим package.json — убираем "type":"module" чтобы main.cjs работал как CommonJS
+node -e "var fs=require('fs'),p='package.json',j=JSON.parse(fs.readFileSync(p));delete j.type;j.main='main.cjs';fs.writeFileSync(p,JSON.stringify(j,null,2));"
+echo     package.json patched (type:module removed)
+
 call bunx electron-builder --config desktop/electron/electron-builder.yml --win --x64
-if %errorlevel% neq 0 (
+set BUILD_ERR=%errorlevel%
+
+:: Восстанавливаем package.json
+node -e "var fs=require('fs'),p='package.json',j=JSON.parse(fs.readFileSync(p));j.type='module';delete j.main;fs.writeFileSync(p,JSON.stringify(j,null,2));"
+echo     package.json restored
+
+if %BUILD_ERR% neq 0 (
   echo ERROR: Packaging failed
   pause
   exit /b 1
