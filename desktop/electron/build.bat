@@ -53,9 +53,31 @@ echo     Frontend built to dist-electron\
 echo.
 echo [4/4] Building Windows installer...
 
-call bunx electron-builder --config desktop/electron/electron-builder.yml --win --x64
+:: Сборка без упаковки в .exe (только win-unpacked)
+call bunx electron-builder --config desktop/electron/electron-builder.yml --win --x64 --dir
 if %errorlevel% neq 0 (
   echo ERROR: Packaging failed
+  pause
+  exit /b 1
+)
+
+:: Патчим app/ в win-unpacked — заменяем старые файлы нашими
+set APP=dist-installer\win-unpacked\resources\app
+echo.
+echo [patching] Fixing app files in win-unpacked...
+copy /Y desktop\electron\main.cjs "%APP%\main.cjs"
+copy /Y desktop\electron\preload.cjs "%APP%\preload.cjs"
+node -e "var fs=require('fs'),p='%APP%\\package.json',j=JSON.parse(fs.readFileSync(p,'utf8'));delete j.type;j.main='main.cjs';fs.writeFileSync(p,JSON.stringify(j,null,2),'utf8');console.log('package.json fixed: main=main.cjs, type removed');"
+echo // entry point > "%APP%\main.js"
+echo require('./main.cjs'); >> "%APP%\main.js"
+echo [patching] Done.
+
+:: Теперь собираем установщик из уже пропатченного win-unpacked
+echo.
+echo [4b] Building NSIS installer from patched dir...
+call bunx electron-builder --config desktop/electron/electron-builder.yml --win nsis --x64 --prepackaged dist-installer\win-unpacked
+if %errorlevel% neq 0 (
+  echo ERROR: NSIS build failed
   pause
   exit /b 1
 )
