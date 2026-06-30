@@ -41,10 +41,13 @@ function getServerPath() {
 
 function startPythonServer() {
   const serverPath = getServerPath();
+  console.log('[electron] server path:', serverPath);
   if (!fs.existsSync(serverPath)) {
-    console.error('[electron] python-server not found:', serverPath);
+    console.error('[electron] python-server NOT FOUND at:', serverPath);
+    dialog.showErrorBox('Сервер не найден', 'python-server.exe не найден по пути:\n' + serverPath);
     return;
   }
+  console.log('[electron] starting server...');
   pythonServer = spawn(serverPath, [], {
     detached: false,
     windowsHide: true,
@@ -54,6 +57,10 @@ function startPythonServer() {
   pythonServer.stdout && pythonServer.stdout.on('data', d => console.log('[server]', d.toString().trim()));
   pythonServer.stderr && pythonServer.stderr.on('data', d => console.error('[server]', d.toString().trim()));
   pythonServer.on('exit', code => console.log('[server] exited, code:', code));
+  pythonServer.on('error', err => {
+    console.error('[server] spawn error:', err.message);
+    dialog.showErrorBox('Ошибка запуска сервера', err.message);
+  });
 }
 
 function waitForServer(url, timeoutMs) {
