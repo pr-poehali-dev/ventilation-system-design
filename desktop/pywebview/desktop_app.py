@@ -181,90 +181,82 @@ def on_loaded():
     if _window is None:
         return
     update_json = json.dumps(_update_info) if _update_info else "null"
-    _window.evaluate_js(f"""
-        window.electronAPI = {{
-            onOpenFile: function(handler) {{
-                window._pvs_open_handler = handler;
-                window.pywebview.api.get_pending_file().then(function(result) {{
-                    if (result && result.content) {{
-                        handler({{ path: result.path, content: result.content }});
-                    }}
-                }});
-            }},
-            offOpenFile: function() {{
-                window._pvs_open_handler = null;
-            }},
-            readFile: function(path) {{
-                return window.pywebview.api.read_file(path);
-            }},
-            writeFile: function(path, content) {{
-                return window.pywebview.api.write_file(path, content);
-            }},
-            getVersion: function() {{
-                return window.pywebview.api.get_version();
-            }},
-            installUpdate: function() {{
-                return window.pywebview.api.install_update();
-            }}
-        }};
 
-        // Перехват всех скачиваний через <a download> и XLSX.writeFile
-        (function() {
-            // Перехват <a>.click() с download атрибутом
-            var _origClick = HTMLAnchorElement.prototype.click;
-            HTMLAnchorElement.prototype.click = function() {
-                if (this.download && this.href) {
-                    var a = this;
-                    var filename = a.download || 'file';
-                    window.pywebview.api.save_file_dialog(filename).then(function(savePath) {
-                        if (!savePath) return;
-                        var href = a.href;
-                        if (href.startsWith('blob:') || href.startsWith('data:')) {
-                            fetch(href).then(function(r) {{ return r.blob(); }}).then(function(blob) {{
-                                var reader = new FileReader();
-                                reader.onload = function() {{
-                                    var b64 = reader.result.split(',')[1];
-                                    window.pywebview.api.save_binary(savePath, b64);
-                                }};
-                                reader.readAsDataURL(blob);
-                            }});
-                        }
-                    }});
-                    return;
+    js_static = """
+(function() {
+    window.electronAPI = {
+        onOpenFile: function(handler) {
+            window._pvs_open_handler = handler;
+            window.pywebview.api.get_pending_file().then(function(result) {
+                if (result && result.content) {
+                    handler({ path: result.path, content: result.content });
                 }
-                _origClick.call(this);
-            }};
+            });
+        },
+        offOpenFile: function() { window._pvs_open_handler = null; },
+        readFile:  function(path)          { return window.pywebview.api.read_file(path); },
+        writeFile: function(path, content) { return window.pywebview.api.write_file(path, content); },
+        getVersion:    function() { return window.pywebview.api.get_version(); },
+        installUpdate: function() { return window.pywebview.api.install_update(); }
+    };
 
-            // Перехват XLSX.writeFile
-            var _xlsxInterval = setInterval(function() {{
-                if (typeof XLSX !== 'undefined' && XLSX.writeFile) {{
-                    var _origWrite = XLSX.writeFile;
-                    XLSX.writeFile = function(wb, filename, opts) {{
-                        window.pywebview.api.save_file_dialog(filename).then(function(savePath) {{
-                            if (!savePath) return;
-                            var data = XLSX.write(wb, {{ bookType: filename.split('.').pop(), type: 'base64' }});
-                            window.pywebview.api.save_binary(savePath, data);
-                        }});
-                    }};
-                    clearInterval(_xlsxInterval);
-                }}
-            }}, 500);
-        }})();
+    var _origClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function() {
+        if (this.download && this.href) {
+            var a = this;
+            var filename = a.download || 'file';
+            window.pywebview.api.save_file_dialog(filename).then(function(savePath) {
+                if (!savePath) return;
+                var href = a.href;
+                if (href.startsWith('blob:') || href.startsWith('data:')) {
+                    fetch(href).then(function(r) { return r.blob(); }).then(function(blob) {
+                        var reader = new FileReader();
+                        reader.onload = function() {
+                            var b64 = reader.result.split(',')[1];
+                            window.pywebview.api.save_binary(savePath, b64);
+                        };
+                        reader.readAsDataURL(blob);
+                    });
+                }
+            });
+            return;
+        }
+        _origClick.call(this);
+    };
 
-        // Уведомление об обновлении
-        var updateInfo = {update_json};
-        if (updateInfo && updateInfo.version) {{
-            setTimeout(function() {{
-                var banner = document.createElement('div');
-                banner.id = 'pvs-update-banner';
-                banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#1d4ed8;color:#fff;padding:8px 16px;display:flex;align-items:center;gap:12px;font-family:sans-serif;font-size:13px;';
-                banner.innerHTML = '<span>Доступно обновление <b>v' + updateInfo.version + '</b>' + (updateInfo.notes ? ': ' + updateInfo.notes : '') + '</span>'
-                    + '<button onclick="window.electronAPI.installUpdate().then(function(){{}})" style="margin-left:auto;background:#fff;color:#1d4ed8;border:none;padding:4px 14px;border-radius:4px;cursor:pointer;font-weight:600;">Обновить</button>'
-                    + '<button onclick="document.getElementById(\'pvs-update-banner\').remove()" style="background:transparent;color:#fff;border:none;cursor:pointer;font-size:16px;">✕</button>';
-                document.body.prepend(banner);
-            }}, 3000);
-        }}
-    """)
+    var _xlsxInterval = setInterval(function() {
+        if (typeof XLSX !== 'undefined' && XLSX.writeFile) {
+            var _origWrite = XLSX.writeFile;
+            XLSX.writeFile = function(wb, filename, opts) {
+                window.pywebview.api.save_file_dialog(filename).then(function(savePath) {
+                    if (!savePath) return;
+                    var ext = filename.split('.').pop();
+                    var data = XLSX.write(wb, { bookType: ext, type: 'base64' });
+                    window.pywebview.api.save_binary(savePath, data);
+                });
+            };
+            clearInterval(_xlsxInterval);
+        }
+    }, 500);
+})();
+"""
+
+    js_update = (
+        "var updateInfo = " + update_json + ";\n"
+        "if (updateInfo && updateInfo.version) {\n"
+        "  setTimeout(function() {\n"
+        "    var b = document.createElement('div');\n"
+        "    b.id = 'pvs-update-banner';\n"
+        "    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#1d4ed8;color:#fff;padding:8px 16px;display:flex;align-items:center;gap:12px;font-family:sans-serif;font-size:13px;';\n"
+        "    b.innerHTML = '<span>Доступно обновление <b>v' + updateInfo.version + '</b></span>'\n"
+        "      + '<button onclick=\"window.electronAPI.installUpdate()\" style=\"margin-left:auto;background:#fff;color:#1d4ed8;border:none;padding:4px 14px;border-radius:4px;cursor:pointer;font-weight:600;\">Обновить</button>'\n"
+        "      + '<button onclick=\"document.getElementById(\\\"pvs-update-banner\\\").remove()\" style=\"background:transparent;color:#fff;border:none;cursor:pointer;font-size:16px;\">✕</button>';\n"
+        "    document.body.prepend(b);\n"
+        "  }, 3000);\n"
+        "}\n"
+    )
+
+    _window.evaluate_js(js_static + js_update)
 
 
 def main():
