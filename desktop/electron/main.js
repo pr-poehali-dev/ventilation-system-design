@@ -1,6 +1,5 @@
 // PV-Sistema — Electron main process
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store').default;
 const path = require('path');
 const { spawn } = require('child_process');
@@ -153,25 +152,20 @@ ipcMain.handle('open-file-dialog', async () => {
 // Версия приложения
 ipcMain.handle('get-version', () => app.getVersion());
 
-// ── Автообновление ─────────────────────────────────────────────────────────────
+// ── Автообновление (подключается позже через отдельный модуль) ────────────────
 function setupAutoUpdater() {
-  autoUpdater.autoDownload = false;
-
-  autoUpdater.on('update-available', (info) => {
-    mainWindow?.webContents.send('update-available', info);
-  });
-
-  autoUpdater.on('download-progress', (progress) => {
-    mainWindow?.webContents.send('update-progress', progress);
-  });
-
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update-downloaded');
-  });
-
-  ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
-  ipcMain.handle('download-update', () => autoUpdater.downloadUpdate());
-  ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = false;
+    autoUpdater.on('update-available', (info) => mainWindow?.webContents.send('update-available', info));
+    autoUpdater.on('download-progress', (p) => mainWindow?.webContents.send('update-progress', p));
+    autoUpdater.on('update-downloaded', () => mainWindow?.webContents.send('update-downloaded'));
+    ipcMain.handle('check-for-updates', () => autoUpdater.checkForUpdates());
+    ipcMain.handle('download-update', () => autoUpdater.downloadUpdate());
+    ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
+  } catch (e) {
+    console.log('[updater] electron-updater not available, skipping');
+  }
 }
 
 // ── Запуск приложения ─────────────────────────────────────────────────────────
