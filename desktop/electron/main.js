@@ -71,10 +71,9 @@ function createWindow(fileToOpen = null) {
   // Убираем меню
   Menu.setApplicationMenu(null);
 
-  // В packaged: __dirname = resources/app/desktop/electron/
-  // dist-electron лежит в resources/app/dist-electron/
+  // В packaged: main.js лежит в корне app.asar, dist-electron рядом
   const indexPath = app.isPackaged
-    ? path.join(__dirname, '..', '..', 'dist-electron', 'index.html')
+    ? path.join(__dirname, 'dist-electron', 'index.html')
     : 'http://localhost:5174';
 
   if (app.isPackaged) {
