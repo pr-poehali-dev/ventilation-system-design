@@ -1959,6 +1959,8 @@ export default function CadPage() {
     branchesList: typeof branches,
     surfaceTempVal: number,
   ) => {
+    const nodesMap = new Map(nodes.map(n => [n.id, n]));
+    const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
     const curve_map = new Map(branchesList.map(b => {
       const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
       const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
@@ -1973,8 +1975,8 @@ export default function CadPage() {
 
     return branchesList.map(b => {
       const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
-      const fromNode = nodes.find(n => n.id === b.fromId);
-      const toNode   = nodes.find(n => n.id === b.toId);
+      const fromNode = nodesMap.get(b.fromId);
+      const toNode   = nodesMap.get(b.toId);
       const tFrom = fromNode ? (fromNode.atmosphereLink ? surfaceTempVal : (fromNode.airTemp ?? surfaceTempVal)) : surfaceTempVal;
       const tTo   = toNode   ? (toNode.atmosphereLink   ? surfaceTempVal : (toNode.airTemp   ?? surfaceTempVal)) : surfaceTempVal;
       const tAvg  = (tFrom + tTo) / 2;
@@ -1999,11 +2001,10 @@ export default function CadPage() {
             const mu = 0.65;
             r = rho / (2 * mu * mu * sw * sw);
           } else {
+            const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
-              : (s.bkAirPerm
-                ?? (s.bkBulkheadId ? mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.airPermeability : undefined)
-                ?? b.bulkheadAirPerm ?? 0);
-            const rRef = s.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === s.bkBulkheadId)?.rMkyurg ?? 0) : 0;
+              : (s.bkAirPerm ?? bkEntry?.airPermeability ?? b.bulkheadAirPerm ?? 0);
+            const rRef = bkEntry?.rMkyurg ?? 0;
             // 1/A² → Мюрг → /1000 → кМюрг; rRef/bkBulkheadR/bulkheadR уже в кМюрг
             r = kAir > 0 ? (1 / (kAir * kAir)) / 1000 : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
           }
@@ -2135,14 +2136,12 @@ export default function CadPage() {
             ? { normalFlows }
             : {}),
       };
-      console.log("[SOLVE] REQUEST:", JSON.stringify(requestBody, null, 2));
       const resp = await fetch(AIRFLOW_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
       });
       const data = await resp.json();
-      console.log("[SOLVE] RESPONSE:", JSON.stringify(data, null, 2));
 
       if (!resp.ok || data.error) {
         const msg = data.error || "Ошибка расчёта";

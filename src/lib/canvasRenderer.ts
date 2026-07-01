@@ -303,7 +303,18 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── Сортировка ветвей по глубине (painter's algorithm) ───────────────────
   // Используем кэш: при анимации потока projNodesMap не меняется → O(1) вместо O(N log N)
-  const sorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>);
+  const allSorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>);
+
+  // ─── Viewport culling: отсекаем ветви вне экрана (с запасом 64px) ──────────
+  const CULL_MARGIN = 64;
+  const cullMinX = -CULL_MARGIN, cullMaxX = width + CULL_MARGIN;
+  const cullMinY = -CULL_MARGIN, cullMaxY = height + CULL_MARGIN;
+  const sorted = allSorted.filter(({ from, to }) => {
+    if (!from || !to) return true;
+    const minX = Math.min(from.sx, to.sx), maxX = Math.max(from.sx, to.sx);
+    const minY = Math.min(from.sy, to.sy), maxY = Math.max(from.sy, to.sy);
+    return maxX >= cullMinX && minX <= cullMaxX && maxY >= cullMinY && minY <= cullMaxY;
+  });
 
   // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
   // Вычисляем параметры ОДИН РАЗ для каждой ветви и сохраняем в Map.
