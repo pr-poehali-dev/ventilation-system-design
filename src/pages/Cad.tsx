@@ -2483,7 +2483,35 @@ export default function CadPage() {
   };
 
   const handleDeleteSelected = () => {
-    if (selectedSymbolId) {
+    if (selectedSymbolIds.size > 1) {
+      // Мульти-удаление символов (перемычки, вентиляторы и др.)
+      pushHistory();
+      const toDelete = schemaSymbols.filter(s => selectedSymbolIds.has(s.id));
+      for (const sym of toDelete) {
+        if (sym.typeId === "fan" && sym.branchId) {
+          updateBranch(sym.branchId, {
+            hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0,
+            fanStopped: false, fanReverse: false, fanRpm: 0,
+            fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
+            fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
+          }, false);
+        }
+        if (BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+          const otherBulkheadsOnBranch = schemaSymbols.filter(
+            s => !selectedSymbolIds.has(s.id) && BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === sym.branchId
+          );
+          if (otherBulkheadsOnBranch.length === 0) {
+            updateBranch(sym.branchId, {
+              hasBulkhead: false, bulkheadR: 0, bulkheadAirPerm: 0,
+              bulkheadManualR: 0, bulkheadSurveyQ: 0, bulkheadSurveyDP: 0,
+            }, false);
+          }
+        }
+      }
+      setSchemaSymbols(prev => prev.filter(s => !selectedSymbolIds.has(s.id)));
+      setSelectedSymbolId(null);
+      setSelectedSymbolIds(new Set());
+    } else if (selectedSymbolId) {
       pushHistory();
       const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
       if (sym?.typeId === "fan" && sym.branchId) {
@@ -7713,6 +7741,10 @@ export default function CadPage() {
               onSymbolMultiSelect={(id) => {
                 setSelectedSymbolIds(prev => {
                   const next = new Set(prev);
+                  // Если Set пуст и есть одиночно выбранный символ — включаем его тоже
+                  if (next.size === 0 && selectedSymbolId && selectedSymbolId !== id) {
+                    next.add(selectedSymbolId);
+                  }
                   if (next.has(id)) { next.delete(id); } else { next.add(id); }
                   return next;
                 });
