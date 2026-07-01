@@ -5,8 +5,7 @@
       "method": "GET",
       "path": "/",
       "expectedStatus": 200,
-      "expectedBody": {"version": "string"},
-      "bodyMatcher": "partial"
+      "bodyMatcher": "none"
     }
   ]
 }

@@ -1,8 +1,11 @@
 """
 Проверка версии и управление обновлениями ПВС-Система.
 
-GET  /        → текущая версия + ссылка на скачивание
-POST /upload  → загрузка нового PVS.exe в S3 (требует ADMIN_PASSWORD)
+GET  /                → текущая версия + ссылки на скачивание
+POST /  action=set_version   → обновить номер версии и заметки
+POST /  action=upload_exe    → загрузить новый PVS-Setup.exe
+POST /  action=upload_server → загрузить новый server.exe (расчёты без переустановки)
+GET  /  ?file=server         → скачать актуальный server.exe (для автообновления)
 """
 import json
 import os
@@ -15,9 +18,10 @@ CORS = {
     "Access-Control-Allow-Headers": "Content-Type, X-Admin-Password",
 }
 
-VERSION_KEY = "updates/version.json"
-EXE_KEY     = "updates/PVS.exe"
-BUCKET      = "files"
+VERSION_KEY    = "updates/version.json"
+EXE_KEY        = "updates/PVS-Setup.exe"
+SERVER_KEY     = "updates/server.exe"
+BUCKET         = "files"
 
 
 def get_s3():
@@ -34,11 +38,28 @@ def cdn_url(key):
 
 
 def get_version_info(s3):
+    default = {
+        "version":        "1.0.0",
+        "download_url":   cdn_url(EXE_KEY),
+        "server_url":     cdn_url(SERVER_KEY),
+        "server_version": "1.0.0",
+        "notes":          "",
+    }
     try:
-        obj = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
-        return json.loads(obj["Body"].read().decode())
+        obj  = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
+        data = obj["Body"].read().decode()
+        parsed = json.loads(data)
+        # Если вдруг пришла строка вместо dict — парсим ещё раз
+        if isinstance(parsed, str):
+            parsed = json.loads(parsed)
+        return {**default, **parsed}
     except Exception:
-        return {"version": "1.0.0", "download_url": cdn_url(EXE_KEY), "notes": ""}
+        return default
+
+
+def check_admin(event):
+    password = (event.get("headers") or {}).get("X-Admin-Password", "")
+    return password == os.environ.get("ADMIN_PASSWORD", "")
 
 
 def handler(event: dict, context) -> dict:
@@ -48,61 +69,74 @@ def handler(event: dict, context) -> dict:
 
     method = event.get("httpMethod", "GET")
     s3 = get_s3()
+    params = event.get("queryStringParameters") or {}
 
+    # ── GET: отдать server.exe напрямую (для автообновления из C#) ────────────
+    if method == "GET" and params.get("file") == "server":
+        try:
+            obj = s3.get_object(Bucket=BUCKET, Key=SERVER_KEY)
+            data = obj["Body"].read()
+            return {
+                "statusCode": 200,
+                "headers": {
+                    **CORS,
+                    "Content-Type": "application/octet-stream",
+                    "Content-Disposition": "attachment; filename=server.exe",
+                },
+                "body": base64.b64encode(data).decode(),
+                "isBase64Encoded": True,
+            }
+        except Exception as e:
+            return {"statusCode": 404, "headers": CORS, "body": json.dumps({"error": str(e)})}
+
+    # ── GET: информация о версии ───────────────────────────────────────────────
     if method == "GET":
         info = get_version_info(s3)
-        return {
-            "statusCode": 200,
-            "headers": CORS,
-            "body": json.dumps(info, ensure_ascii=False),
-        }
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps(info, ensure_ascii=False)}
 
+    # ── POST: требует пароль ───────────────────────────────────────────────────
     if method == "POST":
-        password = (event.get("headers") or {}).get("X-Admin-Password", "")
-        if password != os.environ.get("ADMIN_PASSWORD", ""):
+        if not check_admin(event):
             return {"statusCode": 403, "headers": CORS, "body": json.dumps({"error": "Неверный пароль"})}
 
-        body = json.loads(event.get("body") or "{}")
+        body   = json.loads(event.get("body") or "{}")
         action = body.get("action")
 
+        # Обновить только номер версии и заметки
         if action == "set_version":
-            version = body.get("version", "1.0.0")
-            notes   = body.get("notes", "")
-            info = {
-                "version":      version,
-                "download_url": cdn_url(EXE_KEY),
-                "notes":        notes,
-            }
-            s3.put_object(
-                Bucket=BUCKET,
-                Key=VERSION_KEY,
-                Body=json.dumps(info, ensure_ascii=False).encode(),
-                ContentType="application/json",
-            )
+            info = get_version_info(s3)
+            info["version"] = body.get("version", info["version"])
+            info["notes"]   = body.get("notes",   info.get("notes", ""))
+            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                          Body=json.dumps(info, ensure_ascii=False).encode(),
+                          ContentType="application/json")
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
 
+        # Загрузить новый PVS-Setup.exe (установщик)
         if action == "upload_exe":
-            exe_b64 = body.get("exe_base64", "")
-            exe_bytes = base64.b64decode(exe_b64)
-            s3.put_object(
-                Bucket=BUCKET,
-                Key=EXE_KEY,
-                Body=exe_bytes,
-                ContentType="application/octet-stream",
-            )
-            version = body.get("version", "1.0.0")
-            notes   = body.get("notes", "")
-            info = {
-                "version":      version,
-                "download_url": cdn_url(EXE_KEY),
-                "notes":        notes,
-            }
-            s3.put_object(
-                Bucket=BUCKET,
-                Key=VERSION_KEY,
-                Body=json.dumps(info, ensure_ascii=False).encode(),
-                ContentType="application/json",
-            )
+            exe_bytes = base64.b64decode(body.get("exe_base64", ""))
+            s3.put_object(Bucket=BUCKET, Key=EXE_KEY, Body=exe_bytes,
+                          ContentType="application/octet-stream")
+            info = get_version_info(s3)
+            info["version"]      = body.get("version", info["version"])
+            info["notes"]        = body.get("notes",   info.get("notes", ""))
+            info["download_url"] = cdn_url(EXE_KEY)
+            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                          Body=json.dumps(info, ensure_ascii=False).encode(),
+                          ContentType="application/json")
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
+
+        # Загрузить новый server.exe (расчёты, без переустановки)
+        if action == "upload_server":
+            srv_bytes = base64.b64decode(body.get("exe_base64", ""))
+            s3.put_object(Bucket=BUCKET, Key=SERVER_KEY, Body=srv_bytes,
+                          ContentType="application/octet-stream")
+            info = get_version_info(s3)
+            info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
+            info["server_url"]     = cdn_url(SERVER_KEY)
+            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                          Body=json.dumps(info, ensure_ascii=False).encode(),
+                          ContentType="application/json")
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
 
         return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Неизвестный action"})}

@@ -47,6 +47,9 @@ public partial class MainWindow : Window
 
     private async Task StartupAsync()
     {
+        SetStatus("Проверка обновлений расчётного ядра...");
+        await UpdateServerExeIfNeededAsync();
+
         SetStatus("Запуск расчётного ядра...");
         StartServerProcess();
 
@@ -66,6 +69,49 @@ public partial class MainWindow : Window
 
         SetStatus("Загрузка интерфейса...");
         await InitWebViewAsync();
+    }
+
+    private async Task UpdateServerExeIfNeededAsync()
+    {
+        try
+        {
+            string serverExe  = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
+            string versionFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server_version.txt");
+            string localVer   = File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "";
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            var resp = await Http.GetAsync(VersionCheckUrl, cts.Token);
+            if (!resp.IsSuccessStatusCode) return;
+
+            string json   = await resp.Content.ReadAsStringAsync(cts.Token);
+            var info      = JsonSerializer.Deserialize<VersionInfo>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            string remoteVer = info?.ServerVersion ?? "";
+            if (string.IsNullOrEmpty(remoteVer) || remoteVer == localVer) return;
+
+            SetStatus($"Обновление расчётного ядра до v{remoteVer}...");
+
+            // Скачиваем новый server.exe
+            using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+            var bytes = await httpLarge.GetByteArrayAsync($"{VersionCheckUrl}?file=server");
+
+            string tmpPath = serverExe + ".new";
+            await File.WriteAllBytesAsync(tmpPath, bytes);
+
+            // Заменяем через bat (файл может быть занят если кто-то запустил)
+            string batPath = Path.GetTempFileName() + ".bat";
+            File.WriteAllText(batPath, $"""
+                @echo off
+                timeout /t 1 /nobreak >nul
+                move /Y "{tmpPath}" "{serverExe}"
+                echo {remoteVer}> "{versionFile}"
+                del "%~f0"
+                """, Encoding.GetEncoding(1251));
+            Process.Start(new ProcessStartInfo("cmd", $"/c \"{batPath}\"")
+                { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit(5000);
+        }
+        catch { /* тихо игнорируем — работаем со старой версией */ }
     }
 
     private void StartServerProcess()
@@ -466,4 +512,13 @@ public class UpdateInfo
 {
     public string? Version     { get; set; }
     public string? DownloadUrl { get; set; }
+}
+
+public class VersionInfo
+{
+    public string? Version       { get; set; }
+    public string? DownloadUrl   { get; set; }
+    public string? ServerVersion { get; set; }
+    public string? ServerUrl     { get; set; }
+    public string? Notes         { get; set; }
 }

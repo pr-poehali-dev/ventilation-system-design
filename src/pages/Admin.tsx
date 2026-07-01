@@ -91,14 +91,21 @@ export default function Admin() {
   // Вкладки
   const [activeTab, setActiveTab]       = useState<"licenses" | "update">("licenses");
 
-  // Обновление версии
-  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string} | null>(null);
+  // Обновление PVS.exe (установщик)
+  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string} | null>(null);
   const [updFile, setUpdFile]           = useState<File | null>(null);
   const [updVersion, setUpdVersion]     = useState("");
   const [updNotes, setUpdNotes]         = useState("");
   const [updProgress, setUpdProgress]   = useState(0);
   const [updStatus, setUpdStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [updErr, setUpdErr]             = useState("");
+
+  // Обновление server.exe (расчётное ядро)
+  const [srvFile, setSrvFile]           = useState<File | null>(null);
+  const [srvVersion, setSrvVersion]     = useState("");
+  const [srvProgress, setSrvProgress]   = useState(0);
+  const [srvStatus, setSrvStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
+  const [srvErr, setSrvErr]             = useState("");
   const VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
 
   const loadLicenses = useCallback(async (pwd: string) => {
@@ -236,7 +243,7 @@ export default function Admin() {
     try {
       const r = await fetch(VERSION_URL);
       const d = await r.json();
-      setCurrentVersion({ version: d.version || "—", notes: d.notes || "" });
+      setCurrentVersion({ version: d.version || "—", notes: d.notes || "", server_version: d.server_version || "—" });
     } catch { setCurrentVersion(null); }
   };
 
@@ -275,6 +282,41 @@ export default function Admin() {
     } catch (err: unknown) {
       setUpdStatus("err");
       setUpdErr(err instanceof Error ? err.message : "Ошибка загрузки");
+    }
+  };
+
+  const handleUploadServer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!srvFile || !srvVersion) return;
+    setSrvStatus("uploading");
+    setSrvErr("");
+    setSrvProgress(0);
+    try {
+      const arrayBuf = await srvFile.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuf);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        setSrvProgress(Math.round((i / bytes.length) * 80));
+      }
+      const b64 = btoa(binary);
+      setSrvProgress(85);
+      const res = await fetch(VERSION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({ action: "upload_server", exe_base64: b64, server_version: srvVersion }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Ошибка");
+      setSrvProgress(100);
+      setSrvStatus("ok");
+      setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion } : null);
+      setSrvFile(null);
+      setSrvVersion("");
+    } catch (err: unknown) {
+      setSrvStatus("err");
+      setSrvErr(err instanceof Error ? err.message : "Ошибка загрузки");
     }
   };
 
@@ -362,80 +404,114 @@ export default function Admin() {
         {/* ── Вкладка: Обновление версии ── */}
         {activeTab === "update" && (
           <div className="max-w-xl mx-auto">
-            {/* Текущая версия */}
+            {/* Текущие версии */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
               <div className="flex items-center gap-2 mb-3">
                 <Icon name="Info" size={16} className="text-blue-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Текущая опубликованная версия</span>
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Опубликованные версии</span>
               </div>
               {currentVersion ? (
-                <div className="flex items-center gap-4">
-                  <span className="text-[28px] font-bold text-green-600">{currentVersion.version}</span>
-                  {currentVersion.notes && <span className="text-[12px] text-gray-500">{currentVersion.notes}</span>}
+                <div className="flex gap-8">
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Установщик PVS.exe</div>
+                    <span className="text-[24px] font-bold text-green-600">{currentVersion.version}</span>
+                    {currentVersion.notes && <div className="text-[11px] text-gray-400 mt-0.5">{currentVersion.notes}</div>}
+                  </div>
+                  <div className="w-px bg-gray-200" />
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Расчётное ядро server.exe</div>
+                    <span className="text-[24px] font-bold text-blue-600">{currentVersion.server_version || "—"}</span>
+                    <div className="text-[11px] text-gray-400 mt-0.5">обновляется без переустановки</div>
+                  </div>
                 </div>
               ) : (
                 <span className="text-[12px] text-gray-400">Загрузка...</span>
               )}
             </div>
 
-            {/* Форма загрузки */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            {/* Форма загрузки установщика */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
               <div className="flex items-center gap-2 mb-4">
-                <Icon name="Upload" size={16} className="text-blue-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Загрузить новую версию</span>
+                <Icon name="Package" size={16} className="text-blue-500" />
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Новый установщик PVS-Setup.exe</span>
+                <span className="text-[10px] text-gray-400 ml-1">— пользователи переустанавливают программу</span>
               </div>
               <form onSubmit={handleUploadExe} className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Номер версии</label>
-                  <input type="text" value={updVersion} onChange={e => setUpdVersion(e.target.value)}
-                    className={inputCls} placeholder="например: 1.2.0" required />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">Номер версии</label>
+                    <input type="text" value={updVersion} onChange={e => setUpdVersion(e.target.value)}
+                      className={inputCls} placeholder="1.2.0" required />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">Что нового</label>
+                    <input type="text" value={updNotes} onChange={e => setUpdNotes(e.target.value)}
+                      className={inputCls} placeholder="Новые функции..." />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Что нового (необязательно)</label>
-                  <input type="text" value={updNotes} onChange={e => setUpdNotes(e.target.value)}
-                    className={inputCls} placeholder="Исправление экспорта, новые расчёты..." />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Файл PVS.exe</label>
-                  <label className={`flex items-center gap-3 border-2 border-dashed rounded-lg px-4 py-5 cursor-pointer transition-colors ${updFile ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"}`}>
-                    <Icon name={updFile ? "CheckCircle" : "FileUp"} size={22} className={updFile ? "text-green-500" : "text-gray-400"} />
-                    <div>
-                      <div className="text-[12px] font-semibold text-gray-700">{updFile ? updFile.name : "Нажмите чтобы выбрать файл"}</div>
-                      {updFile && <div className="text-[11px] text-gray-400">{(updFile.size / 1024 / 1024).toFixed(1)} МБ</div>}
-                      {!updFile && <div className="text-[11px] text-gray-400">Только .exe файл</div>}
-                    </div>
-                    <input type="file" accept=".exe" className="hidden"
-                      onChange={e => { setUpdFile(e.target.files?.[0] || null); setUpdStatus("idle"); }} />
-                  </label>
-                </div>
-
+                <label className={`flex items-center gap-3 border-2 border-dashed rounded-lg px-4 py-4 cursor-pointer transition-colors ${updFile ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"}`}>
+                  <Icon name={updFile ? "CheckCircle" : "FileUp"} size={20} className={updFile ? "text-green-500" : "text-gray-400"} />
+                  <div>
+                    <div className="text-[12px] font-semibold text-gray-700">{updFile ? updFile.name : "Выбрать PVS-Setup.exe"}</div>
+                    {updFile && <div className="text-[11px] text-gray-400">{(updFile.size / 1024 / 1024).toFixed(1)} МБ</div>}
+                  </div>
+                  <input type="file" accept=".exe" className="hidden"
+                    onChange={e => { setUpdFile(e.target.files?.[0] || null); setUpdStatus("idle"); }} />
+                </label>
                 {updStatus === "uploading" && (
                   <div>
-                    <div className="flex justify-between text-[11px] text-gray-500 mb-1">
-                      <span>Загрузка...</span><span>{updProgress}%</span>
-                    </div>
+                    <div className="flex justify-between text-[11px] text-gray-500 mb-1"><span>Загрузка...</span><span>{updProgress}%</span></div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div className="h-2 rounded-full transition-all" style={{ width: `${updProgress}%`, background: "#2563eb" }} />
                     </div>
                   </div>
                 )}
-                {updStatus === "ok" && (
-                  <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]">
-                    <Icon name="CheckCircle" size={16} />Версия {updVersion} успешно опубликована! Пользователи получат уведомление при следующем запуске.
-                  </div>
-                )}
-                {updStatus === "err" && (
-                  <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]">
-                    <Icon name="AlertCircle" size={16} />{updErr}
-                  </div>
-                )}
-
+                {updStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Версия {updVersion} опубликована!</div>}
+                {updStatus === "err" && <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} />{updErr}</div>}
                 <button type="submit" disabled={!updFile || !updVersion || updStatus === "uploading"}
                   className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
                   style={{ background: "#1a3a6b" }}>
-                  {updStatus === "uploading"
-                    ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</>
-                    : <><Icon name="Upload" size={14} />Опубликовать версию</>}
+                  {updStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</> : <><Icon name="Upload" size={14} />Опубликовать установщик</>}
+                </button>
+              </form>
+            </div>
+
+            {/* Форма загрузки server.exe */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Icon name="Cpu" size={16} className="text-purple-500" />
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Обновить расчётное ядро server.exe</span>
+                <span className="text-[10px] text-gray-400 ml-1">— без переустановки у пользователей</span>
+              </div>
+              <form onSubmit={handleUploadServer} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Версия ядра</label>
+                  <input type="text" value={srvVersion} onChange={e => setSrvVersion(e.target.value)}
+                    className={inputCls} placeholder="1.2.0" required />
+                </div>
+                <label className={`flex items-center gap-3 border-2 border-dashed rounded-lg px-4 py-4 cursor-pointer transition-colors ${srvFile ? "border-purple-400 bg-purple-50" : "border-gray-300 hover:border-purple-400 hover:bg-purple-50"}`}>
+                  <Icon name={srvFile ? "CheckCircle" : "FileUp"} size={20} className={srvFile ? "text-purple-500" : "text-gray-400"} />
+                  <div>
+                    <div className="text-[12px] font-semibold text-gray-700">{srvFile ? srvFile.name : "Выбрать server.exe"}</div>
+                    {srvFile && <div className="text-[11px] text-gray-400">{(srvFile.size / 1024 / 1024).toFixed(1)} МБ</div>}
+                  </div>
+                  <input type="file" accept=".exe" className="hidden"
+                    onChange={e => { setSrvFile(e.target.files?.[0] || null); setSrvStatus("idle"); }} />
+                </label>
+                {srvStatus === "uploading" && (
+                  <div>
+                    <div className="flex justify-between text-[11px] text-gray-500 mb-1"><span>Загрузка...</span><span>{srvProgress}%</span></div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="h-2 rounded-full transition-all" style={{ width: `${srvProgress}%`, background: "#7c3aed" }} />
+                    </div>
+                  </div>
+                )}
+                {srvStatus === "ok" && <div className="flex items-center gap-2 text-purple-700 bg-purple-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Ядро v{srvVersion} загружено! При следующем запуске пользователи получат обновление автоматически.</div>}
+                {srvStatus === "err" && <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} />{srvErr}</div>}
+                <button type="submit" disabled={!srvFile || !srvVersion || srvStatus === "uploading"}
+                  className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
+                  style={{ background: "#7c3aed" }}>
+                  {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
                 </button>
               </form>
             </div>
