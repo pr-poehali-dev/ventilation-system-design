@@ -19,17 +19,34 @@ def resource(path):
 
 
 def _find_dist():
-    # Внутри .exe: _MEIPASS/pvs-core/dist
-    # При запуске python desktop_app.py: рядом с server.py лежит dist/
+    meipass = getattr(sys, "_MEIPASS", None)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        resource("dist"),                          # _MEIPASS/dist  (fallback)
-        resource(os.path.join("pvs-core", "dist")), # _MEIPASS/pvs-core/dist (внутри exe)
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist"),  # рядом с server.py
+        os.path.join(meipass, "pvs-core", "dist") if meipass else None,
+        os.path.join(meipass, "dist") if meipass else None,
+        os.path.join(script_dir, "dist"),
     ]
+    candidates = [c for c in candidates if c]
+
+    log_path = os.path.join(os.path.expanduser("~"), "pvs_debug.txt")
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"_MEIPASS={meipass}\n")
+        f.write(f"script_dir={script_dir}\n")
+        for c in candidates:
+            exists = os.path.isdir(c)
+            has_index = os.path.exists(os.path.join(c, "index.html")) if exists else False
+            f.write(f"  [{exists}/{has_index}] {c}\n")
+            if exists:
+                try:
+                    files = os.listdir(c)[:10]
+                    f.write(f"    files: {files}\n")
+                except Exception as e:
+                    f.write(f"    listdir error: {e}\n")
+
     for c in candidates:
         if os.path.isdir(c) and os.path.exists(os.path.join(c, "index.html")):
             return c
-    return candidates[0]  # fallback
+    return candidates[-1]
 
 
 DIST_FOLDER = _find_dist()
