@@ -88,6 +88,19 @@ export default function Admin() {
   const [editOk, setEditOk]             = useState(false);
   const [editSaving, setEditSaving]     = useState(false);
 
+  // Вкладки
+  const [activeTab, setActiveTab]       = useState<"licenses" | "update">("licenses");
+
+  // Обновление версии
+  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string} | null>(null);
+  const [updFile, setUpdFile]           = useState<File | null>(null);
+  const [updVersion, setUpdVersion]     = useState("");
+  const [updNotes, setUpdNotes]         = useState("");
+  const [updProgress, setUpdProgress]   = useState(0);
+  const [updStatus, setUpdStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
+  const [updErr, setUpdErr]             = useState("");
+  const VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
+
   const loadLicenses = useCallback(async (pwd: string) => {
     setLoading(true);
     try {
@@ -219,6 +232,52 @@ export default function Admin() {
     setLicenses(ls => ls.map(l => l.id === seatsForId ? { ...l, used_seats: Math.max(0, l.used_seats - 1) } : l));
   };
 
+  const loadCurrentVersion = async () => {
+    try {
+      const r = await fetch(VERSION_URL);
+      const d = await r.json();
+      setCurrentVersion({ version: d.version || "—", notes: d.notes || "" });
+    } catch { setCurrentVersion(null); }
+  };
+
+  useEffect(() => { if (activeTab === "update") loadCurrentVersion(); }, [activeTab]);
+
+  const handleUploadExe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!updFile || !updVersion) return;
+    setUpdStatus("uploading");
+    setUpdErr("");
+    setUpdProgress(0);
+    try {
+      const arrayBuf = await updFile.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuf);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        setUpdProgress(Math.round((i / bytes.length) * 80));
+      }
+      const b64 = btoa(binary);
+      setUpdProgress(85);
+      const res = await fetch(VERSION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({ action: "upload_exe", exe_base64: b64, version: updVersion, notes: updNotes }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Ошибка");
+      setUpdProgress(100);
+      setUpdStatus("ok");
+      setCurrentVersion({ version: updVersion, notes: updNotes });
+      setUpdFile(null);
+      setUpdVersion("");
+      setUpdNotes("");
+    } catch (err: unknown) {
+      setUpdStatus("err");
+      setUpdErr(err instanceof Error ? err.message : "Ошибка загрузки");
+    }
+  };
+
   // Общие стили полей формы
   const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300";
 
@@ -266,19 +325,31 @@ export default function Admin() {
         style={{ background: "#1a3a6b" }}>
         <div className="flex items-center gap-3">
           <Icon name="ShieldCheck" size={20} className="text-blue-300" />
-          <span className="text-white font-bold text-[14px]">Управление лицензиями</span>
+          <span className="text-white font-bold text-[14px]">Панель администратора</span>
           <span className="text-blue-300 text-[12px]">ПВ-Система</span>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => loadLicenses(password)}
-            className="flex items-center gap-1.5 text-[12px] text-blue-200 hover:text-white transition-colors">
-            <Icon name="RefreshCw" size={14} />Обновить
-          </button>
-          <button onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-colors"
-            style={{ background: "#16a34a" }}>
-            <Icon name="Plus" size={14} />Создать ключ
-          </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 bg-white/10 rounded-lg p-1">
+            <button onClick={() => setActiveTab("licenses")}
+              className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "licenses" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
+              <Icon name="Key" size={12} className="inline mr-1" />Лицензии
+            </button>
+            <button onClick={() => setActiveTab("update")}
+              className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "update" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
+              <Icon name="Upload" size={12} className="inline mr-1" />Обновление
+            </button>
+          </div>
+          {activeTab === "licenses" && <>
+            <button onClick={() => loadLicenses(password)}
+              className="flex items-center gap-1.5 text-[12px] text-blue-200 hover:text-white transition-colors">
+              <Icon name="RefreshCw" size={14} />Обновить
+            </button>
+            <button onClick={() => setShowCreate(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-colors"
+              style={{ background: "#16a34a" }}>
+              <Icon name="Plus" size={14} />Создать ключ
+            </button>
+          </>}
           <a href="/"
             className="flex items-center gap-1.5 text-[12px] text-blue-300 hover:text-white transition-colors">
             <Icon name="ArrowLeft" size={14} />В приложение
@@ -287,6 +358,92 @@ export default function Admin() {
       </div>
 
       <div className="max-w-5xl mx-auto p-6">
+
+        {/* ── Вкладка: Обновление версии ── */}
+        {activeTab === "update" && (
+          <div className="max-w-xl mx-auto">
+            {/* Текущая версия */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Icon name="Info" size={16} className="text-blue-500" />
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Текущая опубликованная версия</span>
+              </div>
+              {currentVersion ? (
+                <div className="flex items-center gap-4">
+                  <span className="text-[28px] font-bold text-green-600">{currentVersion.version}</span>
+                  {currentVersion.notes && <span className="text-[12px] text-gray-500">{currentVersion.notes}</span>}
+                </div>
+              ) : (
+                <span className="text-[12px] text-gray-400">Загрузка...</span>
+              )}
+            </div>
+
+            {/* Форма загрузки */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Icon name="Upload" size={16} className="text-blue-500" />
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Загрузить новую версию</span>
+              </div>
+              <form onSubmit={handleUploadExe} className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Номер версии</label>
+                  <input type="text" value={updVersion} onChange={e => setUpdVersion(e.target.value)}
+                    className={inputCls} placeholder="например: 1.2.0" required />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Что нового (необязательно)</label>
+                  <input type="text" value={updNotes} onChange={e => setUpdNotes(e.target.value)}
+                    className={inputCls} placeholder="Исправление экспорта, новые расчёты..." />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Файл PVS.exe</label>
+                  <label className={`flex items-center gap-3 border-2 border-dashed rounded-lg px-4 py-5 cursor-pointer transition-colors ${updFile ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"}`}>
+                    <Icon name={updFile ? "CheckCircle" : "FileUp"} size={22} className={updFile ? "text-green-500" : "text-gray-400"} />
+                    <div>
+                      <div className="text-[12px] font-semibold text-gray-700">{updFile ? updFile.name : "Нажмите чтобы выбрать файл"}</div>
+                      {updFile && <div className="text-[11px] text-gray-400">{(updFile.size / 1024 / 1024).toFixed(1)} МБ</div>}
+                      {!updFile && <div className="text-[11px] text-gray-400">Только .exe файл</div>}
+                    </div>
+                    <input type="file" accept=".exe" className="hidden"
+                      onChange={e => { setUpdFile(e.target.files?.[0] || null); setUpdStatus("idle"); }} />
+                  </label>
+                </div>
+
+                {updStatus === "uploading" && (
+                  <div>
+                    <div className="flex justify-between text-[11px] text-gray-500 mb-1">
+                      <span>Загрузка...</span><span>{updProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="h-2 rounded-full transition-all" style={{ width: `${updProgress}%`, background: "#2563eb" }} />
+                    </div>
+                  </div>
+                )}
+                {updStatus === "ok" && (
+                  <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]">
+                    <Icon name="CheckCircle" size={16} />Версия {updVersion} успешно опубликована! Пользователи получат уведомление при следующем запуске.
+                  </div>
+                )}
+                {updStatus === "err" && (
+                  <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]">
+                    <Icon name="AlertCircle" size={16} />{updErr}
+                  </div>
+                )}
+
+                <button type="submit" disabled={!updFile || !updVersion || updStatus === "uploading"}
+                  className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
+                  style={{ background: "#1a3a6b" }}>
+                  {updStatus === "uploading"
+                    ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</>
+                    : <><Icon name="Upload" size={14} />Опубликовать версию</>}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ── Вкладка: Лицензии ── */}
+        {activeTab === "licenses" && <>
         {/* Статистика */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
@@ -475,6 +632,8 @@ export default function Admin() {
             </div>
           )}
         </div>
+        </>}
+
       </div>
 
       {/* Модал: создание лицензии */}
