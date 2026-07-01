@@ -103,6 +103,11 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
         </div>
 
         <div className="px-3 py-2">
+          {!selectedBranch && !selectedSymbol && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mb-2">
+              Выберите ветвь или УО на схеме, затем нажмите S+S
+            </div>
+          )}
           {/* Группа ветвей */}
           {visibleBranchCriteria.map(c => {
             const enabled = !!selectedBranch || c === "all_with_fan" || c === "all_branches";

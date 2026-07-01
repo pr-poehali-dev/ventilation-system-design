@@ -1145,6 +1145,10 @@ export default function CadPage() {
   const handleBranchMultiSelect = (id: string) => {
     setSelectedBranchIds((prev) => {
       const next = new Set(prev);
+      // Если Set пуст и есть одиночно выбранная ветвь — включаем её тоже (как в узлах)
+      if (next.size === 0 && selectedBranchId && selectedBranchId !== id) {
+        next.add(selectedBranchId);
+      }
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
@@ -2511,10 +2515,16 @@ export default function CadPage() {
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
       setSelectedSymbolIds(new Set());
+    } else if (selectedBranchIds.size > 1) {
+      pushHistory();
+      setBranches((p) => p.filter((b) => !selectedBranchIds.has(b.id)));
+      setSelectedBranchId(null);
+      setSelectedBranchIds(new Set());
     } else if (selectedBranchId) {
       pushHistory();
       setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
       setSelectedBranchId(null);
+      setSelectedBranchIds(new Set());
     } else if (selectedNodeId) {
       requestDeleteNode(selectedNodeId);
     }
@@ -9548,15 +9558,19 @@ export default function CadPage() {
         branches={branches}
         symbols={schemaSymbols}
         onConfirm={(branchIds, symbolIds) => {
-          console.log("[SelectSimilar] branchIds:", branchIds.size, [...branchIds], "symbolIds:", symbolIds.size);
           if (branchIds.size > 0) {
             const first = Array.from(branchIds)[0];
             setSelectedBranchId(first);
             setSelectedBranchIds(new Set(branchIds));
             setSelectedNodeId(null);
+            setSelectedSymbolId(null);
+            setSelectedSymbolIds(new Set());
           }
           if (symbolIds.size > 0) {
             setSelectedSymbolId(Array.from(symbolIds)[0]);
+            setSelectedSymbolIds(new Set(symbolIds));
+            setSelectedBranchId(null);
+            setSelectedBranchIds(new Set());
           }
           setShowSelectSimilar(false);
         }}
