@@ -1,45 +1,40 @@
 @echo off
-chcp 65001 >nul
 echo ============================================
-echo  ПВС-Система — Сборка десктопного .exe
+echo  PVS - Sborka desktop .exe
 echo ============================================
 echo.
 
 cd /d %~dp0
 
-REM --- Шаг 1: Собираем React-билд ---
-echo [1/4] Сборка React-интерфейса...
+REM --- Shag 1: React build ---
+echo [1/4] Sborka React...
 cd ..\..
 call npm install
+if errorlevel 1 (echo OSHIBKA: npm install && pause && exit /b 1)
 call npm run build
+if errorlevel 1 (echo OSHIBKA: npm run build && pause && exit /b 1)
 cd desktop\pywebview
 echo.
 
-REM --- Шаг 2: Устанавливаем Python-зависимости ---
-echo [2/4] Установка Python-зависимостей...
+REM --- Shag 2: Python zavisimosti ---
+echo [2/4] Ustanovka Python-zavisimostey...
 pip install -r pvs-core\requirements.txt
+if errorlevel 1 (echo OSHIBKA: pip install && pause && exit /b 1)
 echo.
 
-REM --- Шаг 3: Копируем dist в pvs-core ---
-echo [3/4] Копирование билда в pvs-core...
+REM --- Shag 3: Kopirovaniye dist ---
+echo [3/4] Kopirovaniye bilda v pvs-core...
 if exist pvs-core\dist rmdir /s /q pvs-core\dist
 xcopy /E /I /Q ..\..\dist pvs-core\dist
 echo.
 
-REM --- Шаг 4: Сборка .exe через PyInstaller ---
-echo [4/4] Сборка .exe...
-pyinstaller ^
-  --onefile ^
-  --windowed ^
-  --name "PVS" ^
-  --add-data "pvs-core;pvs-core" ^
-  --hidden-import flask ^
-  --hidden-import webview ^
-  --hidden-import numpy ^
-  desktop_app.py
+REM --- Shag 4: PyInstaller ---
+echo [4/4] Sborka .exe...
+pyinstaller --onefile --windowed --name "PVS" --add-data "pvs-core;pvs-core" --hidden-import flask --hidden-import webview --hidden-import numpy desktop_app.py
+if errorlevel 1 (echo OSHIBKA: PyInstaller && pause && exit /b 1)
 
 echo.
 echo ============================================
-echo  ГОТОВО! Файл: dist\PVS.exe
+echo  GOTOVO! Fayl: dist\PVS.exe
 echo ============================================
 pause
