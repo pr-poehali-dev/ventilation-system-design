@@ -934,7 +934,10 @@ body{background:white;font-family:Arial,sans-serif}
             const a = document.createElement("a");
             a.href = oc.toDataURL("image/png");
             a.download = `${projectName}-${exportDpi}dpi.png`;
+            a.style.display = "none";
+            document.body.appendChild(a);
             a.click();
+            document.body.removeChild(a);
             resolve();
           };
           img.onerror = () => { URL.revokeObjectURL(svgUrl); reject(new Error("Ошибка загрузки SVG")); };
@@ -1015,7 +1018,10 @@ body{background:white;font-family:Arial,sans-serif}
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = `${projectName}-vector.pdf`;
+        a.style.display = "none";
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
         setShowExportDialog(false);
       } catch (e) {
@@ -1066,7 +1072,12 @@ body{background:white;font-family:Arial,sans-serif}
 
       if (exportFormat === "png") {
         const a = document.createElement("a");
-        a.href = pngSrc; a.download = `${projectName}.png`; a.click();
+        a.href = pngSrc;
+        a.download = `${projectName}.png`;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         setShowExportDialog(false);
         return;
       }
@@ -1084,7 +1095,10 @@ body{background:white;font-family:Arial,sans-serif}
       const a = document.createElement("a");
       a.href = oc2.toDataURL(mime[exportFormat] ?? "image/png", q);
       a.download = `${projectName}.${exportFormat}`;
+      a.style.display = "none";
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       setShowExportDialog(false);
     } finally {
       setPdfExporting(false);
