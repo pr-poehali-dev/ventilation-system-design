@@ -219,10 +219,14 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width  = width;
-    canvas.height = height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = Math.round(width  * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width  = `${width}px`;
+    canvas.style.height = `${height}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    ctx.scale(dpr, dpr);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
     try {
@@ -274,7 +278,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
 
   return (
     <div style={{ position: "relative", width, height, flexShrink: 0 }}>
-      <canvas ref={canvasRef} width={width} height={height} style={{ display: "block" }} />
+      <canvas ref={canvasRef} style={{ display: "block", width, height }} />
 
       {schemaSymbols.length > 0 && (
         <SchemaSymbolsOverlay
