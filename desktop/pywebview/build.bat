@@ -9,10 +9,10 @@ cd /d %~dp0
 REM --- Shag 1: React build ---
 echo [1/4] Sborka React...
 cd ..\..
-call npm install
-if errorlevel 1 (echo OSHIBKA: npm install && pause && exit /b 1)
-call npm run build
-if errorlevel 1 (echo OSHIBKA: npm run build && pause && exit /b 1)
+call bun install
+if errorlevel 1 (echo OSHIBKA: bun install && pause && exit /b 1)
+call bun run build
+if errorlevel 1 (echo OSHIBKA: bun run build && pause && exit /b 1)
 cd desktop\pywebview
 echo.
 
