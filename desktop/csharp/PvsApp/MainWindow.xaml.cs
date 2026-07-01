@@ -29,7 +29,18 @@ public partial class MainWindow : Window
         InitializeComponent();
         _pendingFile = pendingFile;
         Closed += OnClosed;
-        Loaded += async (_, _) => await StartupAsync();
+        Loaded += async (_, _) =>
+        {
+            try { await StartupAsync(); }
+            catch (Exception ex)
+            {
+                string log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PVS", "error.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+                File.WriteAllText(log, $"{DateTime.Now}\n{ex}");
+                MessageBox.Show($"Ошибка запуска:\n{ex.Message}\n\nЛог: {log}", "ПВ-Система", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown();
+            }
+        };
     }
 
     // ── Запуск ────────────────────────────────────────────────────────────────
