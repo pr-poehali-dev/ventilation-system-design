@@ -6,7 +6,6 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>PVS</AssemblyName>
     <RootNamespace>PvsApp</RootNamespace>
-    <ApplicationIcon>pvs.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <AssemblyVersion>1.0.0</AssemblyVersion>
     <FileVersion>1.0.0</FileVersion>
@@ -24,11 +23,5 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- server.exe и pvs-core кладём рядом с PVS.exe в папку server/ -->
-    <None Update="pvs.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
 
 </Project>
