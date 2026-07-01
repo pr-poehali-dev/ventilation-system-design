@@ -18,7 +18,21 @@ def resource(path):
     return os.path.join(base, path)
 
 
-DIST_FOLDER = resource("dist")
+def _find_dist():
+    # Внутри .exe: _MEIPASS/pvs-core/dist
+    # При запуске python desktop_app.py: рядом с server.py лежит dist/
+    candidates = [
+        resource("dist"),                          # _MEIPASS/dist  (fallback)
+        resource(os.path.join("pvs-core", "dist")), # _MEIPASS/pvs-core/dist (внутри exe)
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist"),  # рядом с server.py
+    ]
+    for c in candidates:
+        if os.path.isdir(c) and os.path.exists(os.path.join(c, "index.html")):
+            return c
+    return candidates[0]  # fallback
+
+
+DIST_FOLDER = _find_dist()
 
 app = Flask(__name__, static_folder=DIST_FOLDER, static_url_path="")
 
