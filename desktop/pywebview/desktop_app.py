@@ -186,17 +186,19 @@ def on_loaded():
 (function() {
     var SAVE_URL = 'http://127.0.0.1:5173/api/save-file';
 
+    // Сохраняем файл через Python (показывает диалог "Сохранить как")
     function saveViaApi(filename, dataUrl) {
         fetch(SAVE_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filename: filename, data: dataUrl })
-        });
+        }).catch(function(){});
     }
 
+    // Перехват <a download="..."> с data: или blob: href
     function interceptAnchor(a) {
         if (!a.download) return false;
-        var href = a.href;
+        var href = a.href || a.getAttribute('href') || '';
         var filename = a.download || 'file';
         if (href.startsWith('data:')) {
             saveViaApi(filename, href);
@@ -213,25 +215,60 @@ def on_loaded():
         return false;
     }
 
+    // Перехват .click() на <a>
     var _origClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function() {
         if (interceptAnchor(this)) return;
         _origClick.call(this);
     };
 
+    // Перехват пользовательского клика на <a download>
     document.addEventListener('click', function(e) {
-        var a = e.target.closest('a[download]');
-        if (a && interceptAnchor(a)) e.preventDefault();
+        var a = e.target && e.target.closest ? e.target.closest('a[download]') : null;
+        if (a && interceptAnchor(a)) { e.preventDefault(); e.stopPropagation(); }
     }, true);
 
+    // Перехват URL.createObjectURL — запоминаем blob по URL
+    var _blobMap = {};
+    var _origCreateObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = function(blob) {
+        var url = _origCreateObjectURL(blob);
+        _blobMap[url] = blob;
+        return url;
+    };
+    var _origRevokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = function(url) {
+        delete _blobMap[url];
+        _origRevokeObjectURL(url);
+    };
+
+    // Перехват XLSX.writeFile (SheetJS)
     var _xlsxInterval = setInterval(function() {
         if (typeof XLSX !== 'undefined' && XLSX.writeFile) {
             XLSX.writeFile = function(wb, filename) {
-                var ext = filename.split('.').pop();
+                var ext = (filename.split('.').pop() || 'xlsx');
                 var data = XLSX.write(wb, { bookType: ext, type: 'base64' });
                 saveViaApi(filename, 'data:application/octet-stream;base64,' + data);
             };
             clearInterval(_xlsxInterval);
+        }
+    }, 300);
+
+    // Перехват jsPDF.save() — откладываем патч до появления объекта
+    var _jsPdfInterval = setInterval(function() {
+        var jspdfNs = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+        if (jspdfNs && jspdfNs.prototype && jspdfNs.prototype.save) {
+            var _origSave = jspdfNs.prototype.save;
+            jspdfNs.prototype.save = function(filename) {
+                var self = this;
+                try {
+                    var b64 = self.output('datauristring');
+                    saveViaApi(filename || 'document.pdf', b64);
+                } catch(e) {
+                    _origSave.call(self, filename);
+                }
+            };
+            clearInterval(_jsPdfInterval);
         }
     }, 300);
 
