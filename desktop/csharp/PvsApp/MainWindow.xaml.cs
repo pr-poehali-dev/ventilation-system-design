@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private const int    Port            = 5173;
     private const string AppVersion      = "1.0.0";
     private const string VersionCheckUrl = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
-    private const string ServerUrl       = $"http://127.0.0.1:{Port}";
+    private const string ServerUrl       = "http://127.0.0.1:5173";
 
     private Process?     _serverProcess;
     private string?      _pendingFile;
