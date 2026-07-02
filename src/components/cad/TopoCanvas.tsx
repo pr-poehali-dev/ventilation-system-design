@@ -3852,7 +3852,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
-                const jr = Math.max(2, baseNodeR * 2.5);
+                const jr = baseNodeR;
                 return (
                   <g>
                     <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />

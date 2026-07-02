@@ -936,7 +936,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
       if (fireType === "junction" && sc > 0.025) {
-        const IS = Math.max(2, baseNodeR * 2.5);
+        const IS = baseNodeR;
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);
