@@ -3799,21 +3799,21 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Иконка ПОЖАРНОГО КРАНА (PNG) ── */}
+              {/* ── Иконка ПОЖАРНОГО КРАНА (SVG) ── */}
               {fireType === "consumer" && view.scale > 0.025 && (() => {
                 const hydrantOpen = node.fireHydrantOpen ?? false;
                 const cr = IS * 0.55;
                 const earR = cr * 0.55;
                 const sz = IS * 2.2;
                 const aulaR = cr + earR + 2;
-                // CSS filter: красный → синий (invert + hue-rotate + saturate)
-                const blueFilter = "invert(1) sepia(1) saturate(5) hue-rotate(190deg)";
+                const svgUrl = hydrantOpen
+                  ? "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/032c5f87-d52c-4dac-89d9-8e96cca5c424.svg"
+                  : "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e4d27aad-5c99-48d3-b1d6-60ae301a7061.svg";
                 return (
                   <g>
                     <image
-                      href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/06decf73-a504-4495-86ce-e150bdd97a20.png"
-                      x={-sz / 2} y={-sz / 2} width={sz} height={sz}
-                      style={hydrantOpen ? { filter: blueFilter } : undefined} />
+                      href={svgUrl}
+                      x={-sz / 2} y={-sz / 2} width={sz} height={sz} />
                     {/* Кольцо выделения */}
                     {isSel && <circle r={aulaR + 4} fill="none"
                       stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
