@@ -83,8 +83,10 @@ public partial class MainWindow : Window
             var resp = await Http.GetAsync(VersionCheckUrl, cts.Token);
             if (!resp.IsSuccessStatusCode) return;
 
-            string json   = await resp.Content.ReadAsStringAsync(cts.Token);
-            var info      = JsonSerializer.Deserialize<VersionInfo>(json,
+            string json = await resp.Content.ReadAsStringAsync(cts.Token);
+            // Защита: если пришёл HTML вместо JSON (ошибка gateway) — пропускаем обновление
+            if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("{")) return;
+            var info = JsonSerializer.Deserialize<VersionInfo>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             string remoteVer = info?.ServerVersion ?? "";
@@ -341,6 +343,8 @@ public partial class MainWindow : Window
             req.Headers.Add("User-Agent", $"PVS/{AppVersion}");
             var resp = await Http.SendAsync(req);
             string json = await resp.Content.ReadAsStringAsync();
+            // Защита: если пришёл HTML вместо JSON (ошибка gateway) — не парсим
+            if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("{")) return null;
             var data = JsonSerializer.Deserialize<UpdateInfo>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (data?.Version != null && data.Version != AppVersion)
