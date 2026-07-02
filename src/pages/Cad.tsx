@@ -1477,7 +1477,12 @@ export default function CadPage() {
       showFlowArrows, flowDisplay, zScale, xyScale]);
 
   // Предупреждение при закрытии/обновлении вкладки
+  // В десктопном режиме (WebView2) beforeunload отключён — закрытие обрабатывается через C#
   useEffect(() => {
+    type W = Window & { __IS_DESKTOP__?: boolean };
+    const isDesktop = !!(window as W).__IS_DESKTOP__;
+    if (isDesktop) return; // в десктопе браузерный диалог не нужен
+
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!isDirty) return;
       e.preventDefault();
@@ -1485,6 +1490,33 @@ export default function CadPage() {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
+
+  // В десктопном режиме — регистрируем callbacks для C# перед закрытием окна
+  useEffect(() => {
+    type W = Window & {
+      __IS_DESKTOP__?: boolean;
+      __pvsCanClose?: () => boolean;
+      __pvsShowCloseDialog?: () => void;
+      chrome?: { webview?: { postMessage: (s: string) => void } };
+    };
+    const w = window as W;
+    if (!w.__IS_DESKTOP__) return;
+
+    // C# вызывает __pvsCanClose() — если true, закрываем без диалога
+    w.__pvsCanClose = () => !isDirty;
+
+    // C# вызывает __pvsShowCloseDialog() когда нажата системная кнопка X
+    // Показываем наш React-диалог вместо браузерного "Покинуть сайт?"
+    w.__pvsShowCloseDialog = () => {
+      if (!isDirty) {
+        // Несохранённых данных нет — сразу подтверждаем закрытие
+        w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close-confirmed" }));
+        return;
+      }
+      // Показываем кастомный диалог
+      setShowCloseConfirm(true);
+    };
   }, [isDirty]);
 
   // Записать содержимое в уже открытый FileHandle (перезапись)
@@ -9778,7 +9810,20 @@ export default function CadPage() {
       </div>
     )}
     {/* ── Диалог подтверждения закрытия ───────────────────────────────── */}
-    {showCloseConfirm && (
+    {showCloseConfirm && (() => {
+      type W = Window & { __IS_DESKTOP__?: boolean; chrome?: { webview?: { postMessage: (s: string) => void } } };
+      const w = window as W;
+      const isDesktop = !!w.__IS_DESKTOP__;
+      const doClose = () => {
+        setShowCloseConfirm(false);
+        if (isDesktop) {
+          // В десктопе — подтверждаем через C# чтобы окно закрылось
+          w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close-confirmed" }));
+        } else {
+          window.close();
+        }
+      };
+      return (
       <div className="fixed inset-0 z-[9999] flex items-center justify-center"
         style={{ background: "rgba(0,0,0,0.45)" }}>
         <div className="bg-white rounded shadow-xl border border-gray-300 w-[340px]"
@@ -9801,12 +9846,12 @@ export default function CadPage() {
               Отмена
             </button>
             <button
-              onClick={() => { setShowCloseConfirm(false); window.close(); }}
+              onClick={doClose}
               className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-red-50 text-red-600">
               Не сохранять
             </button>
             <button
-              onClick={async () => { await handleSave(); setShowCloseConfirm(false); window.close(); }}
+              onClick={async () => { await handleSave(); doClose(); }}
               className="h-7 px-3 text-[12px] rounded text-white"
               style={{ background: "#2563eb" }}>
               Сохранить
@@ -9814,7 +9859,8 @@ export default function CadPage() {
           </div>
         </div>
       </div>
-    )}
+      );
+    })()}
 
     {/* ── Окно «О программе» ──────────────────────────────────────────── */}
     {showAbout && (

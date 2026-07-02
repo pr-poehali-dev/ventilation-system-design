@@ -25,11 +25,15 @@ public partial class MainWindow : Window
     private UpdateInfo?  _updateInfo;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
+    // Флаг: JS уже подтвердил закрытие — пропускаем повторный запрос
+    private bool _closeConfirmed = false;
+
     public MainWindow(string? pendingFile)
     {
         InitializeComponent();
         _pendingFile = pendingFile;
-        Closed += OnClosed;
+        Closed  += OnClosed;
+        Closing += OnWindowClosing;
 
         // Уведомляем JS при изменении состояния окна (развёрнуто / обычное)
         StateChanged += OnWindowStateChanged;
@@ -236,6 +240,46 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    // ── Закрытие окна (системная кнопка X / Alt+F4) ──────────────────────────
+
+    private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        // Если WebView ещё не загружен или JS уже подтвердил — закрываем сразу
+        if (WebView?.CoreWebView2 == null || _closeConfirmed)
+            return;
+
+        // Отменяем закрытие — спросим JS
+        e.Cancel = true;
+
+        try
+        {
+            // Проверяем через JS есть ли несохранённые данные
+            string result = await WebView.CoreWebView2.ExecuteScriptAsync(
+                "typeof window.__pvsCanClose === 'function' ? (window.__pvsCanClose() ? 'yes' : 'no') : 'yes'");
+
+            if (result == "\"yes\"" || result == "true")
+            {
+                // Несохранённых данных нет — закрываем
+                _closeConfirmed = true;
+                Dispatcher.Invoke(() => Close());
+            }
+            else
+            {
+                // Просим JS показать диалог сохранения
+                // JS в диалоге вызовет sendCs('win-close-confirmed') при "Не сохранять"
+                // или sendCs('win-close-confirmed') после успешного сохранения
+                await WebView.CoreWebView2.ExecuteScriptAsync(
+                    "typeof window.__pvsShowCloseDialog === 'function' && window.__pvsShowCloseDialog()");
+            }
+        }
+        catch
+        {
+            // При ошибке — закрываем без вопросов
+            _closeConfirmed = true;
+            Dispatcher.Invoke(() => Close());
+        }
+    }
+
     // ── Состояние окна → JS ───────────────────────────────────────────────────
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
@@ -294,6 +338,13 @@ public partial class MainWindow : Window
                     ? WindowState.Normal : WindowState.Maximized);
                 break;
             case "win-close":
+                // JS кнопка "✕" — JS уже показал свой диалог и подтвердил
+                _closeConfirmed = true;
+                Dispatcher.Invoke(() => Close());
+                break;
+            case "win-close-confirmed":
+                // JS явно подтвердил закрытие (после диалога "Не сохранять")
+                _closeConfirmed = true;
                 Dispatcher.Invoke(() => Close());
                 break;
             case "win-drag":
@@ -532,8 +583,16 @@ public partial class MainWindow : Window
     // Переопределяем обработчики — работают через C# сообщения
     window.__pvsWinMinimize = function() { sendCs('win-minimize'); };
     window.__pvsWinMaximize = function() { sendCs('win-maximize'); };
-    window.__pvsWinClose    = function() { sendCs('win-close'); };
     window.__pvsWinDrag     = function() { sendCs('win-drag'); };
+    // Кнопка закрыть — JS сам показывает диалог если есть несохранённые данные,
+    // затем при подтверждении шлёт 'win-close' (JS уже отработал)
+    window.__pvsWinClose = function() { sendCs('win-close'); };
+    // C# вызывает __pvsShowCloseDialog() когда системная кнопка X нажата
+    // React-компонент переопределит эту функцию после загрузки
+    window.__pvsShowCloseDialog = function() {
+        // Fallback если React ещё не загрузился
+        sendCs('win-close-confirmed');
+    };
 
     // ── Перехват <a download> ────────────────────
     function saveViaCs(filename, dataUrl) {
