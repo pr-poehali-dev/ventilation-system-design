@@ -218,23 +218,26 @@ public partial class MainWindow : Window
 
         if (jsKey == null) return;
 
-        // Формируем JS-событие и диспетчеризируем его в активный элемент страницы
-        string js = $"""
-            (function() {{
-                var target = document.activeElement || document.body;
-                var ev = new KeyboardEvent('keydown', {{
-                    key: '{jsKey}',
-                    code: '{e.Key}',
-                    ctrlKey: {(ctrl  ? "true" : "false")},
-                    shiftKey: {(shift ? "true" : "false")},
-                    altKey: {(alt   ? "true" : "false")},
-                    bubbles: true,
-                    cancelable: true
-                }});
-                target.dispatchEvent(ev);
-                document.dispatchEvent(ev);
-            }})();
-            """;
+        // Выносим значения в переменные чтобы избежать вложенных кавычек в интерполяции
+        string ctrlStr  = ctrl  ? "true" : "false";
+        string shiftStr = shift ? "true" : "false";
+        string altStr   = alt   ? "true" : "false";
+        string codeStr  = e.Key.ToString();
+
+        string js = "(function() {" +
+            "var target = document.activeElement || document.body;" +
+            "var ev = new KeyboardEvent('keydown', {" +
+                "key: '" + jsKey + "'," +
+                "code: '" + codeStr + "'," +
+                "ctrlKey: "  + ctrlStr  + "," +
+                "shiftKey: " + shiftStr + "," +
+                "altKey: "   + altStr   + "," +
+                "bubbles: true," +
+                "cancelable: true" +
+            "});" +
+            "target.dispatchEvent(ev);" +
+            "document.dispatchEvent(ev);" +
+        "})();";
 
         _ = WebView.CoreWebView2.ExecuteScriptAsync(js);
         e.Handled = true;
@@ -285,10 +288,10 @@ public partial class MainWindow : Window
     private void OnWindowStateChanged(object? sender, EventArgs e)
     {
         if (WebView?.CoreWebView2 == null) return;
-        bool isMax = WindowState == WindowState.Maximized;
+        string maxVal = WindowState == WindowState.Maximized ? "true" : "false";
         _ = WebView.CoreWebView2.ExecuteScriptAsync(
-            $"window.__pvsWindowMaximized = {(isMax ? "true" : "false")};" +
-            $"window.dispatchEvent(new CustomEvent('pvs-window-state', {{ detail: {{ maximized: {(isMax ? "true" : "false")} }} }}));");
+            "window.__pvsWindowMaximized = " + maxVal + ";" +
+            "window.dispatchEvent(new CustomEvent('pvs-window-state', { detail: { maximized: " + maxVal + " } }));");
     }
 
     // ── JS ↔ C# сообщения ────────────────────────────────────────────────────
@@ -538,14 +541,14 @@ public partial class MainWindow : Window
     {
         string updateJson  = _updateInfo != null ? JsonSerializer.Serialize(_updateInfo) : "null";
         string pendingFile = _pendingFile != null ? JsonSerializer.Serialize(_pendingFile) : "null";
-        bool   isMax       = WindowState == WindowState.Maximized;
+        string isMaxStr    = WindowState == WindowState.Maximized ? "true" : "false";
 
         return $$"""
 (function() {
     // ── Флаг десктопного режима ──────────────────
     window.__IS_DESKTOP__       = true;
     window.__DESKTOP_SERVER__   = '{{ServerUrl}}';
-    window.__pvsWindowMaximized = {{(isMax ? "true" : "false")}};
+    window.__pvsWindowMaximized = {{isMaxStr}};
 
     // ── Реестр pending-промисов для C# ответов ──
     var _pending = {};
