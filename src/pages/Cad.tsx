@@ -3381,6 +3381,7 @@ export default function CadPage() {
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn
               icon="Flame"
+              iconImg="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b103762c-b3b1-4749-8268-7b41f4e07a77.png"
               label="Установить"
               sublabel="очаг пожара"
               onClick={() => { handlePickSymbol("fire_source"); setActiveRibbon("involve"); }}
@@ -3540,7 +3541,7 @@ export default function CadPage() {
               className="flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] disabled:opacity-40"
               style={{ width: 52, height: 60, background: "#dc2626", color: "white", borderColor: "#b91c1c", cursor: "pointer", flexShrink: 0 }}
               title="Расчёт распространения задымления и тепловой депрессии">
-              <Icon name="Flame" size={22} style={{ color: "white" }} />
+              <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b103762c-b3b1-4749-8268-7b41f4e07a77.png" alt="Расчёт пожара" style={{ width: 22, height: 22, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
               <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2 }}><div>Расчёт</div><div>пожара</div></div>
             </button>
             <RibbonBigBtn
@@ -3566,6 +3567,7 @@ export default function CadPage() {
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn
               icon="Zap"
+              iconImg="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f151acd7-084c-42cf-a1a8-86296bced0c9.png"
               label="Установить"
               sublabel="место взрыва"
               onClick={() => { handlePickSymbol("explosion_source"); setActiveRibbon("involve"); }}
