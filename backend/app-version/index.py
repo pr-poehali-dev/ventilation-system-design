@@ -1,11 +1,13 @@
 """
 Проверка версии и управление обновлениями ПВС-Система.
 
-GET  /                → текущая версия + ссылки на скачивание
-POST /  action=set_version   → обновить номер версии и заметки
-POST /  action=upload_exe    → загрузить новый PVS-Setup.exe
-POST /  action=upload_server → загрузить новый server.exe (расчёты без переустановки)
-GET  /  ?file=server         → скачать актуальный server.exe (для автообновления)
+GET  /                         → текущая версия + ссылки на скачивание
+GET  /  ?file=server           → скачать актуальный server.exe
+POST /  action=set_version     → обновить номер версии и заметки
+POST /  action=upload_start    → начать multipart upload, вернуть upload_id
+POST /  action=upload_chunk    → загрузить один чанк (base64, до 5МБ)
+POST /  action=upload_finish   → завершить multipart upload + обновить version.json
+POST /  action=upload_abort    → отменить незавершённый multipart upload
 """
 import json
 import os
@@ -18,10 +20,10 @@ CORS = {
     "Access-Control-Allow-Headers": "Content-Type, X-Admin-Password",
 }
 
-VERSION_KEY    = "updates/version.json"
-EXE_KEY        = "updates/PVS-Setup.exe"
-SERVER_KEY     = "updates/server.exe"
-BUCKET         = "files"
+VERSION_KEY = "updates/version.json"
+EXE_KEY     = "updates/PVS-Setup.exe"
+SERVER_KEY  = "updates/server.exe"
+BUCKET      = "files"
 
 
 def get_s3():
@@ -46,10 +48,9 @@ def get_version_info(s3):
         "notes":          "",
     }
     try:
-        obj  = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
-        data = obj["Body"].read().decode()
+        obj    = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
+        data   = obj["Body"].read().decode()
         parsed = json.loads(data)
-        # Если вдруг пришла строка вместо dict — парсим ещё раз
         if isinstance(parsed, str):
             parsed = json.loads(parsed)
         return {**default, **parsed}
@@ -68,13 +69,13 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     method = event.get("httpMethod", "GET")
-    s3 = get_s3()
+    s3     = get_s3()
     params = event.get("queryStringParameters") or {}
 
-    # ── GET: отдать server.exe напрямую (для автообновления из C#) ────────────
+    # ── GET: отдать server.exe напрямую ───────────────────────────────────────
     if method == "GET" and params.get("file") == "server":
         try:
-            obj = s3.get_object(Bucket=BUCKET, Key=SERVER_KEY)
+            obj  = s3.get_object(Bucket=BUCKET, Key=SERVER_KEY)
             data = obj["Body"].read()
             return {
                 "statusCode": 200,
@@ -102,7 +103,7 @@ def handler(event: dict, context) -> dict:
         body   = json.loads(event.get("body") or "{}")
         action = body.get("action")
 
-        # Обновить только номер версии и заметки
+        # ── Обновить только номер версии и заметки ────────────────────────────
         if action == "set_version":
             info = get_version_info(s3)
             info["version"] = body.get("version", info["version"])
@@ -112,64 +113,68 @@ def handler(event: dict, context) -> dict:
                           ContentType="application/json")
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
 
-        # Получить presigned PUT URL для прямой загрузки файла в S3 (без base64 через функцию)
-        if action == "get_upload_url":
-            file_type = body.get("file_type", "exe")  # "exe" или "server"
+        # ── Начать multipart upload ───────────────────────────────────────────
+        if action == "upload_start":
+            file_type = body.get("file_type", "exe")
             key = EXE_KEY if file_type == "exe" else SERVER_KEY
-            upload_url = s3.generate_presigned_url(
-                "put_object",
-                Params={"Bucket": BUCKET, "Key": key, "ContentType": "application/octet-stream"},
-                ExpiresIn=3600,
+            resp = s3.create_multipart_upload(
+                Bucket=BUCKET, Key=key,
+                ContentType="application/octet-stream",
             )
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"upload_url": upload_url})}
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({
+                "upload_id": resp["UploadId"],
+                "key": key,
+            })}
 
-        # Подтвердить загрузку exe (обновить version.json после прямой загрузки в S3)
-        if action == "confirm_exe":
+        # ── Загрузить один чанк ───────────────────────────────────────────────
+        if action == "upload_chunk":
+            key       = body.get("key")
+            upload_id = body.get("upload_id")
+            part_num  = int(body.get("part_number", 1))
+            chunk_b64 = body.get("chunk_base64", "")
+            chunk_bytes = base64.b64decode(chunk_b64)
+            resp = s3.upload_part(
+                Bucket=BUCKET, Key=key,
+                UploadId=upload_id,
+                PartNumber=part_num,
+                Body=chunk_bytes,
+            )
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({
+                "part_number": part_num,
+                "etag": resp["ETag"],
+            })}
+
+        # ── Завершить multipart upload + обновить version.json ────────────────
+        if action == "upload_finish":
+            key       = body.get("key")
+            upload_id = body.get("upload_id")
+            parts     = body.get("parts", [])  # [{part_number, etag}, ...]
+            s3.complete_multipart_upload(
+                Bucket=BUCKET, Key=key, UploadId=upload_id,
+                MultipartUpload={"Parts": [
+                    {"PartNumber": p["part_number"], "ETag": p["etag"]} for p in parts
+                ]},
+            )
+            # Обновляем version.json
             info = get_version_info(s3)
-            info["version"]      = body.get("version", info["version"])
-            info["notes"]        = body.get("notes",   info.get("notes", ""))
-            info["download_url"] = cdn_url(EXE_KEY)
+            if key == EXE_KEY:
+                info["version"]      = body.get("version", info["version"])
+                info["notes"]        = body.get("notes", info.get("notes", ""))
+                info["download_url"] = cdn_url(EXE_KEY)
+            else:
+                info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
+                info["server_url"]     = cdn_url(SERVER_KEY)
             s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
                           Body=json.dumps(info, ensure_ascii=False).encode(),
                           ContentType="application/json")
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
 
-        # Подтвердить загрузку server.exe (обновить version.json после прямой загрузки в S3)
-        if action == "confirm_server":
-            info = get_version_info(s3)
-            info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
-            info["server_url"]     = cdn_url(SERVER_KEY)
-            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
-                          Body=json.dumps(info, ensure_ascii=False).encode(),
-                          ContentType="application/json")
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
-
-        # Загрузить новый PVS-Setup.exe (установщик) — legacy, оставлен для совместимости
-        if action == "upload_exe":
-            exe_bytes = base64.b64decode(body.get("exe_base64", ""))
-            s3.put_object(Bucket=BUCKET, Key=EXE_KEY, Body=exe_bytes,
-                          ContentType="application/octet-stream")
-            info = get_version_info(s3)
-            info["version"]      = body.get("version", info["version"])
-            info["notes"]        = body.get("notes",   info.get("notes", ""))
-            info["download_url"] = cdn_url(EXE_KEY)
-            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
-                          Body=json.dumps(info, ensure_ascii=False).encode(),
-                          ContentType="application/json")
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
-
-        # Загрузить новый server.exe (расчёты, без переустановки) — legacy
-        if action == "upload_server":
-            srv_bytes = base64.b64decode(body.get("exe_base64", ""))
-            s3.put_object(Bucket=BUCKET, Key=SERVER_KEY, Body=srv_bytes,
-                          ContentType="application/octet-stream")
-            info = get_version_info(s3)
-            info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
-            info["server_url"]     = cdn_url(SERVER_KEY)
-            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
-                          Body=json.dumps(info, ensure_ascii=False).encode(),
-                          ContentType="application/json")
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
+        # ── Отменить незавершённый multipart upload ───────────────────────────
+        if action == "upload_abort":
+            key       = body.get("key")
+            upload_id = body.get("upload_id")
+            s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
 
         return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Неизвестный action"})}
 

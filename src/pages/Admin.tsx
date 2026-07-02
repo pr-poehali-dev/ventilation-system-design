@@ -251,47 +251,81 @@ export default function Admin() {
 
   useEffect(() => { if (activeTab === "update") loadCurrentVersion(); }, [activeTab]);
 
+  // Универсальная загрузка файла чанками через multipart S3
+  const uploadFileChunked = async (
+    file: File,
+    fileType: "exe" | "server",
+    onProgress: (p: number) => void,
+    headers: Record<string, string>,
+  ) => {
+    const CHUNK_SIZE = 4 * 1024 * 1024; // 4 МБ — хорошо вписывается в лимит функции
+
+    // Шаг 1: начать multipart upload
+    onProgress(3);
+    const startRes = await fetch(VERSION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({ action: "upload_start", file_type: fileType }),
+    });
+    const startText = await startRes.text();
+    if (!startRes.ok) throw new Error(startText.startsWith("{") ? (JSON.parse(startText).error || "Ошибка") : `HTTP ${startRes.status}`);
+    const { upload_id, key } = JSON.parse(startText);
+
+    // Шаг 2: загружать чанки по очереди
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const parts: { part_number: number; etag: string }[] = [];
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const slice = file.slice(start, start + CHUNK_SIZE);
+      const buf   = await slice.arrayBuffer();
+      // Конвертируем в base64 по частям (без btoa на весь файл)
+      const bytes = new Uint8Array(buf);
+      let binary  = "";
+      for (let j = 0; j < bytes.length; j += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(j, j + 8192));
+      }
+      const chunkB64 = btoa(binary);
+
+      const chunkRes = await fetch(VERSION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ action: "upload_chunk", key, upload_id, part_number: i + 1, chunk_base64: chunkB64 }),
+      });
+      const chunkText = await chunkRes.text();
+      if (!chunkRes.ok) {
+        // Отменяем multipart upload при ошибке
+        await fetch(VERSION_URL, { method: "POST", headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify({ action: "upload_abort", key, upload_id }) });
+        throw new Error(chunkText.startsWith("{") ? (JSON.parse(chunkText).error || "Ошибка чанка") : `HTTP ${chunkRes.status}`);
+      }
+      const { etag } = JSON.parse(chunkText);
+      parts.push({ part_number: i + 1, etag });
+      onProgress(5 + Math.round(((i + 1) / totalChunks) * 85));
+    }
+
+    return { upload_id, key, parts };
+  };
+
   const handleUploadExe = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!updFile || !updVersion) return;
     setUpdStatus("uploading");
     setUpdErr("");
     setUpdProgress(0);
+    const hdrs = { "X-Admin-Password": password };
     try {
-      // Шаг 1: получить presigned PUT URL от backend
-      setUpdProgress(5);
-      const urlRes = await fetch(VERSION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "get_upload_url", file_type: "exe" }),
-      });
-      const urlText = await urlRes.text();
-      if (!urlRes.ok) throw new Error(urlText.startsWith("{") ? (JSON.parse(urlText).error || "Ошибка") : `HTTP ${urlRes.status}`);
-      const { upload_url } = JSON.parse(urlText);
+      const { upload_id, key, parts } = await uploadFileChunked(updFile, "exe", setUpdProgress, hdrs);
 
-      // Шаг 2: загрузить файл напрямую в S3 через presigned URL (без base64, без лимита)
-      setUpdProgress(10);
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", upload_url);
-        xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) setUpdProgress(10 + Math.round((ev.loaded / ev.total) * 80));
-        };
-        xhr.onload = () => xhr.status < 400 ? resolve() : reject(new Error(`S3 upload HTTP ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Ошибка сети при загрузке файла"));
-        xhr.send(updFile);
-      });
-
-      // Шаг 3: подтвердить загрузку — обновить version.json
+      // Завершить multipart + обновить version.json
       setUpdProgress(92);
-      const confirmRes = await fetch(VERSION_URL, {
+      const finRes = await fetch(VERSION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "confirm_exe", version: updVersion, notes: updNotes }),
+        body: JSON.stringify({ action: "upload_finish", key, upload_id, parts, version: updVersion, notes: updNotes }),
       });
-      const confirmText = await confirmRes.text();
-      if (!confirmRes.ok) throw new Error(confirmText.startsWith("{") ? (JSON.parse(confirmText).error || "Ошибка") : `HTTP ${confirmRes.status}`);
+      const finText = await finRes.text();
+      if (!finRes.ok) throw new Error(finText.startsWith("{") ? (JSON.parse(finText).error || "Ошибка") : `HTTP ${finRes.status}`);
 
       setUpdProgress(100);
       setUpdStatus("ok");
@@ -311,41 +345,19 @@ export default function Admin() {
     setSrvStatus("uploading");
     setSrvErr("");
     setSrvProgress(0);
+    const hdrs = { "X-Admin-Password": password };
     try {
-      // Шаг 1: получить presigned PUT URL
-      setSrvProgress(5);
-      const urlRes = await fetch(VERSION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "get_upload_url", file_type: "server" }),
-      });
-      const urlText = await urlRes.text();
-      if (!urlRes.ok) throw new Error(urlText.startsWith("{") ? (JSON.parse(urlText).error || "Ошибка") : `HTTP ${urlRes.status}`);
-      const { upload_url } = JSON.parse(urlText);
+      const { upload_id, key, parts } = await uploadFileChunked(srvFile, "server", setSrvProgress, hdrs);
 
-      // Шаг 2: загрузить файл напрямую в S3
-      setSrvProgress(10);
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", upload_url);
-        xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) setSrvProgress(10 + Math.round((ev.loaded / ev.total) * 80));
-        };
-        xhr.onload = () => xhr.status < 400 ? resolve() : reject(new Error(`S3 upload HTTP ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Ошибка сети при загрузке файла"));
-        xhr.send(srvFile);
-      });
-
-      // Шаг 3: подтвердить загрузку — обновить version.json
+      // Завершить multipart + обновить version.json
       setSrvProgress(92);
-      const confirmRes = await fetch(VERSION_URL, {
+      const finRes = await fetch(VERSION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "confirm_server", server_version: srvVersion }),
+        body: JSON.stringify({ action: "upload_finish", key, upload_id, parts, server_version: srvVersion }),
       });
-      const confirmText = await confirmRes.text();
-      if (!confirmRes.ok) throw new Error(confirmText.startsWith("{") ? (JSON.parse(confirmText).error || "Ошибка") : `HTTP ${confirmRes.status}`);
+      const finText = await finRes.text();
+      if (!finRes.ok) throw new Error(finText.startsWith("{") ? (JSON.parse(finText).error || "Ошибка") : `HTTP ${finRes.status}`);
 
       setSrvProgress(100);
       setSrvStatus("ok");
