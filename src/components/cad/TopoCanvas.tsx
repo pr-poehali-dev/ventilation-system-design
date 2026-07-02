@@ -287,6 +287,23 @@ export default function TopoCanvas(props: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvasExportRef = useRef<(() => string) | null>(null);
 
+  // WebView2-fix: e.ctrlKey на mouse events ненадёжен при русской раскладке —
+  // отслеживаем состояние Ctrl/Meta через отдельный ref на keydown/keyup
+  const ctrlPressedRef = useRef(false);
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => { if (e.key === "Control" || e.key === "Meta") ctrlPressedRef.current = true; };
+    const onUp   = (e: KeyboardEvent) => { if (e.key === "Control" || e.key === "Meta") ctrlPressedRef.current = false; };
+    const onBlur = () => { ctrlPressedRef.current = false; };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup",   onUp);
+    window.addEventListener("blur",    onBlur);
+    return () => {
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup",   onUp);
+      window.removeEventListener("blur",    onBlur);
+    };
+  }, []);
+
   // Регистрируем функцию получения содержимого для печати (SVG или Canvas PNG)
   useEffect(() => {
     if (!onRegisterGetSvg) return;
@@ -1248,7 +1265,7 @@ export default function TopoCanvas(props: Props) {
 
     // ─── ИНСТРУМЕНТ «ВЫБОР» (по умолчанию) ────────────────────────────
     if (hitN) {
-      if (e.ctrlKey && onNodeMultiSelect) {
+      if ((e.ctrlKey || ctrlPressedRef.current) && onNodeMultiSelect) {
         onNodeMultiSelect(hitN);
       } else {
         onSelectNode(hitN);
@@ -1276,7 +1293,7 @@ export default function TopoCanvas(props: Props) {
     }
 
     if (hitB) {
-      if (e.ctrlKey && onBranchMultiSelect) {
+      if ((e.ctrlKey || ctrlPressedRef.current) && onBranchMultiSelect) {
         onBranchMultiSelect(hitB);
       } else {
         onSelectBranch(hitB);
@@ -1285,7 +1302,7 @@ export default function TopoCanvas(props: Props) {
       return;
     }
 
-    if (!e.ctrlKey) {
+    if (!e.ctrlKey && !ctrlPressedRef.current) {
       onSelectNode(null);
       onSelectBranch(null);
     }
@@ -2237,10 +2254,13 @@ export default function TopoCanvas(props: Props) {
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden"
+      tabIndex={0}
       style={{
         background: is3D ? "linear-gradient(to bottom, #f0f4f8 0%, #ffffff 60%, #f5f5f5 100%)" : "#ffffff",
         cursor: cursorStyle,
-      }}>
+        outline: "none",
+      }}
+      onMouseDown={() => { containerRef.current?.focus({ preventScroll: true }); }}>
 
       {/* ── Слой печати ПОД canvas (только в canvas-режиме) ───────────── */}
       {useCanvas && (
