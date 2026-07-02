@@ -221,7 +221,7 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "fire_tv",            name: "Пункт телевидения",                     group: "Противопожарная защита",
     svgContent: `<rect x="6" y="8" width="36" height="24" fill="none" stroke="#222" stroke-width="1.5"/><text x="24" y="26" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">Т</text>` },
   { id: "fire_crane",         name: "Пожарный кран",                         group: "Противопожарная защита",
-    svgContent: `<line x1="24" y1="4" x2="24" y2="24" stroke="#dc2626" stroke-width="2"/><circle cx="24" cy="30" r="7" fill="none" stroke="#dc2626" stroke-width="2"/>` },
+    svgContent: `<circle cx="24" cy="24" r="14" fill="none" stroke="#dc2626" stroke-width="2.5"/><path d="M24,10 C20,3 13,3 12,8 C11,13 17,14 24,10Z" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linejoin="round"/><path d="M11,30 C6,35 7,42 12,42 C17,42 19,36 14,30Z" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linejoin="round"/><path d="M37,30 C42,35 41,42 36,42 C31,42 29,36 34,30Z" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linejoin="round"/>` },
   { id: "fire_crane_conn",    name: "Кран пожарный соединительная головка",  group: "Противопожарная защита",
     svgContent: `<line x1="24" y1="4" x2="24" y2="18" stroke="#dc2626" stroke-width="2"/><circle cx="24" cy="28" r="10" fill="none" stroke="#dc2626" stroke-width="2"/><circle cx="16" cy="36" r="4" fill="none" stroke="#dc2626" stroke-width="1.5"/><circle cx="32" cy="36" r="4" fill="none" stroke="#dc2626" stroke-width="1.5"/>` },
   { id: "fire_store_P",       name: "Камера хранения противопожарных материалов", group: "Противопожарная защита",
