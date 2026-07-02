@@ -242,7 +242,9 @@ export default function Admin() {
   const loadCurrentVersion = async () => {
     try {
       const r = await fetch(VERSION_URL);
-      const d = await r.json();
+      const text = await r.text();
+      if (!text.trim().startsWith("{")) { setCurrentVersion(null); return; }
+      const d = JSON.parse(text);
       setCurrentVersion({ version: d.version || "—", notes: d.notes || "", server_version: d.server_version || "—" });
     } catch { setCurrentVersion(null); }
   };
@@ -271,8 +273,10 @@ export default function Admin() {
         headers: { "Content-Type": "application/json", "X-Admin-Password": password },
         body: JSON.stringify({ action: "upload_exe", exe_base64: b64, version: updVersion, notes: updNotes }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Ошибка");
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
+      const data = text.startsWith("{") ? JSON.parse(text) : {};
+      void data;
       setUpdProgress(100);
       setUpdStatus("ok");
       setCurrentVersion({ version: updVersion, notes: updNotes });
@@ -307,8 +311,10 @@ export default function Admin() {
         headers: { "Content-Type": "application/json", "X-Admin-Password": password },
         body: JSON.stringify({ action: "upload_server", exe_base64: b64, server_version: srvVersion }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Ошибка");
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
+      const data = text.startsWith("{") ? JSON.parse(text) : {};
+      void data;
       setSrvProgress(100);
       setSrvStatus("ok");
       setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion } : null);

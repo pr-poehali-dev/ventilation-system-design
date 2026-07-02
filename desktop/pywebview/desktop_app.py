@@ -42,7 +42,11 @@ def check_for_update():
         req = urllib.request.Request(VERSION_CHECK_URL, headers={"User-Agent": f"PVS/{CURRENT_VERSION}"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             raw = resp.read().decode()
-            data = json.loads(raw)
+            # Защита: если пришёл HTML вместо JSON (ошибка gateway) — пропускаем
+            stripped = raw.strip()
+            if not stripped or not stripped.startswith("{"):
+                return
+            data = json.loads(stripped)
             if isinstance(data, str):
                 data = json.loads(data)
             remote_ver = data.get("version", "1.0.0")
