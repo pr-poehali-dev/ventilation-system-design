@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 
-const LOGO = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e6a37e59-abfb-4f45-a7d8-89802209b5f4.png";
+const LOGO = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png";
 
 export default function InstallPwaButton() {
   const { isInstalled, isInstallable, install } = usePwaInstall();
