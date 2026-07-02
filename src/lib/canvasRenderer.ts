@@ -897,8 +897,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           // Символ расположен в центре A4: центр ~(10500, 16500) в viewBox 21000×29700.
           // Радиус выступов ~9125 по X → нормировано: 9125/21000 ≈ 0.4345 от drawW.
           // Смещение центра символа по Y: (16500/29700 - 0.5)*drawH ≈ +0.0556*drawH.
-          const symCY = iy + (16500 / 29700 - 0.5) * drawH;
-          const symR = (9125 / 21000) * drawW + 3;
+          const symCY = iy + (15800 / 29700 - 0.5) * drawH;
+          const symR = (10900 / 21000) * drawW + 3;
           ctx.beginPath();
           ctx.arc(ix, symCY, symR, 0, Math.PI * 2);
           ctx.stroke();

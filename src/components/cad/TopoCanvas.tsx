@@ -3819,8 +3819,8 @@ export default function TopoCanvas(props: Props) {
                         Центр символа смещён по Y: (16500/29700 - 0.5)*drawH.
                         Радиус выступов: (9125/21000)*drawW */}
                     {isSel && <circle
-                      cx={0} cy={(16500 / 29700 - 0.5) * drawH}
-                      r={(9125 / 21000) * drawW + 3}
+                      cx={0} cy={(15800 / 29700 - 0.5) * drawH}
+                      r={(10900 / 21000) * drawW + 3}
                       fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
                   </g>
                 );
