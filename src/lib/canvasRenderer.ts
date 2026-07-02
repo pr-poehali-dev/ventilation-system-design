@@ -867,7 +867,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
       if (fireType === "consumer" && sc > 0.025) {
-        const IS = Math.min(24, Math.max(4, baseNodeR * 2.5));
+        const IS = Math.max(4, baseNodeR * 2.5);
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hydrantOpen = n.fireHydrantOpen ?? false;

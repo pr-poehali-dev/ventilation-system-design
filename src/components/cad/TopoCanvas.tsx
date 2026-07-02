@@ -3752,7 +3752,7 @@ export default function TopoCanvas(props: Props) {
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
           const fireType = node.fireNodeType ?? "none";
           const hasFire = fireType !== "none";
-          const IS = Math.min(24, Math.max(3, baseNodeR * 2.5));
+          const IS = Math.max(3, baseNodeR * 2.5);
           return (
             <g key={node.id} transform={`translate(${sx},${sy})`}>
               {/* Кольцо маршрута горноспасателей */}
