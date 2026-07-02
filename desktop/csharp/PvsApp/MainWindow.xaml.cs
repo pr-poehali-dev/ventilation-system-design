@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 
@@ -29,6 +30,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         _pendingFile = pendingFile;
         Closed += OnClosed;
+
+        // Уведомляем JS при изменении состояния окна (развёрнуто / обычное)
+        StateChanged += OnWindowStateChanged;
+
         Loaded += async (_, _) =>
         {
             try { await StartupAsync(); }
@@ -75,16 +80,15 @@ public partial class MainWindow : Window
     {
         try
         {
-            string serverExe  = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
+            string serverExe   = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
             string versionFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server_version.txt");
-            string localVer   = File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "";
+            string localVer    = File.Exists(versionFile) ? File.ReadAllText(versionFile).Trim() : "";
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
             var resp = await Http.GetAsync(VersionCheckUrl, cts.Token);
             if (!resp.IsSuccessStatusCode) return;
 
             string json = await resp.Content.ReadAsStringAsync(cts.Token);
-            // Защита: если пришёл HTML вместо JSON (ошибка gateway) — пропускаем обновление
             if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("{")) return;
             var info = JsonSerializer.Deserialize<VersionInfo>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -94,14 +98,12 @@ public partial class MainWindow : Window
 
             SetStatus($"Обновление расчётного ядра до v{remoteVer}...");
 
-            // Скачиваем новый server.exe
             using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
             var bytes = await httpLarge.GetByteArrayAsync($"{VersionCheckUrl}?file=server");
 
             string tmpPath = serverExe + ".new";
             await File.WriteAllBytesAsync(tmpPath, bytes);
 
-            // Заменяем через bat (файл может быть занят если кто-то запустил)
             string batPath = Path.GetTempFileName() + ".bat";
             File.WriteAllText(batPath, $"""
                 @echo off
@@ -171,14 +173,81 @@ public partial class MainWindow : Window
         WebView.CoreWebView2.Settings.IsStatusBarEnabled              = false;
         WebView.CoreWebView2.Settings.AreHostObjectsAllowed           = true;
 
-        WebView.CoreWebView2.WebMessageReceived += OnWebMessage;
-        WebView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+        WebView.CoreWebView2.WebMessageReceived    += OnWebMessage;
+        WebView.CoreWebView2.NavigationCompleted   += OnNavigationCompleted;
 
-        // Разрешаем localhost без ограничений (CORS, storage)
+        // ── Передаём горячие клавиши в страницу вместо перехвата WPF ──────────
+        // Без этого Ctrl+клик, Delete, S+S (S дважды) не работают в WebView2
+        WebView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        WebView.KeyDown += OnWebViewKeyDown;
+
         WebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
-
         WebView.CoreWebView2.Navigate(ServerUrl);
     }
+
+    // ── Передача клавиш из WPF в WebView2 ────────────────────────────────────
+
+    private void OnWebViewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        // Ctrl+S, Ctrl+Z, Ctrl+Y, Delete — передаём в страницу напрямую через JS
+        // WebView2 с AreBrowserAcceleratorKeysEnabled=false перехватывает их на уровне WPF
+        bool ctrl  = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+        bool shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+        bool alt   = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+
+        string? jsKey = e.Key switch
+        {
+            Key.Delete   => "Delete",
+            Key.S        => "s",
+            Key.Z        => "z",
+            Key.Y        => "y",
+            Key.A        => "a",
+            Key.C        => "c",
+            Key.V        => "v",
+            Key.X        => "x",
+            Key.F9       => "F9",
+            Key.F6       => "F6",
+            Key.Escape   => "Escape",
+            Key.Enter    => "Enter",
+            _            => null
+        };
+
+        if (jsKey == null) return;
+
+        // Формируем JS-событие и диспетчеризируем его в активный элемент страницы
+        string js = $"""
+            (function() {{
+                var target = document.activeElement || document.body;
+                var ev = new KeyboardEvent('keydown', {{
+                    key: '{jsKey}',
+                    code: '{e.Key}',
+                    ctrlKey: {(ctrl  ? "true" : "false")},
+                    shiftKey: {(shift ? "true" : "false")},
+                    altKey: {(alt   ? "true" : "false")},
+                    bubbles: true,
+                    cancelable: true
+                }});
+                target.dispatchEvent(ev);
+                document.dispatchEvent(ev);
+            }})();
+            """;
+
+        _ = WebView.CoreWebView2.ExecuteScriptAsync(js);
+        e.Handled = true;
+    }
+
+    // ── Состояние окна → JS ───────────────────────────────────────────────────
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (WebView?.CoreWebView2 == null) return;
+        bool isMax = WindowState == WindowState.Maximized;
+        _ = WebView.CoreWebView2.ExecuteScriptAsync(
+            $"window.__pvsWindowMaximized = {(isMax ? "true" : "false")};" +
+            $"window.dispatchEvent(new CustomEvent('pvs-window-state', {{ detail: {{ maximized: {(isMax ? "true" : "false")} }} }}));");
+    }
+
+    // ── JS ↔ C# сообщения ────────────────────────────────────────────────────
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
@@ -190,8 +259,6 @@ public partial class MainWindow : Window
 
         _ = WebView.CoreWebView2.ExecuteScriptAsync(BuildJsBootstrap());
     }
-
-    // ── JS ↔ C# сообщения ────────────────────────────────────────────────────
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -230,7 +297,12 @@ public partial class MainWindow : Window
                 Dispatcher.Invoke(() => Close());
                 break;
             case "win-drag":
-                Dispatcher.Invoke(() => DragMove());
+                Dispatcher.Invoke(() =>
+                {
+                    // DragMove работает только когда кнопка мыши зажата
+                    try { if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove(); }
+                    catch { }
+                });
                 break;
         }
     }
@@ -343,7 +415,6 @@ public partial class MainWindow : Window
             req.Headers.Add("User-Agent", $"PVS/{AppVersion}");
             var resp = await Http.SendAsync(req);
             string json = await resp.Content.ReadAsStringAsync();
-            // Защита: если пришёл HTML вместо JSON (ошибка gateway) — не парсим
             if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("{")) return null;
             var data = JsonSerializer.Deserialize<UpdateInfo>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -414,16 +485,17 @@ public partial class MainWindow : Window
 
     private string BuildJsBootstrap()
     {
-        string updateJson = _updateInfo != null
-            ? JsonSerializer.Serialize(_updateInfo)
-            : "null";
-
-        string pendingFile = _pendingFile != null
-            ? JsonSerializer.Serialize(_pendingFile)
-            : "null";
+        string updateJson  = _updateInfo != null ? JsonSerializer.Serialize(_updateInfo) : "null";
+        string pendingFile = _pendingFile != null ? JsonSerializer.Serialize(_pendingFile) : "null";
+        bool   isMax       = WindowState == WindowState.Maximized;
 
         return $$"""
 (function() {
+    // ── Флаг десктопного режима ──────────────────
+    window.__IS_DESKTOP__       = true;
+    window.__DESKTOP_SERVER__   = '{{ServerUrl}}';
+    window.__pvsWindowMaximized = {{(isMax ? "true" : "false")}};
+
     // ── Реестр pending-промисов для C# ответов ──
     var _pending = {};
     window.__pvsCsReply = function(reqId, payload) {
@@ -433,26 +505,37 @@ public partial class MainWindow : Window
         return new Promise(function(resolve) {
             var id = Math.random().toString(36).slice(2);
             _pending[id] = resolve;
-            window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd, reqId: id }, params)));
+            window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd, reqId: id }, params || {})));
         });
+    }
+    // Без reqId (fire-and-forget)
+    function sendCs(cmd, params) {
+        window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd }, params || {})));
     }
 
     // ── electronAPI совместимость ────────────────
     window.electronAPI = {
-        onOpenFile: function(handler) {
+        onOpenFile:    function(handler) {
             window._pvs_open_handler = handler;
             callCs('get-pending-file', {}).then(function(r) {
                 if (r && r.content) handler({ path: r.path, content: r.content });
             });
         },
-        offOpenFile: function() { window._pvs_open_handler = null; },
-        readFile:    function(path)    { return callCs('read-file',  { path: path }); },
-        writeFile:   function(path, content) { return callCs('write-file', { path: path, content: content }); },
-        getVersion:  function()        { return Promise.resolve({ current: '{{AppVersion}}', update: {{updateJson}} }); },
-        installUpdate: function()      { return callCs('install-update', {}); }
+        offOpenFile:   function() { window._pvs_open_handler = null; },
+        readFile:      function(path)    { return callCs('read-file',   { path: path }); },
+        writeFile:     function(path, c) { return callCs('write-file',  { path: path, content: c }); },
+        getVersion:    function()        { return Promise.resolve({ current: '{{AppVersion}}', update: {{updateJson}} }); },
+        installUpdate: function()        { return callCs('install-update', {}); }
     };
 
-    // ── Перехват <a download> для вызова нативного диалога ──
+    // ── Кнопки управления окном ──────────────────
+    // Переопределяем обработчики — работают через C# сообщения
+    window.__pvsWinMinimize = function() { sendCs('win-minimize'); };
+    window.__pvsWinMaximize = function() { sendCs('win-maximize'); };
+    window.__pvsWinClose    = function() { sendCs('win-close'); };
+    window.__pvsWinDrag     = function() { sendCs('win-drag'); };
+
+    // ── Перехват <a download> ────────────────────
     function saveViaCs(filename, dataUrl) {
         return callCs('save-file', { filename: filename, data: dataUrl });
     }
