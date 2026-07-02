@@ -3802,10 +3802,11 @@ export default function TopoCanvas(props: Props) {
               {/* ── Иконка ПОЖАРНОГО КРАНА (SVG) ── */}
               {fireType === "consumer" && view.scale > 0.025 && (() => {
                 const hydrantOpen = node.fireHydrantOpen ?? false;
-                const cr = IS * 0.55;
-                const earR = cr * 0.55;
                 const sz = IS * 2.2;
-                const aulaR = cr + earR + 2;
+                // viewBox SVG = 21000×29700 (A4 portrait), соотношение сторон ~0.707
+                const svgAspect = 21000 / 29700;
+                const drawH = sz;
+                const drawW = sz * svgAspect;
                 const svgUrl = hydrantOpen
                   ? "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9b358780-445c-487f-90d2-0b86b4c3c6fb.svg"
                   : "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/28ea1d46-e9bf-4ca3-bdb2-ae11cf9b1e3b.svg";
@@ -3813,9 +3814,9 @@ export default function TopoCanvas(props: Props) {
                   <g>
                     <image
                       href={svgUrl}
-                      x={-sz / 2} y={-sz / 2} width={sz} height={sz} />
-                    {/* Кольцо выделения */}
-                    {isSel && <circle r={aulaR + 4} fill="none"
+                      x={-drawW / 2} y={-drawH / 2} width={drawW} height={drawH} />
+                    {/* Кольцо выделения — эллипс по реальным размерам крана */}
+                    {isSel && <ellipse rx={drawW / 2 + 3} ry={drawH / 2 + 3} fill="none"
                       stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
                   </g>
                 );

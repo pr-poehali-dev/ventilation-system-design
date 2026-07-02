@@ -876,11 +876,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         // SVG-иконка пожарного крана (красный/синий)
         // viewBox SVG = 21000×29700 (A4 portrait), соотношение сторон ~1:1.4143
         const { img, loaded } = getFireCraneImg(hydrantOpen);
+        const sz = IS * 2.2;
+        const svgAspect = 21000 / 29700; // ширина / высота viewBox
+        const drawH = sz;
+        const drawW = sz * svgAspect;
         if (loaded) {
-          const sz = IS * 2.2;
-          const svgAspect = 21000 / 29700; // ширина / высота
-          const drawH = sz;
-          const drawW = sz * svgAspect;
           ctx.drawImage(img, ix - drawW / 2, iy - drawH / 2, drawW, drawH);
         } else {
           // Фолбэк — простой кружок пока SVG не загрузился
@@ -893,7 +893,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (isSel) {
           ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 2]);
-          ctx.beginPath(); ctx.arc(ix, iy, cr + earR + 3, 0, Math.PI * 2); ctx.stroke();
+          // Эллипс охватывает реальные размеры крана с отступом 3px
+          ctx.beginPath();
+          ctx.ellipse(ix, iy, drawW / 2 + 3, drawH / 2 + 3, 0, 0, Math.PI * 2);
+          ctx.stroke();
           ctx.setLineDash([]);
         }
 
