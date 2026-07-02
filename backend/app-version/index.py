@@ -112,7 +112,39 @@ def handler(event: dict, context) -> dict:
                           ContentType="application/json")
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
 
-        # Загрузить новый PVS-Setup.exe (установщик)
+        # Получить presigned PUT URL для прямой загрузки файла в S3 (без base64 через функцию)
+        if action == "get_upload_url":
+            file_type = body.get("file_type", "exe")  # "exe" или "server"
+            key = EXE_KEY if file_type == "exe" else SERVER_KEY
+            upload_url = s3.generate_presigned_url(
+                "put_object",
+                Params={"Bucket": BUCKET, "Key": key, "ContentType": "application/octet-stream"},
+                ExpiresIn=3600,
+            )
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"upload_url": upload_url})}
+
+        # Подтвердить загрузку exe (обновить version.json после прямой загрузки в S3)
+        if action == "confirm_exe":
+            info = get_version_info(s3)
+            info["version"]      = body.get("version", info["version"])
+            info["notes"]        = body.get("notes",   info.get("notes", ""))
+            info["download_url"] = cdn_url(EXE_KEY)
+            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                          Body=json.dumps(info, ensure_ascii=False).encode(),
+                          ContentType="application/json")
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
+
+        # Подтвердить загрузку server.exe (обновить version.json после прямой загрузки в S3)
+        if action == "confirm_server":
+            info = get_version_info(s3)
+            info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
+            info["server_url"]     = cdn_url(SERVER_KEY)
+            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                          Body=json.dumps(info, ensure_ascii=False).encode(),
+                          ContentType="application/json")
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
+
+        # Загрузить новый PVS-Setup.exe (установщик) — legacy, оставлен для совместимости
         if action == "upload_exe":
             exe_bytes = base64.b64decode(body.get("exe_base64", ""))
             s3.put_object(Bucket=BUCKET, Key=EXE_KEY, Body=exe_bytes,
@@ -126,7 +158,7 @@ def handler(event: dict, context) -> dict:
                           ContentType="application/json")
             return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
 
-        # Загрузить новый server.exe (расчёты, без переустановки)
+        # Загрузить новый server.exe (расчёты, без переустановки) — legacy
         if action == "upload_server":
             srv_bytes = base64.b64decode(body.get("exe_base64", ""))
             s3.put_object(Bucket=BUCKET, Key=SERVER_KEY, Body=srv_bytes,
