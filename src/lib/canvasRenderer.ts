@@ -12,8 +12,8 @@ export const CANVAS_THRESHOLD = 800;
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 
 // Кэш SVG-иконок пожарного крана (красный = закрыт, синий = открыт)
-const FIRE_CRANE_RED_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e4d27aad-5c99-48d3-b1d6-60ae301a7061.svg";
-const FIRE_CRANE_BLUE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/032c5f87-d52c-4dac-89d9-8e96cca5c424.svg";
+const FIRE_CRANE_RED_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/28ea1d46-e9bf-4ca3-bdb2-ae11cf9b1e3b.svg";
+const FIRE_CRANE_BLUE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9b358780-445c-487f-90d2-0b86b4c3c6fb.svg";
 let fireCraneRedImg: HTMLImageElement | null = null;
 let fireCraneRedLoaded = false;
 let fireCraneBlueImg: HTMLImageElement | null = null;
@@ -837,7 +837,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
       if (fireType === "reservoir" && sc > 0.025) {
-        const IS = Math.min(24, Math.max(4, baseNodeR * 2.5));
+        const IS = Math.max(4, baseNodeR * 2.5);
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hw = IS * 0.8, hh = IS * 0.6;
@@ -924,7 +924,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
       // ─── Иконка СОЕДИНЕНИЯ ТРУБ ───────────────────────────────
       if (fireType === "junction" && sc > 0.025) {
-        const IS = Math.min(12, Math.max(2, baseNodeR * 1.8));
+        const IS = Math.max(2, baseNodeR * 1.8);
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         ctx.beginPath(); ctx.arc(ix, iy, IS, 0, Math.PI * 2);

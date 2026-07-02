@@ -3807,8 +3807,8 @@ export default function TopoCanvas(props: Props) {
                 const sz = IS * 2.2;
                 const aulaR = cr + earR + 2;
                 const svgUrl = hydrantOpen
-                  ? "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/032c5f87-d52c-4dac-89d9-8e96cca5c424.svg"
-                  : "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e4d27aad-5c99-48d3-b1d6-60ae301a7061.svg";
+                  ? "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9b358780-445c-487f-90d2-0b86b4c3c6fb.svg"
+                  : "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/28ea1d46-e9bf-4ca3-bdb2-ae11cf9b1e3b.svg";
                 return (
                   <g>
                     <image
@@ -3847,7 +3847,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Иконка СОЕДИНЕНИЯ ТРУБ (маленький кружок с точкой) ── */}
               {fireType === "junction" && view.scale > 0.025 && (() => {
-                const jr = Math.min(7, Math.max(4, 5 + (view.scale - 0.4) * 4));
+                const jr = Math.max(2, baseNodeR * 1.8);
                 return (
                   <g>
                     <circle r={jr} fill="white" stroke="#7c3aed" strokeWidth={Math.max(1, jr * 0.25)} />
