@@ -217,6 +217,19 @@ public partial class MainWindow : Window
             case "install-update":
                 _ = HandleInstallUpdate();
                 break;
+            case "win-minimize":
+                Dispatcher.Invoke(() => WindowState = WindowState.Minimized);
+                break;
+            case "win-maximize":
+                Dispatcher.Invoke(() => WindowState = WindowState == WindowState.Maximized
+                    ? WindowState.Normal : WindowState.Maximized);
+                break;
+            case "win-close":
+                Dispatcher.Invoke(() => Close());
+                break;
+            case "win-drag":
+                Dispatcher.Invoke(() => DragMove());
+                break;
         }
     }
 

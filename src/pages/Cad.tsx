@@ -2776,9 +2776,16 @@ export default function CadPage() {
       style={{ background: "#f0f0f0", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "#1f1f1f", height: "100dvh" }}>
 
       {/* ═══ TITLE BAR ════════════════════════════════════════════════════ */}
-      <div className="h-7 flex items-center justify-between px-2 select-none"
-        style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}>
-        <div className="flex items-center gap-2">
+      <div className="h-7 flex items-center select-none"
+        style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}
+        onMouseDown={e => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          window.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-drag" }));
+        }}
+        onDoubleClick={() => window.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-maximize" }))}>
+
+        {/* Иконка + название — слева */}
+        <div className="flex items-center gap-1.5 px-2 shrink-0">
           <button
             type="button"
             onClick={() => setShowAbout(true)}
@@ -2787,13 +2794,43 @@ export default function CadPage() {
             style={{ lineHeight: 0 }}>
             <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/e6a37e59-abfb-4f45-a7d8-89802209b5f4.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           </button>
-          <span className="text-xs font-medium">ПВ-Система — {projectFileName}{isDirty ? " *" : ""}</span>
+          <span className="text-xs font-medium text-gray-700">ПВ-Система</span>
+          {projectFileName && (
+            <>
+              <span className="text-xs text-gray-400">—</span>
+              <span className="text-xs font-semibold" style={{ color: "#1a3a6b" }}>
+                {projectFileName}{isDirty ? " *" : ""}
+              </span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-1">
-          <button className="w-7 h-5 hover:bg-black/10 flex items-center justify-center text-xs">—</button>
-          <button className="w-7 h-5 hover:bg-black/10 flex items-center justify-center text-xs">▢</button>
-          <button className="w-7 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs"
-            onClick={() => { if (isDirty) { setShowCloseConfirm(true); } else { window.close(); } }}>✕</button>
+
+        {/* Растяжка — drag-зона по центру */}
+        <div className="flex-1 h-full" />
+
+        {/* Кнопки управления окном — справа */}
+        <div className="flex items-center h-full shrink-0">
+          <button
+            className="w-10 h-full hover:bg-black/10 flex items-center justify-center text-[11px] text-gray-600 transition-colors"
+            title="Свернуть"
+            onClick={() => window.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-minimize" }))}>
+            ─
+          </button>
+          <button
+            className="w-10 h-full hover:bg-black/10 flex items-center justify-center text-[11px] text-gray-600 transition-colors"
+            title="Развернуть / восстановить"
+            onClick={() => window.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-maximize" }))}>
+            ▢
+          </button>
+          <button
+            className="w-10 h-full hover:bg-red-500 hover:text-white flex items-center justify-center text-[11px] text-gray-600 transition-colors"
+            title="Закрыть"
+            onClick={() => {
+              if (isDirty) { setShowCloseConfirm(true); }
+              else { window.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close" })); }
+            }}>
+            ✕
+          </button>
         </div>
       </div>
 

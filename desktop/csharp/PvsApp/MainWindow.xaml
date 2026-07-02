@@ -5,7 +5,17 @@
         Title="ПВ-Система"
         Width="1400" Height="900"
         MinWidth="1024" MinHeight="700"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        ResizeMode="CanResize">
+
+  <WindowChrome.WindowChrome>
+    <WindowChrome CaptionHeight="0"
+                  ResizeBorderThickness="5"
+                  GlassFrameThickness="0"
+                  UseAeroCaptionButtons="False"/>
+  </WindowChrome.WindowChrome>
 
   <Grid>
     <!-- Splash / загрузка -->
