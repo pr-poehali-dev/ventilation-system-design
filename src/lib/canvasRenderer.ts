@@ -865,23 +865,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         const img = getFireCraneImg();
         if (fireCraneLoaded) {
           const sz = IS * 2.2;
-          const aulaR = cr + earR + 2;
-          // Синяя аура под PNG при открытом кране
+          // Перекрашиваем PNG в синий через ctx.filter при открытом кране
           if (hydrantOpen) {
-            ctx.globalAlpha = 0.18;
-            ctx.fillStyle = "#1d4ed8";
-            ctx.beginPath(); ctx.arc(ix, iy, aulaR + 3, 0, Math.PI * 2); ctx.fill();
-            ctx.globalAlpha = 1;
+            ctx.filter = "invert(1) sepia(1) saturate(5) hue-rotate(190deg)";
           }
           ctx.drawImage(img, ix - sz / 2, iy - sz / 2, sz, sz);
-          // Синее кольцо ПОВЕРХ PNG при открытом кране
-          if (hydrantOpen) {
-            ctx.strokeStyle = "#1d4ed8";
-            ctx.lineWidth = Math.max(1.5, IS * 0.12);
-            ctx.globalAlpha = 0.85;
-            ctx.beginPath(); ctx.arc(ix, iy, aulaR, 0, Math.PI * 2); ctx.stroke();
-            ctx.globalAlpha = 1;
-          }
+          ctx.filter = "none";
         } else {
           // Фолбэк — простой красный кружок пока PNG не загрузился
           const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";

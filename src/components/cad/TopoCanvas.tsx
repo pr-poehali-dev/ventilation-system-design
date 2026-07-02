@@ -3806,20 +3806,14 @@ export default function TopoCanvas(props: Props) {
                 const earR = cr * 0.55;
                 const sz = IS * 2.2;
                 const aulaR = cr + earR + 2;
+                // CSS filter: красный → синий (invert + hue-rotate + saturate)
+                const blueFilter = "invert(1) sepia(1) saturate(5) hue-rotate(190deg)";
                 return (
                   <g>
-                    {/* Синяя аура под PNG при открытом кране */}
-                    {hydrantOpen && (
-                      <circle cx={0} cy={0} r={aulaR + 3} fill="#1d4ed8" opacity={0.18} />
-                    )}
                     <image
                       href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/06decf73-a504-4495-86ce-e150bdd97a20.png"
-                      x={-sz / 2} y={-sz / 2} width={sz} height={sz} />
-                    {/* Синее кольцо ПОВЕРХ PNG при открытом кране */}
-                    {hydrantOpen && (
-                      <circle cx={0} cy={0} r={aulaR} fill="none"
-                        stroke="#1d4ed8" strokeWidth={Math.max(1.5, IS * 0.12)} opacity={0.85} />
-                    )}
+                      x={-sz / 2} y={-sz / 2} width={sz} height={sz}
+                      style={hydrantOpen ? { filter: blueFilter } : undefined} />
                     {/* Кольцо выделения */}
                     {isSel && <circle r={aulaR + 4} fill="none"
                       stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
