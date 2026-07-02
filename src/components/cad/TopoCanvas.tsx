@@ -3799,26 +3799,21 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* ── Иконка ПОЖАРНОГО КРАНА ──
-                   Закрыт → красный контур, открыт → синяя заливка */}
+              {/* ── Иконка ПОЖАРНОГО КРАНА (PNG) ── */}
               {fireType === "consumer" && view.scale > 0.025 && (() => {
                 const hydrantOpen = node.fireHydrantOpen ?? false;
-                const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";
-                const fillColor = hydrantOpen ? "#bfdbfe" : "white";
                 const cr = IS * 0.55;
-                const lw = Math.max(1.2, IS * 0.10);
                 const earR = cr * 0.55;
+                const sz = IS * 2.2;
                 return (
                   <g>
-                    {/* Левое ухо */}
-                    <circle cx={-cr * 1.1} cy={0} r={earR}
-                      fill={fillColor} stroke={hydrantColor} strokeWidth={lw} />
-                    {/* Правое ухо */}
-                    <circle cx={cr * 1.1} cy={0} r={earR}
-                      fill={fillColor} stroke={hydrantColor} strokeWidth={lw} />
-                    {/* Основной кружок поверх ушек */}
-                    <circle cx={0} cy={0} r={cr}
-                      fill={fillColor} stroke={hydrantColor} strokeWidth={lw} />
+                    {/* Синяя подсветка при открытом кране */}
+                    {hydrantOpen && (
+                      <circle cx={0} cy={0} r={cr + earR} fill="#bfdbfe" opacity={0.6} />
+                    )}
+                    <image
+                      href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/06decf73-a504-4495-86ce-e150bdd97a20.png"
+                      x={-sz / 2} y={-sz / 2} width={sz} height={sz} />
                     {/* Кольцо выделения */}
                     {isSel && <circle r={cr + earR + 3} fill="none"
                       stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}

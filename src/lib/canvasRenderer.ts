@@ -11,6 +11,19 @@ export const CANVAS_THRESHOLD = 800;
 
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 
+// Кэш PNG-иконки пожарного крана
+const FIRE_CRANE_PNG = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/06decf73-a504-4495-86ce-e150bdd97a20.png";
+let fireCraneImg: HTMLImageElement | null = null;
+let fireCraneLoaded = false;
+function getFireCraneImg(): HTMLImageElement {
+  if (!fireCraneImg) {
+    fireCraneImg = new Image();
+    fireCraneImg.onload = () => { fireCraneLoaded = true; };
+    fireCraneImg.src = FIRE_CRANE_PNG;
+  }
+  return fireCraneImg;
+}
+
 
 
 export interface ProjNode {
@@ -841,29 +854,33 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       // ─── Иконка ПОЖАРНОГО КРАНА ───────────────────────────────
-      // Закрыт → красный, открыт → синий с заливкой
       if (fireType === "consumer" && sc > 0.025) {
         const IS = Math.min(24, Math.max(4, baseNodeR * 2.5));
         const ix = pn.sx, iy = pn.sy;
         ctx.save();
         const hydrantOpen = n.fireHydrantOpen ?? false;
-        const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";
-        const fillColor = hydrantOpen ? "#bfdbfe" : "white";
         const cr = IS * 0.55;
         const earR = cr * 0.55;
-        const lw = Math.max(1.2, IS * 0.10);
-        // Левое ухо
-        ctx.beginPath(); ctx.arc(ix - cr * 1.1, iy, earR, 0, Math.PI * 2);
-        ctx.fillStyle = fillColor; ctx.strokeStyle = hydrantColor; ctx.lineWidth = lw;
-        ctx.fill(); ctx.stroke();
-        // Правое ухо
-        ctx.beginPath(); ctx.arc(ix + cr * 1.1, iy, earR, 0, Math.PI * 2);
-        ctx.fillStyle = fillColor; ctx.strokeStyle = hydrantColor; ctx.lineWidth = lw;
-        ctx.fill(); ctx.stroke();
-        // Основной кружок
-        ctx.beginPath(); ctx.arc(ix, iy, cr, 0, Math.PI * 2);
-        ctx.fillStyle = fillColor; ctx.strokeStyle = hydrantColor; ctx.lineWidth = lw;
-        ctx.fill(); ctx.stroke();
+        // PNG-иконка пожарного крана
+        const img = getFireCraneImg();
+        if (fireCraneLoaded) {
+          // При открытом кране — синяя тонировка через globalCompositeOperation
+          if (hydrantOpen) {
+            ctx.globalAlpha = 0.35;
+            ctx.fillStyle = "#bfdbfe";
+            ctx.beginPath(); ctx.arc(ix, iy, cr + earR, 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = 1;
+          }
+          const sz = IS * 2.2;
+          ctx.drawImage(img, ix - sz / 2, iy - sz / 2, sz, sz);
+        } else {
+          // Фолбэк — простой красный кружок пока PNG не загрузился
+          const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";
+          ctx.beginPath(); ctx.arc(ix, iy, cr, 0, Math.PI * 2);
+          ctx.fillStyle = "white"; ctx.strokeStyle = hydrantColor;
+          ctx.lineWidth = Math.max(1.2, IS * 0.10);
+          ctx.fill(); ctx.stroke();
+        }
         if (isSel) {
           ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 2]);
