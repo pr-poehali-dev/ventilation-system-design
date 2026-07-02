@@ -3784,7 +3784,7 @@ export default function CadPage() {
               className="flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] disabled:opacity-40"
               style={{ width: 52, height: 60, background: "#d97706", color: "white", borderColor: "#b45309", cursor: "pointer", flexShrink: 0 }}
               title="Расчёт параметров воздушной ударной волны">
-              <Icon name="Zap" size={22} style={{ color: "white" }} />
+              <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f151acd7-084c-42cf-a1a8-86296bced0c9.png" alt="Расчёт взрыва" style={{ width: 22, height: 22, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
               <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2 }}><div>Расчёт</div><div>взрыва</div></div>
             </button>
             <RibbonBigBtn
