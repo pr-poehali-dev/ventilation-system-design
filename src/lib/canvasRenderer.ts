@@ -874,10 +874,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         const cr = IS * 0.55;
         const earR = cr * 0.55;
         // SVG-иконка пожарного крана (красный/синий)
+        // viewBox SVG = 21000×29700 (A4 portrait), соотношение сторон ~1:1.4143
         const { img, loaded } = getFireCraneImg(hydrantOpen);
         if (loaded) {
           const sz = IS * 2.2;
-          ctx.drawImage(img, ix - sz / 2, iy - sz / 2, sz, sz);
+          const svgAspect = 21000 / 29700; // ширина / высота
+          const drawH = sz;
+          const drawW = sz * svgAspect;
+          ctx.drawImage(img, ix - drawW / 2, iy - drawH / 2, drawW, drawH);
         } else {
           // Фолбэк — простой кружок пока SVG не загрузился
           const hydrantColor = hydrantOpen ? "#1d4ed8" : "#dc2626";
