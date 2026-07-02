@@ -3815,9 +3815,13 @@ export default function TopoCanvas(props: Props) {
                     <image
                       href={svgUrl}
                       x={-drawW / 2} y={-drawH / 2} width={drawW} height={drawH} />
-                    {/* Кольцо выделения — эллипс по реальным размерам крана */}
-                    {isSel && <ellipse rx={drawW / 2 + 3} ry={drawH / 2 + 3} fill="none"
-                      stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
+                    {/* Кольцо выделения — круг по краям выступов крана.
+                        Центр символа смещён по Y: (16500/29700 - 0.5)*drawH.
+                        Радиус выступов: (9125/21000)*drawW */}
+                    {isSel && <circle
+                      cx={0} cy={(16500 / 29700 - 0.5) * drawH}
+                      r={(9125 / 21000) * drawW + 3}
+                      fill="none" stroke={ringColor} strokeWidth="1.5" strokeDasharray="3 2" />}
                   </g>
                 );
               })()}

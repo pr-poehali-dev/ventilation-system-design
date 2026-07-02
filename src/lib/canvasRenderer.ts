@@ -893,9 +893,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (isSel) {
           ctx.strokeStyle = ringColor; ctx.lineWidth = 1.5;
           ctx.setLineDash([3, 2]);
-          // Эллипс охватывает реальные размеры крана с отступом 3px
+          // Круглое кольцо по краям выступов крана.
+          // Символ расположен в центре A4: центр ~(10500, 16500) в viewBox 21000×29700.
+          // Радиус выступов ~9125 по X → нормировано: 9125/21000 ≈ 0.4345 от drawW.
+          // Смещение центра символа по Y: (16500/29700 - 0.5)*drawH ≈ +0.0556*drawH.
+          const symCY = iy + (16500 / 29700 - 0.5) * drawH;
+          const symR = (9125 / 21000) * drawW + 3;
           ctx.beginPath();
-          ctx.ellipse(ix, iy, drawW / 2 + 3, drawH / 2 + 3, 0, 0, Math.PI * 2);
+          ctx.arc(ix, symCY, symR, 0, Math.PI * 2);
           ctx.stroke();
           ctx.setLineDash([]);
         }
