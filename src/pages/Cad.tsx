@@ -201,17 +201,28 @@ export default function CadPage() {
   useEffect(() => {
     const hasWater = branches.some(b => b.hasWaterPipe);
     if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
-    fetch(WATER_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nodes, branches }),
-    }).then(r => r.json()).then(data => {
-      const nr = new Map<string, WaterNodeResult>();
-      const br = new Map<string, WaterBranchResult>();
-      (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
-      (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
-      setWaterNetwork({ nodeResults: nr, branchResults: br });
-    }).catch(() => {});
+    // Дебаунс 400мс — при больших схемах (Canvas >800 ветвей) не спамим запросами
+    const tid = setTimeout(() => {
+      // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload
+      const waterBranches = branches.filter(b => b.hasWaterPipe);
+      const waterNodeIds = new Set<string>();
+      waterBranches.forEach(b => { waterNodeIds.add(b.fromId); waterNodeIds.add(b.toId); });
+      // Также добавляем узлы с fireNodeType (резервуары и потребители)
+      nodes.forEach(n => { if ((n.fireNodeType ?? "none") !== "none") waterNodeIds.add(n.id); });
+      const waterNodes = nodes.filter(n => waterNodeIds.has(n.id));
+      fetch(WATER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes: waterNodes, branches: waterBranches }),
+      }).then(r => r.json()).then(data => {
+        const nr = new Map<string, WaterNodeResult>();
+        const br = new Map<string, WaterBranchResult>();
+        (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
+        (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
+        setWaterNetwork({ nodeResults: nr, branchResults: br });
+      }).catch((err) => { console.error("[water-hydraulics] fetch error:", err); });
+    }, 400);
+    return () => clearTimeout(tid);
   }, [nodes, branches]);
 
   // Запоминаем последнюю вкладку отдельно для узлов и ветвей
