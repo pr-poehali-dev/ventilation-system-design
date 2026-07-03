@@ -258,7 +258,9 @@ export default function Admin() {
     onProgress: (p: number) => void,
     headers: Record<string, string>,
   ) => {
-    const CHUNK_SIZE = 4 * 1024 * 1024; // 4 МБ — хорошо вписывается в лимит функции
+    // S3 multipart требует минимум 5 МБ на часть (кроме последней).
+    // Берём 5 МБ ровно: непоследние части валидны, base64 (~6.7 МБ) вписывается в лимит функции.
+    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 МБ — минимум для S3 multipart
 
     // Шаг 1: начать multipart upload
     onProgress(3);
@@ -275,31 +277,66 @@ export default function Admin() {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
     const parts: { part_number: number; etag: string }[] = [];
 
+    const abortUpload = async () => {
+      await fetch(VERSION_URL, { method: "POST", headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ action: "upload_abort", key, upload_id }) }).catch(() => {});
+    };
+
+    // Флаг: используем прямую загрузку в S3 (presigned URL) — минует лимит функции.
+    // Если S3 недоступен из браузера (CORS) на первом чанке — переключаемся на base64.
+    let useDirect = true;
+
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
       const slice = file.slice(start, start + CHUNK_SIZE);
-      const buf   = await slice.arrayBuffer();
-      // Конвертируем в base64 по частям (без btoa на весь файл)
-      const bytes = new Uint8Array(buf);
-      let binary  = "";
-      for (let j = 0; j < bytes.length; j += 8192) {
-        binary += String.fromCharCode(...bytes.subarray(j, j + 8192));
-      }
-      const chunkB64 = btoa(binary);
+      let etag = "";
 
-      const chunkRes = await fetch(VERSION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify({ action: "upload_chunk", key, upload_id, part_number: i + 1, chunk_base64: chunkB64 }),
-      });
-      const chunkText = await chunkRes.text();
-      if (!chunkRes.ok) {
-        // Отменяем multipart upload при ошибке
-        await fetch(VERSION_URL, { method: "POST", headers: { "Content-Type": "application/json", ...headers },
-          body: JSON.stringify({ action: "upload_abort", key, upload_id }) });
-        throw new Error(chunkText.startsWith("{") ? (JSON.parse(chunkText).error || "Ошибка чанка") : `HTTP ${chunkRes.status}`);
+      if (useDirect) {
+        // 1. Получаем presigned URL для этой части
+        const urlRes = await fetch(VERSION_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify({ action: "get_part_url", key, upload_id, part_number: i + 1 }),
+        });
+        const urlText = await urlRes.text();
+        if (!urlRes.ok) { await abortUpload(); throw new Error(urlText.startsWith("{") ? (JSON.parse(urlText).error || "Ошибка") : `HTTP ${urlRes.status}`); }
+        const { url } = JSON.parse(urlText);
+
+        // 2. PUT чанка напрямую в S3
+        try {
+          const putRes = await fetch(url, { method: "PUT", body: slice });
+          if (!putRes.ok) throw new Error(`S3 ${putRes.status}`);
+          etag = putRes.headers.get("ETag") || putRes.headers.get("etag") || "";
+          if (!etag) throw new Error("no-etag");
+        } catch {
+          // CORS/сеть — на первом чанке переключаемся на base64-режим и повторяем
+          if (i === 0) { useDirect = false; }
+          else { await abortUpload(); throw new Error("Ошибка загрузки в хранилище"); }
+        }
       }
-      const { etag } = JSON.parse(chunkText);
+
+      if (!useDirect) {
+        // Fallback: base64 через функцию
+        const buf   = await slice.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let binary  = "";
+        for (let j = 0; j < bytes.length; j += 8192) {
+          binary += String.fromCharCode(...bytes.subarray(j, j + 8192));
+        }
+        const chunkB64 = btoa(binary);
+        const chunkRes = await fetch(VERSION_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify({ action: "upload_chunk", key, upload_id, part_number: i + 1, chunk_base64: chunkB64 }),
+        });
+        const chunkText = await chunkRes.text();
+        if (!chunkRes.ok) {
+          await abortUpload();
+          throw new Error(chunkText.startsWith("{") ? (JSON.parse(chunkText).error || "Ошибка чанка") : `HTTP ${chunkRes.status}`);
+        }
+        etag = JSON.parse(chunkText).etag;
+      }
+
       parts.push({ part_number: i + 1, etag });
       onProgress(5 + Math.round(((i + 1) / totalChunks) * 85));
     }

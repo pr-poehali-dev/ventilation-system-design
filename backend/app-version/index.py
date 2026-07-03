@@ -126,7 +126,25 @@ def handler(event: dict, context) -> dict:
                 "key": key,
             })}
 
-        # ── Загрузить один чанк ───────────────────────────────────────────────
+        # ── Выдать presigned URL для прямой загрузки части в S3 ───────────────
+        # Браузер грузит чанк напрямую в S3 (PUT), минуя лимит тела функции.
+        if action == "get_part_url":
+            key       = body.get("key")
+            upload_id = body.get("upload_id")
+            part_num  = int(body.get("part_number", 1))
+            url = s3.generate_presigned_url(
+                "upload_part",
+                Params={
+                    "Bucket": BUCKET,
+                    "Key": key,
+                    "UploadId": upload_id,
+                    "PartNumber": part_num,
+                },
+                ExpiresIn=3600,
+            )
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"url": url})}
+
+        # ── Загрузить один чанк (fallback: base64 через функцию) ──────────────
         if action == "upload_chunk":
             key       = body.get("key")
             upload_id = body.get("upload_id")
