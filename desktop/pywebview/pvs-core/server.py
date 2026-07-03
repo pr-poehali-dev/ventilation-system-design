@@ -162,7 +162,8 @@ def api_license():
     if request.method == "OPTIONS":
         return handle_options()
     import urllib.request
-    CLOUD_LICENSE_URL = "https://functions.poehali.dev/a1965362-29d6-40c8-bdb6-48494e8a7db7"
+    import urllib.error
+    CLOUD_LICENSE_URL = "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023"
     body_bytes = request.get_data()
     req = urllib.request.Request(
         CLOUD_LICENSE_URL,
@@ -174,6 +175,14 @@ def api_license():
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())
             return cors_response(data)
+    except urllib.error.HTTPError as e:
+        # Облако вернуло ошибку (например неверный ключ) — пробрасываем
+        # реальный статус и тело, чтобы интерфейс показал понятную причину.
+        try:
+            data = json.loads(e.read().decode())
+        except Exception:
+            data = {"error": "activation_failed"}
+        return cors_response(data, e.code)
     except Exception as e:
         return cors_response({"error": str(e), "offline": True}, 503)
 
