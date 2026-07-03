@@ -22,7 +22,10 @@ export interface BuildSvgOpts {
 
 export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, schemaSymbols = [] }: BuildSvgOpts): string {
   const inset = Math.max(4, Math.min(rw, rh) * 0.015);
-  const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
+  // Размер заголовка пропорционален формату листа (как штамп/Утв), а не rh.
+  const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
+  const _paperWmmT = (pl.orientation ?? "landscape") === "landscape" ? Math.max(_mmT.w, _mmT.h) : Math.min(_mmT.w, _mmT.h);
+  const titleFontSize = Math.max(6, (rw / _paperWmmT) * 5.5);
   let body = "";
 
   // Рамки (без белой подложки — схема видна из canvas под SVG)

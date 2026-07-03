@@ -1753,8 +1753,14 @@ export default function TopoCanvas(props: Props) {
       rh = Math.max(pBL.sy, pBR.sy) - ry;
       rw = Math.max(rw, 40); rh = Math.max(rh, 40);
     }
+    // Единый масштаб «пикселей на 1 мм листа» — фиксирует размеры текста
+    // пропорционально формату листа (A3/A4…), а не экранной высоте рамки rh.
+    // rw соответствует ширине листа в мм → шрифт N*pxPerMm мм стабилен как на печати.
+    const mmW = ori === "landscape" ? Math.max(mm.w, mm.h) : Math.min(mm.w, mm.h);
+    const pxPerMm = rw / mmW;
     const inset = Math.max(4, Math.min(rw, rh) * 0.015);
-    const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
+    // Заголовок: фиксированные ~5.5 мм листа (пропорционально формату)
+    const titleFontSize = Math.max(6, pxPerMm * 5.5);
 
     return (
       <g key={`printlayer-${h.id}`} data-printlayer={h.id}>
