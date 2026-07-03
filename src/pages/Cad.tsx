@@ -7363,6 +7363,40 @@ export default function CadPage() {
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
+            {/* ── Пределы масштабов (фиксированный размер объектов) ── */}
+            <label
+              className="flex items-center gap-1.5 cursor-pointer select-none h-6 px-2 rounded text-[11px]"
+              style={{
+                background: scaleLimitsEnabled ? "#eff6ff" : "white",
+                color: scaleLimitsEnabled ? "#1d4ed8" : "#374151",
+                border: "1px solid " + (scaleLimitsEnabled ? "#93c5fd" : "#d0d0d0"),
+                fontWeight: scaleLimitsEnabled ? 600 : 400,
+              }}
+              title={scaleLimitsEnabled
+                ? "Фиксированный размер объектов ВКЛ — ветви и символы не увеличиваются при зуме. Нажмите для отключения"
+                : "Фиксированный размер объектов ВЫКЛ — при зуме всё масштабируется. Нажмите для включения"}>
+              <input
+                type="checkbox"
+                checked={scaleLimitsEnabled}
+                onChange={e => setScaleLimitsEnabled(e.target.checked)}
+                style={{ width: 12, height: 12, accentColor: "#2563eb", cursor: "pointer" }}
+              />
+              <Icon name="ZoomIn" size={11} /> Масштаб
+            </label>
+            <button
+              onClick={() => setScaleSettingsOpen(true)}
+              className="h-6 px-2 flex items-center rounded text-[11px]"
+              style={{
+                background: "white",
+                color: "#374151",
+                border: "1px solid #d0d0d0",
+              }}
+              title="Настройки пределов масштабирования">
+              <Icon name="Settings2" size={11} />
+            </button>
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+
             {vcError && (
               <span className="text-[10px] text-red-600 max-w-[160px] truncate" title={vcError}>
                 ⚠ {vcError}
