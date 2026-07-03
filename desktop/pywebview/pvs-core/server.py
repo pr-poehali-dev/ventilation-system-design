@@ -6,6 +6,7 @@
 import json
 import os
 import sys
+import importlib.util
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -16,6 +17,72 @@ def resource(path):
     """Путь к ресурсам внутри .exe (PyInstaller _MEIPASS) или рядом с файлом."""
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, path)
+
+
+# ─── Динамическая загрузка backend-функций (airflow, rescue, hydraulics, svg-to-pdf) ──
+# Реальные функции лежат рядом в папке backend_functions/<name>/index.py и содержат
+# handler(event, context) -> {statusCode, body}. Загружаем handler один раз и кэшируем.
+_HANDLER_CACHE = {}
+
+
+def _load_backend_handler(name: str):
+    """Загружает handler(event, context) из backend_functions/<name>/index.py."""
+    if name in _HANDLER_CACHE:
+        return _HANDLER_CACHE[name]
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    meipass = getattr(sys, "_MEIPASS", None)
+    # Ищем backend_functions рядом с server.py и во всех вероятных местах bundle
+    candidates = [
+        os.path.join(script_dir, "backend_functions", name, "index.py"),
+    ]
+    if meipass:
+        candidates.append(os.path.join(meipass, "pvs-core", "backend_functions", name, "index.py"))
+        candidates.append(os.path.join(meipass, "backend_functions", name, "index.py"))
+
+    path = next((c for c in candidates if os.path.exists(c)), None)
+    if not path:
+        _HANDLER_CACHE[name] = None
+        return None
+
+    spec = importlib.util.spec_from_file_location(f"bf_{name}", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    handler = getattr(mod, "handler", None)
+    _HANDLER_CACHE[name] = handler
+    return handler
+
+
+def call_backend(name: str):
+    """Вызывает backend-функцию как в облаке и возвращает Flask-ответ.
+
+    Оборачивает тело запроса в event {httpMethod, body}, вызывает handler,
+    распаковывает {statusCode, body} в «сырой» JSON — именно его ждёт фронт.
+    """
+    handler = _load_backend_handler(name)
+    if handler is None:
+        return cors_response({"error": f"{name} модуль не найден"}, 500)
+
+    event = {
+        "httpMethod": request.method,
+        "body": request.get_data(as_text=True) or "",
+        "headers": dict(request.headers),
+        "queryStringParameters": dict(request.args),
+        "isBase64Encoded": False,
+    }
+    try:
+        result = handler(event, None)
+    except Exception as e:
+        import traceback
+        return cors_response({"error": str(e), "trace": traceback.format_exc()}, 500)
+
+    status = result.get("statusCode", 200)
+    raw_body = result.get("body", "")
+    try:
+        data = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+    except Exception:
+        data = {"raw": raw_body}
+    return cors_response(data, status)
 
 
 def _find_dist():
@@ -105,13 +172,7 @@ def api_aerodynamics():
 def api_airflow():
     if request.method == "OPTIONS":
         return handle_options()
-    try:
-        from backend_airflow import airflow_handler
-        body = request.get_json(force=True, silent=True) or {}
-        result = airflow_handler(body)
-        return cors_response(result)
-    except ImportError:
-        return cors_response({"error": "airflow модуль не найден"}, 500)
+    return call_backend("airflow")
 
 
 # ─── Горноспасатели ───────────────────────────────────────────────────────────
@@ -120,13 +181,7 @@ def api_airflow():
 def api_rescue():
     if request.method == "OPTIONS":
         return handle_options()
-    try:
-        from backend_rescue import rescue_handler
-        body = request.get_json(force=True, silent=True) or {}
-        result = rescue_handler(body)
-        return cors_response(result)
-    except ImportError:
-        return cors_response({"error": "rescue модуль не найден"}, 500)
+    return call_backend("rescue-calculator")
 
 
 # ─── Взрывы ───────────────────────────────────────────────────────────────────
@@ -146,13 +201,16 @@ def api_explosion():
 def api_water():
     if request.method == "OPTIONS":
         return handle_options()
-    try:
-        from backend_hydraulics import hydraulics_handler
-        body = request.get_json(force=True, silent=True) or {}
-        result = hydraulics_handler(body)
-        return cors_response(result)
-    except ImportError:
-        return cors_response({"error": "hydraulics модуль не найден"}, 500)
+    return call_backend("water-hydraulics")
+
+
+# ─── SVG → векторный PDF (экспорт PDF+) ──────────────────────────────────────
+
+@app.route("/api/svg-to-pdf", methods=["POST", "OPTIONS"])
+def api_svg_to_pdf():
+    if request.method == "OPTIONS":
+        return handle_options()
+    return call_backend("svg-to-pdf")
 
 
 # ─── Лицензия (проксируем в облако) ──────────────────────────────────────────

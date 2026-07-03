@@ -54,11 +54,23 @@ echo.
 REM ---------- Шаг 2: расчётное ядро ----------
 echo [2/5] Сборка расчётного ядра server.exe...
 cd /d "%CS_DIR%"
-call pip install pyinstaller flask numpy || goto :fail
+
+echo     Копирую backend-функции в ядро (airflow, rescue, hydraulics, svg-to-pdf)...
+set "BF_DST=%CORE_DIR%\backend_functions"
+if exist "%BF_DST%" rmdir /S /Q "%BF_DST%"
+for %%F in (airflow rescue-calculator water-hydraulics svg-to-pdf explosion-calculator aerodynamics) do (
+    if exist "%ROOT%\backend\%%F\index.py" (
+        mkdir "%BF_DST%\%%F" 2>nul
+        copy /Y "%ROOT%\backend\%%F\index.py" "%BF_DST%\%%F\index.py" >nul
+    )
+)
+
+call pip install pyinstaller flask numpy cairosvg || goto :fail
 call pyinstaller --onefile --noconsole --name "server" ^
   --add-data "..\pywebview\pvs-core;pvs-core" ^
   --hidden-import flask ^
   --hidden-import numpy ^
+  --hidden-import cairosvg ^
   --distpath "%CS_DIR%\dist" ^
   --workpath "%CS_DIR%\build" ^
   --specpath "%CS_DIR%" ^

@@ -94,15 +94,31 @@ xcopy /E /I /Y dist-desktop desktop\pywebview\pvs-core\dist
 
 ## Шаг 2 — Собрать расчётное ядро server.exe (Python)
 
+Сначала копируем backend-функции (воздухораспределение, горноспасатели,
+гидравлика, SVG→PDF и др.) в ядро — их использует локальный сервер:
+
+```cmd
+cd C:\PVS
+
+rmdir /S /Q desktop\pywebview\pvs-core\backend_functions
+for %F in (airflow rescue-calculator water-hydraulics svg-to-pdf explosion-calculator aerodynamics) do (
+  mkdir desktop\pywebview\pvs-core\backend_functions\%F 2>nul
+  copy /Y backend\%F\index.py desktop\pywebview\pvs-core\backend_functions\%F\index.py
+)
+```
+
+Теперь собираем ядро (обрати внимание на `cairosvg` — он нужен для PDF+):
+
 ```cmd
 cd C:\PVS\desktop\csharp
 
-pip install pyinstaller flask numpy
+pip install pyinstaller flask numpy cairosvg
 
 pyinstaller --onefile --noconsole --name "server" ^
   --add-data "..\pywebview\pvs-core;pvs-core" ^
   --hidden-import flask ^
   --hidden-import numpy ^
+  --hidden-import cairosvg ^
   server_entry.py
 ```
 
@@ -186,6 +202,8 @@ desktop\csharp\dist\
 | `Unexpected token '<'` при активации | интерфейс собран обычной `npm run build` | пересобрать Шагом 1 (desktop-конфиг) |
 | «Ошибка активации» при верном ключе | старый `server.exe` со старым адресом лицензии | пересобрать ядро (Шаг 2) — адрес лицензии зашит в `server.exe` |
 | «Не удалось запустить расчётный модуль» | нет `server\server.exe` рядом с `PVS.exe` | проверить Шаг 2 |
+| «airflow модуль не найден» | backend-функции не скопированы в ядро | выполнить копирование в начале Шага 2 и пересобрать |
+| «Ошибка векторного PDF» (PDF+) | нет `cairosvg` в ядре | установить `cairosvg` и пересобрать (Шаг 2) |
 | Пустое белое окно | не скопирован `dist` в `pvs-core\dist` | повторить конец Шага 1 |
 | Логотип-«битая картинка» без сети | нормально: оффлайн подставляется запасной значок | это ожидаемо |
 | Иконка окна стандартная | нет `pvs.ico` | выполнить Шаг 3 |
