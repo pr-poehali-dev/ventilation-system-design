@@ -49,6 +49,11 @@ interface Props {
   /** Множитель супер-сэмплинга canvas (обычно = зум предпросмотра),
    *  чтобы схема оставалась чёткой при CSS transform: scale(). */
   superSample?: number;
+  /** Готовая проекция конкретного тайла (листа) в координатах предпросмотра.
+   *  Если передана — компонент использует её напрямую вместо своего fit-to-screen.
+   *  Нужна для многолистовой печати БЕЗ слоя печати: каждый лист показывает
+   *  свою часть единой схемы (offset смещён на col*pageW / row*pageH). */
+  tileView?: { scale: number; offsetX: number; offsetY: number };
 }
 
 // Вычисляет bbox рамки из projNodes — точно как TopoCanvas.renderPrintLayers
@@ -133,6 +138,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   fixedObjectScale = false,
   xyScale,
   superSample = 1,
+  tileView,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -166,6 +172,17 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   const activeView = useMemo((): ProjOptions & { scale: number; offsetX: number; offsetY: number } => {
     if (width <= 0 || height <= 0) {
       return { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
+    }
+
+    // Готовая проекция тайла (многолистовая печать без слоя печати): используем
+    // напрямую, чтобы каждый лист показывал СВОЮ часть единой схемы, а не всю схему.
+    if (tileView) {
+      return {
+        scale: tileView.scale,
+        offsetX: tileView.offsetX,
+        offsetY: tileView.offsetY,
+        azimuth, elevation, zScale,
+      };
     }
 
     const _xySF0 = xyScale ?? 1;
@@ -227,7 +244,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       azimuth, elevation, zScale,
     };
   }, [viewState, canvasSize, width, height, azimuth, elevation, zScale,
-      hasPrintLayer, activePrintLayers, nodes, visibleBranches, xyScale]);
+      hasPrintLayer, activePrintLayers, nodes, visibleBranches, xyScale, tileView]);
 
   const proj = useMemo<ProjOptions>(() => activeView, [activeView]);
 

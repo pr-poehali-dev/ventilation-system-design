@@ -1479,6 +1479,18 @@ body{background:white;font-family:Arial,sans-serif}
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
 
+                // Проекция конкретного листа для предпросмотра БЕЗ слоя печати.
+                // Повторяет логику renderTileToCanvas: смещаем offset на col*pageW /
+                // row*pageH, чтобы каждый лист показывал СВОЮ часть единой схемы.
+                // Коэффициент px@150dpi → предпросмотр = px(1мм) / mmToPx150(1мм).
+                // Поля (margin) добавляем в пикселях предпросмотра, как в печати.
+                const _kPrev = (prevW / paper.w) / (150 / 25.4);
+                const tileView = !hasPrintLayer ? {
+                  scale:   baseView.sc * _kPrev,
+                  offsetX: px(marginLeft) + (baseView.offsetX - tile.col * baseView.pageW) * _kPrev,
+                  offsetY: px(marginTop)  + (baseView.offsetY - tile.row * baseView.pageH) * _kPrev,
+                } : undefined;
+
                 return (
                   <div key={`${tile.col}-${tile.row}`}
                     onContextMenu={e => handleTileContextMenu(e, idx)}
@@ -1525,6 +1537,7 @@ body{background:white;font-family:Arial,sans-serif}
                         fixedObjectScale={fixedObjectScale}
                         xyScale={xyScale}
                         superSample={viewZoom}
+                        tileView={tileView}
                       />
                     </div>
 
