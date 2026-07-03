@@ -593,7 +593,26 @@ export default function PrintDialog({
     pl: NonNullable<Horizon["printLayer"]>,
     pNodes: { sx: number; sy: number; node: TopoNode }[],
     visBranches: TopoBranch[],
+    proj?: ProjOptions,
+    xyScale = 1,
+    zLevel = 0,
   ): { rx: number; ry: number; rw: number; rh: number } | null => {
+    // Ручная рамка (pl.bounds) — проецируем углы тем же project3D, что и рабочая
+    // область: печать/PDF совпадают с настройкой пользователя, в т.ч. в наклонных видах.
+    if (pl.bounds && proj) {
+      const z4 = zLevel * (proj.zScale ?? 1);
+      const b = pl.bounds;
+      const cc = [
+        project3D({ x: b.x1 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
+        project3D({ x: b.x2 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
+        project3D({ x: b.x1 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
+        project3D({ x: b.x2 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
+      ];
+      const bxs = cc.map(p => p.sx), bys = cc.map(p => p.sy);
+      const rx = Math.min(...bxs), ry = Math.min(...bys);
+      const rw = Math.max(...bxs) - rx, rh = Math.max(...bys) - ry;
+      return { rx, ry, rw: Math.max(rw, 40), rh: Math.max(rh, 40) };
+    }
     const visIds = new Set<string>();
     visBranches.forEach(b => { visIds.add(b.fromId); visIds.add(b.toId); });
     const relevant = pNodes.filter(pn => visIds.has(pn.node.id));
@@ -734,8 +753,10 @@ export default function PrintDialog({
         await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
       }
 
-      // Шаг 5: рамка поверх — координаты из новых projNodes (тем же алгоритмом)
-      const frameRect = computeFrameRect(pl, projNodes, visibleBranches);
+      // Шаг 5: рамка поверх — координаты из новых projNodes (тем же алгоритмом).
+      // Передаём проекцию/масштаб/z, чтобы ручная рамка (pl.bounds) совпадала
+      // с рабочей областью в т.ч. в наклонных видах.
+      const frameRect = computeFrameRect(pl, projNodes, visibleBranches, sv, _xySFPL, activePrintHorizon.z ?? 0);
       if (frameRect) {
         await drawPrintLayerFrame(ctx, oc.width, oc.height, pl, frameRect);
       }

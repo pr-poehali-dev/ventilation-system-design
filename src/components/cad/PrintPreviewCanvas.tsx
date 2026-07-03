@@ -53,7 +53,28 @@ function computeFrameRect(
   pl: NonNullable<Horizon["printLayer"]>,
   projNodes: ProjNode[],
   visibleBranches: TopoBranch[],
+  proj?: ProjOptions,
+  xyScale = 1,
+  zLevel = 0,
 ): { rx: number; ry: number; rw: number; rh: number } | null {
+  // Если рамка настроена вручную (pl.bounds) — проецируем её углы ТЕМ ЖЕ project3D,
+  // что и рабочая область (TopoCanvas). Так предпросмотр/PDF совпадают с тем, что
+  // пользователь настроил на схеме, в т.ч. в наклонных видах (ИЗО/Фронт/Профиль).
+  if (pl.bounds && proj) {
+    const z4 = zLevel * (proj.zScale ?? 1);
+    const b = pl.bounds;
+    const c = [
+      project3D({ x: b.x1 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
+      project3D({ x: b.x2 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
+      project3D({ x: b.x1 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
+      project3D({ x: b.x2 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
+    ];
+    const bxs = c.map(p => p.sx), bys = c.map(p => p.sy);
+    const rx = Math.min(...bxs), ry = Math.min(...bys);
+    const rw = Math.max(...bxs) - rx, rh = Math.max(...bys) - ry;
+    return { rx, ry, rw: Math.max(rw, 40), rh: Math.max(rh, 40) };
+  }
+
   const visibleNodeIds = new Set<string>();
   visibleBranches.forEach(b => { visibleNodeIds.add(b.fromId); visibleNodeIds.add(b.toId); });
   const relevant = projNodes.filter(pn => visibleNodeIds.has(pn.node.id));
@@ -161,8 +182,9 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         ...project3D({ x: n.x * _xySF0, y: n.y * _xySF0, z: n.z * zScale }, proj0),
         depth: 0,
       }));
-      const pl = activePrintLayers[0].printLayer!;
-      const rect = computeFrameRect(pl, pNodes0, visibleBranches);
+      const plHorizon = activePrintLayers[0];
+      const pl = plHorizon.printLayer!;
+      const rect = computeFrameRect(pl, pNodes0, visibleBranches, proj0, _xySF0, plHorizon.z ?? 0);
 
       if (!rect || rect.rw <= 0 || rect.rh <= 0) {
         return { scale: sc0, offsetX: ox0, offsetY: oy0, azimuth, elevation, zScale };
