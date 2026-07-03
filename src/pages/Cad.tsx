@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import Icon from "@/components/ui/icon";
 import { useLicenseContext } from "@/context/LicenseContext";
 import LicenseDialog from "@/components/LicenseDialog";
+import AppLogo from "@/components/AppLogo";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
@@ -2855,7 +2856,7 @@ export default function CadPage() {
             title="О программе"
             className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
             style={{ lineHeight: 0 }}>
-            <img src="/icon.svg" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+            <AppLogo className="w-4 h-4 object-contain" />
           </button>
           <span className="text-xs font-medium text-gray-700">ПВ-Система</span>
           {projectFileName && (
@@ -9871,14 +9872,10 @@ export default function CadPage() {
           {/* Контент */}
           <div className="px-6 py-6 flex flex-col items-center text-center"
             style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
-            <img
-              src="/icon.svg"
-              alt="ПВ-Система"
-              className="w-24 h-24 object-contain mb-2"
+            <AppLogo
+              className="w-48 object-contain mb-2"
               style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
-              draggable={false}
             />
-            <div className="text-[20px] font-semibold text-[#0e63b0] tracking-wide mb-1">ПВ-Система</div>
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>

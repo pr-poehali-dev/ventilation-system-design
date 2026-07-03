@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Monitor, Copy, Check } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
+import AppLogo from "@/components/AppLogo";
 
 interface Props {
   onForceDesktop: () => void;
@@ -22,7 +23,7 @@ export default function MobileStub({ onForceDesktop }: Props) {
       style={{ background: "hsl(220, 20%, 8%)", color: "hsl(210, 20%, 90%)" }}>
 
       <div className="mb-8 flex items-center gap-3">
-        <img src="/icon.svg" alt="ПВ-Система" className="w-10 h-10 object-contain" draggable={false} />
+        <AppLogo className="w-10 h-10 object-contain" />
         <span className="text-xl font-semibold" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
           ПВ-Система
         </span>

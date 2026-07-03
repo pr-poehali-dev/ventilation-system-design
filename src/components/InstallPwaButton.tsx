@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
-
-const LOGO = "/icon.svg";
+import AppLogo from "@/components/AppLogo";
 
 export default function InstallPwaButton() {
   const { isInstalled, isInstallable, install } = usePwaInstall();
@@ -41,7 +40,7 @@ export default function InstallPwaButton() {
         animation: "pwaSlideIn 0.4s cubic-bezier(.16,1,.3,1)",
       }}>
       <style>{`@keyframes pwaSlideIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-      <img src={LOGO} alt="ПВ" className="w-10 h-10 flex-shrink-0 rounded-xl" draggable={false} />
+      <AppLogo alt="ПВ" className="w-10 h-10 flex-shrink-0 rounded-xl" />
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-gray-900 text-[13px]">Установить ПВ-Система</div>
         <div className="text-[11px] text-gray-500 leading-snug mt-0.5">Работайте без браузера как обычная программа</div>
