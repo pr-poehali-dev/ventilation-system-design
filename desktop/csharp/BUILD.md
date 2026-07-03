@@ -54,8 +54,13 @@ desktop\csharp\dist\
 cd C:\PVS
 
 npm install
-npx vite build --config vite.config.desktop.ts
+node_modules\.bin\vite build --config vite.config.desktop.ts
 ```
+
+> ⚠️ Собирай именно через `node_modules\.bin\vite` — это локальный vite
+> проекта (специальная сборка rolldown-vite). НЕ используй `npx vite` —
+> он попытается скачать чужую версию vite и спросит подтверждение,
+> сборка получится неправильной.
 
 Результат появится в папке `dist-desktop`. Переносим его в расчётное ядро:
 
