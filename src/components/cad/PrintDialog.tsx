@@ -472,6 +472,29 @@ export default function PrintDialog({
   );
   const hasPrintLayer = activePrintHorizon !== null;
 
+  // ─── Bbox РУЧНОЙ рамки (pl.bounds) в нормальных координатах (scale=1) ──
+  // Проецируем 4 угла рамки тем же способом, что и schemaBbox. Используется
+  // чтобы вписать на лист ровно область рамки, а не bbox всех узлов.
+  const frameBboxNorm = useMemo(() => {
+    const pl = activePrintHorizon?.printLayer;
+    if (!pl?.bounds) return null;
+    const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
+    const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
+      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
+    const z4 = (activePrintHorizon?.z ?? 0) * zScale;
+    const b = pl.bounds;
+    const corners = [
+      project3D({ x: b.x1 * _xySF, y: b.y2 * _xySF, z: z4 }, tmpProj),
+      project3D({ x: b.x2 * _xySF, y: b.y2 * _xySF, z: z4 }, tmpProj),
+      project3D({ x: b.x1 * _xySF, y: b.y1 * _xySF, z: z4 }, tmpProj),
+      project3D({ x: b.x2 * _xySF, y: b.y1 * _xySF, z: z4 }, tmpProj),
+    ];
+    const xs = corners.map(p => p.sx), ys = corners.map(p => p.sy);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    return { minX, minY, w: (maxX - minX) || 1, h: (maxY - minY) || 1 };
+  }, [activePrintHorizon, viewState.azimuth, viewState.elevation, zScale, xyScale]);
+
   // ─── Вычисление базового view для страницы (150dpi) ─────────────────
   // Если слой печати включён — 1 лист, схема вписывается в рамку.
   // userScale = null → fit в 1 страницу; userScale = N → абсолютный px-scale
@@ -491,20 +514,29 @@ export default function PrintDialog({
       const plOri = pl.orientation ?? "landscape";
       const plW = plOri === "landscape" ? plMm.h : plMm.w;
       const plH = plOri === "landscape" ? plMm.w : plMm.h;
-      // Рабочая область рамки в px@150dpi (поля 8% от меньшей стороны)
+      // Рабочая область рамки в px@150dpi (поля 5% от меньшей стороны)
       const padMmPl = Math.min(plW, plH) * 0.05;
       const padPx = padMmPl * DPI / 25.4;
       const frameW = mmToPx(plW) - padPx * 2;
       const frameH = mmToPx(plH) - padPx * 2;
-      // Вписать схему в рамку с отступом
-      const innerPad = Math.min(frameW, frameH) * 0.05;
-      const fitSc = Math.min((frameW - innerPad * 2) / (bw || 1), (frameH - innerPad * 2) / (bh || 1));
+
+      // Если рамка настроена ВРУЧНУЮ (pl.bounds) — вписываем на лист ровно
+      // область рамки (её проекцию), а не bbox всех узлов. Так на печать
+      // попадает именно то, что очерчено рамкой, в т.ч. в наклонных видах.
+      const fitBox = frameBboxNorm ?? { minX, minY, w: bw, h: bh };
+      // При ручной рамке отступа внутри нет (рамка = граница листа с полями),
+      // при авто-вписывании оставляем небольшой внутренний отступ.
+      const innerPad = frameBboxNorm ? 0 : Math.min(frameW, frameH) * 0.05;
+      const fitSc = Math.min(
+        (frameW - innerPad * 2) / (fitBox.w || 1),
+        (frameH - innerPad * 2) / (fitBox.h || 1),
+      );
       const sc = userScale !== null ? fitSc * userScale : fitSc;
-      // Центрировать схему в рамке (рамка = весь лист с полями)
-      const frameOffX = padPx + innerPad + (frameW - innerPad * 2 - bw * sc) / 2;
-      const frameOffY = padPx + innerPad + (frameH - innerPad * 2 - bh * sc) / 2;
-      const defaultOffsetX = frameOffX - minX * sc;
-      const defaultOffsetY = frameOffY - minY * sc;
+      // Центрировать выбранную область (рамку или схему) в рабочей зоне листа
+      const frameOffX = padPx + innerPad + (frameW - innerPad * 2 - fitBox.w * sc) / 2;
+      const frameOffY = padPx + innerPad + (frameH - innerPad * 2 - fitBox.h * sc) / 2;
+      const defaultOffsetX = frameOffX - fitBox.minX * sc;
+      const defaultOffsetY = frameOffY - fitBox.minY * sc;
       const offsetX = userOffsetX ?? defaultOffsetX;
       const offsetY = userOffsetY ?? defaultOffsetY;
       const pageW = mmToPx(paper.w);
@@ -523,7 +555,7 @@ export default function PrintDialog({
     const offsetX = userOffsetX ?? defaultOffsetX;
     const offsetY = userOffsetY ?? defaultOffsetY;
     return { sc, fitSc, offsetX, offsetY, defaultOffsetX, defaultOffsetY, isScene3D, pageW, pageH, horizonMap };
-  }, [schemaBbox, horizons, viewState, zScale, workArea, paper, userScale, userOffsetX, userOffsetY, hasPrintLayer, activePrintHorizon]);
+  }, [schemaBbox, frameBboxNorm, horizons, viewState, zScale, workArea, paper, userScale, userOffsetX, userOffsetY, hasPrintLayer, activePrintHorizon]);
 
   // Синхронизация scaleDisplay с реальным масштабом (только при userScale=null)
   useEffect(() => {
@@ -709,15 +741,33 @@ export default function PrintDialog({
       const plMm2 = PAPER_SIZES[plFmt2] ?? PAPER_SIZES["A3"];
       const plOri2 = pl.orientation ?? "landscape";
       const fAsp = (plOri2 === "landscape" ? plMm2.h : plMm2.w) / (plOri2 === "landscape" ? plMm2.w : plMm2.h);
-      const sw3 = mxSx - mnSx || 1, sh3 = mxSy - mnSy || 1;
-      const pad3 = Math.max(sw3, sh3) * 0.08 + 15;
-      const scx3 = (mnSx + mxSx) / 2, scy3 = (mnSy + mxSy) / 2;
-      let rsw3 = sw3 + pad3 * 2, rsh3 = rsw3 / fAsp;
-      if (rsh3 < sh3 + pad3 * 2) { rsh3 = sh3 + pad3 * 2; rsw3 = rsh3 * fAsp; }
-      rsw3 = Math.max(rsw3, sw3 + pad3 * 2);
-      rsh3 = rsw3 / fAsp;
-      if (rsh3 < sh3 + pad3 * 2) { rsh3 = sh3 + pad3 * 2; rsw3 = rsh3 * fAsp; }
-      const fRx = scx3 - rsw3 / 2, fRy = scy3 - rsh3 / 2;
+      let fRx: number, fRy: number, rsw3: number, rsh3: number;
+      if (pl.bounds) {
+        // Ручная рамка: прямоугольник = проекция её углов через proj0.
+        const z4t = (activePrintHorizon.z ?? 0) * zScale;
+        const bb = pl.bounds;
+        const cc = [
+          project3D({ x: bb.x1 * _xySFTile, y: bb.y2 * _xySFTile, z: z4t }, proj0),
+          project3D({ x: bb.x2 * _xySFTile, y: bb.y2 * _xySFTile, z: z4t }, proj0),
+          project3D({ x: bb.x1 * _xySFTile, y: bb.y1 * _xySFTile, z: z4t }, proj0),
+          project3D({ x: bb.x2 * _xySFTile, y: bb.y1 * _xySFTile, z: z4t }, proj0),
+        ];
+        const cxs = cc.map(p => p.sx), cys = cc.map(p => p.sy);
+        fRx = Math.min(...cxs); fRy = Math.min(...cys);
+        rsw3 = (Math.max(...cxs) - fRx) || 1;
+        rsh3 = (Math.max(...cys) - fRy) || 1;
+      } else {
+        const sw3 = mxSx - mnSx || 1, sh3 = mxSy - mnSy || 1;
+        const pad3 = Math.max(sw3, sh3) * 0.08 + 15;
+        const scx3 = (mnSx + mxSx) / 2, scy3 = (mnSy + mxSy) / 2;
+        let w3 = sw3 + pad3 * 2, h3 = w3 / fAsp;
+        if (h3 < sh3 + pad3 * 2) { h3 = sh3 + pad3 * 2; w3 = h3 * fAsp; }
+        w3 = Math.max(w3, sw3 + pad3 * 2);
+        h3 = w3 / fAsp;
+        if (h3 < sh3 + pad3 * 2) { h3 = sh3 + pad3 * 2; w3 = h3 * fAsp; }
+        rsw3 = w3; rsh3 = h3;
+        fRx = scx3 - rsw3 / 2; fRy = scy3 - rsh3 / 2;
+      }
 
       // Шаг 3: подгоняем view чтобы рамка = весь canvas
       const fitF = Math.min(oc.width / (rsw3 || 1), oc.height / (rsh3 || 1));
