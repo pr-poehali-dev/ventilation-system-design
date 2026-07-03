@@ -8,6 +8,9 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import {
   computeStampBox, buildStampCells, buildStampGridLines, getStampFieldValue,
 } from "@/lib/stampTemplate";
+import {
+  computeApproverBox, buildApproverElements, buildApproverLines, getApproverFieldValue,
+} from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 
 export interface PrintLayerSvgOptions {
@@ -24,28 +27,39 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
   const inset = Math.max(4, Math.min(rw, rh) * 0.015);
   const titleFontSize = Math.max(9, Math.min(18, rh * 0.03));
 
-  // ── Блок УТВЕРЖДАЮ ──────────────────────────────────────────────────────
+  // ── Блок УТВЕРЖДАЮ — фиксированный размер по формату листа ───────────────
   const approverBlock = pl.showApprover ? (() => {
-    const apW = Math.min(rw * 0.28, 220);
-    const apX = rx + rw - inset - apW;
-    const apY = ry + inset + 2;
-    const apFs = Math.max(7, Math.min(13, rh * 0.018));
-    const lw2 = Math.max(0.4, apFs * 0.06);
-    const apCx = apX + apW / 2;
-    let ay = apY + apFs * 1.4;
-    const lineY = (dy: number) => { ay += dy; return ay; };
+    const fmtA = (pl.paperFormat ?? "A3") as PaperFormat;
+    const oriA = pl.orientation ?? "landscape";
+    const mmA = PAPER_SIZES_MM[fmtA];
+    const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
+    const box = computeApproverBox(rx, ry, rw, inset, paperWmmA);
+    const { pxPerMm, w: apW, h: apH, ax, ay } = box;
+    const mx = (m: number) => ax + m * pxPerMm;
+    const my = (m: number) => ay + m * pxPerMm;
+    const baseFs = Math.max(6, pxPerMm * 2.6);
+    const lw2 = Math.max(0.4, pxPerMm * 0.15);
+    const yearNow = String(new Date().getFullYear());
     return (
       <g key="approver-block">
-        <rect x={apX} y={apY} width={apW} height={apFs * 10} fill="white" style={{ pointerEvents: "none" }} />
-        <text x={apCx} y={lineY(0)} textAnchor="middle" fontSize={apFs * 1.1} fontWeight="normal" fontFamily="Arial, sans-serif" fill="#111">УТВЕРЖДАЮ</text>
-        <text x={apCx} y={lineY(apFs * 1.6)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111">{pl.approverTitle || "Должность"}</text>
-        <text x={apCx} y={lineY(apFs * 1.4)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111">{pl.orgName || "Организация"}</text>
-        <line x1={apX + apFs} y1={lineY(apFs * 1.6)} x2={apX + apW - apFs} y2={ay} stroke="#111" strokeWidth={lw2} />
-        <text x={apX + apW - apFs * 0.5} y={lineY(apFs * 1.2)} textAnchor="end" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#1a44b8">{pl.approverName || "И.О. Фамилия"}</text>
-        <line x1={apX} y1={lineY(apFs * 1.4)} x2={apX + apW} y2={ay} stroke="#111" strokeWidth={lw2} />
-        <text x={apX + apFs * 0.3} y={lineY(apFs * 1.2)} textAnchor="start" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111">«{pl.day || "__"}»</text>
-        <text x={apX + apFs * 3.2} y={ay} textAnchor="start" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111">{pl.month || "__________"}</text>
-        <text x={apX + apW - apFs * 0.3} y={ay} textAnchor="end" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111">{pl.year || String(new Date().getFullYear())} г.</text>
+        <rect x={ax} y={ay} width={apW} height={apH} fill="white" style={{ pointerEvents: "none" }} />
+        {buildApproverLines().map((ln, i) => (
+          <line key={`al-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)} stroke="#111" strokeWidth={lw2} />
+        ))}
+        {buildApproverElements().map((el, i) => {
+          const fs = baseFs * (el.fontScale ?? 1);
+          const anchor = el.align === "left" ? "start" : el.align === "right" ? "end" : "middle";
+          const color = el.color ?? "#111";
+          let txt = el.label ?? "";
+          if (el.field) {
+            const v = getApproverFieldValue(pl, el.field);
+            txt = v || (el.field === "year" ? yearNow : "");
+            if (el.field === "year" && txt) txt += " г.";
+          }
+          if (!txt) return null;
+          return <text key={`ap-${i}`} x={mx(el.x)} y={my(el.y)} textAnchor={anchor} dominantBaseline="central"
+            fontSize={fs} fontFamily="Arial, sans-serif" fill={color}>{txt}</text>;
+        })}
       </g>
     );
   })() : null;
