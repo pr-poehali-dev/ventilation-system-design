@@ -46,6 +46,9 @@ interface Props {
   showPositions?: boolean;
   fixedObjectScale?: boolean;
   xyScale?: number;
+  /** Множитель супер-сэмплинга canvas (обычно = зум предпросмотра),
+   *  чтобы схема оставалась чёткой при CSS transform: scale(). */
+  superSample?: number;
 }
 
 // Вычисляет bbox рамки из projNodes — точно как TopoCanvas.renderPrintLayers
@@ -129,6 +132,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   showPositions = true,
   fixedObjectScale = false,
   xyScale,
+  superSample = 1,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -242,13 +246,20 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width  = Math.round(width  * dpr);
-    canvas.height = Math.round(height * dpr);
+    // Супер-сэмплинг: рисуем canvas во внутреннем разрешении, увеличенном на зум
+    // предпросмотра. Родитель растягивает предпросмотр через CSS transform:scale(),
+    // и без этого растровая схема размывалась бы (в отличие от векторных SVG-слоёв).
+    // Квантуем зум до ступеней (1,2,3,4), чтобы не пересоздавать canvas на каждый
+    // мелкий шаг колеса, и ограничиваем произведение dpr*ss.
+    const ss = Math.max(1, Math.min(4, Math.ceil(superSample)));
+    const totalScale = Math.min(dpr * ss, 4);
+    canvas.width  = Math.round(width  * totalScale);
+    canvas.height = Math.round(height * totalScale);
     canvas.style.width  = `${width}px`;
     canvas.style.height = `${height}px`;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.scale(dpr, dpr);
+    ctx.scale(totalScale, totalScale);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
     try {
@@ -276,7 +287,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     }
   }, [nodes, branches, horizons, horizonMap, visibleBranches,
       projNodes, projNodesMap, proj, activeView,
-      is3D, zScale, width, height,
+      is3D, zScale, width, height, superSample,
       branchWidth, branchBorder, thinLines, colorByHorizon,
       flowDisplay, infoConfig, unitsConfig,
       colorMode, posInnerColors, posOuterColors]);

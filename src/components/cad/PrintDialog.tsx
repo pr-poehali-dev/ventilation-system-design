@@ -1524,6 +1524,7 @@ body{background:white;font-family:Arial,sans-serif}
                         showPositions={showPositions}
                         fixedObjectScale={fixedObjectScale}
                         xyScale={xyScale}
+                        superSample={viewZoom}
                       />
                     </div>
 
