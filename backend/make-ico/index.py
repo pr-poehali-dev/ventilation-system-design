@@ -5,21 +5,15 @@ import boto3
 import urllib.request
 from PIL import Image
 
-# Источник по умолчанию — квадратный логотип-иконка ПВ-Система
-DEFAULT_SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/2abde3ca-e06f-44e9-979d-d2719ef91292.svg"
+# Источник по умолчанию — логотип ПВ-Система
+DEFAULT_SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png"
 
 
 def load_source_image(url: str) -> Image.Image:
-    """Скачивает картинку и возвращает RGBA. Поддерживает PNG/JPG и SVG (через cairosvg)."""
+    """Скачивает картинку и возвращает RGBA (PNG/JPG)."""
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         raw = resp.read()
-
-    is_svg = url.lower().endswith(".svg") or raw[:200].lstrip().startswith(b"<")
-    if is_svg:
-        import cairosvg
-        png_bytes = cairosvg.svg2png(bytestring=raw, output_width=1024, output_height=1024)
-        return Image.open(io.BytesIO(png_bytes)).convert("RGBA")
     return Image.open(io.BytesIO(raw)).convert("RGBA")
 
 

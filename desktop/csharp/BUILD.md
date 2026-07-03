@@ -94,23 +94,25 @@ copy dist\server.exe dist\server\server.exe
 
 ---
 
-## Шаг 3 — Иконка окна и панели задач (pvs.ico) — по желанию
+## Шаг 3 — Иконка окна и панели задач (pvs.ico)
 
-Если файла `desktop\csharp\PvsApp\pvs.ico` нет — программа соберётся,
+Готовая иконка из логотипа ПВ-Система уже сгенерирована (размеры
+16/32/48/64/128/256 в одном файле). Скачай её в проект одной командой:
+
+```cmd
+curl -o C:\PVS\desktop\csharp\PvsApp\pvs.ico ^
+  https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico
+```
+
+(или просто открой ссылку в браузере и сохрани файл как
+`desktop\csharp\PvsApp\pvs.ico`)
+
+Ссылка на иконку:
+https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico
+
+`.csproj` подхватит `pvs.ico` автоматически (иконка подключается только
+если файл существует). Если файла нет — программа всё равно соберётся,
 но со стандартной иконкой Windows.
-
-Чтобы поставить свою иконку, сконвертируй логотип `public\icon.svg`
-в многоразмерный `.ico` (16, 32, 48, 256 px):
-
-- Онлайн: https://icoconvert.com или https://convertio.co/ru/svg-ico/
-  (загрузи `public\icon.svg`, выбери размеры 16/32/48/256, скачай `.ico`)
-- Либо через ImageMagick:
-  ```cmd
-  magick public\icon.svg -define icon:auto-resize=256,48,32,16 desktop\csharp\PvsApp\pvs.ico
-  ```
-
-Положи результат как `desktop\csharp\PvsApp\pvs.ico` — сборка подхватит
-его автоматически.
 
 ---
 
