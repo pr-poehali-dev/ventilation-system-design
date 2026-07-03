@@ -2,12 +2,14 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 
@@ -37,6 +39,11 @@ public partial class MainWindow : Window
 
         // Уведомляем JS при изменении состояния окна (развёрнуто / обычное)
         StateChanged += OnWindowStateChanged;
+
+        // Безрамочное окно (WindowStyle=None) при максимизации перекрывает панель
+        // задач и вылезает за экран. Перехватываем WM_GETMINMAXINFO и ограничиваем
+        // размер рабочей областью текущего монитора.
+        SourceInitialized += OnSourceInitialized;
 
         Loaded += async (_, _) =>
         {
@@ -180,67 +187,51 @@ public partial class MainWindow : Window
         WebView.CoreWebView2.WebMessageReceived    += OnWebMessage;
         WebView.CoreWebView2.NavigationCompleted   += OnNavigationCompleted;
 
-        // ── Передаём горячие клавиши в страницу вместо перехвата WPF ──────────
-        // Без этого Ctrl+клик, Delete, S+S (S дважды) не работают в WebView2
-        WebView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
-        WebView.KeyDown += OnWebViewKeyDown;
+        // ── КРИТИЧНО: клавиши доставляем странице НАПРЯМУЮ ────────────────────
+        // Раньше C# перехватывал S/Delete/Ctrl (WebView.KeyDown + e.Handled) и
+        // пересоздавал синтетические KeyboardEvent через JS. Это ломало:
+        //   • S+S (двойное нажатие) — сбивались тайминги между нажатиями;
+        //   • Ctrl+клик (мультивыбор) — реальный keydown 'Control' не доходил
+        //     до страницы, ctrlPressedRef оставался false, e.ctrlKey на мыши тоже;
+        //   • Delete — синтетическое событие не совпадало с реальным.
+        // Включаем нативную доставку клавиш — страница получает их как в браузере.
+        WebView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = true;
+
+        // ── КРИТИЧНО: флаг десктопа + мост окна внедряем ДО загрузки страницы ──
+        // AddScriptToExecuteOnDocumentCreatedAsync выполняется РАНЬШE скриптов React,
+        // поэтому window.__IS_DESKTOP__ и __pvsWin* доступны уже при первом рендере.
+        // Иначе React монтируется раньше бутстрапа, читает __IS_DESKTOP__ === undefined
+        // и уходит в браузерную ветку — кнопки окна и close-диалог не работают.
+        await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildEarlyBootstrap());
 
         WebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         WebView.CoreWebView2.Navigate(ServerUrl);
     }
 
-    // ── Передача клавиш из WPF в WebView2 ────────────────────────────────────
-
-    private void OnWebViewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    // Ранний бутстрап: только флаг десктопа и мост управления окном.
+    // Выполняется до скриптов страницы (document-created), поэтому React сразу
+    // видит десктопный режим.
+    private string BuildEarlyBootstrap()
     {
-        // Ctrl+S, Ctrl+Z, Ctrl+Y, Delete — передаём в страницу напрямую через JS
-        // WebView2 с AreBrowserAcceleratorKeysEnabled=false перехватывает их на уровне WPF
-        bool ctrl  = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-        bool shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
-        bool alt   = Keyboard.IsKeyDown(Key.LeftAlt) || Keyboard.IsKeyDown(Key.RightAlt);
+        string isMaxStr = WindowState == WindowState.Maximized ? "true" : "false";
+        return $$"""
+(function() {
+    window.__IS_DESKTOP__       = true;
+    window.__DESKTOP_SERVER__   = '{{ServerUrl}}';
+    window.__pvsWindowMaximized = {{isMaxStr}};
 
-        string? jsKey = e.Key switch
-        {
-            Key.Delete   => "Delete",
-            Key.S        => "s",
-            Key.Z        => "z",
-            Key.Y        => "y",
-            Key.A        => "a",
-            Key.C        => "c",
-            Key.V        => "v",
-            Key.X        => "x",
-            Key.F9       => "F9",
-            Key.F6       => "F6",
-            Key.Escape   => "Escape",
-            Key.Enter    => "Enter",
-            _            => null
-        };
-
-        if (jsKey == null) return;
-
-        // Выносим значения в переменные чтобы избежать вложенных кавычек в интерполяции
-        string ctrlStr  = ctrl  ? "true" : "false";
-        string shiftStr = shift ? "true" : "false";
-        string altStr   = alt   ? "true" : "false";
-        string codeStr  = e.Key.ToString();
-
-        string js = "(function() {" +
-            "var target = document.activeElement || document.body;" +
-            "var ev = new KeyboardEvent('keydown', {" +
-                "key: '" + jsKey + "'," +
-                "code: '" + codeStr + "'," +
-                "ctrlKey: "  + ctrlStr  + "," +
-                "shiftKey: " + shiftStr + "," +
-                "altKey: "   + altStr   + "," +
-                "bubbles: true," +
-                "cancelable: true" +
-            "});" +
-            "target.dispatchEvent(ev);" +
-            "document.dispatchEvent(ev);" +
-        "})();";
-
-        _ = WebView.CoreWebView2.ExecuteScriptAsync(js);
-        e.Handled = true;
+    function sendCs(cmd, params) {
+        try { window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd }, params || {}))); }
+        catch (e) {}
+    }
+    window.__pvsSendCs      = sendCs;
+    window.__pvsWinMinimize = function() { sendCs('win-minimize'); };
+    window.__pvsWinMaximize = function() { sendCs('win-maximize'); };
+    window.__pvsWinDrag     = function() { sendCs('win-drag'); };
+    window.__pvsWinClose    = function() { sendCs('win-close'); };
+    window.__pvsShowCloseDialog = function() { sendCs('win-close-confirmed'); };
+})();
+""";
     }
 
     // ── Закрытие окна (системная кнопка X / Alt+F4) ──────────────────────────
@@ -292,6 +283,73 @@ public partial class MainWindow : Window
         _ = WebView.CoreWebView2.ExecuteScriptAsync(
             "window.__pvsWindowMaximized = " + maxVal + ";" +
             "window.dispatchEvent(new CustomEvent('pvs-window-state', { detail: { maximized: " + maxVal + " } }));");
+    }
+
+    // ── Корректная максимизация безрамочного окна (не перекрывать панель задач) ─
+
+    private void OnSourceInitialized(object? sender, EventArgs e)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(handle)?.AddHook(WindowProc);
+    }
+
+    private const int WM_GETMINMAXINFO = 0x0024;
+
+    private static IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_GETMINMAXINFO)
+        {
+            const int MONITOR_DEFAULTTONEAREST = 0x00000002;
+            IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor != IntPtr.Zero)
+            {
+                var mi = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+                if (GetMonitorInfo(monitor, ref mi))
+                {
+                    RECT work = mi.rcWork;      // рабочая область (без панели задач)
+                    RECT area = mi.rcMonitor;   // весь монитор
+                    var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+                    mmi.ptMaxPosition.X  = Math.Abs(work.Left - area.Left);
+                    mmi.ptMaxPosition.Y  = Math.Abs(work.Top  - area.Top);
+                    mmi.ptMaxSize.X      = Math.Abs(work.Right  - work.Left);
+                    mmi.ptMaxSize.Y      = Math.Abs(work.Bottom - work.Top);
+                    Marshal.StructureToPtr(mmi, lParam, true);
+                    handled = true;
+                }
+            }
+        }
+        return IntPtr.Zero;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, int dwFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public int    cbSize;
+        public RECT   rcMonitor;
+        public RECT   rcWork;
+        public uint   dwFlags;
     }
 
     // ── JS ↔ C# сообщения ────────────────────────────────────────────────────
@@ -545,7 +603,7 @@ public partial class MainWindow : Window
 
         return $$"""
 (function() {
-    // ── Флаг десктопного режима ──────────────────
+    // ── Флаг десктопного режима (дублируем на случай перезагрузки страницы) ──
     window.__IS_DESKTOP__       = true;
     window.__DESKTOP_SERVER__   = '{{ServerUrl}}';
     window.__pvsWindowMaximized = {{isMaxStr}};
