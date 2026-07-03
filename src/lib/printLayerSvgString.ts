@@ -1,7 +1,9 @@
 // Генерация SVG-строки слоя печати (без React) для рендера в canvas через Image.
 // Использует те же формулы что renderPrintLayerSvgContent в printLayerSvg.tsx.
-import type { HorizonPrintLayer } from "@/lib/topology";
+import type { HorizonPrintLayer, PaperFormat } from "@/lib/topology";
+import { PAPER_SIZES_MM } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { computeStampBox, buildStampSvgString } from "@/lib/stampTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 
 function e(s: string | number): string {
@@ -111,37 +113,14 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
     }
   }
 
-  // Штамп
+  // Штамп ГОСТ 185×55мм — фиксированный размер по формату листа
   if (pl.showStamp) {
-    const stFs = Math.max(6, Math.min(12, rh * 0.016));
-    const stW = Math.min(rw * 0.65, 420);
-    const stH = stFs * 14;
-    const sx2 = rx + rw - stW + (pl.stampOffsetX ?? 0);
-    const sy2 = ry + rh - stH + (pl.stampOffsetY ?? 0);
-    const sw2 = Math.max(0.3, rw * 0.0015);
-    const rowH = stH / 7;
-    const cols = [0, 0.25, 0.5, 0.67, 0.83].map(t => stW * t);
-    body += `<rect x="${n(sx2)}" y="${n(sy2)}" width="${n(stW)}" height="${n(stH)}" fill="white" stroke="#333" stroke-width="${n(Math.max(0.5, sw2*1.5))}"/>`;
-    [1,2,3,4,5,6].forEach(i => {
-      body += `<line x1="${n(sx2)}" y1="${n(sy2+rowH*i)}" x2="${n(sx2+stW)}" y2="${n(sy2+rowH*i)}" stroke="#333" stroke-width="${n(sw2)}"/>`;
-    });
-    cols.slice(1).forEach(x => {
-      body += `<line x1="${n(sx2+x)}" y1="${n(sy2)}" x2="${n(sx2+x)}" y2="${n(sy2+rowH*5)}" stroke="#333" stroke-width="${n(sw2)}"/>`;
-    });
-    body += `<line x1="${n(sx2+stW*0.4)}" y1="${n(sy2+rowH*5)}" x2="${n(sx2+stW*0.4)}" y2="${n(sy2+stH)}" stroke="#333" stroke-width="${n(sw2)}"/>`;
-    body += `<line x1="${n(sx2+stW*0.7)}" y1="${n(sy2+rowH*5)}" x2="${n(sx2+stW*0.7)}" y2="${n(sy2+stH)}" stroke="#333" stroke-width="${n(sw2)}"/>`;
-    ["Изм.", "Кол.", "Лист", "№ dok.", "Подп.", "Дата"].forEach((t, i) => {
-      const xs = [0, 0.25, 0.5, 0.67, 0.83, 1.0];
-      const midX = i < 5 ? (xs[i] + xs[i+1]) / 2 : xs[5] - 0.085;
-      body += `<text x="${n(sx2+stW*midX)}" y="${n(sy2+rowH*5.7)}" text-anchor="middle" font-size="${n(stFs*0.75)}" font-family="Arial, sans-serif" fill="#333">${e(t)}</text>`;
-    });
-    if (pl.developer) body += `<text x="${n(sx2+3)}" y="${n(sy2+rowH*3.6)}" font-size="${n(stFs*0.85)}" font-family="Arial, sans-serif" fill="#333">Разработал: ${e(pl.developer)}</text>`;
-    if (pl.checker)   body += `<text x="${n(sx2+3)}" y="${n(sy2+rowH*4.6)}" font-size="${n(stFs*0.85)}" font-family="Arial, sans-serif" fill="#333">Нач. УПВ: ${e(pl.checker)}</text>`;
-    body += `<text x="${n(sx2+stW*0.55)}" y="${n(sy2+rowH*5.8)}" text-anchor="middle" font-size="${n(stFs)}" font-family="Arial, sans-serif" fill="#111">${e(pl.projectName || "Название проекта")}</text>`;
-    body += `<text x="${n(sx2+stW*0.55)}" y="${n(sy2+rowH*6.5)}" text-anchor="middle" font-size="${n(stFs*0.85)}" font-family="Arial, sans-serif" fill="#555">${e(pl.modeName || "Режим проветривания")}</text>`;
-    body += `<text x="${n(sx2+stW*0.855)}" y="${n(sy2+rowH*6.5)}" text-anchor="middle" font-size="${n(stFs)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${e(pl.orgName || "Организация")}</text>`;
-    body += `<text x="${n(sx2+stW*0.855)}" y="${n(sy2+rowH*5.5)}" text-anchor="middle" font-size="${n(stFs*0.8)}" font-family="Arial, sans-serif" fill="#555">масштаб</text>`;
-    body += `<text x="${n(sx2+stW*0.855)}" y="${n(sy2+rowH*6.2)}" text-anchor="middle" font-size="${n(stFs)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${e(pl.scale || "1:2000")}</text>`;
+    const fmt = (pl.paperFormat ?? "A3") as PaperFormat;
+    const ori = pl.orientation ?? "landscape";
+    const mm = PAPER_SIZES_MM[fmt];
+    const paperWmm = ori === "landscape" ? Math.max(mm.w, mm.h) : Math.min(mm.w, mm.h);
+    const box = computeStampBox(rx, ry, rw, rh, inset, paperWmm, pl.stampOffsetX ?? 0, pl.stampOffsetY ?? 0);
+    body += buildStampSvgString(pl, box);
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${n(totalW)}" height="${n(totalH)}">${body}</svg>`;

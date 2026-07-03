@@ -346,6 +346,26 @@ export interface HorizonPrintLayer {
   /** Дополнительные поля штампа */
   projectName?: string;
   modeName?: string;
+  /** ── Поля стандартного штампа ГОСТ (основная надпись) ── */
+  /** Обозначение документа (шифр) — верхняя правая графа */
+  docCode?: string;
+  /** Стадия проектирования (напр. "Р", "П") */
+  stage?: string;
+  /** Роли в левом столбце: ФИО */
+  designerName?: string;   // Разраб.
+  checkerName?: string;    // Пров.
+  normContrName?: string;  // Н.контр.
+  approverName2?: string;  // Утв.
+  /** Роли: подписи (обычно пусто, но редактируемы) */
+  designerSign?: string;
+  checkerSign?: string;
+  normContrSign?: string;
+  approverSign?: string;
+  /** Роли: даты */
+  designerDate?: string;
+  checkerDate?: string;
+  normContrDate?: string;
+  approverDate?: string;
 }
 
 export interface Horizon {

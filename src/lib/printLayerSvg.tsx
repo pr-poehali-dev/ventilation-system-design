@@ -2,8 +2,12 @@
 // Используется и в TopoCanvas (рабочая область), и в PrintPreviewCanvas (предпросмотр).
 // Принимает готовые экранные координаты рамки rx,ry,rw,rh.
 import React from "react";
-import type { HorizonPrintLayer } from "@/lib/topology";
+import type { HorizonPrintLayer, PaperFormat } from "@/lib/topology";
+import { PAPER_SIZES_MM } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import {
+  computeStampBox, buildStampCells, buildStampGridLines, getStampFieldValue,
+} from "@/lib/stampTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 
 export interface PrintLayerSvgOptions {
@@ -110,35 +114,45 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     );
   })() : null;
 
-  // ── Штамп ───────────────────────────────────────────────────────────────
+  // ── Штамп ГОСТ 185×55мм — фиксированный размер по формату листа ──────────
   const stampBlock = pl.showStamp ? (() => {
-    const stFontSize = Math.max(6, Math.min(12, rh * 0.016));
-    const stW = Math.min(rw * 0.65, 420);
-    const stH = stFontSize * 14;
-    const sx2 = rx + rw - stW + (pl.stampOffsetX ?? 0);
-    const sy2 = ry + rh - stH + (pl.stampOffsetY ?? 0);
-    const sw2 = Math.max(0.3, rw * 0.0015);
-    const rowH = stH / 7;
-    const col = [0, 0.25, 0.5, 0.67, 0.83].map(t => stW * t);
+    const fmt = (pl.paperFormat ?? "A3") as PaperFormat;
+    const ori = pl.orientation ?? "landscape";
+    const mm = PAPER_SIZES_MM[fmt];
+    const paperWmm = ori === "landscape" ? Math.max(mm.w, mm.h) : Math.min(mm.w, mm.h);
+    const box = computeStampBox(rx, ry, rw, rh, inset, paperWmm, pl.stampOffsetX ?? 0, pl.stampOffsetY ?? 0);
+    const { pxPerMm, stW, stH, sx, sy } = box;
+    const mx = (m: number) => sx + m * pxPerMm;
+    const my = (m: number) => sy + m * pxPerMm;
+    const sw = Math.max(0.4, pxPerMm * 0.35);
+    const swThin = Math.max(0.25, pxPerMm * 0.18);
+    const baseFs = Math.max(5, pxPerMm * 2.3);
     return (
       <g key="stamp-block">
-        <rect x={sx2} y={sy2} width={stW} height={stH} fill="white" stroke="#333" strokeWidth={Math.max(0.5, sw2 * 1.5)} />
-        {[1,2,3,4,5,6].map(i => <line key={i} x1={sx2} y1={sy2+rowH*i} x2={sx2+stW} y2={sy2+rowH*i} stroke="#333" strokeWidth={sw2} />)}
-        {col.slice(1).map((x, i) => <line key={i} x1={sx2+x} y1={sy2} x2={sx2+x} y2={sy2+rowH*5} stroke="#333" strokeWidth={sw2} />)}
-        <line x1={sx2+stW*0.4} y1={sy2+rowH*5} x2={sx2+stW*0.4} y2={sy2+stH} stroke="#333" strokeWidth={sw2} />
-        <line x1={sx2+stW*0.7} y1={sy2+rowH*5} x2={sx2+stW*0.7} y2={sy2+stH} stroke="#333" strokeWidth={sw2} />
-        {["Изм.", "Кол.", "Лист", "№ dok.", "Подп.", "Дата"].map((t, i) => {
-          const xs = [0, 0.25, 0.5, 0.67, 0.83, 1.0];
-          const midX = i < 5 ? (xs[i] + xs[i+1]) / 2 : xs[5] - 0.085;
-          return <text key={i} x={sx2+stW*midX} y={sy2+rowH*5.7} textAnchor="middle" fontSize={stFontSize*0.75} fontFamily="Arial, sans-serif" fill="#333">{t}</text>;
+        <rect x={sx} y={sy} width={stW} height={stH} fill="white" />
+        {buildStampGridLines().map((ln, i) => (
+          <line key={`gl-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)}
+            stroke="#1a1a1a" strokeWidth={ln.thick ? sw : swThin} />
+        ))}
+        {buildStampCells(pl).map((c, i) => {
+          const cw = c.w * pxPerMm, ch = c.h * pxPerMm;
+          const fs = baseFs * (c.fontScale ?? 1);
+          const tx = c.align === "left" ? mx(c.x) + pxPerMm * 1.2 : mx(c.x) + cw / 2;
+          const ty = my(c.y) + ch / 2;
+          const anchor = c.align === "left" ? "start" : "middle";
+          const weight = c.bold ? "bold" : "normal";
+          if (c.label && !c.field) {
+            return <text key={`lbl-${i}`} x={tx} y={ty} textAnchor={anchor} dominantBaseline="central"
+              fontSize={fs} fontFamily="Arial, sans-serif" fontWeight={weight} fill="#333">{c.label}</text>;
+          }
+          if (c.field) {
+            const val = getStampFieldValue(pl, c.field);
+            if (!val) return null;
+            return <text key={`val-${i}`} x={tx} y={ty} textAnchor={anchor} dominantBaseline="central"
+              fontSize={fs} fontFamily="Arial, sans-serif" fontWeight={weight} fill="#111">{val}</text>;
+          }
+          return null;
         })}
-        {pl.developer && <text x={sx2+3} y={sy2+rowH*3.6} fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#333">Разработал: {pl.developer}</text>}
-        {pl.checker && <text x={sx2+3} y={sy2+rowH*4.6} fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#333">Нач. УПВ: {pl.checker}</text>}
-        <text x={sx2+stW*0.55} y={sy2+rowH*5.8} textAnchor="middle" fontSize={stFontSize} fontFamily="Arial, sans-serif" fill="#111">{pl.projectName || "Название проекта"}</text>
-        <text x={sx2+stW*0.55} y={sy2+rowH*6.5} textAnchor="middle" fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#555">{pl.modeName || "Режим проветривания"}</text>
-        <text x={sx2+stW*0.855} y={sy2+rowH*6.5} textAnchor="middle" fontSize={stFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">{pl.orgName || "Организация"}</text>
-        <text x={sx2+stW*0.855} y={sy2+rowH*5.5} textAnchor="middle" fontSize={stFontSize*0.8} fontFamily="Arial, sans-serif" fill="#555">масштаб</text>
-        <text x={sx2+stW*0.855} y={sy2+rowH*6.2} textAnchor="middle" fontSize={stFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">{pl.scale || "1:2000"}</text>
       </g>
     );
   })() : null;

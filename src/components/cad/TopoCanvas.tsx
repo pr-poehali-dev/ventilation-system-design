@@ -6,6 +6,10 @@ import {
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import {
+  STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
+  type StampFieldKey,
+} from "@/lib/stampTemplate";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/cad/CanvasLayerExports";
@@ -421,6 +425,10 @@ export default function TopoCanvas(props: Props) {
   // Редактирование заголовка слоя печати
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleDraft, setEditingTitleDraft] = useState("");
+  // Инлайн-редактирование ячейки штампа: { horizonId, field, draft }
+  const [editingStampCell, setEditingStampCell] = useState<
+    { horizonId: string; field: string; draft: string } | null
+  >(null);
 
   // При смене инструмента сбрасываем «начало ветви» — иначе возникнут призрачные сегменты.
   useEffect(() => { setBranchFrom(null); }, [tool]);
@@ -2111,78 +2119,129 @@ export default function TopoCanvas(props: Props) {
           );
         })()}
 
-        {/* ── Штамп на схеме (правый нижний угол) ────────────────────────── */}
+        {/* ── Штамп ГОСТ 185×55мм на схеме (правый нижний угол) ───────────── */}
         {pl.showStamp && (() => {
-          const stFontSize = Math.max(6, Math.min(12, rh * 0.016));
-          const stW = Math.min(rw * 0.65, 420);
-          const stH = stFontSize * 14;
+          // Фиксированный размер штампа по формату листа:
+          // rw (px рамки) соответствует ширине листа в мм → px/мм = rw / paperWmm.
+          const fmtS = (pl.paperFormat ?? "A3") as PaperFormat;
+          const oriS = pl.orientation ?? "landscape";
+          const mmS = PAPER_SIZES_MM[fmtS];
+          const paperWmm = oriS === "landscape" ? Math.max(mmS.w, mmS.h) : Math.min(mmS.w, mmS.h);
+          const pxPerMm = rw / paperWmm;              // масштаб мир→экран для штампа
+          const stW = STAMP_W_MM * pxPerMm;
+          const stH = STAMP_H_MM * pxPerMm;
           const stOffX = pl.stampOffsetX ?? 0;
           const stOffY = pl.stampOffsetY ?? 0;
-          const sx2 = rx + rw - stW + stOffX;
-          const sy2 = ry + rh - stH + stOffY;
-          const sw2 = Math.max(0.3, rw * 0.0015);
+          // Внутренний отступ рамки чертежа (по ГОСТ штамп прижат к рамке)
+          const sx2 = rx + rw - inset - stW + stOffX;
+          const sy2 = ry + rh - inset - stH + stOffY;
+          const sw2 = Math.max(0.4, pxPerMm * 0.35);  // толщина основных линий
+          const swThin = Math.max(0.25, pxPerMm * 0.18);
+          const baseFs = Math.max(5, pxPerMm * 2.3);  // базовый размер шрифта
           const canDrag = !!onPrintLayerChange;
-          const rowH = stH / 7;
-          const col = [0, 0.25, 0.5, 0.67, 0.83].map(t => stW * t);
+          const cells = buildStampCells(pl);
+          const gridLines = buildStampGridLines();
+          // мм → экранные координаты штампа
+          const mx = (m: number) => sx2 + m * pxPerMm;
+          const my = (m: number) => sy2 + m * pxPerMm;
+
+          const startEdit = (field: StampFieldKey) => {
+            setEditingStampCell({ horizonId: h.id, field, draft: getStampFieldValue(pl, field) });
+          };
+          const commitEdit = () => {
+            if (editingStampCell && editingStampCell.horizonId === h.id) {
+              onPrintLayerChange?.(h.id, { [editingStampCell.field]: editingStampCell.draft } as Partial<import("@/lib/topology").HorizonPrintLayer>);
+            }
+            setEditingStampCell(null);
+          };
 
           return (
             <g key="stamp-block">
-              {/* Фон */}
-              <rect x={sx2} y={sy2} width={stW} height={stH} fill="white" stroke="#333" strokeWidth={Math.max(0.5, sw2 * 1.5)} />
-              {/* Горизонтальные линии */}
-              {[1,2,3,4,5,6].map(i => <line key={i} x1={sx2} y1={sy2+rowH*i} x2={sx2+stW} y2={sy2+rowH*i} stroke="#333" strokeWidth={sw2} />)}
-              {/* Вертикальные линии верхней части (5 строк) */}
-              {col.slice(1).map((x, i) => <line key={i} x1={sx2+x} y1={sy2} x2={sx2+x} y2={sy2+rowH*5} stroke="#333" strokeWidth={sw2} />)}
-              {/* Вертикальные линии нижней части */}
-              <line x1={sx2+stW*0.4} y1={sy2+rowH*5} x2={sx2+stW*0.4} y2={sy2+stH} stroke="#333" strokeWidth={sw2} />
-              <line x1={sx2+stW*0.7} y1={sy2+rowH*5} x2={sx2+stW*0.7} y2={sy2+stH} stroke="#333" strokeWidth={sw2} />
+              {/* Белый фон */}
+              <rect x={sx2} y={sy2} width={stW} height={stH} fill="white" />
 
-              {/* Лейблы колонок */}
-              {["Изм.", "Кол.", "Лист", "№ dok.", "Подп.", "Дата"].map((t, i) => {
-                const xs = [0, 0.25, 0.5, 0.67, 0.83, 1.0];
-                const midX = i < 5 ? (xs[i] + xs[i+1]) / 2 : xs[5] - 0.085;
-                return <text key={i} x={sx2+stW*midX} y={sy2+rowH*5.7} textAnchor="middle" fontSize={stFontSize*0.75} fontFamily="Arial, sans-serif" fill="#333">{t}</text>;
+              {/* Сетка штампа */}
+              {gridLines.map((ln, i) => (
+                <line key={`gl-${i}`}
+                  x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)}
+                  stroke="#1a1a1a" strokeWidth={ln.thick ? sw2 : swThin} />
+              ))}
+
+              {/* Ячейки: подписи граф + редактируемые значения */}
+              {cells.map((c, i) => {
+                const cx = mx(c.x);
+                const cy = my(c.y);
+                const cw = c.w * pxPerMm;
+                const ch = c.h * pxPerMm;
+                const fs = baseFs * (c.fontScale ?? 1);
+                const textX = c.align === "left" ? cx + pxPerMm * 1.2 : cx + cw / 2;
+                const textY = cy + ch / 2;
+                const anchor = c.align === "left" ? "start" : "middle";
+
+                // Нередактируемая подпись графы
+                if (c.label && !c.field) {
+                  return (
+                    <text key={`lbl-${i}`} x={textX} y={textY}
+                      textAnchor={anchor} dominantBaseline="central"
+                      fontSize={fs} fontFamily="Arial, sans-serif"
+                      fontWeight={c.bold ? "bold" : "normal"} fill="#333"
+                      style={{ pointerEvents: "none", userSelect: "none" }}>
+                      {c.label}
+                    </text>
+                  );
+                }
+
+                // Редактируемая ячейка
+                if (c.field) {
+                  const isEd = editingStampCell?.horizonId === h.id && editingStampCell?.field === c.field;
+                  const val = getStampFieldValue(pl, c.field);
+                  if (isEd && canDrag) {
+                    return (
+                      <foreignObject key={`ed-${i}`} x={cx + 1} y={cy + 1} width={Math.max(10, cw - 2)} height={Math.max(10, ch - 2)}>
+                        <input
+                          // @ts-expect-error xmlns
+                          xmlns="http://www.w3.org/1999/xhtml"
+                          autoFocus
+                          value={editingStampCell.draft}
+                          onChange={e => setEditingStampCell(s => s ? { ...s, draft: e.target.value } : s)}
+                          onBlur={commitEdit}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") commitEdit();
+                            if (e.key === "Escape") setEditingStampCell(null);
+                            e.stopPropagation();
+                          }}
+                          onMouseDown={e => e.stopPropagation()}
+                          style={{
+                            width: "100%", height: "100%",
+                            textAlign: c.align === "left" ? "left" : "center",
+                            fontSize: fs, fontFamily: "Arial, sans-serif",
+                            fontWeight: c.bold ? "bold" : "normal",
+                            border: "1.5px solid #7c3aed", borderRadius: 2, outline: "none",
+                            background: "rgba(255,253,230,0.97)", padding: "0 2px",
+                            boxSizing: "border-box" as const, color: "#111",
+                          }}
+                        />
+                      </foreignObject>
+                    );
+                  }
+                  return (
+                    <text key={`val-${i}`} x={textX} y={textY}
+                      textAnchor={anchor} dominantBaseline="central"
+                      fontSize={fs} fontFamily="Arial, sans-serif"
+                      fontWeight={c.bold ? "bold" : "normal"}
+                      fill={val ? "#111" : "#bbb"}
+                      style={{ cursor: canDrag ? "text" : "default", userSelect: "none" }}
+                      onDoubleClick={canDrag ? (e) => { e.stopPropagation(); startEdit(c.field!); } : undefined}>
+                      {val || (canDrag ? (c.placeholder || "—") : "")}
+                    </text>
+                  );
+                }
+                return null;
               })}
 
-              {/* Разработал */}
-              {pl.developer && <text x={sx2+3} y={sy2+rowH*3.6} fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#333">Разработал: {pl.developer}</text>}
-              {/* НАЧ. УПВ / подпись */}
-              {pl.checker && <text x={sx2+3} y={sy2+rowH*4.6} fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#333">Нач. УПВ: {pl.checker}</text>}
-
-              {/* Название проекта */}
-              <text x={sx2+stW*0.55} y={sy2+rowH*5.8} textAnchor="middle"
-                fontSize={stFontSize} fontFamily="Arial, sans-serif" fill="#111"
-                style={{ cursor: canDrag ? "text" : "default" }}
-                onDoubleClick={canDrag ? () => {
-                  const v = prompt("Название проекта:", pl.projectName ?? "");
-                  if (v !== null) onPrintLayerChange?.(h.id, { projectName: v });
-                } : undefined}>
-                {pl.projectName || (canDrag ? "Название проекта" : "")}
-              </text>
-
-              {/* Режим проветривания */}
-              <text x={sx2+stW*0.55} y={sy2+rowH*6.5} textAnchor="middle"
-                fontSize={stFontSize*0.85} fontFamily="Arial, sans-serif" fill="#555"
-                style={{ cursor: canDrag ? "text" : "default" }}
-                onDoubleClick={canDrag ? () => {
-                  const v = prompt("Режим проветривания:", pl.modeName ?? "");
-                  if (v !== null) onPrintLayerChange?.(h.id, { modeName: v });
-                } : undefined}>
-                {pl.modeName || (canDrag ? "Режим проветривания" : "")}
-              </text>
-
-              {/* Организация */}
-              <text x={sx2+stW*0.855} y={sy2+rowH*6.5} textAnchor="middle" fontSize={stFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
-                {pl.orgName || "Организация"}
-              </text>
-
-              {/* Масштаб */}
-              <text x={sx2+stW*0.855} y={sy2+rowH*5.5} textAnchor="middle" fontSize={stFontSize*0.8} fontFamily="Arial, sans-serif" fill="#555">масштаб</text>
-              <text x={sx2+stW*0.855} y={sy2+rowH*6.2} textAnchor="middle" fontSize={stFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">{pl.scale || "1:2000"}</text>
-
-              {/* Ручка перемещения */}
+              {/* Ручка перемещения — узкая полоса по левому краю штампа */}
               {canDrag && (
-                <rect x={sx2} y={sy2} width={stW} height={stH*0.4} fill="transparent" style={{ cursor: "move" }}
+                <rect x={sx2} y={sy2} width={Math.max(6, pxPerMm * 2)} height={stH} fill="transparent" style={{ cursor: "move" }}
                   onMouseDown={(e) => {
                     e.stopPropagation(); e.preventDefault();
                     const startX = e.clientX, startY = e.clientY;
