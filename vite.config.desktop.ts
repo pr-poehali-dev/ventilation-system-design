@@ -8,9 +8,9 @@ import type { Plugin } from "vite";
 //  1. minify: "terser" — агрессивное минифицирование + переименование переменных
 //  2. Кастомный плагин antiDebug — инжектирует anti-devtools код
 //  3. Кастомный плагин stringObfuscator — разбивает строки на сегменты
-//  4. define — подменяет URL backend на localhost:54321
+//  4. define — подменяет URL backend на localhost:5173
 
-const LOCAL_SERVER = "http://127.0.0.1:54321";
+const LOCAL_SERVER = "http://127.0.0.1:5173";
 
 // ── Плагин: Anti-DevTools + Self-Defend ───────────────────────────────────────
 // Вставляет в начало каждого JS-чанка код, который:

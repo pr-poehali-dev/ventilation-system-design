@@ -2855,7 +2855,7 @@ export default function CadPage() {
             title="О программе"
             className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
             style={{ lineHeight: 0 }}>
-            <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
+            <img src="/icon.svg" alt="ПВ-Система" className="w-4 h-4 object-contain" draggable={false} />
           </button>
           <span className="text-xs font-medium text-gray-700">ПВ-Система</span>
           {projectFileName && (
@@ -9872,12 +9872,13 @@ export default function CadPage() {
           <div className="px-6 py-6 flex flex-col items-center text-center"
             style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
             <img
-              src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png"
+              src="/icon.svg"
               alt="ПВ-Система"
-              className="w-48 object-contain mb-2"
+              className="w-24 h-24 object-contain mb-2"
               style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
               draggable={false}
             />
+            <div className="text-[20px] font-semibold text-[#0e63b0] tracking-wide mb-1">ПВ-Система</div>
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>

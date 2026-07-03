@@ -10,13 +10,15 @@ declare const __IS_DESKTOP__: boolean | undefined;
 const isDesktop = typeof __IS_DESKTOP__ !== "undefined" && __IS_DESKTOP__;
 const localBase = typeof __DESKTOP_SERVER__ !== "undefined"
   ? __DESKTOP_SERVER__
-  : "http://127.0.0.1:54321";
+  : "http://127.0.0.1:5173";
 
 // Импортируем cloud URLs (в desktop-билде они будут переопределены)
 import FUNC2URL from "../../backend/func2url.json";
 
 function url(name: string, localPath: string): string {
-  if (isDesktop) return `${localBase}${localPath}`;
+  // В desktop-режиме локальный Flask-сервер раздаёт API под префиксом /api
+  // (http://127.0.0.1:5173/api/license и т.д.)
+  if (isDesktop) return `${localBase}/api${localPath}`;
   return (FUNC2URL as Record<string, string>)[name] ?? "";
 }
 
