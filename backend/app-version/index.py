@@ -12,6 +12,7 @@ POST /  action=upload_abort    → отменить незавершённый m
 import json
 import os
 import base64
+import urllib.request
 import boto3
 
 CORS = {
@@ -102,6 +103,71 @@ def handler(event: dict, context) -> dict:
 
         body   = json.loads(event.get("body") or "{}")
         action = body.get("action")
+
+        # ── Загрузить файл по прямой ссылке (сервер сам скачает и зальёт в S3) ─
+        # Надёжно для больших файлов (77 МБ+): передача сервер→сервер, минуя браузер.
+        if action == "upload_from_url":
+            file_type = body.get("file_type", "exe")
+            src_url   = (body.get("url") or "").strip()
+            if not src_url.startswith("http"):
+                return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Нужна прямая http-ссылка на файл"})}
+
+            key = EXE_KEY if file_type == "exe" else SERVER_KEY
+
+            # Потоковая перекачка через multipart upload (части по 8 МБ), без хранения в памяти
+            PART_SIZE = 8 * 1024 * 1024
+            mp = s3.create_multipart_upload(Bucket=BUCKET, Key=key, ContentType="application/octet-stream")
+            upload_id = mp["UploadId"]
+            parts = []
+            part_num = 1
+            try:
+                req = urllib.request.Request(src_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=300) as stream:
+                    buf = b""
+                    while True:
+                        data = stream.read(1024 * 512)
+                        if data:
+                            buf += data
+                        # Отправляем часть когда накопили >= PART_SIZE, либо в конце (остаток)
+                        if len(buf) >= PART_SIZE or (not data and buf):
+                            resp = s3.upload_part(
+                                Bucket=BUCKET, Key=key, UploadId=upload_id,
+                                PartNumber=part_num, Body=buf,
+                            )
+                            parts.append({"PartNumber": part_num, "ETag": resp["ETag"]})
+                            part_num += 1
+                            buf = b""
+                        if not data:
+                            break
+
+                if not parts:
+                    s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
+                    return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Файл по ссылке пуст или недоступен"})}
+
+                s3.complete_multipart_upload(
+                    Bucket=BUCKET, Key=key, UploadId=upload_id,
+                    MultipartUpload={"Parts": parts},
+                )
+            except Exception as e:
+                try:
+                    s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
+                except Exception:
+                    pass
+                return {"statusCode": 500, "headers": CORS, "body": json.dumps({"error": f"Не удалось скачать файл: {e}"})}
+
+            # Обновляем version.json
+            info = get_version_info(s3)
+            if key == EXE_KEY:
+                info["version"]      = body.get("version", info["version"])
+                info["notes"]        = body.get("notes", info.get("notes", ""))
+                info["download_url"] = cdn_url(EXE_KEY)
+            else:
+                info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
+                info["server_url"]     = cdn_url(SERVER_KEY)
+            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                          Body=json.dumps(info, ensure_ascii=False).encode(),
+                          ContentType="application/json")
+            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}
 
         # ── Обновить только номер версии и заметки ────────────────────────────
         if action == "set_version":

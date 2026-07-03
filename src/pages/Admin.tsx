@@ -99,6 +99,7 @@ export default function Admin() {
   const [updProgress, setUpdProgress]   = useState(0);
   const [updStatus, setUpdStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [updErr, setUpdErr]             = useState("");
+  const [updUrl, setUpdUrl]             = useState("");
 
   // Обновление server.exe (расчётное ядро)
   const [srvFile, setSrvFile]           = useState<File | null>(null);
@@ -106,6 +107,7 @@ export default function Admin() {
   const [srvProgress, setSrvProgress]   = useState(0);
   const [srvStatus, setSrvStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [srvErr, setSrvErr]             = useState("");
+  const [srvUrl, setSrvUrl]             = useState("");
   const VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
 
   const loadLicenses = useCallback(async (pwd: string) => {
@@ -407,6 +409,57 @@ export default function Admin() {
     }
   };
 
+  // ── Загрузка установщика по прямой ссылке (сервер сам скачает) ──
+  const handleUploadExeFromUrl = async () => {
+    if (!updUrl.trim() || !updVersion) return;
+    setUpdStatus("uploading");
+    setUpdErr("");
+    setUpdProgress(50);
+    try {
+      const res = await fetch(VERSION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({ action: "upload_from_url", file_type: "exe", url: updUrl.trim(), version: updVersion, notes: updNotes }),
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
+      setUpdProgress(100);
+      setUpdStatus("ok");
+      setCurrentVersion({ version: updVersion, notes: updNotes });
+      setUpdUrl("");
+      setUpdVersion("");
+      setUpdNotes("");
+    } catch (err: unknown) {
+      setUpdStatus("err");
+      setUpdErr(err instanceof Error ? err.message : "Ошибка загрузки по ссылке");
+    }
+  };
+
+  // ── Загрузка расчётного ядра по прямой ссылке ──
+  const handleUploadServerFromUrl = async () => {
+    if (!srvUrl.trim() || !srvVersion) return;
+    setSrvStatus("uploading");
+    setSrvErr("");
+    setSrvProgress(50);
+    try {
+      const res = await fetch(VERSION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({ action: "upload_from_url", file_type: "server", url: srvUrl.trim(), server_version: srvVersion }),
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
+      setSrvProgress(100);
+      setSrvStatus("ok");
+      setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion } : null);
+      setSrvUrl("");
+      setSrvVersion("");
+    } catch (err: unknown) {
+      setSrvStatus("err");
+      setSrvErr(err instanceof Error ? err.message : "Ошибка загрузки по ссылке");
+    }
+  };
+
   // Общие стили полей формы
   const inputCls = "w-full border border-gray-300 rounded-lg px-3 py-2 text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-300";
 
@@ -561,6 +614,21 @@ export default function Admin() {
                   {updStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</> : <><Icon name="Upload" size={14} />Опубликовать установщик</>}
                 </button>
               </form>
+
+              {/* Альтернатива: загрузка по прямой ссылке (для больших файлов) */}
+              <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Icon name="Link" size={13} className="text-gray-400" />
+                  <span className="text-[11px] font-semibold text-gray-500">Или загрузить по прямой ссылке (надёжно для больших файлов)</span>
+                </div>
+                <input type="url" value={updUrl} onChange={e => { setUpdUrl(e.target.value); setUpdStatus("idle"); }}
+                  className={inputCls + " mb-2"} placeholder="https://... прямая ссылка на PVS-Setup.exe" />
+                <button type="button" onClick={handleUploadExeFromUrl}
+                  disabled={!updUrl.trim() || !updVersion || updStatus === "uploading"}
+                  className="w-full py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 flex items-center justify-center gap-2">
+                  <Icon name="Download" size={13} />Загрузить с сервера по ссылке
+                </button>
+              </div>
             </div>
 
             {/* Форма загрузки server.exe */}
@@ -601,6 +669,21 @@ export default function Admin() {
                   {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
                 </button>
               </form>
+
+              {/* Альтернатива: загрузка ядра по прямой ссылке */}
+              <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Icon name="Link" size={13} className="text-gray-400" />
+                  <span className="text-[11px] font-semibold text-gray-500">Или загрузить по прямой ссылке</span>
+                </div>
+                <input type="url" value={srvUrl} onChange={e => { setSrvUrl(e.target.value); setSrvStatus("idle"); }}
+                  className={inputCls + " mb-2"} placeholder="https://... прямая ссылка на server.exe" />
+                <button type="button" onClick={handleUploadServerFromUrl}
+                  disabled={!srvUrl.trim() || !srvVersion || srvStatus === "uploading"}
+                  className="w-full py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 flex items-center justify-center gap-2">
+                  <Icon name="Download" size={13} />Загрузить с сервера по ссылке
+                </button>
+              </div>
             </div>
           </div>
         )}
