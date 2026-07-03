@@ -1,15 +1,14 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 REM ============================================================
-REM  Сборка десктопного приложения ПВ-Система (PVS.exe)
-REM  Запускать двойным кликом или из командной строки:
+REM  PV-Sistema desktop build (PVS.exe)
+REM  Run by double-click or from command line:
 REM      desktop\csharp\build.bat
-REM  Файл сам находит корень проекта — путь менять не нужно.
+REM  Script finds project root by itself.
 REM ============================================================
 
-REM Корень проекта = на два уровня выше этого bat (desktop\csharp\ -> корень)
+REM Project root = two levels up from this bat (desktop\csharp\ -> root)
 set "SCRIPT_DIR=%~dp0"
 pushd "%SCRIPT_DIR%\..\.."
 set "ROOT=%CD%"
@@ -21,105 +20,109 @@ set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7d
 
 echo.
 echo ============================================================
-echo   ПВ-Система — сборка десктопной программы
-echo   Корень проекта: %ROOT%
+echo   PV-Sistema - desktop build
+echo   Project root: %ROOT%
 echo ============================================================
 echo.
 
-REM ---------- Проверка окружения ----------
-echo [0/5] Проверка окружения...
-where node >nul 2>nul || (echo ОШИБКА: не найден Node.js ^(https://nodejs.org^) & goto :fail)
-where python >nul 2>nul || (echo ОШИБКА: не найден Python ^(https://python.org^) & goto :fail)
-where dotnet >nul 2>nul || (echo ОШИБКА: не найден .NET 8 SDK ^(https://dotnet.microsoft.com/download/dotnet/8.0^) & goto :fail)
+REM ---------- Check environment ----------
+echo [0/5] Checking environment...
+where node >nul 2>nul || (echo ERROR: Node.js not found - https://nodejs.org & goto :fail)
+where python >nul 2>nul || (echo ERROR: Python not found - https://python.org & goto :fail)
+where dotnet >nul 2>nul || (echo ERROR: .NET 8 SDK not found - https://dotnet.microsoft.com/download/dotnet/8.0 & goto :fail)
 echo     OK
 echo.
 
-REM ---------- Шаг 1: интерфейс ----------
-echo [1/5] Сборка интерфейса (desktop-режим)...
+REM ---------- Step 1: frontend ----------
+echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
 call npm install || goto :fail
-call "%ROOT%\node_modules\.bin\vite" build --config vite.config.desktop.ts || goto :fail
+REM Local vite (rolldown-vite). On Windows the launcher is vite.cmd
+if exist "%ROOT%\node_modules\.bin\vite.cmd" (
+    call "%ROOT%\node_modules\.bin\vite.cmd" build --config vite.config.desktop.ts || goto :fail
+) else (
+    call "%ROOT%\node_modules\.bin\vite" build --config vite.config.desktop.ts || goto :fail
+)
 
-echo     Перенос интерфейса в расчётное ядро...
+echo     Copying frontend into calc core...
 if exist "%CORE_DIR%\dist" rmdir /S /Q "%CORE_DIR%\dist"
 xcopy /E /I /Y "%ROOT%\dist-desktop" "%CORE_DIR%\dist" || goto :fail
 
 if not exist "%CORE_DIR%\dist\index.html" (
-    echo ОШИБКА: интерфейс не собрался ^(нет index.html^)
+    echo ERROR: frontend build failed - no index.html
     goto :fail
 )
 echo     OK
 echo.
 
-REM ---------- Шаг 2: расчётное ядро ----------
-echo [2/5] Сборка расчётного ядра server.exe...
+REM ---------- Step 2: calc core (server.exe) ----------
+echo [2/5] Building calc core server.exe...
 cd /d "%CS_DIR%"
 
-echo     Копирую backend-функции в ядро (airflow, rescue, hydraulics, svg-to-pdf)...
+echo     Copying backend functions into core...
 set "BF_DST=%CORE_DIR%\backend_functions"
 if exist "%BF_DST%" rmdir /S /Q "%BF_DST%"
-for %%F in (airflow rescue-calculator water-hydraulics svg-to-pdf explosion-calculator aerodynamics) do (
-    if exist "%ROOT%\backend\%%F\index.py" (
-        mkdir "%BF_DST%\%%F" 2>nul
-        copy /Y "%ROOT%\backend\%%F\index.py" "%BF_DST%\%%F\index.py" >nul
-    )
-)
+call :copyfn airflow
+call :copyfn rescue-calculator
+call :copyfn water-hydraulics
+call :copyfn svg-to-pdf
+call :copyfn explosion-calculator
+call :copyfn aerodynamics
 
 call pip install pyinstaller flask numpy cairosvg || goto :fail
-call pyinstaller --onefile --noconsole --name "server" ^
-  --add-data "..\pywebview\pvs-core;pvs-core" ^
-  --hidden-import flask ^
-  --hidden-import numpy ^
-  --hidden-import cairosvg ^
-  --distpath "%CS_DIR%\dist" ^
-  --workpath "%CS_DIR%\build" ^
-  --specpath "%CS_DIR%" ^
-  server_entry.py || goto :fail
+call pyinstaller --onefile --noconsole --name "server" --add-data "..\pywebview\pvs-core;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import cairosvg --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
 
 if not exist "%CS_DIR%\dist\server" mkdir "%CS_DIR%\dist\server"
 copy /Y "%CS_DIR%\dist\server.exe" "%CS_DIR%\dist\server\server.exe" || goto :fail
 echo     OK
 echo.
 
-REM ---------- Шаг 3: иконка ----------
-echo [3/5] Иконка приложения (pvs.ico)...
+REM ---------- Step 3: icon ----------
+echo [3/5] Application icon (pvs.ico)...
 if exist "%CS_DIR%\PvsApp\pvs.ico" (
-    echo     Иконка уже есть — пропускаю
+    echo     Icon already present - skip
 ) else (
-    echo     Скачиваю иконку...
+    echo     Downloading icon...
     curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
-    if exist "%CS_DIR%\PvsApp\pvs.ico" (echo     OK) else (echo     Иконку скачать не удалось — соберём без неё)
+    if exist "%CS_DIR%\PvsApp\pvs.ico" (echo     OK) else (echo     Icon download failed - building without it)
 )
 echo.
 
-REM ---------- Шаг 4: PVS.exe ----------
-echo [4/5] Сборка PVS.exe (C#)...
+REM ---------- Step 4: PVS.exe ----------
+echo [4/5] Building PVS.exe ^(C#^)...
 cd /d "%CS_DIR%\PvsApp"
-call dotnet publish -c Release -r win-x64 --self-contained true ^
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
-  -o "%CS_DIR%\dist" || goto :fail
+call dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%CS_DIR%\dist" || goto :fail
 echo     OK
 echo.
 
-REM ---------- Шаг 5: готово ----------
-echo [5/5] Готово!
+REM ---------- Step 5: done ----------
+echo [5/5] Done!
 echo.
 echo ============================================================
-echo   Сборка завершена успешно.
-echo   Папка для пользователя: %CS_DIR%\dist
+echo   Build finished successfully.
+echo   User folder: %CS_DIR%\dist
 echo     PVS.exe
 echo     server\server.exe
-echo   Запускать: PVS.exe
+echo   Run: PVS.exe
 echo ============================================================
 echo.
 pause
 exit /b 0
 
+REM ---------- helper: copy one backend function ----------
+:copyfn
+if exist "%ROOT%\backend\%~1\index.py" (
+    mkdir "%BF_DST%\%~1" 2>nul
+    copy /Y "%ROOT%\backend\%~1\index.py" "%BF_DST%\%~1\index.py" >nul
+    echo     + %~1
+)
+exit /b 0
+
 :fail
 echo.
 echo ============================================================
-echo   СБОРКА ПРЕРВАНА — произошла ошибка на одном из шагов.
-echo   Прочитай сообщение выше и исправь причину.
+echo   BUILD ABORTED - error on one of the steps.
+echo   Read the message above and fix the cause.
 echo ============================================================
 echo.
 pause
