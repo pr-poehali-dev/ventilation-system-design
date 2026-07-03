@@ -388,9 +388,9 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<rect x="6" y="6" width="36" height="28" fill="none" stroke="#333" stroke-width="1.5"/>` },
 
   // ─── ПОЖАР (расчётный очаг) ──────────────────────────────────────────
-  // Символ по ГОСТ: сплошной красный круг с 8 расходящимися лучами (солнце).
+  // Символ по ГОСТ: контурный красный круг с 8 расходящимися прямыми лучами.
   { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
-    svgContent: `<circle cx="24" cy="24" r="10" fill="#FF0100"/><g fill="#FF0100"><polygon points="24,1 21,10 27,10"/><polygon points="24,47 21,38 27,38"/><polygon points="1,24 10,21 10,27"/><polygon points="47,24 38,21 38,27"/><polygon points="7.8,7.8 14.5,11.3 11.3,14.5"/><polygon points="40.2,40.2 33.5,36.7 36.7,33.5"/><polygon points="40.2,7.8 33.5,11.3 36.7,14.5"/><polygon points="7.8,40.2 14.5,36.7 11.3,33.5"/></g>` },
+    svgContent: `<circle cx="24" cy="24" r="10" fill="none" stroke="#FF0100" stroke-width="2.4"/><g stroke="#FF0100" stroke-width="2.4" stroke-linecap="round"><line x1="24" y1="2" x2="24" y2="9"/><line x1="24" y1="39" x2="24" y2="46"/><line x1="2" y1="24" x2="9" y2="24"/><line x1="39" y1="24" x2="46" y2="24"/><line x1="8.3" y1="8.3" x2="13.3" y2="13.3"/><line x1="34.7" y1="34.7" x2="39.7" y2="39.7"/><line x1="39.7" y1="8.3" x2="34.7" y2="13.3"/><line x1="13.3" y1="34.7" x2="8.3" y2="39.7"/></g>` },
 
   // ─── ВЗРЫВ (расчётный источник) ──────────────────────────────────────
   { id: "explosion_source", name: "Источник взрыва",  group: "Аварийный режим",

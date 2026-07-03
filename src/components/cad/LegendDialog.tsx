@@ -580,16 +580,16 @@ const ITEMS: LegendItem[] = [
   {
     id: "acc_fire_source", group: "Аварии", name: "Очаг пожара",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <circle cx={24} cy={20} r={9} fill="#FF0100" />
-      <g fill="#FF0100">
-        <polygon points="24,1 21.5,9 26.5,9" />
-        <polygon points="24,39 21.5,31 26.5,31" />
-        <polygon points="4,20 11,17.5 11,22.5" />
-        <polygon points="44,20 37,17.5 37,22.5" />
-        <polygon points="9.9,5.9 15.8,9 12.7,12.1" />
-        <polygon points="38.1,34.1 32.2,31 35.3,27.9" />
-        <polygon points="38.1,5.9 32.2,9 35.3,12.1" />
-        <polygon points="9.9,34.1 15.8,31 12.7,27.9" />
+      <circle cx={24} cy={20} r={9} fill="none" stroke="#FF0100" strokeWidth={2} />
+      <g stroke="#FF0100" strokeWidth={2} strokeLinecap="round">
+        <line x1={24} y1={2} x2={24} y2={8} />
+        <line x1={24} y1={32} x2={24} y2={38} />
+        <line x1={6} y1={20} x2={12} y2={20} />
+        <line x1={36} y1={20} x2={42} y2={20} />
+        <line x1={11.3} y1={7.3} x2={15.5} y2={11.5} />
+        <line x1={32.5} y1={28.5} x2={36.7} y2={32.7} />
+        <line x1={36.7} y1={7.3} x2={32.5} y2={11.5} />
+        <line x1={15.5} y1={28.5} x2={11.3} y2={32.7} />
       </g>
     </svg>,
   },
