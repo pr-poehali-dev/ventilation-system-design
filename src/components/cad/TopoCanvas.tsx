@@ -1638,6 +1638,25 @@ export default function TopoCanvas(props: Props) {
 
   // Вертикальные направляющие — убраны (создавали сотни пунктирных линий при 3D-виде CSV-схем)
 
+  // ─── Единая распроекция экран→мир для рамки слоя печати ───────────────────
+  // Рамка живёт в плоскости z=zLevel. КРИТИЧНО: точка клика и углы рамки должны
+  // распроецироваться ОДНИМ И ТЕМ ЖЕ способом, иначе в наклонных видах (ИЗО и др.)
+  // возникает рассинхрон и рамка резко увеличивается/прыгает.
+  // Для видов, где z-плоскость вырождена (Фронт/Профиль, elevation≈0),
+  // unprojectToPlane вернёт null → откатываемся на плоскую unproject2D для ОБЕИХ
+  // сторон, сохраняя консистентность.
+  const unprojFrame = (sx: number, sy: number, zLevel: number): { x: number; y: number } | null => {
+    if (is3D) {
+      const wp = unprojectToPlane(sx, sy, proj, { axis: "z", value: zLevel });
+      if (wp) return { x: wp.x, y: wp.y };
+      // z-плоскость вырождена (elevation≈0) — плоский фолбэк
+      const flat = unproject2D(sx, sy, proj, zLevel);
+      return { x: flat.x, y: flat.y };
+    }
+    const flat = unproject2D(sx, sy, proj, zLevel);
+    return { x: flat.x, y: flat.y };
+  };
+
   // ─── Рендер шаблонов слоя печати горизонтов ──────────────────────────────
   const renderPrintLayers = () => (horizons ?? []).map((h) => {
     if (!h.printLayer?.visible) return null;
@@ -1750,14 +1769,16 @@ export default function TopoCanvas(props: Props) {
             const svgRect = svgEl.getBoundingClientRect();
             const csx = e.clientX - svgRect.left;
             const csy = e.clientY - svgRect.top;
-            const plane: WorkPlane = { axis: "z", value: h.z };
-            const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
+            const wp = unprojFrame(csx, csy, h.z);
             if (!wp) return;
             const _xys = xyScale ?? 1;
+            // activeBounds — углы рамки распроецируем ТЕМ ЖЕ unprojFrame, что и точку,
+            // иначе рассинхрон в наклонных видах даёт скачок размера рамки.
             const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
               ? (() => {
-                  const wBL = unproject2D(rx,      ry + rh, proj, h.z);
-                  const wTR = unproject2D(rx + rw, ry,      proj, h.z);
+                  const wBL = unprojFrame(rx,      ry + rh, h.z);
+                  const wTR = unprojFrame(rx + rw, ry,      h.z);
+                  if (!wBL || !wTR) return wb;
                   return { x1: wBL.x / _xys, y1: wBL.y / _xys, x2: wTR.x / _xys, y2: wTR.y / _xys };
                 })()
               : wb;
@@ -1769,7 +1790,7 @@ export default function TopoCanvas(props: Props) {
             const onMove = (me: MouseEvent) => {
               const sx2 = me.clientX - svgRect.left;
               const sy2 = me.clientY - svgRect.top;
-              const wp2 = is3D ? unprojectToPlane(sx2, sy2, proj, plane) : unproject2D(sx2, sy2, proj, h.z);
+              const wp2 = unprojFrame(sx2, sy2, h.z);
               if (!wp2) return;
               const dx = wp2.x / _xys - startState.startWx;
               const dy = wp2.y / _xys - startState.startWy;
@@ -1990,14 +2011,15 @@ export default function TopoCanvas(props: Props) {
               const svgRect = svgEl.getBoundingClientRect();
               const csx = e.clientX - svgRect.left;
               const csy = e.clientY - svgRect.top;
-              const plane: WorkPlane = { axis: "z", value: h.z };
-              const wp = is3D ? unprojectToPlane(csx, csy, proj, plane) : unproject2D(csx, csy, proj, h.z);
+              const wp = unprojFrame(csx, csy, h.z);
               if (!wp) return;
               const _xys2 = xyScale ?? 1;
+              // Углы рамки распроецируем ТЕМ ЖЕ unprojFrame, что и точку (без рассинхрона).
               const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
                 ? (() => {
-                    const wBL = unproject2D(rx,      ry + rh, proj, h.z);
-                    const wTR = unproject2D(rx + rw, ry,      proj, h.z);
+                    const wBL = unprojFrame(rx,      ry + rh, h.z);
+                    const wTR = unprojFrame(rx + rw, ry,      h.z);
+                    if (!wBL || !wTR) return wb;
                     return { x1: wBL.x / _xys2, y1: wBL.y / _xys2, x2: wTR.x / _xys2, y2: wTR.y / _xys2 };
                   })()
                 : wb;
@@ -2010,7 +2032,7 @@ export default function TopoCanvas(props: Props) {
               const onMove = (me: MouseEvent) => {
                 const sx2 = me.clientX - svgRect.left;
                 const sy2 = me.clientY - svgRect.top;
-                const wp2 = is3D ? unprojectToPlane(sx2, sy2, proj, plane) : unproject2D(sx2, sy2, proj, h.z);
+                const wp2 = unprojFrame(sx2, sy2, h.z);
                 if (!wp2) return;
                 const sb = startState.startBounds;
                 const b2 = { ...sb };
