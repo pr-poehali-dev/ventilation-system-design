@@ -580,7 +580,17 @@ const ITEMS: LegendItem[] = [
   {
     id: "acc_fire_source", group: "Аварии", name: "Очаг пожара",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <circle cx={24} cy={20} r={14} fill="none" stroke="#dc2626" strokeWidth={2} />
+      <circle cx={24} cy={20} r={9} fill="#FF0100" />
+      <g fill="#FF0100">
+        <polygon points="24,1 21.5,9 26.5,9" />
+        <polygon points="24,39 21.5,31 26.5,31" />
+        <polygon points="4,20 11,17.5 11,22.5" />
+        <polygon points="44,20 37,17.5 37,22.5" />
+        <polygon points="9.9,5.9 15.8,9 12.7,12.1" />
+        <polygon points="38.1,34.1 32.2,31 35.3,27.9" />
+        <polygon points="38.1,5.9 32.2,9 35.3,12.1" />
+        <polygon points="9.9,34.1 15.8,31 12.7,27.9" />
+      </g>
     </svg>,
   },
   {
