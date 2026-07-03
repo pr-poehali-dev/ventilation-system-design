@@ -4,6 +4,7 @@ import type { HorizonPrintLayer, PaperFormat } from "@/lib/topology";
 import { PAPER_SIZES_MM } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { computeStampBox, buildStampSvgString } from "@/lib/stampTemplate";
+import { computeApproverBox, buildApproverSvgString } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 
 function e(s: string | number): string {
@@ -35,30 +36,14 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
     body += `<text x="${n(tx)}" y="${n(ty)}" text-anchor="middle" dominant-baseline="hanging" font-size="${n(titleFontSize)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${e(pl.title)}</text>`;
   }
 
-  // Блок УТВЕРЖДАЮ
+  // Блок УТВЕРЖДАЮ — фиксированный размер по формату листа
   if (pl.showApprover) {
-    const apW = Math.min(rw * 0.28, 220);
-    const apX = rx + rw - inset - apW;
-    const apFs = Math.max(7, Math.min(13, rh * 0.018));
-    const lw2 = Math.max(0.4, apFs * 0.06);
-    const apCx = apX + apW / 2;
-    let ay = ry + inset + 2 + apFs * 1.4;
-    body += `<rect x="${n(apX)}" y="${n(ry+inset+2)}" width="${n(apW)}" height="${n(apFs*10)}" fill="white"/>`;
-    body += `<text x="${n(apCx)}" y="${n(ay)}" text-anchor="middle" font-size="${n(apFs*1.1)}" font-family="Arial, sans-serif" fill="#111">УТВЕРЖДАЮ</text>`;
-    ay += apFs * 1.6;
-    body += `<text x="${n(apCx)}" y="${n(ay)}" text-anchor="middle" font-size="${n(apFs)}" font-family="Arial, sans-serif" fill="#111">${e(pl.approverTitle || "Должность")}</text>`;
-    ay += apFs * 1.4;
-    body += `<text x="${n(apCx)}" y="${n(ay)}" text-anchor="middle" font-size="${n(apFs)}" font-family="Arial, sans-serif" fill="#111">${e(pl.orgName || "Организация")}</text>`;
-    ay += apFs * 1.6;
-    body += `<line x1="${n(apX+apFs)}" y1="${n(ay)}" x2="${n(apX+apW-apFs)}" y2="${n(ay)}" stroke="#111" stroke-width="${n(lw2)}"/>`;
-    ay += apFs * 1.2;
-    body += `<text x="${n(apX+apW-apFs*0.5)}" y="${n(ay)}" text-anchor="end" font-size="${n(apFs)}" font-family="Arial, sans-serif" fill="#1a44b8">${e(pl.approverName || "И.О. Фамилия")}</text>`;
-    ay += apFs * 1.4;
-    body += `<line x1="${n(apX)}" y1="${n(ay)}" x2="${n(apX+apW)}" y2="${n(ay)}" stroke="#111" stroke-width="${n(lw2)}"/>`;
-    ay += apFs * 1.2;
-    body += `<text x="${n(apX+apFs*0.3)}" y="${n(ay)}" text-anchor="start" font-size="${n(apFs)}" font-family="Arial, sans-serif" fill="#111">«${e(pl.day||"__")}»</text>`;
-    body += `<text x="${n(apX+apFs*3.2)}" y="${n(ay)}" text-anchor="start" font-size="${n(apFs)}" font-family="Arial, sans-serif" fill="#111">${e(pl.month||"__________")}</text>`;
-    body += `<text x="${n(apX+apW-apFs*0.3)}" y="${n(ay)}" text-anchor="end" font-size="${n(apFs)}" font-family="Arial, sans-serif" fill="#111">${e(pl.year||String(new Date().getFullYear()))} г.</text>`;
+    const fmtA = (pl.paperFormat ?? "A3") as PaperFormat;
+    const oriA = pl.orientation ?? "landscape";
+    const mmA = PAPER_SIZES_MM[fmtA];
+    const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
+    const boxA = computeApproverBox(rx, ry, rw, inset, paperWmmA);
+    body += buildApproverSvgString(pl, boxA);
   }
 
   // Блок УО — из реально установленных символов на схеме

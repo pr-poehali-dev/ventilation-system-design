@@ -10,6 +10,10 @@ import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
 } from "@/lib/stampTemplate";
+import {
+  buildApproverElements, buildApproverLines, getApproverFieldValue, computeApproverBox,
+  type ApproverFieldKey,
+} from "@/lib/approverTemplate";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/cad/CanvasLayerExports";
@@ -427,6 +431,10 @@ export default function TopoCanvas(props: Props) {
   const [editingTitleDraft, setEditingTitleDraft] = useState("");
   // Инлайн-редактирование ячейки штампа: { horizonId, field, draft }
   const [editingStampCell, setEditingStampCell] = useState<
+    { horizonId: string; field: string; draft: string } | null
+  >(null);
+  // Инлайн-редактирование ячейки блока УТВЕРЖДАЮ
+  const [editingApproverCell, setEditingApproverCell] = useState<
     { horizonId: string; field: string; draft: string } | null
   >(null);
 
@@ -1917,58 +1925,99 @@ export default function TopoCanvas(props: Props) {
         })()}
         {/* Блок УТВЕРЖДАЮ — правый верхний угол рамки */}
         {pl.showApprover && (() => {
-          const apW = Math.min(rw * 0.28, 220);
-          const apX = rx + rw - inset - apW;
-          const apY = ry + inset + 2;
-          const apFs = Math.max(7, Math.min(13, rh * 0.018));
-          const lw2 = Math.max(0.4, apFs * 0.06);
+          // Фиксированный размер блока по формату листа (как штамп)
+          const fmtA = (pl.paperFormat ?? "A3") as PaperFormat;
+          const oriA = pl.orientation ?? "landscape";
+          const mmA = PAPER_SIZES_MM[fmtA];
+          const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
+          const box = computeApproverBox(rx, ry, rw, inset, paperWmmA);
+          const { pxPerMm, w: apW, h: apH, ax, ay } = box;
+          const mx = (m: number) => ax + m * pxPerMm;
+          const my = (m: number) => ay + m * pxPerMm;
+          const baseFs = Math.max(6, pxPerMm * 2.6);
+          const lw2 = Math.max(0.4, pxPerMm * 0.15);
           const canEdit = !!onPrintLayerChange;
-          const apCx = apX + apW / 2;
-          let ay = apY + apFs * 1.4;
-          const lineY = (dy: number) => { ay += dy; return ay; };
+          const yearNow = String(new Date().getFullYear());
+          const els = buildApproverElements();
+          const lines = buildApproverLines();
+
+          const startEdit = (field: ApproverFieldKey) => {
+            setEditingApproverCell({ horizonId: h.id, field, draft: getApproverFieldValue(pl, field) });
+          };
+          const commitEdit = () => {
+            if (editingApproverCell && editingApproverCell.horizonId === h.id) {
+              onPrintLayerChange?.(h.id, { [editingApproverCell.field]: editingApproverCell.draft } as Partial<import("@/lib/topology").HorizonPrintLayer>);
+            }
+            setEditingApproverCell(null);
+          };
+
           return (
             <g key="approver-block">
-              <rect x={apX} y={apY} width={apW} height={apFs * 10} fill="white" style={{ pointerEvents: "none" }} />
-              {/* УТВЕРЖДАЮ */}
-              <text x={apCx} y={lineY(0)} textAnchor="middle" fontSize={apFs * 1.1} fontWeight="normal" fontFamily="Arial, sans-serif" fill="#111" style={{ pointerEvents: "none" }}>УТВЕРЖДАЮ</text>
-              {/* Должность */}
-              <text x={apCx} y={lineY(apFs * 1.6)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
-                style={{ cursor: canEdit ? "text" : "default" }}
-                onDoubleClick={canEdit ? () => { const v = prompt("Должность:", pl.approverTitle ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { approverTitle: v }); } : undefined}>
-                {pl.approverTitle || (canEdit ? "Должность" : "")}
-              </text>
-              {/* Организация */}
-              <text x={apCx} y={lineY(apFs * 1.4)} textAnchor="middle" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
-                style={{ cursor: canEdit ? "text" : "default" }}
-                onDoubleClick={canEdit ? () => { const v = prompt("Организация:", pl.orgName ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { orgName: v }); } : undefined}>
-                {pl.orgName || (canEdit ? "Организация" : "")}
-              </text>
-              {/* Линия */}
-              <line x1={apX + apFs} y1={lineY(apFs * 1.6)} x2={apX + apW - apFs} y2={ay} stroke="#111" strokeWidth={lw2} />
-              {/* ФИО */}
-              <text x={apX + apW - apFs * 0.5} y={lineY(apFs * 1.2)} textAnchor="end" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#1a44b8"
-                style={{ cursor: canEdit ? "text" : "default" }}
-                onDoubleClick={canEdit ? () => { const v = prompt("ФИО:", pl.approverName ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { approverName: v }); } : undefined}>
-                {pl.approverName || (canEdit ? "И.О. Фамилия" : "")}
-              </text>
-              {/* Линия даты */}
-              <line x1={apX} y1={lineY(apFs * 1.4)} x2={apX + apW} y2={ay} stroke="#111" strokeWidth={lw2} />
-              {/* Дата: «день» месяц год г. */}
-              <text x={apX + apFs * 0.3} y={lineY(apFs * 1.2)} textAnchor="start" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
-                style={{ cursor: canEdit ? "text" : "default" }}
-                onDoubleClick={canEdit ? () => { const v = prompt("Число (день):", pl.day ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { day: v }); } : undefined}>
-                «{pl.day || "__"}»
-              </text>
-              <text x={apX + apFs * 3.2} y={ay} textAnchor="start" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
-                style={{ cursor: canEdit ? "text" : "default" }}
-                onDoubleClick={canEdit ? () => { const v = prompt("Месяц:", pl.month ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { month: v }); } : undefined}>
-                {pl.month || "__________"}
-              </text>
-              <text x={apX + apW - apFs * 0.3} y={ay} textAnchor="end" fontSize={apFs} fontFamily="Arial, sans-serif" fill="#111"
-                style={{ cursor: canEdit ? "text" : "default" }}
-                onDoubleClick={canEdit ? () => { const v = prompt("Год:", pl.year ?? ""); if (v !== null) onPrintLayerChange?.(h.id, { year: v }); } : undefined}>
-                {pl.year || String(new Date().getFullYear())} г.
-              </text>
+              <rect x={ax} y={ay} width={apW} height={apH} fill="white" style={{ pointerEvents: "none" }} />
+              {lines.map((ln, i) => (
+                <line key={`al-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)} stroke="#111" strokeWidth={lw2} style={{ pointerEvents: "none" }} />
+              ))}
+              {els.map((el, i) => {
+                const fs = baseFs * (el.fontScale ?? 1);
+                const anchor = el.align === "left" ? "start" : el.align === "right" ? "end" : "middle";
+                const color = el.color ?? "#111";
+                // Статичная надпись
+                if (el.label && !el.field) {
+                  return (
+                    <text key={`lbl-${i}`} x={mx(el.x)} y={my(el.y)} textAnchor={anchor} dominantBaseline="central"
+                      fontSize={fs} fontFamily="Arial, sans-serif" fill={color} style={{ pointerEvents: "none", userSelect: "none" }}>
+                      {el.label}
+                    </text>
+                  );
+                }
+                // Редактируемое поле
+                if (el.field) {
+                  const isEd = editingApproverCell?.horizonId === h.id && editingApproverCell?.field === el.field;
+                  const val = getApproverFieldValue(pl, el.field);
+                  if (isEd && canEdit) {
+                    const cellX = mx(el.cellX ?? 0);
+                    const cellW = (el.cellW ?? (14)) * pxPerMm;
+                    return (
+                      <foreignObject key={`ed-${i}`} x={cellX} y={my(el.y) - fs} width={Math.max(12, cellW)} height={fs * 2}>
+                        <input
+                          // @ts-expect-error xmlns
+                          xmlns="http://www.w3.org/1999/xhtml"
+                          autoFocus
+                          value={editingApproverCell.draft}
+                          onChange={e => setEditingApproverCell(s => s ? { ...s, draft: e.target.value } : s)}
+                          onBlur={commitEdit}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") commitEdit();
+                            if (e.key === "Escape") setEditingApproverCell(null);
+                            e.stopPropagation();
+                          }}
+                          onMouseDown={e => e.stopPropagation()}
+                          style={{
+                            width: "100%", height: "100%",
+                            textAlign: el.align === "left" ? "left" : el.align === "right" ? "right" : "center",
+                            fontSize: fs, fontFamily: "Arial, sans-serif",
+                            border: "1.5px solid #7c3aed", borderRadius: 2, outline: "none",
+                            background: "rgba(255,253,230,0.97)", padding: "0 2px",
+                            boxSizing: "border-box" as const, color,
+                          }}
+                        />
+                      </foreignObject>
+                    );
+                  }
+                  // Отображение значения (с плейсхолдером и суффиксом «г.» для года)
+                  let shown = val || (canEdit ? (el.placeholder || "") : "");
+                  if (el.field === "year") shown = (val || yearNow) + " г.";
+                  return (
+                    <text key={`val-${i}`} x={mx(el.x)} y={my(el.y)} textAnchor={anchor} dominantBaseline="central"
+                      fontSize={fs} fontFamily="Arial, sans-serif" fill={val ? color : "#bbb"}
+                      style={{ cursor: canEdit ? "text" : "default", userSelect: "none" }}
+                      onDoubleClick={canEdit ? (e) => { e.stopPropagation(); startEdit(el.field!); } : undefined}>
+                      {shown}
+                    </text>
+                  );
+                }
+                return null;
+              })}
             </g>
           );
         })()}
