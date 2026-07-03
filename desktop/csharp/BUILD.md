@@ -1,48 +1,80 @@
-# Сборка PVS.exe (C# + WebView2)
+# Сборка десктопного приложения ПВ-Система (PVS.exe)
+
+Десктопное приложение = C#-обёртка (окно WebView2) + локальное расчётное
+ядро на Python (Flask) + собранный React-интерфейс внутри ядра.
+
+Пользователю отдаётся папка с `PVS.exe` — он запускает её как обычную
+программу, интернет не обязателен.
+
+---
+
+## 0. Что нужно установить один раз (окружение сборки)
+
+| Инструмент | Зачем | Ссылка |
+|------------|-------|--------|
+| Node.js 18+ | собрать React-интерфейс | https://nodejs.org |
+| Python 3.11 | собрать расчётное ядро | https://python.org |
+| .NET 8 SDK | собрать PVS.exe | https://dotnet.microsoft.com/download/dotnet/8.0 |
+
+Проверить, что всё установлено:
+
+```cmd
+node -v
+python --version
+dotnet --version
+```
+
+Дальше во всех командах считается, что проект лежит в `C:\PVS`.
+Замени путь на свой, если он другой.
+
+---
 
 ## Структура на выходе
+
 ```
-dist/
-  PVS.exe          ← C# обёртка (единственный файл для пользователя)
-  server/
-    server.exe     ← Flask-ядро (PyInstaller)
-    pvs-core/      ← расчёты + React-билд
-      dist/        ← index.html и assets
-      calc_*.py
-      ...
+desktop\csharp\dist\
+  PVS.exe          ← единственный файл, который запускает пользователь
+  server\
+    server.exe     ← расчётное ядро (Flask, упаковано PyInstaller)
 ```
 
-## Шаг 0 — Собрать React-фронтенд (ОБЯЗАТЕЛЬНО, desktop-режим!)
+---
 
-> ⚠️ КРИТИЧНО: фронт нужно собирать именно desktop-конфигом
-> `vite.config.desktop.ts`. Он включает флаг `__IS_DESKTOP__=true` и
-> направляет все запросы на локальный сервер `http://127.0.0.1:5173/api/...`.
-> Если собрать обычным `vite build` — активация лицензии и расчёты работать
-> НЕ будут (запросы уйдут в облако/пустоту, ошибка "Unexpected token '<'").
+## Шаг 1 — Собрать интерфейс (⚠️ КЛЮЧЕВОЙ ШАГ, без него не работает активация)
+
+> ⚠️ ОБЯЗАТЕЛЬНО собирать именно этой командой (desktop-режим).
+> Она включает флаг десктопа и направляет запросы на локальное ядро
+> `http://127.0.0.1:5173/api/...`.
+>
+> Если собрать обычной `npm run build` — ключ активации НЕ примется,
+> появится ошибка `Unexpected token '<', "<!doctype"...`, а расчёты и
+> кнопки окна работать не будут.
 
 ```cmd
 cd C:\PVS
 
-npm install           # если ещё не ставили зависимости
+npm install
 npx vite build --config vite.config.desktop.ts
 ```
 
-Результат появится в папке `dist-desktop`. Копируем его в ядро сервера:
+Результат появится в папке `dist-desktop`. Переносим его в расчётное ядро:
 
 ```cmd
 rmdir /S /Q desktop\pywebview\pvs-core\dist
 xcopy /E /I /Y dist-desktop desktop\pywebview\pvs-core\dist
 ```
 
-Теперь `desktop\pywebview\pvs-core\dist\index.html` — это готовый десктопный
-фронт, который упакует PyInstaller на следующем шаге.
+После этого должен существовать файл:
+`desktop\pywebview\pvs-core\dist\index.html`
 
-## Шаг 1 — Собрать server.exe (Python)
+---
+
+## Шаг 2 — Собрать расчётное ядро server.exe (Python)
 
 ```cmd
 cd C:\PVS\desktop\csharp
 
-pip install pyinstaller
+pip install pyinstaller flask numpy
 
 pyinstaller --onefile --noconsole --name "server" ^
   --add-data "..\pywebview\pvs-core;pvs-core" ^
@@ -51,37 +83,38 @@ pyinstaller --onefile --noconsole --name "server" ^
   server_entry.py
 ```
 
-Готовый `server.exe` появится в `dist\server.exe`.
+Готовый `server.exe` появится в `desktop\csharp\dist\server.exe`.
 
-## Шаг 2 — Подготовить папку server/
+Разложим его в папку `server\`:
 
 ```cmd
 mkdir dist\server
 copy dist\server.exe dist\server\server.exe
 ```
 
-## Шаг 2.5 — Иконка приложения (pvs.ico)
+---
 
-Иконка окна и панели задач берётся из файла
-`desktop\csharp\PvsApp\pvs.ico`. Если его нет — приложение соберётся, но
-будет со стандартной иконкой Windows.
+## Шаг 3 — Иконка окна и панели задач (pvs.ico) — по желанию
 
-Готовый логотип уже есть в проекте: `public\icon.svg`. Сконвертируй его в
-`.ico` (многоразмерный: 16, 32, 48, 256 px) любым способом:
+Если файла `desktop\csharp\PvsApp\pvs.ico` нет — программа соберётся,
+но со стандартной иконкой Windows.
 
-- Онлайн: https://convertio.co/ru/svg-ico/ или https://icoconvert.com
+Чтобы поставить свою иконку, сконвертируй логотип `public\icon.svg`
+в многоразмерный `.ico` (16, 32, 48, 256 px):
+
+- Онлайн: https://icoconvert.com или https://convertio.co/ru/svg-ico/
   (загрузи `public\icon.svg`, выбери размеры 16/32/48/256, скачай `.ico`)
 - Либо через ImageMagick:
   ```cmd
   magick public\icon.svg -define icon:auto-resize=256,48,32,16 desktop\csharp\PvsApp\pvs.ico
   ```
 
-Положи результат как `desktop\csharp\PvsApp\pvs.ico`. `.csproj` подхватит его
-автоматически (иконка подключается только если файл существует).
+Положи результат как `desktop\csharp\PvsApp\pvs.ico` — сборка подхватит
+его автоматически.
 
-## Шаг 3 — Собрать PVS.exe (C#)
+---
 
-Нужен .NET 8 SDK: https://dotnet.microsoft.com/download/dotnet/8.0
+## Шаг 4 — Собрать PVS.exe (C#)
 
 ```cmd
 cd C:\PVS\desktop\csharp\PvsApp
@@ -91,20 +124,53 @@ dotnet publish -c Release -r win-x64 --self-contained true ^
   -o ..\dist
 ```
 
-## Шаг 4 — Итоговая структура
+---
 
-```cmd
-C:\PVS\desktop\csharp\dist\
+## Шаг 5 — Итог
+
+Готовая папка для пользователя:
+
+```
+desktop\csharp\dist\
   PVS.exe
   server\
     server.exe
 ```
 
-Скопируй пользователю эту папку целиком — запускать `PVS.exe`.
+Скопируй эту папку целиком. Пользователь запускает `PVS.exe`.
 
-## Требования на машине пользователя
+---
+
+## Проверка, что всё собралось правильно (чек-лист)
+
+1. Запусти `PVS.exe`.
+2. Появляется заставка «Запуск расчётного ядра…», затем интерфейс.
+3. Открой окно активации → введи ключ → нажми «Активировать лицензию».
+   - ✅ Правильно: ключ принимается либо приходит понятный ответ сервера.
+   - ❌ Ошибка `Unexpected token '<'` = интерфейс собран не desktop-режимом.
+     Вернись к Шагу 1 и пересобери.
+4. Кнопки в правом верхнем углу (свернуть / развернуть / закрыть) работают.
+5. Логотип отображается в шапке и в окне «О программе».
+
+---
+
+## Частые ошибки
+
+| Симптом | Причина | Решение |
+|---------|---------|---------|
+| `Unexpected token '<'` при активации | интерфейс собран обычной `npm run build` | пересобрать Шагом 1 (desktop-конфиг) |
+| «Не удалось запустить расчётный модуль» | нет `server\server.exe` рядом с `PVS.exe` | проверить Шаг 2 |
+| Пустое белое окно | не скопирован `dist` в `pvs-core\dist` | повторить конец Шага 1 |
+| Логотип-«битая картинка» без сети | нормально: оффлайн подставляется запасной значок | это ожидаемо |
+| Иконка окна стандартная | нет `pvs.ico` | выполнить Шаг 3 |
+
+---
+
+## Требования на компьютере пользователя
 
 - Windows 10/11 x64
-- WebView2 Runtime (входит в Windows 11, для Windows 10: https://go.microsoft.com/fwlink/p/?LinkId=2124703)
-- .NET Runtime НЕ нужен (self-contained)
+- WebView2 Runtime (в Windows 11 уже есть; для Windows 10:
+  https://go.microsoft.com/fwlink/p/?LinkId=2124703)
+- .NET Runtime НЕ нужен (собрано self-contained)
 - Python НЕ нужен
+- Интернет НЕ обязателен (кроме первичной онлайн-проверки лицензии)
