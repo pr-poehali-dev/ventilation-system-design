@@ -12,9 +12,11 @@
   Переменные InPath/OutPath задаёт build.bat через -var (см. вызов).
 -->
 <Obfuscator>
-  <!-- Пути подставляются из build.bat: -->
-  <Var name="InPath" value="." />
-  <Var name="OutPath" value=".\obfuscated" />
+  <!-- Пути подставляет build.bat: копирует этот файл в obfuscar.gen.xml
+       и заменяет плейсхолдеры @@INPATH@@ / @@OUTPATH@@ на реальные пути.
+       Флаг -var в obfuscar.console НЕ поддерживается — только через <Var>. -->
+  <Var name="InPath" value="@@INPATH@@" />
+  <Var name="OutPath" value="@@OUTPATH@@" />
 
   <!-- Держим короткие/латинские имена — стабильнее для WPF -->
   <Var name="KeepPublicApi" value="false" />

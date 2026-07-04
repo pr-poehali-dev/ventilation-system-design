@@ -140,7 +140,12 @@ if not exist "%OBFUSCAR%" (
 )
 
 echo     Obfuscating PVS.dll...
-"%OBFUSCAR%" -var InPath="%CS_DIR%\PvsApp\%OBF_OUTDIR%" -var OutPath="%CS_DIR%\PvsApp\%OBF_OUTDIR%\obf" "%CS_DIR%\PvsApp\obfuscar.xml" || goto :fail
+REM obfuscar.console does NOT support -var flags: it only accepts the xml path.
+REM Generate obfuscar.gen.xml with real paths substituted into the <Var> tags.
+set "OBF_IN=%CS_DIR%\PvsApp\%OBF_OUTDIR%"
+set "OBF_OUT=%CS_DIR%\PvsApp\%OBF_OUTDIR%\obf"
+powershell -NoProfile -Command "(Get-Content -Raw -LiteralPath '%CS_DIR%\PvsApp\obfuscar.xml').Replace('@@INPATH@@', $env:OBF_IN).Replace('@@OUTPATH@@', $env:OBF_OUT) | Set-Content -Encoding UTF8 -LiteralPath '%CS_DIR%\PvsApp\obfuscar.gen.xml'" || goto :fail
+"%OBFUSCAR%" "%CS_DIR%\PvsApp\obfuscar.gen.xml" || goto :fail
 
 REM Replace the clean dll with the obfuscated one
 copy /Y "%CS_DIR%\PvsApp\%OBF_OUTDIR%\obf\PVS.dll" "%CS_DIR%\PvsApp\%OBF_OUTDIR%\PVS.dll" || goto :fail
