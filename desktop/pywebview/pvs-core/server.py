@@ -32,20 +32,31 @@ def _load_backend_handler(name: str):
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     meipass = getattr(sys, "_MEIPASS", None)
-    # Ищем backend_functions рядом с server.py и во всех вероятных местах bundle
-    candidates = [
-        os.path.join(script_dir, "backend_functions", name, "index.py"),
-    ]
+    # Ищем backend_functions рядом с server.py и во всех вероятных местах bundle.
+    # ВАЖНО: в защищённой сборке исходники .py компилируются в .pyc и удаляются,
+    # поэтому ищем оба варианта — сперва index.py, затем index.pyc.
+    base_dirs = [os.path.join(script_dir, "backend_functions", name)]
     if meipass:
-        candidates.append(os.path.join(meipass, "pvs-core", "backend_functions", name, "index.py"))
-        candidates.append(os.path.join(meipass, "backend_functions", name, "index.py"))
+        base_dirs.append(os.path.join(meipass, "pvs-core", "backend_functions", name))
+        base_dirs.append(os.path.join(meipass, "backend_functions", name))
+
+    candidates = []
+    for d in base_dirs:
+        candidates.append(os.path.join(d, "index.py"))
+        candidates.append(os.path.join(d, "index.pyc"))
 
     path = next((c for c in candidates if os.path.exists(c)), None)
     if not path:
         _HANDLER_CACHE[name] = None
         return None
 
-    spec = importlib.util.spec_from_file_location(f"bf_{name}", path)
+    # Для .pyc нужен SourcelessFileLoader (иначе spec может не подобрать loader).
+    if path.endswith(".pyc"):
+        from importlib.machinery import SourcelessFileLoader
+        loader = SourcelessFileLoader(f"bf_{name}", path)
+        spec = importlib.util.spec_from_loader(f"bf_{name}", loader)
+    else:
+        spec = importlib.util.spec_from_file_location(f"bf_{name}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     handler = getattr(mod, "handler", None)
