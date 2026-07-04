@@ -141,57 +141,32 @@ def handler(event: dict, context) -> dict:
                 return {"statusCode": 400, "headers": CORS, "body": json.dumps(
                     {"error": f"Ссылка недоступна: {e}"}, ensure_ascii=False)}
 
-            # Потоковая перекачка через multipart upload (части по 8 МБ), без хранения в памяти
-            PART_SIZE = 8 * 1024 * 1024
-            mp = s3.create_multipart_upload(Bucket=BUCKET, Key=key, ContentType="application/octet-stream")
-            upload_id = mp["UploadId"]
-            parts = []
-            part_num = 1
+            # Скачиваем файл целиком и кладём в S3 одним запросом (multipart не поддерживается хранилищем)
             try:
                 req = urllib.request.Request(direct_url, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req, timeout=300) as stream:
                     ctype = (stream.headers.get("Content-Type") or "").lower()
-                    buf = b""
-                    checked = False
-                    while True:
-                        data = stream.read(1024 * 512)
-                        if data:
-                            buf += data
-                        # Проверка: по ссылке должен прийти файл, а не HTML-страница
-                        if not checked and len(buf) >= 16:
-                            head = buf.lstrip()[:16].lower()
-                            is_html = "text/html" in ctype or head.startswith(b"<!doc") or head.startswith(b"<html")
-                            if is_html:
-                                s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
-                                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
-                                    {"error": "По ссылке получена веб-страница, а не файл. Проверьте, что это публичная ссылка на сам файл."}, ensure_ascii=False)}
-                            checked = True
-                        # Отправляем часть когда накопили >= PART_SIZE, либо в конце (остаток)
-                        if len(buf) >= PART_SIZE or (not data and buf):
-                            resp = s3.upload_part(
-                                Bucket=BUCKET, Key=key, UploadId=upload_id,
-                                PartNumber=part_num, Body=buf,
-                            )
-                            parts.append({"PartNumber": part_num, "ETag": resp["ETag"]})
-                            part_num += 1
-                            buf = b""
-                        if not data:
-                            break
-
-                if not parts:
-                    s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
-                    return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Файл по ссылке пуст или недоступен"})}
-
-                s3.complete_multipart_upload(
-                    Bucket=BUCKET, Key=key, UploadId=upload_id,
-                    MultipartUpload={"Parts": parts},
-                )
+                    file_bytes = stream.read()
             except Exception as e:
-                try:
-                    s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
-                except Exception:
-                    pass
-                return {"statusCode": 500, "headers": CORS, "body": json.dumps({"error": f"Не удалось скачать файл: {e}"}, ensure_ascii=False)}
+                return {"statusCode": 500, "headers": CORS, "body": json.dumps(
+                    {"error": f"Не удалось скачать файл по ссылке: {e}"}, ensure_ascii=False)}
+
+            if not file_bytes:
+                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
+                    {"error": "Файл по ссылке пуст или недоступен"}, ensure_ascii=False)}
+
+            # Проверка: по ссылке должен прийти файл, а не HTML-страница
+            head = file_bytes.lstrip()[:16].lower()
+            if "text/html" in ctype or head.startswith(b"<!doc") or head.startswith(b"<html"):
+                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
+                    {"error": "По ссылке получена веб-страница, а не файл. Проверьте, что это публичная ссылка на сам файл."}, ensure_ascii=False)}
+
+            try:
+                s3.put_object(Bucket=BUCKET, Key=key, Body=file_bytes,
+                              ContentType="application/octet-stream")
+            except Exception as e:
+                return {"statusCode": 500, "headers": CORS, "body": json.dumps(
+                    {"error": f"Не удалось сохранить файл в хранилище: {e}"}, ensure_ascii=False)}
 
             # Обновляем version.json
             info = get_version_info(s3)
