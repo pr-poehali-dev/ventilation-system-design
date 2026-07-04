@@ -156,8 +156,18 @@ call dotnet publish -c Release -r win-x64 --self-contained true --no-build -p:Pu
 echo     OK (obfuscated)
 echo.
 
-REM ---------- Step 5: done ----------
-echo [5/5] Done!
+REM ---------- Step 5: smoke test (verify server.exe APIs) ----------
+echo [5/5] Smoke test - checking server.exe APIs...
+python "%CS_DIR%\smoke_test.py" "%CS_DIR%\dist\server\server.exe"
+if errorlevel 1 (
+    echo ERROR: smoke test failed - core APIs do not respond.
+    echo        The build is broken, do not publish this server.exe.
+    goto :fail
+)
+echo     OK (APIs respond)
+echo.
+
+echo Done!
 echo.
 echo ============================================================
 echo   Build finished successfully.
