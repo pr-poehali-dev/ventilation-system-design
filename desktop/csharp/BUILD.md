@@ -107,20 +107,37 @@ for %F in (airflow rescue-calculator water-hydraulics svg-to-pdf explosion-calcu
 )
 ```
 
-Теперь собираем ядро (обрати внимание на `cairosvg` — он нужен для PDF+):
+Теперь собираем ядро (обрати внимание на `cairosvg` — он нужен для PDF+).
+Ядро **защищается от декомпиляции** обфускатором **PyArmor**: он шифрует
+байткод всех модулей ядра. Без этого распакованный `server.exe` содержит
+обычные `.pyc`, которые легко декомпилировать — и формулы расчётов
+(аэродинамика, взрыв) станут видны конкурентам.
+
+Сборка идёт в 2 подшага: PyArmor шифрует копию ядра → PyInstaller
+упаковывает уже зашифрованную копию.
 
 ```cmd
 cd C:\PVS\desktop\csharp
 
-pip install pyinstaller flask numpy cairosvg
+pip install pyinstaller flask numpy cairosvg pyarmor
 
+REM 1) зашифровать всё ядро в отдельную папку pvs-core-obf
+rmdir /S /Q pvs-core-obf
+pyarmor gen -O pvs-core-obf -r ..\pywebview\pvs-core
+
+REM 2) упаковать server.exe ИЗ защищённой копии (--add-data указывает на неё)
 pyinstaller --onefile --noconsole --name "server" ^
-  --add-data "..\pywebview\pvs-core;pvs-core" ^
+  --add-data "pvs-core-obf;pvs-core" ^
   --hidden-import flask ^
   --hidden-import numpy ^
   --hidden-import cairosvg ^
   server_entry.py
 ```
+
+> ⚠️ Ключевой момент — в `--add-data` указывается `pvs-core-obf`
+> (зашифрованная копия), а НЕ исходная `..\pywebview\pvs-core`. Рантайм
+> PyArmor лежит внутри `pvs-core-obf` и упаковывается вместе с ядром,
+> поэтому при запуске модули расшифровываются автоматически.
 
 Готовый `server.exe` появится в `desktop\csharp\dist\server.exe`.
 
@@ -239,7 +256,9 @@ desktop\csharp\dist\
 4. Кнопки в правом верхнем углу (свернуть / развернуть / закрыть) работают.
 5. Логотип отображается в шапке и в окне «О программе».
 6. (Опционально) Открой `PVS.dll` из `dist` в dnSpy — имена методов/полей
-   должны быть нечитаемыми (обфускация сработала).
+   должны быть нечитаемыми (обфускация C# сработала).
+7. (Опционально) Расчёты работают (аэродинамика, взрыв) — значит защищённое
+   PyArmor-ядро запускается корректно.
 
 ---
 
@@ -258,6 +277,9 @@ desktop\csharp\dist\
 | Окно не открывается / падает после обфускации | WPF-тип переименован | добавить его в `<SkipType>` в `PvsApp\obfuscar.xml` и пересобрать |
 | `obfuscar.console.exe not found` | не установился инструмент Obfuscar | проверить интернет/доступ к nuget.org, повторить Шаг 4 |
 | Обфускация «не применилась» | publish пересобрал проект | шаг 3 публикации должен идти с `--no-build` |
+| `server.exe` падает на старте после защиты | не подхватился рантайм PyArmor | `--add-data` должен указывать на `pvs-core-obf`, а не на оригинал; пересобрать Шаг 2 |
+| `pyarmor: command not found` | не установлен PyArmor | `pip install pyarmor` и повторить Шаг 2 |
+| Формулы всё ещё видны в распакованном ядре | упаковали исходную папку | проверить, что в `--add-data` указана `pvs-core-obf` |
 
 ---
 

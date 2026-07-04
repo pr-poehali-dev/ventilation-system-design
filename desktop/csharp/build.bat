@@ -69,12 +69,27 @@ call :copyfn svg-to-pdf
 call :copyfn explosion-calculator
 call :copyfn aerodynamics
 
-call pip install pyinstaller flask numpy cairosvg || goto :fail
-call pyinstaller --onefile --noconsole --name "server" --add-data "..\pywebview\pvs-core;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import cairosvg --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
+call pip install pyinstaller flask numpy cairosvg pyarmor || goto :fail
+
+REM --- Protect Python core with PyArmor (encrypt bytecode) ---
+REM Without this, PyInstaller-packed .pyc are easily decompiled and the
+REM calculation formulas (aerodynamics/explosion) become readable.
+REM PyArmor makes an encrypted copy of pvs-core; PyInstaller packs THAT copy.
+echo     Obfuscating Python core with PyArmor...
+set "CORE_OBF=%CS_DIR%\pvs-core-obf"
+if exist "%CORE_OBF%" rmdir /S /Q "%CORE_OBF%"
+call pyarmor gen -O "%CORE_OBF%" -r "%CORE_DIR%" || goto :fail
+if not exist "%CORE_OBF%\server.py" (
+    echo ERROR: PyArmor did not produce protected core (no server.py).
+    goto :fail
+)
+
+echo     Packing server.exe from protected core...
+call pyinstaller --onefile --noconsole --name "server" --add-data "%CORE_OBF%;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import cairosvg --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
 
 if not exist "%CS_DIR%\dist\server" mkdir "%CS_DIR%\dist\server"
 copy /Y "%CS_DIR%\dist\server.exe" "%CS_DIR%\dist\server\server.exe" || goto :fail
-echo     OK
+echo     OK (Python core protected)
 echo.
 
 REM ---------- Step 3: icon ----------
