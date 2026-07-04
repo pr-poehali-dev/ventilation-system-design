@@ -9878,8 +9878,8 @@ export default function CadPage() {
             />
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
-              <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">1.0.0</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">2026.05</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">2.0.17</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">03.07.2026</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop / PWA</span></div>
               {(() => {
