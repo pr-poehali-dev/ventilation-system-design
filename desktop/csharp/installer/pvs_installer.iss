@@ -1,8 +1,9 @@
 #define AppName "ПВ-Система"
-#define AppVersion "1.0.0"
+#define AppVersion "2.0.18"
 #define AppPublisher "ПВС"
 #define AppExeName "PVS.exe"
 #define SourceDir "..\dist"
+#define AppIcon "..\PvsApp\pvs.ico"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -36,6 +37,9 @@ Name: "desktopicon"; Description: "Создать значок на рабоче
 ; Главный exe
 Source: "{#SourceDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
+; Чёткая иконка (16/32/48/256) — используется ярлыками
+Source: "{#AppIcon}"; DestDir: "{app}"; DestName: "pvs.ico"; Flags: ignoreversion
+
 ; Flask-сервер
 Source: "{#SourceDir}\server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -43,8 +47,8 @@ Source: "{#SourceDir}\server\*"; DestDir: "{app}\server"; Flags: ignoreversion r
 ; Source: "redist\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\pvs.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\pvs.ico"; Tasks: desktopicon
 
 [Registry]
 ; Ассоциация файлов .vproj
