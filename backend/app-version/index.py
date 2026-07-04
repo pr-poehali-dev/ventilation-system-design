@@ -13,6 +13,7 @@ import json
 import os
 import base64
 import urllib.request
+import urllib.parse
 import boto3
 
 CORS = {
@@ -57,6 +58,25 @@ def get_version_info(s3):
         return {**default, **parsed}
     except Exception:
         return default
+
+
+def resolve_download_url(src_url: str) -> str:
+    """Преобразует публичную ссылку в прямую ссылку на скачивание файла.
+
+    Поддерживает Яндекс.Диск (disk.yandex.ru / yadi.sk) через официальный API.
+    Для остальных ссылок возвращает их как есть.
+    """
+    if "disk.yandex" in src_url or "yadi.sk" in src_url:
+        api = ("https://cloud-api.yandex.net/v1/disk/public/resources/download"
+               f"?public_key={urllib.parse.quote(src_url, safe='')}")
+        req = urllib.request.Request(api, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = json.loads(r.read().decode())
+        href = data.get("href")
+        if not href:
+            raise ValueError("Не удалось получить прямую ссылку с Яндекс.Диска")
+        return href
+    return src_url
 
 
 def check_admin(event):
@@ -114,6 +134,13 @@ def handler(event: dict, context) -> dict:
 
             key = EXE_KEY if file_type == "exe" else SERVER_KEY
 
+            # Преобразуем публичную ссылку (Я.Диск и т.п.) в прямую ссылку на файл
+            try:
+                direct_url = resolve_download_url(src_url)
+            except Exception as e:
+                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
+                    {"error": f"Ссылка недоступна: {e}"}, ensure_ascii=False)}
+
             # Потоковая перекачка через multipart upload (части по 8 МБ), без хранения в памяти
             PART_SIZE = 8 * 1024 * 1024
             mp = s3.create_multipart_upload(Bucket=BUCKET, Key=key, ContentType="application/octet-stream")
@@ -121,13 +148,24 @@ def handler(event: dict, context) -> dict:
             parts = []
             part_num = 1
             try:
-                req = urllib.request.Request(src_url, headers={"User-Agent": "Mozilla/5.0"})
+                req = urllib.request.Request(direct_url, headers={"User-Agent": "Mozilla/5.0"})
                 with urllib.request.urlopen(req, timeout=300) as stream:
+                    ctype = (stream.headers.get("Content-Type") or "").lower()
                     buf = b""
+                    checked = False
                     while True:
                         data = stream.read(1024 * 512)
                         if data:
                             buf += data
+                        # Проверка: по ссылке должен прийти файл, а не HTML-страница
+                        if not checked and len(buf) >= 16:
+                            head = buf.lstrip()[:16].lower()
+                            is_html = "text/html" in ctype or head.startswith(b"<!doc") or head.startswith(b"<html")
+                            if is_html:
+                                s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
+                                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
+                                    {"error": "По ссылке получена веб-страница, а не файл. Проверьте, что это публичная ссылка на сам файл."}, ensure_ascii=False)}
+                            checked = True
                         # Отправляем часть когда накопили >= PART_SIZE, либо в конце (остаток)
                         if len(buf) >= PART_SIZE or (not data and buf):
                             resp = s3.upload_part(
@@ -153,7 +191,7 @@ def handler(event: dict, context) -> dict:
                     s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
                 except Exception:
                     pass
-                return {"statusCode": 500, "headers": CORS, "body": json.dumps({"error": f"Не удалось скачать файл: {e}"})}
+                return {"statusCode": 500, "headers": CORS, "body": json.dumps({"error": f"Не удалось скачать файл: {e}"}, ensure_ascii=False)}
 
             # Обновляем version.json
             info = get_version_info(s3)
