@@ -79,13 +79,12 @@ echo.
 
 REM ---------- Step 3: icon ----------
 echo [3/5] Application icon (pvs.ico)...
-if exist "%CS_DIR%\PvsApp\pvs.ico" (
-    echo     Icon already present - skip
-) else (
-    echo     Downloading icon...
-    curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
-    if exist "%CS_DIR%\PvsApp\pvs.ico" (echo     OK) else (echo     Icon download failed - building without it)
-)
+REM Always re-download the fresh multi-size icon (16..256) so the app
+REM never ends up with an old blurry file cached in the project.
+if exist "%CS_DIR%\PvsApp\pvs.ico" del /Q "%CS_DIR%\PvsApp\pvs.ico"
+echo     Downloading fresh icon...
+curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
+if exist "%CS_DIR%\PvsApp\pvs.ico" (echo     OK) else (echo     Icon download failed - building without it)
 echo.
 
 REM ---------- Step 4: PVS.exe ----------
