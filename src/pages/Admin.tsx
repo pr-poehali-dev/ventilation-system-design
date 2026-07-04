@@ -93,18 +93,14 @@ export default function Admin() {
 
   // Обновление PVS.exe (установщик)
   const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string} | null>(null);
-  const [updFile, setUpdFile]           = useState<File | null>(null);
   const [updVersion, setUpdVersion]     = useState("");
   const [updNotes, setUpdNotes]         = useState("");
-  const [updProgress, setUpdProgress]   = useState(0);
   const [updStatus, setUpdStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [updErr, setUpdErr]             = useState("");
   const [updUrl, setUpdUrl]             = useState("");
 
   // Обновление server.exe (расчётное ядро)
-  const [srvFile, setSrvFile]           = useState<File | null>(null);
   const [srvVersion, setSrvVersion]     = useState("");
-  const [srvProgress, setSrvProgress]   = useState(0);
   const [srvStatus, setSrvStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [srvErr, setSrvErr]             = useState("");
   const [srvUrl, setSrvUrl]             = useState("");
@@ -253,206 +249,44 @@ export default function Admin() {
 
   useEffect(() => { if (activeTab === "update") loadCurrentVersion(); }, [activeTab]);
 
-  // Универсальная загрузка файла чанками через multipart S3
-  const uploadFileChunked = async (
-    file: File,
-    fileType: "exe" | "server",
-    onProgress: (p: number) => void,
-    headers: Record<string, string>,
-  ) => {
-    // S3 multipart требует минимум 5 МБ на часть (кроме последней).
-    // Берём 5 МБ ровно: непоследние части валидны, base64 (~6.7 МБ) вписывается в лимит функции.
-    const CHUNK_SIZE = 5 * 1024 * 1024; // 5 МБ — минимум для S3 multipart
-
-    // Шаг 1: начать multipart upload
-    onProgress(3);
-    const startRes = await fetch(VERSION_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify({ action: "upload_start", file_type: fileType }),
-    });
-    const startText = await startRes.text();
-    if (!startRes.ok) throw new Error(startText.startsWith("{") ? (JSON.parse(startText).error || "Ошибка") : `HTTP ${startRes.status}`);
-    const { upload_id, key } = JSON.parse(startText);
-
-    // Шаг 2: загружать чанки по очереди
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    const parts: { part_number: number; etag: string }[] = [];
-
-    const abortUpload = async () => {
-      await fetch(VERSION_URL, { method: "POST", headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify({ action: "upload_abort", key, upload_id }) }).catch(() => {});
-    };
-
-    // Флаг: используем прямую загрузку в S3 (presigned URL) — минует лимит функции.
-    // Если S3 недоступен из браузера (CORS) на первом чанке — переключаемся на base64.
-    let useDirect = true;
-
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE;
-      const slice = file.slice(start, start + CHUNK_SIZE);
-      let etag = "";
-
-      if (useDirect) {
-        // 1. Получаем presigned URL для этой части
-        const urlRes = await fetch(VERSION_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...headers },
-          body: JSON.stringify({ action: "get_part_url", key, upload_id, part_number: i + 1 }),
-        });
-        const urlText = await urlRes.text();
-        if (!urlRes.ok) { await abortUpload(); throw new Error(urlText.startsWith("{") ? (JSON.parse(urlText).error || "Ошибка") : `HTTP ${urlRes.status}`); }
-        const { url } = JSON.parse(urlText);
-
-        // 2. PUT чанка напрямую в S3
-        try {
-          const putRes = await fetch(url, { method: "PUT", body: slice });
-          if (!putRes.ok) throw new Error(`S3 ${putRes.status}`);
-          etag = putRes.headers.get("ETag") || putRes.headers.get("etag") || "";
-          if (!etag) throw new Error("no-etag");
-        } catch {
-          // CORS/сеть — на первом чанке переключаемся на base64-режим и повторяем
-          if (i === 0) { useDirect = false; }
-          else { await abortUpload(); throw new Error("Ошибка загрузки в хранилище"); }
-        }
-      }
-
-      if (!useDirect) {
-        // Fallback: base64 через функцию
-        const buf   = await slice.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary  = "";
-        for (let j = 0; j < bytes.length; j += 8192) {
-          binary += String.fromCharCode(...bytes.subarray(j, j + 8192));
-        }
-        const chunkB64 = btoa(binary);
-        const chunkRes = await fetch(VERSION_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...headers },
-          body: JSON.stringify({ action: "upload_chunk", key, upload_id, part_number: i + 1, chunk_base64: chunkB64 }),
-        });
-        const chunkText = await chunkRes.text();
-        if (!chunkRes.ok) {
-          await abortUpload();
-          throw new Error(chunkText.startsWith("{") ? (JSON.parse(chunkText).error || "Ошибка чанка") : `HTTP ${chunkRes.status}`);
-        }
-        etag = JSON.parse(chunkText).etag;
-      }
-
-      parts.push({ part_number: i + 1, etag });
-      onProgress(5 + Math.round(((i + 1) / totalChunks) * 85));
-    }
-
-    return { upload_id, key, parts };
-  };
-
-  const handleUploadExe = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!updFile || !updVersion) return;
-    setUpdStatus("uploading");
-    setUpdErr("");
-    setUpdProgress(0);
-    const hdrs = { "X-Admin-Password": password };
-    try {
-      const { upload_id, key, parts } = await uploadFileChunked(updFile, "exe", setUpdProgress, hdrs);
-
-      // Завершить multipart + обновить version.json
-      setUpdProgress(92);
-      const finRes = await fetch(VERSION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "upload_finish", key, upload_id, parts, version: updVersion, notes: updNotes }),
-      });
-      const finText = await finRes.text();
-      if (!finRes.ok) throw new Error(finText.startsWith("{") ? (JSON.parse(finText).error || "Ошибка") : `HTTP ${finRes.status}`);
-
-      setUpdProgress(100);
-      setUpdStatus("ok");
-      setCurrentVersion({ version: updVersion, notes: updNotes });
-      setUpdFile(null);
-      setUpdVersion("");
-      setUpdNotes("");
-    } catch (err: unknown) {
-      setUpdStatus("err");
-      setUpdErr(err instanceof Error ? err.message : "Ошибка загрузки");
-    }
-  };
-
-  const handleUploadServer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!srvFile || !srvVersion) return;
-    setSrvStatus("uploading");
-    setSrvErr("");
-    setSrvProgress(0);
-    const hdrs = { "X-Admin-Password": password };
-    try {
-      const { upload_id, key, parts } = await uploadFileChunked(srvFile, "server", setSrvProgress, hdrs);
-
-      // Завершить multipart + обновить version.json
-      setSrvProgress(92);
-      const finRes = await fetch(VERSION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "upload_finish", key, upload_id, parts, server_version: srvVersion }),
-      });
-      const finText = await finRes.text();
-      if (!finRes.ok) throw new Error(finText.startsWith("{") ? (JSON.parse(finText).error || "Ошибка") : `HTTP ${finRes.status}`);
-
-      setSrvProgress(100);
-      setSrvStatus("ok");
-      setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion } : null);
-      setSrvFile(null);
-      setSrvVersion("");
-    } catch (err: unknown) {
-      setSrvStatus("err");
-      setSrvErr(err instanceof Error ? err.message : "Ошибка загрузки");
-    }
-  };
-
-  // ── Загрузка установщика по прямой ссылке (сервер сам скачает) ──
+  // ── Опубликовать установщик: сохранить публичную ссылку Я.Диска ──
   const handleUploadExeFromUrl = async () => {
     if (!updUrl.trim() || !updVersion) return;
     setUpdStatus("uploading");
     setUpdErr("");
-    setUpdProgress(50);
     try {
       const res = await fetch(VERSION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "upload_from_url", file_type: "exe", url: updUrl.trim(), version: updVersion, notes: updNotes }),
+        body: JSON.stringify({ action: "set_url", file_type: "exe", url: updUrl.trim(), version: updVersion, notes: updNotes }),
       });
       const text = await res.text();
       if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
-      setUpdProgress(100);
       setUpdStatus("ok");
-      setCurrentVersion({ version: updVersion, notes: updNotes });
-      setUpdUrl("");
+      setCurrentVersion(prev => ({ version: updVersion, notes: updNotes, server_version: prev?.server_version }));
       setUpdVersion("");
       setUpdNotes("");
     } catch (err: unknown) {
       setUpdStatus("err");
-      setUpdErr(err instanceof Error ? err.message : "Ошибка загрузки по ссылке");
+      setUpdErr(err instanceof Error ? err.message : "Ошибка публикации");
     }
   };
 
-  // ── Загрузка расчётного ядра по прямой ссылке ──
+  // ── Опубликовать расчётное ядро: сохранить публичную ссылку Я.Диска ──
   const handleUploadServerFromUrl = async () => {
     if (!srvUrl.trim() || !srvVersion) return;
     setSrvStatus("uploading");
     setSrvErr("");
-    setSrvProgress(50);
     try {
       const res = await fetch(VERSION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Admin-Password": password },
-        body: JSON.stringify({ action: "upload_from_url", file_type: "server", url: srvUrl.trim(), server_version: srvVersion }),
+        body: JSON.stringify({ action: "set_url", file_type: "server", url: srvUrl.trim(), server_version: srvVersion }),
       });
       const text = await res.text();
       if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
-      setSrvProgress(100);
       setSrvStatus("ok");
       setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion } : null);
-      setSrvUrl("");
       setSrvVersion("");
     } catch (err: unknown) {
       setSrvStatus("err");
@@ -576,12 +410,12 @@ export default function Admin() {
                 <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Новый установщик PVS-Setup.exe</span>
                 <span className="text-[10px] text-gray-400 ml-1">— пользователи переустанавливают программу</span>
               </div>
-              <form onSubmit={handleUploadExe} className="space-y-4">
+              <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-gray-500 mb-1">Номер версии</label>
-                    <input type="text" value={updVersion} onChange={e => setUpdVersion(e.target.value)}
-                      className={inputCls} placeholder="1.2.0" required />
+                    <input type="text" value={updVersion} onChange={e => { setUpdVersion(e.target.value); setUpdStatus("idle"); }}
+                      className={inputCls} placeholder="1.2.0" />
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-gray-500 mb-1">Что нового</label>
@@ -589,44 +423,18 @@ export default function Admin() {
                       className={inputCls} placeholder="Новые функции..." />
                   </div>
                 </div>
-                <label className={`flex items-center gap-3 border-2 border-dashed rounded-lg px-4 py-4 cursor-pointer transition-colors ${updFile ? "border-green-400 bg-green-50" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50"}`}>
-                  <Icon name={updFile ? "CheckCircle" : "FileUp"} size={20} className={updFile ? "text-green-500" : "text-gray-400"} />
-                  <div>
-                    <div className="text-[12px] font-semibold text-gray-700">{updFile ? updFile.name : "Выбрать PVS-Setup.exe"}</div>
-                    {updFile && <div className="text-[11px] text-gray-400">{(updFile.size / 1024 / 1024).toFixed(1)} МБ</div>}
-                  </div>
-                  <input type="file" accept=".exe" className="hidden"
-                    onChange={e => { setUpdFile(e.target.files?.[0] || null); setUpdStatus("idle"); }} />
-                </label>
-                {updStatus === "uploading" && (
-                  <div>
-                    <div className="flex justify-between text-[11px] text-gray-500 mb-1"><span>Загрузка...</span><span>{updProgress}%</span></div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="h-2 rounded-full transition-all" style={{ width: `${updProgress}%`, background: "#2563eb" }} />
-                    </div>
-                  </div>
-                )}
-                {updStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Версия {updVersion} опубликована!</div>}
-                {updStatus === "err" && <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} />{updErr}</div>}
-                <button type="submit" disabled={!updFile || !updVersion || updStatus === "uploading"}
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл (Яндекс.Диск)</label>
+                  <input type="url" value={updUrl} onChange={e => { setUpdUrl(e.target.value); setUpdStatus("idle"); }}
+                    className={inputCls} placeholder="https://disk.yandex.ru/d/..." />
+                  <div className="text-[10px] text-gray-400 mt-1">Загрузите PVS-Setup.exe на Яндекс.Диск, сделайте публичную ссылку и вставьте сюда.</div>
+                </div>
+                {updStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Версия опубликована! Пользователи получат обновление.</div>}
+                {updStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{updErr}</div>}
+                <button type="button" onClick={handleUploadExeFromUrl} disabled={!updUrl.trim() || !updVersion || updStatus === "uploading"}
                   className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
                   style={{ background: "#1a3a6b" }}>
-                  {updStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</> : <><Icon name="Upload" size={14} />Опубликовать установщик</>}
-                </button>
-              </form>
-
-              {/* Альтернатива: загрузка по прямой ссылке (для больших файлов) */}
-              <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Icon name="Link" size={13} className="text-gray-400" />
-                  <span className="text-[11px] font-semibold text-gray-500">Или загрузить по прямой ссылке (надёжно для больших файлов)</span>
-                </div>
-                <input type="url" value={updUrl} onChange={e => { setUpdUrl(e.target.value); setUpdStatus("idle"); }}
-                  className={inputCls + " mb-2"} placeholder="https://... прямая ссылка на PVS-Setup.exe" />
-                <button type="button" onClick={handleUploadExeFromUrl}
-                  disabled={!updUrl.trim() || !updVersion || updStatus === "uploading"}
-                  className="w-full py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 flex items-center justify-center gap-2">
-                  <Icon name="Download" size={13} />Загрузить с сервера по ссылке
+                  {updStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Публикация...</> : <><Icon name="Upload" size={14} />Опубликовать установщик</>}
                 </button>
               </div>
             </div>
@@ -638,50 +446,24 @@ export default function Admin() {
                 <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Обновить расчётное ядро server.exe</span>
                 <span className="text-[10px] text-gray-400 ml-1">— без переустановки у пользователей</span>
               </div>
-              <form onSubmit={handleUploadServer} className="space-y-4">
+              <div className="space-y-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-gray-500 mb-1">Версия ядра</label>
-                  <input type="text" value={srvVersion} onChange={e => setSrvVersion(e.target.value)}
-                    className={inputCls} placeholder="1.2.0" required />
+                  <input type="text" value={srvVersion} onChange={e => { setSrvVersion(e.target.value); setSrvStatus("idle"); }}
+                    className={inputCls} placeholder="1.2.0" />
                 </div>
-                <label className={`flex items-center gap-3 border-2 border-dashed rounded-lg px-4 py-4 cursor-pointer transition-colors ${srvFile ? "border-purple-400 bg-purple-50" : "border-gray-300 hover:border-purple-400 hover:bg-purple-50"}`}>
-                  <Icon name={srvFile ? "CheckCircle" : "FileUp"} size={20} className={srvFile ? "text-purple-500" : "text-gray-400"} />
-                  <div>
-                    <div className="text-[12px] font-semibold text-gray-700">{srvFile ? srvFile.name : "Выбрать server.exe"}</div>
-                    {srvFile && <div className="text-[11px] text-gray-400">{(srvFile.size / 1024 / 1024).toFixed(1)} МБ</div>}
-                  </div>
-                  <input type="file" accept=".exe" className="hidden"
-                    onChange={e => { setSrvFile(e.target.files?.[0] || null); setSrvStatus("idle"); }} />
-                </label>
-                {srvStatus === "uploading" && (
-                  <div>
-                    <div className="flex justify-between text-[11px] text-gray-500 mb-1"><span>Загрузка...</span><span>{srvProgress}%</span></div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="h-2 rounded-full transition-all" style={{ width: `${srvProgress}%`, background: "#7c3aed" }} />
-                    </div>
-                  </div>
-                )}
-                {srvStatus === "ok" && <div className="flex items-center gap-2 text-purple-700 bg-purple-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Ядро v{srvVersion} загружено! При следующем запуске пользователи получат обновление автоматически.</div>}
-                {srvStatus === "err" && <div className="flex items-center gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} />{srvErr}</div>}
-                <button type="submit" disabled={!srvFile || !srvVersion || srvStatus === "uploading"}
+                <div>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл (Яндекс.Диск)</label>
+                  <input type="url" value={srvUrl} onChange={e => { setSrvUrl(e.target.value); setSrvStatus("idle"); }}
+                    className={inputCls} placeholder="https://disk.yandex.ru/d/..." />
+                  <div className="text-[10px] text-gray-400 mt-1">Загрузите server.exe на Яндекс.Диск, сделайте публичную ссылку и вставьте сюда.</div>
+                </div>
+                {srvStatus === "ok" && <div className="flex items-center gap-2 text-purple-700 bg-purple-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Ядро опубликовано! При следующем запуске пользователи получат обновление автоматически.</div>}
+                {srvStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{srvErr}</div>}
+                <button type="button" onClick={handleUploadServerFromUrl} disabled={!srvUrl.trim() || !srvVersion || srvStatus === "uploading"}
                   className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
                   style={{ background: "#7c3aed" }}>
-                  {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Загрузка...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
-                </button>
-              </form>
-
-              {/* Альтернатива: загрузка ядра по прямой ссылке */}
-              <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Icon name="Link" size={13} className="text-gray-400" />
-                  <span className="text-[11px] font-semibold text-gray-500">Или загрузить по прямой ссылке</span>
-                </div>
-                <input type="url" value={srvUrl} onChange={e => { setSrvUrl(e.target.value); setSrvStatus("idle"); }}
-                  className={inputCls + " mb-2"} placeholder="https://... прямая ссылка на server.exe" />
-                <button type="button" onClick={handleUploadServerFromUrl}
-                  disabled={!srvUrl.trim() || !srvVersion || srvStatus === "uploading"}
-                  className="w-full py-2 rounded-lg text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 flex items-center justify-center gap-2">
-                  <Icon name="Download" size={13} />Загрузить с сервера по ссылке
+                  {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Публикация...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
                 </button>
               </div>
             </div>

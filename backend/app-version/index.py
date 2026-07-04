@@ -1,17 +1,18 @@
 """
 Проверка версии и управление обновлениями ПВС-Система.
 
-GET  /                         → текущая версия + ссылки на скачивание
-GET  /  ?file=server           → скачать актуальный server.exe
-POST /  action=set_version     → обновить номер версии и заметки
-POST /  action=upload_start    → начать multipart upload, вернуть upload_id
-POST /  action=upload_chunk    → загрузить один чанк (base64, до 5МБ)
-POST /  action=upload_finish   → завершить multipart upload + обновить version.json
-POST /  action=upload_abort    → отменить незавершённый multipart upload
+Файлы обновлений (PVS-Setup.exe, server.exe) НЕ хранятся в нашем хранилище —
+они лежат на Яндекс.Диске. Мы храним только публичную ссылку, а прямую ссылку
+на скачивание выдаём свежую при каждом запросе (они у Яндекса временные).
+
+GET  /                      → версия + свежие прямые ссылки на скачивание
+GET  /  ?file=exe           → редирект на свежую прямую ссылку установщика
+GET  /  ?file=server        → редирект на свежую прямую ссылку расчётного ядра
+POST /  action=set_url      → сохранить публичную ссылку Я.Диска + версию
+POST /  action=set_version  → обновить только номер версии и заметки
 """
 import json
 import os
-import base64
 import urllib.request
 import urllib.parse
 import boto3
@@ -23,8 +24,6 @@ CORS = {
 }
 
 VERSION_KEY = "updates/version.json"
-EXE_KEY     = "updates/PVS-Setup.exe"
-SERVER_KEY  = "updates/server.exe"
 BUCKET      = "files"
 
 
@@ -37,17 +36,13 @@ def get_s3():
     )
 
 
-def cdn_url(key):
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
-
-
 def get_version_info(s3):
     default = {
-        "version":        "1.0.0",
-        "download_url":   cdn_url(EXE_KEY),
-        "server_url":     cdn_url(SERVER_KEY),
-        "server_version": "1.0.0",
-        "notes":          "",
+        "version":         "1.0.0",
+        "server_version":  "1.0.0",
+        "notes":           "",
+        "exe_public_url":  "",   # публичная ссылка Я.Диска на установщик
+        "server_public_url": "", # публичная ссылка Я.Диска на расчётное ядро
     }
     try:
         obj    = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
@@ -60,12 +55,20 @@ def get_version_info(s3):
         return default
 
 
-def resolve_download_url(src_url: str) -> str:
-    """Преобразует публичную ссылку в прямую ссылку на скачивание файла.
+def save_version_info(s3, info):
+    s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
+                  Body=json.dumps(info, ensure_ascii=False).encode(),
+                  ContentType="application/json")
 
-    Поддерживает Яндекс.Диск (disk.yandex.ru / yadi.sk) через официальный API.
-    Для остальных ссылок возвращает их как есть.
+
+def resolve_download_url(src_url: str) -> str:
+    """Публичную ссылку → прямую ссылку на скачивание файла.
+
+    Поддерживает Яндекс.Диск через официальный API. Прямые ссылки временные,
+    поэтому запрашиваем свежую при каждом обращении. Остальные ссылки — как есть.
     """
+    if not src_url:
+        return ""
     if "disk.yandex" in src_url or "yadi.sk" in src_url:
         api = ("https://cloud-api.yandex.net/v1/disk/public/resources/download"
                f"?public_key={urllib.parse.quote(src_url, safe='')}")
@@ -93,186 +96,84 @@ def handler(event: dict, context) -> dict:
     s3     = get_s3()
     params = event.get("queryStringParameters") or {}
 
-    # ── GET: отдать server.exe напрямую ───────────────────────────────────────
-    if method == "GET" and params.get("file") == "server":
+    # ── GET ?file=exe|server: редирект на свежую прямую ссылку скачивания ──────
+    if method == "GET" and params.get("file") in ("exe", "server"):
+        info = get_version_info(s3)
+        pub  = info["exe_public_url"] if params["file"] == "exe" else info["server_public_url"]
+        if not pub:
+            return {"statusCode": 404, "headers": CORS,
+                    "body": json.dumps({"error": "Файл ещё не опубликован"}, ensure_ascii=False)}
         try:
-            obj  = s3.get_object(Bucket=BUCKET, Key=SERVER_KEY)
-            data = obj["Body"].read()
-            return {
-                "statusCode": 200,
-                "headers": {
-                    **CORS,
-                    "Content-Type": "application/octet-stream",
-                    "Content-Disposition": "attachment; filename=server.exe",
-                },
-                "body": base64.b64encode(data).decode(),
-                "isBase64Encoded": True,
-            }
+            direct = resolve_download_url(pub)
         except Exception as e:
-            return {"statusCode": 404, "headers": CORS, "body": json.dumps({"error": str(e)})}
+            return {"statusCode": 502, "headers": CORS,
+                    "body": json.dumps({"error": str(e)}, ensure_ascii=False)}
+        return {"statusCode": 302, "headers": {**CORS, "Location": direct}, "body": ""}
 
-    # ── GET: информация о версии ───────────────────────────────────────────────
+    # ── GET: информация о версии + свежие прямые ссылки ───────────────────────
     if method == "GET":
         info = get_version_info(s3)
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps(info, ensure_ascii=False)}
+        out = {
+            "version":        info["version"],
+            "server_version": info["server_version"],
+            "notes":          info["notes"],
+        }
+        try:
+            out["download_url"] = resolve_download_url(info["exe_public_url"])
+        except Exception:
+            out["download_url"] = ""
+        try:
+            out["server_url"] = resolve_download_url(info["server_public_url"])
+        except Exception:
+            out["server_url"] = ""
+        return {"statusCode": 200, "headers": CORS, "body": json.dumps(out, ensure_ascii=False)}
 
     # ── POST: требует пароль ───────────────────────────────────────────────────
     if method == "POST":
         if not check_admin(event):
-            return {"statusCode": 403, "headers": CORS, "body": json.dumps({"error": "Неверный пароль"})}
+            return {"statusCode": 403, "headers": CORS,
+                    "body": json.dumps({"error": "Неверный пароль"}, ensure_ascii=False)}
 
         body   = json.loads(event.get("body") or "{}")
         action = body.get("action")
 
-        # ── Загрузить файл по прямой ссылке (сервер сам скачает и зальёт в S3) ─
-        # Надёжно для больших файлов (77 МБ+): передача сервер→сервер, минуя браузер.
-        if action == "upload_from_url":
+        # ── Сохранить публичную ссылку Я.Диска + версию (без скачивания) ──────
+        if action == "set_url":
             file_type = body.get("file_type", "exe")
             src_url   = (body.get("url") or "").strip()
             if not src_url.startswith("http"):
-                return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Нужна прямая http-ссылка на файл"})}
+                return {"statusCode": 400, "headers": CORS,
+                        "body": json.dumps({"error": "Нужна публичная ссылка (http...)"}, ensure_ascii=False)}
 
-            key = EXE_KEY if file_type == "exe" else SERVER_KEY
-
-            # Преобразуем публичную ссылку (Я.Диск и т.п.) в прямую ссылку на файл
+            # Сразу проверяем, что ссылка рабочая и отдаёт файл (получаем прямую ссылку)
             try:
-                direct_url = resolve_download_url(src_url)
+                resolve_download_url(src_url)
             except Exception as e:
-                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
-                    {"error": f"Ссылка недоступна: {e}"}, ensure_ascii=False)}
+                return {"statusCode": 400, "headers": CORS,
+                        "body": json.dumps({"error": f"Ссылка недоступна: {e}"}, ensure_ascii=False)}
 
-            # Скачиваем файл целиком и кладём в S3 одним запросом (multipart не поддерживается хранилищем)
-            try:
-                req = urllib.request.Request(direct_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=300) as stream:
-                    ctype = (stream.headers.get("Content-Type") or "").lower()
-                    file_bytes = stream.read()
-            except Exception as e:
-                return {"statusCode": 500, "headers": CORS, "body": json.dumps(
-                    {"error": f"Не удалось скачать файл по ссылке: {e}"}, ensure_ascii=False)}
-
-            if not file_bytes:
-                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
-                    {"error": "Файл по ссылке пуст или недоступен"}, ensure_ascii=False)}
-
-            # Проверка: по ссылке должен прийти файл, а не HTML-страница
-            head = file_bytes.lstrip()[:16].lower()
-            if "text/html" in ctype or head.startswith(b"<!doc") or head.startswith(b"<html"):
-                return {"statusCode": 400, "headers": CORS, "body": json.dumps(
-                    {"error": "По ссылке получена веб-страница, а не файл. Проверьте, что это публичная ссылка на сам файл."}, ensure_ascii=False)}
-
-            try:
-                s3.put_object(Bucket=BUCKET, Key=key, Body=file_bytes,
-                              ContentType="application/octet-stream")
-            except Exception as e:
-                return {"statusCode": 500, "headers": CORS, "body": json.dumps(
-                    {"error": f"Не удалось сохранить файл в хранилище: {e}"}, ensure_ascii=False)}
-
-            # Обновляем version.json
             info = get_version_info(s3)
-            if key == EXE_KEY:
-                info["version"]      = body.get("version", info["version"])
-                info["notes"]        = body.get("notes", info.get("notes", ""))
-                info["download_url"] = cdn_url(EXE_KEY)
+            if file_type == "exe":
+                info["exe_public_url"] = src_url
+                info["version"]        = body.get("version", info["version"])
+                info["notes"]          = body.get("notes", info.get("notes", ""))
             else:
-                info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
-                info["server_url"]     = cdn_url(SERVER_KEY)
-            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
-                          Body=json.dumps(info, ensure_ascii=False).encode(),
-                          ContentType="application/json")
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}
+                info["server_public_url"] = src_url
+                info["server_version"]    = body.get("server_version", info.get("server_version", "1.0.0"))
+            save_version_info(s3, info)
+            return {"statusCode": 200, "headers": CORS,
+                    "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}
 
         # ── Обновить только номер версии и заметки ────────────────────────────
         if action == "set_version":
             info = get_version_info(s3)
             info["version"] = body.get("version", info["version"])
             info["notes"]   = body.get("notes",   info.get("notes", ""))
-            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
-                          Body=json.dumps(info, ensure_ascii=False).encode(),
-                          ContentType="application/json")
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
+            save_version_info(s3, info)
+            return {"statusCode": 200, "headers": CORS,
+                    "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}
 
-        # ── Начать multipart upload ───────────────────────────────────────────
-        if action == "upload_start":
-            file_type = body.get("file_type", "exe")
-            key = EXE_KEY if file_type == "exe" else SERVER_KEY
-            resp = s3.create_multipart_upload(
-                Bucket=BUCKET, Key=key,
-                ContentType="application/octet-stream",
-            )
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({
-                "upload_id": resp["UploadId"],
-                "key": key,
-            })}
-
-        # ── Выдать presigned URL для прямой загрузки части в S3 ───────────────
-        # Браузер грузит чанк напрямую в S3 (PUT), минуя лимит тела функции.
-        if action == "get_part_url":
-            key       = body.get("key")
-            upload_id = body.get("upload_id")
-            part_num  = int(body.get("part_number", 1))
-            url = s3.generate_presigned_url(
-                "upload_part",
-                Params={
-                    "Bucket": BUCKET,
-                    "Key": key,
-                    "UploadId": upload_id,
-                    "PartNumber": part_num,
-                },
-                ExpiresIn=3600,
-            )
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"url": url})}
-
-        # ── Загрузить один чанк (fallback: base64 через функцию) ──────────────
-        if action == "upload_chunk":
-            key       = body.get("key")
-            upload_id = body.get("upload_id")
-            part_num  = int(body.get("part_number", 1))
-            chunk_b64 = body.get("chunk_base64", "")
-            chunk_bytes = base64.b64decode(chunk_b64)
-            resp = s3.upload_part(
-                Bucket=BUCKET, Key=key,
-                UploadId=upload_id,
-                PartNumber=part_num,
-                Body=chunk_bytes,
-            )
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({
-                "part_number": part_num,
-                "etag": resp["ETag"],
-            })}
-
-        # ── Завершить multipart upload + обновить version.json ────────────────
-        if action == "upload_finish":
-            key       = body.get("key")
-            upload_id = body.get("upload_id")
-            parts     = body.get("parts", [])  # [{part_number, etag}, ...]
-            s3.complete_multipart_upload(
-                Bucket=BUCKET, Key=key, UploadId=upload_id,
-                MultipartUpload={"Parts": [
-                    {"PartNumber": p["part_number"], "ETag": p["etag"]} for p in parts
-                ]},
-            )
-            # Обновляем version.json
-            info = get_version_info(s3)
-            if key == EXE_KEY:
-                info["version"]      = body.get("version", info["version"])
-                info["notes"]        = body.get("notes", info.get("notes", ""))
-                info["download_url"] = cdn_url(EXE_KEY)
-            else:
-                info["server_version"] = body.get("server_version", info.get("server_version", "1.0.0"))
-                info["server_url"]     = cdn_url(SERVER_KEY)
-            s3.put_object(Bucket=BUCKET, Key=VERSION_KEY,
-                          Body=json.dumps(info, ensure_ascii=False).encode(),
-                          ContentType="application/json")
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True, "info": info})}
-
-        # ── Отменить незавершённый multipart upload ───────────────────────────
-        if action == "upload_abort":
-            key       = body.get("key")
-            upload_id = body.get("upload_id")
-            s3.abort_multipart_upload(Bucket=BUCKET, Key=key, UploadId=upload_id)
-            return {"statusCode": 200, "headers": CORS, "body": json.dumps({"ok": True})}
-
-        return {"statusCode": 400, "headers": CORS, "body": json.dumps({"error": "Неизвестный action"})}
+        return {"statusCode": 400, "headers": CORS,
+                "body": json.dumps({"error": "Неизвестный action"}, ensure_ascii=False)}
 
     return {"statusCode": 405, "headers": CORS, "body": ""}
