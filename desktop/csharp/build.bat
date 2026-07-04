@@ -42,12 +42,11 @@ REM ---------- Step 1: frontend ----------
 echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
 call npm install || goto :fail
-REM Local vite (rolldown-vite). On Windows the launcher is vite.cmd
-if exist "%ROOT%\node_modules\.bin\vite.cmd" (
-    call "%ROOT%\node_modules\.bin\vite.cmd" build --config vite.config.desktop.ts || goto :fail
-) else (
-    call "%ROOT%\node_modules\.bin\vite" build --config vite.config.desktop.ts || goto :fail
-)
+REM Запускаем vite через npx — он сам найдёт локальный бинарник vite
+REM независимо от того, как называется launcher (vite.cmd / rolldown).
+REM Прямой путь к node_modules\.bin\vite.cmd на некоторых машинах
+REM отсутствует и даёт "The system cannot find the path specified".
+call npx --no-install vite build --config vite.config.desktop.ts || goto :fail
 
 echo     Copying frontend into calc core...
 if exist "%CORE_DIR%\dist" rmdir /S /Q "%CORE_DIR%\dist"
