@@ -424,10 +424,10 @@ export default function Admin() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл (Яндекс.Диск)</label>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл</label>
                   <input type="url" value={updUrl} onChange={e => { setUpdUrl(e.target.value); setUpdStatus("idle"); }}
-                    className={inputCls} placeholder="https://disk.yandex.ru/d/..." />
-                  <div className="text-[10px] text-gray-400 mt-1">Загрузите PVS-Setup.exe на Яндекс.Диск, сделайте публичную ссылку и вставьте сюда.</div>
+                    className={inputCls} placeholder="https://cdn.poehali.dev/.../PVS-Setup.exe" />
+                  <div className="text-[10px] text-gray-400 mt-1">Загрузите PVS-Setup.exe в Хранилище проекта (Ядро → Хранилище → Загрузить), скопируйте ссылку на файл и вставьте сюда. Также подойдёт публичная ссылка с Яндекс.Диска.</div>
                 </div>
                 {updStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Версия опубликована! Пользователи получат обновление.</div>}
                 {updStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{updErr}</div>}
@@ -453,10 +453,10 @@ export default function Admin() {
                     className={inputCls} placeholder="1.2.0" />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл (Яндекс.Диск)</label>
+                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл</label>
                   <input type="url" value={srvUrl} onChange={e => { setSrvUrl(e.target.value); setSrvStatus("idle"); }}
-                    className={inputCls} placeholder="https://disk.yandex.ru/d/..." />
-                  <div className="text-[10px] text-gray-400 mt-1">Загрузите server.exe на Яндекс.Диск, сделайте публичную ссылку и вставьте сюда.</div>
+                    className={inputCls} placeholder="https://cdn.poehali.dev/.../server.exe" />
+                  <div className="text-[10px] text-gray-400 mt-1">Загрузите server.exe в Хранилище проекта (Ядро → Хранилище → Загрузить), скопируйте ссылку на файл и вставьте сюда. Также подойдёт публичная ссылка с Яндекс.Диска.</div>
                 </div>
                 {srvStatus === "ok" && <div className="flex items-center gap-2 text-purple-700 bg-purple-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Ядро опубликовано! При следующем запуске пользователи получат обновление автоматически.</div>}
                 {srvStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{srvErr}</div>}
