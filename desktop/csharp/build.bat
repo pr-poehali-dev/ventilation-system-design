@@ -18,10 +18,15 @@ set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
 
+REM Полный лог сборки пишем в build.log — если окно закроется, причина останется тут
+set "BUILD_LOG=%CS_DIR%\build.log"
+echo Build started %DATE% %TIME% > "%BUILD_LOG%"
+
 echo.
 echo ============================================================
 echo   PV-Sistema - desktop build
 echo   Project root: %ROOT%
+echo   Log file: %BUILD_LOG%
 echo ============================================================
 echo.
 
@@ -79,7 +84,11 @@ REM so no .py source ends up inside server.exe. Free, no license needed.
 echo     Compiling Python core to bytecode (.pyc)...
 set "CORE_OBF=%CS_DIR%\pvs-core-pyc"
 if exist "%CORE_OBF%" rmdir /S /Q "%CORE_OBF%"
-call python "%CS_DIR%\compile_core.py" "%CORE_DIR%" "%CORE_OBF%" || goto :fail
+python "%CS_DIR%\compile_core.py" "%CORE_DIR%" "%CORE_OBF%" 2>>"%BUILD_LOG%"
+if errorlevel 1 (
+    echo ERROR: core compilation failed - see %BUILD_LOG%
+    goto :fail
+)
 if not exist "%CORE_OBF%\server.pyc" (
     echo ERROR: bytecode core not produced (no server.pyc).
     goto :fail

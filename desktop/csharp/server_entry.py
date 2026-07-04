@@ -11,7 +11,10 @@ def resource(path):
 
 sys.path.insert(0, resource("pvs-core"))
 
-from server import app
-
+# Импорт откладываем до рантайма: ядро лежит в pvs-core как .pyc и попадает
+# в sys.path только после вставки выше. Статический анализ PyInstaller не
+# должен пытаться разрешить 'server' на этапе сборки.
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5173, threaded=True, debug=False, use_reloader=False)
+    import importlib
+    server = importlib.import_module("server")
+    server.app.run(host="127.0.0.1", port=5173, threaded=True, debug=False, use_reloader=False)

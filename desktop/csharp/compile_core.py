@@ -33,11 +33,25 @@ def main():
     if os.path.exists(out):
         shutil.rmtree(out)
 
+    # Папки, которые пропускаем при обходе: кэш и сборочные артефакты.
+    SKIP_DIRS = {"__pycache__", "build", "pvs-core-pyc", ".git"}
+    # dist (собранный фронтенд) НЕ компилируем — там нет .py, только html/js/css.
+    # Копируем его целиком как есть, чтобы server.exe отдавал интерфейс.
+    COPY_WHOLE = {"dist"}
+
     compiled = 0
     copied = 0
+    errors = 0
     for root, dirs, files in os.walk(src):
-        # пропускаем кэш-папки
-        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        # dist копируем целиком отдельно и не заходим внутрь при обходе
+        for d in list(dirs):
+            if d in COPY_WHOLE:
+                shutil.copytree(
+                    os.path.join(root, d),
+                    os.path.join(out, os.path.relpath(os.path.join(root, d), src)),
+                    dirs_exist_ok=True,
+                )
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and d not in COPY_WHOLE]
         rel = os.path.relpath(root, src)
         dst_root = out if rel == "." else os.path.join(out, rel)
         os.makedirs(dst_root, exist_ok=True)
@@ -45,19 +59,27 @@ def main():
         for name in files:
             src_file = os.path.join(root, name)
             if name.endswith(".py"):
-                # компилируем .py -> foo.pyc рядом (legacy-имя, без __pycache__)
+                # компилируем .py -> foo.pyc рядом (legacy-имя, без __pycache__).
+                # optimize=0 (по умолчанию), иначе рантайм отвергнет .pyc.
                 dst_pyc = os.path.join(dst_root, name[:-3] + ".pyc")
-                py_compile.compile(
-                    src_file, cfile=dst_pyc, doraise=True, optimize=2,
-                )
-                compiled += 1
+                try:
+                    py_compile.compile(src_file, cfile=dst_pyc, doraise=True)
+                    compiled += 1
+                except py_compile.PyCompileError as e:
+                    # один битый файл не должен молча ронять всю сборку —
+                    # печатаем понятную ошибку, чтобы её было видно в консоли
+                    print(f"COMPILE ERROR in {src_file}:\n{e}")
+                    errors += 1
             elif name.endswith(".pyc"):
-                # уже скомпилированные — пропускаем
                 continue
             else:
                 # прочие ресурсы (html/js/css/json и т.п.) копируем как есть
                 shutil.copy2(src_file, os.path.join(dst_root, name))
                 copied += 1
+
+    if errors:
+        print(f"ERROR: {errors} file(s) failed to compile")
+        sys.exit(1)
 
     print(f"Compiled {compiled} .py -> .pyc, copied {copied} resource files")
     print(f"Protected core: {out}")
