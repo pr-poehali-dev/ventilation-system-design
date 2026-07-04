@@ -140,6 +140,14 @@ def main():
                 proc.kill()
             except Exception:
                 pass
+        # onefile-сборка может оставить дочерний процесс — добиваем по имени,
+        # иначе .exe останется заблокированным для следующей сборки/копирования.
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "server.exe"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        time.sleep(1.0)
 
 
 if __name__ == "__main__":

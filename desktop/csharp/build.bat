@@ -72,6 +72,11 @@ REM ---------- Step 2: calc core (server.exe) ----------
 echo [2/5] Building calc core server.exe...
 cd /d "%CS_DIR%"
 
+REM Kill any running server.exe (e.g. from a previous smoke test or app run),
+REM otherwise PyInstaller/copy cannot overwrite the locked .exe.
+taskkill /F /IM server.exe >nul 2>nul
+timeout /t 1 /nobreak >nul
+
 echo     Copying backend functions into core...
 set "BF_DST=%CORE_DIR%\backend_functions"
 if exist "%BF_DST%" rmdir /S /Q "%BF_DST%"
@@ -104,6 +109,9 @@ echo     Packing server.exe from bytecode core...
 call pyinstaller --onefile --noconsole --name "server" --add-data "%CORE_OBF%;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import svglib --hidden-import reportlab --collect-all reportlab --collect-all svglib --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
 
 if not exist "%CS_DIR%\dist\server" mkdir "%CS_DIR%\dist\server"
+REM Make sure the target is not locked by a running process before copying
+taskkill /F /IM server.exe >nul 2>nul
+timeout /t 1 /nobreak >nul
 copy /Y "%CS_DIR%\dist\server.exe" "%CS_DIR%\dist\server\server.exe" || goto :fail
 echo     OK (Python core compiled to bytecode)
 echo.
