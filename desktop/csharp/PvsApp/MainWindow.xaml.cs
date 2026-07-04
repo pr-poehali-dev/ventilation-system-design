@@ -597,7 +597,9 @@ public partial class MainWindow : Window
 
     private string BuildJsBootstrap()
     {
-        string updateJson  = _updateInfo != null ? JsonSerializer.Serialize(_updateInfo) : "null";
+        // camelCase — чтобы JS видел upd.version / upd.downloadUrl (не Version/DownloadUrl)
+        var jsOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        string updateJson  = _updateInfo != null ? JsonSerializer.Serialize(_updateInfo, jsOpts) : "null";
         string pendingFile = _pendingFile != null ? JsonSerializer.Serialize(_pendingFile) : "null";
         string isMaxStr    = WindowState == WindowState.Maximized ? "true" : "false";
 
