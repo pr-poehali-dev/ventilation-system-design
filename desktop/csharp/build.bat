@@ -82,7 +82,7 @@ call :copyfn svg-to-pdf
 call :copyfn explosion-calculator
 call :copyfn aerodynamics
 
-call pip install pyinstaller flask numpy cairosvg || goto :fail
+call pip install pyinstaller flask numpy svglib reportlab || goto :fail
 
 REM --- Protect Python core: compile .py -> .pyc, pack only bytecode ---
 REM Compile the whole core to .pyc and pack ONLY the bytecode copy,
@@ -101,7 +101,7 @@ if not exist "%CORE_OBF%\server.pyc" (
 )
 
 echo     Packing server.exe from bytecode core...
-call pyinstaller --onefile --noconsole --name "server" --add-data "%CORE_OBF%;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import cairosvg --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
+call pyinstaller --onefile --noconsole --name "server" --add-data "%CORE_OBF%;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import svglib --hidden-import reportlab --collect-all reportlab --collect-all svglib --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
 
 if not exist "%CS_DIR%\dist\server" mkdir "%CS_DIR%\dist\server"
 copy /Y "%CS_DIR%\dist\server.exe" "%CS_DIR%\dist\server\server.exe" || goto :fail
