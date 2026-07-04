@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Конфигурация обфускации Obfuscar для ПВ-Система (PVS.dll).
+  Запутывает имена типов, методов и полей, чтобы после декомпиляции
+  (dnSpy/ILSpy) код был нечитаемым.
+
+  Как это работает в сборке (см. build.bat, шаг 4):
+    1. dotnet build  -> получаем обычную PVS.dll в папке build_obf\
+    2. obfuscar.console obfuscar.xml -> перезаписываем PVS.dll обфусцированной
+    3. dotnet publish -> упаковка обфусцированной сборки в single-file PVS.exe
+
+  Переменные InPath/OutPath задаёт build.bat через -var (см. вызов).
+-->
+<Obfuscator>
+  <!-- Пути подставляются из build.bat: -->
+  <Var name="InPath" value="." />
+  <Var name="OutPath" value=".\obfuscated" />
+
+  <!-- Держим короткие/латинские имена — стабильнее для WPF -->
+  <Var name="KeepPublicApi" value="false" />
+  <Var name="HidePrivateApi" value="true" />
+
+  <!-- Шифруем строковые константы (URL, тексты) в коде -->
+  <Var name="HideStrings" value="true" />
+
+  <!-- Переименование с использованием непечатаемых символов выключаем,
+       чтобы не ломать WPF-рефлексию; используем безопасное переименование -->
+  <Var name="RenameProperties" value="true" />
+  <Var name="RenameEvents" value="true" />
+  <Var name="RenameFields" value="true" />
+
+  <!-- Основная сборка приложения -->
+  <Module file="$(InPath)\PVS.dll" />
+
+  <!--
+    WPF использует рефлексию для XAML (InitializeComponent, x:Name,
+    обработчики событий из разметки). Чтобы окно не сломалось,
+    исключаем из переименования типы, которые связаны с XAML.
+  -->
+  <SkipType name="PvsApp.App" />
+  <SkipType name="PvsApp.MainWindow" />
+
+  <!-- Не трогаем автогенерированный WPF-код разметки -->
+  <SkipNamespace name="XamlGeneratedNamespace" />
+</Obfuscator>

@@ -171,15 +171,45 @@ https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/ico
 
 ---
 
-## Шаг 4 — Собрать PVS.exe (C#)
+## Шаг 4 — Собрать PVS.exe (C#) с обфускацией
+
+Код C# защищается от декомпиляции обфускатором **Obfuscar** (бесплатный).
+После обфускации имена классов/методов/полей и строковые константы
+становятся нечитаемыми в dnSpy/ILSpy. Сборка идёт в 3 подшага:
+компиляция → обфускация `PVS.dll` → упаковка в один `.exe`.
 
 ```cmd
 cd C:\PVS\desktop\csharp\PvsApp
 
-dotnet publish -c Release -r win-x64 --self-contained true ^
+REM 1) компиляция (получаем обычную PVS.dll, ещё без упаковки)
+dotnet build -c Release -r win-x64 --self-contained true ^
+  -p:PublishSingleFile=false ^
+  -o bin\Release\net8.0-windows\win-x64
+
+REM 2) установка обфускатора (один раз) и обфускация PVS.dll
+dotnet tool install --tool-path ..\.tools Obfuscar.GlobalTool
+..\.tools\obfuscar.console.exe ^
+  -var InPath="%CD%\bin\Release\net8.0-windows\win-x64" ^
+  -var OutPath="%CD%\bin\Release\net8.0-windows\win-x64\obf" ^
+  obfuscar.xml
+copy /Y bin\Release\net8.0-windows\win-x64\obf\PVS.dll ^
+        bin\Release\net8.0-windows\win-x64\PVS.dll
+
+REM 3) упаковка БЕЗ пересборки (--no-build), чтобы взялась обфусцированная dll
+dotnet publish -c Release -r win-x64 --self-contained true --no-build ^
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
   -o ..\dist
 ```
+
+> ⚠️ Ключевой момент — шаг 3 идёт с флагом `--no-build`. Без него
+> `dotnet publish` пересобрал бы проект заново и **стёр обфускацию**.
+>
+> Настройки обфускации — в файле `PvsApp\obfuscar.xml`. Типы `App` и
+> `MainWindow` исключены из переименования, т.к. WPF обращается к ним
+> по имени через XAML (иначе окно перестанет работать).
+
+Всё это уже автоматизировано в `build.bat` (Шаг 4) — при обычной сборке
+ничего вручную делать не нужно.
 
 ---
 
@@ -208,6 +238,8 @@ desktop\csharp\dist\
      Вернись к Шагу 1 и пересобери.
 4. Кнопки в правом верхнем углу (свернуть / развернуть / закрыть) работают.
 5. Логотип отображается в шапке и в окне «О программе».
+6. (Опционально) Открой `PVS.dll` из `dist` в dnSpy — имена методов/полей
+   должны быть нечитаемыми (обфускация сработала).
 
 ---
 
@@ -223,6 +255,9 @@ desktop\csharp\dist\
 | Пустое белое окно | не скопирован `dist` в `pvs-core\dist` | повторить конец Шага 1 |
 | Логотип-«битая картинка» без сети | нормально: оффлайн подставляется запасной значок | это ожидаемо |
 | Иконка окна стандартная | нет `pvs.ico` | выполнить Шаг 3 |
+| Окно не открывается / падает после обфускации | WPF-тип переименован | добавить его в `<SkipType>` в `PvsApp\obfuscar.xml` и пересобрать |
+| `obfuscar.console.exe not found` | не установился инструмент Obfuscar | проверить интернет/доступ к nuget.org, повторить Шаг 4 |
+| Обфускация «не применилась» | publish пересобрал проект | шаг 3 публикации должен идти с `--no-build` |
 
 ---
 

@@ -87,11 +87,35 @@ curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
 if exist "%CS_DIR%\PvsApp\pvs.ico" (echo     OK) else (echo     Icon download failed - building without it)
 echo.
 
-REM ---------- Step 4: PVS.exe ----------
-echo [4/5] Building PVS.exe ^(C#^)...
+REM ---------- Step 4: PVS.exe (build -> obfuscate -> publish) ----------
+echo [4/5] Building PVS.exe ^(C#^) with obfuscation...
 cd /d "%CS_DIR%\PvsApp"
-call dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%CS_DIR%\dist" || goto :fail
-echo     OK
+
+set "OBF_OUTDIR=bin\Release\net8.0-windows\win-x64"
+
+REM 4.1 - compile (produces PVS.dll, does NOT pack into single file yet)
+echo     Compiling...
+call dotnet build -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "%OBF_OUTDIR%" || goto :fail
+
+REM 4.2 - install Obfuscar tool locally (idempotent) and obfuscate PVS.dll
+echo     Installing Obfuscar tool...
+call dotnet tool install --tool-path "%CS_DIR%\.tools" Obfuscar.GlobalTool >nul 2>nul
+set "OBFUSCAR=%CS_DIR%\.tools\obfuscar.console.exe"
+if not exist "%OBFUSCAR%" (
+    echo     ERROR: Obfuscar tool not installed. Check internet/nuget access.
+    goto :fail
+)
+
+echo     Obfuscating PVS.dll...
+"%OBFUSCAR%" -var InPath="%CS_DIR%\PvsApp\%OBF_OUTDIR%" -var OutPath="%CS_DIR%\PvsApp\%OBF_OUTDIR%\obf" "%CS_DIR%\PvsApp\obfuscar.xml" || goto :fail
+
+REM Replace the clean dll with the obfuscated one
+copy /Y "%CS_DIR%\PvsApp\%OBF_OUTDIR%\obf\PVS.dll" "%CS_DIR%\PvsApp\%OBF_OUTDIR%\PVS.dll" || goto :fail
+
+REM 4.3 - publish WITHOUT recompiling, so the obfuscated dll is packed as-is
+echo     Packing single-file PVS.exe...
+call dotnet publish -c Release -r win-x64 --self-contained true --no-build -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%CS_DIR%\dist" || goto :fail
+echo     OK (obfuscated)
 echo.
 
 REM ---------- Step 5: done ----------
