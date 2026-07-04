@@ -52,6 +52,7 @@ import VentPipeDialog from "@/components/cad/VentPipeDialog";
 import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
+import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import { API_URLS } from "@/lib/api-urls";
 import {
@@ -9920,10 +9921,11 @@ export default function CadPage() {
           </div>
 
           {/* Футер */}
-          <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <UpdateCheckButton currentVersion="2.0.17" />
             <button
               onClick={() => setShowAbout(false)}
-              className="h-7 px-4 text-[12px] rounded text-white font-medium"
+              className="h-7 px-4 text-[12px] rounded text-white font-medium flex-shrink-0"
               style={{ background: "#2563eb" }}>
               OK
             </button>
