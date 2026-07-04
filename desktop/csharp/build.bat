@@ -18,7 +18,7 @@ set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
 
-REM Полный лог сборки пишем в build.log — если окно закроется, причина останется тут
+REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
 echo Build started %DATE% %TIME% > "%BUILD_LOG%"
 
@@ -32,9 +32,21 @@ echo.
 
 REM ---------- Check environment ----------
 echo [0/5] Checking environment...
-where node >nul 2>nul || (echo ERROR: Node.js not found - https://nodejs.org & goto :fail)
-where python >nul 2>nul || (echo ERROR: Python not found - https://python.org & goto :fail)
-where dotnet >nul 2>nul || (echo ERROR: .NET 8 SDK not found - https://dotnet.microsoft.com/download/dotnet/8.0 & goto :fail)
+where node >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: Node.js not found - install from nodejs.org
+    goto :fail
+)
+where python >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: Python not found - install from python.org
+    goto :fail
+)
+where dotnet >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: .NET 8 SDK not found - install dotnet 8.0
+    goto :fail
+)
 echo     OK
 echo.
 
@@ -42,10 +54,7 @@ REM ---------- Step 1: frontend ----------
 echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
 call npm install || goto :fail
-REM Запускаем vite через npx — он сам найдёт локальный бинарник vite
-REM независимо от того, как называется launcher (vite.cmd / rolldown).
-REM Прямой путь к node_modules\.bin\vite.cmd на некоторых машинах
-REM отсутствует и даёт "The system cannot find the path specified".
+REM Run vite via npx so it finds the local binary regardless of launcher name.
 call npx --no-install vite build --config vite.config.desktop.ts || goto :fail
 
 echo     Copying frontend into calc core...
@@ -76,20 +85,18 @@ call :copyfn aerodynamics
 call pip install pyinstaller flask numpy cairosvg || goto :fail
 
 REM --- Protect Python core: compile .py -> .pyc, pack only bytecode ---
-REM Without this, PyInstaller-packed sources are plain .py and the
-REM calculation formulas (aerodynamics/explosion) are readable.
-REM We compile the whole core to .pyc and pack ONLY the bytecode copy,
+REM Compile the whole core to .pyc and pack ONLY the bytecode copy,
 REM so no .py source ends up inside server.exe. Free, no license needed.
 echo     Compiling Python core to bytecode (.pyc)...
 set "CORE_OBF=%CS_DIR%\pvs-core-pyc"
 if exist "%CORE_OBF%" rmdir /S /Q "%CORE_OBF%"
-python "%CS_DIR%\compile_core.py" "%CORE_DIR%" "%CORE_OBF%" 2>>"%BUILD_LOG%"
+python "%CS_DIR%\compile_core.py" "%CORE_DIR%" "%CORE_OBF%"
 if errorlevel 1 (
-    echo ERROR: core compilation failed - see %BUILD_LOG%
+    echo ERROR: core compilation failed
     goto :fail
 )
 if not exist "%CORE_OBF%\server.pyc" (
-    echo ERROR: bytecode core not produced (no server.pyc).
+    echo ERROR: bytecode core not produced - no server.pyc
     goto :fail
 )
 
@@ -103,16 +110,18 @@ echo.
 
 REM ---------- Step 3: icon ----------
 echo [3/5] Application icon (pvs.ico)...
-REM Always re-download the fresh multi-size icon (16..256) so the app
-REM never ends up with an old blurry file cached in the project.
 if exist "%CS_DIR%\PvsApp\pvs.ico" del /Q "%CS_DIR%\PvsApp\pvs.ico"
 echo     Downloading fresh icon...
 curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
-if exist "%CS_DIR%\PvsApp\pvs.ico" (echo     OK) else (echo     Icon download failed - building without it)
+if exist "%CS_DIR%\PvsApp\pvs.ico" (
+    echo     OK
+) else (
+    echo     Icon download failed - building without it
+)
 echo.
 
 REM ---------- Step 4: PVS.exe (build -> obfuscate -> publish) ----------
-echo [4/5] Building PVS.exe ^(C#^) with obfuscation...
+echo [4/5] Building PVS.exe (C#) with obfuscation...
 cd /d "%CS_DIR%\PvsApp"
 
 set "OBF_OUTDIR=bin\Release\net8.0-windows\win-x64"
