@@ -17,6 +17,8 @@ popd
 set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
+REM Исходный PNG-логотип (чёткий, 512x512, без фона) — из него локально соберём .ico
+set "ICON_PNG_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/14e46911-d90d-4bc5-a7c1-8676aa5e350d.png"
 
 REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
@@ -118,13 +120,33 @@ echo.
 
 REM ---------- Step 3: icon ----------
 echo [3/5] Application icon (pvs.ico)...
+REM Чистим ВСЕ возможные старые варианты иконки (в т.ч. ошибочный pvs.png),
+REM чтобы C# не подхватил битый файл и не показал размытую иконку.
 if exist "%CS_DIR%\PvsApp\pvs.ico" del /Q "%CS_DIR%\PvsApp\pvs.ico"
-echo     Downloading fresh icon...
-curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
+if exist "%CS_DIR%\PvsApp\pvs.png" del /Q "%CS_DIR%\PvsApp\pvs.png"
+
+echo     Downloading source PNG logo...
+curl -s -L -o "%CS_DIR%\PvsApp\pvs_src.png" "%ICON_PNG_URL%"
+
+echo     Building multi-size pvs.ico locally (Pillow)...
+call pip install pillow >nul 2>nul
+python "%CS_DIR%\make_ico.py" "%CS_DIR%\PvsApp\pvs_src.png" "%CS_DIR%\PvsApp\pvs.ico"
+if errorlevel 1 (
+    echo     Local ICO build failed - trying to download ready .ico...
+    curl -s -L -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
+)
+if exist "%CS_DIR%\PvsApp\pvs_src.png" del /Q "%CS_DIR%\PvsApp\pvs_src.png"
+
+REM Проверяем, что это действительно ICO (первые байты 00 00 01 00), а не PNG.
 if exist "%CS_DIR%\PvsApp\pvs.ico" (
-    echo     OK
+    powershell -NoProfile -Command "$b=[IO.File]::ReadAllBytes('%CS_DIR%\PvsApp\pvs.ico'); if($b.Length -gt 4 -and $b[0]-eq0 -and $b[1]-eq0 -and $b[2]-eq1 -and $b[3]-eq0){exit 0}else{exit 1}"
+    if errorlevel 1 (
+        echo     ERROR: pvs.ico is not a valid ICO file
+        goto :fail
+    )
+    echo     OK - valid multi-size icon
 ) else (
-    echo     Icon download failed - building without it
+    echo     Icon build failed - building without it
 )
 echo.
 
