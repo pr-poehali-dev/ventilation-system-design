@@ -2134,6 +2134,50 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   )}
                 </div>
               )}
+
+              {(() => {
+                const sources = [
+                  vfr        ? { power: vfr.power_MW,        dT: vfr.deltaT_C,        heat: 0 } : null,
+                  beltResult ? { power: beltResult.powerMax, dT: beltResult.deltaT_C, heat: beltResult.heatTotal } : null,
+                  cableResult? { power: cableResult.powerMW, dT: cableResult.deltaT_C, heat: cableResult.heatTotal } : null,
+                  woodResult ? { power: woodResult.powerMW,  dT: woodResult.deltaT_C,  heat: woodResult.heatTotal } : null,
+                ].filter((s): s is { power: number; dT: number; heat: number } => s !== null);
+
+                if (sources.length === 0) return null;
+
+                const totalPower = sources.reduce((a, s) => a + (isFinite(s.power) ? s.power : 0), 0);
+                const totalDT    = sources.reduce((a, s) => a + (isFinite(s.dT)    ? s.dT    : 0), 0);
+                const totalHeat  = sources.reduce((a, s) => a + (isFinite(s.heat)  ? s.heat  : 0), 0);
+
+                return (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-bold text-gray-800 mb-1 px-0.5">
+                      Общая пожарная нагрузка <span className="font-normal text-gray-500">(активных источников: {sources.length})</span>
+                    </div>
+                    <table className="w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr style={{ background: "#fee2e2" }}>
+                          <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
+                          <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
+                          <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="text-center px-1 py-0.5 font-bold" style={{ border: "1px solid #d1d5db", color: "#b91c1c" }}>{totalPower.toFixed(2)}</td>
+                          <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                          <td className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>{totalDT > 0 ? totalDT.toFixed(1) : "—"}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    {totalHeat > 0 && (
+                      <div className="text-[10px] text-gray-500 mt-0.5 px-0.5">
+                        Суммарный теплозапас: {totalHeat.toFixed(0)} МДж
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
