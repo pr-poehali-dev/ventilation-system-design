@@ -54,25 +54,54 @@ def handler(event, context):
         results[f"png_{size}"] = f"{cdn}/{key}"
 
     # ICO — несколько размеров в одном файле (для Windows ярлыка).
-    # ВАЖНО: каждый размер готовим отдельно через LANCZOS и вкладываем как
-    # самостоятельный кадр. Иначе Pillow ресайзит один базовый кадр «на лету»,
-    # и мелкие размеры (16/32/48) получаются мыльными.
-    ico_sizes = [16, 32, 48, 64, 128, 256]
-    ico_frames = [src.resize((s, s), Image.LANCZOS) for s in ico_sizes]
-
-    # Собираем ICO вручную из готовых PNG-кадров — гарантированно чётко.
+    # ВАЖНО: каждый размер готовим отдельно через LANCZOS.
+    # Формат кадра внутри ICO критичен для чёткости:
+    #   • размеры < 256  → классический BMP/DIB (32-bit BGRA). Загрузчик иконок
+    #     ярлыков/проводника Windows читает его надёжно и без масштабирования.
+    #   • размер 256      → PNG (стандарт для крупной иконки, экономит размер).
+    # Раньше ВСЕ кадры писались как PNG — на мелких размерах Windows часто
+    # ресайзил крупный кадр «на лету», отсюда и мыло.
     import struct
+
+    ico_sizes = [16, 32, 48, 64, 128, 256]
+    ico_frames = [src.resize((s, s), Image.LANCZOS).convert("RGBA") for s in ico_sizes]
+
+    def frame_as_dib(img):
+        """32-bit BMP/DIB (BGRA) + AND-маска — тело кадра ICO без BMP-заголовка."""
+        w, h = img.size
+        px = img.load()
+        # XOR-часть: BGRA, снизу вверх
+        xor = bytearray()
+        for y in range(h - 1, -1, -1):
+            for x in range(w):
+                r, g, b, a = px[x, y]
+                xor += bytes((b, g, r, a))
+        # AND-маска: 1 бит на пиксель, строки выровнены по 4 байта
+        row_bytes = ((w + 31) // 32) * 4
+        and_mask = bytearray()
+        for y in range(h - 1, -1, -1):
+            row = bytearray(row_bytes)
+            for x in range(w):
+                if px[x, y][3] == 0:            # полностью прозрачный → бит маски = 1
+                    row[x // 8] |= 0x80 >> (x % 8)
+            and_mask += row
+        # BITMAPINFOHEADER: высота = 2*h (XOR + AND)
+        header = struct.pack("<IiiHHIIiiII", 40, w, h * 2, 1, 32, 0,
+                             len(xor) + len(and_mask), 0, 0, 0, 0)
+        return bytes(header) + bytes(xor) + bytes(and_mask)
+
+    def frame_as_png(img):
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return buf.getvalue()
 
     def build_ico(frames):
         out = io.BytesIO()
         n = len(frames)
-        out.write(struct.pack("<HHH", 0, 1, n))  # заголовок ICONDIR
-        offset = 6 + n * 16                       # после всех записей ICONDIRENTRY
-        payloads = []
-        for img in frames:
-            buf = io.BytesIO()
-            img.save(buf, format="PNG", optimize=True)  # PNG-сжатие внутри ICO
-            payloads.append(buf.getvalue())
+        out.write(struct.pack("<HHH", 0, 1, n))   # ICONDIR
+        payloads = [frame_as_png(im) if im.width >= 256 else frame_as_dib(im)
+                    for im in frames]
+        offset = 6 + n * 16                        # после всех ICONDIRENTRY
         for img, data in zip(frames, payloads):
             w = img.width if img.width < 256 else 0
             h = img.height if img.height < 256 else 0
@@ -86,6 +115,7 @@ def handler(event, context):
     s3.put_object(Bucket="files", Key="icons/desktop-icon.ico",
         Body=ico_bytes, ContentType="image/x-icon")
     results["ico"] = f"{cdn}/icons/desktop-icon.ico"
+    results["ico_sizes"] = ico_sizes
 
     return {"statusCode": 200,
         "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
