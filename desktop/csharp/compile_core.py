@@ -36,8 +36,10 @@ def main():
     # Папки, которые пропускаем при обходе: кэш и сборочные артефакты.
     SKIP_DIRS = {"__pycache__", "build", "pvs-core-pyc", ".git"}
     # dist (собранный фронтенд) НЕ компилируем — там нет .py, только html/js/css.
-    # Копируем его целиком как есть, чтобы server.exe отдавал интерфейс.
-    COPY_WHOLE = {"dist"}
+    # backend_functions копируем как есть (.py): их handler'ы грузятся динамически
+    # через spec_from_file_location и зависят от numpy. Компиляция в .pyc и
+    # загрузка через SourcelessFileLoader на них ломала импорт (airflow => 500).
+    COPY_WHOLE = {"dist", "backend_functions"}
 
     compiled = 0
     copied = 0
