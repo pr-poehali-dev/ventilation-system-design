@@ -166,6 +166,17 @@ def serve_spa(path):
     return send_from_directory(DIST_FOLDER, "index.html")
 
 
+@app.after_request
+def _no_cache(resp):
+    # Десктоп грузит фронтенд из локального сервера. Отключаем кэш браузера,
+    # иначе WebView2 после пересборки показывает СТАРЫЙ интерфейс
+    # (старые index.html/js/css из кэша). Файлы локальные — кэш не нужен.
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 # ─── Аэродинамика ─────────────────────────────────────────────────────────────
 
 @app.route("/api/aerodynamics", methods=["GET", "POST", "OPTIONS"])

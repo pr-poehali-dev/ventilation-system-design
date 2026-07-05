@@ -219,6 +219,17 @@ public partial class MainWindow : Window
         await WebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildEarlyBootstrap());
 
         WebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+
+        // Сбрасываем кэш браузера перед загрузкой, чтобы после обновления программы
+        // всегда открывался свежий интерфейс, а не старые файлы из кэша WebView2.
+        try
+        {
+            await WebView.CoreWebView2.Profile.ClearBrowsingDataAsync(
+                CoreWebView2BrowsingDataKinds.DiskCache |
+                CoreWebView2BrowsingDataKinds.CacheStorage);
+        }
+        catch { /* старая версия рантайма WebView2 — не критично, есть no-cache на сервере */ }
+
         WebView.CoreWebView2.Navigate(ServerUrl);
     }
 
