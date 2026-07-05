@@ -1774,6 +1774,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
         {innerTab === "Пож.нагрузка" && (() => {
           const airFlow = Math.abs(branch.flow ?? 0);
+          // Длина ветви (по координатам узлов) — дефолт длины для источников пож.нагрузки
+          const branchLenStr = branch.length > 0 ? String(Math.round(branch.length)) : "";
           const massRubber  = branch.fireVehicleMassRubber  ?? 1200;
           const massDiesel  = branch.fireVehicleMassDiesel  ?? 400;
           const massOil     = branch.fireVehicleMassOil     ?? 200;
@@ -1785,7 +1787,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 burnRate:   branch.fireBeltBurnRate   ?? "0.013",
                 density:    branch.fireBeltDensity    ?? "1200",
                 width:      branch.fireBeltWidth      ?? "1.2",
-                length:     branch.fireBeltLength     ?? "100",
+                length:     branch.fireBeltLength     ?? (branchLenStr || "100"),
                 thickness:  branch.fireBeltThickness  ?? "0.016",
                 flameSpeed: branch.fireBeltFlameSpeed ?? "0.013",
               }, airFlow)
@@ -1795,7 +1797,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 heatValue:    branch.fireCableHeatValue ?? "25",
                 burnRate:     branch.fireCableBurnRate  ?? "0.007",
                 density:      branch.fireCableDensity   ?? "900",
-                length:       branch.fireCableLength    ?? "100",
+                length:       branch.fireCableLength    ?? (branchLenStr || "100"),
                 sectionWidth: branch.fireCableWidth     ?? "0.05",
                 sectionThick: branch.fireCableThick     ?? "0.05",
               }, airFlow)
@@ -1805,7 +1807,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 heatValue:    branch.fireWoodHeatValue   ?? "13.8",
                 burnRate:     branch.fireWoodBurnRate    ?? "0.027",
                 density:      branch.fireWoodDensity     ?? "500",
-                length:       branch.fireWoodLength      ?? "50",
+                length:       branch.fireWoodLength      ?? (branchLenStr || "50"),
                 sectionWidth: branch.fireWoodWidth       ?? "8.9",
                 sectionThick: branch.fireWoodThick       ?? "0.08",
                 flameSpeed:   branch.fireWoodFlameSpeed  ?? "0.024",
@@ -1920,10 +1922,10 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         { label: "ψ, кг/(м²·с)",    key: "fireBeltBurnRate"   as const, def: "0.013" },
                         { label: "ρ, кг/м³",         key: "fireBeltDensity"    as const, def: "1200"  },
                         { label: "Ширина, м",        key: "fireBeltWidth"      as const, def: "1.2"   },
-                        { label: "Длина, м",         key: "fireBeltLength"     as const, def: "100"   },
+                        { label: "Длина, м",         key: "fireBeltLength"     as const, def: branchLenStr || "100" },
                         { label: "Толщина, м",       key: "fireBeltThickness"  as const, def: "0.016" },
                         { label: "v пламени, м/с",   key: "fireBeltFlameSpeed" as const, def: "0.013" },
-                      ] as const).map(({ label, key, def }) => (
+                      ]).map(({ label, key, def }) => (
                         <tr key={key}>
                           <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
                           <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
@@ -2010,10 +2012,10 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         { label: "Q_н, МДж/кг",       key: "fireCableHeatValue" as const, def: "25"   },
                         { label: "ψ, кг/(м²·с)",      key: "fireCableBurnRate"  as const, def: "0.007"},
                         { label: "ρ, кг/м³",          key: "fireCableDensity"   as const, def: "900"  },
-                        { label: "Длина, м",           key: "fireCableLength"    as const, def: "100"  },
+                        { label: "Длина, м",           key: "fireCableLength"    as const, def: branchLenStr || "100" },
                         { label: "Ширина сеч., м",     key: "fireCableWidth"     as const, def: "0.05" },
                         { label: "Толщина сеч., м",    key: "fireCableThick"     as const, def: "0.05" },
-                      ] as const).map(({ label, key, def }) => (
+                      ]).map(({ label, key, def }) => (
                         <tr key={key}>
                           <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
                           <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
@@ -2084,12 +2086,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         { label: "Q_н, МДж/кг",         key: "fireWoodHeatValue"  as const, def: "13.8"  },
                         { label: "ψ, кг/(м²·с)",        key: "fireWoodBurnRate"   as const, def: "0.027" },
                         { label: "ρ, кг/м³",            key: "fireWoodDensity"    as const, def: "500"   },
-                        { label: "Длина, м",             key: "fireWoodLength"     as const, def: "50"    },
+                        { label: "Длина, м",             key: "fireWoodLength"     as const, def: branchLenStr || "50" },
                         { label: "Периметр сеч., м",     key: "fireWoodWidth"      as const, def: "8.9"   },
                         { label: "Толщина сеч., м",      key: "fireWoodThick"      as const, def: "0.08"  },
                         { label: "v пламени, м/с",       key: "fireWoodFlameSpeed" as const, def: "0.024" },
                         { label: "Время расч., мин",     key: "fireWoodCalcTime"   as const, def: "10"    },
-                      ] as const).map(({ label, key, def }) => (
+                      ]).map(({ label, key, def }) => (
                         <tr key={key}>
                           <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
                           <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
