@@ -5,8 +5,8 @@ import boto3
 import urllib.request
 from PIL import Image
 
-# Источник по умолчанию — логотип ПВ-Система
-DEFAULT_SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png"
+# Источник по умолчанию — логотип ПВ-Система (чёткий, без фона, 512×512)
+DEFAULT_SOURCE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/14e46911-d90d-4bc5-a7c1-8676aa5e350d.png"
 
 
 def load_source_image(url: str) -> Image.Image:
@@ -53,23 +53,38 @@ def handler(event, context):
         s3.put_object(Bucket="files", Key=key, Body=buf.getvalue(), ContentType="image/png")
         results[f"png_{size}"] = f"{cdn}/{key}"
 
-    # ICO — несколько размеров в одном файле (для Windows ярлыка)
+    # ICO — несколько размеров в одном файле (для Windows ярлыка).
+    # ВАЖНО: каждый размер готовим отдельно через LANCZOS и вкладываем как
+    # самостоятельный кадр. Иначе Pillow ресайзит один базовый кадр «на лету»,
+    # и мелкие размеры (16/32/48) получаются мыльными.
     ico_sizes = [16, 32, 48, 64, 128, 256]
-    ico_imgs = [src.resize((s, s), Image.LANCZOS) for s in ico_sizes]
-    # ICO не поддерживает RGBA напрямую во всех случаях — конвертируем правильно
-    ico_frames = []
-    for img in ico_imgs:
-        # Сохраняем прозрачность через RGBA
-        ico_frames.append(img)
+    ico_frames = [src.resize((s, s), Image.LANCZOS) for s in ico_sizes]
 
-    ico_buf = io.BytesIO()
-    ico_frames[0].save(
-        ico_buf, format="ICO",
-        sizes=[(s, s) for s in ico_sizes],
-        append_images=ico_frames[1:]
-    )
+    # Собираем ICO вручную из готовых PNG-кадров — гарантированно чётко.
+    import struct
+
+    def build_ico(frames):
+        out = io.BytesIO()
+        n = len(frames)
+        out.write(struct.pack("<HHH", 0, 1, n))  # заголовок ICONDIR
+        offset = 6 + n * 16                       # после всех записей ICONDIRENTRY
+        payloads = []
+        for img in frames:
+            buf = io.BytesIO()
+            img.save(buf, format="PNG", optimize=True)  # PNG-сжатие внутри ICO
+            payloads.append(buf.getvalue())
+        for img, data in zip(frames, payloads):
+            w = img.width if img.width < 256 else 0
+            h = img.height if img.height < 256 else 0
+            out.write(struct.pack("<BBBBHHII", w, h, 0, 0, 1, 32, len(data), offset))
+            offset += len(data)
+        for data in payloads:
+            out.write(data)
+        return out.getvalue()
+
+    ico_bytes = build_ico(ico_frames)
     s3.put_object(Bucket="files", Key="icons/desktop-icon.ico",
-        Body=ico_buf.getvalue(), ContentType="image/x-icon")
+        Body=ico_bytes, ContentType="image/x-icon")
     results["ico"] = f"{cdn}/icons/desktop-icon.ico"
 
     return {"statusCode": 200,
