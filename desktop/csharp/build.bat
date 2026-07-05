@@ -17,7 +17,7 @@ popd
 set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
-REM Исходный PNG-логотип (чёткий, 512x512, без фона) — из него локально соберём .ico
+REM Source PNG logo 512x512 - build multi-size .ico from it locally
 set "ICON_PNG_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/14e46911-d90d-4bc5-a7c1-8676aa5e350d.png"
 
 REM Full build log so the reason stays if the window closes
@@ -120,8 +120,8 @@ echo.
 
 REM ---------- Step 3: icon ----------
 echo [3/5] Application icon (pvs.ico)...
-REM Чистим ВСЕ возможные старые варианты иконки (в т.ч. ошибочный pvs.png),
-REM чтобы C# не подхватил битый файл и не показал размытую иконку.
+REM Clean any old icon variants (including wrong pvs.png) so C# does not
+REM pick a broken file and show a blurry icon.
 if exist "%CS_DIR%\PvsApp\pvs.ico" del /Q "%CS_DIR%\PvsApp\pvs.ico"
 if exist "%CS_DIR%\PvsApp\pvs.png" del /Q "%CS_DIR%\PvsApp\pvs.png"
 
@@ -137,8 +137,8 @@ if errorlevel 1 (
 )
 if exist "%CS_DIR%\PvsApp\pvs_src.png" del /Q "%CS_DIR%\PvsApp\pvs_src.png"
 
-REM Проверяем, что это действительно ICO (первые байты 00 00 01 00), а не PNG.
-REM Проверку выносим из вложенного if, иначе errorlevel читается до powershell.
+REM Verify it is really an ICO (first bytes 00 00 01 00), not a PNG.
+REM Keep the check out of a nested if, else errorlevel is read before powershell.
 if not exist "%CS_DIR%\PvsApp\pvs.ico" (
     echo     WARNING: icon build failed - building without it
     goto :icon_done
