@@ -47,28 +47,18 @@ def _load_backend_handler(name: str):
 
     path = next((c for c in candidates if os.path.exists(c)), None)
     if not path:
-        # Диагностика: печатаем какие пути проверяли — видно в консоли/логах.
-        print(f"[backend] '{name}' NOT FOUND. Checked:")
-        for c in candidates:
-            print(f"    {'[exists]' if os.path.exists(c) else '[  no  ]'} {c}")
-        # НЕ кэшируем None — иначе одна ранняя осечка отключит функцию навсегда.
+        _HANDLER_CACHE[name] = None
         return None
 
     # Для .pyc нужен SourcelessFileLoader (иначе spec может не подобрать loader).
-    try:
-        if path.endswith(".pyc"):
-            from importlib.machinery import SourcelessFileLoader
-            loader = SourcelessFileLoader(f"bf_{name}", path)
-            spec = importlib.util.spec_from_loader(f"bf_{name}", loader)
-        else:
-            spec = importlib.util.spec_from_file_location(f"bf_{name}", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-    except Exception as e:
-        import traceback
-        print(f"[backend] '{name}' FAILED to load from {path}: {e}")
-        print(traceback.format_exc())
-        return None
+    if path.endswith(".pyc"):
+        from importlib.machinery import SourcelessFileLoader
+        loader = SourcelessFileLoader(f"bf_{name}", path)
+        spec = importlib.util.spec_from_loader(f"bf_{name}", loader)
+    else:
+        spec = importlib.util.spec_from_file_location(f"bf_{name}", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
     handler = getattr(mod, "handler", None)
     _HANDLER_CACHE[name] = handler
     return handler

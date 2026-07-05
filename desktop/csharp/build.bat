@@ -17,8 +17,6 @@ popd
 set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
-REM Source PNG logo 512x512 - build multi-size .ico from it locally
-set "ICON_PNG_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/14e46911-d90d-4bc5-a7c1-8676aa5e350d.png"
 
 REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
@@ -120,36 +118,14 @@ echo.
 
 REM ---------- Step 3: icon ----------
 echo [3/5] Application icon (pvs.ico)...
-REM Clean any old icon variants (including wrong pvs.png) so C# does not
-REM pick a broken file and show a blurry icon.
 if exist "%CS_DIR%\PvsApp\pvs.ico" del /Q "%CS_DIR%\PvsApp\pvs.ico"
-if exist "%CS_DIR%\PvsApp\pvs.png" del /Q "%CS_DIR%\PvsApp\pvs.png"
-
-echo     Downloading source PNG logo...
-curl -s -L -o "%CS_DIR%\PvsApp\pvs_src.png" "%ICON_PNG_URL%"
-
-echo     Building multi-size pvs.ico locally (Pillow)...
-call pip install pillow >nul 2>nul
-python "%CS_DIR%\make_ico.py" "%CS_DIR%\PvsApp\pvs_src.png" "%CS_DIR%\PvsApp\pvs.ico"
-if errorlevel 1 (
-    echo     Local ICO build failed - trying to download ready .ico...
-    curl -s -L -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
+echo     Downloading fresh icon...
+curl -s -o "%CS_DIR%\PvsApp\pvs.ico" "%ICON_URL%"
+if exist "%CS_DIR%\PvsApp\pvs.ico" (
+    echo     OK
+) else (
+    echo     Icon download failed - building without it
 )
-if exist "%CS_DIR%\PvsApp\pvs_src.png" del /Q "%CS_DIR%\PvsApp\pvs_src.png"
-
-REM Verify it is really an ICO (first bytes 00 00 01 00), not a PNG.
-REM Keep the check out of a nested if, else errorlevel is read before powershell.
-if not exist "%CS_DIR%\PvsApp\pvs.ico" (
-    echo     WARNING: icon build failed - building without it
-    goto :icon_done
-)
-powershell -NoProfile -Command "$b=[IO.File]::ReadAllBytes('%CS_DIR%\PvsApp\pvs.ico'); if($b.Length -gt 4 -and $b[0]-eq0 -and $b[1]-eq0 -and $b[2]-eq1 -and $b[3]-eq0){exit 0}else{exit 1}"
-if errorlevel 1 (
-    echo     ERROR: pvs.ico is not a valid ICO file
-    goto :fail
-)
-echo     OK - valid multi-size icon
-:icon_done
 echo.
 
 REM ---------- Step 4: PVS.exe (build -> obfuscate -> publish) ----------
