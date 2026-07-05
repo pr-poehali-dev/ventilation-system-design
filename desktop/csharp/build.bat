@@ -138,16 +138,18 @@ if errorlevel 1 (
 if exist "%CS_DIR%\PvsApp\pvs_src.png" del /Q "%CS_DIR%\PvsApp\pvs_src.png"
 
 REM Проверяем, что это действительно ICO (первые байты 00 00 01 00), а не PNG.
-if exist "%CS_DIR%\PvsApp\pvs.ico" (
-    powershell -NoProfile -Command "$b=[IO.File]::ReadAllBytes('%CS_DIR%\PvsApp\pvs.ico'); if($b.Length -gt 4 -and $b[0]-eq0 -and $b[1]-eq0 -and $b[2]-eq1 -and $b[3]-eq0){exit 0}else{exit 1}"
-    if errorlevel 1 (
-        echo     ERROR: pvs.ico is not a valid ICO file
-        goto :fail
-    )
-    echo     OK - valid multi-size icon
-) else (
-    echo     Icon build failed - building without it
+REM Проверку выносим из вложенного if, иначе errorlevel читается до powershell.
+if not exist "%CS_DIR%\PvsApp\pvs.ico" (
+    echo     WARNING: icon build failed - building without it
+    goto :icon_done
 )
+powershell -NoProfile -Command "$b=[IO.File]::ReadAllBytes('%CS_DIR%\PvsApp\pvs.ico'); if($b.Length -gt 4 -and $b[0]-eq0 -and $b[1]-eq0 -and $b[2]-eq1 -and $b[3]-eq0){exit 0}else{exit 1}"
+if errorlevel 1 (
+    echo     ERROR: pvs.ico is not a valid ICO file
+    goto :fail
+)
+echo     OK - valid multi-size icon
+:icon_done
 echo.
 
 REM ---------- Step 4: PVS.exe (build -> obfuscate -> publish) ----------
