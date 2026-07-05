@@ -6,9 +6,11 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>PVS</AssemblyName>
     <RootNamespace>PvsApp</RootNamespace>
-    <Version>2.0.17</Version>
-    <AssemblyVersion>2.0.17</AssemblyVersion>
-    <FileVersion>2.0.17</FileVersion>
+    <!-- Единый источник версии: desktop/VERSION. Меняешь номер ТОЛЬКО там. -->
+    <PvsVersion>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\..\..\VERSION').Trim())</PvsVersion>
+    <Version>$(PvsVersion)</Version>
+    <AssemblyVersion>$(PvsVersion)</AssemblyVersion>
+    <FileVersion>$(PvsVersion)</FileVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>

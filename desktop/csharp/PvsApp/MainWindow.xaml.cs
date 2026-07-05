@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -18,7 +19,20 @@ namespace PvsApp;
 public partial class MainWindow : Window
 {
     private const int    Port            = 5173;
-    private const string AppVersion      = "2.0.17";
+    // Версия берётся из сборки (тег <Version> в PvsApp.csproj, который читает
+    // desktop/VERSION). Хардкода больше нет — единый источник версии.
+    private static readonly string AppVersion = GetAppVersion();
+
+    private static string GetAppVersion()
+    {
+        var info = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+            ?? "0.0.0";
+        // Отбрасываем возможный суффикс сборки вида "2.0.17+abc123"
+        var plus = info.IndexOf('+');
+        return plus >= 0 ? info.Substring(0, plus) : info;
+    }
     private const string VersionCheckUrl = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
     private const string ServerUrl       = "http://127.0.0.1:5173";
 

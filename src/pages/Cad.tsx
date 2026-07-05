@@ -53,6 +53,7 @@ import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHa
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
 import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
+import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import { API_URLS } from "@/lib/api-urls";
 import {
@@ -9879,8 +9880,8 @@ export default function CadPage() {
             />
 
             <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
-              <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">2.0.17</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">03.07.2026</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">{APP_VERSION}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">{APP_BUILD_DATE}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop / PWA</span></div>
               {(() => {
@@ -9922,7 +9923,7 @@ export default function CadPage() {
 
           {/* Футер */}
           <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <UpdateCheckButton currentVersion="2.0.17" />
+            <UpdateCheckButton currentVersion={APP_VERSION} />
             <button
               onClick={() => setShowAbout(false)}
               className="h-7 px-4 text-[12px] rounded text-white font-medium flex-shrink-0"
