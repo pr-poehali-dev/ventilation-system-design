@@ -4878,8 +4878,10 @@ export default function CadPage() {
               // Карта узлов для быстрого поиска в подписях ветвей (без O(n) find)
               const nodeById = new Map(nodes.map(n => [n.id, n]));
 
-              const NavBtn = ({ id, label, count, icon }: { id: typeof checkTab; label: string; count: number; icon: string }) => (
+              const navBtn = (id: typeof checkTab, label: string, count: number, icon: string) => (
                 <button
+                  key={id}
+                  type="button"
                   onClick={() => setCheckTab(id)}
                   className="flex-1 flex flex-col items-center py-1.5 gap-0.5 text-[10px] font-medium transition-colors relative"
                   style={{
@@ -4906,8 +4908,9 @@ export default function CadPage() {
                 setFocusNonce(Date.now());
               };
 
-              const NodeBtn = ({ n }: { n: TopoNode }) => (
+              const nodeBtn = (n: TopoNode) => (
                 <button
+                  type="button"
                   className="text-[11px] font-medium text-blue-700 hover:underline text-left"
                   onClick={e => { e.stopPropagation(); focusNode(n.id); }}
                 >
@@ -4930,8 +4933,9 @@ export default function CadPage() {
                 return `${nm} (${fn?.number || fn?.id || "?"}→${tn?.number || tn?.id || "?"})`;
               };
 
-              const BranchBtn = ({ b }: { b: TopoBranch }) => (
+              const branchBtn = (b: TopoBranch) => (
                 <button
+                  type="button"
                   className="text-[11px] font-medium text-blue-700 hover:underline text-left"
                   onClick={e => { e.stopPropagation(); focusBranch(b.id); }}
                 >
@@ -4970,19 +4974,19 @@ export default function CadPage() {
                   <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
                     style={{ background: "#f3f4f6" }}>Узлы</div>
                   <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
-                    <NavBtn id="near"     label="Несоед." icon="GitMerge"   count={tabCounts.near} />
-                    <NavBtn id="isolated" label="Тупики"  icon="Unlink"     count={tabCounts.isolated} />
-                    <NavBtn id="dupes"    label="Дубли"   icon="Copy"       count={tabCounts.dupes} />
+                    {navBtn("near",     "Несоед.", tabCounts.near,     "GitMerge")}
+                    {navBtn("isolated", "Тупики",  tabCounts.isolated, "Unlink")}
+                    {navBtn("dupes",    "Дубли",   tabCounts.dupes,    "Copy")}
                   </div>
 
                   {/* Навигация — Ветви */}
                   <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
                     style={{ background: "#f3f4f6" }}>Ветви</div>
                   <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
-                    <NavBtn id="dupbranch" label="Дубли"   icon="CopyPlus"    count={tabCounts.dupbranch} />
-                    <NavBtn id="zeroR"     label="R = 0"   icon="CircleSlash" count={tabCounts.zeroR} />
-                    <NavBtn id="highR"     label="R↑"      icon="TrendingUp"  count={tabCounts.highR} />
-                    <NavBtn id="bulkR"     label="Перем."  icon="DoorClosed"  count={tabCounts.bulkR} />
+                    {navBtn("dupbranch", "Дубли",  tabCounts.dupbranch, "CopyPlus")}
+                    {navBtn("zeroR",     "R = 0",  tabCounts.zeroR,     "CircleSlash")}
+                    {navBtn("highR",     "R↑",     tabCounts.highR,     "TrendingUp")}
+                    {navBtn("bulkR",     "Перем.", tabCounts.bulkR,     "DoorClosed")}
                   </div>
 
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
@@ -5021,9 +5025,9 @@ export default function CadPage() {
                                   <Icon name="AlertTriangle" size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-baseline gap-1 flex-wrap">
-                                      <NodeBtn n={a} />
+                                      {nodeBtn(a)}
                                       <span className="text-gray-300">↔</span>
-                                      <NodeBtn n={b} />
+                                      {nodeBtn(b)}
                                     </div>
                                     <div className="text-[10px] text-gray-400 mt-0.5">
                                       {dist < 0.1 ? dist.toFixed(3) : dist < 1 ? dist.toFixed(2) : dist.toFixed(1)} м
@@ -5091,9 +5095,9 @@ export default function CadPage() {
                                 <Icon name="Copy" size={12} className="text-purple-400 flex-shrink-0 mt-0.5" />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-baseline gap-1 flex-wrap">
-                                    <NodeBtn n={a} />
+                                    {nodeBtn(a)}
                                     <span className="text-gray-300">↔</span>
-                                    <NodeBtn n={b} />
+                                    {nodeBtn(b)}
                                   </div>
                                   <div className="text-[10px] text-gray-400 mt-0.5">
                                     X={a.x.toFixed(2)} Y={a.y.toFixed(2)} Z={a.z.toFixed(2)}
@@ -5126,7 +5130,7 @@ export default function CadPage() {
                                 {grp.map(b => (
                                   <div key={b.id} className="flex items-center gap-1"
                                     style={{ background: selectedBranchId === b.id ? "#fef3c7" : "transparent" }}>
-                                    <BranchBtn b={b} />
+                                    {branchBtn(b)}
                                     <span className="text-[10px] text-gray-400">· L={b.length.toFixed(0)}м · R={(b.resistance ?? 0).toFixed(3)}</span>
                                   </div>
                                 ))}
@@ -5158,7 +5162,7 @@ export default function CadPage() {
                               >
                                 <Icon name="CircleSlash" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
                                 <div className="flex-1 min-w-0">
-                                  <BranchBtn b={b} />
+                                  {branchBtn(b)}
                                   <div className="text-[10px] text-gray-400 mt-0.5">
                                     L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м² · R={(b.resistance ?? 0).toFixed(4)}
                                   </div>
@@ -5206,7 +5210,7 @@ export default function CadPage() {
                                 >
                                   <Icon name="TrendingUp" size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1 min-w-0">
-                                    <BranchBtn b={b} />
+                                    {branchBtn(b)}
                                     <div className="text-[10px] text-gray-400 mt-0.5">
                                       R=<b className="text-amber-700">{(b.resistance ?? 0).toFixed(2)}</b> Н·с²/м⁸ · L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м²
                                     </div>
@@ -5255,7 +5259,7 @@ export default function CadPage() {
                                 >
                                   <Icon name="DoorClosed" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1 min-w-0">
-                                    <BranchBtn b={b} />
+                                    {branchBtn(b)}
                                     <div className="text-[10px] text-gray-400 mt-0.5">
                                       {b.bulkheadName || "Перемычка"} · R=<b className="text-red-600">{rKmu.toFixed(0)}</b> кМюрг
                                     </div>
