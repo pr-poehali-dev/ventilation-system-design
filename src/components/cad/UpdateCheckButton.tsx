@@ -71,21 +71,14 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
     // WebView2 (десктоп C#) и браузер часто блокируют window.open для .exe.
     // Надёжный способ — временная ссылка <a download> с кликом: WebView2
     // отдаёт файл в загрузки, а не пытается открыть новое окно.
+    // Явное имя файла по версии, иначе браузер берёт UUID из URL.
     const a = document.createElement("a");
     a.href = downloadUrl;
-    a.download = "";
+    a.download = `PVS-Setup-${newVersion}.exe`;
     a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // Фолбэк: если загрузка не стартовала (жёсткая блокировка) — навигация.
-    setTimeout(() => {
-      try {
-        window.location.href = downloadUrl;
-      } catch {
-        /* игнорируем */
-      }
-    }, 600);
   };
 
   if (status === "available") {
