@@ -184,15 +184,24 @@ export function calcFireStability(
     const firePower = calcBranchFirePower(b, airFlow);
     const fireTemp  = calcFireTemp(firePower, airFlow, ambientTemp);
 
-    // Тепловая депрессия пожара по абсолютному углу (модуль), знак учтём отдельно
-    const thermalDep = Math.abs(
-      calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, absAngle)
+    // ── Устойчивость: используем ТОТ ЖЕ критерий, что и аварийный режим
+    //    (fireCalculator.calcFireMode), чтобы результаты полностью совпадали.
+    //
+    // Тепловая депрессия пожара считается по ЗНАКОВОМУ углу в направлении
+    // потока: нисходящая струя → отрицательная депрессия → способствует
+    // опрокидыванию. Знак берём из signedAngleFlow (учёт направления воздуха).
+    const thermalDepSigned = calcThermalDepression(
+      fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow,
     );
-    const branchDep = Math.abs(b.dP ?? 0);
+    const thermalDep = Math.abs(thermalDepSigned);
+    const branchDep  = Math.abs(b.dP ?? 0);
 
-    // Критерий: нисходящая струя устойчива, если располагаемая депрессия ветви
-    // больше тепловой депрессии пожара. Восходящая — всегда устойчива.
-    const stable = descending ? (branchDep >= thermalDep) : true;
+    // Критерий опрокидывания (идентичен calcFireMode, строка 488-489):
+    //   нисходящая ветвь (угол по потоку < -1°) И
+    //   |тепловая депрессия| > |депрессия ветви| × 0.5
+    // Иначе — струя устойчива. Восходящие всегда устойчивы.
+    const willReverse = (signedAngleFlow < -1) && (thermalDep > branchDep * 0.5);
+    const stable = !willReverse;
 
     const row: StabilityRow = {
       branchId: b.id,
