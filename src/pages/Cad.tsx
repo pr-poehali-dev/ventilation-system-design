@@ -10136,31 +10136,19 @@ export default function CadPage() {
               <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop / PWA</span></div>
               {(() => {
-                const isStandalone = window.matchMedia("(display-mode: standalone)").matches
-                  || (navigator as unknown as { standalone?: boolean }).standalone === true;
                 const isOnline = navigator.onLine;
-                const mode = isStandalone ? "Установленное приложение" : "Браузер";
                 return (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Запуск:</span>
-                      <span className="font-medium flex items-center gap-1.5">
-                        <Icon name={isStandalone ? "MonitorSmartphone" : "Globe"} size={12} className="text-blue-600" />
-                        {mode}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Сеть:</span>
-                      <span className="font-medium flex items-center gap-1.5">
-                        <span style={{
-                          width: 8, height: 8, borderRadius: 999,
-                          background: isOnline ? "#22c55e" : "#f59e0b",
-                          display: "inline-block",
-                        }} />
-                        {isOnline ? "Онлайн" : "Офлайн-режим"}
-                      </span>
-                    </div>
-                  </>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Сеть:</span>
+                    <span className="font-medium flex items-center gap-1.5">
+                      <span style={{
+                        width: 8, height: 8, borderRadius: 999,
+                        background: isOnline ? "#22c55e" : "#f59e0b",
+                        display: "inline-block",
+                      }} />
+                      {isOnline ? "Онлайн" : "Офлайн-режим"}
+                    </span>
+                  </div>
                 );
               })()}
             </div>
