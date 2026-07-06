@@ -1409,14 +1409,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
 
-        # Проверка Q > qMax для вентилятора с кривой характеристики.
-        # ВМП (вентиляторы местного проветривания) исключаем — для них
-        # предупреждение о выходе за паспортную зону не выводим.
-        if e.get("hasFan") and not e.get("fanStopped") and e.get("fanType", "ГВУ") != "ВМП":
-            q_max = e.get("qMax", 0)
-            if q_max > 0 and abs(q) > q_max * 1.02:
-                diag.append({"level": "warning", "category": "fan_overload",
-                             "message": f"Ветвь {e['id']}: Q={abs(q):.2f} м³/с превышает qMax={q_max:.1f} м³/с — вентилятор вышел за паспортную зону"})
+        # Предупреждение о выходе вентилятора за паспортную зону (Q > qMax)
+        # отключено для всех типов вентиляторов (ВМП, ВВУ, ГВУ) по требованию.
 
         # flowDir: направление реального потока (a→b при Q>0, b→a при Q<0)
         # actualQ: модуль расхода (всегда положительный) — для отображения
