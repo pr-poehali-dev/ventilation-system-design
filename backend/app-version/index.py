@@ -148,7 +148,9 @@ def handler(event: dict, context) -> dict:
         body   = json.loads(event.get("body") or "{}")
         action = body.get("action")
 
-        # ── Сохранить публичную ссылку Я.Диска + версию (без скачивания) ──────
+        # ── Опубликовать: перелить файл в наше S3 с красивым именем + версия ──
+        # Файл по ссылке скачиваем и кладём в S3 под именем PVS-Setup-{версия}.exe,
+        # чтобы у пользователя скачивался файл с правильным именем, а не UUID.
         if action == "set_url":
             file_type = body.get("file_type", "exe")
             src_url   = (body.get("url") or "").strip()
@@ -156,24 +158,45 @@ def handler(event: dict, context) -> dict:
                 return {"statusCode": 400, "headers": CORS,
                         "body": json.dumps({"error": "Нужна публичная ссылка (http...)"}, ensure_ascii=False)}
 
-            # Сразу проверяем, что ссылка рабочая и отдаёт файл (получаем прямую ссылку)
             try:
-                resolve_download_url(src_url)
+                direct = resolve_download_url(src_url)
             except Exception as e:
                 return {"statusCode": 400, "headers": CORS,
                         "body": json.dumps({"error": f"Ссылка недоступна: {e}"}, ensure_ascii=False)}
 
             info = get_version_info(s3)
-            if file_type == "exe":
-                info["exe_public_url"] = src_url
-                info["version"]        = body.get("version", info["version"])
+            is_exe = file_type == "exe"
+            ver    = (body.get("version") if is_exe else body.get("server_version")) \
+                     or (info["version"] if is_exe else info["server_version"])
+            prefix   = "PVS-Setup" if is_exe else "PVS-Server"
+            filename = f"{prefix}-{ver}.exe"
+            key      = f"updates/{filename}"
+
+            # Скачиваем файл и заливаем в наше хранилище под красивым именем.
+            try:
+                req = urllib.request.Request(direct, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=300) as r:
+                    data = r.read()
+                s3.put_object(
+                    Bucket=BUCKET, Key=key, Body=data,
+                    ContentType="application/octet-stream",
+                    ContentDisposition=f'attachment; filename="{filename}"',
+                )
+            except Exception as e:
+                return {"statusCode": 502, "headers": CORS,
+                        "body": json.dumps({"error": f"Не удалось перелить файл: {e}"}, ensure_ascii=False)}
+
+            cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+            if is_exe:
+                info["exe_public_url"] = cdn_url
+                info["version"]        = ver
                 info["notes"]          = body.get("notes", info.get("notes", ""))
             else:
-                info["server_public_url"] = src_url
-                info["server_version"]    = body.get("server_version", info.get("server_version", "1.0.0"))
+                info["server_public_url"] = cdn_url
+                info["server_version"]    = ver
             save_version_info(s3, info)
             return {"statusCode": 200, "headers": CORS,
-                    "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}
+                    "body": json.dumps({"ok": True, "info": info, "download_url": cdn_url}, ensure_ascii=False)}
 
         # ── Обновить только номер версии и заметки ────────────────────────────
         if action == "set_version":

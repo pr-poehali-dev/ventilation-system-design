@@ -427,7 +427,7 @@ export default function Admin() {
                   <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл</label>
                   <input type="url" value={updUrl} onChange={e => { setUpdUrl(e.target.value); setUpdStatus("idle"); }}
                     className={inputCls} placeholder="https://cdn.poehali.dev/.../PVS-Setup.exe" />
-                  <div className="text-[10px] text-gray-400 mt-1">Загрузите PVS-Setup.exe в Хранилище проекта (Ядро → Хранилище → Загрузить), скопируйте ссылку на файл и вставьте сюда. Также подойдёт публичная ссылка с Яндекс.Диска.</div>
+                  <div className="text-[10px] text-gray-400 mt-1">Загрузите PVS-Setup.exe в Хранилище проекта (Ядро → Хранилище → Загрузить), скопируйте ссылку на файл и вставьте сюда. Файл автоматически переименуется в PVS-Setup-{версия}.exe при публикации. Также подойдёт публичная ссылка с Яндекс.Диска.</div>
                 </div>
                 {updStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Версия опубликована! Пользователи получат обновление.</div>}
                 {updStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{updErr}</div>}
