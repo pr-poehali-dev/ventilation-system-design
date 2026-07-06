@@ -324,3 +324,37 @@ export function airPermToR(A: number): number {
 export function bulkheadR(item: BulkheadCatalogItem): number {
   return airPermToR(item.airPermeability);
 }
+
+// Эффективное сопротивление перемычки ветви в кМюрг.
+// Повторяет логику networkSolver.ts (строки 357-377), чтобы значение
+// совпадало с тем, что реально учитывается в расчёте сети.
+// Возвращает R в кМюрг (1 кМюрг = 1 Н·с²/м⁸ в системе расчёта).
+export function branchBulkheadRkMurg(b: {
+  hasBulkhead?: boolean;
+  bulkheadResMode?: "project" | "survey" | "manual";
+  bulkheadManualR?: number;
+  bulkheadSurveyQ?: number;
+  bulkheadSurveyDP?: number;
+  bulkheadManualAirPerm?: boolean;
+  bulkheadCustomAirPerm?: number;
+  bulkheadAirPerm?: number;
+  bulkheadR?: number;
+}): number {
+  if (!b.hasBulkhead) return 0;
+  const mode = b.bulkheadResMode ?? "project";
+  if (mode === "manual") return b.bulkheadManualR ?? 0;            // кМюрг
+  if (mode === "survey") {
+    const q = b.bulkheadSurveyQ ?? 0;
+    const dp = b.bulkheadSurveyDP ?? 0;
+    return q > 0 ? dp / (q * q) : 1e9;                            // Н·с²/м⁸ = кМюрг
+  }
+  // project: воздухопроницаемость вручную → R = 1/A² Мюрг → /1000 → кМюрг
+  if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
+    return airPermToR(b.bulkheadCustomAirPerm!) / 1000;
+  }
+  // project: воздухопроницаемость из справочника → кМюрг
+  if ((b.bulkheadAirPerm ?? 0) > 0) {
+    return airPermToR(b.bulkheadAirPerm!) / 1000;
+  }
+  return b.bulkheadR ?? 0;                                        // fallback: кМюрг
+}

@@ -36,7 +36,7 @@ import { type CsvImportResult } from "@/lib/csvImport";
 import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR } from "@/lib/bulkheads";
+import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg } from "@/lib/bulkheads";
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
@@ -1128,7 +1128,13 @@ export default function CadPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
   const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
-  const [checkTab, setCheckTab] = useState<"near" | "isolated" | "dupes">("near");
+  const [checkTab, setCheckTab] = useState<
+    "near" | "isolated" | "dupes" | "dupbranch" | "zeroR" | "highR" | "bulkR"
+  >("near");
+  // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
+  const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
+  // Порог сопротивления перемычки, кМюрг (норматив — 686 кМюрг)
+  const [checkBulkRThreshold, setCheckBulkRThreshold] = useState<number>(686);
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
   const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
@@ -4892,8 +4898,43 @@ export default function CadPage() {
                 }
               }
 
-              const tabCounts = { near: nearPairs.length, isolated: isolated.length, dupes: dupes.length };
-              const totalIssues = nearPairs.length + isolated.length + dupes.length;
+              // ── 4. Дублирующие ветви (одна пара узлов from↔to) ────────
+              type DupBranch = { branches: TopoBranch[]; key: string };
+              const branchByPair = new Map<string, TopoBranch[]>();
+              for (const br of branches) {
+                // Ключ без учёта направления: узлы {from,to} = {to,from}
+                const key = [br.fromId, br.toId].sort().join("|");
+                if (!branchByPair.has(key)) branchByPair.set(key, []);
+                branchByPair.get(key)!.push(br);
+              }
+              const dupBranches: DupBranch[] = [];
+              branchByPair.forEach((arr, key) => {
+                if (arr.length > 1) dupBranches.push({ branches: arr, key });
+              });
+
+              // ── 5. Ветви с нулевым сопротивлением ─────────────────────
+              const zeroRBranches = branches.filter(b => (b.resistance ?? 0) <= 0);
+
+              // ── 6. Ветви с большим сопротивлением (> порога) ──────────
+              const highRBranches = branches
+                .filter(b => (b.resistance ?? 0) > checkHighRThreshold)
+                .sort((a, b) => (b.resistance ?? 0) - (a.resistance ?? 0));
+
+              // ── 7. Перемычки с большим R (> норматива, по умолч. 686 кМюрг) ─
+              type BulkCheck = { branch: TopoBranch; rKmu: number };
+              const bulkBranches: BulkCheck[] = branches
+                .filter(b => b.hasBulkhead)
+                .map(b => ({ branch: b, rKmu: branchBulkheadRkMurg(b) }))
+                .filter(x => x.rKmu > checkBulkRThreshold)
+                .sort((a, b) => b.rKmu - a.rKmu);
+
+              const tabCounts = {
+                near: nearPairs.length, isolated: isolated.length, dupes: dupes.length,
+                dupbranch: dupBranches.length, zeroR: zeroRBranches.length,
+                highR: highRBranches.length, bulkR: bulkBranches.length,
+              };
+              const totalIssues = nearPairs.length + isolated.length + dupes.length
+                + dupBranches.length + zeroRBranches.length + highRBranches.length + bulkBranches.length;
 
               const NavBtn = ({ id, label, count, icon }: { id: typeof checkTab; label: string; count: number; icon: string }) => (
                 <button
@@ -4932,6 +4973,30 @@ export default function CadPage() {
                 </button>
               );
 
+              const focusBranch = (id: string) => {
+                setSelectedBranchId(id);
+                setSelectedBranchIds(new Set([id]));
+                setSelectedNodeId(null);
+                setFocusBranchId(id);
+                setFocusNonce(Date.now());
+              };
+
+              const branchLabel = (b: TopoBranch) => {
+                const fn = nodes.find(n => n.id === b.fromId);
+                const tn = nodes.find(n => n.id === b.toId);
+                const nm = b.type || `Ветвь ${b.id}`;
+                return `${nm} (${fn?.number || fn?.id || "?"}→${tn?.number || tn?.id || "?"})`;
+              };
+
+              const BranchBtn = ({ b }: { b: TopoBranch }) => (
+                <button
+                  className="text-[11px] font-medium text-blue-700 hover:underline text-left"
+                  onClick={e => { e.stopPropagation(); focusBranch(b.id); }}
+                >
+                  {branchLabel(b)}
+                </button>
+              );
+
               const EmptyOk = ({ text }: { text: string }) => (
                 <div className="flex flex-col items-center justify-center py-10 gap-2">
                   <Icon name="CheckCircle" size={28} className="text-green-500" />
@@ -4951,11 +5016,23 @@ export default function CadPage() {
                     </span>
                   </div>
 
-                  {/* Навигация по разделам */}
+                  {/* Навигация — Узлы */}
+                  <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
+                    style={{ background: "#f3f4f6" }}>Узлы</div>
                   <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
                     <NavBtn id="near"     label="Несоед." icon="GitMerge"   count={tabCounts.near} />
                     <NavBtn id="isolated" label="Тупики"  icon="Unlink"     count={tabCounts.isolated} />
                     <NavBtn id="dupes"    label="Дубли"   icon="Copy"       count={tabCounts.dupes} />
+                  </div>
+
+                  {/* Навигация — Ветви */}
+                  <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
+                    style={{ background: "#f3f4f6" }}>Ветви</div>
+                  <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
+                    <NavBtn id="dupbranch" label="Дубли"   icon="CopyPlus"    count={tabCounts.dupbranch} />
+                    <NavBtn id="zeroR"     label="R = 0"   icon="CircleSlash" count={tabCounts.zeroR} />
+                    <NavBtn id="highR"     label="R↑"      icon="TrendingUp"  count={tabCounts.highR} />
+                    <NavBtn id="bulkR"     label="Перем."  icon="DoorClosed"  count={tabCounts.bulkR} />
                   </div>
 
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
@@ -5078,6 +5155,167 @@ export default function CadPage() {
                           })}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Дублирующие ветви ── */}
+                  {checkTab === "dupbranch" && (
+                    <div className="flex-1 overflow-y-auto">
+                      {dupBranches.length === 0 ? <EmptyOk text="Дублирующих ветвей нет" /> : (
+                        <div className="flex flex-col">
+                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                            Несколько ветвей соединяют одну пару узлов. Групп: <b className="text-amber-700">{dupBranches.length}</b>
+                          </div>
+                          {dupBranches.map(({ branches: grp, key }) => (
+                            <div key={key} className="px-2 py-1.5" style={{ borderBottom: "1px solid #f5f5f5" }}>
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <Icon name="CopyPlus" size={12} className="text-amber-500 flex-shrink-0" />
+                                <span className="text-[10px] text-gray-500">Параллельных ветвей: {grp.length}</span>
+                              </div>
+                              <div className="flex flex-col gap-0.5 pl-4">
+                                {grp.map(b => (
+                                  <div key={b.id} className="flex items-center gap-1"
+                                    style={{ background: selectedBranchId === b.id ? "#fef3c7" : "transparent" }}>
+                                    <BranchBtn b={b} />
+                                    <span className="text-[10px] text-gray-400">· L={b.length.toFixed(0)}м · R={(b.resistance ?? 0).toFixed(3)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Ветви с нулевым сопротивлением ── */}
+                  {checkTab === "zeroR" && (
+                    <div className="flex-1 overflow-y-auto">
+                      {zeroRBranches.length === 0 ? <EmptyOk text="Ветвей с нулевым сопротивлением нет" /> : (
+                        <div className="flex flex-col">
+                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                            R = 0 приводит к некорректному расчёту. Ветвей: <b className="text-red-600">{zeroRBranches.length}</b>
+                          </div>
+                          {zeroRBranches.map(b => {
+                            const isSel = selectedBranchId === b.id;
+                            return (
+                              <div key={b.id}
+                                className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                onClick={() => focusBranch(b.id)}
+                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                              >
+                                <Icon name="CircleSlash" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                  <BranchBtn b={b} />
+                                  <div className="text-[10px] text-gray-400 mt-0.5">
+                                    L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м² · R={(b.resistance ?? 0).toFixed(4)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Ветви с большим сопротивлением ── */}
+                  {checkTab === "highR" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1">Сопротивление ветви выше порога — вероятна ошибка в сечении/длине.</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-600 flex-shrink-0">Порог R:</span>
+                          <input
+                            type="number" min={0} step={10}
+                            value={checkHighRThreshold}
+                            onChange={e => setCheckHighRThreshold(Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="w-20 text-right border border-gray-300 rounded px-1 bg-white"
+                            style={{ fontSize: 11, height: 20 }}
+                          />
+                          <span className="text-[10px] text-gray-500">Н·с²/м⁸</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {highRBranches.length === 0 ? <EmptyOk text="Ветвей с большим сопротивлением не найдено" /> : (
+                          <div className="flex flex-col">
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              Ветвей: <b className="text-amber-700">{highRBranches.length}</b>
+                            </div>
+                            {highRBranches.map(b => {
+                              const isSel = selectedBranchId === b.id;
+                              return (
+                                <div key={b.id}
+                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                  onClick={() => focusBranch(b.id)}
+                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                >
+                                  <Icon name="TrendingUp" size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    <BranchBtn b={b} />
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      R=<b className="text-amber-700">{(b.resistance ?? 0).toFixed(2)}</b> Н·с²/м⁸ · L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м²
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Перемычки с большим R ── */}
+                  {checkTab === "bulkR" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1">Сопротивление перемычки выше норматива.</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-600 flex-shrink-0">Норматив:</span>
+                          <input
+                            type="number" min={0} step={1}
+                            value={checkBulkRThreshold}
+                            onChange={e => setCheckBulkRThreshold(Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="w-20 text-right border border-gray-300 rounded px-1 bg-white"
+                            style={{ fontSize: 11, height: 20 }}
+                          />
+                          <span className="text-[10px] text-gray-500">кМюрг</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {bulkBranches.length === 0 ? <EmptyOk text="Перемычек с превышением норматива нет" /> : (
+                          <div className="flex flex-col">
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              Перемычек: <b className="text-red-600">{bulkBranches.length}</b>
+                            </div>
+                            {bulkBranches.map(({ branch: b, rKmu }) => {
+                              const isSel = selectedBranchId === b.id;
+                              return (
+                                <div key={b.id}
+                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                  onClick={() => focusBranch(b.id)}
+                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                >
+                                  <Icon name="DoorClosed" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    <BranchBtn b={b} />
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      {b.bulkheadName || "Перемычка"} · R=<b className="text-red-600">{rKmu.toFixed(0)}</b> кМюрг
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
