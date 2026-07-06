@@ -65,9 +65,27 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
     const api = (window as any).electronAPI as DesktopApi | undefined;
     if (api?.installUpdate) {
       api.installUpdate();
-    } else if (downloadUrl) {
-      window.open(downloadUrl, "_blank");
+      return;
     }
+    if (!downloadUrl) return;
+    // WebView2 (десктоп C#) и браузер часто блокируют window.open для .exe.
+    // Надёжный способ — временная ссылка <a download> с кликом: WebView2
+    // отдаёт файл в загрузки, а не пытается открыть новое окно.
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = "";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Фолбэк: если загрузка не стартовала (жёсткая блокировка) — навигация.
+    setTimeout(() => {
+      try {
+        window.location.href = downloadUrl;
+      } catch {
+        /* игнорируем */
+      }
+    }, 600);
   };
 
   if (status === "available") {
