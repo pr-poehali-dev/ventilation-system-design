@@ -588,9 +588,11 @@ export default function CadPage() {
       setNodes((prev) => prev.map((n) => {
         const newId = nodeMap.get(n.id) ?? n.id;
         const oldId = n.id;
-        // Сбрасываем name если: нет имени, начинается с "Узел ", или совпадает со старым id (технический id из импорта)
+        // Автонумерация задаёт только НОМЕР узла. Название оставляем пустым,
+        // если оно было автоматическим ("Узел N" / совпадает с id). Осмысленное
+        // пользовательское название сохраняем.
         const isAutoName = !n.name || n.name.startsWith("Узел ") || n.name === oldId;
-        return { ...n, id: newId, number: newId, name: isAutoName ? `Узел ${newId}` : n.name };
+        return { ...n, id: newId, number: newId, name: isAutoName ? "" : n.name };
       }));
     }
 
@@ -634,7 +636,7 @@ export default function CadPage() {
     const finalZ = activeHorizon ? activeHorizon.z : z;
     const node = makeNode(newId, {
       x, y, z: finalZ,
-      name: `Узел ${newId}`,
+      name: "",
       number: newId,
     });
     setNodes((p) => [...p, node]);
@@ -684,7 +686,7 @@ export default function CadPage() {
     const horizonId = activeHorizon ? activeHorizon.id : old.horizonId;
     const newNode = makeNode(newNodeId, {
       x, y, z: finalZ,
-      name: `Узел ${num}`,
+      name: "",
       number: num,
     });
 
@@ -4732,12 +4734,13 @@ export default function CadPage() {
               if (q.length > 0) {
                 if (searchScope === "all" || searchScope === "nodes") {
                   for (const n of nodes) {
-                    const fields = [n.id, n.name, n.number].filter(Boolean).map(String);
-                    if (fields.some(f => f.toLowerCase().includes(q))) {
+                    // Поиск узла ТОЛЬКО по номеру узла
+                    const num = String(n.number ?? "").toLowerCase();
+                    if (num && num.includes(q)) {
                       hits.push({
                         kind: "node",
                         id: n.id,
-                        title: n.name || `Узел ${n.number || n.id}`,
+                        title: `Узел ${n.number || n.id}`,
                         subtitle: `№ ${n.number || "—"} · X=${n.x.toFixed(1)} Y=${n.y.toFixed(1)} Z=${n.z.toFixed(1)}`,
                       });
                     }
@@ -4747,14 +4750,15 @@ export default function CadPage() {
                   for (const b of branches) {
                     const fromN = nodes.find(n => n.id === b.fromId);
                     const toN = nodes.find(n => n.id === b.toId);
-                    const fields = [b.id, b.type, b.fanName, fromN?.name, toN?.name, fromN?.number, toN?.number]
+                    // Поиск ветви по номерам узлов (и типу/имени вентилятора)
+                    const fields = [b.id, b.type, b.fanName, fromN?.number, toN?.number]
                       .filter(Boolean).map(String);
                     if (fields.some(f => f.toLowerCase().includes(q))) {
                       hits.push({
                         kind: "branch",
                         id: b.id,
                         title: `Ветвь ${b.id}${b.type ? ` (${b.type})` : ""}`,
-                        subtitle: `${fromN?.name || b.fromId} → ${toN?.name || b.toId}${b.hasFan ? " · вентилятор" : ""}`,
+                        subtitle: `${fromN?.number || b.fromId} → ${toN?.number || b.toId}${b.hasFan ? " · вентилятор" : ""}`,
                       });
                     }
                   }
