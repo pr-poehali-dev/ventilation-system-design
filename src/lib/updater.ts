@@ -49,33 +49,21 @@ export async function fetchRemoteVersion(): Promise<RemoteVersion> {
   };
 }
 
+interface DesktopApi {
+  installUpdate?: () => void;
+}
+
 /**
  * Запускает скачивание/установку обновления. ЕДИНАЯ точка для веба и десктопа.
- * - Десктоп (C# WebView2): шлём команду в C# через postMessage. Если оболочка
- *   команду не обрабатывает — C# всё равно может открыть ссылку сам; как
- *   подстраховку дополнительно пробуем открыть установщик.
+ * - Десктоп (C# WebView2): вызываем window.electronAPI.installUpdate() — этот
+ *   мост уже реализован в C#-оболочке (MainWindow.xaml.cs → HandleInstallUpdate):
+ *   она скачивает установщик, подменяет .exe через .bat и перезапускается.
  * - Браузер: скачиваем .exe по ?file=exe (сервер отдаёт корректное имя файла).
  */
 export function downloadAndInstall(): void {
-  if (isDesktopApp()) {
-    const w = window as Window & {
-      chrome?: { webview?: { postMessage: (s: string) => void } };
-      __pvsDownloadUpdate?: (url: string) => void;
-    };
-    // Способ 1: нативный колбэк, если C# его зарегистрировал.
-    if (typeof w.__pvsDownloadUpdate === "function") {
-      w.__pvsDownloadUpdate(INSTALLER_URL);
-      return;
-    }
-    // Способ 2: сообщение в C# (WebView2). C# скачивает и запускает установщик.
-    if (w.chrome?.webview?.postMessage) {
-      w.chrome.webview.postMessage(
-        JSON.stringify({ cmd: "download-update", url: INSTALLER_URL })
-      );
-      return;
-    }
-    // Fallback: открыть ссылку (C# перехватит навигацию/скачивание).
-    window.location.href = INSTALLER_URL;
+  const api = (window as Window & { electronAPI?: DesktopApi }).electronAPI;
+  if (isDesktopApp() && api?.installUpdate) {
+    api.installUpdate();
     return;
   }
 
