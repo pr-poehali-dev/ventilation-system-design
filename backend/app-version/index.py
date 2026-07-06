@@ -96,10 +96,14 @@ def handler(event: dict, context) -> dict:
     s3     = get_s3()
     params = event.get("queryStringParameters") or {}
 
-    # ── GET ?file=exe|server: редирект на свежую прямую ссылку скачивания ──────
+    # ── GET ?file=exe|server: редирект на скачивание с правильным именем ────────
+    # Файл большой (80+ МБ) — проксировать через функцию нельзя (лимит размера
+    # ответа). Отдаём 302-редирект на прямую ссылку, добавляя к ней параметр
+    # filename=PVS-Setup-{версия}.exe — CDN Яндекса отдаёт файл с этим именем.
     if method == "GET" and params.get("file") in ("exe", "server"):
         info = get_version_info(s3)
-        pub  = info["exe_public_url"] if params["file"] == "exe" else info["server_public_url"]
+        is_exe = params["file"] == "exe"
+        pub    = info["exe_public_url"] if is_exe else info["server_public_url"]
         if not pub:
             return {"statusCode": 404, "headers": CORS,
                     "body": json.dumps({"error": "Файл ещё не опубликован"}, ensure_ascii=False)}
@@ -108,6 +112,13 @@ def handler(event: dict, context) -> dict:
         except Exception as e:
             return {"statusCode": 502, "headers": CORS,
                     "body": json.dumps({"error": str(e)}, ensure_ascii=False)}
+
+        ver      = info["version"] if is_exe else info["server_version"]
+        prefix   = "PVS-Setup" if is_exe else "PVS-Server"
+        filename = f"{prefix}-{ver}.exe"
+        # Яндекс отдаёт имя из query-параметра filename прямой ссылки.
+        sep    = "&" if "?" in direct else "?"
+        direct = f"{direct}{sep}filename={urllib.parse.quote(filename)}"
         return {"statusCode": 302, "headers": {**CORS, "Location": direct}, "body": ""}
 
     # ── GET: информация о версии + свежие прямые ссылки ───────────────────────
