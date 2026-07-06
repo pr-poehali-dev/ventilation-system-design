@@ -19,7 +19,7 @@ import MobileStub from "./components/MobileStub";
 import InstallPwaButton from "./components/InstallPwaButton";
 import PwaUpdateBanner from "./components/PwaUpdateBanner";
 import { LicenseProvider } from "./context/LicenseContext";
-import UpdateNotification from "./components/UpdateNotification";
+import AppUpdateBanner from "./components/AppUpdateBanner";
 
 const queryClient = new QueryClient();
 
@@ -89,7 +89,7 @@ const App = () => {
         </Router>
         <InstallPwaButton />
         <PwaUpdateBanner />
-        <UpdateNotification />
+        <AppUpdateBanner />
       </LicenseProvider>
     </TooltipProvider>
   </QueryClientProvider>

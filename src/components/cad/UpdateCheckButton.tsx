@@ -1,56 +1,32 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
-
-const VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
+import { fetchRemoteVersion, isNewerVersion, downloadAndInstall } from "@/lib/updater";
 
 interface Props {
-  /** Текущая версия установленной программы (например "2.0.17") */
+  /** Текущая версия установленной программы (например "2.3.24") */
   currentVersion: string;
-}
-
-interface DesktopApi {
-  installUpdate?: () => void;
 }
 
 type Status = "idle" | "checking" | "latest" | "available" | "error";
 
-/** Сравнение версий вида "2.0.17" — true если remote новее local */
-function isNewer(remote: string, local: string): boolean {
-  const r = remote.split(".").map(n => parseInt(n, 10) || 0);
-  const l = local.split(".").map(n => parseInt(n, 10) || 0);
-  const len = Math.max(r.length, l.length);
-  for (let i = 0; i < len; i++) {
-    const a = r[i] ?? 0, b = l[i] ?? 0;
-    if (a > b) return true;
-    if (a < b) return false;
-  }
-  return false;
-}
-
 /**
  * Кнопка «Проверить обновления» для окна «О программе».
- * Запрашивает сервер версий, сравнивает с текущей и предлагает скачать.
- * В десктопе скачивание идёт через C# (electronAPI.installUpdate),
- * в браузере — открывает прямую ссылку на установщик.
+ * Использует ЕДИНУЮ логику обновления (src/lib/updater.ts) — ту же, что и
+ * верхний баннер: качает установщик по ?file=exe (браузер) или отдаёт команду
+ * в C#-оболочку (десктоп).
  */
 export default function UpdateCheckButton({ currentVersion }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [newVersion, setNewVersion] = useState("");
   const [notes, setNotes] = useState("");
-  const [downloadUrl, setDownloadUrl] = useState("");
 
   const check = async () => {
     setStatus("checking");
     try {
-      const res = await fetch(VERSION_URL, { cache: "no-store" });
-      const text = await res.text();
-      if (!text.trim().startsWith("{")) throw new Error("bad response");
-      const d = JSON.parse(text);
-      const remote = String(d.version || "");
-      if (remote && isNewer(remote, currentVersion)) {
-        setNewVersion(remote);
-        setNotes(String(d.notes || ""));
-        setDownloadUrl(String(d.download_url || ""));
+      const d = await fetchRemoteVersion();
+      if (d.version && isNewerVersion(d.version, currentVersion)) {
+        setNewVersion(d.version);
+        setNotes(d.notes);
         setStatus("available");
       } else {
         setStatus("latest");
@@ -58,25 +34,6 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
     } catch {
       setStatus("error");
     }
-  };
-
-  const install = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const api = (window as any).electronAPI as DesktopApi | undefined;
-    if (api?.installUpdate) {
-      api.installUpdate();
-      return;
-    }
-    if (!downloadUrl) return;
-    // Скачиваем через наш бэкенд (?file=exe): он проксирует установщик и отдаёт
-    // его с именем PVS-Setup-{версия}.exe (Content-Disposition). Прямая ссылка
-    // на CDN дала бы имя-UUID, т.к. файл на другом домене.
-    const a = document.createElement("a");
-    a.href = `${VERSION_URL}?file=exe`;
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
   };
 
   if (status === "available") {
@@ -88,7 +45,7 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
         </div>
         {notes && <div className="text-[11px] text-gray-500">{notes}</div>}
         <button
-          onClick={install}
+          onClick={downloadAndInstall}
           className="h-7 px-3 text-[12px] rounded text-white font-medium flex items-center gap-1.5"
           style={{ background: "#16a34a" }}>
           <Icon name="Download" size={13} />
