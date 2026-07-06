@@ -564,38 +564,46 @@ public partial class MainWindow : Window
 
     private async Task HandleInstallUpdate()
     {
-        // Ссылка на установщик. Если по какой-то причине пусто — используем
-        // серверный редирект ?file=exe (он всегда отдаёт свежий установщик).
+        // Сервер отдаёт УСТАНОВЩИК (Inno Setup, PVS-Setup-*.exe), а не голый
+        // PVS.exe. Программа установлена в C:\Program Files\PVS (нужны права
+        // администратора). Поэтому НЕЛЬЗЯ подменять exe на месте — вместо этого
+        // скачиваем установщик во временную папку (туда доступ есть всегда) и
+        // запускаем его: Windows покажет UAC, установщик корректно обновит всё.
+
+        // Ссылка на установщик. Если пусто — серверный редирект ?file=exe.
         string downloadUrl = string.IsNullOrWhiteSpace(_updateInfo?.DownloadUrl)
             ? $"{VersionCheckUrl}?file=exe"
             : _updateInfo!.DownloadUrl!;
         try
         {
-            string exePath  = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
-            string tmpPath  = exePath + ".new.exe";
-            string batPath  = Path.GetTempFileName() + ".bat";
+            string ver     = _updateInfo?.Version ?? "latest";
+            string setup   = Path.Combine(Path.GetTempPath(), $"PVS-Setup-{ver}.exe");
 
-            // ВАЖНО: установщик ~82 МБ — общий Http с таймаутом 10 с не успевает
-            // и обрывает загрузку. Отдельный клиент с большим таймаутом.
-            using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-            using var stream = await httpLarge.GetStreamAsync(downloadUrl);
-            using var file   = File.Create(tmpPath);
-            await stream.CopyToAsync(file);
+            // Установщик ~82 МБ — отдельный клиент с большим таймаутом.
+            using (var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
+            using (var stream = await httpLarge.GetStreamAsync(downloadUrl))
+            using (var file   = File.Create(setup))
+            {
+                await stream.CopyToAsync(file);
+            }
 
-            string bat = $"""
-                @echo off
-                timeout /t 2 /nobreak >nul
-                move /Y "{tmpPath}" "{exePath}"
-                start "" "{exePath}"
-                del "%~f0"
-                """;
-            File.WriteAllText(batPath, bat, Encoding.GetEncoding(1251));
-            Process.Start(new ProcessStartInfo("cmd", $"/c \"{batPath}\"")
-                { CreateNoWindow = true, UseShellExecute = false });
+            // Запускаем установщик с элевацией (UseShellExecute + runas → UAC).
+            // /SILENT — минимум окон; /CLOSEAPPLICATIONS — закрыть текущее
+            // приложение перед заменой файлов; RESTARTAPPLICATIONS — перезапуск.
+            var psi = new ProcessStartInfo(setup)
+            {
+                UseShellExecute = true,
+                Verb            = "runas",
+                Arguments       = "/SILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+            };
+            Process.Start(psi);
             Application.Current.Shutdown();
         }
         catch (Exception ex)
         {
+            // Код 1223 = пользователь отклонил UAC-запрос прав администратора.
+            if (ex is System.ComponentModel.Win32Exception w32 && w32.NativeErrorCode == 1223)
+                return;
             MessageBox.Show($"Ошибка обновления: {ex.Message}", "ПВ-Система",
                             MessageBoxButton.OK, MessageBoxImage.Error);
         }
