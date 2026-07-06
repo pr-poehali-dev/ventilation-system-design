@@ -68,10 +68,11 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
       return;
     }
     if (!downloadUrl) return;
-    // download_url ведёт на updates/PVS-Setup-{версия}.exe в нашем S3 —
-    // файл уже с правильным именем (сервер выставил Content-Disposition).
+    // Скачиваем через наш бэкенд (?file=exe): он проксирует установщик и отдаёт
+    // его с именем PVS-Setup-{версия}.exe (Content-Disposition). Прямая ссылка
+    // на CDN дала бы имя-UUID, т.к. файл на другом домене.
     const a = document.createElement("a");
-    a.href = downloadUrl;
+    a.href = `${VERSION_URL}?file=exe`;
     a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
