@@ -564,14 +564,21 @@ public partial class MainWindow : Window
 
     private async Task HandleInstallUpdate()
     {
-        if (_updateInfo?.DownloadUrl == null) return;
+        // Ссылка на установщик. Если по какой-то причине пусто — используем
+        // серверный редирект ?file=exe (он всегда отдаёт свежий установщик).
+        string downloadUrl = string.IsNullOrWhiteSpace(_updateInfo?.DownloadUrl)
+            ? $"{VersionCheckUrl}?file=exe"
+            : _updateInfo!.DownloadUrl!;
         try
         {
             string exePath  = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule!.FileName;
             string tmpPath  = exePath + ".new.exe";
             string batPath  = Path.GetTempFileName() + ".bat";
 
-            using var stream = await Http.GetStreamAsync(_updateInfo.DownloadUrl);
+            // ВАЖНО: установщик ~82 МБ — общий Http с таймаутом 10 с не успевает
+            // и обрывает загрузку. Отдельный клиент с большим таймаутом.
+            using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            using var stream = await httpLarge.GetStreamAsync(downloadUrl);
             using var file   = File.Create(tmpPath);
             await stream.CopyToAsync(file);
 
@@ -757,15 +764,26 @@ public partial class MainWindow : Window
 
 public class UpdateInfo
 {
-    public string? Version     { get; set; }
+    public string? Version { get; set; }
+
+    // Сервер отдаёт поле в snake_case ("download_url") — маппим явно,
+    // т.к. PropertyNameCaseInsensitive не превращает snake_case в PascalCase.
+    [System.Text.Json.Serialization.JsonPropertyName("download_url")]
     public string? DownloadUrl { get; set; }
 }
 
 public class VersionInfo
 {
-    public string? Version       { get; set; }
-    public string? DownloadUrl   { get; set; }
+    public string? Version { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("download_url")]
+    public string? DownloadUrl { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("server_version")]
     public string? ServerVersion { get; set; }
-    public string? ServerUrl     { get; set; }
-    public string? Notes         { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("server_url")]
+    public string? ServerUrl { get; set; }
+
+    public string? Notes { get; set; }
 }
