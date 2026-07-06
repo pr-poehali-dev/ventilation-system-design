@@ -55,6 +55,7 @@ import HelpDialog from "@/components/cad/HelpDialog";
 import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
 import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
+import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
 import { API_URLS } from "@/lib/api-urls";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
@@ -783,6 +784,8 @@ export default function CadPage() {
   // Геотермический градиент °C / 100 м глубины (стандарт 3°C/100м)
   const [geoGradient, setGeoGradient] = useState(3.0);
   const [showSolverParams, setShowSolverParams] = useState(false);
+  // Диалог «Устойчивость при пожаре» (Акт устойчивости)
+  const [showFireStability, setShowFireStability] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const logIdRef = useRef(0);
@@ -4444,6 +4447,13 @@ export default function CadPage() {
               title="Построить депрессиограмму главного маршрута"
               disabled={!solveResult}
               onClick={() => setShowDepressogram(true)}
+            />
+            <RibbonBigBtn
+              icon="ShieldCheck"
+              label="Устойчивость"
+              sublabel="при пожаре"
+              title="Проверка устойчивости вентиляционных режимов при пожаре и формирование Акта устойчивости"
+              onClick={() => setShowFireStability(true)}
             />
           </RibbonGroup>
         )}
@@ -9958,6 +9968,18 @@ export default function CadPage() {
         }}
         manualBranchIds={depressogramManualBranches}
         onClearManual={() => setDepressogramManualBranches(new Set())}
+      />
+    )}
+
+    {/* ── Устойчивость при пожаре (Акт устойчивости) ──────────────────── */}
+    {showFireStability && (
+      <FireStabilityDialog
+        branches={branches}
+        nodes={nodes}
+        positions={positions}
+        projectName={projectFileName.replace(/\.vproj$/, "")}
+        solved={!!solveResult}
+        onClose={() => setShowFireStability(false)}
       />
     )}
 
