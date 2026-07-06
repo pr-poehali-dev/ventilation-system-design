@@ -56,6 +56,7 @@ import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
 import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
+import { calcBranchFirePower } from "@/lib/fireStability";
 import { API_URLS } from "@/lib/api-urls";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
@@ -2154,6 +2155,50 @@ export default function CadPage() {
     const flowMap = new Map<string, number>();
     (data.branches as { id: string; Q: number }[]).forEach(rb => flowMap.set(rb.id, rb.Q));
     return flowMap;
+  };
+
+  // ── Факт опрокидывания для Акта устойчивости ──────────────────────────────
+  // Ставит очаг пожара на КАЖДУЮ ветвь с пожарной нагрузкой (мощность из
+  // пожарной нагрузки), задаёт тепловую депрессию и пересчитывает сеть.
+  // Сравнивает знак расхода до/после — это и есть фактическое опрокидывание,
+  // тот же принцип, что в аварийном режиме (actuallyReversed).
+  const computeFireStabilityFacts = async (ambientTemp: number): Promise<Map<string, boolean>> => {
+    const facts = new Map<string, boolean>();
+    const loaded = branches.filter(b =>
+      b.fireLoadTech || b.fireLoadConveyor || b.fireLoadCable || b.fireLoadWoodSupport);
+    if (loaded.length === 0) return facts;
+
+    const originalFlows = new Map<string, number>(branches.map(b => [b.id, b.flow ?? 0]));
+    const loadedIds = new Set(loaded.map(b => b.id));
+
+    // Готовим ветви: на нагруженных ставим тепловую депрессию по мощности пожара.
+    const branchesWithHt = branches.map(b => {
+      if (!loadedIds.has(b.id)) return b;
+      const airQ = Math.abs(b.flow ?? 0);
+      const power = calcBranchFirePower(b, airQ);         // суммарная мощность пожара, МВт
+      const T_pr  = calcFireTemp(power, airQ, ambientTemp);
+      const fromN = nodes.find(n => n.id === b.fromId);
+      const toN   = nodes.find(n => n.id === b.toId);
+      const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
+      const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1);
+      const h_t = calcThermalDepression(T_pr, ambientTemp, b.length, signedAngle);
+      return { ...b, fireThermalDepression: h_t };
+    });
+
+    const newFlows = await solveFireIteration(branchesWithHt, ambientTemp);
+    if (newFlows.size === 0) {
+      // Сеть не пересчиталась — факт неизвестен, оставляем оценку риска
+      return facts;
+    }
+
+    // Факт разворота: знак расхода изменился и новый поток заметен
+    loaded.forEach(b => {
+      const orig = originalFlows.get(b.id) ?? 0;
+      const now  = newFlows.get(b.id) ?? orig;
+      const reversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
+      facts.set(b.id, reversed);
+    });
+    return facts;
   };
 
   // Расчёт воздухораспределения (Кросс или МКР)
@@ -9979,6 +10024,7 @@ export default function CadPage() {
         positions={positions}
         projectName={projectFileName.replace(/\.vproj$/, "")}
         solved={!!solveResult}
+        computeReversalFacts={computeFireStabilityFacts}
         onClose={() => setShowFireStability(false)}
       />
     )}

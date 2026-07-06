@@ -11,6 +11,9 @@ interface Props {
   positions?: Position[];
   projectName?: string;
   solved: boolean;   // выполнен ли расчёт сети
+  // Реальный итеративный расчёт опрокидывания (как в аварийном режиме).
+  // Возвращает Map<branchId, reversed> по ветвям с пожарной нагрузкой.
+  computeReversalFacts?: (ambientTemp: number) => Promise<Map<string, boolean>>;
   onClose: () => void;
 }
 
@@ -26,11 +29,15 @@ const CATEGORY_ORDER: StabilityCategory[] = [
 ];
 
 export default function FireStabilityDialog({
-  branches, nodes, positions = [], projectName = "Подземный рудник", solved, onClose,
+  branches, nodes, positions = [], projectName = "Подземный рудник", solved,
+  computeReversalFacts, onClose,
 }: Props) {
   const [angleFilter, setAngleFilter]   = useState("5");
   const [lengthFilter, setLengthFilter] = useState("30");
   const [ambientTemp, setAmbientTemp]   = useState("20");
+  // Факты опрокидывания из реального расчёта сети (null = ещё не считали)
+  const [reversalFacts, setReversalFacts] = useState<Map<string, boolean> | null>(null);
+  const [computing, setComputing] = useState(false);
 
   const result = useMemo(() => {
     const angle  = parseFloat(angleFilter.replace(",", ".")) || 0;
@@ -41,10 +48,23 @@ export default function FireStabilityDialog({
       lengthFilter: length,
       ambientTemp: amb,
       positions: positions.map(p => ({ branchIds: p.branchIds, number: p.number, name: p.name })),
+      reversalFacts: reversalFacts ?? undefined,
     });
-  }, [branches, nodes, positions, angleFilter, lengthFilter, ambientTemp]);
+  }, [branches, nodes, positions, angleFilter, lengthFilter, ambientTemp, reversalFacts]);
 
   const total = result.rows.length;
+
+  async function handleComputeFacts() {
+    if (!computeReversalFacts) return;
+    setComputing(true);
+    try {
+      const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
+      const facts = await computeReversalFacts(amb);
+      setReversalFacts(facts);
+    } finally {
+      setComputing(false);
+    }
+  }
 
   function handleExport() {
     exportStabilityAct(result, { projectName });
@@ -100,6 +120,24 @@ export default function FireStabilityDialog({
             Отбираются ветви с заданной пожарной нагрузкой. Направление (нисходящее/восходящее)
             определяется по фактическому потоку воздуха после расчёта сети.
           </div>
+
+          {/* Критерий устойчивости + расчёт факта опрокидывания */}
+          {computeReversalFacts && (
+            <div className="flex items-center gap-2 pt-1">
+              <button onClick={handleComputeFacts} disabled={computing || !solved}
+                className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5 disabled:opacity-50"
+                style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "#1d4ed8" }}>
+                <Icon name={computing ? "Loader" : "Play"} size={12}
+                  className={computing ? "animate-spin" : ""} />
+                {computing ? "Расчёт..." : "Рассчитать факт опрокидывания"}
+              </button>
+              <span className="text-[10px]" style={{ color: reversalFacts ? "#15803d" : "#9ca3af" }}>
+                {reversalFacts
+                  ? "✓ Устойчивость — по факту разворота потока"
+                  : "Пока — предварительная оценка риска"}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Сводка по категориям */}

@@ -129,6 +129,10 @@ export function calcFireStability(
     lengthFilter?: number;  // мин. длина, м. По умолчанию 30
     ambientTemp?: number;   // °C. По умолчанию 20
     positions?: { branchIds?: string[]; number?: number; name?: string }[]; // позиции ПЛА
+    // Факты опрокидывания из реального итеративного расчёта сети при пожаре
+    // (branchId → true, если поток фактически развернулся). Если передана —
+    // устойчивость определяется по ФАКТУ, а не по локальной оценке.
+    reversalFacts?: Map<string, boolean>;
   } = {},
 ): StabilityResult {
   const angleFilter  = opts.angleFilter  ?? 5;
@@ -196,12 +200,17 @@ export function calcFireStability(
     const thermalDep = Math.abs(thermalDepSigned);
     const branchDep  = Math.abs(b.dP ?? 0);
 
-    // Критерий опрокидывания (идентичен calcFireMode, строка 488-489):
-    //   нисходящая ветвь (угол по потоку < -1°) И
-    //   |тепловая депрессия| > |депрессия ветви| × 0.5
-    // Иначе — струя устойчива. Восходящие всегда устойчивы.
+    // ── Определение устойчивости ────────────────────────────────────────
+    // Приоритет — ФАКТ опрокидывания из реального итеративного расчёта сети
+    // (reversalFacts). Если факт передан — используем его: ветвь устойчива,
+    // если поток НЕ развернулся, даже при большой тепловой депрессии
+    // (соседние ветви компенсируют). Это совпадает с аварийным режимом.
+    //
+    // Если факта нет (расчёт не запускался) — локальная оценка риска
+    // (идентична calcFireMode): нисходящая ветвь И |h_t| > 0.5·|dP|.
+    const fact = opts.reversalFacts?.get(b.id);
     const willReverse = (signedAngleFlow < -1) && (thermalDep > branchDep * 0.5);
-    const stable = !willReverse;
+    const stable = fact !== undefined ? !fact : !willReverse;
 
     const row: StabilityRow = {
       branchId: b.id,

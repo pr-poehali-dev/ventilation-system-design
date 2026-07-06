@@ -203,6 +203,86 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
   return ws;
 }
 
+// ─── Лист «Мероприятия» ──────────────────────────────────────────────────────
+function buildMeasuresSheet(result: StabilityResult): XLSX.WorkSheet {
+  const unstable = result.rows.filter(r => !r.stable);
+  const aoa: (string | number)[][] = [];
+  aoa.push(["Мероприятия по обеспечению устойчивости проветривания при пожаре"]);
+  aoa.push([]);
+
+  if (unstable.length === 0) {
+    aoa.push(["По результатам проверки все горные выработки с наклоном 5° и более сохраняют"]);
+    aoa.push(["устойчивое проветривание при пожаре. Дополнительные мероприятия не требуются."]);
+  } else {
+    aoa.push(["Для выработок с риском опрокидывания вентиляционной струи предусмотреть:"]);
+    aoa.push([]);
+    aoa.push(["№", "№ ветви", "Наименование выработки", "Мероприятие"]);
+    unstable.forEach((r, i) => {
+      aoa.push([
+        i + 1,
+        r.branchNumber,
+        r.name,
+        "Установка автоматических пожарных дверей / реверсирование ВГП / секционирование вентиляции для предотвращения опрокидывания струи",
+      ]);
+    });
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 6 }, { wch: 10 }, { wch: 30 }, { wch: 70 }];
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+  const t = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  if (ws[t]) ws[t].s = { font: { bold: true, sz: 11 } };
+  if (unstable.length > 0) {
+    ["A5", "B5", "C5", "D5"].forEach(ref => { if (ws[ref]) ws[ref].s = headerStyle(); });
+    unstable.forEach((_, i) => {
+      for (let c = 0; c < 4; c++) {
+        const ref = XLSX.utils.encode_cell({ r: i + 5, c });
+        if (ws[ref]) ws[ref].s = cellStyle(i);
+      }
+    });
+  }
+  return ws;
+}
+
+// ─── Лист «Выводы» ────────────────────────────────────────────────────────────
+function buildConclusionsSheet(result: StabilityResult): XLSX.WorkSheet {
+  const total = result.rows.length;
+  const unstable = result.totalUnstable;
+  const stable = total - unstable;
+  const descIncl = result.byCategory["descending-incline"].length;
+  const descVert = result.byCategory["descending-vertical"].length;
+  const ascIncl  = result.byCategory["ascending-incline"].length;
+  const ascVert  = result.byCategory["ascending-vertical"].length;
+
+  const aoa: string[][] = [];
+  aoa.push(["ВЫВОДЫ"]);
+  aoa.push([]);
+  aoa.push([`1. Проверке подлежало ${total} горных выработок с углом наклона ${result.angleFilter}° и более`]);
+  aoa.push([`   и длиной ${result.lengthFilter} м и более, имеющих пожарную нагрузку, в том числе:`]);
+  aoa.push([`   • наклонные с нисходящим проветриванием — ${descIncl};`]);
+  aoa.push([`   • вертикальные с нисходящим проветриванием — ${descVert};`]);
+  aoa.push([`   • наклонные с восходящим проветриванием — ${ascIncl};`]);
+  aoa.push([`   • вертикальные с восходящим проветриванием — ${ascVert}.`]);
+  aoa.push([]);
+  aoa.push([`2. Устойчивое проветривание при пожаре сохраняют ${stable} из ${total} выработок.`]);
+  if (unstable > 0) {
+    aoa.push([`3. Выявлено ${unstable} выработок с риском самопроизвольного опрокидывания`]);
+    aoa.push([`   вентиляционной струи. Для них разработаны мероприятия (см. лист «Мероприятия»).`]);
+  } else {
+    aoa.push([`3. Выработок с риском опрокидывания вентиляционной струи не выявлено.`]);
+    aoa.push([`   Принятые проектные решения обеспечивают устойчивость проветривания при пожаре.`]);
+  }
+  aoa.push([]);
+  aoa.push([`Температура наружного воздуха, принятая в расчёте: ${result.ambientTemp} °C.`]);
+  aoa.push([`Расчёт выполнен в программном обеспечении «ПВ-Система».`]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 100 }];
+  const t = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  if (ws[t]) ws[t].s = { font: { bold: true, sz: 12 } };
+  return ws;
+}
+
 // ─── Главная функция экспорта ────────────────────────────────────────────────
 export function exportStabilityAct(result: StabilityResult, meta?: Partial<ActMeta>): void {
   const m = { ...DEFAULT_META, ...meta };
@@ -215,6 +295,9 @@ export function exportStabilityAct(result: StabilityResult, meta?: Partial<ActMe
     const ws = buildTableSheet(cat, rows);
     XLSX.utils.book_append_sheet(wb, ws, CATEGORY_META[cat].sheet);
   });
+
+  XLSX.utils.book_append_sheet(wb, buildMeasuresSheet(result), "Мероприятия");
+  XLSX.utils.book_append_sheet(wb, buildConclusionsSheet(result), "Выводы");
 
   const date = new Date().toISOString().slice(0, 10);
   const filename = `Акт_устойчивости_${m.projectName || "рудник"}_${date}.xlsx`;
