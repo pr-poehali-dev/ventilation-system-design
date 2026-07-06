@@ -1897,7 +1897,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <InlineLabel label="Конвейерная лента">
                 <CheckField
                   checked={branch.fireLoadConveyor ?? false}
-                  onChange={(v) => onUpdate({ fireLoadConveyor: v })}
+                  onChange={(v) => onUpdate(v
+                    ? { fireLoadConveyor: v, fireBeltLength: branchLenStr || branch.fireBeltLength || "100" }
+                    : { fireLoadConveyor: v })}
                 />
               </InlineLabel>
 
@@ -1987,7 +1989,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <InlineLabel label="Кабель">
                 <CheckField
                   checked={branch.fireLoadCable ?? false}
-                  onChange={(v) => onUpdate({ fireLoadCable: v })}
+                  onChange={(v) => onUpdate(v
+                    ? { fireLoadCable: v, fireCableLength: branchLenStr || branch.fireCableLength || "100" }
+                    : { fireLoadCable: v })}
                 />
               </InlineLabel>
 
@@ -2061,7 +2065,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               <InlineLabel label="Деревянная крепь">
                 <CheckField
                   checked={branch.fireLoadWoodSupport ?? false}
-                  onChange={(v) => onUpdate({ fireLoadWoodSupport: v })}
+                  onChange={(v) => onUpdate(v
+                    ? { fireLoadWoodSupport: v, fireWoodLength: branchLenStr || branch.fireWoodLength || "50" }
+                    : { fireLoadWoodSupport: v })}
                 />
               </InlineLabel>
 
