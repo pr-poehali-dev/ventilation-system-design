@@ -37,6 +37,7 @@ import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg } from "@/lib/bulkheads";
+import { checkSchema } from "@/lib/schemaCheck";
 import LegendDialog from "@/components/cad/LegendDialog";
 import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import PrintDialog from "@/components/cad/PrintDialog";
@@ -1135,6 +1136,16 @@ export default function CadPage() {
   const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
   // Порог сопротивления перемычки, кМюрг (норматив — 686 кМюрг)
   const [checkBulkRThreshold, setCheckBulkRThreshold] = useState<number>(686);
+  // Результат проверки схемы — считается только когда открыта панель «Проверка».
+  // Мемоизация исключает тяжёлый O(n) пересчёт на каждый ререндер (ховеры и т.п.).
+  const schemaCheckResult = useMemo(() => {
+    if (activeSide !== "check") return null;
+    return checkSchema(nodes, branches, {
+      nearThreshold: checkThreshold,
+      highRThreshold: checkHighRThreshold,
+      bulkRThreshold: checkBulkRThreshold,
+    });
+  }, [activeSide, nodes, branches, checkThreshold, checkHighRThreshold, checkBulkRThreshold]);
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
   const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
@@ -4857,84 +4868,15 @@ export default function CadPage() {
 
 
             {/* ═══ ВКЛАДКА: ПРОВЕРКА СХЕМЫ ═══════════════════════════════ */}
-            {activeSide === "check" && (() => {
-              type NearPair = { a: TopoNode; b: TopoNode; dist: number };
+            {activeSide === "check" && schemaCheckResult && (() => {
+              const {
+                nearPairs, isolated, dupes, dupBranches,
+                zeroRBranches, highRBranches, bulkBranches,
+                tabCounts, totalIssues, truncated,
+              } = schemaCheckResult;
 
-              // ── Множество соединённых пар ──────────────────────────────
-              const branchPairs = new Set<string>();
-              const nodeBranchCount = new Map<string, number>();
-              for (const br of branches) {
-                branchPairs.add(`${br.fromId}|${br.toId}`);
-                branchPairs.add(`${br.toId}|${br.fromId}`);
-                nodeBranchCount.set(br.fromId, (nodeBranchCount.get(br.fromId) ?? 0) + 1);
-                nodeBranchCount.set(br.toId,   (nodeBranchCount.get(br.toId)   ?? 0) + 1);
-              }
-
-              // ── 1. Близкие несоединённые узлы (3D расстояние: X, Y, Z) ──
-              const nearPairs: NearPair[] = [];
-              for (let i = 0; i < nodes.length; i++) {
-                for (let j = i + 1; j < nodes.length; j++) {
-                  const a = nodes[i], b = nodes[j];
-                  if (branchPairs.has(`${a.id}|${b.id}`)) continue;
-                  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-                  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                  if (dist <= checkThreshold) nearPairs.push({ a, b, dist });
-                }
-              }
-              nearPairs.sort((x, y) => x.dist - y.dist);
-
-              // ── 2. Изолированные узлы (нет ни одной ветви) ───────────
-              const isolated = nodes.filter(n => (nodeBranchCount.get(n.id) ?? 0) === 0);
-
-              // ── 3. Дубликаты координат (совпадают x,y,z с точностью 0.01 м) ─
-              type DupePair = { a: TopoNode; b: TopoNode };
-              const dupes: DupePair[] = [];
-              for (let i = 0; i < nodes.length; i++) {
-                for (let j = i + 1; j < nodes.length; j++) {
-                  const a = nodes[i], b = nodes[j];
-                  if (Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01 && Math.abs(a.z - b.z) < 0.01) {
-                    dupes.push({ a, b });
-                  }
-                }
-              }
-
-              // ── 4. Дублирующие ветви (одна пара узлов from↔to) ────────
-              type DupBranch = { branches: TopoBranch[]; key: string };
-              const branchByPair = new Map<string, TopoBranch[]>();
-              for (const br of branches) {
-                // Ключ без учёта направления: узлы {from,to} = {to,from}
-                const key = [br.fromId, br.toId].sort().join("|");
-                if (!branchByPair.has(key)) branchByPair.set(key, []);
-                branchByPair.get(key)!.push(br);
-              }
-              const dupBranches: DupBranch[] = [];
-              branchByPair.forEach((arr, key) => {
-                if (arr.length > 1) dupBranches.push({ branches: arr, key });
-              });
-
-              // ── 5. Ветви с нулевым сопротивлением ─────────────────────
-              const zeroRBranches = branches.filter(b => (b.resistance ?? 0) <= 0);
-
-              // ── 6. Ветви с большим сопротивлением (> порога) ──────────
-              const highRBranches = branches
-                .filter(b => (b.resistance ?? 0) > checkHighRThreshold)
-                .sort((a, b) => (b.resistance ?? 0) - (a.resistance ?? 0));
-
-              // ── 7. Перемычки с большим R (> норматива, по умолч. 686 кМюрг) ─
-              type BulkCheck = { branch: TopoBranch; rKmu: number };
-              const bulkBranches: BulkCheck[] = branches
-                .filter(b => b.hasBulkhead)
-                .map(b => ({ branch: b, rKmu: branchBulkheadRkMurg(b) }))
-                .filter(x => x.rKmu > checkBulkRThreshold)
-                .sort((a, b) => b.rKmu - a.rKmu);
-
-              const tabCounts = {
-                near: nearPairs.length, isolated: isolated.length, dupes: dupes.length,
-                dupbranch: dupBranches.length, zeroR: zeroRBranches.length,
-                highR: highRBranches.length, bulkR: bulkBranches.length,
-              };
-              const totalIssues = nearPairs.length + isolated.length + dupes.length
-                + dupBranches.length + zeroRBranches.length + highRBranches.length + bulkBranches.length;
+              // Карта узлов для быстрого поиска в подписях ветвей (без O(n) find)
+              const nodeById = new Map(nodes.map(n => [n.id, n]));
 
               const NavBtn = ({ id, label, count, icon }: { id: typeof checkTab; label: string; count: number; icon: string }) => (
                 <button
@@ -4982,8 +4924,8 @@ export default function CadPage() {
               };
 
               const branchLabel = (b: TopoBranch) => {
-                const fn = nodes.find(n => n.id === b.fromId);
-                const tn = nodes.find(n => n.id === b.toId);
+                const fn = nodeById.get(b.fromId);
+                const tn = nodeById.get(b.toId);
                 const nm = b.type || `Ветвь ${b.id}`;
                 return `${nm} (${fn?.number || fn?.id || "?"}→${tn?.number || tn?.id || "?"})`;
               };
@@ -5015,6 +4957,14 @@ export default function CadPage() {
                       {totalIssues > 0 ? `Найдено нарушений: ${totalIssues}` : "Нарушений не найдено"}
                     </span>
                   </div>
+
+                  {truncated && (
+                    <div className="px-2 py-1 text-[10px] flex items-center gap-1"
+                      style={{ background: "#fffbeb", color: "#b45309", borderBottom: "1px solid #fde68a" }}>
+                      <Icon name="Info" size={11} className="flex-shrink-0" />
+                      Показаны первые результаты — устраните их и запустите проверку повторно.
+                    </div>
+                  )}
 
                   {/* Навигация — Узлы */}
                   <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
