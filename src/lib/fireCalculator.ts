@@ -553,7 +553,10 @@ export function calcFireMode(
       airSpeed: Math.max(smokeSpeed, 0.3),
       flowSign: fbFlow >= 0 ? 1 : -1,
     });
-    if (willReverse || actuallyReversed) reversedBranches.add(fb.id);
+    // В множество опрокинутых (синяя подсветка + счётчик) добавляем ТОЛЬКО
+    // ветви с РЕАЛЬНЫМ опрокидыванием потока. Риск (willReverse) отражается
+    // лишь в логе/тексте, без подсветки и без учёта в счётчике.
+    if (actuallyReversed) reversedBranches.add(fb.id);
 
     log.push(`Ветвь ${fb.id}: Q_пожара=${Q_MW} МВт, T=${Math.round(fireTemp)}°C, h_t=${Math.round(thermalDep)} Па, CO=${coConc.toFixed(3)}%, вид.=${Math.round(visibility)} м${actuallyReversed ? " 🔄 ОПРОКИНУТА (расчёт)" : willReverse ? " ⚠️ РИСК ОПРОКИДЫВАНИЯ" : ""}`);
   }
