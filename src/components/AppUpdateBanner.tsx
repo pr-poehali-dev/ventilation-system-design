@@ -25,6 +25,9 @@ export default function AppUpdateBanner() {
         const d = await fetchRemoteVersion();
         if (cancelled) return;
         if (d.version && isNewerVersion(d.version, APP_VERSION)) {
+          // «Позже» скрывает баннер до следующего запуска (сессии).
+          // Если появилась ещё более новая версия — баннер покажем снова.
+          if (sessionStorage.getItem("pvsUpdateSnooze") === d.version) return;
           setVersion(d.version);
           setNotes(d.notes);
         }
@@ -74,6 +77,14 @@ export default function AppUpdateBanner() {
         ) : (
           <><Icon name="Download" size={13} />Обновить</>
         )}
+      </button>
+      <button
+        onClick={() => {
+          try { sessionStorage.setItem("pvsUpdateSnooze", version); } catch { /* ignore */ }
+          setDismissed(true);
+        }}
+        className="h-7 px-3 rounded-md text-[12px] font-medium flex-shrink-0 hover:bg-white/20 border border-white/40">
+        Позже
       </button>
       <button
         onClick={() => setDismissed(true)}
