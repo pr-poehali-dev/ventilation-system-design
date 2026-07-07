@@ -8807,8 +8807,12 @@ export default function CadPage() {
                 ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSF))
                 : Math.min(8, Math.max(0.25, _rawPosSF));
               const PX_PER_MM = 3.78 * posSF;
-              // ГОСТ-диаметр маркера позиции (мм) — используется вместо жёсткого 13.
+              // ГОСТ-диаметр маркера позиции (мм). Действует ГЛОБАЛЬНО как множитель
+              // относительно эталона 13 мм: эффективный диаметр = pos.diameter · (ГОСТ / 13).
+              // Так поле «Размер по ГОСТ» всегда влияет на схему, сохраняя индивидуальные
+              // размеры отдельных позиций.
               const _posGostMm = positionGostMm > 0 ? positionGostMm : 13;
+              const _gostFactor = _posGostMm / 13;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
               const leaderBranchEnd = (branchId: string, t: number): { sx: number; sy: number } | null => {
@@ -8849,7 +8853,7 @@ export default function CadPage() {
                     if (pos.visible === false) return null;
                     const pz = pos.z ?? 0;
                     const pm = proj(pos.x, pos.y, pz);
-                    const r = (pos.diameter ?? _posGostMm) * PX_PER_MM / 2;
+                    const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
                     const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
                     const isDrawing = leaderDrawMode === pos.id;
 
@@ -8946,7 +8950,7 @@ export default function CadPage() {
                   {positions.map((pos) => {
                     if (pos.visible === false) return null;
                     const { sx, sy } = proj(pos.x, pos.y, pos.z ?? 0);
-                    const r = (pos.diameter ?? _posGostMm) * PX_PER_MM / 2;
+                    const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
                     const isReverse = pos.positionType === "reverse";
                     const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
@@ -8995,12 +8999,12 @@ export default function CadPage() {
                       >
                         {isReverse && (
                           <>
-                            <circle r={r + 7} fill="none" stroke="#e53e3e" strokeWidth={2.5} />
-                            <circle r={r + 4} fill="none" stroke="#fff" strokeWidth={3} />
+                            <circle r={r + r * 0.14} fill="none" stroke="#e53e3e" strokeWidth={Math.max(1.5, r * 0.06)} />
+                            <circle r={r + r * 0.08} fill="none" stroke="#fff" strokeWidth={Math.max(1.5, r * 0.07)} />
                           </>
                         )}
-                        {isSelected && <circle r={r + 4} fill="none" stroke="#2563eb" strokeWidth={2} strokeDasharray="5,2.5" />}
-                        <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={2} />
+                        {isSelected && <circle r={r + r * 0.08} fill="none" stroke="#2563eb" strokeWidth={Math.max(1.5, r * 0.05)} strokeDasharray="5,2.5" />}
+                        <circle r={r} fill={pos.color} stroke={pos.borderColor} strokeWidth={Math.max(1, r * 0.05)} />
                         <text
                           textAnchor="middle" dominantBaseline="central"
                           fill="#000" fontSize={fontSize}
