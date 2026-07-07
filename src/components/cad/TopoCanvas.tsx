@@ -813,10 +813,32 @@ export default function TopoCanvas(props: Props) {
     project3D({ x: p.x * (xyScale ?? 1), y: p.y * (xyScale ?? 1), z: p.z * (zScale ?? 1) }, proj),
   [proj, zScale, xyScale]);
 
-  // Проекции всех узлов — пересчитываются только при изменении nodes или proj
+  // ── БЫСТРАЯ ПАНОРАМА ──────────────────────────────────────────────────────
+  // Экранная координата узла: sx = offsetX + bx, sy = offsetY + by, где
+  // bx = x1·scale, by = -y2·scale, depth — НЕ зависят от смещения (offset).
+  // Тяжёлую тригонометрию (project3D) считаем ТОЛЬКО при смене масштаба/ракурса/
+  // координат — но НЕ при перетаскивании. При pan меняется лишь offset, поэтому
+  // достаточно прибавить его к закешированным bx/by (2 сложения на узел).
+  const projBase = useMemo(() => {
+    const arr = new Array<{ node: TopoNode; bx: number; by: number; depth: number }>(nodes.length);
+    // Проекция без смещения: считаем в системе offset=0.
+    const opts: ProjOptions = { scale: view.scale, offsetX: 0, offsetY: 0, azimuth: view.azimuth, elevation: view.elevation, zScale };
+    const kx = xyScale ?? 1, kz = zScale ?? 1;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const p = project3D({ x: n.x * kx, y: n.y * kx, z: n.z * kz }, opts);
+      arr[i] = { node: n, bx: p.sx, by: p.sy, depth: p.depth };
+    }
+    return arr;
+    // Намеренно НЕ зависим от offsetX/offsetY — иначе кэш сбрасывался бы на каждый pan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, view.scale, view.azimuth, view.elevation, zScale, xyScale]);
+
+  // Проекции всех узлов с учётом смещения. При pan пересчитывается только этот
+  // лёгкий цикл (без тригонометрии) — projBase остаётся закешированным.
   const projNodes = useMemo(
-    () => nodes.map((n) => ({ node: n, ...projectWithZ(n) })),
-    [nodes, projectWithZ]
+    () => projBase.map((p) => ({ node: p.node, sx: view.offsetX + p.bx, sy: view.offsetY + p.by, depth: p.depth })),
+    [projBase, view.offsetX, view.offsetY]
   );
 
   // Map для O(1) lookup по ID узла (вместо O(n) find внутри рендера)
@@ -825,6 +847,12 @@ export default function TopoCanvas(props: Props) {
     for (const p of projNodes) m.set(p.node.id, p);
     return m;
   }, [projNodes]);
+
+  // Эпоха порядка глубины: увеличивается только когда меняется projBase
+  // (масштаб/ракурс/координаты), но НЕ при перетаскивании (offset). Передаётся в
+  // renderCanvas, чтобы при pan пропускать повторную сортировку 13000+ ветвей/узлов.
+  const sortEpochRef = useRef(0);
+  const sortEpoch = useMemo(() => ++sortEpochRef.current, [projBase]);
 
   // ── Загрязнённые ветви (ниже по потоку от ветвей с pollutesAir=true) ───
   // BFS/DFS по графу в направлении движения воздуха (flow > 0: from→to, flow < 0: to→from).
@@ -2387,6 +2415,7 @@ export default function TopoCanvas(props: Props) {
           projNodesMap={projNodesMap}
           proj={proj}
           view={view}
+          sortEpoch={sortEpoch}
           is3D={is3D}
           zScale={zScale}
           zLevel={zLevel}

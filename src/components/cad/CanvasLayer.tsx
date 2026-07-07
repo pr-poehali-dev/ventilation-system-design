@@ -36,6 +36,7 @@ interface CanvasLayerProps {
 
   proj: ProjOptions;
   view: ViewState;
+  sortEpoch?: number;
   is3D: boolean;
   zScale: number;
   zLevel: number;
@@ -177,6 +178,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         projNodesMap: p.projNodesMap,
         proj: p.proj,
         view: p.view,
+        sortEpoch: p.sortEpoch,
         is3D: p.is3D,
         zScale: p.zScale,
         zLevel: p.zLevel,

@@ -61,6 +61,9 @@ export interface CanvasRenderOptions {
 
   proj: ProjOptions;
   view: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
+  /** Эпоха порядка глубины: меняется при смене масштаба/ракурса/координат, но НЕ при pan.
+   *  Позволяет пропускать повторную сортировку ветвей при простом перетаскивании. */
+  sortEpoch?: number;
   is3D: boolean;
   zScale: number;
   zLevel: number;
@@ -170,15 +173,38 @@ function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: 
 type SortedBranch = { b: TopoBranch; from: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; to: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; depth: number };
 let _sortedBranchesCache: SortedBranch[] = [];
 let _sortedBranchesKey: { visibleBranches: TopoBranch[]; projNodesMap: Map<string, unknown> } = { visibleBranches: [], projNodesMap: new Map() };
+// Эпоха порядка глубины: меняется только при смене масштаба/ракурса/координат,
+// но НЕ при перетаскивании. Пока эпоха та же — порядок сортировки не меняется,
+// и при pan мы лишь обновляем ссылки from/to без повторной O(N·logN) сортировки.
+let _sortedBranchesEpoch: number | undefined;
 
 function getSortedBranches(
   visibleBranches: TopoBranch[],
   projNodesMap: Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>,
+  sortEpoch?: number,
 ): SortedBranch[] {
   if (_sortedBranchesKey.visibleBranches === visibleBranches && _sortedBranchesKey.projNodesMap === projNodesMap) {
     return _sortedBranchesCache;
   }
+  // БЫСТРАЯ ПАНОРАМА: та же эпоха глубины и тот же набор ветвей →
+  // порядок сохраняется, обновляем только from/to (сдвиг offset) без сортировки.
+  if (
+    sortEpoch !== undefined &&
+    sortEpoch === _sortedBranchesEpoch &&
+    _sortedBranchesKey.visibleBranches === visibleBranches &&
+    _sortedBranchesCache.length === visibleBranches.length
+  ) {
+    _sortedBranchesKey = { visibleBranches, projNodesMap };
+    _sortedBranchesCache = _sortedBranchesCache.map((e) => ({
+      b: e.b,
+      from: projNodesMap.get(e.b.fromId),
+      to: projNodesMap.get(e.b.toId),
+      depth: e.depth,
+    }));
+    return _sortedBranchesCache;
+  }
   _sortedBranchesKey = { visibleBranches, projNodesMap };
+  _sortedBranchesEpoch = sortEpoch;
   _sortedBranchesCache = visibleBranches.map((b) => {
     const from = projNodesMap.get(b.fromId);
     const to   = projNodesMap.get(b.toId);
@@ -191,11 +217,28 @@ function getSortedBranches(
 type SortedNode = { node: TopoNode; sx: number; sy: number; depth: number };
 let _sortedNodesCache: SortedNode[] = [];
 let _sortedNodesKey: ProjNode[] | null = null;
+let _sortedNodesEpoch: number | undefined;
+// Индексы порядка сортировки узлов (для быстрого переупорядочивания при pan).
+let _sortedNodesOrder: number[] = [];
 
-function getSortedNodes(projNodes: ProjNode[]): SortedNode[] {
+function getSortedNodes(projNodes: ProjNode[], sortEpoch?: number): SortedNode[] {
   if (_sortedNodesKey === projNodes) return _sortedNodesCache;
+  // БЫСТРАЯ ПАНОРАМА: та же эпоха и тот же размер → порядок прежний,
+  // переиспользуем сохранённые индексы без повторной сортировки.
+  if (
+    sortEpoch !== undefined &&
+    sortEpoch === _sortedNodesEpoch &&
+    _sortedNodesOrder.length === projNodes.length
+  ) {
+    _sortedNodesKey = projNodes;
+    _sortedNodesCache = _sortedNodesOrder.map((idx) => projNodes[idx]);
+    return _sortedNodesCache;
+  }
   _sortedNodesKey = projNodes;
-  _sortedNodesCache = [...projNodes].sort((a, b) => a.depth - b.depth);
+  _sortedNodesEpoch = sortEpoch;
+  const order = projNodes.map((_, i) => i).sort((a, b) => projNodes[a].depth - projNodes[b].depth);
+  _sortedNodesOrder = order;
+  _sortedNodesCache = order.map((idx) => projNodes[idx]);
   return _sortedNodesCache;
 }
 
@@ -348,7 +391,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── Сортировка ветвей по глубине (painter's algorithm) ───────────────────
   // Используем кэш: при анимации потока projNodesMap не меняется → O(1) вместо O(N log N)
-  const allSorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>);
+  const allSorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>, opts.sortEpoch);
 
   // ─── Viewport culling: отсекаем ветви вне экрана (с запасом 64px) ──────────
   const CULL_MARGIN = 64;
@@ -809,7 +852,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
     }
     // O(1) при анимации — projNodes не меняется между кадрами
-    const nodesSorted = getSortedNodes(projNodes);
+    const nodesSorted = getSortedNodes(projNodes, opts.sortEpoch);
     for (const pn of nodesSorted) {
       const n = pn.node;
       if (n.visible === false) continue;
