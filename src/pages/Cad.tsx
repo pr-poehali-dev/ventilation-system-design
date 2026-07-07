@@ -831,6 +831,8 @@ export default function CadPage() {
   // Масштаб перемычек в % от ширины ветви (150% = перемычка в 1.5 раза шире ветви).
   // Синхронизируется с реальной толщиной ветви на экране (учитывает масштаб XY).
   const [bulkheadScale, setBulkheadScale] = useState(150);
+  // Масштаб вентиляторов в % от ширины ветви (450% по умолчанию). Как у перемычек.
+  const [fanScale, setFanScale] = useState(450);
 
   // ─── Сравнение схем ─────────────────────────────────────────────────
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
@@ -1490,6 +1492,7 @@ export default function CadPage() {
     textBlocks,
     scaleLimitsEnabled,
     bulkheadScale,
+    fanScale,
   });
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
@@ -1739,6 +1742,7 @@ export default function CadPage() {
     setXyScale(1);
     setScaleLimitsEnabled(false);
     setBulkheadScale(150);
+    setFanScale(450);
     setPosColorInner(false);
     setPosColorOuter(false);
     setShowPositions(true);
@@ -1851,6 +1855,7 @@ export default function CadPage() {
     if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.bulkheadScale !== undefined) setBulkheadScale(data.bulkheadScale as number);
+    if (data.fanScale !== undefined) setFanScale(data.fanScale as number);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
     if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
@@ -1952,6 +1957,7 @@ export default function CadPage() {
     setXyScale(1);
     setScaleLimitsEnabled(false);
     setBulkheadScale(150);
+    setFanScale(450);
     setPosColorInner(false);
     setPosColorOuter(false);
     setShowPositions(true);
@@ -7978,6 +7984,7 @@ export default function CadPage() {
                 branchMin: scaleBranchMin, branchMax: scaleBranchMax,
               } : undefined}
               bulkheadScale={bulkheadScale}
+              fanScale={fanScale}
               colorByHorizon={colorMode === "horizon"}
               showFlowArrows={showFlowArrows}
               scaleOverride={viewScale}
@@ -9677,6 +9684,23 @@ export default function CadPage() {
                       </div>
                     </td>
                   </tr>
+
+                  {/* Строка 4: Масштаб вентиляторов */}
+                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
+                      <div className="text-gray-700">Масштаб вентиляторов</div>
+                      <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
+                    </td>
+                    <td className="py-2 px-3 text-center" colSpan={2}>
+                      <div className="flex items-center justify-center gap-1">
+                        <input type="number" min={50} max={2000} value={fanScale}
+                          onChange={e => setFanScale(Math.max(50, Math.min(2000, Number(e.target.value))))}
+                          className="text-right text-[12px] px-1"
+                          style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
+                        <span className="text-gray-500">% от ширины ветви</span>
+                      </div>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -9687,7 +9711,7 @@ export default function CadPage() {
                 onClick={() => {
                   setScaleTextMin(80); setScaleTextMax(150);
                   setScaleBranchMin(80); setScaleBranchMax(150);
-                  setBulkheadScale(150);
+                  setBulkheadScale(150); setFanScale(450);
                 }}
                 className="px-4 py-1 text-[12px] border border-gray-400 bg-white hover:bg-gray-100"
                 style={{ minWidth: 70 }}>

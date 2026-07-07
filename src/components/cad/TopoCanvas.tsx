@@ -28,11 +28,6 @@ import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/c
 const EMPTY_SET = new Set<string>();
 const EMPTY_ARRAY: never[] = [];
 
-// Коэффициент размера УО «Вентилятор» относительно ширины ветви.
-// Вентилятор масштабируется от толщины ветви (как перемычка) — синхронно с
-// масштабом схемы. Значение подобрано так, чтобы вентилятор был заметно крупнее
-// перемычки и читаемо смотрелся на трубе.
-const FAN_SCALE_K = 4.5;
 
 // Форматирует сопротивление с авто-выбором значащих цифр (не показывает 0.0000)
 function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
@@ -96,6 +91,8 @@ interface Props {
   };
   /** Масштаб перемычек в % от ширины ветви (150 = 1.5× ширины ветви). */
   bulkheadScale?: number;
+  /** Масштаб вентиляторов в % от ширины ветви (450 = 4.5× ширины ветви). */
+  fanScale?: number;
   /** Окрашивать ветви по цвету горизонта (вместо цвета по скорости/потоку). */
   colorByHorizon?: boolean;
   /** Показывать стрелки направления свежей струи после расчёта (F9). */
@@ -254,6 +251,7 @@ export default function TopoCanvas(props: Props) {
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
     horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, scaleLimits,
     bulkheadScale = 150,
+    fanScale = 450,
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId,
@@ -3222,7 +3220,7 @@ export default function TopoCanvas(props: Props) {
             const fanBr = branches.find(b => b.id === sym.branchId);
             const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
             const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
-            SZ = Math.max(8, realBwFan * FAN_SCALE_K * sc);
+            SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
           }
@@ -4172,7 +4170,7 @@ export default function TopoCanvas(props: Props) {
               const fanBr = branches.find(b => b.id === sym.branchId);
               const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
               const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
-              SZ = Math.max(8, realBwFan * FAN_SCALE_K * sc);
+              SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
             } else {
               SZ = Math.max(4, 32 * sc * symScaleV);
             }
