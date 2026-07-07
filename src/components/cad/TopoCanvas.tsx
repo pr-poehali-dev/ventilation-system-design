@@ -2412,6 +2412,11 @@ export default function TopoCanvas(props: Props) {
           pollutedBranchIds={pollutedBranchIds}
           xyScale={xyScale}
           compareBranchColors={compareBranchColors}
+          colorMode={colorMode}
+          flowColorMin={flowColorMin}
+          flowColorMax={flowColorMax}
+          flowColorHue={flowColorHue}
+          posInnerColors={posInnerColors}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}

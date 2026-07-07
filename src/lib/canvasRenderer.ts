@@ -89,6 +89,12 @@ export interface CanvasRenderOptions {
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   /** Режим цвета: none = по скорости, flowQ = по расходу */
   colorMode?: "none" | "flowQ";
+  /** Нижний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
+  flowColorMin?: number;
+  /** Верхний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
+  flowColorMax?: number;
+  /** Палитра заливки по расходу: белый → выбранный цвет */
+  flowColorHue?: "red" | "blue" | "green";
   /** Карта branchId → цвет позиции внутри (ПЛА) */
   posInnerColors?: Map<string, string>;
   /** Карта branchId → цвет позиции снаружи (ПЛА) */
@@ -131,6 +137,22 @@ export function velocityColor(v: number): string {
   }
   const t = lo.v === hi.v ? 1 : Math.min(1, (v - lo.v) / (hi.v - lo.v));
   return `rgb(${Math.round(lo.r + (hi.r - lo.r) * t)},${Math.round(lo.g + (hi.g - lo.g) * t)},${Math.round(lo.b + (hi.b - lo.b) * t)})`;
+}
+
+// ─── Цвет ветви по расходу воздуха (заливка heatmap) ───────────────────────
+// Аналог flowQColor из SVG-рендера: белый (мин) → насыщенный цвет (макс).
+const FLOW_HUE_TARGETS: Record<string, [number, number, number]> = {
+  red:   [220, 38, 38],
+  blue:  [37, 99, 235],
+  green: [22, 163, 74],
+};
+export function flowQColor(q: number, min: number, max: number, hue: "red" | "blue" | "green"): string {
+  const t = Math.min(1, Math.max(0, (q - min) / Math.max(0.001, max - min)));
+  const [tr, tg, tb] = FLOW_HUE_TARGETS[hue] ?? FLOW_HUE_TARGETS.red;
+  const r = Math.round(255 + (tr - 255) * t);
+  const g = Math.round(255 + (tg - 255) * t);
+  const b = Math.round(255 + (tb - 255) * t);
+  return `rgb(${r},${g},${b})`;
 }
 
 function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
@@ -270,7 +292,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
-    colorMode = "none", posInnerColors, posOuterColors, printMode = false,
+    colorMode = "none", flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
+    posInnerColors, posOuterColors, printMode = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     xyScale,
@@ -373,7 +396,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
       : (colorByHorizon && horizonColor) ? horizonColor
-      : colorMode === "flowQ" ? (Q > 0 ? velocityColor(V) : defaultBranchColor)
+      : colorMode === "flowQ" ? flowQColor(Q, flowColorMin, flowColorMax, flowColorHue)
       : posInnerColors ? (posInnerCol ?? defaultBranchColor)
       : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
