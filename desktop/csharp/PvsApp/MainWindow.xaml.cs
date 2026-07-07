@@ -303,8 +303,15 @@ public partial class MainWindow : Window
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
     {
+        // Рамка ресайза (Margin вокруг WebView) нужна только в обычном режиме.
+        // В развёрнутом окне убираем отступ — иначе по краям видна серая полоса.
+        bool maximized = WindowState == WindowState.Maximized;
+        var margin = maximized ? new Thickness(0) : new Thickness(ResizeBorder);
+        if (WebView != null)  WebView.Margin  = margin;
+        if (SplashGrid != null) SplashGrid.Margin = margin;
+
         if (WebView?.CoreWebView2 == null) return;
-        string maxVal = WindowState == WindowState.Maximized ? "true" : "false";
+        string maxVal = maximized ? "true" : "false";
         _ = WebView.CoreWebView2.ExecuteScriptAsync(
             "window.__pvsWindowMaximized = " + maxVal + ";" +
             "window.dispatchEvent(new CustomEvent('pvs-window-state', { detail: { maximized: " + maxVal + " } }));");

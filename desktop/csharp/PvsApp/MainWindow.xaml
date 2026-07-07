@@ -17,9 +17,15 @@
                   UseAeroCaptionButtons="False"/>
   </WindowChrome.WindowChrome>
 
-  <Grid>
+  <!-- Фон окна = тонкая «рамка» вокруг WebView. WebView2 (дочерний HWND
+       браузера) перекрывает окно и не пропускает события рамки ресайза к WPF.
+       Поэтому оставляем по краям полоску шириной ResizeBorderThickness (6px),
+       не занятую браузером — Windows получает по ней WM_NCHITTEST и позволяет
+       тянуть края. Цвет рамки совпадает с фоном заголовка интерфейса (#e0e0e0),
+       поэтому визуально она почти незаметна. -->
+  <Grid Background="#e0e0e0">
     <!-- Splash / загрузка -->
-    <Grid x:Name="SplashGrid" Background="#1e293b" Panel.ZIndex="10">
+    <Grid x:Name="SplashGrid" Background="#1e293b" Panel.ZIndex="10" Margin="6">
       <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
         <TextBlock Text="ПВ-Система"
                    Foreground="White" FontSize="32" FontWeight="Bold"
@@ -34,8 +40,9 @@
       </StackPanel>
     </Grid>
 
-    <!-- WebView2 -->
+    <!-- WebView2. Margin=6 оставляет зону ресайза окну (см. комментарий выше). -->
     <wv2:WebView2 x:Name="WebView"
+                  Margin="6"
                   Visibility="Collapsed"/>
   </Grid>
 </Window>
