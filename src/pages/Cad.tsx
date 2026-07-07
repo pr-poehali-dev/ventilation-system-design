@@ -7099,19 +7099,23 @@ export default function CadPage() {
               const ind = selectedBranch.indicators ?? {};
               const setInd = (key: string, val: boolean) =>
                 updateBranch(selectedBranch.id, { indicators: { ...ind, [key]: val } });
-              const IndRow = ({ k, label }: { k: string; label: string }) => (
-                <label className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+              // ВАЖНО: IndRow/IndSection — обычные функции, а НЕ вложенные компоненты.
+              // Если объявить их как компоненты внутри render, React пересоздаёт их тип
+              // на каждом рендере и ремонтирует <input>, из-за чего в canvas-режиме
+              // (частые перерисовки схемы) клик по чекбоксу «теряется» и не срабатывает.
+              const indRow = (k: string, label: string) => (
+                <label key={k} className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
                   <input type="checkbox" checked={ind[k] ?? false}
                     onChange={e => setInd(k, e.target.checked)}
                     style={{ width: 13, height: 13, accentColor: "#2563eb", cursor: "pointer" }} />
                   <span className="text-[11px] text-gray-700">{label}</span>
                 </label>
               );
-              const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-                <div className="mb-2">
+              const indSection = (title: string, rows: React.ReactNode) => (
+                <div className="mb-2" key={title}>
                   <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
                     style={{ borderBottom: "1px solid #e5e7eb" }}>{title}</div>
-                  <div className="pt-0.5">{children}</div>
+                  <div className="pt-0.5">{rows}</div>
                 </div>
               );
               return (
@@ -7125,38 +7129,38 @@ export default function CadPage() {
                     </button>
                   </div>
 
-                  <Section title="Общее">
-                    <IndRow k="branchName"   label="Название" />
-                    <IndRow k="branchNumber" label="Номер" />
-                  </Section>
+                  {indSection("Общее", [
+                    indRow("branchName", "Название"),
+                    indRow("branchNumber", "Номер"),
+                  ])}
 
-                  <Section title="Вентиляция">
-                    <IndRow k="branchVelocity"      label="Макс. допустимая скорость воздуха" />
-                    <IndRow k="branchAlpha"          label="Коэффициент шероховатости (α)" />
-                    <IndRow k="branchLocalXi"        label="Мин. допустимая скорость воздуха" />
-                    <IndRow k="branchResistance"     label="Аэродинамическое сопротивление" />
-                    <IndRow k="branchAngle"          label="Уклон" />
-                    <IndRow k="branchFlow"           label="Фактический расход воздуха" />
-                    <IndRow k="branchDepression"     label="Фактический перепад давления" />
-                    <IndRow k="branchLength"         label="Длина" />
-                    <IndRow k="branchHeight"         label="Объём" />
-                    <IndRow k="branchSection"        label="Поперечное сечение" />
-                    <IndRow k="branchFlowCalc"       label="Расход воздуха" />
-                    <IndRow k="branchVelocityModel"  label="Скорость воздуха" />
-                    <IndRow k="branchDepressionModel" label="Перепад давления" />
-                    <IndRow k="branchExtraFan"       label="Энергозатраты на единицу длины" />
-                    <IndRow k="branchResistanceSum"  label="Финзатраты на единицу длины" />
-                    <IndRow k="branchNatDragC"       label="Гарантированный расход воздуха" />
-                  </Section>
+                  {indSection("Вентиляция", [
+                    indRow("branchVelocity", "Макс. допустимая скорость воздуха"),
+                    indRow("branchAlpha", "Коэффициент шероховатости (α)"),
+                    indRow("branchLocalXi", "Мин. допустимая скорость воздуха"),
+                    indRow("branchResistance", "Аэродинамическое сопротивление"),
+                    indRow("branchAngle", "Уклон"),
+                    indRow("branchFlow", "Фактический расход воздуха"),
+                    indRow("branchDepression", "Фактический перепад давления"),
+                    indRow("branchLength", "Длина"),
+                    indRow("branchHeight", "Объём"),
+                    indRow("branchSection", "Поперечное сечение"),
+                    indRow("branchFlowCalc", "Расход воздуха"),
+                    indRow("branchVelocityModel", "Скорость воздуха"),
+                    indRow("branchDepressionModel", "Перепад давления"),
+                    indRow("branchExtraFan", "Энергозатраты на единицу длины"),
+                    indRow("branchResistanceSum", "Финзатраты на единицу длины"),
+                    indRow("branchNatDragC", "Гарантированный расход воздуха"),
+                  ])}
 
-                  <Section title="Авария">
-                    <IndRow k="branchMethane"       label="Концентрация метана" />
-                    <IndRow k="branchCOEmission"    label="Концентрация угарного газа" />
-                    <IndRow k="branchGasEmission"   label="Концентрация водорода" />
-                    <IndRow k="branchGasSpreadTime" label="Концентрация оксидов азота" />
-                    <IndRow k="branchNatDragT"      label="Тепловая критическая депрессия" />
-                    <IndRow k="branchNatDragW"      label="Тепловая депрессия пожара" />
-                  </Section>
+                  {indSection("Авария", [
+                    indRow("branchMethane", "Концентрация метана"),
+                    indRow("branchCOEmission", "Концентрация угарного газа"),
+                    indRow("branchGasEmission", "Концентрация водорода"),
+                    indRow("branchGasSpreadTime", "Концентрация оксидов азота"),
+                    indRow("branchNatDragT", "Тепловая критическая депрессия"),
+                    indRow("branchNatDragW", "Тепловая депрессия пожара"),
+                  ])}
                 </div>
               );
             })()}
@@ -7169,19 +7173,21 @@ export default function CadPage() {
               const ind = selectedBranch.indicators ?? {};
               const setInd = (key: string, val: boolean) =>
                 updateBranch(selectedBranch.id, { indicators: { ...ind, [key]: val } });
-              const IndRow = ({ k, label }: { k: string; label: string }) => (
-                <label className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+              // См. комментарий во вкладке «Индикаторы»: функции, а не компоненты,
+              // иначе в canvas-режиме клики по чекбоксам теряются.
+              const indRow = (k: string, label: string) => (
+                <label key={k} className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
                   <input type="checkbox" checked={ind[k] ?? false}
                     onChange={e => setInd(k, e.target.checked)}
                     style={{ width: 13, height: 13, accentColor: "#2563eb", cursor: "pointer" }} />
                   <span className="text-[11px] text-gray-700">{label}</span>
                 </label>
               );
-              const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-                <div className="mb-2">
+              const indSection = (title: string, rows: React.ReactNode) => (
+                <div className="mb-2" key={title}>
                   <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
                     style={{ borderBottom: "1px solid #e5e7eb" }}>{title}</div>
-                  <div className="pt-0.5">{children}</div>
+                  <div className="pt-0.5">{rows}</div>
                 </div>
               );
               return (
@@ -7194,19 +7200,19 @@ export default function CadPage() {
                       Сбросить
                     </button>
                   </div>
-                  <Section title="Расход воздуха">
-                    <IndRow k="branchFlowCalc"  label="Расход воздуха на вентиляторе" />
-                    <IndRow k="branchFlow"       label="Фактический расход воздуха" />
-                  </Section>
-                  <Section title="Напор и мощность">
-                    <IndRow k="fanPressure"      label="Напор вентилятора" />
-                    <IndRow k="fanShaftPower"    label="Мощность вентилятора" />
-                    <IndRow k="fanEfficiency"    label="КПД вентилятора" />
-                    <IndRow k="fanMaxPressure"   label="Макс. напор вентилятора" />
-                  </Section>
-                  <Section title="Описание">
-                    <IndRow k="branchName"       label="Описание объекта" />
-                  </Section>
+                  {indSection("Расход воздуха", [
+                    indRow("branchFlowCalc", "Расход воздуха на вентиляторе"),
+                    indRow("branchFlow", "Фактический расход воздуха"),
+                  ])}
+                  {indSection("Напор и мощность", [
+                    indRow("fanPressure", "Напор вентилятора"),
+                    indRow("fanShaftPower", "Мощность вентилятора"),
+                    indRow("fanEfficiency", "КПД вентилятора"),
+                    indRow("fanMaxPressure", "Макс. напор вентилятора"),
+                  ])}
+                  {indSection("Описание", [
+                    indRow("branchName", "Описание объекта"),
+                  ])}
                 </div>
               );
             })()}
