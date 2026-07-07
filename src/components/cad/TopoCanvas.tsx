@@ -1018,6 +1018,21 @@ export default function TopoCanvas(props: Props) {
   const _xySF = Math.max(1, xyScale ?? 1);
   const _objSF = Math.min(8, Math.max(0.25, view.scale / (_xySF * 0.4)));
 
+  // Итоговый масштаб толщины ВЕТВИ — В ТОЧНОСТИ как при отрисовке ветвей.
+  // Перемычки используют этот коэффициент, чтобы масштабироваться синхронно с
+  // шириной ветви (в т.ч. НЕ уменьшаться при приближении в фиксированном режиме).
+  // ВАЖНО: SVG- и Canvas-рендеры считают ширину ветви в фикс.режиме по-разному:
+  //  • SVG (≤ порога): rawObjSF = 1 (полностью фиксировано);
+  //  • Canvas (> порога, canvasRenderer): rawObjSF = scale/(xyScale*0.4) с зажимом.
+  // Поэтому выбираем формулу под активный режим отрисовки.
+  const _useCanvasRender = visibleBranches.length > CANVAS_THRESHOLD;
+  const _rawBranchSF = (fixedObjectScale && !_useCanvasRender)
+    ? 1
+    : (view.scale / (_xySF * 0.4));
+  const _branchObjSF = fixedObjectScale && scaleLimits
+    ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, _rawBranchSF))
+    : Math.max(0.25, _rawBranchSF);
+
   // Радиус попадания в узел — пропорционален реальному размеру, минимум 8px
   const hitNodeR = (sx: number, sy: number, pn: typeof projNodes, extraR = 0) => {
     const baseW = branchWidth ?? 2.5;
@@ -3193,7 +3208,7 @@ export default function TopoCanvas(props: Props) {
             // Размер перемычки = реальная ширина ветви на экране × bulkheadScale%.
             // _objSF — тот же коэффициент толщины ветви, что и при отрисовке ветвей,
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
-            const realBw = Math.max(bkBw * _objSF, 1.0);
+            const realBw = Math.max(bkBw * _branchObjSF, 1.0);
             SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
@@ -4133,7 +4148,7 @@ export default function TopoCanvas(props: Props) {
               // Реальная толщина ветви в пикселях на экране (тот же objSF, что и
               // при отрисовке ветвей в canvasRenderer). Благодаря этому перемычка
               // масштабируется СИНХРОННО с шириной ветви при любом масштабе XY.
-              const realBranchW = Math.max(msBw * _objSF, 1.0);
+              const realBranchW = Math.max(msBw * _branchObjSF, 1.0);
               // Высота перемычки поперёк ветви = ширина ветви × (bulkheadScale%).
               // ph = SZ * 0.85 → SZ = ph / 0.85.
               const ph = realBranchW * (bulkheadScale / 100);
@@ -4245,7 +4260,7 @@ export default function TopoCanvas(props: Props) {
                   const bkBwOv = (bkBrOv?.lineWidth && bkBrOv.lineWidth > 0) ? bkBrOv.lineWidth : branchWidth;
                   // Размер перемычки синхронизирован с реальной шириной ветви на
                   // экране (_objSF) × bulkheadScale% — не зависит от масштаба XY.
-                  const realBwOv = Math.max(bkBwOv * _objSF, 1.0);
+                  const realBwOv = Math.max(bkBwOv * _branchObjSF, 1.0);
                   const SZov = Math.max(6, (realBwOv * (bulkheadScale / 100) / 0.85) * (sym.scale ?? 1));
                   const ph = Math.max(3, SZov * 0.85);
                   const pw = Math.max(1.5, ph * 0.38);
