@@ -95,21 +95,48 @@ export default function CadPage() {
     if (license.status === "demo") setShowLicenseDialog(true);
   }, [license.status]);
 
-  // Открытие .vproj файла из Electron (двойной клик в проводнике)
+  // Открытие .vproj файла из десктопа (двойной клик по файлу в проводнике).
+  // ВАЖНО: window.electronAPI инжектируется C# (WebView2) и может появиться
+  // ПОЗЖЕ, чем смонтируется React. Раньше эффект просто выходил, если API ещё
+  // не было — из-за чего файл не открывался и показывался пустой новый проект.
+  // Теперь ждём появления electronAPI (короткий поллинг) и только затем
+  // регистрируем обработчик открытия файла.
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eAPI = (window as any).electronAPI;
-    if (!eAPI?.onOpenFile) return;
+    type EAPI = { onOpenFile?: (h: (f: { path: string; content: string }) => void) => void; offOpenFile?: () => void };
+    let cancelled = false;
+    let registered: EAPI | null = null;
+
     const handler = ({ content }: { path: string; content: string }) => {
       try {
         const data = JSON.parse(content);
-        if (data.nodes && Array.isArray(data.nodes)) {
+        if (data && data.nodes && Array.isArray(data.nodes)) {
           applyProjectData(data, data.name || "project.vproj");
         }
-      } catch { /* ignore */ }
+      } catch { /* повреждённый файл — тихо игнорируем */ }
     };
-    eAPI.onOpenFile(handler);
-    return () => eAPI.offOpenFile?.();
+
+    const tryRegister = () => {
+      if (cancelled) return true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eAPI = (window as any).electronAPI as EAPI | undefined;
+      if (eAPI?.onOpenFile) {
+        registered = eAPI;
+        eAPI.onOpenFile(handler);
+        return true;
+      }
+      return false;
+    };
+
+    if (!tryRegister()) {
+      // Поллинг до 5 секунд (25 × 200мс) — на случай позднего инжекта моста C#
+      let tries = 0;
+      const iv = window.setInterval(() => {
+        if (tryRegister() || ++tries >= 25) window.clearInterval(iv);
+      }, 200);
+      return () => { cancelled = true; window.clearInterval(iv); registered?.offOpenFile?.(); };
+    }
+    return () => { cancelled = true; registered?.offOpenFile?.(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

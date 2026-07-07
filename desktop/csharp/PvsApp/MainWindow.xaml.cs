@@ -319,9 +319,67 @@ public partial class MainWindow : Window
     }
 
     private const int WM_GETMINMAXINFO = 0x0024;
+    private const int WM_NCHITTEST     = 0x0084;
+    private const int WM_NCLBUTTONDOWN = 0x00A1;
 
-    private static IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    // Коды зон окна для перетаскивания/ресайза (возврат из WM_NCHITTEST)
+    private const int HTCAPTION     = 2;
+    private const int HTLEFT        = 10;
+    private const int HTRIGHT       = 11;
+    private const int HTTOP         = 12;
+    private const int HTTOPLEFT     = 13;
+    private const int HTTOPRIGHT    = 14;
+    private const int HTBOTTOM      = 15;
+    private const int HTBOTTOMLEFT  = 16;
+    private const int HTBOTTOMRIGHT = 17;
+
+    // Толщина зоны захвата по краям окна для изменения размера (px)
+    private const int ResizeBorder = 6;
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+
+    private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        // ── Изменение размера безрамочного окна поверх WebView2 ────────────────
+        // WebView2 (дочерний HWND браузера) закрывает окно целиком и «съедает»
+        // стандартную рамку ресайза WPF. Поэтому сами обрабатываем WM_NCHITTEST:
+        // если курсор у самого края окна — возвращаем код зоны ресайза, и Windows
+        // рисует стрелку + позволяет тянуть край.
+        if (msg == WM_NCHITTEST && WindowState != WindowState.Maximized)
+        {
+            int screenX = unchecked((short)((long)lParam & 0xFFFF));
+            int screenY = unchecked((short)(((long)lParam >> 16) & 0xFFFF));
+
+            var pt = PointFromScreen(new System.Windows.Point(screenX, screenY));
+            double w = ActualWidth, h = ActualHeight;
+            int b = ResizeBorder;
+
+            bool left   = pt.X <= b;
+            bool right  = pt.X >= w - b;
+            bool top    = pt.Y <= b;
+            bool bottom = pt.Y >= h - b;
+
+            int code = 0;
+            if (top && left)          code = HTTOPLEFT;
+            else if (top && right)    code = HTTOPRIGHT;
+            else if (bottom && left)  code = HTBOTTOMLEFT;
+            else if (bottom && right) code = HTBOTTOMRIGHT;
+            else if (left)            code = HTLEFT;
+            else if (right)           code = HTRIGHT;
+            else if (top)             code = HTTOP;
+            else if (bottom)          code = HTBOTTOM;
+
+            if (code != 0)
+            {
+                handled = true;
+                return (IntPtr)code;
+            }
+        }
+
         if (msg == WM_GETMINMAXINFO)
         {
             const int MONITOR_DEFAULTTONEAREST = 0x00000002;
@@ -436,8 +494,19 @@ public partial class MainWindow : Window
             case "win-drag":
                 Dispatcher.Invoke(() =>
                 {
-                    // DragMove работает только когда кнопка мыши зажата
-                    try { if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove(); }
+                    // ВАЖНО: DragMove() ненадёжен, когда событие пришло из WebView2
+                    // (мышь захвачена дочерним HWND браузера). Используем нативный
+                    // способ перетаскивания окна: отпускаем захват и шлём окну
+                    // WM_NCLBUTTONDOWN с кодом HTCAPTION — Windows сам начинает drag.
+                    try
+                    {
+                        var h = new WindowInteropHelper(this).Handle;
+                        if (h != IntPtr.Zero)
+                        {
+                            ReleaseCapture();
+                            SendMessage(h, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                        }
+                    }
                     catch { }
                 });
                 break;
