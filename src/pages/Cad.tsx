@@ -828,10 +828,9 @@ export default function CadPage() {
   const [scaleTextMax, setScaleTextMax] = useState(150);
   const [scaleBranchMin, setScaleBranchMin] = useState(80);
   const [scaleBranchMax, setScaleBranchMax] = useState(150);
-  const [scaleSymbolMin, setScaleSymbolMin] = useState(80);
-  const [scaleSymbolMax, setScaleSymbolMax] = useState(220);
-  const [scaleBranchMode, setScaleBranchMode] = useState<"relative" | "fixed">("relative");
-  const [scaleSingleLineAt, setScaleSingleLineAt] = useState(10);
+  // Масштаб перемычек в % от ширины ветви (150% = перемычка в 1.5 раза шире ветви).
+  // Синхронизируется с реальной толщиной ветви на экране (учитывает масштаб XY).
+  const [bulkheadScale, setBulkheadScale] = useState(150);
 
   // ─── Сравнение схем ─────────────────────────────────────────────────
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
@@ -1490,6 +1489,7 @@ export default function CadPage() {
     positions,
     textBlocks,
     scaleLimitsEnabled,
+    bulkheadScale,
   });
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
@@ -1738,6 +1738,7 @@ export default function CadPage() {
     setZScale(1);
     setXyScale(1);
     setScaleLimitsEnabled(false);
+    setBulkheadScale(150);
     setPosColorInner(false);
     setPosColorOuter(false);
     setShowPositions(true);
@@ -1849,6 +1850,7 @@ export default function CadPage() {
     if (data.zScale !== undefined) setZScale(data.zScale as number);
     if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
+    if (data.bulkheadScale !== undefined) setBulkheadScale(data.bulkheadScale as number);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
     if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
@@ -1949,6 +1951,7 @@ export default function CadPage() {
     setZScale(1);
     setXyScale(1);
     setScaleLimitsEnabled(false);
+    setBulkheadScale(150);
     setPosColorInner(false);
     setPosColorOuter(false);
     setShowPositions(true);
@@ -7973,10 +7976,8 @@ export default function CadPage() {
               scaleLimits={scaleLimitsEnabled ? {
                 textMin: scaleTextMin, textMax: scaleTextMax,
                 branchMin: scaleBranchMin, branchMax: scaleBranchMax,
-                symbolMin: scaleSymbolMin, symbolMax: scaleSymbolMax,
-                branchMode: scaleBranchMode,
-                singleLineAt: scaleSingleLineAt,
               } : undefined}
+              bulkheadScale={bulkheadScale}
               colorByHorizon={colorMode === "horizon"}
               showFlowArrows={showFlowArrows}
               scaleOverride={viewScale}
@@ -9637,22 +9638,8 @@ export default function CadPage() {
 
                   {/* Строка 2: Толщина ветви */}
                   <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4" style={{ verticalAlign: "middle" }}>
-                      <div className="text-gray-700">Толщина ветви</div>
-                      <div className="flex items-center gap-3 mt-1">
-                        <label className="flex items-center gap-1 text-[11px] cursor-pointer">
-                          <input type="radio" name="scaleMode" checked={scaleBranchMode === "relative"}
-                            onChange={() => setScaleBranchMode("relative")}
-                            style={{ accentColor: "#0078d7", width: 12, height: 12 }} />
-                          Относит. масштаба
-                        </label>
-                        <label className="flex items-center gap-1 text-[11px] cursor-pointer">
-                          <input type="radio" name="scaleMode" checked={scaleBranchMode === "fixed"}
-                            onChange={() => setScaleBranchMode("fixed")}
-                            style={{ accentColor: "#0078d7", width: 12, height: 12 }} />
-                          Фиксированные знач.
-                        </label>
-                      </div>
+                    <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
+                      Толщина ветви
                     </td>
                     <td className="py-2 px-3 text-center">
                       <div className="flex items-center justify-center gap-1">
@@ -9674,44 +9661,19 @@ export default function CadPage() {
                     </td>
                   </tr>
 
-                  {/* Строка 3: Устройства */}
+                  {/* Строка 3: Масштаб перемычек */}
                   <tr style={{ borderTop: "1px solid #e5e7eb" }}>
                     <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                      <div className="text-gray-700">Размер устройств</div>
-                      <span className="text-[11px] text-gray-500">(вентиляторы, усл. обозн., люди и т.п. кроме перемычек)</span>
+                      <div className="text-gray-700">Масштаб перемычек</div>
+                      <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
                     </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2 px-3 text-center" colSpan={2}>
                       <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scaleSymbolMin}
-                          onChange={e => setScaleSymbolMin(Math.max(10, Math.min(500, Number(e.target.value))))}
+                        <input type="number" min={20} max={500} value={bulkheadScale}
+                          onChange={e => setBulkheadScale(Math.max(20, Math.min(500, Number(e.target.value))))}
                           className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scaleSymbolMax}
-                          onChange={e => setScaleSymbolMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Строка 4: Ветви в одну линию */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4 text-gray-700" colSpan={1}>
-                      Ветви в одну линию при масштабе &lt;=
-                    </td>
-                    <td className="py-2 px-3" colSpan={2}>
-                      <div className="flex items-center gap-2">
-                        <input type="number" min={1} max={100} value={scaleSingleLineAt}
-                          onChange={e => setScaleSingleLineAt(Math.max(1, Math.min(100, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
+                          style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
+                        <span className="text-gray-500">% от ширины ветви</span>
                       </div>
                     </td>
                   </tr>
@@ -9725,8 +9687,7 @@ export default function CadPage() {
                 onClick={() => {
                   setScaleTextMin(80); setScaleTextMax(150);
                   setScaleBranchMin(80); setScaleBranchMax(150);
-                  setScaleSymbolMin(80); setScaleSymbolMax(220);
-                  setScaleBranchMode("relative"); setScaleSingleLineAt(10);
+                  setBulkheadScale(150);
                 }}
                 className="px-4 py-1 text-[12px] border border-gray-400 bg-white hover:bg-gray-100"
                 style={{ minWidth: 70 }}>

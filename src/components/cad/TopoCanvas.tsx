@@ -87,10 +87,9 @@ interface Props {
   scaleLimits?: {
     textMin: number; textMax: number;
     branchMin: number; branchMax: number;
-    symbolMin: number; symbolMax: number;
-    branchMode: "relative" | "fixed";
-    singleLineAt: number;
   };
+  /** Масштаб перемычек в % от ширины ветви (150 = 1.5× ширины ветви). */
+  bulkheadScale?: number;
   /** Окрашивать ветви по цвету горизонта (вместо цвета по скорости/потоку). */
   colorByHorizon?: boolean;
   /** Показывать стрелки направления свежей струи после расчёта (F9). */
@@ -248,6 +247,7 @@ export default function TopoCanvas(props: Props) {
     onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
     horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, scaleLimits,
+    bulkheadScale = 150,
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId,
@@ -3190,8 +3190,11 @@ export default function TopoCanvas(props: Props) {
           } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
             const bkBr = branches.find(b => b.id === sym.branchId);
             const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
-            // ph = ширина ветви на экране * 2.0 (200%), SZ = ph / 0.85
-            SZ = Math.max(6, (bkBw * symSF * 2.0 / 0.85) * sc);
+            // Размер перемычки = реальная ширина ветви на экране × bulkheadScale%.
+            // _objSF — тот же коэффициент толщины ветви, что и при отрисовке ветвей,
+            // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
+            const realBw = Math.max(bkBw * _objSF, 1.0);
+            SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
           }
@@ -4127,7 +4130,14 @@ export default function TopoCanvas(props: Props) {
             } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
               const msBr = branches.find(b => b.id === sym.branchId);
               const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
-              SZ = Math.max(6, (msBw * symScaleV * 2.0 / 0.85) * sc);
+              // Реальная толщина ветви в пикселях на экране (тот же objSF, что и
+              // при отрисовке ветвей в canvasRenderer). Благодаря этому перемычка
+              // масштабируется СИНХРОННО с шириной ветви при любом масштабе XY.
+              const realBranchW = Math.max(msBw * _objSF, 1.0);
+              // Высота перемычки поперёк ветви = ширина ветви × (bulkheadScale%).
+              // ph = SZ * 0.85 → SZ = ph / 0.85.
+              const ph = realBranchW * (bulkheadScale / 100);
+              SZ = Math.max(6, (ph / 0.85) * sc);
             } else {
               SZ = Math.max(4, 32 * sc * symScaleV);
             }
@@ -4233,10 +4243,10 @@ export default function TopoCanvas(props: Props) {
                     : tid.includes("brick") ? "#bf360c" : tid.includes("metal") ? "#4a148c"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800" : "#1a1a1a";
                   const bkBwOv = (bkBrOv?.lineWidth && bkBrOv.lineWidth > 0) ? bkBrOv.lineWidth : branchWidth;
-                  const symSFov = fixedObjectScale
-                    ? (view.scale < 0.4 ? view.scale / 0.4 : (() => { const k = (view.scale - 0.4) / 0.4; return 1 + 2 * (k / (k + 2)); })())
-                    : view.scale / 0.4;
-                  const SZov = Math.max(6, (bkBwOv * symSFov * 2.0 / 0.85) * (sym.scale ?? 1));
+                  // Размер перемычки синхронизирован с реальной шириной ветви на
+                  // экране (_objSF) × bulkheadScale% — не зависит от масштаба XY.
+                  const realBwOv = Math.max(bkBwOv * _objSF, 1.0);
+                  const SZov = Math.max(6, (realBwOv * (bulkheadScale / 100) / 0.85) * (sym.scale ?? 1));
                   const ph = Math.max(3, SZov * 0.85);
                   const pw = Math.max(1.5, ph * 0.38);
                   const gap = Math.max(1, pw * 0.5);

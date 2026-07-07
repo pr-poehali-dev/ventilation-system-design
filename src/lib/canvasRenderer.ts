@@ -101,9 +101,6 @@ export interface CanvasRenderOptions {
   scaleLimits?: {
     textMin: number; textMax: number;
     branchMin: number; branchMax: number;
-    symbolMin: number; symbolMax: number;
-    branchMode: "relative" | "fixed";
-    singleLineAt: number;
   };
   /** Масштаб по осям XY — нужен для нормализации objSF при реальных координатах */
   xyScale?: number;

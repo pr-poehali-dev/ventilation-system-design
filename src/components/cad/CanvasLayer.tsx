@@ -63,9 +63,6 @@ interface CanvasLayerProps {
   scaleLimits?: {
     textMin: number; textMax: number;
     branchMin: number; branchMax: number;
-    symbolMin: number; symbolMax: number;
-    branchMode: "relative" | "fixed";
-    singleLineAt: number;
   };
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
