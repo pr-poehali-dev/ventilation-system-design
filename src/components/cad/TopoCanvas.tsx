@@ -28,6 +28,12 @@ import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/c
 const EMPTY_SET = new Set<string>();
 const EMPTY_ARRAY: never[] = [];
 
+// Коэффициент размера УО «Вентилятор» относительно ширины ветви.
+// Вентилятор масштабируется от толщины ветви (как перемычка) — синхронно с
+// масштабом схемы. Значение подобрано так, чтобы вентилятор был заметно крупнее
+// перемычки и читаемо смотрелся на трубе.
+const FAN_SCALE_K = 4.5;
+
 // Форматирует сопротивление с авто-выбором значащих цифр (не показывает 0.0000)
 function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
   const v = unit.fromBase(rMkyurg);
@@ -3210,6 +3216,13 @@ export default function TopoCanvas(props: Props) {
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
             const realBw = Math.max(bkBw * _branchObjSF, 1.0);
             SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
+          } else if (sym.typeId === "fan" && sym.branchId && hasBranchPts) {
+            // Вентилятор масштабируется от ширины ветви (как перемычка), поэтому
+            // синхронен с масштабом схемы и не «плавает» в фиксированном режиме.
+            const fanBr = branches.find(b => b.id === sym.branchId);
+            const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
+            const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
+            SZ = Math.max(8, realBwFan * FAN_SCALE_K * sc);
           } else {
             SZ = Math.max(4, 32 * sc * symSF);
           }
@@ -4153,6 +4166,13 @@ export default function TopoCanvas(props: Props) {
               // ph = SZ * 0.85 → SZ = ph / 0.85.
               const ph = realBranchW * (bulkheadScale / 100);
               SZ = Math.max(6, (ph / 0.85) * sc);
+            } else if (sym.typeId === "fan" && sym.branchId && hasBranchPts) {
+              // Вентилятор масштабируется от ширины ветви (как перемычка) —
+              // синхронно с масштабом схемы, не «плавает» в фиксированном режиме.
+              const fanBr = branches.find(b => b.id === sym.branchId);
+              const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
+              const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
+              SZ = Math.max(8, realBwFan * FAN_SCALE_K * sc);
             } else {
               SZ = Math.max(4, 32 * sc * symScaleV);
             }
