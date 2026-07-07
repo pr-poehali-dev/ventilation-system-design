@@ -555,11 +555,44 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("{")) return null;
             var data = JsonSerializer.Deserialize<UpdateInfo>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (data?.Version != null && data.Version != AppVersion)
+            // Баннер показываем ТОЛЬКО если серверная версия СТРОГО НОВЕЕ текущей.
+            // Раньше сравнивали строки на "!=" — из-за чего баннер вылезал даже
+            // когда установлена та же или более свежая версия.
+            if (data?.Version != null && IsNewerVersion(data.Version, AppVersion))
                 return data;
         }
         catch { }
         return null;
+    }
+
+    // Возвращает true, если candidate строго новее current (семантическое
+    // сравнение по номерам: 2.3.29 vs 2.3.30). При неразборчивом формате —
+    // безопасный фолбэк: считаем НЕ новее, чтобы не показывать лишний баннер.
+    private static bool IsNewerVersion(string candidate, string current)
+    {
+        static int[] Parse(string v)
+        {
+            var core = v.Split('+', '-')[0].Trim().TrimStart('v', 'V');
+            var parts = core.Split('.');
+            var nums = new int[Math.Max(parts.Length, 3)];
+            for (int i = 0; i < parts.Length; i++)
+                int.TryParse(parts[i], out nums[i]);
+            return nums;
+        }
+        try
+        {
+            var a = Parse(candidate);
+            var b = Parse(current);
+            int len = Math.Max(a.Length, b.Length);
+            for (int i = 0; i < len; i++)
+            {
+                int ai = i < a.Length ? a[i] : 0;
+                int bi = i < b.Length ? b[i] : 0;
+                if (ai != bi) return ai > bi;
+            }
+            return false; // версии равны
+        }
+        catch { return false; }
     }
 
     private async Task HandleInstallUpdate()
