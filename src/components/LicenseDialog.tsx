@@ -202,9 +202,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 Продолжить в демо-режиме
               </button>
             )}
-            <div className="text-[10px] text-gray-400 ml-auto">
-              Для приобретения: пв-система.рф
-            </div>
+            <div className="text-[10px] text-gray-400 ml-auto">Для приобретения: пвсистема.рф</div>
           </div>
         </div>
       </div>
