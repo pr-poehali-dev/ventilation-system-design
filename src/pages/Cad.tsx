@@ -828,6 +828,11 @@ export default function CadPage() {
   const [scaleTextMax, setScaleTextMax] = useState(150);
   const [scaleBranchMin, setScaleBranchMin] = useState(80);
   const [scaleBranchMax, setScaleBranchMax] = useState(150);
+  // Пределы масштаба маркеров «Позиции ПЛА» (в % от нормального размера), как у ветвей/текста.
+  const [scalePositionMin, setScalePositionMin] = useState(80);
+  const [scalePositionMax, setScalePositionMax] = useState(150);
+  // ГОСТ-диаметр маркера позиции ПЛА на чертеже, мм (по умолчанию 13 мм).
+  const [positionGostMm, setPositionGostMm] = useState(13);
   // Масштаб перемычек в % от ширины ветви (150% = перемычка в 1.5 раза шире ветви).
   // Синхронизируется с реальной толщиной ветви на экране (учитывает масштаб XY).
   const [bulkheadScale, setBulkheadScale] = useState(150);
@@ -8791,13 +8796,19 @@ export default function CadPage() {
               // Проекция узла с xyScale и zScale
               const projNode = (n: { x: number; y: number; z: number }) =>
                 project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, projOpts);
-              // По ГОСТ позиции ПЛА: диаметр 13 мм на чертеже.
-              // Режим 1 (scaleLimitsEnabled=true, fixedObjectScale): фиксированный размер — posSF=1.
-              // Режим 2 (!scaleLimitsEnabled): объекты масштабируются — posSF пропорционален зуму.
+              // Масштаб маркеров позиций ПЛА — В ТОЧНОСТИ как у перемычек/ветвей.
+              // «Сырой» коэффициент объекта = view.scale / (xyScale * 0.4) — тот же, что _objSF ветвей.
               // Нормируем на xyScale: при реальных координатах «нормальный» vs.scale меньше в xyScale раз.
-              const _xySFPos = xyScale ?? 1;
-              const posSF = scaleLimitsEnabled ? 1 : Math.min(8, Math.max(0.25, vs.scale / (_xySFPos * 0.5)));
+              // Режим «Пределы масштаба ВКЛ» (fixedObjectScale): размер зажат между posMin% и posMax%.
+              // Режим ВЫКЛ: свободно масштабируется с зумом (мин. 0.25, макс. 8), как ветвь.
+              const _xySFPos = Math.max(1, xyScale ?? 1);
+              const _rawPosSF = vs.scale / (_xySFPos * 0.4);
+              const posSF = scaleLimitsEnabled
+                ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSF))
+                : Math.min(8, Math.max(0.25, _rawPosSF));
               const PX_PER_MM = 3.78 * posSF;
+              // ГОСТ-диаметр маркера позиции (мм) — используется вместо жёсткого 13.
+              const _posGostMm = positionGostMm > 0 ? positionGostMm : 13;
 
               // Вспомогательная: экранные координаты конца выноски по привязке к ветви
               const leaderBranchEnd = (branchId: string, t: number): { sx: number; sy: number } | null => {
@@ -8838,7 +8849,7 @@ export default function CadPage() {
                     if (pos.visible === false) return null;
                     const pz = pos.z ?? 0;
                     const pm = proj(pos.x, pos.y, pz);
-                    const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
+                    const r = (pos.diameter ?? _posGostMm) * PX_PER_MM / 2;
                     const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
                     const isDrawing = leaderDrawMode === pos.id;
 
@@ -8935,7 +8946,7 @@ export default function CadPage() {
                   {positions.map((pos) => {
                     if (pos.visible === false) return null;
                     const { sx, sy } = proj(pos.x, pos.y, pos.z ?? 0);
-                    const r = (pos.diameter ?? 13) * PX_PER_MM / 2;
+                    const r = (pos.diameter ?? _posGostMm) * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
                     const isReverse = pos.positionType === "reverse";
                     const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
@@ -9783,6 +9794,48 @@ export default function CadPage() {
                       </div>
                     </td>
                   </tr>
+
+                  {/* Строка 5: Пределы масштаба Позиций ПЛА */}
+                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
+                      Размер позиций ПЛА
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <input type="number" min={10} max={500} value={scalePositionMin}
+                          onChange={e => setScalePositionMin(Math.max(10, Math.min(500, Number(e.target.value))))}
+                          className="text-right text-[12px] px-1"
+                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                        <span className="text-gray-500">%</span>
+                      </div>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <input type="number" min={10} max={500} value={scalePositionMax}
+                          onChange={e => setScalePositionMax(Math.max(10, Math.min(500, Number(e.target.value))))}
+                          className="text-right text-[12px] px-1"
+                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                        <span className="text-gray-500">%</span>
+                      </div>
+                    </td>
+                  </tr>
+
+                  {/* Строка 6: ГОСТ-размер маркера позиции ПЛА */}
+                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
+                      <div className="text-gray-700">Размер позиции по ГОСТ</div>
+                      <span className="text-[11px] text-gray-500">(диаметр маркера позиции ПЛА на чертеже, по умолчанию 13 мм)</span>
+                    </td>
+                    <td className="py-2 px-3 text-center" colSpan={2}>
+                      <div className="flex items-center justify-center gap-1">
+                        <input type="number" min={2} max={100} step={0.5} value={positionGostMm}
+                          onChange={e => setPositionGostMm(Math.max(2, Math.min(100, Number(e.target.value))))}
+                          className="text-right text-[12px] px-1"
+                          style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
+                        <span className="text-gray-500">мм</span>
+                      </div>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -9793,6 +9846,8 @@ export default function CadPage() {
                 onClick={() => {
                   setScaleTextMin(80); setScaleTextMax(150);
                   setScaleBranchMin(80); setScaleBranchMax(150);
+                  setScalePositionMin(80); setScalePositionMax(150);
+                  setPositionGostMm(13);
                   setBulkheadScale(150); setFanScale(450);
                 }}
                 className="px-4 py-1 text-[12px] border border-gray-400 bg-white hover:bg-gray-100"
