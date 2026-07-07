@@ -7,7 +7,7 @@ import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
   DEMO_NODES, DEMO_BRANCHES, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
-  project3D, unprojectToPlane,
+  project3D, unprojectToPlane, calcBranchLength,
 } from "@/lib/topology";
 import { SURFACE_TYPES } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
@@ -1133,7 +1133,7 @@ export default function CadPage() {
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
   const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
   const [checkTab, setCheckTab] = useState<
-    "near" | "isolated" | "dupes" | "dupbranch" | "zeroR" | "highR" | "bulkR"
+    "near" | "isolated" | "dupes" | "dupbranch" | "zeroR" | "highR" | "bulkR" | "manualLen"
   >("near");
   // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
   const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
@@ -4884,7 +4884,7 @@ export default function CadPage() {
             {activeSide === "check" && schemaCheckResult && (() => {
               const {
                 nearPairs, isolated, dupes, dupBranches,
-                zeroRBranches, highRBranches, bulkBranches,
+                zeroRBranches, highRBranches, bulkBranches, manualLenBranches,
                 tabCounts, totalIssues, truncated,
               } = schemaCheckResult;
 
@@ -5000,6 +5000,7 @@ export default function CadPage() {
                     {navBtn("zeroR",     "R = 0",  tabCounts.zeroR,     "CircleSlash")}
                     {navBtn("highR",     "R↑",     tabCounts.highR,     "TrendingUp")}
                     {navBtn("bulkR",     "Перем.", tabCounts.bulkR,     "DoorClosed")}
+                    {navBtn("manualLen", "L ручн.", tabCounts.manualLen, "Ruler")}
                   </div>
 
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
@@ -5276,6 +5277,81 @@ export default function CadPage() {
                                     <div className="text-[10px] text-gray-400 mt-0.5">
                                       {b.bulkheadName || "Перемычка"} · R=<b className="text-red-600">{rKmu.toFixed(0)}</b> кМюрг
                                     </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Ветви с длиной, заданной вручную ── */}
+                  {checkTab === "manualLen" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1.5">
+                          У этих ветвей длина задана вручную и не пересчитывается из координат.
+                          Если она меньше реальной — сопротивление занижено, если больше — завышено.
+                        </div>
+                        {manualLenBranches.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setBranches(prev => prev.map(b => {
+                              if (!b.manualLength) return b;
+                              const fn = nodes.find(n => n.id === b.fromId);
+                              const tn = nodes.find(n => n.id === b.toId);
+                              const len = fn && tn ? Math.round(calcBranchLength(fn, tn)) : b.length;
+                              return { ...b, manualLength: false, length: len };
+                            }))}
+                            className="text-[10px] font-medium px-2 py-1 rounded border"
+                            style={{ borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" }}
+                          >
+                            Все на авто (из координат)
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {manualLenBranches.length === 0 ? <EmptyOk text="Ветвей с ручной длиной нет" /> : (
+                          <div className="flex flex-col">
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              Ветвей: <b className="text-amber-700">{manualLenBranches.length}</b>
+                            </div>
+                            {manualLenBranches.map(b => {
+                              const isSel = selectedBranchId === b.id;
+                              const fn = nodes.find(n => n.id === b.fromId);
+                              const tn = nodes.find(n => n.id === b.toId);
+                              const autoLen = fn && tn ? Math.round(calcBranchLength(fn, tn)) : null;
+                              const mismatch = autoLen != null && Math.abs(autoLen - b.length) >= 1;
+                              return (
+                                <div key={b.id}
+                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                  onClick={() => focusBranch(b.id)}
+                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                >
+                                  <Icon name="Ruler" size={12} className={`${mismatch ? "text-red-400" : "text-amber-500"} flex-shrink-0 mt-0.5`} />
+                                  <div className="flex-1 min-w-0">
+                                    {branchBtn(b)}
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      Ручная: <b>{b.length.toFixed(0)}</b>м
+                                      {autoLen != null && (
+                                        <> · по коорд.: <b className={mismatch ? "text-red-600" : "text-gray-500"}>{autoLen}</b>м</>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        updateBranch(b.id, { manualLength: false, length: autoLen ?? b.length });
+                                      }}
+                                      className="mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded border"
+                                      style={{ borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" }}
+                                    >
+                                      На авто
+                                    </button>
                                   </div>
                                 </div>
                               );

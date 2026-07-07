@@ -23,9 +23,11 @@ export interface SchemaCheckResult {
   zeroRBranches: TopoBranch[];
   highRBranches: TopoBranch[];
   bulkBranches: BulkCheck[];
+  /** Ветви с длиной, заданной вручную (manualLength=true) — длина не пересчитывается из координат. */
+  manualLenBranches: TopoBranch[];
   tabCounts: {
     near: number; isolated: number; dupes: number;
-    dupbranch: number; zeroR: number; highR: number; bulkR: number;
+    dupbranch: number; zeroR: number; highR: number; bulkR: number; manualLen: number;
   };
   totalIssues: number;
   /** true — списки обрезаны до maxItems (схема очень большая) */
@@ -149,6 +151,7 @@ export function checkSchema(
   const zeroRBranches: TopoBranch[] = [];
   const highRBranches: TopoBranch[] = [];
   const bulkBranches: BulkCheck[] = [];
+  const manualLenBranches: TopoBranch[] = [];
   for (const b of branches) {
     const r = b.resistance ?? 0;
     if (r <= 0) {
@@ -162,6 +165,11 @@ export function checkSchema(
         if (!capReached(bulkBranches.length)) bulkBranches.push({ branch: b, rKmu }); else truncated = true;
       }
     }
+    // Ветвь с ручной длиной — потенциальное расхождение с реальной длиной по координатам,
+    // что искажает сопротивление. Помечаем для контроля.
+    if (b.manualLength) {
+      if (!capReached(manualLenBranches.length)) manualLenBranches.push(b); else truncated = true;
+    }
   }
   highRBranches.sort((a, b) => (b.resistance ?? 0) - (a.resistance ?? 0));
   bulkBranches.sort((a, b) => b.rKmu - a.rKmu);
@@ -170,12 +178,16 @@ export function checkSchema(
     near: nearPairs.length, isolated: isolated.length, dupes: dupes.length,
     dupbranch: dupBranches.length, zeroR: zeroRBranches.length,
     highR: highRBranches.length, bulkR: bulkBranches.length,
+    manualLen: manualLenBranches.length,
   };
+  // Ветви с ручной длиной — информационная пометка, не критичная ошибка,
+  // поэтому в totalIssues не включаем (чтобы «схема без ошибок» оставалась зелёной).
   const totalIssues = nearPairs.length + isolated.length + dupes.length
     + dupBranches.length + zeroRBranches.length + highRBranches.length + bulkBranches.length;
 
   return {
     nearPairs, isolated, dupes, dupBranches, zeroRBranches, highRBranches, bulkBranches,
+    manualLenBranches,
     tabCounts, totalIssues, truncated,
   };
 }
