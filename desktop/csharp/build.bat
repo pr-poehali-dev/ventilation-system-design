@@ -126,6 +126,18 @@ if exist "%CS_DIR%\PvsApp\pvs.ico" (
 ) else (
     echo     Icon download failed - building without it
 )
+
+REM Document icon for .vproj files. Prefer regenerating a crisp multi-size .ico
+REM from the committed PNG source; fall back to the committed vproj.ico as-is.
+echo     Building document icon for .vproj (vproj.ico)...
+if exist "%CS_DIR%\PvsApp\vproj_src.png" (
+    python "%CS_DIR%\make_ico.py" "%CS_DIR%\PvsApp\vproj_src.png" "%CS_DIR%\PvsApp\vproj.ico"
+)
+if exist "%CS_DIR%\PvsApp\vproj.ico" (
+    echo     OK (vproj.ico ready)
+) else (
+    echo     WARNING: vproj.ico missing - .vproj files will use app icon
+)
 echo.
 
 REM ---------- Step 4: PVS.exe (build -> obfuscate -> publish) ----------
