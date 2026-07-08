@@ -3126,8 +3126,6 @@ export default function CadPage() {
                       { icon: "FileJson" as const,    label: "Добавить схему из файла",        ext: ".vproj / .json", action: "json" },
                       { icon: "Code" as const,        label: "Добавить схему из XML",           ext: ".xml",           action: "xml"  },
                       { icon: "Pencil" as const,      label: "Добавить схему из DXF",           ext: ".dxf",           action: "dxf"  },
-                      { icon: "Table" as const,       label: "Добавить таблицу из Excel",       ext: ".xlsx",          action: "xlsx" },
-                      { icon: "Layers" as const,      label: "DXF + Excel (Вентиляция 2.0)",   ext: "два файла",      action: "combined" },
                       { icon: "FileText" as const,    label: "Добавить схему из TXT",           ext: ".txt",           action: "txt"  },
                     ].map((item) => (
                       <button key={item.label}
@@ -3144,12 +3142,6 @@ export default function CadPage() {
                             setActiveRibbon("home");
                           } else if (item.action === "dxf") {
                             setShowDxfImport(true);
-                            setActiveRibbon("home");
-                          } else if (item.action === "xlsx") {
-                            setShowExcelImport(true);
-                            setActiveRibbon("home");
-                          } else if (item.action === "combined") {
-                            setShowCombinedImport(true);
                             setActiveRibbon("home");
                           } else {
                             const inp = document.createElement("input");
