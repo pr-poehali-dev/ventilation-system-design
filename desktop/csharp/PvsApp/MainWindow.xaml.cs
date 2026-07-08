@@ -690,12 +690,32 @@ public partial class MainWindow : Window
             string ver     = _updateInfo?.Version ?? "latest";
             string setup   = Path.Combine(Path.GetTempPath(), $"PVS-Setup-{ver}.exe");
 
-            // Установщик ~82 МБ — отдельный клиент с большим таймаутом.
+            // Установщик ~82 МБ — качаем ПОТОКОВО и сообщаем прогресс в JS
+            // (window.__pvsUpdateProgress), чтобы в баннере была полоса загрузки.
             using (var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
-            using (var stream = await httpLarge.GetStreamAsync(downloadUrl))
-            using (var file   = File.Create(setup))
             {
-                await stream.CopyToAsync(file);
+                using var resp = await httpLarge.GetAsync(
+                    downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                resp.EnsureSuccessStatusCode();
+                long total = resp.Content.Headers.ContentLength ?? -1L;
+
+                using var stream = await resp.Content.ReadAsStreamAsync();
+                using var file   = File.Create(setup);
+                var buffer = new byte[81920];
+                long read  = 0;
+                int  last  = -1;
+                int  n;
+                while ((n = await stream.ReadAsync(buffer)) > 0)
+                {
+                    await file.WriteAsync(buffer.AsMemory(0, n));
+                    read += n;
+                    if (total > 0)
+                    {
+                        int pct = (int)(read * 100 / total);
+                        if (pct != last) { last = pct; ReportUpdateProgress(pct); }
+                    }
+                }
+                ReportUpdateProgress(100);
             }
 
             // Запускаем установщик с элевацией (UseShellExecute + runas → UAC).
@@ -727,6 +747,21 @@ public partial class MainWindow : Window
         string json = JsonSerializer.Serialize(payload ?? new { });
         string js   = $"window.__pvsCsReply && window.__pvsCsReply({JsonSerializer.Serialize(reqId)}, {json});";
         _ = WebView.CoreWebView2.ExecuteScriptAsync(js);
+    }
+
+    // Сообщает JS-баннеру прогресс скачивания обновления (0..100).
+    private void ReportUpdateProgress(int percent)
+    {
+        try
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (WebView?.CoreWebView2 == null) return;
+                _ = WebView.CoreWebView2.ExecuteScriptAsync(
+                    $"window.__pvsUpdateProgress && window.__pvsUpdateProgress({percent});");
+            });
+        }
+        catch { /* окно закрывается — прогресс уже не нужен */ }
     }
 
     private static byte[] DecodeBase64Data(string data)
@@ -863,17 +898,10 @@ public partial class MainWindow : Window
     }, 300);
 
     // ── Баннер обновления ────────────────────────
-    var upd = {{updateJson}};
-    if (upd && upd.version) {
-        setTimeout(function() {
-            var b = document.createElement('div');
-            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#1d4ed8;color:#fff;padding:8px 16px;display:flex;align-items:center;gap:12px;font-family:sans-serif;font-size:13px;';
-            b.innerHTML = '<span>Доступно обновление <b>v' + upd.version + '</b></span>'
-                + '<button onclick="window.electronAPI.installUpdate()" style="margin-left:auto;background:#fff;color:#1d4ed8;border:none;padding:4px 14px;border-radius:4px;cursor:pointer;font-weight:600;">Обновить</button>'
-                + '<button onclick="this.parentNode.remove()" style="background:transparent;color:#fff;border:none;cursor:pointer;font-size:16px;">✕</button>';
-            document.body && document.body.prepend(b);
-        }, 3000);
-    }
+    // ВАЖНО: собственный баннер здесь БОЛЬШЕ НЕ рисуем — иначе получалось ДВА
+    // баннера (этот + React-компонент AppUpdateBanner). Оставляем только React:
+    // он показывает версию, прогресс загрузки и кнопки «Обновить»/«Позже».
+    // Прогресс скачивания из C# приходит в window.__pvsUpdateProgress(percent).
 })();
 """;
     }

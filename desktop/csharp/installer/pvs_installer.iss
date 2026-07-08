@@ -72,7 +72,12 @@ Root: HKCR; Subkey: "PVS.Project\shell\open"; ValueType: string; ValueName: ""; 
 Root: HKCR; Subkey: "PVS.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [Run]
+; Обычная установка (интерактивная): галочка «Запустить ПВ-Система» в конце.
 Filename: "{app}\{#AppExeName}"; Description: "Запустить ПВ-Система"; Flags: nowait postinstall skipifsilent
+; Тихое авто-обновление (/SILENT из самой программы): запускаем приложение
+; ВСЕГДА, чтобы после обновления оно перезапустилось само (без ручного запуска).
+; runasoriginaluser — стартуем от имени пользователя, а не от админа установщика.
+Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\PVS\WebView2Cache"
