@@ -2980,14 +2980,17 @@ export default function TopoCanvas(props: Props) {
                 // Перпендикуляр к ветви — смещаем линию к краю на (w/2 - 1.5)px
                 const nx = -uy; // нормаль
                 const ny = ux;
-                const offset = w * 0.38; // смещение от центра к краю
+                const offset = w * 0.38; // смещение от центра к краю (масштабируется с ветвью)
+                // Толщина синей линии тоже масштабируется вместе с ветвью — как в canvasRenderer,
+                // иначе при зуме труба остаётся тонкой и «отстаёт» от растущей ветви
+                const pipeSW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
                 const x1o = from.sx + nx * offset;
                 const y1o = from.sy + ny * offset;
                 const x2o = to.sx + nx * offset;
                 const y2o = to.sy + ny * offset;
                 return (
                   <line x1={x1o} y1={y1o} x2={x2o} y2={y2o}
-                    stroke="#1d4ed8" strokeWidth="1.5"
+                    stroke="#1d4ed8" strokeWidth={pipeSW}
                     strokeLinecap="round" opacity="1" />
                 );
               })()}
