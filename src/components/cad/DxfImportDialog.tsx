@@ -8,6 +8,54 @@ interface DxfImportDialogProps {
   onClose: () => void;
 }
 
+// ── Кодировки DXF ────────────────────────────────────────────────────────────
+// АэроСеть и «Вентиляция 2.0» экспортируют DXF в Windows-1251 (ANSI, кириллица),
+// AutoCAD/НаноКАД — часто в UTF-8. При неверной кодировке кириллические имена
+// слоёв («ось», «Стволы») превращаются в мусор («Р'РЎРљР»), и парсер не находит
+// осевые слои → схема не импортируется. Поэтому декодируем байты, а не строку.
+type EncodingId = "auto" | "windows-1251" | "utf-8" | "utf-16le";
+
+const ENCODING_OPTIONS: { id: EncodingId; label: string }[] = [
+  { id: "auto",         label: "Авто (определить)" },
+  { id: "windows-1251", label: "ANSI / Windows-1251 (АэроСеть, Вентиляция 2.0)" },
+  { id: "utf-8",        label: "UTF-8 (AutoCAD, НаноКАД)" },
+  { id: "utf-16le",     label: "Unicode (UTF-16)" },
+];
+
+/** «Испорченность» текста: доля типичных мусорных последовательностей кириллицы
+ *  в UTF-8 (Р-/С-мусор, «â€», символ замены). Чем больше — тем хуже кодировка. */
+function mojibakeScore(text: string): number {
+  if (!text) return 1;
+  // Типичный «мусор» при чтении Windows-1251 как UTF-8: символ замены \uFFFD и
+  // латинские Ð/Ñ/Â/Ã/â/€, в которые превращаются кириллические байты.
+  const bad = (text.match(/[\uFFFDÐÑÂÃâ€]/g) || []).length;
+  return bad / Math.max(text.length, 1);
+}
+
+/** Декодирует байты DXF в текст. При "auto" выбирает кодировку с наименьшим
+ *  количеством мусора (UTF-8 vs Windows-1251), дополнительно ловит UTF-16. */
+function decodeDxfBytes(buf: ArrayBuffer, enc: EncodingId): string {
+  const bytes = new Uint8Array(buf);
+  // BOM UTF-16LE / UTF-16BE
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe)
+    return new TextDecoder("utf-16le").decode(buf);
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff)
+    return new TextDecoder("utf-16be").decode(buf);
+
+  if (enc !== "auto") {
+    try { return new TextDecoder(enc).decode(buf); }
+    catch { return new TextDecoder("windows-1251").decode(buf); }
+  }
+
+  // Авто: сравниваем UTF-8 и Windows-1251, берём наименее «испорченный».
+  let utf8 = "";
+  try { utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buf); } catch { /* ignore */ }
+  const cp1251 = new TextDecoder("windows-1251").decode(buf);
+  const noCyrillic = !/[А-Яа-яЁё]/.test(utf8) && !/[А-Яа-яЁё]/.test(cp1251);
+  if (noCyrillic) return utf8 || cp1251;  // латиница — любая подойдёт
+  return mojibakeScore(utf8) <= mojibakeScore(cp1251) ? utf8 : cp1251;
+}
+
 export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<DxfImportResult | null>(null);
@@ -17,7 +65,9 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const [showDebug, setShowDebug] = useState(false);
   const [filePreview, setFilePreview] = useState<string>("");
   const [epsilon, setEpsilon] = useState<number>(0.05);
+  const [encoding, setEncoding] = useState<EncodingId>("auto");
   const fileTextRef = useRef<string>("");
+  const fileBufRef = useRef<ArrayBuffer | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const parseWithEpsilon = (text: string, eps: number, useAutoEpsilon = false) => {
@@ -35,17 +85,9 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     setError(null);
     setLoading(true);
     try {
-      let text = "";
-      try {
-        text = await f.text();
-        if (text.includes("â€") || text.includes("\uFFFD")) {
-          const buf = await f.arrayBuffer();
-          text = new TextDecoder("windows-1251").decode(buf);
-        }
-      } catch {
-        const buf = await f.arrayBuffer();
-        text = new TextDecoder("windows-1251").decode(buf);
-      }
+      const buf = await f.arrayBuffer();
+      fileBufRef.current = buf;
+      const text = decodeDxfBytes(buf, encoding);
       fileTextRef.current = text;
       setFilePreview(text.split("\n").slice(0, 60).join("\n"));
       parseWithEpsilon(text, epsilon, true);  // первый парсинг — автоопределение epsilon
@@ -54,6 +96,16 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     } finally {
       setLoading(false);
     }
+  };
+
+  // Смена кодировки — перечитываем сохранённые байты и парсим заново.
+  const handleEncodingChange = (enc: EncodingId) => {
+    setEncoding(enc);
+    if (!fileBufRef.current) return;
+    const text = decodeDxfBytes(fileBufRef.current, enc);
+    fileTextRef.current = text;
+    setFilePreview(text.split("\n").slice(0, 60).join("\n"));
+    parseWithEpsilon(text, epsilon, true);
   };
 
   const handleEpsilonChange = (val: number) => {
@@ -118,6 +170,27 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
             <input ref={inputRef} type="file" accept=".dxf,.DXF" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           </div>
+
+          {/* Кодировка файла — как в АэроСеть / Вентиляция 2.0 */}
+          {file && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-gray-600 flex-shrink-0">Кодировка файла:</span>
+              <select
+                value={encoding}
+                onChange={(e) => handleEncodingChange(e.target.value as EncodingId)}
+                className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 bg-white">
+                {ENCODING_OPTIONS.map((o) => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {file && result && result.branches.length === 0 && (
+            <div className="text-[11px] text-orange-700 px-1 -mt-1">
+              Схема не распозналась? Если в логе видны «кракозябры» в именах слоёв — смените кодировку на
+              <b> ANSI / Windows-1251</b>.
+            </div>
+          )}
 
           {loading && (
             <div className="flex items-center gap-2 text-sm text-blue-600">
