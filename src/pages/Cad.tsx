@@ -1249,6 +1249,9 @@ export default function CadPage() {
   // ─── МЕНЮ ФАЙЛ ──────────────────────────────────────────────────────
   const [fileSectionState, setFileSectionState] = useState("add");
 
+  // Актуальная версия десктопа (для вкладки Файл → Установить)
+  const [desktopLatestVer, setDesktopLatestVer] = useState<string>("");
+
   // При открытии вкладки «Установить» подтягиваем актуальную версию десктопа
   useEffect(() => {
     if (fileSectionState !== "install" || desktopLatestVer) return;
@@ -1485,8 +1488,6 @@ export default function CadPage() {
   const [showCloseConfirm, setShowCloseConfirm] = useState<boolean>(false);
   // Окно "О программе"
   const [showAbout, setShowAbout] = useState<boolean>(false);
-  // Актуальная версия десктопа (для вкладки Файл → Установить)
-  const [desktopLatestVer, setDesktopLatestVer] = useState<string>("");
   // Диалог руководства пользователя
   const [showHelpDialog, setShowHelpDialog] = useState<boolean>(false);
   const [showDepressogram, setShowDepressogram] = useState<boolean>(false);
