@@ -116,9 +116,15 @@ def handler(event: dict, context) -> dict:
         ver      = info["version"] if is_exe else info["server_version"]
         prefix   = "PVS-Setup" if is_exe else "PVS-Server"
         filename = f"{prefix}-{ver}.exe"
-        # Яндекс отдаёт имя из query-параметра filename прямой ссылки.
-        sep    = "&" if "?" in direct else "?"
-        direct = f"{direct}{sep}filename={urllib.parse.quote(filename)}"
+        # Задаём понятное имя файла при скачивании, чтобы он не сохранялся
+        # как безымянный хэш (что усиливает предупреждение SmartScreen).
+        # Разные хранилища читают имя из разных параметров, добавляем оба:
+        #   • filename=...                       — Яндекс.Диск CDN
+        #   • response-content-disposition=...   — S3-совместимые хранилища
+        sep       = "&" if "?" in direct else "?"
+        cd        = urllib.parse.quote(f'attachment; filename="{filename}"')
+        direct    = (f"{direct}{sep}filename={urllib.parse.quote(filename)}"
+                     f"&response-content-disposition={cd}")
         return {"statusCode": 302, "headers": {**CORS, "Location": direct}, "body": ""}
 
     # ── GET: информация о версии + свежие прямые ссылки ───────────────────────

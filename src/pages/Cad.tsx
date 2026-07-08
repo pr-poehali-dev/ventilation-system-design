@@ -3323,10 +3323,25 @@ export default function CadPage() {
                           </div>
                         </a>
                       </div>
-                      <div className="text-[11px] text-gray-400 leading-relaxed px-1">
+                      <div className="text-[11px] text-gray-400 leading-relaxed px-1 mb-3">
                         После загрузки запустите установщик <b>PVS-Setup.exe</b> — программа установится в
                         <b> C:\Program Files\PVS</b> (потребуется подтверждение прав администратора) и свяжет файлы
                         схем <b>.vproj</b> с приложением.
+                      </div>
+
+                      <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2.5">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Icon name="ShieldAlert" size={15} className="text-amber-600 flex-shrink-0" />
+                          <span className="text-[12px] font-semibold text-amber-800">Браузер или Windows блокирует загрузку?</span>
+                        </div>
+                        <div className="text-[11px] text-amber-700 leading-relaxed">
+                          Это защита <b>SmartScreen</b>: она предупреждает о новых файлах без цифровой подписи. Установщик безопасен. Чтобы продолжить:
+                          <div className="mt-1.5 space-y-1">
+                            <div>• <b>При скачивании</b> (значок «Загрузки»): нажмите <b>«···» → «Сохранить»</b>, затем «Подробнее» → <b>«Всё равно сохранить»</b>.</div>
+                            <div>• <b>При запуске</b> установщика: в окне «Windows защитила ваш компьютер» нажмите <b>«Подробнее» → «Выполнить в любом случае»</b>.</div>
+                            <div>• Если сработал антивирус — добавьте <b>PVS-Setup.exe</b> в исключения.</div>
+                          </div>
+                        </div>
                       </div>
                     </>
                   );
