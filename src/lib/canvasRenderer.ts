@@ -817,7 +817,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     for (const { b, from, to } of sorted) {
       if (!b.hasWaterPipe || !from || !to) continue;
       const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-      const w2 = thinLines ? 1 : bw;
+      // Ширина тела ветви в px экрана — так же, как рисуется сама ветвь (с objSF).
+      // Раньше offset брался от НЕмасштабированной ширины (bw), поэтому при зуме
+      // труба «уезжала» от края ветви. Теперь offset масштабируется вместе с ветвью.
+      const w2 = thinLines ? 1 : Math.max(bw * objSF, 1.0);
       const ddx = to.sx - from.sx, ddy = to.sy - from.sy;
       const segL = Math.hypot(ddx, ddy);
       const nx = segL > 0 ? -ddy / segL : 0;
@@ -826,7 +829,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const lx1 = from.sx + nx * offset, ly1 = from.sy + ny * offset;
       const lx2 = to.sx   + nx * offset, ly2 = to.sy   + ny * offset;
       ctx.strokeStyle = "#1d4ed8";
-      ctx.lineWidth = 1.5;
+      // Толщина синей линии трубы тоже масштабируется вместе с ветвью
+      ctx.lineWidth = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
       ctx.lineCap = "round";
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);
