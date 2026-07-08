@@ -67,6 +67,7 @@ interface CanvasLayerProps {
   };
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
+  transparentBg?: boolean;
   compareBranchColors?: Map<string, string>;
   colorMode?: "none" | "flowQ";
   flowColorMin?: number;
@@ -204,6 +205,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         scaleLimits: p.scaleLimits,
         pollutedBranchIds: p.pollutedBranchIds,
         xyScale: p.xyScale,
+        transparentBg: p.transparentBg,
         compareBranchColors: p.compareBranchColors,
         colorMode: p.colorMode,
         flowColorMin: p.flowColorMin,
@@ -254,6 +256,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.infoConfig, props.unitsConfig,
     props.waterNodeResults, props.branchFireColors, props.branchExplosionColors,
     props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,
+    props.transparentBg,
     props.compareBranchColors,
     props.colorMode, props.flowColorMin, props.flowColorMax, props.flowColorHue,
     props.posInnerColors,
@@ -289,7 +292,10 @@ export default function CanvasLayer(props: CanvasLayerProps) {
       ref={canvasRef}
       width={width}
       height={height}
-      style={{ display: "block", touchAction: "none", userSelect: "none" }}
+      style={{ display: "block", touchAction: "none", userSelect: "none",
+        // Когда активен слой печати — поднимаем canvas над SVG рамки (zIndex:0),
+        // чтобы схема была ПОВЕРХ рамки, но прозрачный фон показывал лист.
+        ...(props.transparentBg ? { position: "relative" as const, zIndex: 1 } : {}) }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}

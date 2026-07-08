@@ -104,6 +104,8 @@ export interface CanvasRenderOptions {
   posOuterColors?: Map<string, string>;
   /** Режим печати: белый фон без сетки */
   printMode?: boolean;
+  /** Прозрачный фон: не заливать холст (нужно, когда под canvas виден слой печати) */
+  transparentBg?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме */
   fixedObjectScale?: boolean;
   /** Пределы масштабов (%, 80 = 80%) для объектов при fixedObjectScale=true */
@@ -336,7 +338,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
     colorMode = "none", flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
-    posInnerColors, posOuterColors, printMode = false,
+    posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     xyScale,
@@ -378,7 +380,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   const lodNodes    = true;
 
   // ─── Фон / сетка ──────────────────────────────────────────────────────────
-  if (printMode) {
+  // transparentBg: не заливаем холст, чтобы сквозь него был виден слой печати
+  // (белый лист + рамка), лежащий ПОД canvas в canvas-режиме.
+  if (transparentBg) {
+    // прозрачно: рисуем только линии сетки в 2D (они не мешают), в 3D — ничего
+    if (!is3D && sc >= 0.5) drawGrid2D(ctx, width, height, sc, view.offsetX, view.offsetY);
+  } else if (printMode) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
   } else if (is3D) {

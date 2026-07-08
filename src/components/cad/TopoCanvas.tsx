@@ -2334,6 +2334,10 @@ export default function TopoCanvas(props: Props) {
   const useCanvas = visibleBranches.length > CANVAS_THRESHOLD;
   if (!useCanvas) canvasExportRef.current = null;
 
+  // Активен ли слой печати — тогда canvas делаем прозрачным, чтобы рамка/штамп
+  // (SVG под canvas) были видны сквозь схему и лежали ПОД ней.
+  const hasActivePrintLayer = (horizons ?? EMPTY_ARRAY).some(h => h.printLayer?.visible);
+
   const cursorStyle = rotStart ? "grabbing" : panStart ? "grabbing"
     : draggingPrintTitle ? "grabbing"
     : draggingNode ? "grabbing"
@@ -2392,6 +2396,10 @@ export default function TopoCanvas(props: Props) {
       onMouseDown={() => { containerRef.current?.focus({ preventScroll: true }); }}>
 
       {/* ── Слой печати ПОД canvas (только в canvas-режиме) ───────────── */}
+      {/* Рамка/штамп лежат ПОД canvas-схемой: SVG zIndex:0, а canvas — zIndex:1.
+          Чтобы схема не закрывала рамку своей заливкой, canvas делаем прозрачным
+          (transparentBg) когда активен слой печати. При редактировании поднимаем
+          SVG (2), чтобы ручки перетаскивания были доступны над схемой. */}
       {useCanvas && (
         <svg
           style={{ position: "absolute", top: 0, left: 0, pointerEvents: editingPrintLayerId ? "auto" : "none", zIndex: editingPrintLayerId ? 2 : 0 }}
@@ -2440,6 +2448,7 @@ export default function TopoCanvas(props: Props) {
           reversedBranchIds={reversedBranchIds}
           pollutedBranchIds={pollutedBranchIds}
           xyScale={xyScale}
+          transparentBg={hasActivePrintLayer}
           compareBranchColors={compareBranchColors}
           colorMode={colorMode}
           flowColorMin={flowColorMin}
