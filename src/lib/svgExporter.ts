@@ -812,34 +812,10 @@ export function generateSvg(opts: SvgExportOptions): string {
     parts.push(`</g>`); // /schema-symbols
   }
 
-  // ── Рамка печати ─────────────────────────────────────────────────────────
-  // При активном слое печати: vbX=0,vbY=0,vbW=canvasW,vbH=canvasH.
-  // frameRect уже в пространстве viewBox (0..canvasW, 0..canvasH).
-  if (pl && frameRect) {
-    const { rx, ry, rw, rh } = frameRect;
-    const frameSvgContent = buildPrintLayerSvgString({
-      pl,
-      rx, ry, rw, rh,
-      totalW: vbW,
-      totalH: vbH,
-      schemaSymbols,
-    });
-    const bodyMatch = frameSvgContent.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
-    if (bodyMatch) {
-      parts.push(`<g id="print-layer">`);
-      parts.push(bodyMatch[1]);
-      parts.push(`</g>`);
-    }
-  } else if (opts.printLayerSvg) {
-    const bodyMatch = opts.printLayerSvg.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
-    if (bodyMatch) {
-      parts.push(`<g id="print-layer">`);
-      parts.push(bodyMatch[1]);
-      parts.push(`</g>`);
-    }
-  }
-
   // ── Маркеры позиций ПЛА (кружки с номерами) ──────────────────────────────
+  // ВАЖНО: позиции рисуются ДО рамки печати — так же, как в предпросмотре
+  // (PrintPreviewCanvas) и растровом экспорте, где рамка/штамп всегда
+  // поверх схемы и позиций. Иначе экспорт не совпадёт с предпросмотром.
   const visiblePositions = positions.filter(pos => pos.visible !== false && pos.x != null);
   if (visiblePositions.length > 0) {
     // posSF: в режиме 1 (fixedObjectScale) — pxPerMm фиксированный,
@@ -866,6 +842,33 @@ export function generateSvg(opts: SvgExportOptions): string {
       parts.push(`</g>`);
     }
     parts.push(`</g>`);
+  }
+
+  // ── Рамка печати (всегда ПОВЕРХ схемы и позиций) ─────────────────────────
+  // При активном слое печати: vbX=0,vbY=0,vbW=canvasW,vbH=canvasH.
+  // frameRect уже в пространстве viewBox (0..canvasW, 0..canvasH).
+  if (pl && frameRect) {
+    const { rx, ry, rw, rh } = frameRect;
+    const frameSvgContent = buildPrintLayerSvgString({
+      pl,
+      rx, ry, rw, rh,
+      totalW: vbW,
+      totalH: vbH,
+      schemaSymbols,
+    });
+    const bodyMatch = frameSvgContent.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
+    if (bodyMatch) {
+      parts.push(`<g id="print-layer">`);
+      parts.push(bodyMatch[1]);
+      parts.push(`</g>`);
+    }
+  } else if (opts.printLayerSvg) {
+    const bodyMatch = opts.printLayerSvg.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
+    if (bodyMatch) {
+      parts.push(`<g id="print-layer">`);
+      parts.push(bodyMatch[1]);
+      parts.push(`</g>`);
+    }
   }
 
   // ── Закрываем SVG ─────────────────────────────────────────────────────────

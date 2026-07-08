@@ -620,6 +620,47 @@ export default function PrintDialog({
     });
   }, [schemaSymbols]);
 
+  // Рисует маркеры позиций ПЛА (кружки с номерами) на 2D-canvas.
+  // Нужно для растрового экспорта (PNG/JPG/PDF), чтобы он совпадал с
+  // предпросмотром, где позиции рисуются отдельным SVG-слоем.
+  // fitScale — итоговый масштаб схемы на данном canvas (тот же, что у схемы).
+  const drawPositionsToCanvas = useCallback((
+    ctx: CanvasRenderingContext2D,
+    sv: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number; zScale: number },
+    fitScale: number,
+  ): void => {
+    if (!showPositions || positions.length === 0) return;
+    const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
+    const posSF = fixedObjectScale
+      ? 1
+      : Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.5)));
+    const previewK = viewState.scale > 0 ? fitScale / viewState.scale : 1;
+    for (const pos of positions) {
+      if (pos.visible === false || pos.x == null) continue;
+      const p = project3D({ x: pos.x * _xySF, y: pos.y * _xySF, z: (pos.z ?? 0) * zScale }, sv);
+      const r = (pos.diameter ?? 13) * 3.78 * posSF * previewK / 2;
+      if (r <= 0) continue;
+      const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
+      ctx.save();
+      ctx.translate(p.sx, p.sy);
+      if (pos.positionType === "reverse") {
+        ctx.beginPath(); ctx.arc(0, 0, r + 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "#e53e3e"; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3; ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle = pos.color ?? "#ffffff"; ctx.fill();
+      ctx.strokeStyle = pos.borderColor ?? "#000000";
+      ctx.lineWidth = Math.max(0.5, r * 0.12); ctx.stroke();
+      ctx.fillStyle = "#000000";
+      ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(pos.number), 0, 0);
+      ctx.restore();
+    }
+  }, [showPositions, positions, xyScale, fixedObjectScale, viewState.scale, zScale]);
+
   // Вычисляет bbox рамки из projNodes — тот же алгоритм что в PrintPreviewCanvas/TopoCanvas
   const computeFrameRect = useCallback((
     pl: NonNullable<Horizon["printLayer"]>,
@@ -803,6 +844,9 @@ export default function PrintDialog({
         await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
       }
 
+      // Позиции ПЛА — поверх схемы, но ПОД рамкой печати (как в предпросмотре).
+      drawPositionsToCanvas(ctx, sv, scaledSc);
+
       // Шаг 5: рамка поверх — координаты из новых projNodes (тем же алгоритмом).
       // Передаём проекцию/масштаб/z, чтобы ручная рамка (pl.bounds) совпадала
       // с рабочей областью в т.ч. в наклонных видах.
@@ -857,6 +901,13 @@ export default function PrintDialog({
         await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
         ctx.restore();
       }
+      // Позиции ПЛА — поверх схемы (как в предпросмотре), в пределах рабочей области.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(marginLeftPx, marginTopPx, workW, workH);
+      ctx.clip();
+      drawPositionsToCanvas(ctx, sv, scaledSc);
+      ctx.restore();
     }
 
     return oc.toDataURL("image/png");
@@ -864,7 +915,8 @@ export default function PrintDialog({
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
       colorMode, posInnerColors, posOuterColors, fixedObjectScale, xyScale,
-      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect]);
+      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect,
+      drawPositionsToCanvas]);
 
 
   // ─── Печать ──────────────────────────────────────────────────────────

@@ -8,8 +8,69 @@ POST / body: { svg: "<svg...>", filename?: "schema", paper?: "A3", orientation?:
 """
 import json
 import os
+import re
 import base64
 import io
+import urllib.request
+
+# Кириллический шрифт DejaVu Sans.
+# 1) сначала пробуем файл рядом с функцией (если он попал в деплой),
+# 2) иначе — кэш в /tmp,
+# 3) иначе — качаем с CDN один раз при холодном старте и кэшируем в /tmp.
+_FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+_FONT_URLS = {
+    "DejaVuSans.ttf": "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",
+    "DejaVuSans-Bold.ttf": "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf",
+}
+_FONTS_REGISTERED = False
+
+
+def _resolve_font(fname: str) -> str:
+    """Возвращает путь к TTF: bundle -> /tmp-кэш -> скачивание с CDN."""
+    bundled = os.path.join(_FONT_DIR, fname)
+    if os.path.exists(bundled) and os.path.getsize(bundled) > 10000:
+        return bundled
+    cached = os.path.join("/tmp", fname)
+    if os.path.exists(cached) and os.path.getsize(cached) > 10000:
+        return cached
+    req = urllib.request.Request(_FONT_URLS[fname], headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        data = r.read()
+    with open(cached, "wb") as f:
+        f.write(data)
+    return cached
+
+
+def _register_cyrillic_fonts():
+    """Регистрирует кириллический TTF (DejaVu Sans) в svglib один раз.
+
+    Регистрируем через svglib.register_font (обычное и жирное начертание
+    одной семьи DejaVuSans), чтобы svglib корректно резолвил и
+    font-weight="bold". Без кириллического шрифта русский текст в PDF
+    превращается в прямоугольники.
+    """
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    from svglib.svglib import register_font
+    reg = _resolve_font("DejaVuSans.ttf")
+    bold = _resolve_font("DejaVuSans-Bold.ttf")
+    register_font("DejaVuSans", font_path=reg,
+                  weight="normal", rlgFontName="DejaVuSans")
+    register_font("DejaVuSans", font_path=bold,
+                  weight="bold", rlgFontName="DejaVuSans-Bold")
+    _FONTS_REGISTERED = True
+
+
+def _remap_font_family(svg: str) -> str:
+    """Заменяет любой font-family в SVG на кириллический DejaVuSans.
+
+    Без этого svglib маппит Arial/Segoe UI/Helvetica на встроенные шрифты
+    reportlab, где нет кириллицы -> русский текст превращается в прямоугольники.
+    """
+    svg = re.sub(r'font-family\s*=\s*"[^"]*"', 'font-family="DejaVuSans"', svg)
+    svg = re.sub(r"font-family\s*:\s*[^;\"']+", "font-family:DejaVuSans", svg)
+    return svg
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -66,6 +127,19 @@ def handler(event: dict, context) -> dict:
         from reportlab.graphics import renderPDF
         from reportlab.pdfgen import canvas
         from reportlab.lib.units import mm as RL_MM  # noqa: F401
+
+        # Регистрируем кириллический шрифт и подменяем font-family в SVG,
+        # иначе русский текст в PDF станет прямоугольниками.
+        # Если шрифт по какой-то причине не зарегистрировался — не ломаем
+        # экспорт целиком, просто оставляем исходный font-family.
+        font_ok = False
+        try:
+            _register_cyrillic_fonts()
+            font_ok = True
+        except Exception:
+            font_ok = False
+        if font_ok:
+            svg_string = _remap_font_family(svg_string)
 
         # svglib парсит SVG в reportlab-drawing (векторный)
         drawing = svg2rlg(io.BytesIO(svg_string.encode("utf-8")))
