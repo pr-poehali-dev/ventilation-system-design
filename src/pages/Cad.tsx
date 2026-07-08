@@ -8684,13 +8684,13 @@ export default function CadPage() {
                       updateBranch(branchId, {
                         hasExplosion: true,
                         explosionT: expT,
-                        explosionMethod: "gas_dynamics",
-                        explosionSourceType: "gas",
+                        explosionMethod: "fnip_494",
+                        explosionSourceType: "mass",
                         explosionGasId: "methane",
                         explosionGasVolume: 100,
                         explosionGasConcentration: 9.5,
                         explosionExplosiveId: "ammonit",
-                        explosionExplosiveMass: 10,
+                        explosionExplosiveMass: 100,
                         explosionConsiderWalls: true,
                       });
                       setSelectedSymbolId(newSym.id);

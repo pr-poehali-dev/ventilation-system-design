@@ -392,12 +392,17 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="24" r="10" fill="none" stroke="#FF0100" stroke-width="2.4"/><g stroke="#FF0100" stroke-width="2.4" stroke-linecap="round"><line x1="24" y1="2" x2="24" y2="9"/><line x1="24" y1="39" x2="24" y2="46"/><line x1="2" y1="24" x2="9" y2="24"/><line x1="39" y1="24" x2="46" y2="24"/><line x1="8.3" y1="8.3" x2="13.3" y2="13.3"/><line x1="34.7" y1="34.7" x2="39.7" y2="39.7"/><line x1="39.7" y1="8.3" x2="34.7" y2="13.3"/><line x1="13.3" y1="34.7" x2="8.3" y2="39.7"/></g>` },
 
-  // ─── ВЗРЫВ (расчётный источник) ──────────────────────────────────────
-  { id: "explosion_source", name: "Источник взрыва",  group: "Аварийный режим",
-    svgContent: `<circle cx="24" cy="20" r="9" fill="#fbbf24" stroke="#92400e" stroke-width="1.2" opacity="0.95"/>
-<path d="M24,4 L26,14 L36,8 L28,16 L38,18 L28,20 L36,30 L26,24 L24,36 L22,24 L12,30 L20,20 L10,18 L20,16 L12,8 L22,14 Z" fill="#ef4444" stroke="#7f1d1d" stroke-width="0.8" stroke-linejoin="round"/>
-<circle cx="24" cy="20" r="5" fill="#fef3c7" stroke="#f59e0b" stroke-width="1"/>
-<circle cx="24" cy="20" r="2.5" fill="white" opacity="0.9"/>` },
+  // ─── ВЗРЫВ (расчётный источник) — УО «Место взрыва» по ГОСТ ───────────
+  // Кольцо с четырьмя стрелками, расходящимися наружу (вверх/вниз/влево/вправо) —
+  // символ распространения взрывной волны.
+  { id: "explosion_source", name: "Место взрыва",  group: "Аварийный режим",
+    svgContent: `<g fill="none" stroke="#FF0000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="24" cy="24" r="9"/>
+<line x1="24" y1="13" x2="24" y2="3"/><polyline points="20,7 24,3 28,7"/>
+<line x1="24" y1="35" x2="24" y2="45"/><polyline points="20,41 24,45 28,41"/>
+<line x1="13" y1="24" x2="3" y2="24"/><polyline points="7,20 3,24 7,28"/>
+<line x1="35" y1="24" x2="45" y2="24"/><polyline points="41,20 45,24 41,28"/>
+</g>` },
 
   // ─── УЗЛЫ ─────────────────────────────────────────────────────────────
   { id: "node_normal", name: "Узел (сопряжение)",    group: "Узлы",
