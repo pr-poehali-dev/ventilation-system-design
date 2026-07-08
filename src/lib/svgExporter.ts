@@ -555,7 +555,10 @@ export function generateSvg(opts: SvgExportOptions): string {
   }
 
   // ── Индикаторы ветвей (Q, V, сечение, название, номер) ───────────────────
-  if (!thinLines && infoConfig) {
+  // ВАЖНО: рисуем и при отсутствии infoConfig (как в canvasRenderer/предпросмотре),
+  // где есть fallback Q=/V= без конфигурации. Раньше при infoConfig=null
+  // подписи расхода воздуха не попадали в экспорт.
+  if (!thinLines) {
     const uFlow = getUnit(unitsConfig, "flow");
     const uVel  = getUnit(unitsConfig, "velocity");
     const uPres = getUnit(unitsConfig, "pressure");
@@ -594,6 +597,11 @@ export function generateSvg(opts: SvgExportOptions): string {
         if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? " ⚠" : ""}`);
         if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
         if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP ?? 0).toFixed(uPres.decimals)}${uPres.symbol}`);
+      } else if (!isDead && !ic && hasCalc) {
+        // Fallback без конфигурации (как в canvasRenderer): показываем Q и V.
+        const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
+        dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
+        if (V > 0) dataLines.push(`V=${V.toFixed(1)}`);
       }
 
       const showNum = !ic || ic.branchNumber;
