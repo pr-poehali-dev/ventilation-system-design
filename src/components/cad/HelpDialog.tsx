@@ -44,10 +44,45 @@ export default function HelpDialog({ onClose }: Props) {
           </ul>
 
           <H3>Системные требования</H3>
-          <p className="text-[12px] text-gray-600 leading-relaxed">
-            Современный веб-браузер (Chrome, Edge, Firefox). Рекомендуется разрешение экрана не менее 1280×800 пикселей.
-            Для сохранения файлов через File System Access API (перезапись без диалога) требуется браузер Chromium.
-          </p>
+          <div className="space-y-3">
+            <Block title="Веб-версия (в браузере)" color="#dbeafe">
+              Современный веб-браузер (Chrome, Edge, Firefox). Рекомендуется разрешение экрана
+              не менее 1280×800 пикселей. Для сохранения файлов через File System Access API
+              (перезапись без диалога) требуется браузер на движке Chromium.
+            </Block>
+
+            <Block title="Десктопная версия (Windows, C#)" color="#dcfce7">
+              Автономное приложение на C# (.NET 8 + WebView2) с встроенным расчётным ядром — работает без интернета.
+              <br /><b>ОС:</b> Windows 10/11 (64-бит) с установленным компонентом Microsoft Edge WebView2 Runtime.
+              <table className="w-full text-[11px] border-collapse mt-2">
+                <thead><tr style={{ background: "#eef7ee" }}>
+                  <th className="text-left p-1.5 border border-gray-200">Компонент</th>
+                  <th className="text-left p-1.5 border border-gray-200">Минимум</th>
+                  <th className="text-left p-1.5 border border-gray-200">Рекомендуется</th>
+                </tr></thead>
+                <tbody>
+                  {[
+                    ["Процессор", "Intel Core i5 14-го поколения (например i5-14400) или Ryzen 5 7600", "Intel Core i7 14-го поколения (i7-14700) и выше"],
+                    ["Оперативная память", "16 ГБ", "32 ГБ (для схем свыше 800 ветвей)"],
+                    ["Накопитель", "SSD, 2 ГБ свободно", "NVMe SSD, 5 ГБ свободно"],
+                    ["Видео", "Встроенная графика Intel UHD/Iris Xe", "Дискретная видеокарта (аппаратное ускорение)"],
+                    ["Экран", "1920×1080", "2560×1440 и выше"],
+                  ].map(([c, mn, rec]) => (
+                    <tr key={c} className="even:bg-white">
+                      <td className="p-1.5 border border-gray-200 font-medium">{c}</td>
+                      <td className="p-1.5 border border-gray-200 text-gray-600">{mn}</td>
+                      <td className="p-1.5 border border-gray-200 text-gray-600">{rec}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="text-[11px] text-gray-500 mt-1.5">
+                Процессор Intel Core i5 14-го поколения и SSD обеспечивают быстрый пересчёт
+                воздухораспределения и плавную работу с крупными схемами. На более слабом железе
+                программа тоже запустится, но расчёт больших схем будет идти медленнее.
+              </div>
+            </Block>
+          </div>
         </div>
       ),
     },
