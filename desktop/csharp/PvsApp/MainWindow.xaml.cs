@@ -398,7 +398,9 @@ public partial class MainWindow : Window
                 {
                     RECT work = mi.rcWork;      // рабочая область (без панели задач)
                     RECT area = mi.rcMonitor;   // весь монитор
-                    var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+                    // PtrToStructure<T> возвращает T? (при Nullable enable) — берём
+                    // значение через GetValueOrDefault, чтобы не было CS8629.
+                    MINMAXINFO mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam)!;
                     mmi.ptMaxPosition.X  = Math.Abs(work.Left - area.Left);
                     mmi.ptMaxPosition.Y  = Math.Abs(work.Top  - area.Top);
                     mmi.ptMaxSize.X      = Math.Abs(work.Right  - work.Left);
