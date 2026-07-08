@@ -99,10 +99,19 @@ function esc(s: string): string {
 function n(v: number, d = 2): string { return v.toFixed(d); }
 
 
+// Форматы бумаги (мм) — для вычисления пропорций рамки печати.
+const PAPER_SIZES_MM: Record<string, { w: number; h: number }> = {
+  A4: { w: 210, h: 297 },
+  A3: { w: 297, h: 420 },
+  A2: { w: 420, h: 594 },
+  A1: { w: 594, h: 841 },
+  A0: { w: 841, h: 1189 },
+};
+
 // ── Генерация SVG строки ──────────────────────────────────────────────────────
 export function generateSvg(opts: SvgExportOptions): string {
   const {
-    nodes, branches, horizons, horizonMap, proj,
+    nodes, branches, horizons, horizonMap,
     zScale, branchWidth = 2, branchBorder = 0.1,
     thinLines = false, colorByHorizon = false,
     infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG, canvasW, canvasH, title = "Схема",
@@ -114,6 +123,11 @@ export function generateSvg(opts: SvgExportOptions): string {
     xyScale,
   } = opts;
 
+  // Проекция схемы. При активном слое печати ниже пересчитываем её так,
+  // чтобы схема была вписана в рамку и отцентрована по листу (как в
+  // растровом экспорте). Иначе схема «уезжает» и не масштабируется.
+  let proj = opts.proj;
+
   // Коэффициент px/мм для физического размера позиций ПЛА.
   // Если paperWidthMm передан — вычисляем точно из соотношения холст/бумага.
   // Иначе используем стандарт 96dpi (3.78 px/мм).
@@ -123,7 +137,7 @@ export function generateSvg(opts: SvgExportOptions): string {
   // Нормируем на xyScale: при реальных координатах «нормальный» proj.scale в xyScale раз меньше.
   // Ограничиваем сверху (8) — при крупном зуме объекты не должны вырастать в исполинов.
   const _xySFExport = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
-  const objSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, proj.scale / (_xySFExport * 0.4)));
+  let objSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, proj.scale / (_xySFExport * 0.4)));
 
   // Проецируем все узлы (координаты умножаем на xyScale для реальных схем)
   const projMap = new Map<string, { sx: number; sy: number }>();
@@ -154,14 +168,70 @@ export function generateSvg(opts: SvgExportOptions): string {
     // viewBox = весь лист
     vbX = 0; vbY = 0; vbW = canvasW; vbH = canvasH;
 
-    // Рамка в пространстве canvasW×canvasH.
-    // Используем те же поля что PrintDialog (5% от меньшей стороны).
-    const padPx = Math.min(canvasW, canvasH) * 0.05;
-    const rx = padPx;
-    const ry = padPx;
-    const rw = canvasW - padPx * 2;
-    const rh = canvasH - padPx * 2;
-    frameRect = { rx, ry, rw, rh };
+    // ── Вписываем схему в рамку и центрируем по листу ────────────────────────
+    // Тот же алгоритм, что в растровом экспорте (PrintDialog.renderTileToCanvas):
+    // 1) считаем bbox схемы при текущей проекции,
+    // 2) строим рамку по пропорциям формата слоя печати,
+    // 3) масштабируем/сдвигаем проекцию так, чтобы рамка заняла весь лист.
+    const visNodeIds = new Set<string>();
+    visibleBranches.forEach(b => { visNodeIds.add(b.fromId); visNodeIds.add(b.toId); });
+    let mnSx = Infinity, mxSx = -Infinity, mnSy = Infinity, mxSy = -Infinity;
+    for (const [id, p] of projMap.entries()) {
+      if (visNodeIds.size > 0 && !visNodeIds.has(id)) continue;
+      if (p.sx < mnSx) mnSx = p.sx;
+      if (p.sx > mxSx) mxSx = p.sx;
+      if (p.sy < mnSy) mnSy = p.sy;
+      if (p.sy > mxSy) mxSy = p.sy;
+    }
+    if (!isFinite(mnSx)) { mnSx = 0; mxSx = canvasW; mnSy = 0; mxSy = canvasH; }
+
+    const sw = mxSx - mnSx || 1, sh = mxSy - mnSy || 1;
+    const pad = Math.max(sw, sh) * 0.08 + 15;
+    const scx = (mnSx + mxSx) / 2, scy = (mnSy + mxSy) / 2;
+
+    const plFmt = (pl.paperFormat ?? "A3") as keyof typeof PAPER_SIZES_MM;
+    const plMm = PAPER_SIZES_MM[plFmt] ?? PAPER_SIZES_MM.A3;
+    const plOri = pl.orientation ?? "landscape";
+    const fAsp = (plOri === "landscape" ? plMm.h : plMm.w) / (plOri === "landscape" ? plMm.w : plMm.h);
+
+    let rsw = sw + pad * 2, rsh = rsw / fAsp;
+    if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * fAsp; }
+    rsw = Math.max(rsw, sw + pad * 2);
+    rsh = rsw / fAsp;
+    if (rsh < sh + pad * 2) { rsh = sh + pad * 2; rsw = rsh * fAsp; }
+    const fRx = scx - rsw / 2, fRy = scy - rsh / 2;
+
+    // Масштаб вписывания рамки в лист + центрирование
+    const fitF = Math.min(canvasW / (rsw || 1), canvasH / (rsh || 1));
+    const extraOffX = (canvasW - rsw * fitF) / 2;
+    const extraOffY = (canvasH - rsh * fitF) / 2;
+
+    // Новая проекция: масштаб*fitF, сдвиг так, чтобы левый-верх рамки попал в
+    // (extraOffX, extraOffY) на листе. project3D: sx = x*scale + offsetX.
+    proj = {
+      ...proj,
+      scale: proj.scale * fitF,
+      offsetX: proj.offsetX * fitF - fRx * fitF + extraOffX,
+      offsetY: proj.offsetY * fitF - fRy * fitF + extraOffY,
+    };
+
+    // Перепроецируем узлы уже вписанной проекцией
+    projMap.clear();
+    for (const nd of nodes) {
+      const p = project3D({ x: nd.x * _xySFExport, y: nd.y * _xySFExport, z: nd.z * zScale }, proj);
+      projMap.set(nd.id, { sx: p.sx, sy: p.sy });
+    }
+
+    // Пересчитываем масштаб объектов под новую проекцию (режим 2)
+    objSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, proj.scale / (_xySFExport * 0.4)));
+
+    // Рамка теперь занимает весь лист с учётом центрирования
+    frameRect = {
+      rx: extraOffX,
+      ry: extraOffY,
+      rw: rsw * fitF,
+      rh: rsh * fitF,
+    };
   } else {
     // bbox только по узлам видимых ветвей (горизонт уже отфильтрован в visibleBranches)
     const visibleNodeIdsForBbox = new Set<string>();

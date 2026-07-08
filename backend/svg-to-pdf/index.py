@@ -72,6 +72,42 @@ def _remap_font_family(svg: str) -> str:
     svg = re.sub(r"font-family\s*:\s*[^;\"']+", "font-family:DejaVuSans", svg)
     return svg
 
+
+def _fix_baseline(svg: str) -> str:
+    """svglib игнорирует dominant-baseline -> текст (номера позиций, штамп,
+    заголовок) уезжает вверх/вниз относительно ячейки. Переводим
+    dominant-baseline в явный dy (в px), опираясь на font-size элемента.
+
+    central/middle -> опустить на ~0.32em (визуальный центр по y),
+    hanging        -> опустить на ~0.72em (верх текста по y),
+    auto/text-*    -> без сдвига (baseline по y).
+    """
+    tag_re = re.compile(r"<text\b[^>]*>", re.IGNORECASE)
+
+    def repl(m):
+        tag = m.group(0)
+        bl = re.search(r'dominant-baseline\s*=\s*"([^"]*)"', tag)
+        if not bl:
+            return tag
+        mode = bl.group(1).strip().lower()
+        if mode in ("middle", "central"):
+            k = 0.32
+        elif mode == "hanging":
+            k = 0.72
+        else:
+            k = 0.0
+        # font-size (px) из тега, иначе 12
+        fs_m = re.search(r'font-size\s*=\s*"([\d.]+)', tag)
+        fs = float(fs_m.group(1)) if fs_m else 12.0
+        dy = k * fs
+        # убираем dominant-baseline и добавляем/увеличиваем dy
+        tag2 = re.sub(r'\s*dominant-baseline\s*=\s*"[^"]*"', "", tag)
+        if abs(dy) > 0.01 and "dy=" not in tag2:
+            tag2 = tag2[:-1] + f' dy="{dy:.2f}">'
+        return tag2
+
+    return tag_re.sub(repl, svg)
+
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -140,6 +176,8 @@ def handler(event: dict, context) -> dict:
             font_ok = False
         if font_ok:
             svg_string = _remap_font_family(svg_string)
+        # Центрируем текст по вертикали (svglib не понимает dominant-baseline)
+        svg_string = _fix_baseline(svg_string)
 
         # svglib парсит SVG в reportlab-drawing (векторный)
         drawing = svg2rlg(io.BytesIO(svg_string.encode("utf-8")))
