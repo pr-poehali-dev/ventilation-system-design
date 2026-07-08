@@ -134,7 +134,7 @@ if exist "%CS_DIR%\PvsApp\vproj_src.png" (
     python "%CS_DIR%\make_ico.py" "%CS_DIR%\PvsApp\vproj_src.png" "%CS_DIR%\PvsApp\vproj.ico"
 )
 if exist "%CS_DIR%\PvsApp\vproj.ico" (
-    echo     OK (vproj.ico ready)
+    echo     OK - vproj.ico ready
 ) else (
     echo     WARNING: vproj.ico missing - .vproj files will use app icon
 )
