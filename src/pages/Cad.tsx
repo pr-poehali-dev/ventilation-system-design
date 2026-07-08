@@ -8290,16 +8290,7 @@ export default function CadPage() {
                   setActiveSide("fan");
                   return;
                 }
-                // Одиночный клик по перемычке — сразу открываем вкладку «Топология»,
-                // где находятся её настройки.
-                if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
-                  setSelectedBranchId(sym.branchId);
-                  setSelectedNodeId(null);
-                  setFanSymbolBranchId(null);
-                  setActiveSide("topology");
-                  return;
-                }
-                // Для замерных станций — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
+                // Для перемычек и замерных станций — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
                 if (sym?.branchId && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
