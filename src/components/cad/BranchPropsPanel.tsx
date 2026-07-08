@@ -1744,6 +1744,55 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 <ComputedInput value={numFmt(waterBranchResult?.deltaP ?? 0, 4)} />
               </InlineLabel>
             </>)}
+
+            {/* ─── ВОЗДУХОПРОВОД (сжатый воздух) ──────────────────── */}
+            <SectionHeader title="Воздухопровод (сжатый воздух)" />
+            <InlineLabel label="Воздухопровод задан">
+              <CheckField
+                checked={branch.hasAirPipe ?? false}
+                onChange={(v) => onUpdate({ hasAirPipe: v })}
+              />
+            </InlineLabel>
+
+            {(branch.hasAirPipe) && (<>
+              <SectionHeader title="Геометрия трубы" />
+              <InlineLabel label="Диаметр, мм">
+                <EditInput
+                  type="number" step="1"
+                  value={branch.apDiameter ?? 100}
+                  onChange={(v) => onUpdate({ apDiameter: parseFloat(v) || 0 })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Материал">
+                <SelectField
+                  value={branch.apMaterial ?? "Сталь"}
+                  options={["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"]}
+                  onChange={(v) => onUpdate({ apMaterial: v })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Рабочее давление, атм">
+                <EditInput
+                  type="number" step="0.1"
+                  value={branch.apPressure ?? 6}
+                  onChange={(v) => onUpdate({ apPressure: parseFloat(v) || 0 })}
+                />
+              </InlineLabel>
+              <InlineLabel label="Длина вручную">
+                <CheckField
+                  checked={branch.apLengthManual ?? false}
+                  onChange={(v) => onUpdate({ apLengthManual: v })}
+                />
+              </InlineLabel>
+              {branch.apLengthManual && (
+                <InlineLabel label="Длина, м">
+                  <EditInput
+                    type="number" step="0.1"
+                    value={branch.apLength ?? 0}
+                    onChange={(v) => onUpdate({ apLength: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+              )}
+            </>)}
           </div>
         )}
 

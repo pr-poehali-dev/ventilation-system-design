@@ -161,6 +161,14 @@ export interface TopoBranch {
   wpReducerOutPressure: number;    // МПа — настроенное выходное давление
   wpReducerMaxFlow: number;        // м³/ч — макс. расход (для ручного режима)
 
+  // ─── Воздухопровод (сжатый воздух) ───────────────────────
+  hasAirPipe?: boolean;            // ветвь содержит воздухопровод (сжатый воздух)
+  apDiameter?: number;             // мм — внутренний диаметр трубы
+  apMaterial?: string;             // материал трубы
+  apLengthManual?: boolean;        // длина задана вручную
+  apLength?: number;               // м — длина воздухопровода
+  apPressure?: number;             // атм — рабочее давление сжатого воздуха
+
   // ─── Пожар (вентиляционный расчёт аварийного режима) ────────────────
   hasFire: boolean;                // в ветви установлен очаг пожара
   fireT: number;                   // позиция очага вдоль ветви 0..1 (0=fromId, 1=toId)

@@ -2975,23 +2975,29 @@ export default function TopoCanvas(props: Props) {
                 <circle cx={sxA} cy={syA} r="2.5" fill={color} opacity="0.9" />
               )}
 
-              {/* ── Трубопровод ППЗ — яркая синяя линия со смещением к краю ветви ── */}
-              {b.hasWaterPipe && (() => {
-                // Перпендикуляр к ветви — смещаем линию к краю на (w/2 - 1.5)px
+              {/* ── Трубопроводы у края ветви ──────────────────────────────────
+                   Синяя линия = водопровод ППЗ (у одного края),
+                   красная линия = воздухопровод / сжатый воздух (у противоположного края) ── */}
+              {(b.hasWaterPipe || b.hasAirPipe) && (() => {
+                // Перпендикуляр к ветви — смещаем линию к краю
                 const nx = -uy; // нормаль
                 const ny = ux;
                 const offset = w * 0.38; // смещение от центра к краю (масштабируется с ветвью)
-                // Толщина синей линии тоже масштабируется вместе с ветвью — как в canvasRenderer,
+                // Толщина линии масштабируется вместе с ветвью — как в canvasRenderer,
                 // иначе при зуме труба остаётся тонкой и «отстаёт» от растущей ветви
                 const pipeSW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
-                const x1o = from.sx + nx * offset;
-                const y1o = from.sy + ny * offset;
-                const x2o = to.sx + nx * offset;
-                const y2o = to.sy + ny * offset;
-                return (
-                  <line x1={x1o} y1={y1o} x2={x2o} y2={y2o}
-                    stroke="#1d4ed8" strokeWidth={pipeSW}
+                const pipeLine = (sign: number, color: string, key: string) => (
+                  <line key={key}
+                    x1={from.sx + nx * offset * sign} y1={from.sy + ny * offset * sign}
+                    x2={to.sx + nx * offset * sign}   y2={to.sy + ny * offset * sign}
+                    stroke={color} strokeWidth={pipeSW}
                     strokeLinecap="round" opacity="1" />
+                );
+                return (
+                  <>
+                    {b.hasWaterPipe && pipeLine(+1, "#1d4ed8", "wp")}
+                    {b.hasAirPipe   && pipeLine(-1, "#dc2626", "ap")}
+                  </>
                 );
               })()}
 
