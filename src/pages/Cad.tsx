@@ -55,6 +55,7 @@ import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
 import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
 import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
+import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
 import { calcBranchFirePower } from "@/lib/fireStability";
@@ -1248,6 +1249,14 @@ export default function CadPage() {
   // ─── МЕНЮ ФАЙЛ ──────────────────────────────────────────────────────
   const [fileSectionState, setFileSectionState] = useState("add");
 
+  // При открытии вкладки «Установить» подтягиваем актуальную версию десктопа
+  useEffect(() => {
+    if (fileSectionState !== "install" || desktopLatestVer) return;
+    fetchRemoteVersion()
+      .then(v => { if (v.version) setDesktopLatestVer(v.version); })
+      .catch(() => { /* нет сети — просто не показываем номер версии */ });
+  }, [fileSectionState, desktopLatestVer]);
+
   // ─── DXF ИМПОРТ ─────────────────────────────────────────────────────
   const [showDxfImport, setShowDxfImport] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
@@ -1476,6 +1485,8 @@ export default function CadPage() {
   const [showCloseConfirm, setShowCloseConfirm] = useState<boolean>(false);
   // Окно "О программе"
   const [showAbout, setShowAbout] = useState<boolean>(false);
+  // Актуальная версия десктопа (для вкладки Файл → Установить)
+  const [desktopLatestVer, setDesktopLatestVer] = useState<string>("");
   // Диалог руководства пользователя
   const [showHelpDialog, setShowHelpDialog] = useState<boolean>(false);
   const [showDepressogram, setShowDepressogram] = useState<boolean>(false);
@@ -3286,50 +3297,36 @@ export default function CadPage() {
                   </>
                 )}
 
-                {/* ── Установить приложение ── */}
+                {/* ── Установить приложение (десктоп) ── */}
                 {fileSectionState === "install" && (() => {
-                  const isStandalone = window.matchMedia("(display-mode: standalone)").matches
-                    || (navigator as unknown as { standalone?: boolean }).standalone === true;
                   return (
                     <>
-                      <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Установить приложение</div>
-                      {isStandalone ? (
-                        <div className="flex items-center gap-3 px-3 py-3 rounded bg-green-50 border border-green-200 mb-3">
-                          <Icon name="CheckCircle" size={22} className="text-green-600 flex-shrink-0" />
+                      <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Установить приложение для Windows</div>
+                      <div className="text-[12px] text-gray-600 mb-3 leading-relaxed">
+                        Скачайте настольную версию ПВ-Система — она работает без браузера и без интернета,
+                        со встроенным расчётным ядром. Ссылка всегда ведёт на самую свежую версию.
+                      </div>
+                      <div className="mb-3">
+                        <a
+                          href={INSTALLER_URL}
+                          rel="noopener"
+                          className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group no-underline">
+                          <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                            <Icon name="Download" size={22} className="text-blue-600" />
+                          </div>
                           <div>
-                            <div className="text-[13px] font-medium text-green-800">Приложение установлено</div>
-                            <div className="text-[11px] text-green-600">ПВ-Система работает как настольное приложение</div>
+                            <div className="text-[13px] font-medium text-blue-700">
+                              Скачать ПВ-Система для ПК{desktopLatestVer ? ` (v${desktopLatestVer})` : ""}
+                            </div>
+                            <div className="text-[11px] text-gray-400">Windows 10/11 · установщик PVS-Setup.exe</div>
                           </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="text-[12px] text-gray-600 mb-3 leading-relaxed">
-                            Установите ПВ-Система на ПК — приложение откроется без браузера, как обычная программа Windows.
-                          </div>
-                          <div id="pwa-install-area" className="mb-3">
-                            <button
-                              id="pwa-install-btn"
-                              className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group"
-                              onClick={() => {
-                                const ev = (window as unknown as { __pwaPrompt?: { prompt: () => void } }).__pwaPrompt;
-                                if (ev) { ev.prompt(); }
-                                else { alert("Для установки откройте сайт в браузере Chrome или Edge и нажмите значок установки (⊕) в адресной строке."); }
-                              }}>
-                              <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
-                                <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/a81f2c98-d805-485d-b5f9-3e15893dd1a4.png"
-                                  alt="" className="w-7 h-7 rounded-lg" />
-                              </div>
-                              <div>
-                                <div className="text-[13px] font-medium text-blue-700">Установить ПВ-Система на ПК</div>
-                                <div className="text-[11px] text-gray-400">Chrome / Edge — Windows, macOS, Linux</div>
-                              </div>
-                            </button>
-                          </div>
-                          <div className="text-[11px] text-gray-400 leading-relaxed px-1">
-                            Если кнопка не работает — найдите значок <b>⊕</b> или <b>⬇</b> в правой части адресной строки браузера.
-                          </div>
-                        </>
-                      )}
+                        </a>
+                      </div>
+                      <div className="text-[11px] text-gray-400 leading-relaxed px-1">
+                        После загрузки запустите установщик <b>PVS-Setup.exe</b> — программа установится в
+                        <b> C:\Program Files\PVS</b> (потребуется подтверждение прав администратора) и свяжет файлы
+                        схем <b>.vproj</b> с приложением.
+                      </div>
                     </>
                   );
                 })()}
@@ -10296,7 +10293,7 @@ export default function CadPage() {
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">{APP_VERSION}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">{APP_BUILD_DATE}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop / PWA</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop</span></div>
               {(() => {
                 const isOnline = navigator.onLine;
                 return (
