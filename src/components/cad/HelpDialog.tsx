@@ -87,6 +87,60 @@ export default function HelpDialog({ onClose }: Props) {
       ),
     },
     {
+      id: "quickstart",
+      icon: "Rocket",
+      title: "Быстрый старт",
+      content: (
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg border-l-4 border-green-500" style={{ background: "#f0fdf4" }}>
+            <div className="font-bold text-green-800 text-[13px] mb-1">От пустого листа до первого расчёта за 7 шагов</div>
+            <div className="text-[12px] text-green-700 leading-relaxed">
+              Ниже — минимальный сценарий: построить простую сеть, задать вентилятор и атмосферу, запустить расчёт.
+            </div>
+          </div>
+
+          <ol className="space-y-3">
+            <QStep n={1} title="Создать проект">
+              <b>Файл → Создать</b> — новый пустой проект. Все прежние данные сбрасываются.
+            </QStep>
+            <QStep n={2} title="Поставить узлы">
+              Выберите инструмент <b>«Узел»</b> в панели инструментов и кликами на холсте расставьте
+              точки соединения выработок (устье, сопряжения, забои).
+            </QStep>
+            <QStep n={3} title="Соединить ветвями">
+              Инструмент <b>«Ветвь»</b>: клик по первому узлу — старт, клик по второму — создаётся выработка.
+              Так соедините все узлы в связную сеть.
+            </QStep>
+            <QStep n={4} title="Задать атмосферу">
+              Кликните правой кнопкой по узлу выхода на поверхность → отметьте
+              <b> «Поверхностный узел (атмосфера)»</b>. Это граничное условие — без него расчёт не сойдётся.
+              Нужен минимум один такой узел.
+            </QStep>
+            <QStep n={5} title="Указать параметры выработок">
+              Выберите ветвь (инструмент «Выбрать») → в левой панели на вкладке <b>«Общие»</b> задайте
+              тип и сечение, на вкладке <b>«Вентиляция»</b> — сопротивление (коэф. крепи α). Можно применить
+              готовый шаблон из справочника «Типы выработок».
+            </QStep>
+            <QStep n={6} title="Поставить вентилятор">
+              Вкладка <b>Схема</b> → выберите вентилятор (ГВУ) и кликните на ветвь. Затем одиночным кликом
+              по символу откройте вкладку <b>«Вентилятор»</b> и выберите модель, обороты и угол лопаток из каталога.
+            </QStep>
+            <QStep n={7} title="Запустить расчёт">
+              Нажмите <KBD>F9</KBD> (или «Расчёт» на ленте «Главная»). Программа определит расход Q, скорость V
+              и депрессию в каждой ветви. На схеме появятся стрелки направления воздуха и подписи расхода.
+            </QStep>
+          </ol>
+
+          <div className="p-2 rounded" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+            <span className="text-[12px] text-blue-700">
+              💡 Расчёт не сходится? Проверьте, что есть поверхностный узел (атмосфера) и что вся схема связна
+              (нет изолированных фрагментов). Подробнее — в разделе «Советы и приёмы».
+            </span>
+          </div>
+        </div>
+      ),
+    },
+    {
       id: "interface",
       icon: "Layout",
       title: "Интерфейс",
@@ -934,5 +988,20 @@ function KBD({ children }: { children: React.ReactNode }) {
       style={{ background: "#f3f4f6", border: "1px solid #d1d5db", color: "#374151", boxShadow: "0 1px 0 #9ca3af" }}>
       {children}
     </kbd>
+  );
+}
+
+function QStep({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <li className="flex items-start gap-3">
+      <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold text-white"
+        style={{ background: "#2563eb" }}>
+        {n}
+      </div>
+      <div className="text-[12px] text-gray-700 leading-relaxed pt-0.5">
+        <div className="font-semibold text-gray-800">{title}</div>
+        <div>{children}</div>
+      </div>
+    </li>
   );
 }
