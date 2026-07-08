@@ -8281,6 +8281,15 @@ export default function CadPage() {
                 // Одиночный клик: выбрать УО и показать свойства (панель params)
                 const sym = schemaSymbols.find(s => s.id === symId);
                 setSelectedSymbolId(symId);
+                // Одиночный клик по вентилятору — сразу открываем вкладку настроек
+                // вентилятора в левой панели (а не свойства ветви).
+                if (sym?.typeId === "fan" && sym.branchId) {
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(sym.branchId);
+                  setActiveSide("fan");
+                  return;
+                }
                 // Для перемычек и замерных станций — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
                 if (sym?.branchId && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
                   setSelectedBranchId(sym.branchId);
