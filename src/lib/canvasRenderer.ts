@@ -650,6 +650,30 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
     }
 
+    // ── Трубопроводы у края ветви (под стрелкой направления воздуха) ──────
+    // Синяя линия = водопровод ППЗ (у одного края),
+    // красная линия = воздухопровод (сжатый воздух, у противоположного края).
+    // Рисуем ЗДЕСЬ (до стрелки потока), чтобы стрелка была поверх труб — как в SVG-режиме.
+    if (lodNodes && (b.hasWaterPipe || b.hasAirPipe)) {
+      const nx = -uy, ny = ux;
+      const pipeOffset = w * 0.38;
+      const pipeLW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
+      const drawEdgePipe = (sign: number, col: string) => {
+        const ox = nx * pipeOffset * sign, oy = ny * pipeOffset * sign;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = pipeLW;
+        ctx.beginPath();
+        ctx.moveTo(p.fromSx + ox, p.fromSy + oy);
+        ctx.lineTo(p.toSx + ox, p.toSy + oy);
+        ctx.stroke();
+      };
+      if (b.hasWaterPipe) drawEdgePipe(+1, "#1d4ed8");
+      if (b.hasAirPipe)   drawEdgePipe(-1, "#dc2626");
+    }
+
     // Бегущий пунктир
     if (showDashes) {
       ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "butt";
@@ -809,47 +833,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
 
     void ux; void uy;
-  }
-
-  // ─── ТРУБОПРОВОДЫ у края ветви ─────────────────────────────────────────
-  // Синяя линия = водопровод ППЗ (смещена к одному краю),
-  // красная линия = воздухопровод (сжатый воздух, смещена к противоположному краю).
-  if (lodNodes) {
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.globalAlpha = 1;
-    ctx.setLineDash([]);
-    for (const { b, from, to } of sorted) {
-      if ((!b.hasWaterPipe && !b.hasAirPipe) || !from || !to) continue;
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-      // Ширина тела ветви в px экрана — так же, как рисуется сама ветвь (с objSF).
-      // Раньше offset брался от НЕмасштабированной ширины (bw), поэтому при зуме
-      // труба «уезжала» от края ветви. Теперь offset масштабируется вместе с ветвью.
-      const w2 = thinLines ? 1 : Math.max(bw * objSF, 1.0);
-      const ddx = to.sx - from.sx, ddy = to.sy - from.sy;
-      const segL = Math.hypot(ddx, ddy);
-      const nx = segL > 0 ? -ddy / segL : 0;
-      const ny = segL > 0 ?  ddx / segL : 0;
-      const offset = w2 * 0.38;
-      const pipeLW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
-
-      const drawPipe = (sign: number, color: string) => {
-        const ox = nx * offset * sign, oy = ny * offset * sign;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = pipeLW;
-        ctx.beginPath();
-        ctx.moveTo(from.sx + ox, from.sy + oy);
-        ctx.lineTo(to.sx   + ox, to.sy   + oy);
-        ctx.stroke();
-      };
-
-      // Водопровод — синий, у одного края; воздухопровод — красный, у противоположного
-      if (b.hasWaterPipe) drawPipe(+1, "#1d4ed8");
-      if (b.hasAirPipe)   drawPipe(-1, "#dc2626");
-
-      // Маркер wpHasReducer убран — отображается через УО-символ valve_reduce (оверлей)
-    }
-    ctx.restore();
   }
 
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
