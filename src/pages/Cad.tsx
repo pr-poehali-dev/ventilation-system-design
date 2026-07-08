@@ -10296,7 +10296,7 @@ export default function CadPage() {
               <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">{APP_VERSION}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">{APP_BUILD_DATE}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Web / Desktop</span><span className="font-medium">Web / Desktop / PWA</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop / PWA</span></div>
               {(() => {
                 const isOnline = navigator.onLine;
                 return (
