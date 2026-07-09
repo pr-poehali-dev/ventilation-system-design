@@ -581,6 +581,19 @@ export function calcFireMode(
     branchesByInNode.get(inNodeId)!.push(b);
   }
 
+  // Суммарный расход воздуха, ВХОДЯЩИЙ в каждый узел (по всем ветвям, где узел
+  // является выходным). Нужен для разбавления дыма свежим воздухом в узлах
+  // слияния: концентрация на выходе = (задымлённый_Q × конц) / полный_Q_узла.
+  // Именно разбавление обрывает фронт задымления там, где к дыму подмешивается
+  // много чистого воздуха (модель Аэросеть/Вентиляция).
+  const nodeInflowQ = new Map<string, number>();
+  for (const b of branches) {
+    const flow = b.flow ?? 0;
+    if (Math.abs(flow) < 0.001) continue;
+    const outNodeId = flow >= 0 ? b.toId : b.fromId; // куда воздух ВТЕКАЕТ
+    nodeInflowQ.set(outNodeId, (nodeInflowQ.get(outNodeId) ?? 0) + Math.abs(flow));
+  }
+
   // ── Шаг 4: Dijkstra-BFS распространения задымления ────────────────────────
   // Используем Dijkstra (priority queue по времени прихода) вместо простого BFS,
   // чтобы корректно обрабатывать сети с циклами: каждый узел обрабатывается
@@ -653,6 +666,15 @@ export function calcFireMode(
     }
   }
 
+  // Порог задымления по видимости (модель Аэросеть/Вентиляция): дым считается
+  // «дошедшим» в ветвь, только пока видимость в дыму НИЖЕ порога. Как только
+  // при затухании вдоль струи видимость восстанавливается выше порога —
+  // дальше идёт практически чистый воздух, и фронт задымления ОБРЫВАЕТСЯ.
+  // Это гарантирует связность: задымлены только ветви на непрерывном пути от
+  // очага, где концентрация ещё опасна (никаких «оторванных» задымлённых ветвей).
+  const SMOKE_VIS_THRESHOLD = 50; // м — граница различимого задымления
+  const SMOKE_DENS_THRESHOLD = 3 / SMOKE_VIS_THRESHOLD; // соответствующая плотность
+
   while (pq.length > 0) {
     const [entryTime, smokedNodeId] = pqPop();
 
@@ -667,6 +689,9 @@ export function calcFireMode(
 
     const sp = smokeAtNode.get(smokedNodeId);
     if (!sp) continue;
+    // Узел задымлён по порогу? Если дым сюда пришёл уже рассеянным (плотность
+    // ниже порога) — дальше он НЕ распространяется (обрыв фронта, чистый воздух).
+    if (sp.smokeC < SMOKE_DENS_THRESHOLD) continue;
     // Время задымления ВХОДНОГО узла — оно уже оптимально (узел финализирован).
     const arrivalAtIn = optArrival;
 
@@ -691,6 +716,10 @@ export function calcFireMode(
       const tempOut  = ambientTemp_C + (sp.tempC - ambientTemp_C) * Math.exp(-(b.length ?? 0) * 0.001);
       const visOut   = smokeOut > 0 ? Math.min(100, 3 / smokeOut) : 100;
       const hazard   = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
+
+      // Порог: если дым в этой ветви уже рассеялся ниже порога видимости —
+      // ветвь НЕ задымляется и дальше по ней распространение не идёт.
+      if (smokeOut < SMOKE_DENS_THRESHOLD) continue;
 
       // Реальное опрокидывание: знак расхода изменился по сравнению с исходным
       const bOrigFlow = (b as TopoBranch & { originalFlow?: number }).originalFlow;
@@ -727,8 +756,21 @@ export function calcFireMode(
       if (finalized.has(outNodeId)) continue;
       const prevArrival = nodeArrivalTime.get(outNodeId);
       if (prevArrival !== undefined && arrivalAtOut >= prevArrival - 1e-9) continue;
+
+      // Разбавление в узле слияния: дым, принесённый этой ветвью (расход |flow|),
+      // смешивается со ВСЕМ воздухом, входящим в узел (nodeInflowQ). Чем больше
+      // подмешивается свежего воздуха — тем сильнее падает концентрация. Это
+      // естественно обрывает фронт задымления в узлах с большим притоком воздуха.
+      const totalInQ = Math.max(nodeInflowQ.get(outNodeId) ?? Math.abs(flow), Math.abs(flow));
+      const dil = totalInQ > 0 ? Math.abs(flow) / totalInQ : 1;
+
       nodeArrivalTime.set(outNodeId, arrivalAtOut);
-      smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
+      smokeAtNode.set(outNodeId, {
+        coC:    coOut    * dil,
+        co2C:   Math.max(0.04, co2Out * dil),
+        smokeC: smokeOut * dil,
+        tempC:  ambientTemp_C + (tempOut - ambientTemp_C) * dil,
+      });
       pqPush([arrivalAtOut, outNodeId]);
     }
   }
