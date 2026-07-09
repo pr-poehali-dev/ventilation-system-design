@@ -9502,7 +9502,7 @@ export default function CadPage() {
                       setSmokeAnimating(true);
                       smokeAnimRef.current = setInterval(() => {
                         setSmokeTimeMinutes(prev => {
-                          const next = prev + smokeTimeStep;
+                          const next = Math.round((prev + smokeTimeStep) * 1000) / 1000;
                           if (next >= smokeMaxTime) {
                             if (smokeAnimRef.current) clearInterval(smokeAnimRef.current);
                             smokeAnimRef.current = null;
@@ -9568,7 +9568,9 @@ export default function CadPage() {
                   fontSize: 12, fontWeight: 700, color: "#fff", background: "#b91c1c",
                   borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
                 }}>
-                  T = {smokeTimeMinutes} мин
+                  {smokeTimeMinutes > 0 && smokeTimeMinutes < 1
+                    ? `T = ${Math.round(smokeTimeMinutes * 60)} сек`
+                    : `T = ${Number(smokeTimeMinutes.toFixed(2))} мин`}
                 </span>
 
                 <div style={{ width: 1, background: "#7f1d1d", alignSelf: "stretch", margin: "0 2px" }} />
@@ -9599,8 +9601,18 @@ export default function CadPage() {
                     fontSize: 11, background: "#3b0000", color: "#fca5a5",
                     border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 2px",
                   }}>
-                  {[1, 2, 5, 10, 15, 30, 60].map(s => (
-                    <option key={s} value={s}>{s} мин</option>
+                  {[
+                    { v: 1 / 60, label: "1 сек" },
+                    { v: 30 / 60, label: "30 сек" },
+                    { v: 1, label: "1 мин" },
+                    { v: 2, label: "2 мин" },
+                    { v: 5, label: "5 мин" },
+                    { v: 10, label: "10 мин" },
+                    { v: 15, label: "15 мин" },
+                    { v: 30, label: "30 мин" },
+                    { v: 60, label: "60 мин" },
+                  ].map(s => (
+                    <option key={s.label} value={s.v}>{s.label}</option>
                   ))}
                 </select>
               </div>
