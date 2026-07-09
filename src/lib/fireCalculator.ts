@@ -650,15 +650,21 @@ export function calcFireMode(
   }
 
   while (pq.length > 0) {
-    const [, smokedNodeId] = pqPop();
+    const [entryTime, smokedNodeId] = pqPop();
 
-    // Пропускаем если уже обработан (Dijkstra гарантирует оптимальность)
+    // Пропускаем если уже обработан (Dijkstra гарантирует оптимальность).
+    // Также пропускаем «устаревшие» записи в куче: если время в записи больше
+    // текущего оптимального времени узла — этот путь неактуален (в куче могло
+    // остаться несколько записей для одного узла с разным временем).
     if (finalized.has(smokedNodeId)) continue;
+    const optArrival = nodeArrivalTime.get(smokedNodeId) ?? 0;
+    if (entryTime > optArrival + 1e-9) continue;
     finalized.add(smokedNodeId);
 
     const sp = smokeAtNode.get(smokedNodeId);
     if (!sp) continue;
-    const arrivalAtIn = nodeArrivalTime.get(smokedNodeId) ?? 0;
+    // Время задымления ВХОДНОГО узла — оно уже оптимально (узел финализирован).
+    const arrivalAtIn = optArrival;
 
     // Все ветви, для которых этот узел — входной (дым идёт вниз по потоку)
     const downBranches = branchesByInNode.get(smokedNodeId) ?? [];
@@ -689,11 +695,13 @@ export function calcFireMode(
         : false;
       if (bActuallyReversed) reversedBranches.add(b.id);
 
-      // Записываем результат по ветви:
-      // - если ветвь ещё не записана — записываем всегда
-      // - если уже записана — обновляем только при более раннем времени прихода
-      const existingResult = resultMap.get(b.id);
-      if (!existingResult || arrivalAtIn < existingResult.smokeArrivalTime) {
+      // У каждой ветви ровно один входной узел (по знаку flow), поэтому она
+      // обрабатывается ровно один раз — когда её входной узел финализирован
+      // Dijkstra с гарантированно оптимальным (минимальным) временем прихода.
+      // Дым начинает вползать в ветвь именно с момента arrivalAtIn — фронтенд
+      // рисует прогресс от этого времени со скоростью speed. Очаги исключены
+      // из branchesByInNode, поэтому их smokeArrivalTime=0 не перезаписывается.
+      if (!resultMap.has(b.id)) {
         resultMap.set(b.id, {
           branchId: b.id,
           airTempOut:        Math.round(tempOut  * 10)  / 10,
@@ -705,16 +713,16 @@ export function calcFireMode(
           smokeDensity:      Math.round(smokeOut * 100)  / 100,
           visibility:        Math.round(visOut   * 10)   / 10,
           hazardLevel:       hazard,
-          smokeArrivalTime:  Math.round(arrivalAtIn * 10) / 10,
+          smokeArrivalTime:  Math.round(arrivalAtIn * 100) / 100,
           airSpeed:          Math.round(speed * 100) / 100,
           flowSign:          flow >= 0 ? 1 : -1,
         });
       }
 
-      // Обновляем выходной узел в Dijkstra только если путь быстрее
+      // Обновляем выходной узел в Dijkstra только если новый путь строго быстрее
       if (finalized.has(outNodeId)) continue;
       const prevArrival = nodeArrivalTime.get(outNodeId);
-      if (prevArrival !== undefined && arrivalAtOut >= prevArrival) continue;
+      if (prevArrival !== undefined && arrivalAtOut >= prevArrival - 1e-9) continue;
       nodeArrivalTime.set(outNodeId, arrivalAtOut);
       smokeAtNode.set(outNodeId, { coC: coOut, co2C: co2Out, smokeC: smokeOut, tempC: tempOut });
       pqPush([arrivalAtOut, outNodeId]);
