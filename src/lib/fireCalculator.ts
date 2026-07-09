@@ -335,6 +335,10 @@ export interface FireCalculationResult {
   log: string[];
   // Максимальное время распространения задымления (минуты)
   maxSmokeTime: number;
+  // Время прихода задымления в каждый узел (минуты). Нужно фронтенду, чтобы
+  // корректно дорисовывать задымление внутри ветви-очага, когда дым по кольцу
+  // возвращается к входному узлу очага.
+  nodeArrivalTime: Map<string, number>;
 }
 
 // ─── Физические формулы ───────────────────────────────────────────────────────
@@ -436,7 +440,7 @@ export function calcFireMode(
   // ── Шаг 1: Находим ветви с пожарами ──────────────────────────────────────
   const fireBranches = branches.filter(b => b.hasFire);
   if (fireBranches.length === 0) {
-    return { fireTemp: ambientTemp_C, fireThermalDep: 0, branches: resultMap, reversedBranches, log: ["Очагов пожара не обнаружено"], maxSmokeTime: 60 };
+    return { fireTemp: ambientTemp_C, fireThermalDep: 0, branches: resultMap, reversedBranches, log: ["Очагов пожара не обнаружено"], maxSmokeTime: 60, nodeArrivalTime: new Map() };
   }
   log.push(`Обнаружено очагов пожара: ${fireBranches.length}`);
 
@@ -755,6 +759,7 @@ export function calcFireMode(
     reversedBranches,
     log,
     maxSmokeTime,
+    nodeArrivalTime,
   };
 }
 

@@ -8500,20 +8500,40 @@ export default function CadPage() {
                     // Используем flowSign из результата расчёта (не branch.flow из state — он может быть устаревшим)
                     const flowDir = (fr.flowSign ?? 1) >= 0; // true = from→to
 
+                    // Участок ВНИЗ по потоку от точки очага (дым идёт по направлению воздуха)
                     const downLen = Math.min(
                       flowDir ? (1 - ft) * len : ft * len,
                       elapsedSec * flowSpeed
                     );
                     const downFrac = downLen / len;
 
+                    // Участок от точки очага к ВХОДНОМУ узлу (против потока).
+                    // Дым может вернуться сюда по кольцу — тогда входной узел очага
+                    // получает время прихода. Закрашиваем этот участок навстречу очагу,
+                    // чтобы задымление доходило до самого очага, а не обрывалось.
+                    const inNodeId = flowDir ? branch.fromId : branch.toId;
+                    const inArrival = fireResult.nodeArrivalTime?.get(inNodeId);
+                    let upFrac = 0;
+                    if (inArrival !== undefined && inArrival <= smokeTimeMinutes) {
+                      const elapsedUp = (smokeTimeMinutes - inArrival) * 60;
+                      const upSpan = flowDir ? ft * len : (1 - ft) * len; // длина участка вход→очаг
+                      const upLen = Math.min(upSpan, elapsedUp * flowSpeed);
+                      upFrac = upLen / len;
+                    }
+
+                    // Итоговый закрашенный отрезок вдоль ветви [fromT..toT]
                     const fromT = flowDir
-                      ? ft
-                      : Math.max(0, ft - downFrac);
+                      ? Math.max(0, ft - upFrac)     // вход слева: от очага к входу
+                      : Math.min(1, ft + upFrac);    // вход справа
                     const toT = flowDir
                       ? Math.min(1, ft + downFrac)
-                      : ft;
+                      : Math.max(0, ft - downFrac);
 
-                    map.set(bid, { color: col, fromT, toT });
+                    map.set(bid, {
+                      color: col,
+                      fromT: Math.min(fromT, toT),
+                      toT: Math.max(fromT, toT),
+                    });
                     return;
                   }
 
