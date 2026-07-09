@@ -859,8 +859,22 @@ export default function CadPage() {
   const [normalFlows, setNormalFlows] = useState<Record<string, number>>({});
   const [vcSolving, setVcSolving] = useState(false);
   const [vcError, setVcError] = useState<string | null>(null);
-  // Метод расчёта: cross = Кросс, mkr = МКР
-  const [calcMode, setCalcMode] = useState<"cross" | "mkr">("cross");
+  // Метод расчёта: cross = Кросс, mkr = МКР, nodal = Узловой (быстрый)
+  const [calcMode, setCalcMode] = useState<"cross" | "mkr" | "nodal">("cross");
+  // Пользователь выбрал метод вручную — тогда автоподбор для больших схем отключаем
+  const calcModeManualRef = useRef(false);
+  // Автовыбор узлового метода для больших схем (≥2000 ветвей): на них Кросс/МКР
+  // считаются минутами, а узловой — за секунды. Срабатывает один раз и только
+  // если пользователь ещё не выбрал метод вручную.
+  const nodalAutoSuggestedRef = useRef(false);
+  useEffect(() => {
+    if (calcModeManualRef.current || nodalAutoSuggestedRef.current) return;
+    if (branches.length >= 2000 && calcMode !== "nodal") {
+      nodalAutoSuggestedRef.current = true;
+      setCalcMode("nodal");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branches.length]);
   // Параметры расчёта
   const [solverTolerance, setSolverTolerance] = useState(0.01);
   const [solverMaxIter, setSolverMaxIter] = useState(2000);
@@ -1959,7 +1973,7 @@ export default function CadPage() {
       }
     }
     if (data.mineTypes) setMineTypes(data.mineTypes as BranchType[]);
-    if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
+    if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr" | "nodal");
     if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
     if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
@@ -2360,7 +2374,8 @@ export default function CadPage() {
   const handleSolveLocal = async () => {
     setVcSolving(true);
     setVcError(null);
-    addLog("info", `Запуск расчёта: метод ${calcMode === "cross" ? "Кросс" : "МКР"}, узлов ${nodes.length}, ветвей ${branches.length}`);
+    const methodName = calcMode === "cross" ? "Кросс" : calcMode === "mkr" ? "МКР" : "Узловой";
+    addLog("info", `Запуск расчёта: метод ${methodName}, узлов ${nodes.length}, ветвей ${branches.length}`);
     const zeroR = branches.filter(b => b.resistance <= 0);
     if (zeroR.length > 0) addLog("warn", `R=0 у ${zeroR.length} ветвей: ${zeroR.slice(0, 5).map(b => `${b.id}(L=${b.length.toFixed(0)},S=${b.area.toFixed(1)},P=${b.perimeter.toFixed(1)})`).join(", ")}${zeroR.length > 5 ? "..." : ""}`);
     const atmNodes = nodes.filter(n => n.atmosphereLink);
@@ -4543,11 +4558,17 @@ export default function CadPage() {
                   {/* Выбор метода в диалоге */}
                   <div className="mb-2">
                     <label className="text-[10px] text-gray-500 block mb-1">Метод расчёта</label>
-                    <select value={calcMode} onChange={e => setCalcMode(e.target.value as "cross" | "mkr")}
+                    <select value={calcMode} onChange={e => { calcModeManualRef.current = true; setCalcMode(e.target.value as "cross" | "mkr" | "nodal"); }}
                       className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1">
                       <option value="cross">Метод Кросса (Андрияшева–Кросса)</option>
                       <option value="mkr">МКР — Метод контурных расходов</option>
+                      <option value="nodal">Узловой (быстрый) — для больших схем</option>
                     </select>
+                    {calcMode === "nodal" && (
+                      <p className="text-[10px] text-emerald-600 mt-1 leading-tight">
+                        Быстрый расчёт больших сетей (тысячи ветвей) за секунды.
+                      </p>
+                    )}
                   </div>
                   <div className="mb-2">
                     <label className="text-[10px] text-gray-500 block mb-1">Макс. погрешность (Па)</label>
