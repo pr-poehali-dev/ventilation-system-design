@@ -4275,6 +4275,10 @@ export default function TopoCanvas(props: Props) {
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
           {(() => {
+          // Во время перетаскивания/вращения схемы не перерисовываем тяжёлый
+          // оверлей УО (на больших схемах это тормозит и даёт «шлейф»). Ветви
+          // на canvas двигаются дёшево, а символы вернутся сразу после отпускания.
+          if (panStart || rotStart) return null;
           const renderOneOv = (sym: typeof schemaSymbolsSorted[number]): React.ReactNode => {
             const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
@@ -4600,51 +4604,81 @@ export default function TopoCanvas(props: Props) {
             return { x: pt.sx + (sym.offsetX ?? 0), y: pt.sy + (sym.offsetY ?? 0) };
           };
           const clipR = Math.max(18, 40 * (fixedObjectScale ? 1 : view.scale / 0.4));
+          // Группируем символы по порядку горизонта ОДИН раз (вместо скана всех
+          // символов на каждый горизонт) — важно при большом числе перемычек.
+          const symsByOrder = new Map<number, typeof schemaSymbolsSorted[number][]>();
+          for (const sym of schemaSymbolsSorted) {
+            const ho = horizonOfOv(sym);
+            let arr = symsByOrder.get(ho);
+            if (!arr) { arr = []; symsByOrder.set(ho, arr); }
+            arr.push(sym);
+          }
           for (const ord of ordersOv) {
             seenOv.add(ord);
             const ordSyms: { x: number; y: number }[] = [];
-            for (const sym of schemaSymbolsSorted) {
-              if (horizonOfOv(sym) !== ord) continue;
+            for (const sym of (symsByOrder.get(ord) ?? [])) {
               const node = renderOneOv(sym);
               if (node) out.push(<g key={`ovsym-${sym.id}`}>{node}</g>);
               const p = symScreenPos(sym);
               if (p) ordSyms.push(p);
             }
-            const higher = branchesSorted.filter(x => x.hOrder < ord);
-            if (higher.length && ordSyms.length) {
-              const clipId = `occclip-${ord}`;
-              out.push(
-                <g key={`ovocc-${ord}`} style={{ pointerEvents: "none" }}>
-                  <defs>
-                    <clipPath id={clipId}>
-                      {ordSyms.map((p, i) => (
-                        <circle key={i} cx={p.x} cy={p.y} r={clipR} />
-                      ))}
-                    </clipPath>
-                  </defs>
-                  <g clipPath={`url(#${clipId})`}>
-                  {higher.map(({ branch: ob }) => {
-                    const f = projNodesMap.get(ob.fromId);
-                    const tN = projNodesMap.get(ob.toId);
-                    if (!f || !tN) return null;
-                    const obw = (ob.lineWidth && ob.lineWidth > 0) ? ob.lineWidth : branchWidth;
-                    const ow = Math.max((thinLines ? 1 : obw) * _branchObjSF, 1);
-                    const bb = (ob.lineBorder !== undefined && ob.lineBorder >= 0) ? ob.lineBorder : branchBorder;
-                    const bw = (thinLines || !(bb > 0)) ? 0 : Math.max(bb * _branchObjSF, 0.5);
-                    return (
-                      <g key={`ovoccl-${ob.id}`}>
-                        {bw > 0 && (
+            // Occluder нужен только для перекрытия символов этого слоя ветвями
+            // ВЫШЕ. Отбираем лишь те ветви, что реально проходят рядом с символом
+            // (bbox-проверка) — иначе на больших схемах это тысячи лишних линий.
+            if (ordSyms.length) {
+              let minSx = Infinity, minSy = Infinity, maxSx = -Infinity, maxSy = -Infinity;
+              for (const p of ordSyms) {
+                if (p.x < minSx) minSx = p.x; if (p.x > maxSx) maxSx = p.x;
+                if (p.y < minSy) minSy = p.y; if (p.y > maxSy) maxSy = p.y;
+              }
+              minSx -= clipR; minSy -= clipR; maxSx += clipR; maxSy += clipR;
+              const nearHigher: typeof branchesSorted = [];
+              for (const x of branchesSorted) {
+                if (x.hOrder >= ord) continue;
+                const f = projNodesMap.get(x.branch.fromId);
+                const tN = projNodesMap.get(x.branch.toId);
+                if (!f || !tN) continue;
+                // bbox сегмента пересекает bbox символов слоя?
+                if (Math.max(f.sx, tN.sx) < minSx || Math.min(f.sx, tN.sx) > maxSx) continue;
+                if (Math.max(f.sy, tN.sy) < minSy || Math.min(f.sy, tN.sy) > maxSy) continue;
+                nearHigher.push(x);
+                if (nearHigher.length > 400) break; // страховка от вырожденных случаев
+              }
+              if (nearHigher.length) {
+                const clipId = `occclip-${ord}`;
+                out.push(
+                  <g key={`ovocc-${ord}`} style={{ pointerEvents: "none" }}>
+                    <defs>
+                      <clipPath id={clipId}>
+                        {ordSyms.map((p, i) => (
+                          <circle key={i} cx={p.x} cy={p.y} r={clipR} />
+                        ))}
+                      </clipPath>
+                    </defs>
+                    <g clipPath={`url(#${clipId})`}>
+                    {nearHigher.map(({ branch: ob }) => {
+                      const f = projNodesMap.get(ob.fromId);
+                      const tN = projNodesMap.get(ob.toId);
+                      if (!f || !tN) return null;
+                      const obw = (ob.lineWidth && ob.lineWidth > 0) ? ob.lineWidth : branchWidth;
+                      const ow = Math.max((thinLines ? 1 : obw) * _branchObjSF, 1);
+                      const bb = (ob.lineBorder !== undefined && ob.lineBorder >= 0) ? ob.lineBorder : branchBorder;
+                      const bw = (thinLines || !(bb > 0)) ? 0 : Math.max(bb * _branchObjSF, 0.5);
+                      return (
+                        <g key={`ovoccl-${ob.id}`}>
+                          {bw > 0 && (
+                            <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
+                              stroke="#1f2937" strokeWidth={ow + bw * 2} strokeLinecap="round" opacity={0.85} />
+                          )}
                           <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
-                            stroke="#1f2937" strokeWidth={ow + bw * 2} strokeLinecap="round" opacity={0.85} />
-                        )}
-                        <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
-                          stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round" />
-                      </g>
-                    );
-                  })}
+                            stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round" />
+                        </g>
+                      );
+                    })}
+                    </g>
                   </g>
-                </g>
-              );
+                );
+              }
             }
           }
           for (const sym of schemaSymbolsSorted) {
