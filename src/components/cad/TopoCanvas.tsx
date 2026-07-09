@@ -406,6 +406,9 @@ export default function TopoCanvas(props: Props) {
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
   // Зум: ref для синхронного применения без батчинга
   const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
+  // Флаг «идёт зум колёсиком»: на время зума замораживаем тяжёлый слой УО.
+  const [isZooming, setIsZooming] = useState(false);
+  const zoomStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const symTouchRef = useRef<{ x: number; y: number } | null>(null);
   // Для определения двойного клика по УО
   const symLastClickRef = useRef<{ id: string; time: number } | null>(null);
@@ -679,6 +682,12 @@ export default function TopoCanvas(props: Props) {
       e.preventDefault();
       e.stopPropagation();
 
+      // Помечаем «идёт зум» и планируем снятие флага через паузу после последнего
+      // события колеса — на это время слой УО не перерисовывается (плавный зум).
+      setIsZooming(true);
+      if (zoomStopTimerRef.current) clearTimeout(zoomStopTimerRef.current);
+      zoomStopTimerRef.current = setTimeout(() => setIsZooming(false), 200);
+
       const rect = el.getBoundingClientRect();
       const px = e.clientX - rect.left;
       const py = e.clientY - rect.top;
@@ -724,7 +733,10 @@ export default function TopoCanvas(props: Props) {
     };
 
     el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
+    return () => {
+      el.removeEventListener("wheel", handler);
+      if (zoomStopTimerRef.current) clearTimeout(zoomStopTimerRef.current);
+    };
   }, []);
 
   // Refs для touch hit-test — заполняются ниже после объявления projNodes/projNodesMap
@@ -4275,10 +4287,10 @@ export default function TopoCanvas(props: Props) {
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
           {(() => {
-          // Во время перетаскивания/вращения схемы не перерисовываем тяжёлый
+          // Во время перетаскивания/вращения/зума схемы не перерисовываем тяжёлый
           // оверлей УО (на больших схемах это тормозит и даёт «шлейф»). Ветви
-          // на canvas двигаются дёшево, а символы вернутся сразу после отпускания.
-          if (panStart || rotStart) return null;
+          // на canvas двигаются дёшево, а символы вернутся сразу после остановки.
+          if (panStart || rotStart || isZooming) return null;
           const renderOneOv = (sym: typeof schemaSymbolsSorted[number]): React.ReactNode => {
             const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
