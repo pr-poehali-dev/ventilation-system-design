@@ -46,6 +46,7 @@ interface CanvasLayerProps {
   selectedNodeId: string | null;
   selectedNodeIds: Set<string>;
   hoverBranchId: string | null;
+  highlightHorizonId?: string | null;
 
   branchWidth: number;
   branchBorder: number;
@@ -188,6 +189,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         selectedNodeId: p.selectedNodeId,
         selectedNodeIds: p.selectedNodeIds,
         hoverBranchId: p.hoverBranchId,
+        highlightHorizonId: p.highlightHorizonId,
         branchWidth: p.branchWidth,
         branchBorder: p.branchBorder,
         thinLines: p.thinLines,
@@ -250,7 +252,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.is3D, props.zScale, props.xyScale, props.zLevel,
     props.selectedBranchId, props.selectedBranchIds,
     props.selectedNodeId, props.selectedNodeIds,
-    props.hoverBranchId,
+    props.hoverBranchId, props.highlightHorizonId,
     props.branchWidth, props.branchBorder, props.thinLines,
     props.colorByHorizon, props.showFlowArrows, props.flowDisplay,
     props.infoConfig, props.unitsConfig,

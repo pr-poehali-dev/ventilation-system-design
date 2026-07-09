@@ -448,6 +448,31 @@ export default function CadPage() {
     setHorizonDragIdx(null); setHorizonDragOverIdx(null);
   };
 
+  // Наведение на горизонт в списке слева → подсветка его ветвей на схеме
+  const [hoveredHorizonId, setHoveredHorizonId] = useState<string | null>(null);
+
+  // Быстрое перемещение горизонта на передний/задний план списка слоёв
+  const moveHorizonToFront = (id: string) => {
+    setHorizons(prev => {
+      const idx = prev.findIndex(h => h.id === id);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(idx, 1);
+      next.unshift(moved);
+      return next;
+    });
+  };
+  const moveHorizonToBack = (id: string) => {
+    setHorizons(prev => {
+      const idx = prev.findIndex(h => h.id === id);
+      if (idx < 0 || idx === prev.length - 1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(idx, 1);
+      next.push(moved);
+      return next;
+    });
+  };
+
   // Bounds "Общего вида" теперь вычисляются динамически в TopoCanvas
   // из проекций всех узлов — это корректно при любой проекции (план/фронт/профиль/ИЗО).
 
@@ -6895,6 +6920,7 @@ export default function CadPage() {
                       const isActive = activeHorizonId === h.id;
                       const isOverview = h.id === OVERVIEW_HORIZON_ID;
                       const isDragOver = horizonDragOverIdx === hIdx;
+                      const isHovered = hoveredHorizonId === h.id;
                       return (
                         <div key={h.id}
                           draggable
@@ -6902,10 +6928,12 @@ export default function CadPage() {
                           onDragOver={(e) => handleHorizonDragOver(e, hIdx)}
                           onDrop={() => handleHorizonDrop(hIdx)}
                           onDragEnd={() => { setHorizonDragIdx(null); setHorizonDragOverIdx(null); }}
+                          onMouseEnter={() => setHoveredHorizonId(h.id)}
+                          onMouseLeave={() => setHoveredHorizonId(prev => prev === h.id ? null : prev)}
                           className="border rounded"
                           style={{
-                            background: isActive ? "#eff6ff" : "white",
-                            borderColor: isDragOver ? "#2563eb" : isActive ? "#3b82f6" : "#d1d5db",
+                            background: isHovered ? "#fffbeb" : isActive ? "#eff6ff" : "white",
+                            borderColor: isDragOver ? "#2563eb" : isHovered ? "#f59e0b" : isActive ? "#3b82f6" : "#d1d5db",
                             opacity: horizonDragIdx === hIdx ? 0.5 : 1,
                             outline: isDragOver ? "2px solid #93c5fd" : undefined,
                           }}>
@@ -6941,6 +6969,22 @@ export default function CadPage() {
                             <span className="text-[10px] text-gray-400 w-7 text-center" title="Ветвей на горизонте">
                               {usedCount}
                             </span>
+                            {!isOverview && (
+                              <button onClick={() => moveHorizonToFront(h.id)}
+                                disabled={hIdx === 0}
+                                className="w-5 h-5 flex items-center justify-center hover:bg-blue-100 rounded flex-shrink-0 disabled:opacity-30"
+                                title="На передний план (поверх всех)">
+                                <Icon name="ChevronsUp" size={12} className="text-gray-600" />
+                              </button>
+                            )}
+                            {!isOverview && (
+                              <button onClick={() => moveHorizonToBack(h.id)}
+                                disabled={hIdx === horizons.length - 1}
+                                className="w-5 h-5 flex items-center justify-center hover:bg-blue-100 rounded flex-shrink-0 disabled:opacity-30"
+                                title="На задний план (под всеми)">
+                                <Icon name="ChevronsDown" size={12} className="text-gray-600" />
+                              </button>
+                            )}
                             {!isOverview && (
                               <button onClick={() => removeHorizon(h.id)}
                                 className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
@@ -8125,6 +8169,7 @@ export default function CadPage() {
               flowColorHue={flowColorHue}
               workPlane={workPlane}
               horizons={horizons}
+              highlightHorizonId={hoveredHorizonId}
               branchWidth={branchWidth}
               branchBorder={branchBorder}
               thinLines={thinLines}

@@ -76,6 +76,8 @@ interface Props {
   workPlane?: WorkPlane | null;
   /** Список горизонтов для фильтрации/окрашивания ветвей. */
   horizons?: Horizon[];
+  /** ID горизонта для временной подсветки его ветвей (наведение в списке слоёв). */
+  highlightHorizonId?: string | null;
   /** Базовая толщина линии ветви (px), общая настройка. По умолчанию 2.5. */
   branchWidth?: number;
   /** Толщина обводки ветви (px), 0 = без обводки. */
@@ -249,7 +251,7 @@ export default function TopoCanvas(props: Props) {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
-    horizons, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, scaleLimits,
+    horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, scaleLimits,
     bulkheadScale = 150,
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false,
@@ -2451,6 +2453,7 @@ export default function TopoCanvas(props: Props) {
           selectedNodeId={selectedNodeId}
           selectedNodeIds={selectedNodeIds ?? EMPTY_SET}
           hoverBranchId={hoverBranchId}
+          highlightHorizonId={highlightHorizonId}
           branchWidth={branchWidth}
           branchBorder={branchBorder}
           thinLines={thinLines}
@@ -2701,6 +2704,22 @@ export default function TopoCanvas(props: Props) {
                 x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                 stroke={col} strokeWidth={w + borderW * 2 + 6 * objSF}
                 strokeLinecap="round" opacity="0.7" />
+            );
+          }) : null;
+
+          // ── ПОДСВЕТКА ГОРИЗОНТА (наведение в списке слоёв слева) ──────────
+          const highlightPass = highlightHorizonId ? branchesSorted.map(({ branch: b }) => {
+            if (b.horizonId !== highlightHorizonId) return null;
+            const from = projNodesMap.get(b.fromId);
+            const to   = projNodesMap.get(b.toId);
+            if (!from || !to) return null;
+            const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+            const w = (thinLines ? 1 : bw) * objSF;
+            return (
+              <line key={`hl-${b.id}`}
+                x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                stroke="#f59e0b" strokeWidth={w + 10 * objSF}
+                strokeLinecap="round" opacity="0.55" />
             );
           }) : null;
 
@@ -3192,7 +3211,7 @@ export default function TopoCanvas(props: Props) {
               </g>
             );
           }
-          return <>{comparePass}{posOuterPass}{layered}</>;
+          return <>{comparePass}{posOuterPass}{highlightPass}{layered}</>;
         })()}
 
         {/* Превью создания ветви */}

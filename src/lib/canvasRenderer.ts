@@ -73,6 +73,8 @@ export interface CanvasRenderOptions {
   selectedNodeId: string | null;
   selectedNodeIds: Set<string>;
   hoverBranchId: string | null;
+  /** ID горизонта для временной подсветки его ветвей (наведение в списке слоёв). */
+  highlightHorizonId?: string | null;
 
   branchWidth: number;
   branchBorder: number;
@@ -172,47 +174,73 @@ function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: 
 // Ключ — ссылочное равенство: если массив/map не изменился → возвращаем кэш O(1).
 // При pan/zoom projNodesMap пересоздаётся → кэш сбрасывается автоматически.
 // При анимации потока projNodesMap НЕ меняется → кэш переиспользуется.
-type SortedBranch = { b: TopoBranch; from: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; to: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; depth: number };
+type SortedBranch = { b: TopoBranch; from: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; to: { sx: number; sy: number; depth: number; node: TopoNode } | undefined; depth: number; hOrder: number };
 let _sortedBranchesCache: SortedBranch[] = [];
-let _sortedBranchesKey: { visibleBranches: TopoBranch[]; projNodesMap: Map<string, unknown> } = { visibleBranches: [], projNodesMap: new Map() };
+let _sortedBranchesKey: { visibleBranches: TopoBranch[]; projNodesMap: Map<string, unknown>; horizonOrderMap: Map<string, number> } = { visibleBranches: [], projNodesMap: new Map(), horizonOrderMap: new Map() };
 // Эпоха порядка глубины: меняется только при смене масштаба/ракурса/координат,
 // но НЕ при перетаскивании. Пока эпоха та же — порядок сортировки не меняется,
 // и при pan мы лишь обновляем ссылки from/to без повторной O(N·logN) сортировки.
 let _sortedBranchesEpoch: number | undefined;
 
+// Кэш карты порядка горизонтов по ссылке массива horizons → стабильная ссылка,
+// пока список горизонтов не изменился (важно для кэша сортировки ветвей).
+let _horizonOrderKey: Horizon[] | null = null;
+let _horizonOrderCache: Map<string, number> = new Map();
+function getHorizonOrderMap(horizons: Horizon[]): Map<string, number> {
+  if (_horizonOrderKey === horizons) return _horizonOrderCache;
+  const m = new Map<string, number>();
+  (horizons ?? []).forEach((h, i) => m.set(h.id, i));
+  _horizonOrderKey = horizons;
+  _horizonOrderCache = m;
+  return m;
+}
+
 function getSortedBranches(
   visibleBranches: TopoBranch[],
   projNodesMap: Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>,
+  horizonOrderMap: Map<string, number>,
   sortEpoch?: number,
 ): SortedBranch[] {
-  if (_sortedBranchesKey.visibleBranches === visibleBranches && _sortedBranchesKey.projNodesMap === projNodesMap) {
+  if (
+    _sortedBranchesKey.visibleBranches === visibleBranches &&
+    _sortedBranchesKey.projNodesMap === projNodesMap &&
+    _sortedBranchesKey.horizonOrderMap === horizonOrderMap
+  ) {
     return _sortedBranchesCache;
   }
-  // БЫСТРАЯ ПАНОРАМА: та же эпоха глубины и тот же набор ветвей →
-  // порядок сохраняется, обновляем только from/to (сдвиг offset) без сортировки.
+  // БЫСТРАЯ ПАНОРАМА: та же эпоха глубины, тот же набор ветвей и порядок
+  // горизонтов → порядок сохраняется, обновляем только from/to (сдвиг offset).
   if (
     sortEpoch !== undefined &&
     sortEpoch === _sortedBranchesEpoch &&
     _sortedBranchesKey.visibleBranches === visibleBranches &&
+    _sortedBranchesKey.horizonOrderMap === horizonOrderMap &&
     _sortedBranchesCache.length === visibleBranches.length
   ) {
-    _sortedBranchesKey = { visibleBranches, projNodesMap };
+    _sortedBranchesKey = { visibleBranches, projNodesMap, horizonOrderMap };
     _sortedBranchesCache = _sortedBranchesCache.map((e) => ({
       b: e.b,
       from: projNodesMap.get(e.b.fromId),
       to: projNodesMap.get(e.b.toId),
       depth: e.depth,
+      hOrder: e.hOrder,
     }));
     return _sortedBranchesCache;
   }
-  _sortedBranchesKey = { visibleBranches, projNodesMap };
+  _sortedBranchesKey = { visibleBranches, projNodesMap, horizonOrderMap };
   _sortedBranchesEpoch = sortEpoch;
   _sortedBranchesCache = visibleBranches.map((b) => {
     const from = projNodesMap.get(b.fromId);
     const to   = projNodesMap.get(b.toId);
     const depth = from && to ? (from.depth + to.depth) / 2 : 0;
-    return { b, from, to, depth };
-  }).sort((a, b) => a.depth - b.depth);
+    const hOrder = b.horizonId ? (horizonOrderMap.get(b.horizonId) ?? 9999) : 9999;
+    return { b, from, to, depth, hOrder };
+  }).sort((a, b) => {
+    // Главный критерий — порядок горизонта (слои как в Фотошопе): больший hOrder ниже.
+    if (a.hOrder !== b.hOrder) return b.hOrder - a.hOrder;
+    // Внутри горизонта — по глубине 3D.
+    return a.depth - b.depth;
+  });
   return _sortedBranchesCache;
 }
 
@@ -341,6 +369,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
+    highlightHorizonId = null,
     xyScale,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
     // чтобы при случайном обращении к ним не было ReferenceError.
@@ -396,9 +425,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     drawGrid2D(ctx, width, height, sc, view.offsetX, view.offsetY);
   }
 
-  // ─── Сортировка ветвей по глубине (painter's algorithm) ───────────────────
+  // ─── Порядок горизонтов (слои как в Фотошопе): индекс в списке = z-order ───
+  // Стабильная ссылка (кэш по ссылке массива horizons) — нужна для кэша сортировки.
+  const horizonOrderMap = getHorizonOrderMap(_horizons);
+
+  // ─── Сортировка ветвей: сначала по слою-горизонту, затем по глубине ────────
   // Используем кэш: при анимации потока projNodesMap не меняется → O(1) вместо O(N log N)
-  const allSorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>, opts.sortEpoch);
+  const allSorted = getSortedBranches(visibleBranches, projNodesMap as Map<string, { sx: number; sy: number; depth: number; node: TopoNode }>, horizonOrderMap, opts.sortEpoch);
 
   // ─── Viewport culling: отсекаем ветви вне экрана (с запасом 64px) ──────────
   const CULL_MARGIN = 64;
@@ -410,6 +443,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const minY = Math.min(from.sy, to.sy), maxY = Math.max(from.sy, to.sy);
     return maxX >= cullMinX && minX <= cullMaxX && maxY >= cullMinY && minY <= cullMaxY;
   });
+
+  // ─── Группировка по слоям-горизонтам (как в Фотошопе) ─────────────────────
+  // sorted уже упорядочен: сначала нижние горизонты, потом верхние. Внутри слоя
+  // рисуем border, затем fill (цельные стыки), а слои идут по порядку — поэтому
+  // окантовка/заливка/УО верхнего горизонта не перекрываются нижним.
+  const layerGroups: SortedBranch[][] = [];
+  {
+    let gi = 0;
+    while (gi < sorted.length) {
+      const curOrder = sorted[gi].hOrder;
+      const start = gi;
+      while (gi < sorted.length && sorted[gi].hOrder === curOrder) gi++;
+      layerGroups.push(sorted.slice(start, gi));
+    }
+  }
 
   // ─── ВЕТВИ ────────────────────────────────────────────────────────────────
   // Вычисляем параметры ОДИН РАЗ для каждой ветви и сохраняем в Map.
@@ -514,10 +562,28 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.globalAlpha = 1;
   }
 
-  // ── ПРОХОД 1: только border (обводка) всех ветвей ─────────────────────────
-  // Рисуем border отдельным проходом ДО всех fill, чтобы fill соседних ветвей
-  // перекрывал торцы border — схема выглядит цельной без разрывов в узлах
-  for (const { b } of sorted) {
+  // ── ПОДСВЕТКА ГОРИЗОНТА (наведение в списке слоёв слева) ─────────────────
+  if (highlightHorizonId) {
+    ctx.globalAlpha = 0.55;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#f59e0b";
+    for (const { b } of sorted) {
+      if (b.horizonId !== highlightHorizonId) continue;
+      const p = bParamsMap.get(b.id);
+      if (!p) continue;
+      ctx.lineWidth = p.w + 10;
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ── ВЕТВИ ПО СЛОЯМ-ГОРИЗОНТАМ ─────────────────────────────────────────────
+  // Для каждого горизонта: сначала border всей группы, затем fill всей группы.
+  // Это сохраняет цельные стыки в узлах ВНУТРИ горизонта и одновременно даёт
+  // корректный z-order МЕЖДУ горизонтами (верхний слой поверх нижнего).
+  for (const group of layerGroups) {
+  // ── ПРОХОД 1: только border (обводка) ветвей слоя ─────────────────────────
+  for (const { b } of group) {
     const p = bParamsMap.get(b.id);
     if (!p || p.bwBorder === 0) continue;
     // Опрокидывание — синяя аура под border
@@ -572,12 +638,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.setLineDash(p.isLeakage ? [6, 4] : []);
     ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
   }
-  // Сброс после прохода 1
+  // Сброс после прохода 1 (border) внутри слоя
   ctx.globalAlpha = 1;
   ctx.setLineDash([]);
 
-  // ── ПРОХОД 2: fill + декор всех ветвей ────────────────────────────────────
-  for (const { b } of sorted) {
+  // ── ПРОХОД 2: fill + декор ветвей слоя ────────────────────────────────────
+  for (const { b } of group) {
     const p = bParamsMap.get(b.id);
     if (!p) continue;
     const { isSel, isDead, isLeakage, Q, V, overV,
@@ -841,6 +907,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     void ux; void uy;
   }
+  } // конец цикла по слоям-горизонтам
+  // Сброс после всех слоёв
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
 
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {
