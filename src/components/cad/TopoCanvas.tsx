@@ -1598,8 +1598,9 @@ export default function TopoCanvas(props: Props) {
     return m;
   }, [horizons]);
 
-  // Сортировка ветвей: сначала по глубине (3D), затем по иерархии горизонтов (как в Фотошопе)
-  // Горизонт с меньшим индексом в списке рисуется ПОВЕРХ остальных
+  // Сортировка ветвей: сначала по иерархии горизонтов (как слои в Фотошопе / Аэросети),
+  // затем по глубине 3D внутри одного горизонта.
+  // Горизонт выше в списке слева (меньший индекс) рисуется ПОВЕРХ остальных.
   const branchesSorted = useMemo(() => [...visibleBranches].map((b) => {
     const from = projNodesMap.get(b.fromId);
     const to = projNodesMap.get(b.toId);
@@ -1608,9 +1609,10 @@ export default function TopoCanvas(props: Props) {
     const hOrder = b.horizonId ? (horizonOrderMap.get(b.horizonId) ?? 9999) : 9999;
     return { branch: b, depth, hOrder };
   }).sort((a, b) => {
-    // Сначала по глубине 3D, затем по иерархии горизонтов (больший hOrder = ниже)
-    if (a.depth !== b.depth) return a.depth - b.depth;
-    return b.hOrder - a.hOrder; // меньший индекс горизонта рисуется поверх
+    // Главный критерий — порядок горизонта в списке слоёв (больший hOrder рисуется первым = ниже)
+    if (a.hOrder !== b.hOrder) return b.hOrder - a.hOrder;
+    // Внутри одного горизонта — по глубине 3D (дальние рисуются первыми = ниже)
+    return a.depth - b.depth;
   }), [visibleBranches, projNodesMap, horizonOrderMap]);
 
   const nodesSorted = useMemo(
