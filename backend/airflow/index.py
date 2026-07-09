@@ -1642,29 +1642,53 @@ def solve_nodal(nodes_in, branches_in, options, normal_flows=None, surface_temp=
         H_char = max(H_char, abs(e.get("naturalDraft", 0.0)))
     dp_floor = max(1e-9, 1e-8 * H_char)
 
-    # Расход ветвей-вентиляторов с прошлой итерации — для расчёта их напора
-    # (лаг по Q, классический устойчивый приём). Направление напора известно
-    # заранее (вентилятор нагнетает в направлении a→b, при реверсе — b→a),
-    # поэтому знак берём по fdir, а НЕ по текущему dP (это была причина, по
-    # которой давление узла «убивало» вентилятор и расчёт схлопывался в 0).
+    # ── Напор вентиляторов как ФИКСИРОВАННЫЙ источник давления ────────────────
+    # Ключ к устойчивости: вентилятор моделируется постоянным источником напора
+    # в направлении нагнетания (fdir), встроенным в движущий перепад. НЕ зависит
+    # от знака текущего dP и НЕ обнуляется при опрокидывании во время итераций —
+    # именно «переключение» напора туда-сюда раньше вызывало осцилляции, застой
+    # линейного поиска (λ→0) и нарушение баланса масс. Для curve-вентилятора
+    # рабочую точку уточняем по расходу с предыдущей итерации (лаг с демпфированием).
+    fan_dir = {}
+    fan_Hfix = _np.zeros(m, dtype=_np.float64)   # источник напора ветви (Па)
     Q_fan_prev = {k: 0.0 for k in fan_positions}
+    for k in fan_positions:
+        e = solve_edges[k]
+        fan_dir[k] = -1.0 if (e.get("fanType", "ГВУ") != "ВМП" and e.get("fanReverse")) else 1.0
+
+    def _update_fan_source(damp=1.0):
+        """Пересчёт напорного источника вентиляторов по текущему расходу (для
+        curve — характеристика H(Q); для constant — практически постоянный)."""
+        for k in fan_positions:
+            e = solve_edges[k]
+            q_fan = abs(Q_fan_prev.get(k, 0.0))
+            h_new = fan_dir[k] * fan_H(e, q_fan)
+            fan_Hfix[k] = (1.0 - damp) * fan_Hfix[k] + damp * h_new
+
+    _update_fan_source(1.0)
+
+    fan_slope = _np.zeros(m, dtype=_np.float64)   # |dH/dQ| curve-вентилятора
+
+    def _update_fan_slope():
+        for k in fan_positions:
+            e = solve_edges[k]
+            fan_slope[k] = fan_dH(e, abs(Q_fan_prev.get(k, 0.0)))
+
+    _update_fan_slope()
 
     def _branch_state(P_vec):
         """По давлениям узлов P → (Q ветвей, эффективный dP, проводимость g).
         Q и g согласованы по одному adp_safe (устойчивый Ньютон)."""
         Pa = _np.where(ia >= 0, P_vec[_np.clip(ia, 0, n_nodes - 1)], 0.0)
         Pb = _np.where(ib >= 0, P_vec[_np.clip(ib, 0, n_nodes - 1)], 0.0)
-        Hsrc = Hnat.copy()
-        for k in fan_positions:
-            e = solve_edges[k]
-            fdir = -1.0 if (e.get("fanType", "ГВУ") != "ВМП" and e.get("fanReverse")) else 1.0
-            # Напор по модулю расхода в направлении нагнетания вентилятора.
-            q_fan = abs(Q_fan_prev.get(k, 0.0))
-            Hsrc[k] += fdir * fan_H(e, q_fan)
-        dPe = Pa - Pb + Hsrc
+        dPe = Pa - Pb + Hnat + fan_Hfix
         adp_safe = _np.maximum(_np.abs(dPe), dp_floor)
         Qb = _np.sign(dPe) * _np.sqrt(adp_safe / R_arr)
-        gb = 1.0 / (2.0 * _np.sqrt(R_arr * adp_safe))
+        # Проводимость ветви g = dQ/dΔP. Для curve-вентилятора наклон
+        # характеристики |dH/dQ| добавляет «сопротивление» → знаменатель растёт,
+        # что стабилизирует крутые кривые (иначе Ньютон осциллирует).
+        denom = 2.0 * _np.sqrt(R_arr * adp_safe) + fan_slope
+        gb = 1.0 / denom
         return Qb, dPe, gb
 
     def _residual(P_vec):
@@ -1680,6 +1704,12 @@ def solve_nodal(nodes_in, branches_in, options, normal_flows=None, surface_temp=
     Q = _branch_state(P)[0]
     F, _ = _residual(P)
     res_norm = float(_np.linalg.norm(F))
+    # Лучшее найденное решение (по минимальному дисбалансу) — возвращаем его,
+    # даже если хвост итераций слегка «дрожит» вокруг решения.
+    best_imb = float(_np.max(_np.abs(F))) if n_nodes else 0.0
+    best_P = P.copy(); best_Q = Q.copy(); best_F = F.copy()
+    fan_damp = 1.0   # шаг обновления напора вентилятора (адаптивный)
+    stall = 0        # счётчик итераций без улучшения баланса
 
     for it in range(1, max_iter + 1):
         _Qb, _dPe, g = _branch_state(P)
@@ -1698,45 +1728,60 @@ def solve_nodal(nodes_in, branches_in, options, normal_flows=None, surface_temp=
         if not _np.all(_np.isfinite(step)):
             step = _np.nan_to_num(step, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # ── Линейный поиск: подбираем λ так, чтобы норма невязки убывала ─────
-        # (глобализация Ньютона — гарантирует сходимость и корректный баланс).
+        # ── Линейный поиск: выбираем λ с МИНИМАЛЬНОЙ нормой невязки ──────────
+        # (глобализация Ньютона). Берём лучший из пробных шагов, а не первый
+        # уменьшающий — устойчивее к нелинейности вентиляторов.
+        best_lam = 1.0; best_rn = None; best_res = None
         lam = 1.0
-        P_new = P + lam * step
-        F_new, Q_new = _residual(P_new)
-        rn_new = float(_np.linalg.norm(F_new))
-        bt = 0
-        while rn_new > res_norm and bt < 20:
+        for _ls in range(24):
+            P_try = P + lam * step
+            F_try, Q_try = _residual(P_try)
+            rn_try = float(_np.linalg.norm(F_try))
+            if best_rn is None or rn_try < best_rn:
+                best_rn = rn_try; best_lam = lam; best_res = (P_try, F_try, Q_try)
+            if rn_try < res_norm:
+                break                     # достаточно: норма уже убыла
             lam *= 0.5
-            P_new = P + lam * step
-            F_new, Q_new = _residual(P_new)
-            rn_new = float(_np.linalg.norm(F_new))
-            bt += 1
+        P_new, F_new, Q_new = best_res
+        rn_new = best_rn
 
-        max_dp = float(_np.max(_np.abs(lam * step))) if n_nodes else 0.0
+        max_dp = float(_np.max(_np.abs(best_lam * step))) if n_nodes else 0.0
         max_dq = float(_np.max(_np.abs(Q_new - Q))) if m else 0.0
         P = P_new
         F = F_new
         Q = Q_new
         res_norm = rn_new
 
-        # Обновляем расход вентиляторов для их напора на следующей итерации.
-        # Знак — в направлении нагнетания (fdir), чтобы напор считался по |Q|.
+        # Обновляем напорный источник вентиляторов (для curve — по новому Q).
+        # Демпфирование адаптивное: если баланс перестал улучшаться (осцилляция
+        # рабочей точки на изломе характеристики у qMax), уменьшаем шаг источника
+        # — это гарантированно гасит «дрожание» и доводит расчёт до сходимости.
         for k in fan_positions:
-            e = solve_edges[k]
-            fdir = -1.0 if (e.get("fanType", "ГВУ") != "ВМП" and e.get("fanReverse")) else 1.0
-            Q_fan_prev[k] = Q[k] * fdir
+            Q_fan_prev[k] = Q[k] * fan_dir[k]
+        _update_fan_source(fan_damp)
+        _update_fan_slope()
+        # После смены источника невязка меняется — синхронизируем.
+        F, Q = _residual(P)
+        res_norm = float(_np.linalg.norm(F))
 
-        # Критерий остановки — по ФАКТИЧЕСКОМУ балансу масс в узлах (|F|_∞),
-        # а НЕ по величине шага: возле dP≈0 первый шаг Ньютона мал из-за
-        # большой проводимости, и проверка по шагу давала ложную сходимость.
         cur_imb = float(_np.max(_np.abs(F))) if n_nodes else 0.0
+        if cur_imb < best_imb - 1e-9:
+            best_imb = cur_imb
+            best_P = P.copy(); best_Q = Q.copy(); best_F = F.copy()
+            stall = 0
+        else:
+            stall += 1
+            if stall >= 2 and fan_positions:
+                fan_damp = max(0.02, fan_damp * 0.5)   # сильнее демпфируем
+                stall = 0
+
+        # Критерий остановки — по ФАКТИЧЕСКОМУ балансу масс в узлах (|F|_∞).
         q_scale = max(1.0, float(_np.max(_np.abs(Q))) if m else 1.0)
         if it >= 2 and cur_imb < max(0.01, 1e-4 * q_scale) and max_dq < max(tol, 0.05):
             break
-        # Досрочный выход, если линейный поиск полностью «застрял» (λ→0) при уже
-        # приемлемом балансе — дальше прогресса не будет.
-        if bt >= 20 and cur_imb < 0.5:
-            break
+
+    # Возвращаем лучшее найденное решение (минимальный дисбаланс масс).
+    P = best_P; Q = best_Q; F = best_F
 
     # Сходимость определяем по фактическому балансу масс в узлах (|F|_∞),
     # а не только по величине шага — иначе «застревание» линейного поиска
