@@ -1615,6 +1615,23 @@ export default function TopoCanvas(props: Props) {
     return a.depth - b.depth;
   }), [visibleBranches, projNodesMap, horizonOrderMap]);
 
+  // Условные обозначения (УО) сортируем по порядку горизонта привязанной ветви,
+  // чтобы они переупорядочивались вместе с ветвями при перемещении горизонта:
+  // УО верхнего горизонта рисуется поверх УО нижних (стабильная сортировка
+  // сохраняет исходный порядок внутри одного горизонта).
+  const schemaSymbolsSorted = useMemo(() => {
+    const branchHorizonOrder = (branchId: string | null): number => {
+      if (!branchId) return 9999;
+      const br = branches.find(b => b.id === branchId);
+      if (!br || !br.horizonId) return 9999;
+      return horizonOrderMap.get(br.horizonId) ?? 9999;
+    };
+    return schemaSymbols
+      .map((sym, i) => ({ sym, i, ord: branchHorizonOrder(sym.branchId) }))
+      .sort((a, b) => (a.ord !== b.ord ? b.ord - a.ord : a.i - b.i))
+      .map(x => x.sym);
+  }, [schemaSymbols, branches, horizonOrderMap]);
+
   const nodesSorted = useMemo(
     () => [...projNodes].sort((a, b) => a.depth - b.depth),
     [projNodes]
@@ -3153,7 +3170,29 @@ export default function TopoCanvas(props: Props) {
             </g>
           );
         });
-          return <>{comparePass}{posOuterPass}{borderPass}{fillPass}</>;
+          // ── СБОРКА ПО СЛОЯМ-ГОРИЗОНТАМ (как слои Photoshop) ─────────────
+          // border и fill выровнены по индексу с branchesSorted (которая уже
+          // отсортирована так, что верхние горизонты идут последними).
+          // Группируем по горизонту: внутри слоя сначала ВСЕ border, затем ВСЕ
+          // fill (чтобы стыки в узлах были цельными), а сами слои идут по порядку
+          // горизонтов — поэтому окантовка верхнего горизонта не перекрывается
+          // заливкой нижнего.
+          const layered: React.ReactNode[] = [];
+          let gi = 0;
+          while (gi < branchesSorted.length) {
+            const curOrder = branchesSorted[gi].hOrder;
+            const start = gi;
+            while (gi < branchesSorted.length && branchesSorted[gi].hOrder === curOrder) gi++;
+            const borderGroup = borderPass.slice(start, gi);
+            const fillGroup = fillPass.slice(start, gi);
+            layered.push(
+              <g key={`hlayer-${curOrder}-${start}`}>
+                {borderGroup}
+                {fillGroup}
+              </g>
+            );
+          }
+          return <>{comparePass}{posOuterPass}{layered}</>;
         })()}
 
         {/* Превью создания ветви */}
@@ -3207,7 +3246,7 @@ export default function TopoCanvas(props: Props) {
         })()}
 
         {/* ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ──────────────────────────── */}
-        {!useCanvas && schemaSymbols.map(sym => {
+        {!useCanvas && schemaSymbolsSorted.map(sym => {
           const isBulkheadEarly = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           // Перемычки рисуются геометрически — не требуют lt из LEGEND_TYPES
@@ -4158,7 +4197,7 @@ export default function TopoCanvas(props: Props) {
           onMouseUp={(e) => onMouseUpCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
-          {schemaSymbols.map(sym => {
+          {schemaSymbolsSorted.map(sym => {
             const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
             if (!lt && !isBulkheadOv) return null;
