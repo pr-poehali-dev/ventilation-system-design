@@ -1055,6 +1055,37 @@ export default function CadPage() {
 
   // Активировать инструмент размещения символа
   const handlePickSymbol = (typeId: string) => {
+    // Ограничение: на схеме может быть только ОДИН очаг пожара и ОДНО место взрыва.
+    // Иначе повторная установка приведёт к некорректному расчёту.
+    if (typeId === "fire_source") {
+      const existing = schemaSymbols.filter(s => FIRE_SYMBOL_IDS.has(s.typeId));
+      if (existing.length > 0) {
+        const ok = window.confirm(
+          "На схеме уже установлен очаг пожара.\n\nМожно установить только один очаг пожара — иначе расчёт будет некорректным.\n\nУбрать установленный очаг пожара и установить новый?"
+        );
+        if (!ok) return;
+        existing.forEach(s => {
+          if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 });
+          removeSymbol(s.id);
+        });
+        setFireResult(null);
+        setFireCalcDone(false);
+      }
+    } else if (typeId === "explosion_source") {
+      const existing = schemaSymbols.filter(s => EXPLOSION_SYMBOL_IDS.has(s.typeId));
+      if (existing.length > 0) {
+        const ok = window.confirm(
+          "На схеме уже установлено место взрыва.\n\nМожно установить только одно место взрыва — иначе расчёт будет некорректным.\n\nУбрать установленное место взрыва и установить новое?"
+        );
+        if (!ok) return;
+        existing.forEach(s => {
+          if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
+          removeSymbol(s.id);
+        });
+        setExplosionResult(null);
+        setExplosionCalcDone(false);
+      }
+    }
     setActiveSymbolTypeId(typeId);
     setTool("symbol");
   };
