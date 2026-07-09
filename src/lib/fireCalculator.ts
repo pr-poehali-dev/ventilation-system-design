@@ -429,6 +429,7 @@ export function calcFireMode(
   branches: TopoBranch[],
   nodes: TopoNode[],
   ambientTemp_C = 20,
+  smokeVisThreshold = 50,
 ): FireCalculationResult {
   const log: string[] = [];
   const resultMap = new Map<string, FireBranchResult>();
@@ -672,7 +673,7 @@ export function calcFireMode(
   // дальше идёт практически чистый воздух, и фронт задымления ОБРЫВАЕТСЯ.
   // Это гарантирует связность: задымлены только ветви на непрерывном пути от
   // очага, где концентрация ещё опасна (никаких «оторванных» задымлённых ветвей).
-  const SMOKE_VIS_THRESHOLD = 50; // м — граница различимого задымления
+  const SMOKE_VIS_THRESHOLD = smokeVisThreshold > 0 ? smokeVisThreshold : 50; // м — граница различимого задымления
   const SMOKE_DENS_THRESHOLD = 3 / SMOKE_VIS_THRESHOLD; // соответствующая плотность
 
   while (pq.length > 0) {

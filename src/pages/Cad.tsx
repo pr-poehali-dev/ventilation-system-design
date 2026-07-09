@@ -849,6 +849,9 @@ export default function CadPage() {
   // Максимум шкалы (мин) и шаг — задаётся пользователем
   const [smokeMaxTime, setSmokeMaxTime] = useState(60);
   const [smokeTimeStep, setSmokeTimeStep] = useState(1);
+  // Порог видимости задымления (м): дым распространяется, пока видимость в дыму
+  // ниже порога; дальше — чистый воздух. Настраивается под нормативы.
+  const [smokeVisThreshold, setSmokeVisThreshold] = useState(50);
   // Анимация воспроизведения шкалы
   const [smokeAnimating, setSmokeAnimating] = useState(false);
   const smokeAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1624,6 +1627,7 @@ export default function CadPage() {
     scaleLimitsEnabled,
     bulkheadScale,
     fanScale,
+    smokeVisThreshold,
   });
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
@@ -1987,6 +1991,7 @@ export default function CadPage() {
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.bulkheadScale !== undefined) setBulkheadScale(data.bulkheadScale as number);
     if (data.fanScale !== undefined) setFanScale(data.fanScale as number);
+    if (data.smokeVisThreshold !== undefined) setSmokeVisThreshold(data.smokeVisThreshold as number);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
     if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
@@ -3768,7 +3773,7 @@ export default function CadPage() {
                   return q !== undefined ? { ...b, flow: q } : b;
                 }));
 
-                const result = calcFireMode(branchesForFire, nodes, AMBIENT_TEMP);
+                const result = calcFireMode(branchesForFire, nodes, AMBIENT_TEMP, smokeVisThreshold);
                 // Записываем вычисленные параметры обратно в ветви
                 setBranches(prev => prev.map(b => {
                   const fr = result.branches.get(b.id);
@@ -8526,10 +8531,27 @@ export default function CadPage() {
                     ? Math.min(1, smokedLen / branch.length)
                     : 1;
 
-                  // Используем flowSign из результата расчёта, а не branch.flow из React state
-                  // (React state обновляется асинхронно и может не совпадать с потоком на момент расчёта)
-                  const flowSign = fr.flowSign ?? (((branch.flow ?? 0) >= 0) ? 1 : -1);
-                  if (flowSign >= 0) {
+                  // ВХОДНОЙ узел ветви — тот, куда дым пришёл раньше (по времени
+                  // задымления узлов). Заливка ВСЕГДА растёт ОТ входного узла по
+                  // направлению струи — это гарантирует НЕПРЕРЫВНОСТЬ фронта, в т.ч.
+                  // на опрокинутых ветвях (дым не «перескакивает» на другой конец).
+                  const nat = fireResult.nodeArrivalTime;
+                  const tFrom = nat?.get(branch.fromId);
+                  const tTo = nat?.get(branch.toId);
+                  let inputIsFrom: boolean;
+                  if (tFrom !== undefined && tTo !== undefined) {
+                    // Вход — узел, задымлённый раньше
+                    inputIsFrom = tFrom <= tTo;
+                  } else if (tFrom !== undefined) {
+                    inputIsFrom = true;
+                  } else if (tTo !== undefined) {
+                    inputIsFrom = false;
+                  } else {
+                    // fallback на знак потока из расчёта
+                    inputIsFrom = (fr.flowSign ?? (((branch.flow ?? 0) >= 0) ? 1 : -1)) >= 0;
+                  }
+
+                  if (inputIsFrom) {
                     map.set(bid, { color: col, fromT: 0, toT: smokedFrac });
                   } else {
                     map.set(bid, { color: col, fromT: 1 - smokedFrac, toT: 1 });
@@ -9614,6 +9636,25 @@ export default function CadPage() {
                     <option key={s.label} value={s.v}>{s.label}</option>
                   ))}
                 </select>
+
+                <div style={{ width: 1, background: "#7f1d1d", alignSelf: "stretch", margin: "0 2px" }} />
+
+                {/* Порог видимости задымления — применяется при следующем расчёте пожара */}
+                <span style={{ fontSize: 10, color: "#fca5a5", whiteSpace: "nowrap" }}
+                  title="Дым распространяется, пока видимость в дыму ниже этого порога. Применяется при следующем расчёте пожара.">
+                  Порог видимости:
+                </span>
+                <input
+                  type="number" min={1} max={200} step={5}
+                  value={smokeVisThreshold}
+                  onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(200, Number(e.target.value))))}
+                  title="Дым распространяется, пока видимость в дыму ниже этого порога. Применяется при следующем расчёте пожара."
+                  style={{
+                    width: 48, fontSize: 11, background: "#3b0000", color: "#fca5a5",
+                    border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 4px", textAlign: "center",
+                  }}
+                />
+                <span style={{ fontSize: 10, color: "#fca5a5" }}>м</span>
               </div>
             )}
 
