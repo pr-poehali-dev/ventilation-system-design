@@ -1626,84 +1626,129 @@ def solve_nodal(nodes_in, branches_in, options, normal_flows=None, surface_temp=
     fan_positions = [k for k, e in enumerate(solve_edges) if e["hasFan"]]
 
     P = _np.zeros(n_nodes, dtype=_np.float64)   # начальные давления
-    Q = _np.zeros(m, dtype=_np.float64)
 
-    def _pa(idx):
-        # давление узла (или 0 для GND)
-        return _np.where(idx >= 0, P[_np.clip(idx, 0, n_nodes - 1)], 0.0)
+    va = ia >= 0
+    vb = ib >= 0
+    vab = va & vb
+    idx_reg = _np.arange(n_nodes)
+
+    # Пол |dP| для устойчивости: возле dP≈0 проводимость g→∞. Ограничиваем
+    # СОГЛАСОВАННО и Q, и g (одинаковый adp_safe), иначе Ньютон рассогласован
+    # и колеблется — это была причина несходимости и нарушения баланса.
+    H_char = 1.0
+    for e in solve_edges:
+        if e.get("hasFan") and not e.get("fanStopped"):
+            H_char = max(H_char, abs(float(e.get("fanPressure", 0))), abs(float(e.get("h0", 0))))
+        H_char = max(H_char, abs(e.get("naturalDraft", 0.0)))
+    dp_floor = max(1e-9, 1e-8 * H_char)
+
+    # Расход ветвей-вентиляторов с прошлой итерации — для расчёта их напора
+    # (лаг по Q, классический устойчивый приём). Направление напора известно
+    # заранее (вентилятор нагнетает в направлении a→b, при реверсе — b→a),
+    # поэтому знак берём по fdir, а НЕ по текущему dP (это была причина, по
+    # которой давление узла «убивало» вентилятор и расчёт схлопывался в 0).
+    Q_fan_prev = {k: 0.0 for k in fan_positions}
+
+    def _branch_state(P_vec):
+        """По давлениям узлов P → (Q ветвей, эффективный dP, проводимость g).
+        Q и g согласованы по одному adp_safe (устойчивый Ньютон)."""
+        Pa = _np.where(ia >= 0, P_vec[_np.clip(ia, 0, n_nodes - 1)], 0.0)
+        Pb = _np.where(ib >= 0, P_vec[_np.clip(ib, 0, n_nodes - 1)], 0.0)
+        Hsrc = Hnat.copy()
+        for k in fan_positions:
+            e = solve_edges[k]
+            fdir = -1.0 if (e.get("fanType", "ГВУ") != "ВМП" and e.get("fanReverse")) else 1.0
+            # Напор по модулю расхода в направлении нагнетания вентилятора.
+            q_fan = abs(Q_fan_prev.get(k, 0.0))
+            Hsrc[k] += fdir * fan_H(e, q_fan)
+        dPe = Pa - Pb + Hsrc
+        adp_safe = _np.maximum(_np.abs(dPe), dp_floor)
+        Qb = _np.sign(dPe) * _np.sqrt(adp_safe / R_arr)
+        gb = 1.0 / (2.0 * _np.sqrt(R_arr * adp_safe))
+        return Qb, dPe, gb
+
+    def _residual(P_vec):
+        Qb, _dPe, _gb = _branch_state(P_vec)
+        F = _np.zeros(n_nodes, dtype=_np.float64)
+        _np.add.at(F, ia[va], -Qb[va])   # из узла a вытекает
+        _np.add.at(F, ib[vb], +Qb[vb])   # в узел b втекает
+        return F, Qb
 
     it = 0
     max_dp = float("inf")
     max_dq = float("inf")
+    Q = _branch_state(P)[0]
+    F, _ = _residual(P)
+    res_norm = float(_np.linalg.norm(F))
+
     for it in range(1, max_iter + 1):
-        Pa = _pa(ia)
-        Pb = _pa(ib)
+        _Qb, _dPe, g = _branch_state(P)
 
-        # Напор источников (вентилятор + тяга). Вентилятор нелинеен по Q.
-        Hsrc = Hnat.copy()
-        if fan_positions:
-            for k in fan_positions:
-                e = solve_edges[k]
-                fdir = -1.0 if (e.get("fanType", "ГВУ") != "ВМП" and e.get("fanReverse")) else 1.0
-                Hsrc[k] += fdir * fan_H(e, Q[k] * fdir)
+        # ── Разрежённый якобиан (матрица проводимостей узлов) ────────────────
+        rows = _np.concatenate([ia[va], ib[vb], ia[vab], ib[vab], idx_reg])
+        cols = _np.concatenate([ia[va], ib[vb], ib[vab], ia[vab], idx_reg])
+        vals = _np.concatenate([g[va], g[vb], -g[vab], -g[vab],
+                                _np.full(n_nodes, 1e-9)])
+        J = coo_matrix((vals, (rows, cols)), shape=(n_nodes, n_nodes)).tocsc()
 
-        dP = Pa - Pb + Hsrc          # эффективный перепад для ветви a→b
-        adp = _np.abs(dP)
-        adp_safe = _np.maximum(adp, 1e-9)
-        # Q = sign(dP)·sqrt(|dP|/R)
-        Qnew = _np.sign(dP) * _np.sqrt(adp_safe / R_arr)
-        # Проводимость ветви g = dQ/dP = 1/(2·sqrt(R·|dP|))
-        g = 1.0 / (2.0 * _np.sqrt(R_arr * adp_safe))
-        g = _np.minimum(g, 1e6)      # ограничение при dP→0 (численная устойчивость)
-
-        # ── Сборка разрежённого якобиана (матрица проводимостей узлов) ───────
-        # Диагональ: +g для ia и ib; внедиагональ: −g между ia и ib
-        rows = []; cols = []; vals = []
-        va = ia >= 0
-        vb = ib >= 0
-        # ia-ia
-        rows.append(ia[va]); cols.append(ia[va]); vals.append(g[va])
-        # ib-ib
-        rows.append(ib[vb]); cols.append(ib[vb]); vals.append(g[vb])
-        # ia-ib и ib-ia (только когда оба не GND)
-        vab = va & vb
-        rows.append(ia[vab]); cols.append(ib[vab]); vals.append(-g[vab])
-        rows.append(ib[vab]); cols.append(ia[vab]); vals.append(-g[vab])
-        rows = _np.concatenate(rows); cols = _np.concatenate(cols); vals = _np.concatenate(vals)
-        J = coo_matrix((vals, (rows, cols)), shape=(n_nodes, n_nodes)).tocsr()
-
-        # ── Невязка баланса масс в узлах: F_n = Σ Q (втекающие +, вытекающие −) ─
-        F = _np.zeros(n_nodes, dtype=_np.float64)
-        _np.add.at(F, ia[va], -Qnew[va])   # из узла a вытекает
-        _np.add.at(F, ib[vb], +Qnew[vb])   # в узел b втекает
-
-        # Регуляризация диагонали (защита от вырожденности)
-        diagreg = coo_matrix((_np.full(n_nodes, 1e-9), (_np.arange(n_nodes), _np.arange(n_nodes))),
-                             shape=(n_nodes, n_nodes)).tocsr()
         try:
-            dPnode = spsolve((J + diagreg).tocsc(), F)
+            step = spsolve(J, F)
         except Exception:
-            dPnode = _np.zeros(n_nodes)
-        if not _np.all(_np.isfinite(dPnode)):
-            dPnode = _np.nan_to_num(dPnode, nan=0.0, posinf=0.0, neginf=0.0)
+            step = _np.zeros(n_nodes)
+        if not _np.all(_np.isfinite(step)):
+            step = _np.nan_to_num(step, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # Демпфирование Ньютона для устойчивости на первых шагах
-        relax = 1.0 if it > 3 else 0.6
-        P = P + relax * dPnode
+        # ── Линейный поиск: подбираем λ так, чтобы норма невязки убывала ─────
+        # (глобализация Ньютона — гарантирует сходимость и корректный баланс).
+        lam = 1.0
+        P_new = P + lam * step
+        F_new, Q_new = _residual(P_new)
+        rn_new = float(_np.linalg.norm(F_new))
+        bt = 0
+        while rn_new > res_norm and bt < 20:
+            lam *= 0.5
+            P_new = P + lam * step
+            F_new, Q_new = _residual(P_new)
+            rn_new = float(_np.linalg.norm(F_new))
+            bt += 1
 
-        max_dp = float(_np.max(_np.abs(dPnode))) if n_nodes else 0.0
-        max_dq = float(_np.max(_np.abs(Qnew - Q))) if m else 0.0
-        Q = Qnew
+        max_dp = float(_np.max(_np.abs(lam * step))) if n_nodes else 0.0
+        max_dq = float(_np.max(_np.abs(Q_new - Q))) if m else 0.0
+        P = P_new
+        F = F_new
+        Q = Q_new
+        res_norm = rn_new
 
-        if it >= 3 and max_dp < tol_h and max_dq < tol:
+        # Обновляем расход вентиляторов для их напора на следующей итерации.
+        # Знак — в направлении нагнетания (fdir), чтобы напор считался по |Q|.
+        for k in fan_positions:
+            e = solve_edges[k]
+            fdir = -1.0 if (e.get("fanType", "ГВУ") != "ВМП" and e.get("fanReverse")) else 1.0
+            Q_fan_prev[k] = Q[k] * fdir
+
+        # Критерий остановки — по ФАКТИЧЕСКОМУ балансу масс в узлах (|F|_∞),
+        # а НЕ по величине шага: возле dP≈0 первый шаг Ньютона мал из-за
+        # большой проводимости, и проверка по шагу давала ложную сходимость.
+        cur_imb = float(_np.max(_np.abs(F))) if n_nodes else 0.0
+        q_scale = max(1.0, float(_np.max(_np.abs(Q))) if m else 1.0)
+        if it >= 2 and cur_imb < max(0.01, 1e-4 * q_scale) and max_dq < max(tol, 0.05):
+            break
+        # Досрочный выход, если линейный поиск полностью «застрял» (λ→0) при уже
+        # приемлемом балансе — дальше прогресса не будет.
+        if bt >= 20 and cur_imb < 0.5:
             break
 
-    converged = max_dp < max(tol_h, 1.0) and max_dq < max(tol, 0.05)
+    # Сходимость определяем по фактическому балансу масс в узлах (|F|_∞),
+    # а не только по величине шага — иначе «застревание» линейного поиска
+    # ошибочно считалось бы сходимостью при нарушенном балансе.
+    max_imbalance = float(_np.max(_np.abs(F))) if n_nodes else 0.0
+    converged = max_imbalance < max(0.05, 1e-4 * max(1.0, float(_np.max(_np.abs(Q))) if m else 1.0))
     if not converged:
         diag.append({"level": "warning", "category": "convergence",
                      "message": f"Узловой метод не сошёлся за {max_iter} итераций. "
-                                f"|ΔP|={max_dp:.2f} Па, δQ={max_dq:.4f} м³/с"})
-    log.append(f"Узловой метод: итераций={it} |ΔP|={max_dp:.3f} Па δQ={max_dq:.4f} м³/с")
+                                f"Дисбаланс |ΣQ|={max_imbalance:.3f} м³/с, |ΔP|={max_dp:.2f} Па"})
+    log.append(f"Узловой метод: итераций={it} дисбаланс|ΣQ|={max_imbalance:.4f} м³/с "
+               f"|ΔP|={max_dp:.3f} Па δQ={max_dq:.4f} м³/с")
 
     Q_map = {e["id"]: float(Q[k]) for k, e in enumerate(solve_edges)}
     for e in edges:
