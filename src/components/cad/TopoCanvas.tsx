@@ -1600,6 +1600,17 @@ export default function TopoCanvas(props: Props) {
     return m;
   }, [horizons]);
 
+  // Быстрый доступ к ветви по id (для определения горизонта символа).
+  const branchById = useMemo(() => {
+    const m = new Map<string, TopoBranch>();
+    for (const b of branches) m.set(b.id, b);
+    return m;
+  }, [branches]);
+
+  // Слои ветвей по горизонтам (публикуются при отрисовке ветвей и переиспользуются
+  // блоком УО, чтобы символы имели корректный z-order между горизонтами).
+  const branchLayerGroupsRef = useRef<{ order: number; node: React.ReactNode }[]>([]);
+
   // Сортировка ветвей: сначала по иерархии горизонтов (как слои в Фотошопе / Аэросети),
   // затем по глубине 3D внутри одного горизонта.
   // Горизонт выше в списке слева (меньший индекс) рисуется ПОВЕРХ остальных.
@@ -3197,6 +3208,7 @@ export default function TopoCanvas(props: Props) {
           // горизонтов — поэтому окантовка верхнего горизонта не перекрывается
           // заливкой нижнего.
           const layered: React.ReactNode[] = [];
+          const layerGroups: { order: number; node: React.ReactNode }[] = [];
           let gi = 0;
           while (gi < branchesSorted.length) {
             const curOrder = branchesSorted[gi].hOrder;
@@ -3204,13 +3216,18 @@ export default function TopoCanvas(props: Props) {
             while (gi < branchesSorted.length && branchesSorted[gi].hOrder === curOrder) gi++;
             const borderGroup = borderPass.slice(start, gi);
             const fillGroup = fillPass.slice(start, gi);
-            layered.push(
+            const node = (
               <g key={`hlayer-${curOrder}-${start}`}>
                 {borderGroup}
                 {fillGroup}
               </g>
             );
+            layered.push(node);
+            layerGroups.push({ order: curOrder, node });
           }
+          // Публикуем слои ветвей — их переиспользует блок УО для корректного
+          // z-order символов между горизонтами (см. блок УСЛОВНЫЕ ОБОЗНАЧЕНИЯ).
+          branchLayerGroupsRef.current = layerGroups;
           return <>{comparePass}{posOuterPass}{highlightPass}{layered}</>;
         })()}
 
@@ -3264,8 +3281,9 @@ export default function TopoCanvas(props: Props) {
           );
         })()}
 
-        {/* ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ──────────────────────────── */}
-        {!useCanvas && schemaSymbolsSorted.map(sym => {
+        {/* ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ (canvas-оверлей — см. ниже) ─────────── */}
+        {!useCanvas && (() => {
+          const renderOne = (sym: typeof schemaSymbolsSorted[number]): React.ReactNode => {
           const isBulkheadEarly = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
           const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
           // Перемычки рисуются геометрически — не требуют lt из LEGEND_TYPES
@@ -3944,7 +3962,47 @@ export default function TopoCanvas(props: Props) {
               })()}
             </g>
           );
-        })}
+          };
+          // Группируем УО по порядку горизонта их ветви и встраиваем в слои:
+          // символ рисуется поверх ветвей своего горизонта, но под ветвями
+          // горизонтов, которые выше в списке слоёв (как в Фотошопе).
+          const symOut: React.ReactNode[] = [];
+          const layerGroups = branchLayerGroupsRef.current;
+          // Порядок горизонтов от нижнего (больший order) к верхнему (меньший).
+          const orders = Array.from(new Set(branchesSorted.map(x => x.hOrder))).sort((a, b) => b - a);
+          const seen = new Set<number>();
+          const horizonOf = (sym: typeof schemaSymbolsSorted[number]): number => {
+            const hz = sym.branchId ? (branchById.get(sym.branchId)?.horizonId ?? "") : "";
+            return hz ? (horizonOrderMap.get(hz) ?? 9999) : 9999;
+          };
+          for (const ord of orders) {
+            seen.add(ord);
+            // УО этого горизонта — поверх его ветвей.
+            for (const sym of schemaSymbolsSorted) {
+              if (horizonOf(sym) !== ord) continue;
+              const node = renderOne(sym);
+              if (node) symOut.push(<g key={`sym-${sym.id}`}>{node}</g>);
+            }
+            // Ветви горизонтов ВЫШЕ текущего перекрывают эти УО — перерисовываем их поверх.
+            const higher = layerGroups.filter(g => g.order < ord);
+            if (higher.length) {
+              symOut.push(
+                <g key={`occ-${ord}`} style={{ pointerEvents: "none" }}>
+                  {higher.map(g => (
+                    <g key={`occ-${ord}-${g.order}`}>{g.node}</g>
+                  ))}
+                </g>
+              );
+            }
+          }
+          // УО без привязки к видимым горизонтам — поверх всего.
+          for (const sym of schemaSymbolsSorted) {
+            if (seen.has(horizonOf(sym))) continue;
+            const node = renderOne(sym);
+            if (node) symOut.push(<g key={`sym-top-${sym.id}`}>{node}</g>);
+          }
+          return <>{symOut}</>;
+        })()}
 
         {/* ─── УЗЛЫ (отсортированы по глубине, ближние сверху) ─────────── */}
         {!useCanvas && nodesSorted.map(({ node, sx, sy }) => {
@@ -4216,7 +4274,8 @@ export default function TopoCanvas(props: Props) {
           onMouseUp={(e) => onMouseUpCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
-          {schemaSymbolsSorted.map(sym => {
+          {(() => {
+          const renderOneOv = (sym: typeof schemaSymbolsSorted[number]): React.ReactNode => {
             const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
             if (!lt && !isBulkheadOv) return null;
@@ -4508,7 +4567,93 @@ export default function TopoCanvas(props: Props) {
                 })()}
               </g>
             );
-          })}
+          };
+          // Встраиваем УО в слои горизонтов (как в SVG-режиме). В canvas-режиме
+          // ветви нарисованы на <canvas> ПОД этим оверлеем, поэтому чтобы символ
+          // нижнего горизонта не перекрывал ветви верхнего, поверх символов слоя
+          // дорисовываем ветви горизонтов, которые выше в списке.
+          const out: React.ReactNode[] = [];
+          const horizonOfOv = (sym: typeof schemaSymbolsSorted[number]): number => {
+            const hz = sym.branchId ? (branchById.get(sym.branchId)?.horizonId ?? "") : "";
+            return hz ? (horizonOrderMap.get(hz) ?? 9999) : 9999;
+          };
+          const ordersOv = Array.from(new Set(branchesSorted.map(x => x.hOrder))).sort((a, b) => b - a);
+          const seenOv = new Set<number>();
+          const occColor = (ob: TopoBranch): string => {
+            const hc = ob.horizonId ? horizonMap.get(ob.horizonId)?.color : undefined;
+            if (colorByHorizon && hc) return hc;
+            return "#ffffff";
+          };
+          // Экранная позиция символа (для клипа occluder-а — чтобы не перекрашивать
+          // ветви целиком, а лишь скрывать символ там, где его перекрывает верхний слой).
+          const symScreenPos = (sym: typeof schemaSymbolsSorted[number]): { x: number; y: number } | null => {
+            if (sym.branchId) {
+              const br = branchById.get(sym.branchId);
+              const fN = br ? projNodesMap.get(br.fromId) : null;
+              const tN = br ? projNodesMap.get(br.toId) : null;
+              if (fN && tN) {
+                const t = sym.t ?? 0.5;
+                return { x: fN.sx + (tN.sx - fN.sx) * t + (sym.offsetX ?? 0), y: fN.sy + (tN.sy - fN.sy) * t + (sym.offsetY ?? 0) };
+              }
+            }
+            const pt = projectWithZ({ x: sym.x, y: sym.y, z: 0 });
+            return { x: pt.sx + (sym.offsetX ?? 0), y: pt.sy + (sym.offsetY ?? 0) };
+          };
+          const clipR = Math.max(18, 40 * (fixedObjectScale ? 1 : view.scale / 0.4));
+          for (const ord of ordersOv) {
+            seenOv.add(ord);
+            const ordSyms: { x: number; y: number }[] = [];
+            for (const sym of schemaSymbolsSorted) {
+              if (horizonOfOv(sym) !== ord) continue;
+              const node = renderOneOv(sym);
+              if (node) out.push(<g key={`ovsym-${sym.id}`}>{node}</g>);
+              const p = symScreenPos(sym);
+              if (p) ordSyms.push(p);
+            }
+            const higher = branchesSorted.filter(x => x.hOrder < ord);
+            if (higher.length && ordSyms.length) {
+              const clipId = `occclip-${ord}`;
+              out.push(
+                <g key={`ovocc-${ord}`} style={{ pointerEvents: "none" }}>
+                  <defs>
+                    <clipPath id={clipId}>
+                      {ordSyms.map((p, i) => (
+                        <circle key={i} cx={p.x} cy={p.y} r={clipR} />
+                      ))}
+                    </clipPath>
+                  </defs>
+                  <g clipPath={`url(#${clipId})`}>
+                  {higher.map(({ branch: ob }) => {
+                    const f = projNodesMap.get(ob.fromId);
+                    const tN = projNodesMap.get(ob.toId);
+                    if (!f || !tN) return null;
+                    const obw = (ob.lineWidth && ob.lineWidth > 0) ? ob.lineWidth : branchWidth;
+                    const ow = Math.max((thinLines ? 1 : obw) * _branchObjSF, 1);
+                    const bb = (ob.lineBorder !== undefined && ob.lineBorder >= 0) ? ob.lineBorder : branchBorder;
+                    const bw = (thinLines || !(bb > 0)) ? 0 : Math.max(bb * _branchObjSF, 0.5);
+                    return (
+                      <g key={`ovoccl-${ob.id}`}>
+                        {bw > 0 && (
+                          <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
+                            stroke="#1f2937" strokeWidth={ow + bw * 2} strokeLinecap="round" opacity={0.85} />
+                        )}
+                        <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
+                          stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round" />
+                      </g>
+                    );
+                  })}
+                  </g>
+                </g>
+              );
+            }
+          }
+          for (const sym of schemaSymbolsSorted) {
+            if (seenOv.has(horizonOfOv(sym))) continue;
+            const node = renderOneOv(sym);
+            if (node) out.push(<g key={`ovsym-top-${sym.id}`}>{node}</g>);
+          }
+          return <>{out}</>;
+          })()}
         </svg>
       )}
 
