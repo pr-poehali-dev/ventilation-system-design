@@ -396,7 +396,7 @@ export const LEGEND_TYPES: LegendType[] = [
   // Кольцо с четырьмя стрелками, расходящимися наружу (вверх/вниз/влево/вправо) —
   // символ распространения взрывной волны.
   { id: "explosion_source", name: "Место взрыва",  group: "Аварийный режим",
-    svgContent: `<g fill="none" stroke="#FF0000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    svgContent: `<g fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
 <circle cx="24" cy="24" r="9"/>
 <line x1="24" y1="13" x2="24" y2="3"/><polyline points="20,7 24,3 28,7"/>
 <line x1="24" y1="35" x2="24" y2="45"/><polyline points="20,41 24,45 28,41"/>
