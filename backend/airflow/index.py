@@ -1756,6 +1756,119 @@ def _estimate_q0_mkr(edges, r_total):
     return 1.0
 
 
+def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
+                      sync_tree_q, q0, relaxation, prev_dh, min_iter, max_iter,
+                      tol_h_rel, tol_q, log):
+    """
+    Быстрая версия итераций МКР — ТА ЖЕ математика и ТОТ ЖЕ порядок обновления
+    (Гаусс-Зейдель по контурам), что и в скалярном цикле, но без обращения к
+    dict/объектам в горячем цикле: все данные ветвей заранее разложены в
+    плоские списки/массивы по индексам. Результат идентичен скалярной версии,
+    ускорение — за счёт устранения Python-накладных на .get()/индексацию словарей.
+    Возвращает (it, max_dh, max_dq).
+    """
+    n_edges = len(Q)
+
+    # ── Предвычисление данных ветвей по глобальному индексу (один раз) ────────
+    R_edge = [0.0] * n_edges
+    nat_edge = [0.0] * n_edges
+    fan_edge = [None] * n_edges   # объект ветви-вентилятора или None
+    fan_is_vmp = [False] * n_edges
+    fan_dir_edge = [1.0] * n_edges
+    for i, e in enumerate(active_edges_list):
+        gi = local_to_global[i]
+        R_edge[gi] = float(e["R"])
+        nat_edge[gi] = float(e.get("naturalDraft", 0.0))
+        if e.get("hasFan"):
+            fan_edge[gi] = e
+            is_vmp = e.get("fanType", "ГВУ") == "ВМП"
+            fan_is_vmp[gi] = is_vmp
+            fan_dir_edge[gi] = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
+
+    # Контуры → плоские кортежи (gi, sign) для быстрого прохода без словарей
+    contours_flat = [tuple((local_to_global[li], 1.0 if s > 0 else -1.0) for li, s in c)
+                     for c in contours_local]
+
+    q0_floor = max(q0, 1.0)
+    max_dh = float("inf")
+    max_dq = float("inf")
+    it = 0
+    for it in range(1, max_iter + 1):
+        max_dh = 0.0
+        max_dq = 0.0
+
+        for contour in contours_flat:
+            num = 0.0
+            den = 0.0
+            q_ref = 0.0
+            for gi, sign in contour:
+                qg = Q[gi]
+                qd = qg * sign
+                aqd = qd if qd >= 0.0 else -qd
+                R = R_edge[gi]
+                num += R * qd * aqd
+                den += 2.0 * R * aqd
+
+                fe = fan_edge[gi]
+                if fe is not None:
+                    fdir = fan_dir_edge[gi]
+                    if fan_is_vmp[gi]:
+                        H = _mkr_fan_H(fe, abs(qg))   # ВМП: H всегда > 0
+                    else:
+                        q_fan = qg * fdir
+                        H = _mkr_fan_H(fe, abs(qg)) if q_fan >= 0 else 0.0
+                    num -= fdir * H * sign
+                    den += _mkr_fan_dH(fe, abs(qg))
+
+                hn = nat_edge[gi]
+                if hn != 0.0:
+                    num -= hn * sign
+
+                aqg = qg if qg >= 0.0 else -qg
+                if aqg > q_ref:
+                    q_ref = aqg
+
+            if den < 1e-12:
+                continue
+
+            dq_raw = -num / den
+            if q_ref < 0.1:
+                q_ref = q0_floor
+            if dq_raw > q_ref:
+                dq_raw = q_ref
+            elif dq_raw < -q_ref:
+                dq_raw = -q_ref
+            dq = relaxation * dq_raw
+
+            anum = num if num >= 0.0 else -num
+            if anum > max_dh:
+                max_dh = anum
+            adq = dq if dq >= 0.0 else -dq
+            if adq > max_dq:
+                max_dq = adq
+
+            for gi, sign in contour:
+                nq = Q[gi] + dq * sign
+                Q[gi] = nq if math.isfinite(nq) else 0.0
+
+        # Синхронизация ветвей дерева по Кирхгофу-1
+        sync_tree_q(Q)
+
+        # Адаптивное демпфирование
+        if it > 5:
+            if max_dh > prev_dh * 1.05:
+                relaxation = max(0.1, relaxation * 0.7)
+            elif max_dh < prev_dh * 0.95:
+                relaxation = min(1.0, relaxation * 1.1)
+        prev_dh = max_dh
+
+        if it >= min_iter and max_dh < tol_h_rel and max_dq < tol_q:
+            it += 1
+            break
+
+    return it, max_dh, max_dq
+
+
 def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
     """
     МКР — Метод контурных расходов.
@@ -1974,7 +2087,20 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Относительный допуск: 0.5% от макс. напора в сети (≈ 10 Па для 2000 Па ГВУ)
     tol_h_rel = max(tol_h, 0.005 * h_char)
 
-    for it in range(1, max_iter + 1):
+    # ── БЫСТРЫЙ ПУТЬ для больших сетей ────────────────────────────────────────
+    # На больших схемах (тысячи контуров) горячий цикл с обращением к dict/объектам
+    # ветвей делает миллиарды медленных операций и упирается в таймаут. Вынесли
+    # ТУ ЖЕ математику и ТОТ ЖЕ порядок обновления (Гаусс-Зейдель) в _mkr_iterate_fast
+    # с плоскими массивами по индексам — результат идентичен, но в разы быстрее.
+    USE_FAST = len(contours_local) > 200
+    if USE_FAST:
+        it, max_dh, max_dq = _mkr_iterate_fast(
+            contours_local, active_edges_list, local_to_global, Q,
+            sync_tree_q, q0, relaxation, prev_dh, min_iter, max_iter,
+            tol_h_rel, tol_q, log,
+        )
+    else:
+      for it in range(1, max_iter + 1):
         max_dh = 0.0
         max_dq = 0.0
 
