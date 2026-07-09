@@ -81,6 +81,37 @@ const AIRFLOW_URL      = API_URLS.airflow;
 const EXPLOSION_URL    = API_URLS.explosionCalculator;
 const WATER_URL        = API_URLS.waterHydraulics;
 
+// Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
+// ветвей) весят несколько МБ и упираются в лимит размера запроса — поэтому
+// крупный JSON сжимаем gzip прямо в браузере (CompressionStream). Бэкенд
+// распознаёт заголовок Content-Encoding: gzip и распаковывает тело.
+// Если сжатие недоступно или тело маленькое — отправляем как обычный JSON.
+async function postAirflow(body: unknown): Promise<Response> {
+  const json = JSON.stringify(body);
+  const canGzip = typeof (globalThis as { CompressionStream?: unknown }).CompressionStream !== "undefined";
+  // Порог 1 МБ: мелкие запросы быстрее отправить без сжатия
+  if (canGzip && json.length > 1_000_000) {
+    try {
+      const stream = new Response(json).body!.pipeThrough(
+        new CompressionStream("gzip"),
+      );
+      const gz = new Uint8Array(await new Response(stream).arrayBuffer());
+      return fetch(AIRFLOW_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
+        body: gz,
+      });
+    } catch {
+      // fallback ниже
+    }
+  }
+  return fetch(AIRFLOW_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: json,
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
 // (АэроСеть / Вентиляция-CAD): ribbon-меню + вертикальные вкладки + свойства
@@ -2272,11 +2303,7 @@ export default function CadPage() {
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
     };
 
-    const resp = await fetch(AIRFLOW_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reqBody),
-    });
+    const resp = await postAirflow(reqBody);
     if (!resp.ok) return new Map();
     const data = await resp.json();
     if (data.error) return new Map();
@@ -2362,11 +2389,7 @@ export default function CadPage() {
             ? { normalFlows }
             : {}),
       };
-      const resp = await fetch(AIRFLOW_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
+      const resp = await postAirflow(requestBody);
       const data = await resp.json();
 
       if (!resp.ok || data.error) {

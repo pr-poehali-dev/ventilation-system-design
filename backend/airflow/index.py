@@ -28,7 +28,20 @@ def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
     try:
-        body = json.loads(event.get("body") or "{}")
+        raw = event.get("body") or "{}"
+        # Большие схемы фронтенд присылает сжатыми gzip (тело в base64,
+        # заголовок Content-Encoding: gzip) — распаковываем перед разбором JSON.
+        headers = event.get("headers") or {}
+        enc = str(headers.get("Content-Encoding") or headers.get("content-encoding") or "").lower()
+        if "gzip" in enc:
+            import base64, gzip
+            data = base64.b64decode(raw) if event.get("isBase64Encoded") else (
+                raw.encode("latin-1") if isinstance(raw, str) else raw)
+            raw = gzip.decompress(data).decode("utf-8")
+        elif event.get("isBase64Encoded"):
+            import base64
+            raw = base64.b64decode(raw).decode("utf-8")
+        body = json.loads(raw)
     except BaseException:
         return err(400, "Ошибка парсинга JSON")
 
