@@ -16,8 +16,6 @@ import Cad from "./pages/Cad";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 import MobileStub from "./components/MobileStub";
-import InstallPwaButton from "./components/InstallPwaButton";
-import PwaUpdateBanner from "./components/PwaUpdateBanner";
 import { LicenseProvider } from "./context/LicenseContext";
 import AppUpdateBanner from "./components/AppUpdateBanner";
 
@@ -87,8 +85,6 @@ const App = () => {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Router>
-        <InstallPwaButton />
-        <PwaUpdateBanner />
         <AppUpdateBanner />
       </LicenseProvider>
     </TooltipProvider>

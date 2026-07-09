@@ -24,15 +24,6 @@
     </script>
     <title>ПВ-Система</title>
 
-    <!-- ─── PWA ────────────────────────────────────────────── -->
-    <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#0E63B0">
-    <meta name="application-name" content="ПВ-Система">
-    <meta name="mobile-web-app-capable" content="yes">
-    <!-- iOS поддержка установки на главный экран -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ПВ-Система">
     <style>
       html, body, #root {
         width: 100%;
@@ -127,7 +118,7 @@
         100% { left: 100%; }
       }
     </style>
-    <!-- Блокируем Ctrl+колесо на уровне браузера/PWA — масштабирует только схема внутри приложения -->
+    <!-- Блокируем Ctrl+колесо на уровне браузера — масштабирует только схема внутри приложения -->
     <script>
       (function() {
         document.addEventListener('wheel', function(e) {
@@ -135,7 +126,7 @@
             e.preventDefault();
           }
         }, { passive: false, capture: true });
-        // Блокируем жест pinch-zoom (touch) на десктопных PWA / тачпадах
+        // Блокируем жест pinch-zoom (touch) на тачпадах
         document.addEventListener('touchmove', function(e) {
           if (e.touches && e.touches.length > 1) {
             e.preventDefault();
@@ -147,7 +138,6 @@
     <meta name="author" content="poehali.dev"/>
     <link rel="icon" type="image/png" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png">
     <link rel="icon" type="image/png" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png">
-    <link rel="apple-touch-icon" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png">
     <meta property="og:title" content="ПВ-Система">
     <meta property="og:description" content="ПВ-Система. Проектирование вентиляции и водоснабжения рудников">
     <meta property="og:image:width" content="4800">
