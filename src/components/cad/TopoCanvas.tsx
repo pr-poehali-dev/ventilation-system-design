@@ -3381,9 +3381,9 @@ export default function TopoCanvas(props: Props) {
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
             const realBw = Math.max(bkBw * _branchObjSF, 1.0);
             SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
-          } else if (sym.typeId === "fan" && sym.branchId && hasBranchPts) {
-            // Вентилятор масштабируется от ширины ветви (как перемычка), поэтому
-            // синхронен с масштабом схемы и не «плавает» в фиксированном режиме.
+          } else if ((sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts) {
+            // Вентилятор и насос масштабируются от ширины ветви (как перемычка),
+            // поэтому синхронны с масштабом схемы и не «плавают» в фиксированном режиме.
             const fanBr = branches.find(b => b.id === sym.branchId);
             const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
             const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
@@ -3775,9 +3775,9 @@ export default function TopoCanvas(props: Props) {
                   </g>
                 );
               })()}
-              {/* Маленькая чёрная стрелка направления воздуха — выходит из
-                  границы окружности вентилятора. Можно отключить в свойствах. */}
-              {!isFanStopped && sym.typeId === "fan" && sym.branchId && hasBranchPts
+              {/* Маленькая стрелка направления — выходит из границы окружности
+                  вентилятора/насоса. Можно отключить в свойствах. */}
+              {!isFanStopped && (sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts
                 && (sym.showFanArrow ?? true) && (() => {
                 const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
@@ -3791,16 +3791,18 @@ export default function TopoCanvas(props: Props) {
                 const aLen = SZ * 0.32;                       // короткая стрелка
                 const stroke = Math.max(0.8, SZ * 0.045);
                 const head = Math.max(3, SZ * 0.13);
+                // Цвет стрелки под цвет символа: насос — красный, вентилятор — чёрный.
+                const arrCol = sym.typeId === "pump" ? "#dc2626" : "#111";
                 // Хвост — на границе круга, остриё — снаружи.
                 const x0 = rIcon;
                 const x1 = rIcon + aLen;
                 return (
                   <g transform={`translate(${iconCx},${iconCy}) rotate(${arrowAngle})`}>
                     <line x1={x0} y1={0} x2={x1 - head * 0.5} y2={0}
-                      stroke="#111" strokeWidth={stroke} strokeLinecap="round" />
+                      stroke={arrCol} strokeWidth={stroke} strokeLinecap="round" />
                     <polygon
                       points={`${x1 - head},${-head * 0.55} ${x1},0 ${x1 - head},${head * 0.55}`}
-                      fill="#111" />
+                      fill={arrCol} />
                   </g>
                 );
               })()}
@@ -4401,9 +4403,9 @@ export default function TopoCanvas(props: Props) {
               // ph = SZ * 0.85 → SZ = ph / 0.85.
               const ph = realBranchW * (bulkheadScale / 100);
               SZ = Math.max(6, (ph / 0.85) * sc);
-            } else if (sym.typeId === "fan" && sym.branchId && hasBranchPts) {
-              // Вентилятор масштабируется от ширины ветви (как перемычка) —
-              // синхронно с масштабом схемы, не «плавает» в фиксированном режиме.
+            } else if ((sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts) {
+              // Вентилятор и насос масштабируются от ширины ветви (как перемычка) —
+              // синхронно с масштабом схемы, не «плавают» в фиксированном режиме.
               const fanBr = branches.find(b => b.id === sym.branchId);
               const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
               const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
@@ -4613,8 +4615,8 @@ export default function TopoCanvas(props: Props) {
                       stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
                   </g>
                 )}
-                {/* Стрелка направления тяги вентилятора */}
-                {!isFanStoppedOv && sym.typeId === "fan" && sym.branchId && hasBranchPts
+                {/* Стрелка направления тяги вентилятора / направления насоса */}
+                {!isFanStoppedOv && (sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts
                   && (sym.showFanArrow ?? true) && (() => {
                   const brDxOv = tsx2 - fsx, brDyOv = tsy2 - fsy;
                   const brAngleOv = Math.atan2(brDyOv, brDxOv) * 180 / Math.PI;
@@ -4626,15 +4628,16 @@ export default function TopoCanvas(props: Props) {
                   const aLenOv = SZ * 0.32;
                   const strokeOv2 = Math.max(0.8, SZ * 0.045);
                   const headOv = Math.max(3, SZ * 0.13);
+                  const arrColOv = sym.typeId === "pump" ? "#dc2626" : "#111";
                   const x0Ov = rIconOv;
                   const x1Ov = rIconOv + aLenOv;
                   return (
                     <g transform={`translate(${iconCxOv},${iconCyOv}) rotate(${arrowAngleOv})`} pointerEvents="none">
                       <line x1={x0Ov} y1={0} x2={x1Ov - headOv * 0.5} y2={0}
-                        stroke="#111" strokeWidth={strokeOv2} strokeLinecap="round" />
+                        stroke={arrColOv} strokeWidth={strokeOv2} strokeLinecap="round" />
                       <polygon
                         points={`${x1Ov - headOv},${-headOv * 0.55} ${x1Ov},0 ${x1Ov - headOv},${headOv * 0.55}`}
-                        fill="#111" />
+                        fill={arrColOv} />
                     </g>
                   );
                 })()}

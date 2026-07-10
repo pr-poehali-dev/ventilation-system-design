@@ -168,6 +168,23 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump }: P
         <span className="text-gray-400 flex-shrink-0 w-8">шт</span>
       </div>
 
+      {/* Направление стрелки (как у вентилятора) */}
+      <div className="flex items-center gap-1 mb-1.5">
+        <span className="text-gray-500 w-16 flex-shrink-0">Направление</span>
+        <select value={sym.airDirection ?? "forward"}
+          onChange={(e) => onUpdate({ airDirection: e.target.value as "forward" | "reverse" })}
+          className="flex-1 px-1 py-0.5 text-[11px]" style={inputStyle}>
+          <option value="forward">По ветви (прямое)</option>
+          <option value="reverse">Против ветви (реверс)</option>
+        </select>
+      </div>
+      <label className="flex items-center gap-1.5 mb-2 cursor-pointer text-gray-600">
+        <input type="checkbox" checked={sym.showFanArrow ?? true}
+          onChange={(e) => onUpdate({ showFanArrow: e.target.checked })}
+          style={{ accentColor: "#dc2626" }} />
+        Показывать стрелку направления
+      </label>
+
       {/* График характеристики (если выбрана модель из библиотеки) */}
       {currentModel && (
         <div className="mb-2">
