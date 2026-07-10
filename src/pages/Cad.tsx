@@ -2520,7 +2520,32 @@ export default function CadPage() {
     }
   };
 
-  const handleSolve = () => { void handleSolveLocal(); };
+  const handleSolve = () => {
+    // Перед расчётом проверяем сеть на изолированные ветви: подсети без выхода
+    // на поверхность (нет пути к атмосферному узлу) не дают корректно рассчитать
+    // воздухораспределение. Предупреждаем и открываем вкладку «Изолир.».
+    const check = checkSchema(nodes, branches);
+    if (check.noAtmosphere || check.isolatedBranches.length > 0) {
+      setActiveSide("check");
+      setCheckTab("isolatedBranch");
+      const ids = check.isolatedBranches.map(b => b.id);
+      if (ids.length > 0) {
+        setSelectedBranchIds(new Set(ids));
+        setSelectedNodeId(null);
+        setSelectedBranchId(ids[0]);
+        setFocusBranchId(ids[0]);
+        setFocusNonce(Date.now());
+      }
+      const msg = check.noAtmosphere
+        ? "В схеме нет ни одного выхода на поверхность (атмосферного узла).\n\nРасчёт воздухораспределения невозможен: воздуху некуда входить и выходить.\nОтметьте хотя бы один узел как связанный с атмосферой.\n\nЗапустить расчёт всё равно?"
+        : `Найдено изолированных ветвей: ${check.isolatedBranches.length}.\n\nЭти ветви не связаны с поверхностью (нет пути к выходу на поверхность) и мешают расчёту воздухораспределения. Они отмечены на схеме и открыты во вкладке «Изолир.».\n\nЗапустить расчёт всё равно?`;
+      addLog("warn", check.noAtmosphere
+        ? "Расчёт остановлен: в схеме нет выхода на поверхность (атмосферного узла)."
+        : `Расчёт остановлен: изолированных ветвей ${check.isolatedBranches.length} (нет связи с поверхностью).`);
+      if (!window.confirm(msg)) return;
+    }
+    void handleSolveLocal();
+  };
   // Подключаем ref чтобы updateBranch мог вызвать расчёт (нужен прямой режим перед реверсом)
   handleSolveRef.current = handleSolve;
 
