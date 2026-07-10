@@ -729,9 +729,15 @@ export default function RescuePanel({
     </label>
   );
 
-  // Кнопка выбора узла кликом на схеме
-  const PickBtn = ({ mode, label }: { mode: "start" | "target"; label: string }) => (
+  // Кнопка выбора узла кликом на схеме.
+  // ВАЖНО: это обычная функция-рендерер (возвращает JSX напрямую), а НЕ React-компонент,
+  // объявленный внутри тела RescuePanel. Если бы это был вложенный компонент (const PickBtn = () => <button/>),
+  // React считал бы его НОВЫМ типом компонента при каждом ре-рендере панели и пересоздавал
+  // DOM-узел кнопки (unmount+mount) — из-за этого в canvas-режиме (где родитель Cad.tsx
+  // перерендеривается чаще) клик по кнопке нередко «терялся» между mousedown и click.
+  const renderPickBtn = (mode: "start" | "target", label: string) => (
     <button
+      type="button"
       onClick={() => onPickModeChange(pickMode === mode ? null : mode)}
       title={`Кликните на узел схемы для выбора: ${label}`}
       className={`h-6 px-1.5 rounded border text-[10px] flex items-center gap-0.5 flex-shrink-0 ${
@@ -787,7 +793,7 @@ export default function RescuePanel({
           <option value="">— выберите —</option>
           {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
         </select>
-        <PickBtn mode="start" label="начального узла" />
+        {renderPickBtn("start", "начального узла")}
       </div>
       {startNodeId && (
         <div className="text-[10px] text-green-700 ml-1 mt-0.5">✓ {nodeName(startNodeId)}</div>
@@ -849,7 +855,7 @@ export default function RescuePanel({
           <option value="">— выберите —</option>
           {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
         </select>
-        <PickBtn mode="target" label="целевого узла" />
+        {renderPickBtn("target", "целевого узла")}
       </div>
       {targetNodeId && (
         <div className="text-[10px] text-green-700 ml-1 mt-0.5">✓ {nodeName(targetNodeId)}</div>
