@@ -28,21 +28,63 @@ def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
     try:
+        import base64, gzip
         raw = event.get("body") or "{}"
-        # Большие схемы фронтенд присылает сжатыми gzip (тело в base64,
-        # заголовок Content-Encoding: gzip) — распаковываем перед разбором JSON.
-        headers = event.get("headers") or {}
-        enc = str(headers.get("Content-Encoding") or headers.get("content-encoding") or "").lower()
-        if "gzip" in enc:
-            import base64, gzip
-            data = base64.b64decode(raw) if event.get("isBase64Encoded") else (
-                raw.encode("latin-1") if isinstance(raw, str) else raw)
+
+        # Большие схемы фронтенд присылает сжатыми gzip. В браузере gzip
+        # распознаётся по заголовку Content-Encoding, НО в десктопной версии
+        # (C#/WebView2) этот заголовок теряется при проксировании, и функция
+        # получала сжатые байты как «обычный текст» → «Ошибка парсинга JSON».
+        #
+        # Поэтому определяем gzip НАДЁЖНО — по сигнатуре самих данных
+        # (gzip всегда начинается с магических байт 0x1f 0x8b), не полагаясь
+        # на заголовок. Схема разбора:
+        #   1) приводим тело к байтам (учитывая base64 / str / bytes);
+        #   2) если байты начинаются с 1f 8b — распаковываем gzip;
+        #   3) декодируем в UTF-8 и парсим JSON.
+        is_b64 = bool(event.get("isBase64Encoded"))
+
+        if isinstance(raw, (bytes, bytearray)):
+            data = bytes(raw)
+        elif is_b64:
+            data = base64.b64decode(raw)
+        else:
+            # Может прийти обычный JSON-текст ИЛИ base64 без флага isBase64Encoded
+            # (десктоп). Сначала пробуем как есть, base64 определим по сигнатуре ниже.
+            data = raw.encode("utf-8", "surrogatepass") if isinstance(raw, str) else bytes(raw)
+
+        # gzip-сигнатура? (десктоп мог не выставить isBase64Encoded — тогда data
+        # содержит base64-текст; попробуем ещё раз декодировать base64 и проверить)
+        def _looks_gzip(b: bytes) -> bool:
+            return len(b) >= 2 and b[0] == 0x1F and b[1] == 0x8B
+
+        if not _looks_gzip(data) and not is_b64 and isinstance(raw, str):
+            # Пробуем интерпретировать текст как base64 (десктоп без флага)
+            try:
+                maybe = base64.b64decode(raw, validate=False)
+                if _looks_gzip(maybe):
+                    data = maybe
+            except BaseException:
+                pass
+
+        if _looks_gzip(data):
             raw = gzip.decompress(data).decode("utf-8")
-        elif event.get("isBase64Encoded"):
-            import base64
-            raw = base64.b64decode(raw).decode("utf-8")
+        else:
+            raw = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else raw
+
         body = json.loads(raw)
-    except BaseException:
+    except BaseException as ex:
+        _hdrs = event.get("headers") or {}
+        _b = event.get("body")
+        print(
+            "PARSE_FAIL:",
+            "type=", type(_b).__name__,
+            "len=", (len(_b) if hasattr(_b, "__len__") else "?"),
+            "isBase64=", event.get("isBase64Encoded"),
+            "CE=", _hdrs.get("Content-Encoding") or _hdrs.get("content-encoding"),
+            "head=", (repr(_b[:16]) if isinstance(_b, (str, bytes, bytearray)) else "?"),
+            "err=", repr(ex),
+        )
         return err(400, "Ошибка парсинга JSON")
 
     nodes_in          = body.get("nodes", [])
