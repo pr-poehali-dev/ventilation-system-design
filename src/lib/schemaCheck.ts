@@ -21,6 +21,8 @@ export interface SchemaCheckResult {
   dupes: DupePair[];
   dupBranches: DupBranchGroup[];
   zeroRBranches: TopoBranch[];
+  /** Ветви с длиной = 0 — не имеют сопротивления, расчёт воздухораспределения невозможен. */
+  zeroLenBranches: TopoBranch[];
   highRBranches: TopoBranch[];
   bulkBranches: BulkCheck[];
   /** Ветви с длиной, заданной вручную (manualLength=true) — длина не пересчитывается из координат. */
@@ -32,7 +34,7 @@ export interface SchemaCheckResult {
   noAtmosphere: boolean;
   tabCounts: {
     near: number; isolated: number; dupes: number;
-    dupbranch: number; zeroR: number; highR: number; bulkR: number; manualLen: number;
+    dupbranch: number; zeroR: number; zeroLen: number; highR: number; bulkR: number; manualLen: number;
     isolatedBranch: number;
   };
   totalIssues: number;
@@ -164,6 +166,7 @@ export function checkSchema(
 
   // ── Ветви по сопротивлению + перемычки (один проход) ────────────────────────
   const zeroRBranches: TopoBranch[] = [];
+  const zeroLenBranches: TopoBranch[] = [];
   const highRBranches: TopoBranch[] = [];
   const bulkBranches: BulkCheck[] = [];
   const manualLenBranches: TopoBranch[] = [];
@@ -173,6 +176,11 @@ export function checkSchema(
       if (!capReached(zeroRBranches.length)) zeroRBranches.push(b); else truncated = true;
     } else if (r > highRThreshold) {
       if (!capReached(highRBranches.length)) highRBranches.push(b); else truncated = true;
+    }
+    // Ветвь с нулевой длиной не имеет аэродинамического сопротивления —
+    // расчёт воздухораспределения по ней невозможен.
+    if ((b.length ?? 0) <= 0) {
+      if (!capReached(zeroLenBranches.length)) zeroLenBranches.push(b); else truncated = true;
     }
     if (b.hasBulkhead) {
       const rKmu = branchBulkheadRkMurg(b);
@@ -231,6 +239,7 @@ export function checkSchema(
   const tabCounts = {
     near: nearPairs.length, isolated: isolated.length, dupes: dupes.length,
     dupbranch: dupBranches.length, zeroR: zeroRBranches.length,
+    zeroLen: zeroLenBranches.length,
     highR: highRBranches.length, bulkR: bulkBranches.length,
     manualLen: manualLenBranches.length,
     isolatedBranch: isolatedBranches.length,
@@ -238,11 +247,12 @@ export function checkSchema(
   // Ветви с ручной длиной — информационная пометка, не критичная ошибка,
   // поэтому в totalIssues не включаем (чтобы «схема без ошибок» оставалась зелёной).
   const totalIssues = nearPairs.length + isolated.length + dupes.length
-    + dupBranches.length + zeroRBranches.length + highRBranches.length + bulkBranches.length
+    + dupBranches.length + zeroRBranches.length + zeroLenBranches.length
+    + highRBranches.length + bulkBranches.length
     + isolatedBranches.length;
 
   return {
-    nearPairs, isolated, dupes, dupBranches, zeroRBranches, highRBranches, bulkBranches,
+    nearPairs, isolated, dupes, dupBranches, zeroRBranches, zeroLenBranches, highRBranches, bulkBranches,
     manualLenBranches, isolatedBranches, noAtmosphere,
     tabCounts, totalIssues, truncated,
   };
