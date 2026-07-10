@@ -265,7 +265,7 @@ export const LEGEND_TYPES: LegendType[] = [
 
   // ─── ВОДОПРОВОД ───────────────────────────────────────────────────────
   { id: "pump",        name: "Насос",                             group: "Водопровод",
-    svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#333" stroke-width="1.5"/><path d="M14,26 Q24,8 34,26" fill="none" stroke="#333" stroke-width="1.5"/>` },
+    svgContent: `<line x1="2" y1="20" x2="10" y2="20" stroke="#dc2626" stroke-width="1.5"/><line x1="38" y1="20" x2="46" y2="20" stroke="#dc2626" stroke-width="1.5"/><circle cx="24" cy="20" r="14" fill="white" stroke="#dc2626" stroke-width="1.5"/><path d="M14,26 Q24,8 34,26" fill="none" stroke="#dc2626" stroke-width="1.5"/>` },
   { id: "pump_station",name: "Насос и насосная станция стационарные", group: "Водопровод",
     svgContent: `<circle cx="24" cy="20" r="14" fill="#222" stroke="#333" stroke-width="1.5"/><path d="M14,26 Q24,8 34,26" fill="none" stroke="white" stroke-width="1.5"/>` },
   { id: "valve_reduce",name: "Клапан редукционный",               group: "Водопровод",

@@ -51,6 +51,23 @@ export interface SchemaSymbol {
   msIndOffsetX?: number;
   msIndOffsetY?: number;
   msIndFontSize?: number;
+  // ── Насос (typeId: "pump") ──────────────────────────────────────────
+  /** ID выбранной модели насоса из библиотеки PUMP_CATALOG или пользовательской */
+  pumpModelId?: string;
+  /** Название насоса (марка) — для подписи */
+  pumpName?: string;
+  /** Номинальный напор, м вод. ст. */
+  pumpHead?: number;
+  /** Номинальная подача (расход), м³/ч */
+  pumpFlow?: number;
+  /** Частота вращения, об/мин */
+  pumpRpm?: number;
+  /** КПД, доли (0..1) */
+  pumpEfficiency?: number;
+  /** Мощность на валу, кВт */
+  pumpPower?: number;
+  /** Число параллельно работающих насосов */
+  pumpParallel?: number;
 }
 
 export type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "fireload" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "compare" | "bulkhead";

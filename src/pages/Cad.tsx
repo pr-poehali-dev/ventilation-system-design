@@ -43,6 +43,8 @@ import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberD
 import PrintDialog from "@/components/cad/PrintDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
+import { type PumpModel } from "@/lib/pumps";
+import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
@@ -1084,6 +1086,8 @@ export default function CadPage() {
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
+  // Пользовательские модели насосов (сохраняются в проекте)
+  const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
   const [selectedSymbolIds, setSelectedSymbolIds] = useState<Set<string>>(new Set());
@@ -1608,6 +1612,7 @@ export default function CadPage() {
     horizons,
     schemaSymbols,
     mineFans,
+    userPumps,
     mineBulkheads,
     mineTypes,
     calcMode,
@@ -1644,7 +1649,7 @@ export default function CadPage() {
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     setIsDirty(true);
-  }, [nodes, branchesRaw, schemaSymbols, mineFans, mineBulkheads, mineTypes,
+  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
       showFlowArrows, flowDisplay, zScale, xyScale]);
@@ -1954,6 +1959,7 @@ export default function CadPage() {
       return { ...br, hasBulkhead: false };
     }));
     if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
+    setUserPumps(Array.isArray(data.userPumps) ? (data.userPumps as PumpModel[]) : []);
     {
       const loaded = data.mineBulkheads as MineBulkheadExport[] | undefined;
       if (loaded && loaded.length > 0) {
@@ -6803,6 +6809,16 @@ export default function CadPage() {
                         );
                       })()}
                     </>
+                  )}
+
+                  {/* ── Насос ── */}
+                  {sym.typeId === "pump" && (
+                    <PumpPanel
+                      sym={sym}
+                      userPumps={userPumps}
+                      onUpdate={updSym}
+                      onAddUserPump={(pump) => setUserPumps((prev) => [...prev, pump])}
+                    />
                   )}
                 </div>
               );
