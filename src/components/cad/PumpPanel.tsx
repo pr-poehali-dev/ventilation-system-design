@@ -13,6 +13,7 @@ import {
 } from "@/lib/pumps";
 import PumpChart from "@/components/cad/PumpChart";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
+import type { WaterBranchResult } from "@/lib/waterHydraulics";
 
 interface Props {
   sym: SchemaSymbol;
@@ -20,12 +21,14 @@ interface Props {
   userPumps: PumpModel[];
   onUpdate: (patch: Partial<SchemaSymbol>) => void;
   onAddUserPump: (pump: PumpModel) => void;
+  /** Результат гидравлического расчёта по ветви, на которой стоит насос */
+  waterBranchResult?: WaterBranchResult;
 }
 
 const inputCls = "flex-1 px-1 py-0.5 text-[11px] text-right";
 const inputStyle: React.CSSProperties = { border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 };
 
-export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump }: Props) {
+export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, waterBranchResult }: Props) {
   const [showLibrary, setShowLibrary] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [filterType, setFilterType] = useState<PumpType | "all">("all");
@@ -193,6 +196,35 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump }: P
           <div className="text-[9px] text-gray-400 mt-1">
             <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "#dc2626" }} /> напор ·
             <span className="inline-block w-3 h-0.5 align-middle ml-1" style={{ background: "#9ca3af", borderTop: "1px dashed #9ca3af" }} /> КПД
+          </div>
+        </div>
+      )}
+
+      {/* Результат гидравлического расчёта водопровода на ветви насоса */}
+      {waterBranchResult && (
+        <div className="mt-2 rounded p-2" style={{ background: waterBranchResult.pumpActive ? "#f0fdf4" : "#f9fafb", border: "1px solid #e5e7eb" }}>
+          <div className="text-[10px] font-medium text-gray-600 mb-1 flex items-center gap-1">
+            <Icon name="Activity" size={11} /> Результат расчёта
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-600 mb-0.5">
+            <span className="text-gray-400">Насос</span>
+            <span className={waterBranchResult.pumpActive ? "text-green-700 font-medium" : "text-gray-400"}>
+              {waterBranchResult.pumpActive ? "● Повышает напор" : "○ Не активен"}
+            </span>
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-600 mb-0.5">
+            <span className="text-gray-400">Прибавка напора</span>
+            <span className="font-medium text-gray-800">
+              {(waterBranchResult.pumpHeadM ?? 0).toFixed(1)} м · +{(waterBranchResult.pumpDeltaP ?? 0).toFixed(3)} МПа
+            </span>
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-600 mb-0.5">
+            <span className="text-gray-400">Расход в трубе</span>
+            <span className="font-medium text-gray-800">{waterBranchResult.flow.toFixed(1)} м³/ч</span>
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-600">
+            <span className="text-gray-400">Скорость воды</span>
+            <span className="font-medium text-gray-800">{waterBranchResult.velocity.toFixed(2)} м/с</span>
           </div>
         </div>
       )}

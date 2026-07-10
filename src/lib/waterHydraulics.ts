@@ -36,6 +36,9 @@ export interface WaterBranchResult {
   reducerInP: number;     // МПа — давление на входе клапана
   reducerOutP: number;    // МПа — давление на выходе клапана
   reducerDeltaP: number;  // МПа — сколько срезал клапан
+  pumpActive?: boolean;   // насос повышает напор на этой ветви
+  pumpHeadM?: number;     // м вод. ст. — напор насоса (суммарно)
+  pumpDeltaP?: number;    // МПа — прибавка давления от насоса
 }
 
 // ─── Формулы ──────────────────────────────────────────────────────────────────

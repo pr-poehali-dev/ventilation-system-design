@@ -270,8 +270,25 @@ export default function CadPage() {
     if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
     // Дебаунс 400мс — при больших схемах (Canvas >800 ветвей) не спамим запросами
     const tid = setTimeout(() => {
-      // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload
-      const waterBranches = branches.filter(b => b.hasWaterPipe);
+      // Карта: branchId → символ насоса (для передачи напора в расчёт)
+      const pumpByBranch = new Map<string, typeof schemaSymbols[number]>();
+      for (const s of schemaSymbols) {
+        if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
+      }
+      // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload.
+      // Если на ветви стоит насос — «впечатываем» его параметры в поля ветви
+      // (аналогично редукционному клапану), чтобы backend учёл напор насоса.
+      const waterBranches = branches.filter(b => b.hasWaterPipe).map(b => {
+        const pump = pumpByBranch.get(b.id);
+        if (!pump) return b;
+        const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
+        return {
+          ...b,
+          wpHasPump: head > 0,
+          wpPumpHead: head,                                  // м вод. ст. (суммарно по параллельным)
+          wpPumpReverse: pump.airDirection === "reverse",    // насос качает против направления ветви
+        };
+      });
       const waterNodeIds = new Set<string>();
       waterBranches.forEach(b => { waterNodeIds.add(b.fromId); waterNodeIds.add(b.toId); });
       // Также добавляем узлы с fireNodeType (резервуары и потребители)
@@ -290,7 +307,7 @@ export default function CadPage() {
       }).catch((err) => { console.error("[water-hydraulics] fetch error:", err); });
     }, 400);
     return () => clearTimeout(tid);
-  }, [nodes, branches]);
+  }, [nodes, branches, schemaSymbols]);
 
   // Запоминаем последнюю вкладку отдельно для узлов и ветвей
   const lastNodeTab = useRef<SideTab>("params");
@@ -6818,6 +6835,7 @@ export default function CadPage() {
                       userPumps={userPumps}
                       onUpdate={updSym}
                       onAddUserPump={(pump) => setUserPumps((prev) => [...prev, pump])}
+                      waterBranchResult={sym.branchId ? waterNetwork.branchResults.get(sym.branchId) : undefined}
                     />
                   )}
                 </div>

@@ -31,6 +31,26 @@
       "expectedStatus": 200,
       "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6}], "branchResults": [{"branchId": "B1", "flow": 216.581}]},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Сеть с насосом: насос повышает напор в ветви",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {"id": "N1", "fireNodeType": "reservoir", "fireInitPressure": 0.2, "fireCapacity": 50, "z": 0},
+          {"id": "N2", "fireNodeType": "consumer", "fireHydrantOpen": true, "fireHydrantDiameter": 50, "fireResistanceMode": "project", "z": 0}
+        ],
+        "branches": [
+          {"id": "B1", "fromId": "N1", "toId": "N2", "hasWaterPipe": true,
+           "wpDiameter": 100, "length": 100, "wpLengthManual": false,
+           "wpRoughnessMode": "rough", "wpRoughness": 0.5, "wpLocalXi": 0,
+           "wpHasReducer": false, "wpHasPump": true, "wpPumpHead": 50, "wpPumpReverse": false}
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"branchResults": [{"branchId": "B1", "pumpActive": true, "pumpHeadM": 50.0}]},
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -10,8 +10,13 @@ POST: {
   branches: [{id, fromId, toId,
               hasWaterPipe, wpDiameter, wpLengthManual, wpLength, length,
               wpRoughnessMode, wpRoughness, wpManualR, wpLocalXi,
-              wpHasReducer, wpReducerOutPressure, wpReducerMaxFlow, z}]
+              wpHasReducer, wpReducerOutPressure, wpReducerMaxFlow, z,
+              wpHasPump, wpPumpHead, wpPumpReverse}]
 }
+
+Насос повышает напор в направлении своего потока (аналог редукционного
+клапана, но наоборот): P += ρ·g·H / 1e6, где H — напор насоса в м вод.ст.
+
 """
 import json, math, collections
 
@@ -101,6 +106,7 @@ def calc_water_network(nodes_in, branches_in):
             "deltaP": 0.0, "resistance": R,
             "reducerActive": False, "reducerInP": 0.0,
             "reducerOutP": 0.0, "reducerDeltaP": 0.0,
+            "pumpActive": False, "pumpHeadM": 0.0, "pumpDeltaP": 0.0,
         }
 
     # Узлы
@@ -219,6 +225,24 @@ def calc_water_network(nodes_in, branches_in):
                 p_avail          = reducer_target if reducer_active else p_avail_raw
                 reducer_delta    = p_avail_raw - reducer_target if reducer_active else 0.0
 
+                # ── Насос: повышает напор в направлении своего потока ──────────
+                # wpPumpHead — суммарный напор насоса, м вод.ст. (с учётом
+                # параллельных). Переводим в МПа: P = ρ·g·H / 1e6.
+                # По умолчанию насос качает по направлению ветви from→to; при
+                # реверсе (wpPumpReverse) — против. Напор добавляем только когда
+                # обход top-down идёт в ту же сторону, что качает насос.
+                has_pump   = bool(br.get("wpHasPump"))
+                pump_head_m = float(br.get("wpPumpHead", 0) or 0) if has_pump else 0.0
+                pump_reverse = bool(br.get("wpPumpReverse"))
+                pump_delta = 0.0
+                if has_pump and pump_head_m > 0:
+                    # Направление качания насоса (from→to) с учётом реверса
+                    pump_dir_from_to = not pump_reverse
+                    # Обход идёт от текущего узла nid; is_from=True → идём from→to
+                    if is_from == pump_dir_from_to:
+                        pump_delta = 1000.0 * 9.81 * pump_head_m / 1e6
+                p_avail = p_avail + pump_delta
+
                 flow     = branch_flow.get(bid, 0.0)
                 max_flow = float(br.get("wpReducerMaxFlow", 9999) or 9999) if has_reducer else 9999.0
                 flow_eff = min(flow, max_flow)
@@ -235,6 +259,9 @@ def calc_water_network(nodes_in, branches_in):
                     "reducerInP":    round(p_avail_raw, 4),
                     "reducerOutP":   round(p_avail, 4),
                     "reducerDeltaP": round(reducer_delta, 4),
+                    "pumpActive":    has_pump and pump_delta > 0,
+                    "pumpHeadM":     round(pump_head_m, 2),
+                    "pumpDeltaP":    round(pump_delta, 4),
                 }
 
                 prev = node_pressures.get(nbr)
