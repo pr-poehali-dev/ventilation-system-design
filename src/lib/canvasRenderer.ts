@@ -127,6 +127,10 @@ export interface CanvasRenderOptions {
   rescuePathNodeIds?: Set<string>;
   /** Буквенные метки узлов горноспасателей: nodeId → «А»/«Б»/«В» */
   rescueNodeLetters?: Map<string, string>;
+  /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */
+  rescuePathBranchIds?: Set<string>;
+  /** Направление движения по ветви маршрута: true = fromId→toId, false = toId→fromId */
+  rescuePathBranchDirs?: Map<string, boolean>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -374,6 +378,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     rescuePathNodeIds, rescueNodeLetters,
+    rescuePathBranchIds, rescuePathBranchDirs,
     highlightHorizonId = null,
     xyScale,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
@@ -782,6 +787,57 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     if (flowVisible) {
       ctx.fillStyle = color; ctx.globalAlpha = 0.9; ctx.setLineDash([]);
       ctx.beginPath(); ctx.arc(sxA, syA, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // ── Подсветка маршрута горноспасателей + стрелки направления (как в SVG) ──
+    if (rescuePathBranchIds?.has(b.id)) {
+      ctx.save();
+      ctx.setLineDash([]);
+      // Зелёная аура
+      ctx.strokeStyle = "#16a34a"; ctx.globalAlpha = 0.4;
+      ctx.lineWidth = Math.max(w + 10, 7); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      // Зелёная штриховая линия
+      ctx.strokeStyle = "#4ade80"; ctx.globalAlpha = 0.9;
+      ctx.lineWidth = Math.max(w + 3, 3); ctx.setLineDash([14, 6]);
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Направление движения по ветви
+      const forward = rescuePathBranchDirs?.get(b.id) ?? true;
+      const rAxA = forward ? p.fromSx : p.toSx;
+      const rAyA = forward ? p.fromSy : p.toSy;
+      const rAxB = forward ? p.toSx   : p.fromSx;
+      const rAyB = forward ? p.toSy   : p.fromSy;
+      const rdx = rAxB - rAxA, rdy = rAyB - rAyA;
+      const rLen = Math.hypot(rdx, rdy);
+      const rAngle = Math.atan2(rdy, rdx);
+      const arrowStep = 90;
+      const arrowCount = rLen > arrowStep ? Math.floor(rLen / arrowStep) : 1;
+      if (rLen > 20) {
+        const al = Math.min(22, Math.max(14, w * 3.5));
+        const hw = al / 2;
+        ctx.globalAlpha = 0.95;
+        for (let i = 0; i < arrowCount; i++) {
+          const t0 = (i + 1) / (arrowCount + 1);
+          const cx = rAxA + rdx * t0, cy = rAyA + rdy * t0;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(rAngle);
+          // Хвостик
+          ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 5, 0); ctx.stroke();
+          ctx.strokeStyle = "#15803d"; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(-hw, 0); ctx.lineTo(hw - 5, 0); ctx.stroke();
+          // Наконечник
+          ctx.fillStyle = "white"; ctx.strokeStyle = "#15803d"; ctx.lineWidth = 1; ctx.lineJoin = "round";
+          ctx.beginPath();
+          ctx.moveTo(hw - 7, -5); ctx.lineTo(hw, 0); ctx.lineTo(hw - 7, 5); ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          ctx.restore();
+        }
+      }
+      ctx.restore();
     }
 
     // Стрелка потока — одна по центру ветви с тонким хвостиком, стиль Вентиляция 2.0

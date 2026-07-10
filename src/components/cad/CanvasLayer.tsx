@@ -77,6 +77,8 @@ interface CanvasLayerProps {
   posInnerColors?: Map<string, string>;
   rescuePathNodeIds?: Set<string>;
   rescueNodeLetters?: Map<string, string>;
+  rescuePathBranchIds?: Set<string>;
+  rescuePathBranchDirs?: Map<string, boolean>;
 
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -218,6 +220,8 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         posInnerColors: p.posInnerColors,
         rescuePathNodeIds: p.rescuePathNodeIds,
         rescueNodeLetters: p.rescueNodeLetters,
+        rescuePathBranchIds: p.rescuePathBranchIds,
+        rescuePathBranchDirs: p.rescuePathBranchDirs,
       });
     } catch (err) {
       console.error("[CanvasLayer] renderCanvas error:", err);
@@ -267,6 +271,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.colorMode, props.flowColorMin, props.flowColorMax, props.flowColorHue,
     props.posInnerColors,
     props.rescuePathNodeIds, props.rescueNodeLetters,
+    props.rescuePathBranchIds, props.rescuePathBranchDirs,
     props.width, props.height,
   ]);
 

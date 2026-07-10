@@ -16,6 +16,7 @@ import {
 } from "@/lib/approverTemplate";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import CanvasLayer from "@/components/cad/CanvasLayer";
+import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/cad/CanvasLayerExports";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2467,8 +2468,12 @@ export default function TopoCanvas(props: Props) {
         </svg>
       )}
 
-      {/* ── Canvas-рендерер (большие схемы > CANVAS_THRESHOLD ветвей) ── */}
+      {/* ── Canvas-рендерер (большие схемы > CANVAS_THRESHOLD ветвей) ──
+          Обёрнут в CanvasErrorBoundary: если рендер упадёт из-за непредвиденной
+          ошибки (например, некорректные данные маршрута горноспасателей),
+          пользователь увидит понятное сообщение вместо чёрного экрана всего приложения. */}
       {useCanvas && (
+        <CanvasErrorBoundary>
         <CanvasLayer
           width={size.w}
           height={size.h}
@@ -2517,6 +2522,8 @@ export default function TopoCanvas(props: Props) {
           posInnerColors={posInnerColors}
           rescuePathNodeIds={rescuePathNodeIds}
           rescueNodeLetters={rescueNodeLetters}
+          rescuePathBranchIds={rescuePathBranchIds}
+          rescuePathBranchDirs={rescuePathBranchDirs}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -2528,6 +2535,7 @@ export default function TopoCanvas(props: Props) {
           onRegisterGetCanvas={(fn) => { canvasExportRef.current = fn; }}
           onRegisterCanvasEl={onRegisterCanvasEl}
         />
+        </CanvasErrorBoundary>
       )}
 
       {/* ── Canvas-режим: overlay SVG для интерактивных элементов (preview ветви, ghost) ── */}
