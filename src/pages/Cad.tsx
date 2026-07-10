@@ -8131,22 +8131,25 @@ export default function CadPage() {
                 const dragPos = positions.find(p => p.id === leaderDragRef.current!.posId);
                 const pz = (dragPos?.z ?? 0) * (zScale ?? 1);
                 const xy = xyScale ?? 1;
-                // Компенсируем «фиксированный масштаб» выноски: на экране конец выноски
-                // отрисован в зажатом масштабе (clampRatio), поэтому курсор нужно
-                // вернуть в реальные мировые координаты вокруг центра маркера.
+                // Экранная длина выноски нормирована на масштаб маркера (leaderScale),
+                // поэтому курсор нужно вернуть к реальному мировому смещению вокруг
+                // центра маркера (обратное преобразование). Применяется всегда — так же,
+                // как при отрисовке выноски.
                 let dsx = sx, dsy = sy;
-                if (scaleLimitsEnabled && dragPos) {
+                if (dragPos) {
                   const _xySFPosD = Math.max(1, xy);
                   const _rawPosSFD = vs.scale / (_xySFPosD * 0.4);
-                  const posSFD = Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSFD));
-                  const clampRatio = _rawPosSFD > 0 ? posSFD / _rawPosSFD : 1;
-                  if (clampRatio !== 0 && clampRatio !== 1) {
+                  const posSFD = scaleLimitsEnabled
+                    ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSFD))
+                    : Math.min(8, Math.max(0.25, _rawPosSFD));
+                  const leaderScale = _rawPosSFD > 0 ? posSFD / _rawPosSFD : 1;
+                  if (leaderScale !== 0 && leaderScale !== 1) {
                     const pm = project3D(
                       { x: dragPos.x * xy, y: dragPos.y * xy, z: (dragPos.z ?? 0) * (zScale ?? 1) },
                       { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation }
                     );
-                    dsx = pm.sx + (sx - pm.sx) / clampRatio;
-                    dsy = pm.sy + (sy - pm.sy) / clampRatio;
+                    dsx = pm.sx + (sx - pm.sx) / leaderScale;
+                    dsy = pm.sy + (sy - pm.sy) / leaderScale;
                   }
                 }
                 const w = unprojectToPlane(dsx, dsy, vs, { axis: "z", value: pz });
@@ -8244,7 +8247,28 @@ export default function CadPage() {
                 if (pz === 0 && nodes.length > 0) {
                   pz = nodes[0].z;
                 }
-                const w = unprojectToPlane(sx2, sy2, vs2, { axis: "z", value: pz });
+                // Экранная длина выноски нормирована на масштаб маркера (leaderScale) —
+                // возвращаем курсор к реальному мировому смещению вокруг центра маркера,
+                // чтобы сохранённая точка совпала с отрисованной (без прыжка).
+                let fsx = sx2, fsy = sy2;
+                const xyD = xyScale ?? 1;
+                if (drawPos) {
+                  const _xySFPosD = Math.max(1, xyD);
+                  const _rawPosSFD = vs2.scale / (_xySFPosD * 0.4);
+                  const posSFD = scaleLimitsEnabled
+                    ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSFD))
+                    : Math.min(8, Math.max(0.25, _rawPosSFD));
+                  const leaderScale = _rawPosSFD > 0 ? posSFD / _rawPosSFD : 1;
+                  if (leaderScale !== 0 && leaderScale !== 1) {
+                    const pm = project3D(
+                      { x: drawPos.x * xyD, y: drawPos.y * xyD, z: (drawPos.z ?? 0) * (zScale ?? 1) },
+                      { scale: vs2.scale, offsetX: vs2.offsetX, offsetY: vs2.offsetY, azimuth: vs2.azimuth, elevation: vs2.elevation }
+                    );
+                    fsx = pm.sx + (sx2 - pm.sx) / leaderScale;
+                    fsy = pm.sy + (sy2 - pm.sy) / leaderScale;
+                  }
+                }
+                const w = unprojectToPlane(fsx, fsy, vs2, { axis: "z", value: pz });
                 if (w) {
                   setPositions(prev => prev.map(p =>
                     p.id === leaderDrawMode
@@ -9156,18 +9180,19 @@ export default function CadPage() {
 
                     if (endSx == null || endSy == null) return null;
 
-                    // Фиксированный масштаб выноски: когда «Пределы масштаба» ВКЛ,
-                    // маркер имеет фиксированный экранный размер (posSF зажат), а конец
-                    // выноски — мировая точка, проецируемая полным зумом. Из-за этого
-                    // при отдалении/приближении выноска «убегает» от маркера.
-                    // Приводим ДЛИНУ выноски к тому же фиксированному масштабу маркера,
-                    // масштабируя вектор от центра маркера на коэффициент зажатия.
+                    // Длина выноски привязана к масштабу МАРКЕРА (posSF), а не к полному
+                    // зуму схемы. Конец выноски — мировая точка, её экранное смещение от
+                    // маркера пропорционально vs.scale и потому растёт быстрее кружка,
+                    // из-за чего выноска «убегает» при увеличении схемы (особенно при
+                    // фиксированном масштабе, когда кружок не растёт, а выноска тянется).
+                    // Нормируем смещение на posSF/_rawPosSF ⇒ длина выноски ∝ posSF, т.е.
+                    // всегда пропорциональна размеру кружка в обоих режимах (лимиты вкл/выкл).
                     // В режиме рисования (isDrawing) не трогаем — конец следует за курсором.
-                    if (!isDrawing && scaleLimitsEnabled && _rawPosSF > 0) {
-                      const clampRatio = posSF / _rawPosSF;
-                      if (clampRatio !== 1) {
-                        endSx = pm.sx + (endSx - pm.sx) * clampRatio;
-                        endSy = pm.sy + (endSy - pm.sy) * clampRatio;
+                    if (!isDrawing && _rawPosSF > 0) {
+                      const leaderScale = posSF / _rawPosSF;
+                      if (leaderScale !== 1) {
+                        endSx = pm.sx + (endSx - pm.sx) * leaderScale;
+                        endSy = pm.sy + (endSy - pm.sy) * leaderScale;
                       }
                     }
 
