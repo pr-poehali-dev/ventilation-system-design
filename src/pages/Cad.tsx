@@ -957,17 +957,15 @@ export default function CadPage() {
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
   // Текущий вид TopoCanvas: ref для мгновенного доступа + state для перерисовки оверлея позиций
   const savedViewStateRef = useRef<SavedView | null>(null);
-  const viewTickRafRef = useRef<number | null>(null);
   const [viewStateTick, setViewStateTick] = useState(0);
   const handleViewStateChange = useCallback((v: SavedView) => {
     savedViewStateRef.current = v;
-    // Throttle через rAF — перерисовка оверлея позиций не чаще 60fps
-    if (viewTickRafRef.current === null) {
-      viewTickRafRef.current = requestAnimationFrame(() => {
-        viewTickRafRef.current = null;
-        setViewStateTick(t => t + 1);
-      });
-    }
+    // Обновляем оверлей позиций ПЛА В ТОТ ЖЕ кадр, что и схему (TopoCanvas).
+    // rAF-троттлинг убран: он сдвигал перерисовку выносок/маркеров на кадр
+    // назад, из-за чего в SVG-режиме позиции «отставали» от схемы при зуме.
+    // onViewStateChange вызывается лишь при реальном изменении вида (не чаще),
+    // поэтому прямой setState здесь безопасен по производительности.
+    setViewStateTick(t => t + 1);
   }, []);
   // ─── Позиции ────────────────────────────────────────────────────────────
   const [positions, setPositions] = useState<Position[]>([]);
@@ -8132,9 +8130,27 @@ export default function CadPage() {
               if (leaderDragRef.current) {
                 const dragPos = positions.find(p => p.id === leaderDragRef.current!.posId);
                 const pz = (dragPos?.z ?? 0) * (zScale ?? 1);
-                const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
-                if (!w) return;
                 const xy = xyScale ?? 1;
+                // Компенсируем «фиксированный масштаб» выноски: на экране конец выноски
+                // отрисован в зажатом масштабе (clampRatio), поэтому курсор нужно
+                // вернуть в реальные мировые координаты вокруг центра маркера.
+                let dsx = sx, dsy = sy;
+                if (scaleLimitsEnabled && dragPos) {
+                  const _xySFPosD = Math.max(1, xy);
+                  const _rawPosSFD = vs.scale / (_xySFPosD * 0.4);
+                  const posSFD = Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSFD));
+                  const clampRatio = _rawPosSFD > 0 ? posSFD / _rawPosSFD : 1;
+                  if (clampRatio !== 0 && clampRatio !== 1) {
+                    const pm = project3D(
+                      { x: dragPos.x * xy, y: dragPos.y * xy, z: (dragPos.z ?? 0) * (zScale ?? 1) },
+                      { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation }
+                    );
+                    dsx = pm.sx + (sx - pm.sx) / clampRatio;
+                    dsy = pm.sy + (sy - pm.sy) / clampRatio;
+                  }
+                }
+                const w = unprojectToPlane(dsx, dsy, vs, { axis: "z", value: pz });
+                if (!w) return;
                 setPositions(prev => prev.map(p =>
                   p.id === leaderDragRef.current!.posId
                     ? { ...p, leaderEndX: xy !== 1 ? w.x / xy : w.x, leaderEndY: xy !== 1 ? w.y / xy : w.y }
@@ -9140,6 +9156,21 @@ export default function CadPage() {
 
                     if (endSx == null || endSy == null) return null;
 
+                    // Фиксированный масштаб выноски: когда «Пределы масштаба» ВКЛ,
+                    // маркер имеет фиксированный экранный размер (posSF зажат), а конец
+                    // выноски — мировая точка, проецируемая полным зумом. Из-за этого
+                    // при отдалении/приближении выноска «убегает» от маркера.
+                    // Приводим ДЛИНУ выноски к тому же фиксированному масштабу маркера,
+                    // масштабируя вектор от центра маркера на коэффициент зажатия.
+                    // В режиме рисования (isDrawing) не трогаем — конец следует за курсором.
+                    if (!isDrawing && scaleLimitsEnabled && _rawPosSF > 0) {
+                      const clampRatio = posSF / _rawPosSF;
+                      if (clampRatio !== 1) {
+                        endSx = pm.sx + (endSx - pm.sx) * clampRatio;
+                        endSy = pm.sy + (endSy - pm.sy) * clampRatio;
+                      }
+                    }
+
                     const dx = endSx - pm.sx, dy = endSy - pm.sy;
                     const dist = Math.hypot(dx, dy);
                     if (dist < 2) return null;
@@ -9149,18 +9180,18 @@ export default function CadPage() {
 
                     return (
                       <g key={`leader-${pos.id}`}>
-                        {/* Пунктирная линия — по ГОСТ чёрного цвета */}
+                        {/* Пунктирная линия-выноска — красная (единый стиль SVG/Canvas) */}
                         <line
                           x1={x1} y1={y1} x2={endSx} y2={endSy}
-                          stroke="#000000" strokeWidth={lw}
+                          stroke="#e11d48" strokeWidth={lw}
                           strokeDasharray="6,3" strokeLinecap="round"
-                          opacity={isDrawing ? 0.6 : 0.9}
+                          opacity={isDrawing ? 0.6 : 0.95}
                           style={{ pointerEvents: "none" }}
                         />
                         {/* Точка привязки к ветви */}
                         {isBranchAttached && !isDrawing && (
                           <circle cx={endSx} cy={endSy} r={4}
-                            fill="#000000" stroke="#fff" strokeWidth={1.5}
+                            fill="#e11d48" stroke="#fff" strokeWidth={1.5}
                             style={{ pointerEvents: "none" }} />
                         )}
                         {/* Ручка для перемещения (только когда не привязана к ветви) */}

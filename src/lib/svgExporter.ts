@@ -527,6 +527,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const borderColor = pos.borderColor || "#1f2937";
       const textColor = "#000000";
       const leaderThickness = Math.max(0.3, (pos.leaderThickness ?? 0.2) * pxPerMm);
+      const leaderColor = "#e11d48"; // выноска — красная (единый стиль с редактором)
 
       // Выноска: если задана leaderBranchId или leaderEndX
       if (pos.leaderBranchId && pos.leaderT != null) {
@@ -538,12 +539,12 @@ export function generateSvg(opts: SvgExportOptions): string {
           if (lbFrom && lbTo) {
             const lx = lbFrom.sx + (lbTo.sx - lbFrom.sx) * pos.leaderT;
             const ly = lbFrom.sy + (lbTo.sy - lbFrom.sy) * pos.leaderT;
-            parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${esc(borderColor)}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.85"/>`);
+            parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
           }
         }
       } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
         const lp = project3D({ x: pos.leaderEndX * _xySFExport, y: pos.leaderEndY * _xySFExport, z: pos.z * zScale }, proj);
-        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${esc(borderColor)}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.85"/>`);
+        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
       }
 
       // Кружок маркера
