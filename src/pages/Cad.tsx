@@ -818,6 +818,17 @@ export default function CadPage() {
   const [rescuePathBranchIds, setRescuePathBranchIds] = useState<Set<string>>(new Set());
   const [rescuePathBranchDirs, setRescuePathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
+  const [rescueWaypointIds, setRescueWaypointIds] = useState<string[]>([]);
+  // Буквенные метки узлов маршрута горноспасателей: А — начальный (база ВГСЧ),
+  // Б — целевой (место аварии), В — промежуточные узлы. Рисуются на схеме поверх узлов.
+  const rescueNodeLetters = React.useMemo(() => {
+    const m = new Map<string, string>();
+    if (activeSide !== "rescue") return m;
+    rescueWaypointIds.forEach(id => { if (id) m.set(id, "В"); });
+    if (rescueStartNodeId)  m.set(rescueStartNodeId, "А");
+    if (rescueTargetNodeId) m.set(rescueTargetNodeId, "Б");
+    return m;
+  }, [activeSide, rescueStartNodeId, rescueTargetNodeId, rescueWaypointIds]);
   // ─── Горнорабочий ──────────────────────────────────────────────────
   const [workerPickMode, setWorkerPickMode] = useState<WorkerPickMode>(null);
   const [workerStartNodeId, setWorkerStartNodeId] = useState("");
@@ -7807,6 +7818,7 @@ export default function CadPage() {
                   setRescuePathNodeIds(nIds);
                   setRescuePathBranchDirs(bDirs);
                 }}
+                onWaypointsChange={setRescueWaypointIds}
               />
             )}
 
@@ -8903,6 +8915,7 @@ export default function CadPage() {
                 : rescuePathNodeIds.size > 0 ? rescuePathNodeIds
                 : undefined
               }
+              rescueNodeLetters={rescueNodeLetters.size > 0 ? rescueNodeLetters : undefined}
               rescuePickMode={depressogramPickMode ? "depress" : (rescuePickMode ?? workerPickMode)}
               onRescueNodePick={(nodeId) => {
                 if (rescuePickMode) rescuePickHandlerRef.current?.(nodeId);

@@ -123,6 +123,10 @@ export interface CanvasRenderOptions {
   reversedBranchIds?: Set<string>;
   /** Карта branchId → цвет сравнения схем (#f59e0b=изменена, #22c55e=добавлена, #ef4444=удалена) */
   compareBranchColors?: Map<string, string>;
+  /** ID узлов маршрута горноспасателей — рисуются зелёным кольцом */
+  rescuePathNodeIds?: Set<string>;
+  /** Буквенные метки узлов горноспасателей: nodeId → «А»/«Б»/«В» */
+  rescueNodeLetters?: Map<string, string>;
 }
 
 // ─── Цвет ветви по скорости ────────────────────────────────────────────────
@@ -369,6 +373,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
+    rescuePathNodeIds, rescueNodeLetters,
     highlightHorizonId = null,
     xyScale,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
@@ -957,6 +962,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.setLineDash([3, 2]); ctx.stroke();
         ctx.setLineDash([]);
       }
+      // Кольцо маршрута горноспасателей (зелёное) — под основным кружком узла
+      if (rescuePathNodeIds?.has(n.id)) {
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + baseNodeR * 0.8, 0, Math.PI * 2);
+        ctx.fillStyle = "#16a34a"; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+        ctx.strokeStyle = "#15803d"; ctx.lineWidth = Math.max(0.8, baseNodeR * 0.25); ctx.stroke();
+      }
       // Для fire-узлов иконка заменяет кружок — рисуем маленький кружок только как маркер центра
       const consumerColor = (n.fireHydrantOpen ?? false) ? "#1d4ed8" : "#dc2626";
       const nodeColor = fireType === "reservoir" ? "#1d4ed8"
@@ -1128,6 +1139,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           });
           ctx.globalAlpha = 1;
         }
+      }
+
+      // Буквенная метка узла горноспасателей: А — начальный, Б — целевой, В — промежуточный
+      const rescueLetter = rescueNodeLetters?.get(n.id);
+      if (rescueLetter) {
+        const badgeR = Math.max(6, baseNodeR * 2.2);
+        const bx = pn.sx, by = pn.sy - badgeR - r;
+        const col = rescueLetter === "А" ? "#15803d" : rescueLetter === "Б" ? "#b91c1c" : "#b45309";
+        ctx.beginPath(); ctx.arc(bx, by, badgeR, 0, Math.PI * 2);
+        ctx.fillStyle = "white"; ctx.fill();
+        ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, badgeR * 0.18); ctx.stroke();
+        ctx.fillStyle = col;
+        ctx.font = `700 ${Math.round(badgeR * 1.4)}px "Segoe UI",sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(rescueLetter, bx, by + badgeR * 0.05);
       }
 
       ctx.restore();

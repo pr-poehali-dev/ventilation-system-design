@@ -47,6 +47,8 @@ interface Props {
   onPickedTargetChange: (id: string) => void;
   // Маршрут для подсветки на схеме
   onRouteChange: (branchIds: Set<string>, nodeIds: Set<string>, branchDirs: Map<string, boolean>) => void;
+  /** Актуальный список выбранных промежуточных узлов (для подписи «В» на схеме) */
+  onWaypointsChange?: (waypointIds: string[]) => void;
 }
 
 const OP_LABELS: Record<RescueOperationType, string> = {
@@ -603,7 +605,7 @@ export default function RescuePanel({
   pickMode, onPickModeChange, onRegisterPickHandler,
   pickedStartId, pickedTargetId,
   onPickedStartChange, onPickedTargetChange,
-  onRouteChange,
+  onRouteChange, onWaypointsChange,
 }: Props) {
   const [operationType, setOperationType] = useState<RescueOperationType>("scout_and_transport");
   const [useAirTemp, setUseAirTemp] = useState(false);
@@ -622,6 +624,12 @@ export default function RescuePanel({
   // Промежуточные узлы (вайпоинты)
   const [useWaypoints, setUseWaypoints] = useState(false);
   const [waypointIds, setWaypointIds] = useState<string[]>([]);
+
+  // Сообщаем родителю актуальные промежуточные узлы — для подписи «В» на схеме
+  React.useEffect(() => {
+    onWaypointsChange?.(useWaypoints ? waypointIds.filter(Boolean) : []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useWaypoints, waypointIds]);
 
   // Регистрируем обработчик pick-клика — Cad.tsx запомнит fn и будет её вызывать
   const pickHandlerRef = React.useRef<(nodeId: string) => void>(() => {});

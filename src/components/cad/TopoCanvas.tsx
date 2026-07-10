@@ -214,6 +214,8 @@ interface Props {
   rescuePathBranchDirs?: Map<string, boolean>;
   /** ID узлов маршрута горноспасателей (старт/финиш) — подсвечиваются */
   rescuePathNodeIds?: Set<string>;
+  /** Буквенные метки узлов горноспасателей: nodeId → «А»/«Б»/«В» */
+  rescueNodeLetters?: Map<string, string>;
   /** Callback при клике по узлу в режиме pick (rescuePickMode) */
   onRescueNodePick?: (nodeId: string) => void;
   /** Callback при клике по ветви в режиме pick (rescuePickMode) */
@@ -288,6 +290,7 @@ export default function TopoCanvas(props: Props) {
     rescuePathBranchIds,
     rescuePathBranchDirs,
     rescuePathNodeIds,
+    rescueNodeLetters,
     onRescueNodePick,
     onRescueBranchPick,
     rescuePickMode,
@@ -2500,6 +2503,8 @@ export default function TopoCanvas(props: Props) {
           flowColorMax={flowColorMax}
           flowColorHue={flowColorHue}
           posInnerColors={posInnerColors}
+          rescuePathNodeIds={rescuePathNodeIds}
+          rescueNodeLetters={rescueNodeLetters}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -4052,6 +4057,22 @@ export default function TopoCanvas(props: Props) {
               {isRescuePath && (
                 <circle r={r + baseNodeR * 0.8} fill="#16a34a" stroke="#15803d" strokeWidth={1.5 * nodeSF} opacity="0.85" />
               )}
+              {/* Буквенная метка узла горноспасателей: А — начальный, Б — целевой, В — промежуточный */}
+              {rescueNodeLetters?.get(node.id) && (() => {
+                const letter = rescueNodeLetters.get(node.id)!;
+                const badgeR = Math.max(6, baseNodeR * 2.2);
+                const fs = badgeR * 1.4;
+                const col = letter === "А" ? "#15803d" : letter === "Б" ? "#b91c1c" : "#b45309";
+                return (
+                  <g>
+                    <circle cx={0} cy={-badgeR - r} r={badgeR} fill="white" stroke={col} strokeWidth={Math.max(1, badgeR * 0.18)} />
+                    <text x={0} y={-badgeR - r} textAnchor="middle" dominantBaseline="central"
+                      fontSize={fs} fontWeight={700} fill={col} style={{ userSelect: "none" }}>
+                      {letter}
+                    </text>
+                  </g>
+                );
+              })()}
               {/* Кольцо выделения — только для обычных узлов */}
               {(isSel || isBranchFrom) && !hasFire && (
                 <circle r={r + baseNodeR * 0.5} fill="none" stroke={ringColor} strokeWidth={Math.min(2, Math.max(0.5, baseNodeR * 0.2))}
