@@ -8,6 +8,7 @@ import {
 } from "@/lib/bulkheads";
 import UnitsConfigPanel from "@/components/cad/UnitsConfigPanel";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead } from "@/lib/pumps";
 
 type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport" | "units";
 
@@ -1452,10 +1453,6 @@ const DEMO_TYPICAL = [
   { name: "Превышение CH₄ > 1%", steps: 5, resp: "Мастер ВТБ", dur: "10 мин" },
   { name: "Отказ ГВУ", steps: 4, resp: "Гл. механик", dur: "20 мин" },
 ];
-const DEMO_PUMPS = [
-  { name: "ЦНС-60-264", type: "Центробежный", q: "60 м³/ч", h: "264 м", power: "75 кВт" },
-  { name: "ЦНС-300-120", type: "Центробежный", q: "300 м³/ч", h: "120 м", power: "132 кВт" },
-];
 const DEMO_PIPES = [
   { name: "Сталь Ст20", dn: "DN50", wall: "4 мм", p: "16 бар" },
   { name: "Сталь Ст20", dn: "DN100", wall: "5 мм", p: "16 бар" },
@@ -1600,8 +1597,16 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
     headers={["Мероприятие", "Шагов", "Ответственный", "Время"]}
     rows={DEMO_TYPICAL.map(r => [r.name, r.steps, r.resp, r.dur])} />;
   if (tab === "pumps") return <SimpleTable
-    headers={["Марка", "Тип", "Расход", "Напор", "Мощность"]}
-    rows={DEMO_PUMPS.map(r => [r.name, r.type, r.q, r.h, r.power])} />;
+    headers={["Марка", "Тип", "Подача", "Напор", "Обороты", "Мощность", "КПД"]}
+    rows={PUMP_CATALOG.map(p => [
+      `${p.brand} ${p.model}`,
+      PUMP_TYPE_NAMES[p.type],
+      `${p.Qopt} м³/ч`,
+      `${Math.round(pumpHead(p, p.Qopt))} м`,
+      `${p.rpm} об/мин`,
+      `${p.power} кВт`,
+      `${Math.round(p.etaMax * 100)} %`,
+    ])} />;
   if (tab === "pipes") return <SimpleTable
     headers={["Материал", "DN", "Стенка", "Давление"]}
     rows={DEMO_PIPES.map(r => [r.name, r.dn, r.wall, r.p])} />;

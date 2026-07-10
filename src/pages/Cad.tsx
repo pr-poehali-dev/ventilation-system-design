@@ -8594,8 +8594,9 @@ export default function CadPage() {
                   setActiveSide("fan");
                   return;
                 }
-                // Для перемычек и замерных станций — НЕ выбираем ветвь, чтобы открылась панель символа (не ветви)
-                if (sym?.branchId && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
+                // Для перемычек, замерных станций и насосов — НЕ выбираем ветвь,
+                // чтобы открылась панель символа (а не свойства ветви).
+                if (sym?.branchId && sym.typeId !== "pump" && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                 } else {
