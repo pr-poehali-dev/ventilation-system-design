@@ -1209,8 +1209,12 @@ export default function TopoCanvas(props: Props) {
     // узлы схемы визуально закрыты этими символами. Если сначала отсекать клики
     // по [data-sym], то в canvas-режиме по такому узлу невозможно попасть.
     // Поэтому в режиме pick сразу делаем hit-тест по узлам/ветвям схемы.
+    if (rescuePickMode) {
+      console.log("[RESCUE-PICK] onMouseDown", { rescuePickMode, button: e.button, sx, sy, hasCb: !!onRescueNodePick, nProj: projNodes.length });
+    }
     if (rescuePickMode && e.button === 0) {
       const hitNp = hitNode(sx, sy, projNodes);
+      console.log("[RESCUE-PICK] hitNode result:", hitNp);
       if (hitNp && onRescueNodePick) {
         onRescueNodePick(hitNp);
         e.stopPropagation();
@@ -4318,6 +4322,7 @@ export default function TopoCanvas(props: Props) {
           style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none", cursor: cursorStyle }}
           width={size.w} height={size.h}
           onMouseDown={(e) => {
+            if (rescuePickMode) console.log("[RESCUE-PICK] overlay-svg onMouseDown fired", { target: (e.target as Element)?.tagName });
             // В режиме выбора узла/ветви для горноспасателей клик должен доходить
             // до схемы, даже если сверху лежит символ УО — иначе в canvas-режиме
             // по закрытому символом узлу невозможно попасть.
