@@ -263,51 +263,9 @@ export default function CadPage() {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
-  // Гидравлический расчёт водопроводной сети ППЗ (backend)
+  // Гидравлический расчёт водопроводной сети ППЗ (backend).
+  // Сам useEffect вынесен ниже — после объявления schemaSymbols, т.к. он его использует.
   const [waterNetwork, setWaterNetwork] = useState<{ nodeResults: Map<string, WaterNodeResult>; branchResults: Map<string, WaterBranchResult> }>({ nodeResults: new Map(), branchResults: new Map() });
-  useEffect(() => {
-    const hasWater = branches.some(b => b.hasWaterPipe);
-    if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
-    // Дебаунс 400мс — при больших схемах (Canvas >800 ветвей) не спамим запросами
-    const tid = setTimeout(() => {
-      // Карта: branchId → символ насоса (для передачи напора в расчёт)
-      const pumpByBranch = new Map<string, typeof schemaSymbols[number]>();
-      for (const s of schemaSymbols) {
-        if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
-      }
-      // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload.
-      // Если на ветви стоит насос — «впечатываем» его параметры в поля ветви
-      // (аналогично редукционному клапану), чтобы backend учёл напор насоса.
-      const waterBranches = branches.filter(b => b.hasWaterPipe).map(b => {
-        const pump = pumpByBranch.get(b.id);
-        if (!pump) return b;
-        const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
-        return {
-          ...b,
-          wpHasPump: head > 0,
-          wpPumpHead: head,                                  // м вод. ст. (суммарно по параллельным)
-          wpPumpReverse: pump.airDirection === "reverse",    // насос качает против направления ветви
-        };
-      });
-      const waterNodeIds = new Set<string>();
-      waterBranches.forEach(b => { waterNodeIds.add(b.fromId); waterNodeIds.add(b.toId); });
-      // Также добавляем узлы с fireNodeType (резервуары и потребители)
-      nodes.forEach(n => { if ((n.fireNodeType ?? "none") !== "none") waterNodeIds.add(n.id); });
-      const waterNodes = nodes.filter(n => waterNodeIds.has(n.id));
-      fetch(WATER_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: waterNodes, branches: waterBranches }),
-      }).then(r => r.json()).then(data => {
-        const nr = new Map<string, WaterNodeResult>();
-        const br = new Map<string, WaterBranchResult>();
-        (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
-        (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
-        setWaterNetwork({ nodeResults: nr, branchResults: br });
-      }).catch((err) => { console.error("[water-hydraulics] fetch error:", err); });
-    }, 400);
-    return () => clearTimeout(tid);
-  }, [nodes, branches, schemaSymbols]);
 
   // Запоминаем последнюю вкладку отдельно для узлов и ветвей
   const lastNodeTab = useRef<SideTab>("params");
@@ -1105,6 +1063,53 @@ export default function CadPage() {
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
+
+  // Гидравлический расчёт водопроводной сети ППЗ (backend).
+  // Объявлен здесь (а не выше вместе с waterNetwork state), т.к. использует schemaSymbols.
+  useEffect(() => {
+    const hasWater = branches.some(b => b.hasWaterPipe);
+    if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
+    // Дебаунс 400мс — при больших схемах (Canvas >800 ветвей) не спамим запросами
+    const tid = setTimeout(() => {
+      // Карта: branchId → символ насоса (для передачи напора в расчёт)
+      const pumpByBranch = new Map<string, typeof schemaSymbols[number]>();
+      for (const s of schemaSymbols) {
+        if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
+      }
+      // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload.
+      // Если на ветви стоит насос — «впечатываем» его параметры в поля ветви
+      // (аналогично редукционному клапану), чтобы backend учёл напор насоса.
+      const waterBranches = branches.filter(b => b.hasWaterPipe).map(b => {
+        const pump = pumpByBranch.get(b.id);
+        if (!pump) return b;
+        const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
+        return {
+          ...b,
+          wpHasPump: head > 0,
+          wpPumpHead: head,                                  // м вод. ст. (суммарно по параллельным)
+          wpPumpReverse: pump.airDirection === "reverse",    // насос качает против направления ветви
+        };
+      });
+      const waterNodeIds = new Set<string>();
+      waterBranches.forEach(b => { waterNodeIds.add(b.fromId); waterNodeIds.add(b.toId); });
+      // Также добавляем узлы с fireNodeType (резервуары и потребители)
+      nodes.forEach(n => { if ((n.fireNodeType ?? "none") !== "none") waterNodeIds.add(n.id); });
+      const waterNodes = nodes.filter(n => waterNodeIds.has(n.id));
+      fetch(WATER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes: waterNodes, branches: waterBranches }),
+      }).then(r => r.json()).then(data => {
+        const nr = new Map<string, WaterNodeResult>();
+        const br = new Map<string, WaterBranchResult>();
+        (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
+        (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
+        setWaterNetwork({ nodeResults: nr, branchResults: br });
+      }).catch((err) => { console.error("[water-hydraulics] fetch error:", err); });
+    }, 400);
+    return () => clearTimeout(tid);
+  }, [nodes, branches, schemaSymbols]);
+
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
   const [selectedSymbolIds, setSelectedSymbolIds] = useState<Set<string>>(new Set());
