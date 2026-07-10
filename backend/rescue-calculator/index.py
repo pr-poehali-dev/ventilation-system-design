@@ -126,10 +126,15 @@ def build_dijkstra(nodes, branch_map, adj, start_id):
             if not b:
                 continue
             smoke_dens = float(b.get("fireComputedSmokeDens") or 0)
-            signed_angle = float(b.get("angle") or 0) * (1 if edge["forward"] else -1)
+            _ang = float(b.get("angle") or 0)
+            if not math.isfinite(_ang):
+                _ang = 0.0
+            signed_angle = _ang * (1 if edge["forward"] else -1)
             zone = get_zone(smoke_dens)
             speed = get_speed(zone, signed_angle)
             length = float(b.get("length") or 0)
+            if not math.isfinite(length):
+                length = 0.0
             t = length / speed if speed > 0 and length > 0 else 0
             nd = cur_d + t
             nbr = edge["toId"]
@@ -255,7 +260,8 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
         branch_map[b["id"]] = b
         if b.get("isLeakage"):
             continue
-        if float(b.get("length") or 0) <= 0:
+        _len = float(b.get("length") or 0)
+        if not math.isfinite(_len) or _len <= 0:
             continue
         if b.get("hasBulkhead") and not is_bulkhead_passable(b.get("bulkheadId") or ""):
             continue

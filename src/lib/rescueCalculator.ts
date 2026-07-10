@@ -252,10 +252,12 @@ function buildDijkstra(
       const b = branches.find(b2 => b2.id === edge.branchId);
       if (!b) continue;
       const smokeDens = b.fireComputedSmokeDens ?? 0;
-      const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
+      const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+      const signedAngle = edge.forward ? rawAngle : -rawAngle;
       const zone = getZone(smokeDens);
-      const speed = getSpeed(zone, signedAngle);
-      const t = b.length > 0 ? b.length / speed : 0;
+      const speed = Math.max(1, getSpeed(zone, signedAngle));
+      const len = Number.isFinite(b.length) ? b.length : 0;
+      const t = len > 0 ? len / speed : 0;
       const nd = curD + t;
       if (nd < (dist.get(edge.toId) ?? Infinity)) {
         dist.set(edge.toId, nd);
@@ -299,7 +301,9 @@ export function calcRescue(
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
     if (b.isLeakage) continue;
-    if ((b.length ?? 0) <= 0) continue;
+    // NaN-длина не отсекалась `<= 0` (NaN <= 0 === false) и ломала Дейкстру
+    if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
+    if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
     adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
@@ -626,11 +630,19 @@ export function calcWorkerPath(
   const warnings: string[] = [];
 
   // Строим граф (все ветви проходимы для горнорабочего, включая перемычки с дверями)
+  // Индекс ветвей по id — быстрый доступ внутри Дейкстры (без branches.find на каждом ребре)
+  const branchById = new Map(branches.map(b => [b.id, b]));
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
     if (b.isLeakage) continue;
-    if ((b.length ?? 0) <= 0) continue;
+    // ВАЖНО: длина должна быть конечным положительным числом.
+    // Проверка `(b.length ?? 0) <= 0` НЕ отсекает NaN (NaN <= 0 === false),
+    // из-за чего ветвь с некорректной длиной попадала в граф и давала t=NaN,
+    // ломая сортировку очереди Дейкстры — маршрут «терялся» (0.0 мин).
+    if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
+    // Узлы ветви обязаны существовать в графе (иначе adj.get вернёт undefined)
+    if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     // Горнорабочий проходит через двери, паруса, регуляторы; глухие перемычки — нет
     if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
@@ -653,14 +665,16 @@ export function calcWorkerPath(
       if (visited.has(cur)) continue;
       visited.add(cur);
       for (const edge of (adj.get(cur) ?? [])) {
-        const b = branches.find(b2 => b2.id === edge.branchId);
+        const b = branchById.get(edge.branchId);
         if (!b) continue;
-        const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
+        const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+        const signedAngle = edge.forward ? rawAngle : -rawAngle;
         const sdens = b.fireComputedSmokeDens ?? 0;
         const sz = getZone(sdens);
         const smokeK = sz === "clean" ? 1.0 : sz === "smoky_low" ? 0.75 : 0.55;
-        const speed = Math.round(getWorkerSpeed(method, signedAngle) * smokeK);
-        const t = b.length > 0 ? b.length / Math.max(1, speed) : 0;
+        const speed = Math.max(1, Math.round(getWorkerSpeed(method, signedAngle) * smokeK));
+        const len = Number.isFinite(b.length) ? b.length : 0;
+        const t = len > 0 ? len / speed : 0;
         const nd = curD + t;
         if (nd < (dist.get(edge.toId) ?? Infinity)) {
           dist.set(edge.toId, nd);
@@ -700,7 +714,9 @@ export function calcWorkerPath(
     const b = branchMap.get(edge.branchId);
     if (!b) continue;
     const isForward = edge.forward;
-    const signedAngle = isForward ? (b.angle ?? 0) : -(b.angle ?? 0);
+    const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+    const signedAngle = isForward ? rawAngle : -rawAngle;
+    const segLen = Number.isFinite(b.length) && b.length > 0 ? b.length : 0;
     // Учёт задымления: в задымлённых зонах горнорабочий движется медленнее
     const smokeDensity = b.fireComputedSmokeDens ?? 0;
     const zone = getZone(smokeDensity);
@@ -708,11 +724,11 @@ export function calcWorkerPath(
     // В чистой зоне — нормативная скорость по методике; в задымлении — снижается
     const workerBaseSpeed = getWorkerSpeed(method, signedAngle);
     const smokeKoeff = zone === "clean" ? 1.0 : zone === "smoky_low" ? 0.75 : 0.55;
-    const speed = Math.round(workerBaseSpeed * smokeKoeff);
+    const speed = Math.max(1, Math.round(workerBaseSpeed * smokeKoeff));
     const speedBackBase = getWorkerSpeed(method, -signedAngle);
-    const speedBack = Math.round(speedBackBase * smokeKoeff);
-    const time_min = b.length > 0 ? b.length / speed : 0;
-    const time_back_min = b.length > 0 ? b.length / speedBack : 0;
+    const speedBack = Math.max(1, Math.round(speedBackBase * smokeKoeff));
+    const time_min = segLen > 0 ? segLen / speed : 0;
+    const time_back_min = segLen > 0 ? segLen / speedBack : 0;
     cumTime += time_min;
 
     const fromNodeId = isForward ? b.fromId : b.toId;
@@ -727,7 +743,7 @@ export function calcWorkerPath(
     segments.push({
       branchId: b.id, branchName, branchLabel,
       segmentNumber: i + 1,
-      length: b.length, angle: signedAngle,
+      length: segLen, angle: signedAngle,
       fromNodeId, toNodeId,
       zone, smokeDensity,
       speed_mpm: speed, speed_back_mpm: speedBack, time_min, time_back_min,
@@ -742,9 +758,11 @@ export function calcWorkerPath(
   for (const edge of backEdges) {
     const b = branchMap.get(edge.branchId);
     if (!b) continue;
-    const signedAngle = edge.forward ? (b.angle ?? 0) : -(b.angle ?? 0);
-    const speed = getWorkerSpeed(method, signedAngle);
-    const t = b.length > 0 ? b.length / speed : 0;
+    const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+    const signedAngle = edge.forward ? rawAngle : -rawAngle;
+    const speed = Math.max(1, getWorkerSpeed(method, signedAngle));
+    const len = Number.isFinite(b.length) && b.length > 0 ? b.length : 0;
+    const t = len > 0 ? len / speed : 0;
     cumBack += t;
     backTimes.push(cumBack);
   }
