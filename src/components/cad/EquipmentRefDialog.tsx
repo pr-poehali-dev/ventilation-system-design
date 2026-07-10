@@ -8,7 +8,8 @@ import {
 } from "@/lib/bulkheads";
 import UnitsConfigPanel from "@/components/cad/UnitsConfigPanel";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
-import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead } from "@/lib/pumps";
+import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, type PumpModel } from "@/lib/pumps";
+import PumpChart from "@/components/cad/PumpChart";
 
 type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport" | "units";
 
@@ -1575,6 +1576,98 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
   );
 }
 
+// ─── Справочник насосов с картой характеристик (двойной клик по строке) ──────
+function PumpsSection() {
+  const [selected, setSelected] = useState<PumpModel | null>(null);
+
+  return (
+    <>
+      <table className="w-full border-collapse">
+        <thead><tr>
+          {["Марка", "Тип", "Подача", "Напор", "Обороты", "Мощность", "КПД"].map(h => <Th key={h}>{h}</Th>)}
+        </tr></thead>
+        <tbody>
+          {PUMP_CATALOG.map((p, i) => (
+            <tr key={p.id}
+              style={{ background: i % 2 === 0 ? "#fafafa" : "#fff" }}
+              className="hover:bg-blue-50 cursor-pointer"
+              onDoubleClick={() => setSelected(p)}
+              title="Двойной клик — карта характеристик">
+              <Td>{p.brand} {p.model}</Td>
+              <Td>{PUMP_TYPE_NAMES[p.type]}</Td>
+              <Td>{p.Qopt} м³/ч</Td>
+              <Td>{Math.round(pumpHead(p, p.Qopt))} м</Td>
+              <Td>{p.rpm} об/мин</Td>
+              <Td>{p.power} кВт</Td>
+              <Td>{Math.round(p.etaMax * 100)} %</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {selected && <PumpCharacteristicCard pump={selected} onClose={() => setSelected(null)} />}
+    </>
+  );
+}
+
+// Модальная карта характеристик выбранного насоса
+function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.4)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded shadow-2xl overflow-hidden" style={{ width: 560 }}>
+        {/* Заголовок */}
+        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "#dc2626", color: "white" }}>
+          <div className="flex items-center gap-2">
+            <Icon name="Waves" size={16} />
+            <span className="text-[13px] font-semibold">Характеристика насоса — {pump.brand} {pump.model}</span>
+          </div>
+          <button onClick={onClose} className="text-white hover:text-gray-200 text-lg leading-none px-1">✕</button>
+        </div>
+
+        <div className="p-4 flex gap-4">
+          {/* График */}
+          <div className="flex-shrink-0">
+            <div className="text-[11px] text-gray-500 mb-1 font-medium">Напорная характеристика Q–H</div>
+            <PumpChart pump={pump} width={300} height={200} />
+            <div className="text-[10px] text-gray-400 mt-1">
+              <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "#dc2626" }} /> напор ·
+              <span className="inline-block w-3 h-0.5 align-middle ml-1" style={{ background: "#9ca3af" }} /> КПД
+            </div>
+          </div>
+
+          {/* Параметры */}
+          <div className="flex-1 text-[12px]">
+            <div className="text-[11px] text-gray-500 mb-1 font-medium uppercase tracking-wide">Параметры</div>
+            <table className="w-full">
+              <tbody>
+                {[
+                  ["Тип", PUMP_TYPE_NAMES[pump.type]],
+                  ["Подача оптимальная", `${pump.Qopt} м³/ч`],
+                  ["Диапазон подачи", `${pump.Qmin}…${pump.Qmax} м³/ч`],
+                  ["Напор при Qопт", `${Math.round(pumpHead(pump, pump.Qopt))} м вод. ст.`],
+                  ["Напор при нуле H₀", `${Math.round(pump.H0)} м`],
+                  ["Частота вращения", `${pump.rpm} об/мин`],
+                  ["Мощность двигателя", `${pump.power} кВт`],
+                  ["КПД максимальный", `${Math.round(pump.etaMax * 100)} %`],
+                  ["Масса", pump.weight ? `${pump.weight} кг` : "—"],
+                ].map(([k, v], idx) => (
+                  <tr key={idx} className="border-b border-gray-100">
+                    <td className="py-1 text-gray-500">{k}</td>
+                    <td className="py-1 text-right font-medium text-gray-800">{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {pump.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{pump.notes}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
@@ -1596,17 +1689,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   if (tab === "typical") return <SimpleTable
     headers={["Мероприятие", "Шагов", "Ответственный", "Время"]}
     rows={DEMO_TYPICAL.map(r => [r.name, r.steps, r.resp, r.dur])} />;
-  if (tab === "pumps") return <SimpleTable
-    headers={["Марка", "Тип", "Подача", "Напор", "Обороты", "Мощность", "КПД"]}
-    rows={PUMP_CATALOG.map(p => [
-      `${p.brand} ${p.model}`,
-      PUMP_TYPE_NAMES[p.type],
-      `${p.Qopt} м³/ч`,
-      `${Math.round(pumpHead(p, p.Qopt))} м`,
-      `${p.rpm} об/мин`,
-      `${p.power} кВт`,
-      `${Math.round(p.etaMax * 100)} %`,
-    ])} />;
+  if (tab === "pumps") return <PumpsSection />;
   if (tab === "pipes") return <SimpleTable
     headers={["Материал", "DN", "Стенка", "Давление"]}
     rows={DEMO_PIPES.map(r => [r.name, r.dn, r.wall, r.p])} />;
