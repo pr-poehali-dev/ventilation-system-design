@@ -1203,24 +1203,36 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    // ─── РЕЖИМ ВЫБОРА УЗЛА/ВЕТВИ ДЛЯ ГОРНОСПАСАТЕЛЕЙ (pick-mode) ──────
+    // ВАЖНО: проверяем ДО early-return по [data-sym]. В canvas-режиме поверх
+    // схемы лежит SVG-оверлей с символами УО (позиции ПЛА, отделения) — многие
+    // узлы схемы визуально закрыты этими символами. Если сначала отсекать клики
+    // по [data-sym], то в canvas-режиме по такому узлу невозможно попасть.
+    // Поэтому в режиме pick сразу делаем hit-тест по узлам/ветвям схемы.
+    if (rescuePickMode && e.button === 0) {
+      const hitNp = hitNode(sx, sy, projNodes);
+      if (hitNp && onRescueNodePick) {
+        onRescueNodePick(hitNp);
+        e.stopPropagation();
+        return;
+      }
+      const hitBp = !hitNp ? hitBranch(sx, sy, projNodesMap, branches) : null;
+      if (hitBp && onRescueBranchPick) {
+        onRescueBranchPick(hitBp);
+        e.stopPropagation();
+        return;
+      }
+      // В режиме pick клик по пустому месту не должен вращать/сбрасывать —
+      // просто игнорируем, оставаясь в режиме выбора.
+      e.stopPropagation();
+      return;
+    }
+
     // Если клик произошёл внутри g[data-sym] — это символ УО, не трогаем ветвь/узел
     if ((e.target as Element).closest?.("[data-sym]")) return;
 
     const hitN = hitNode(sx, sy, projNodes);
     const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, branches) : null;
-
-    // ─── РЕЖИМ ВЫБОРА УЗЛА ДЛЯ ГОРНОСПАСАТЕЛЕЙ (pick-mode) ────────────
-    if (rescuePickMode && onRescueNodePick && hitN && e.button === 0) {
-      onRescueNodePick(hitN);
-      e.stopPropagation();
-      return;
-    }
-    // ─── РЕЖИМ ВЫБОРА ВЕТВИ (pick-mode) ────────────────────────────────
-    if (rescuePickMode && onRescueBranchPick && hitB && !hitN && e.button === 0) {
-      onRescueBranchPick(hitB);
-      e.stopPropagation();
-      return;
-    }
 
     // ─── РЕЖИМ ПРИВЯЗКИ ВЕТВЕЙ К ПОЗИЦИИ (F3) ──────────────────────────
     if (branchBindMode && hitB) {
@@ -3407,6 +3419,9 @@ export default function TopoCanvas(props: Props) {
                 }
               }}
               onMouseDown={(e) => {
+                // В режиме выбора узла для горноспасателей символ не перехватывает
+                // клик — отдаём его общему обработчику схемы (выбор узла под символом).
+                if (rescuePickMode && e.button === 0) { onMouseDown(e as unknown as React.MouseEvent<SVGSVGElement>); return; }
                 if (e.button !== 0 || tool !== "select") return;
                 e.stopPropagation();
 
@@ -4302,7 +4317,13 @@ export default function TopoCanvas(props: Props) {
         <svg
           style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none", cursor: cursorStyle }}
           width={size.w} height={size.h}
-          onMouseDown={(e) => { if ((e.target as SVGElement).closest("g[data-sym]")) return; onMouseDownCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>); }}
+          onMouseDown={(e) => {
+            // В режиме выбора узла/ветви для горноспасателей клик должен доходить
+            // до схемы, даже если сверху лежит символ УО — иначе в canvas-режиме
+            // по закрытому символом узлу невозможно попасть.
+            if (!rescuePickMode && (e.target as SVGElement).closest("g[data-sym]")) return;
+            onMouseDownCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+          }}
           onMouseMove={(e) => onMouseMoveCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onMouseUp={(e) => onMouseUpCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
@@ -4405,8 +4426,15 @@ export default function TopoCanvas(props: Props) {
 
             return (
               <g key={sym.id} data-sym={sym.id}
-                style={{ cursor: tool === "select" ? "move" : undefined }}
+                style={{ cursor: rescuePickMode ? "cell" : (tool === "select" ? "move" : undefined) }}
                 onMouseDown={(e) => {
+                  // В режиме выбора узла/ветви для горноспасателей символ УО не
+                  // перехватывает клик — передаём его в общий обработчик схемы,
+                  // чтобы можно было выбрать узел, закрытый этим символом.
+                  if (rescuePickMode && e.button === 0) {
+                    onMouseDownCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+                    return;
+                  }
                   if (e.button !== 0 || tool !== "select") return;
                   e.stopPropagation(); e.preventDefault();
                   onSelectSymbol?.(sym.id);

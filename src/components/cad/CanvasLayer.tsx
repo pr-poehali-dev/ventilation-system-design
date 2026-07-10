@@ -266,6 +266,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.compareBranchColors,
     props.colorMode, props.flowColorMin, props.flowColorMax, props.flowColorHue,
     props.posInnerColors,
+    props.rescuePathNodeIds, props.rescueNodeLetters,
     props.width, props.height,
   ]);
 
