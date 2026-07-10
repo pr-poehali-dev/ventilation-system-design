@@ -25,9 +25,15 @@ export interface SchemaCheckResult {
   bulkBranches: BulkCheck[];
   /** Ветви с длиной, заданной вручную (manualLength=true) — длина не пересчитывается из координат. */
   manualLenBranches: TopoBranch[];
+  /** Изолированные ветви: подсети без связи с поверхностью (нет пути к атмосферному узлу).
+   *  Именно они не дают провести расчёт воздухораспределения. */
+  isolatedBranches: TopoBranch[];
+  /** true — в схеме вообще нет атмосферных узлов (выхода на поверхность). */
+  noAtmosphere: boolean;
   tabCounts: {
     near: number; isolated: number; dupes: number;
     dupbranch: number; zeroR: number; highR: number; bulkR: number; manualLen: number;
+    isolatedBranch: number;
   };
   totalIssues: number;
   /** true — списки обрезаны до maxItems (схема очень большая) */
@@ -64,12 +70,21 @@ export function checkSchema(
   const branchPairs = new Set<string>();          // соединённые пары узлов (оба направления)
   const nodeBranchCount = new Map<string, number>();
   const branchByPair = new Map<string, TopoBranch[]>(); // группировка для дублей ветвей
+  const adj = new Map<string, string[]>();        // список смежности узлов (для обхода связности)
+
+  const addAdj = (a: string, b: string) => {
+    let arr = adj.get(a);
+    if (!arr) { arr = []; adj.set(a, arr); }
+    arr.push(b);
+  };
 
   for (const br of branches) {
     branchPairs.add(`${br.fromId}|${br.toId}`);
     branchPairs.add(`${br.toId}|${br.fromId}`);
     nodeBranchCount.set(br.fromId, (nodeBranchCount.get(br.fromId) ?? 0) + 1);
     nodeBranchCount.set(br.toId,   (nodeBranchCount.get(br.toId)   ?? 0) + 1);
+    addAdj(br.fromId, br.toId);
+    addAdj(br.toId, br.fromId);
     // Ключ без учёта направления
     const key = br.fromId < br.toId ? `${br.fromId}|${br.toId}` : `${br.toId}|${br.fromId}`;
     let arr = branchByPair.get(key);
@@ -174,20 +189,61 @@ export function checkSchema(
   highRBranches.sort((a, b) => (b.resistance ?? 0) - (a.resistance ?? 0));
   bulkBranches.sort((a, b) => b.rKmu - a.rKmu);
 
+  // ── Изолированные ветви (нет пути на поверхность / к атмосфере) ─────────────
+  // Расчёт воздухораспределения возможен только для сети, связанной с атмосферой
+  // (хотя бы один выход на поверхность). Ветви подсети, из которой НЕЛЬЗЯ дойти
+  // до атмосферного узла, «висят в воздухе» и ломают расчёт.
+  //
+  // Обход в ширину (BFS) стартует со ВСЕХ атмосферных узлов одновременно.
+  // Все непосещённые узлы — недостижимы с поверхности; ветвь считается
+  // изолированной, если ОБА её узла недостижимы.
+  const atmIds: string[] = [];
+  for (const n of nodes) if (n.atmosphereLink) atmIds.push(n.id);
+  const noAtmosphere = atmIds.length === 0;
+
+  const reachable = new Set<string>();
+  if (!noAtmosphere) {
+    const queue: string[] = [];
+    for (const id of atmIds) {
+      if (!reachable.has(id)) { reachable.add(id); queue.push(id); }
+    }
+    let qi = 0;
+    while (qi < queue.length) {
+      const cur = queue[qi++];
+      const neigh = adj.get(cur);
+      if (!neigh) continue;
+      for (const nx of neigh) {
+        if (!reachable.has(nx)) { reachable.add(nx); queue.push(nx); }
+      }
+    }
+  }
+
+  const isolatedBranches: TopoBranch[] = [];
+  // Если атмосферных узлов нет — вся построенная сеть фактически изолирована.
+  for (const b of branches) {
+    const connected = !noAtmosphere && (reachable.has(b.fromId) || reachable.has(b.toId));
+    if (!connected) {
+      if (!capReached(isolatedBranches.length)) isolatedBranches.push(b);
+      else { truncated = true; break; }
+    }
+  }
+
   const tabCounts = {
     near: nearPairs.length, isolated: isolated.length, dupes: dupes.length,
     dupbranch: dupBranches.length, zeroR: zeroRBranches.length,
     highR: highRBranches.length, bulkR: bulkBranches.length,
     manualLen: manualLenBranches.length,
+    isolatedBranch: isolatedBranches.length,
   };
   // Ветви с ручной длиной — информационная пометка, не критичная ошибка,
   // поэтому в totalIssues не включаем (чтобы «схема без ошибок» оставалась зелёной).
   const totalIssues = nearPairs.length + isolated.length + dupes.length
-    + dupBranches.length + zeroRBranches.length + highRBranches.length + bulkBranches.length;
+    + dupBranches.length + zeroRBranches.length + highRBranches.length + bulkBranches.length
+    + isolatedBranches.length;
 
   return {
     nearPairs, isolated, dupes, dupBranches, zeroRBranches, highRBranches, bulkBranches,
-    manualLenBranches,
+    manualLenBranches, isolatedBranches, noAtmosphere,
     tabCounts, totalIssues, truncated,
   };
 }

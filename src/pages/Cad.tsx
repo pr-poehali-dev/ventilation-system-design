@@ -1256,7 +1256,7 @@ export default function CadPage() {
   const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
   const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
   const [checkTab, setCheckTab] = useState<
-    "near" | "isolated" | "dupes" | "dupbranch" | "zeroR" | "highR" | "bulkR" | "manualLen"
+    "near" | "isolated" | "dupes" | "dupbranch" | "zeroR" | "highR" | "bulkR" | "manualLen" | "isolatedBranch"
   >("near");
   // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
   const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
@@ -5007,6 +5007,7 @@ export default function CadPage() {
               const {
                 nearPairs, isolated, dupes, dupBranches,
                 zeroRBranches, highRBranches, bulkBranches, manualLenBranches,
+                isolatedBranches, noAtmosphere,
                 tabCounts, totalIssues, truncated,
               } = schemaCheckResult;
 
@@ -5118,11 +5119,12 @@ export default function CadPage() {
                   <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
                     style={{ background: "#f3f4f6" }}>Ветви</div>
                   <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
-                    {navBtn("dupbranch", "Дубли",  tabCounts.dupbranch, "CopyPlus")}
-                    {navBtn("zeroR",     "R = 0",  tabCounts.zeroR,     "CircleSlash")}
-                    {navBtn("highR",     "R↑",     tabCounts.highR,     "TrendingUp")}
-                    {navBtn("bulkR",     "Перем.", tabCounts.bulkR,     "DoorClosed")}
-                    {navBtn("manualLen", "L ручн.", tabCounts.manualLen, "Ruler")}
+                    {navBtn("dupbranch",      "Дубли",   tabCounts.dupbranch,     "CopyPlus")}
+                    {navBtn("zeroR",          "R = 0",   tabCounts.zeroR,         "CircleSlash")}
+                    {navBtn("highR",          "R↑",      tabCounts.highR,         "TrendingUp")}
+                    {navBtn("bulkR",          "Перем.",  tabCounts.bulkR,         "DoorClosed")}
+                    {navBtn("manualLen",      "L ручн.", tabCounts.manualLen,     "Ruler")}
+                    {navBtn("isolatedBranch", "Изолир.", tabCounts.isolatedBranch, "Network")}
                   </div>
 
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
@@ -5474,6 +5476,76 @@ export default function CadPage() {
                                     >
                                       На авто
                                     </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Изолированные ветви (нет выхода на поверхность) ── */}
+                  {checkTab === "isolatedBranch" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1.5">
+                          Ветви построены, но их подсеть не связана с поверхностью —
+                          нет ни одного пути к атмосферному узлу (выхода на поверхность).
+                          Такие ветви не дают провести расчёт воздухораспределения.
+                        </div>
+                        {noAtmosphere && (
+                          <div className="text-[10px] font-medium px-2 py-1 rounded flex items-start gap-1"
+                            style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}>
+                            <Icon name="AlertTriangle" size={12} className="flex-shrink-0 mt-0.5" />
+                            В схеме нет ни одного выхода на поверхность (атмосферного узла).
+                            Отметьте хотя бы один узел как связанный с атмосферой.
+                          </div>
+                        )}
+                        {isolatedBranches.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBranchIds(new Set(isolatedBranches.map(b => b.id)));
+                              setSelectedNodeId(null);
+                              setSelectedBranchId(isolatedBranches[0].id);
+                              setFocusBranchId(isolatedBranches[0].id);
+                              setFocusNonce(Date.now());
+                            }}
+                            className="mt-1.5 text-[10px] font-medium px-2 py-1 rounded border"
+                            style={{ borderColor: "#fca5a5", background: "#fef2f2", color: "#b91c1c" }}
+                          >
+                            Выделить все на схеме
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {isolatedBranches.length === 0 ? (
+                          <EmptyOk text={noAtmosphere
+                            ? "Ветвей нет"
+                            : "Изолированных ветвей не найдено — вся сеть связана с поверхностью"} />
+                        ) : (
+                          <div className="flex flex-col">
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              Ветвей: <b className="text-red-600">{isolatedBranches.length}</b>
+                            </div>
+                            {isolatedBranches.map(b => {
+                              const isSel = selectedBranchId === b.id;
+                              return (
+                                <div key={b.id}
+                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                  onClick={() => focusBranch(b.id)}
+                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                >
+                                  <Icon name="Network" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    {branchBtn(b)}
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      Нет связи с поверхностью · L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м²
+                                    </div>
                                   </div>
                                 </div>
                               );
