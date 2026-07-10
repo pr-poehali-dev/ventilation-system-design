@@ -528,10 +528,6 @@ export function generateSvg(opts: SvgExportOptions): string {
       const textColor = "#000000";
       const leaderThickness = Math.max(0.3, (pos.leaderThickness ?? 0.2) * pxPerMm);
       const leaderColor = "#e11d48"; // выноска — красная (единый стиль с редактором)
-      // Длина выноски привязана к размеру маркера (pxPerMm — физический масштаб мм),
-      // а не к масштабу проекции. Иначе выноска «убегает» при крупном plan-масштабе,
-      // как и на экране. Нормируем экранное смещение конца на pxPerMm / proj.scale.
-      const leaderK = proj.scale > 0 ? pxPerMm / proj.scale : 1;
 
       // Выноска: если задана leaderBranchId или leaderEndX
       if (pos.leaderBranchId && pos.leaderT != null) {
@@ -541,18 +537,14 @@ export function generateSvg(opts: SvgExportOptions): string {
           const lbFrom = projMap.get(lb.fromId);
           const lbTo   = projMap.get(lb.toId);
           if (lbFrom && lbTo) {
-            const lx0 = lbFrom.sx + (lbTo.sx - lbFrom.sx) * pos.leaderT;
-            const ly0 = lbFrom.sy + (lbTo.sy - lbFrom.sy) * pos.leaderT;
-            const lx = cx + (lx0 - cx) * leaderK;
-            const ly = cy + (ly0 - cy) * leaderK;
+            const lx = lbFrom.sx + (lbTo.sx - lbFrom.sx) * pos.leaderT;
+            const ly = lbFrom.sy + (lbTo.sy - lbFrom.sy) * pos.leaderT;
             parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
           }
         }
       } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
         const lp = project3D({ x: pos.leaderEndX * _xySFExport, y: pos.leaderEndY * _xySFExport, z: pos.z * zScale }, proj);
-        const lx = cx + (lp.sx - cx) * leaderK;
-        const ly = cy + (lp.sy - cy) * leaderK;
-        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
+        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
       }
 
       // Кружок маркера
