@@ -453,7 +453,13 @@ export function generateSvg(opts: SvgExportOptions): string {
     if (!p) continue;
 
     const isAtm = nd.atmosphereLink;
-    const fireType = nd.fireNodeType ?? "none";
+    const rawFireType = nd.fireNodeType ?? "none";
+    const waterTypeVisible =
+      rawFireType === "reservoir" ? (!infoConfig || infoConfig.waterReservoir)
+    : rawFireType === "consumer"  ? (!infoConfig || infoConfig.waterConsumer)
+    : rawFireType === "junction"  ? (!infoConfig || infoConfig.waterPipeJoint)
+    : true;
+    const fireType = waterTypeVisible ? rawFireType : "none";
     const hasFire = fireType !== "none";
 
     const adjBranches = branches.filter(b => b.fromId === nd.id || b.toId === nd.id);

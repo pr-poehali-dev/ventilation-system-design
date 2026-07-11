@@ -753,7 +753,28 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.lineTo(p.toSx + ox, p.toSy + oy);
         ctx.stroke();
       };
-      if (b.hasWaterPipe) drawEdgePipe(+1, "#1d4ed8");
+      const showWaterPipes = !infoConfig || infoConfig.waterPipes;
+      if (b.hasWaterPipe && showWaterPipes) {
+        drawEdgePipe(+1, "#1d4ed8");
+        // Стрелка направления течения воды (по центру трубы)
+        const showWaterDir = !infoConfig || infoConfig.waterFlowDirection;
+        const wf = b.wpComputedFlow ?? 0;
+        if (showWaterDir && Math.abs(wf) > 0.001) {
+          const dir = wf >= 0 ? 1 : -1;
+          const ox = nx * pipeOffset, oy = ny * pipeOffset;
+          const mx = (p.fromSx + p.toSx) / 2 + ox;
+          const my = (p.fromSy + p.toSy) / 2 + oy;
+          const ah = Math.max(3, pipeLW * 2.2);
+          const dux = ux * dir, duy = uy * dir;
+          ctx.fillStyle = "#1d4ed8";
+          ctx.beginPath();
+          ctx.moveTo(mx + dux * ah, my + duy * ah);
+          ctx.lineTo(mx - dux * ah * 0.5 + nx * ah * 0.6, my - duy * ah * 0.5 + ny * ah * 0.6);
+          ctx.lineTo(mx - dux * ah * 0.5 - nx * ah * 0.6, my - duy * ah * 0.5 - ny * ah * 0.6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
       if (b.hasAirPipe)   drawEdgePipe(-1, "#dc2626");
     }
 
@@ -914,6 +935,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
         if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
         if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
+        // ─── Водопроводные показатели трубы (вкладка «Водопровод») ───
+        if (b.hasWaterPipe) {
+          if (ic.waterVelocity && (b.wpComputedVelocity ?? 0) > 0)
+            dataLines.push(`Vв=${(b.wpComputedVelocity ?? 0).toFixed(2)} м/с`);
+          if (ic.waterFlow && (b.wpComputedFlow ?? 0) > 0)
+            dataLines.push(`Qв=${(b.wpComputedFlow ?? 0).toFixed(1)} м³/ч`);
+          if (ic.waterReducerPressure && b.wpHasReducer)
+            dataLines.push(`Pред=${(b.wpReducerOutPressure ?? 0).toFixed(2)} МПа`);
+        }
       } else if (!isDead && !ic && hasCalc) {
         const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
         dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
@@ -1008,7 +1038,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.save();
 
       // Основной круг
-      const fireType = n.fireNodeType ?? "none";
+      const rawFireType = n.fireNodeType ?? "none";
+      // Видимость водопроводных типов узлов управляется панелью информации.
+      // Если соответствующий флаг выключен — узел рисуется как обычный (скрыт).
+      const waterTypeVisible =
+        rawFireType === "reservoir" ? (!infoConfig || infoConfig.waterReservoir)
+      : rawFireType === "consumer"  ? (!infoConfig || infoConfig.waterConsumer)
+      : rawFireType === "junction"  ? (!infoConfig || infoConfig.waterPipeJoint)
+      : true;
+      const fireType = waterTypeVisible ? rawFireType : "none";
       const hasFire = fireType !== "none";
 
       // Кольцо выделения — только для обычных узлов (fire-узлы рисуют своё внутри иконок)
@@ -1174,6 +1212,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           if (n.name) nlines.push(n.name);
         } else {
           if (ic.nodeNumber && n.number) nlines.push(`${n.number}`);
+        }
+        // ─── Водопроводные показатели узла (управляются вкладкой «Водопровод») ───
+        if (ic && rawFireType === "consumer") {
+          const wr = waterNodeResults?.get(n.id);
+          if (ic.waterDynamicPressure && wr && wr.dynamicP > 0)
+            nlines.push(`Pд=${wr.dynamicP.toFixed(2)} МПа`);
+          if (ic.waterFlow && wr && wr.flow > 0)
+            nlines.push(`Q=${wr.flow.toFixed(1)} м³/ч`);
+          if (ic.waterDeficit && wr) {
+            const req = n.fireRequiredFlow ?? 0;
+            const def = req - wr.flow;
+            if (def > 0.05) nlines.push(`Δ=${def.toFixed(1)} м³/ч`);
+          }
         }
         if (nlines.length > 0) {
           // Размер текста масштабируется как objSF, но с отдельными пределами textMin/Max
