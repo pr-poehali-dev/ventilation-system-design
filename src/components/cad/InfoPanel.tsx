@@ -165,19 +165,6 @@ export default function InfoPanel({
             <CheckRow label="Высота ветви (Высота), м" checked={config.branchHeight} onChange={set("branchHeight")} />
             <CheckRow label="Количество людей (Людей)" checked={config.branchPeople} onChange={set("branchPeople")} />
             <CheckRow label="Депрессия (Н), даПа" checked={config.branchDepression} onChange={set("branchDepression")} />
-            <CheckRow label="Естественная тяга (С) (Нс), даПа" checked={config.branchNatDragC} onChange={set("branchNatDragC")} />
-            <CheckRow label="Естественная тяга (T) (НТ), даПа" checked={config.branchNatDragT} onChange={set("branchNatDragT")} />
-            <CheckRow label="Естественная тяга (W) (НW), даПа" checked={config.branchNatDragW} onChange={set("branchNatDragW")} />
-            <CheckRow label="Газовыделение (J), м³/с" checked={config.branchGasEmission} onChange={set("branchGasEmission")} />
-            <CheckRow label="Время распростр. газов (t), мин:сек" checked={config.branchGasSpreadTime} onChange={set("branchGasSpreadTime")} />
-            <CheckRow label="Расход метана (CH4), м³/с" checked={config.branchMethane} onChange={set("branchMethane")} />
-            <CheckRow label="Коэф. альфа (α), Нс²/м⁴×1000" checked={config.branchAlpha} onChange={set("branchAlpha")} />
-            <CheckRow label="Коэф. местных сопротивлений (Kr)" checked={config.branchLocalXi} onChange={set("branchLocalXi")} />
-            <CheckRow label="Выделение CO (CO), м³/с" checked={config.branchCOEmission} onChange={set("branchCOEmission")} />
-            <CheckRow label="CO в начале (CO нач.), ppm" checked={config.branchCOStart} onChange={set("branchCOStart")} />
-            <CheckRow label="CO в конце (CO кон.), ppm" checked={config.branchCOEnd} onChange={set("branchCOEnd")} />
-            <CheckRow label="Q CO в начале (Q CO нач.), м³/с" checked={config.branchQCOStart} onChange={set("branchQCOStart")} />
-            <CheckRow label="Q CO в конце (Q CO кон.), м³/с" checked={config.branchQCOEnd} onChange={set("branchQCOEnd")} />
           </div>
         )}
 
