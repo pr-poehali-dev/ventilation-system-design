@@ -8522,6 +8522,7 @@ export default function CadPage() {
               infoConfig={infoConfig}
               unitsConfig={unitsConfig}
               waterNodeResults={waterNetwork.nodeResults}
+              waterBranchResults={waterNetwork.branchResults}
               zScale={zScale}
               xyScale={xyScale}
               schemaSymbols={schemaSymbols}

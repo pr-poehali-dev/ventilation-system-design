@@ -203,6 +203,7 @@ interface Props {
   posOuterColors?: Map<string, string>;
   /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
+  waterBranchResults?: Map<string, import("@/lib/waterHydraulics").WaterBranchResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
@@ -285,6 +286,7 @@ export default function TopoCanvas(props: Props) {
     posInnerColors,
     posOuterColors,
     waterNodeResults,
+    waterBranchResults,
     branchFireColors,
     branchExplosionColors,
     reversedBranchIds,
@@ -2508,6 +2510,7 @@ export default function TopoCanvas(props: Props) {
           infoConfig={infoConfig}
           unitsConfig={unitsConfig}
           waterNodeResults={waterNodeResults}
+          waterBranchResults={waterBranchResults}
           branchFireColors={branchFireColors}
           branchExplosionColors={branchExplosionColors}
           reversedBranchIds={reversedBranchIds}
@@ -3178,8 +3181,14 @@ export default function TopoCanvas(props: Props) {
                       dataLines.push(`Vв=${(b.wpComputedVelocity ?? 0).toFixed(2)} м/с`);
                     if (ic.waterFlow && (b.wpComputedFlow ?? 0) > 0)
                       dataLines.push(`Qв=${(b.wpComputedFlow ?? 0).toFixed(1)} м³/ч`);
-                    if (ic.waterReducerPressure && b.wpHasReducer)
-                      dataLines.push(`Pред=${(b.wpReducerOutPressure ?? 0).toFixed(2)} МПа`);
+                    if (ic.waterReducerPressure && b.wpHasReducer) {
+                      const wbr = waterBranchResults?.get(b.id);
+                      const pIn  = wbr && wbr.reducerInP > 0 ? wbr.reducerInP : null;
+                      const pOut = wbr && wbr.reducerOutP > 0 ? wbr.reducerOutP : (b.wpReducerOutPressure ?? 0);
+                      dataLines.push(pIn != null
+                        ? `Ред: ${pIn.toFixed(2)}→${pOut.toFixed(2)} МПа`
+                        : `Ред: →${pOut.toFixed(2)} МПа`);
+                    }
                   }
                 } else if (hasCalc) {
                   dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);

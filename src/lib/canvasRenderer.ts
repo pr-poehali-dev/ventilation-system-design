@@ -5,7 +5,7 @@
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "./unitsConfig";
-import { type WaterNodeResult } from "./waterHydraulics";
+import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 
 export const CANVAS_THRESHOLD = 800;
 
@@ -88,6 +88,7 @@ export interface CanvasRenderOptions {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig: UnitsConfig;
   waterNodeResults?: Map<string, WaterNodeResult>;
+  waterBranchResults?: Map<string, WaterBranchResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} (0..1 вдоль ветви) */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /** Карта branchId → зона поражения взрывом {hazardLevel} */
@@ -372,7 +373,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
-    horizonMap, infoConfig, unitsConfig, waterNodeResults, branchFireColors, branchExplosionColors,
+    horizonMap, infoConfig, unitsConfig, waterNodeResults, waterBranchResults, branchFireColors, branchExplosionColors,
     colorMode = "none", flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
@@ -941,8 +942,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
             dataLines.push(`Vв=${(b.wpComputedVelocity ?? 0).toFixed(2)} м/с`);
           if (ic.waterFlow && (b.wpComputedFlow ?? 0) > 0)
             dataLines.push(`Qв=${(b.wpComputedFlow ?? 0).toFixed(1)} м³/ч`);
-          if (ic.waterReducerPressure && b.wpHasReducer)
-            dataLines.push(`Pред=${(b.wpReducerOutPressure ?? 0).toFixed(2)} МПа`);
+          if (ic.waterReducerPressure && b.wpHasReducer) {
+            const wbr = waterBranchResults?.get(b.id);
+            const pIn  = wbr && wbr.reducerInP > 0 ? wbr.reducerInP : null;
+            const pOut = wbr && wbr.reducerOutP > 0 ? wbr.reducerOutP : (b.wpReducerOutPressure ?? 0);
+            dataLines.push(pIn != null
+              ? `Ред: ${pIn.toFixed(2)}→${pOut.toFixed(2)} МПа`
+              : `Ред: →${pOut.toFixed(2)} МПа`);
+          }
         }
       } else if (!isDead && !ic && hasCalc) {
         const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";

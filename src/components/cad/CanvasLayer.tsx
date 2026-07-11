@@ -9,7 +9,7 @@ import {
 } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
-import { type WaterNodeResult } from "@/lib/waterHydraulics";
+import { type WaterNodeResult, type WaterBranchResult } from "@/lib/waterHydraulics";
 
 
 
@@ -58,6 +58,7 @@ interface CanvasLayerProps {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
   waterNodeResults?: Map<string, WaterNodeResult>;
+  waterBranchResults?: Map<string, WaterBranchResult>;
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   reversedBranchIds?: Set<string>;
@@ -204,6 +205,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         infoConfig: p.infoConfig,
         unitsConfig: p.unitsConfig ?? DEFAULT_UNITS_CONFIG,
         waterNodeResults: p.waterNodeResults,
+        waterBranchResults: p.waterBranchResults,
         branchFireColors: p.branchFireColors,
         branchExplosionColors: p.branchExplosionColors,
         reversedBranchIds: p.reversedBranchIds,
@@ -264,7 +266,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.branchWidth, props.branchBorder, props.thinLines,
     props.colorByHorizon, props.showFlowArrows, props.flowDisplay,
     props.infoConfig, props.unitsConfig,
-    props.waterNodeResults, props.branchFireColors, props.branchExplosionColors,
+    props.waterNodeResults, props.waterBranchResults, props.branchFireColors, props.branchExplosionColors,
     props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,
     props.transparentBg,
     props.compareBranchColors,
