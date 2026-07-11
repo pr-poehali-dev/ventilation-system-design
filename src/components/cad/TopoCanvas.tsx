@@ -3088,9 +3088,26 @@ export default function TopoCanvas(props: Props) {
                     stroke={color} strokeWidth={pipeSW}
                     strokeLinecap="round" opacity="1" />
                 );
+                const showWaterPipes = !infoConfig || infoConfig.waterPipes;
+                const showWaterDir = !infoConfig || infoConfig.waterFlowDirection;
+                const wf = b.wpComputedFlow ?? 0;
+                let waterArrow: JSX.Element | null = null;
+                if (b.hasWaterPipe && showWaterPipes && showWaterDir && Math.abs(wf) > 0.001) {
+                  const dir = wf >= 0 ? 1 : -1;
+                  const ox = nx * offset, oy = ny * offset;
+                  const mx = (from.sx + to.sx) / 2 + ox;
+                  const my = (from.sy + to.sy) / 2 + oy;
+                  const ah = Math.max(3, pipeSW * 2.2);
+                  const dux = ux * dir, duy = uy * dir;
+                  const p1x = mx + dux * ah, p1y = my + duy * ah;
+                  const p2x = mx - dux * ah * 0.5 + nx * ah * 0.6, p2y = my - duy * ah * 0.5 + ny * ah * 0.6;
+                  const p3x = mx - dux * ah * 0.5 - nx * ah * 0.6, p3y = my - duy * ah * 0.5 - ny * ah * 0.6;
+                  waterArrow = <polygon key="wpdir" points={`${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`} fill="#1d4ed8" />;
+                }
                 return (
                   <>
-                    {b.hasWaterPipe && pipeLine(+1, "#1d4ed8", "wp")}
+                    {b.hasWaterPipe && showWaterPipes && pipeLine(+1, "#1d4ed8", "wp")}
+                    {waterArrow}
                     {b.hasAirPipe   && pipeLine(-1, "#dc2626", "ap")}
                   </>
                 );
@@ -3155,6 +3172,15 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
                   if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
+                  // ─── Водопроводные показатели трубы (вкладка «Водопровод») ───
+                  if (b.hasWaterPipe) {
+                    if (ic.waterVelocity && (b.wpComputedVelocity ?? 0) > 0)
+                      dataLines.push(`Vв=${(b.wpComputedVelocity ?? 0).toFixed(2)} м/с`);
+                    if (ic.waterFlow && (b.wpComputedFlow ?? 0) > 0)
+                      dataLines.push(`Qв=${(b.wpComputedFlow ?? 0).toFixed(1)} м³/ч`);
+                    if (ic.waterReducerPressure && b.wpHasReducer)
+                      dataLines.push(`Pред=${(b.wpReducerOutPressure ?? 0).toFixed(2)} МПа`);
+                  }
                 } else if (hasCalc) {
                   dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
                   if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
@@ -4073,7 +4099,14 @@ export default function TopoCanvas(props: Props) {
           const r = isSel ? baseNodeR * 1.5 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
           const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
-          const fireType = node.fireNodeType ?? "none";
+          const rawFireType = node.fireNodeType ?? "none";
+          // Видимость водопроводных типов узлов управляется вкладкой «Водопровод».
+          const waterTypeVisible =
+            rawFireType === "reservoir" ? (!infoConfig || infoConfig.waterReservoir)
+          : rawFireType === "consumer"  ? (!infoConfig || infoConfig.waterConsumer)
+          : rawFireType === "junction"  ? (!infoConfig || infoConfig.waterPipeJoint)
+          : true;
+          const fireType = waterTypeVisible ? rawFireType : "none";
           const hasFire = fireType !== "none";
           const IS = Math.max(3, baseNodeR * 2.5);
           return (
@@ -4220,6 +4253,19 @@ export default function TopoCanvas(props: Props) {
                       nlines.push(`P=${uPresN.fromBase(node.computedPressure).toFixed(uPresN.decimals)}${uPresN.symbol}`);
                     if (ic.nodeTemp && node.airTemp !== 0) nlines.push(`T=${uTemp.fromBase(node.airTemp).toFixed(uTemp.decimals)}${uTemp.symbol}`);
                     if (ic.nodeMethane && node.computedGasConc > 0) nlines.push(`CH4=${uGas.fromBase(node.computedGasConc).toFixed(uGas.decimals)}${uGas.symbol}`);
+                    // ─── Водопроводные показатели узла (вкладка «Водопровод») ───
+                    if (rawFireType === "consumer") {
+                      const wr = waterNodeResults?.get(node.id);
+                      if (ic.waterDynamicPressure && wr && wr.dynamicP > 0)
+                        nlines.push(`Pд=${wr.dynamicP.toFixed(2)} МПа`);
+                      if (ic.waterFlow && wr && wr.flow > 0)
+                        nlines.push(`Q=${wr.flow.toFixed(1)} м³/ч`);
+                      if (ic.waterDeficit && wr) {
+                        const req = node.fireRequiredFlow ?? 0;
+                        const def = req - wr.flow;
+                        if (def > 0.05) nlines.push(`Δ=${def.toFixed(1)} м³/ч`);
+                      }
+                    }
                   }
                   if (nlines.length === 0) return null;
                   const nodeFontSize = Math.max(4, baseNodeR * 1.6);
