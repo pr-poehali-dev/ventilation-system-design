@@ -38,6 +38,19 @@ export interface InfoDisplayConfig {
   branchCOEnd: boolean;
   branchQCOStart: boolean;
   branchQCOEnd: boolean;
+  // ─── Водопровод (общие данные по схеме) ─────────────────────────
+  waterReservoir: boolean;
+  waterConsumer: boolean;
+  waterPumpStation: boolean;
+  waterPipeJoint: boolean;
+  waterReducer: boolean;
+  waterReducerPressure: boolean;
+  waterPipes: boolean;
+  waterFlowDirection: boolean;
+  waterVelocity: boolean;
+  waterFlow: boolean;
+  waterDeficit: boolean;
+  waterDynamicPressure: boolean;
 }
 
 export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
@@ -77,4 +90,16 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   branchCOEnd: false,
   branchQCOStart: false,
   branchQCOEnd: false,
+  waterReservoir: true,
+  waterConsumer: true,
+  waterPumpStation: true,
+  waterPipeJoint: true,
+  waterReducer: true,
+  waterReducerPressure: false,
+  waterPipes: true,
+  waterFlowDirection: true,
+  waterVelocity: false,
+  waterFlow: false,
+  waterDeficit: false,
+  waterDynamicPressure: false,
 };

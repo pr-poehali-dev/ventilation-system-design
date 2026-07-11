@@ -88,6 +88,7 @@ export default function InfoPanel({
 }: InfoPanelProps) {
   const [nodesOpen, setNodesOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState(false);
+  const [waterOpen, setWaterOpen] = useState(false);
   const [nodeVisOpen, setNodeVisOpen] = useState(false);
   const [posVisOpen, setPosVisOpen] = useState(false);
   const [preset, setPreset] = useState(0);
@@ -165,6 +166,25 @@ export default function InfoPanel({
             <CheckRow label="Высота ветви (Высота), м" checked={config.branchHeight} onChange={set("branchHeight")} />
             <CheckRow label="Количество людей (Людей)" checked={config.branchPeople} onChange={set("branchPeople")} />
             <CheckRow label="Депрессия (Н), даПа" checked={config.branchDepression} onChange={set("branchDepression")} />
+          </div>
+        )}
+
+        {/* ─── Водопровод ─── */}
+        <SectionHeader label="Водопровод" expanded={waterOpen} onToggle={() => setWaterOpen((v) => !v)} />
+        {waterOpen && (
+          <div>
+            <CheckRow label="Резервуар с водой" checked={config.waterReservoir} onChange={set("waterReservoir")} />
+            <CheckRow label="Потребитель воды" checked={config.waterConsumer} onChange={set("waterConsumer")} />
+            <CheckRow label="Насосная станция" checked={config.waterPumpStation} onChange={set("waterPumpStation")} />
+            <CheckRow label="Соединение труб" checked={config.waterPipeJoint} onChange={set("waterPipeJoint")} />
+            <CheckRow label="Редукционный клапан" checked={config.waterReducer} onChange={set("waterReducer")} />
+            <CheckRow label="Входное/выходное давление на редукторе" checked={config.waterReducerPressure} onChange={set("waterReducerPressure")} />
+            <CheckRow label="Трубы" checked={config.waterPipes} onChange={set("waterPipes")} />
+            <CheckRow label="Направление течения воды" checked={config.waterFlowDirection} onChange={set("waterFlowDirection")} />
+            <CheckRow label="Скорость воды (V), м/с" checked={config.waterVelocity} onChange={set("waterVelocity")} />
+            <CheckRow label="Расход воды (Q), м³/ч" checked={config.waterFlow} onChange={set("waterFlow")} />
+            <CheckRow label="Дефицит воды, м³/ч" checked={config.waterDeficit} onChange={set("waterDeficit")} />
+            <CheckRow label="Динамическое давление, МПа" checked={config.waterDynamicPressure} onChange={set("waterDynamicPressure")} />
           </div>
         )}
 
