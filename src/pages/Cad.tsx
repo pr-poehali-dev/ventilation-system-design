@@ -8677,12 +8677,12 @@ export default function CadPage() {
                 if (!showSmoke || !fireCalcDone || !fireResult) return undefined;
                 const map = new Map<string, { color: string; fromT: number; toT: number }>();
 
-                // Вспомогательная функция: цвет по уровню опасности
+                // Вспомогательная функция: цвет дыма по уровню опасности (оттенки серого — цвет дыма)
                 const hazardCol = (level: string) =>
-                  level === "lethal"  ? "#7f1d1d"
-                : level === "danger"  ? "#dc2626"
-                : level === "warning" ? "#f59e0b"
-                : "#a16207"; // safe — тёмно-жёлтый, задымление слабое но видимое
+                  level === "lethal"  ? "#1f2937"
+                : level === "danger"  ? "#374151"
+                : level === "warning" ? "#4b5563"
+                : "#6b7280"; // safe — светло-серый, задымление слабое но видимое
 
                 fireResult.branches.forEach((fr, bid) => {
                   const branch = branches.find(b => b.id === bid);

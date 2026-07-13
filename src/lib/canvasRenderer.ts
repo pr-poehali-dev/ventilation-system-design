@@ -609,18 +609,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.lineWidth = Math.max(p.w + 10, 6);
       ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
     }
-    // Пожар — аура под border
-    const fireSeg = branchFireColors?.get(b.id);
-    if (fireSeg) {
-      const { color: fireCol, fromT, toT } = fireSeg;
-      const fsx = p.sxA + (p.sxB - p.sxA) * fromT, fsy = p.syA + (p.syB - p.syA) * fromT;
-      const tsx = p.sxA + (p.sxB - p.sxA) * toT,   tsy = p.syA + (p.syB - p.syA) * toT;
-      ctx.strokeStyle = fireCol;
-      ctx.lineWidth = Math.max(p.w + 14, 8);
-      ctx.globalAlpha = 0.7;
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
-    }
     // Взрыв — аура под border (штриховая, более широкая)
     const expSeg = branchExplosionColors?.get(b.id);
     if (expSeg) {
@@ -674,17 +662,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.lineWidth = Math.max(w + 10, 6);
         ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
       }
-      const fireSeg = branchFireColors?.get(b.id);
-      if (fireSeg) {
-        const { color: fireCol, fromT, toT } = fireSeg;
-        const fsx = sxA + (sxB - sxA) * fromT, fsy = syA + (syB - syA) * fromT;
-        const tsx = sxA + (sxB - sxA) * toT,   tsy = syA + (syB - syA) * toT;
-        ctx.strokeStyle = fireCol;
-        ctx.lineWidth = Math.max(w + 14, 8);
-        ctx.globalAlpha = 0.7;
-        ctx.setLineDash([]);
-        ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
-      }
       const expSeg2 = branchExplosionColors?.get(b.id);
       if (expSeg2) {
         ctx.strokeStyle = expSeg2.color;
@@ -712,6 +689,20 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.globalAlpha = flowVisible ? 0.55 : 1;
     ctx.setLineDash(isLeakage ? [6, 4] : []);
     ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+
+    // Задымление (дым) — тёмно-серая полоса ВНУТРИ ветви, поверх основной линии
+    const fireSeg = branchFireColors?.get(b.id);
+    if (fireSeg) {
+      const { color: fireCol, fromT, toT } = fireSeg;
+      const fsx = sxA + (sxB - sxA) * fromT, fsy = syA + (syB - syA) * fromT;
+      const tsx = sxA + (sxB - sxA) * toT,   tsy = syA + (syB - syA) * toT;
+      ctx.strokeStyle = fireCol;
+      ctx.lineWidth = Math.max(w * 0.7, 2);
+      ctx.globalAlpha = 0.95;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
 
     // ── Вентрубопровод — пунктирная линия параллельно ветви ──────────────
     if (b.hasVentPipe) {

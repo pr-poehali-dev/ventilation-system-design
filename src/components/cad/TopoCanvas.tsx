@@ -2912,19 +2912,6 @@ export default function TopoCanvas(props: Props) {
                   stroke="#2563eb" strokeWidth={Math.max(w + 10, 6)} strokeLinecap="round"
                   opacity="0.3" />
               </>)}
-              {/* Подсветка задымления (пожар) — сегмент от fromT до toT по направлению потока */}
-              {fireSeg && (() => {
-                const { color: fireCol, fromT, toT } = fireSeg;
-                // sxA/syA — начало по направлению потока (с учётом reversed)
-                const fsx = sxA + (sxB - sxA) * fromT;
-                const fsy = syA + (syB - syA) * fromT;
-                const tsx = sxA + (sxB - sxA) * toT;
-                const tsy = syA + (syB - syA) * toT;
-                return (
-                  <line x1={fsx} y1={fsy} x2={tsx} y2={tsy}
-                    stroke={fireCol} strokeWidth={Math.max(w + 14, 8)} strokeLinecap="round" opacity="0.7" />
-                );
-              })()}
               {/* Подсветка взрыва — штриховая аура по всей ветви */}
               {expSeg && (<>
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
@@ -3003,6 +2990,20 @@ export default function TopoCanvas(props: Props) {
               <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                 stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1}
                 strokeDasharray={isLeakage ? "6 4" : undefined} />
+
+              {/* Задымление (дым) — тёмно-серая полоса ВНУТРИ ветви, поверх основной линии */}
+              {fireSeg && (() => {
+                const { color: fireCol, fromT, toT } = fireSeg;
+                // sxA/syA — начало по направлению потока (с учётом reversed)
+                const fsx = sxA + (sxB - sxA) * fromT;
+                const fsy = syA + (syB - syA) * fromT;
+                const tsx = sxA + (sxB - sxA) * toT;
+                const tsy = syA + (syB - syA) * toT;
+                return (
+                  <line x1={fsx} y1={fsy} x2={tsx} y2={tsy}
+                    stroke={fireCol} strokeWidth={Math.max(w * 0.7, 2)} strokeLinecap="round" opacity="0.95" />
+                );
+              })()}
 
               {/* ── Вентрубопровод — пунктирная линия параллельно ветви ── */}
               {b.hasVentPipe && (() => {
