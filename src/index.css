@@ -168,6 +168,17 @@ select.cad-input {
   background: hsl(210, 100%, 56%);
 }
 
+/* Верхняя панель инструментов CAD — тонкая горизонтальная прокрутка вместо обрезки */
+.cad-toolbar-scroll::-webkit-scrollbar {
+  height: 3px;
+}
+.cad-toolbar-scroll::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+}
+.cad-toolbar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #909090;
+}
+
 /* Таблица результатов */
 .results-table th {
   color: hsl(215, 15%, 55%);

@@ -7997,7 +7997,7 @@ export default function CadPage() {
         <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#ffffff" }}>
 
           {/* Локальная панель инструментов рисования */}
-          <div className="h-8 flex items-center gap-1 px-2"
+          <div className="h-8 flex items-center gap-1 px-2 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 cad-toolbar-scroll"
             style={{ background: "#f5f5f5", borderBottom: "1px solid #d0d0d0" }}>
             <ToolBtn icon="MousePointer2" label="Выбрать" active={tool === "select"} onClick={() => setTool("select")} />
             <ToolBtn icon="Plus" label="Узел" active={tool === "node"} onClick={() => setTool("node")} />
@@ -8109,32 +8109,6 @@ export default function CadPage() {
                 </button>
               </>
             )}
-
-            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
-
-            {/* ── Активный горизонт (Z для новых узлов) ── */}
-            <span className="text-[11px] text-gray-700"
-              title="Все новые узлы будут создаваться на отметке выбранного горизонта">Горизонт:</span>
-            <select value={activeHorizonId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setActiveHorizonId(id);
-                const h = horizons.find((hh) => hh.id === id);
-                if (h) {
-                  setZLevel(h.z);
-                  if (workPlane?.axis === "z") setWorkPlane({ axis: "z", value: h.z });
-                }
-              }}
-              className="cad-input text-[11px] py-0"
-              style={{
-                background: activeHorizon ? activeHorizon.color + "22" : "white",
-                borderColor: activeHorizon ? activeHorizon.color : "#d0d0d0",
-              }}>
-              <option value="">— не выбран —</option>
-              {horizons.map((h) => (
-                <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
-              ))}
-            </select>
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
