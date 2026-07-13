@@ -381,7 +381,9 @@ export function calcGasConcentrations(
   if (airFlow_m3s <= 0) {
     return { coConc: 2.0, co2Conc: 15.0, smokeDensity: 10, visibility: 0 };
   }
-  const burnRate_kgs = (heatRelease_MW * 1e3) / combustible.heatValue;
+  // Скорость выгорания: мощность (кВт=кДж/с) / низшую теплоту сгорания (кДж/кг).
+  // heatValue задаётся в МДж/кг → переводим в кДж/кг (×1000).
+  const burnRate_kgs = (heatRelease_MW * 1e3) / (combustible.heatValue * 1e3);
   const airFlow_Nm3s = airFlow_m3s * (RHO_AIR_0 / 1.293);
 
   const coVolRate = (burnRate_kgs * combustible.coYield) / 1.25;
