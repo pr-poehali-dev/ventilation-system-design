@@ -117,8 +117,11 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
 
       <SectionHeader title="Вычисленные параметры" />
 
-      <Row label="Концентрация газа (расч.), %">
-        <ComputedInput value={numVal(node.computedGasConc, 3)} />
+      <Row label="Концентрация газа СО (расч.), %">
+        <ComputedInput value={numVal(node.computedCO, 3)} />
+      </Row>
+      <Row label="Концентрация газа СО₂ (расч.), %">
+        <ComputedInput value={numVal(node.computedCO2, 2)} />
       </Row>
       <Row label="Температура воздуха (расч.), °C">
         <ComputedInput value={numVal(node.computedAirTemp, 2)} />

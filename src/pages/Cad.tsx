@@ -3848,6 +3848,11 @@ export default function CadPage() {
                     fireComputedCO2: fr.co2Conc,
                   };
                 }));
+                // Записываем расчётные концентрации CO/CO₂ в узлы (распространение по сети)
+                setNodes(prev => prev.map(n => {
+                  const g = result.nodeGas.get(n.id);
+                  return { ...n, computedCO: g?.co ?? 0, computedCO2: g?.co2 ?? 0 };
+                }));
                 setFireResult(result);
                 setFireCalcDone(true);
                 setShowSmoke(true);

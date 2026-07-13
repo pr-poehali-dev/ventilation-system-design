@@ -339,6 +339,9 @@ export interface FireCalculationResult {
   // корректно дорисовывать задымление внутри ветви-очага, когда дым по кольцу
   // возвращается к входному узлу очага.
   nodeArrivalTime: Map<string, number>;
+  // Концентрации продуктов горения в каждом задымлённом узле (% CO и % CO₂).
+  // Заполняется при обходе распространения дыма по узлам сети.
+  nodeGas: Map<string, { co: number; co2: number }>;
 }
 
 // ─── Физические формулы ───────────────────────────────────────────────────────
@@ -441,7 +444,7 @@ export function calcFireMode(
   // ── Шаг 1: Находим ветви с пожарами ──────────────────────────────────────
   const fireBranches = branches.filter(b => b.hasFire);
   if (fireBranches.length === 0) {
-    return { fireTemp: ambientTemp_C, fireThermalDep: 0, branches: resultMap, reversedBranches, log: ["Очагов пожара не обнаружено"], maxSmokeTime: 60, nodeArrivalTime: new Map() };
+    return { fireTemp: ambientTemp_C, fireThermalDep: 0, branches: resultMap, reversedBranches, log: ["Очагов пожара не обнаружено"], maxSmokeTime: 60, nodeArrivalTime: new Map(), nodeGas: new Map() };
   }
   log.push(`Обнаружено очагов пожара: ${fireBranches.length}`);
 
@@ -601,6 +604,8 @@ export function calcFireMode(
   // ТОЛЬКО ОДИН РАЗ — когда найден кратчайший путь к нему.
   interface SmokeParams { coC: number; co2C: number; smokeC: number; tempC: number; }
   const smokeAtNode = new Map<string, SmokeParams>();
+  // Итоговые концентрации CO / CO₂ в задымлённых узлах (для панели свойств узла)
+  const nodeGas = new Map<string, { co: number; co2: number }>();
 
   // Инициализация: только ВЫХОДНЫЕ узлы очагов попадают в начало обхода.
   // Входной узел очага (inNodeId) — источник свежего воздуха, НЕ задымляется.
@@ -693,6 +698,11 @@ export function calcFireMode(
     // Узел задымлён по порогу? Если дым сюда пришёл уже рассеянным (плотность
     // ниже порога) — дальше он НЕ распространяется (обрыв фронта, чистый воздух).
     if (sp.smokeC < SMOKE_DENS_THRESHOLD) continue;
+    // Фиксируем концентрации продуктов горения в этом задымлённом узле.
+    nodeGas.set(smokedNodeId, {
+      co:  Math.round(sp.coC  * 1000) / 1000,
+      co2: Math.round(sp.co2C * 100)  / 100,
+    });
     // Время задымления ВХОДНОГО узла — оно уже оптимально (узел финализирован).
     const arrivalAtIn = optArrival;
 
@@ -803,6 +813,7 @@ export function calcFireMode(
     log,
     maxSmokeTime,
     nodeArrivalTime,
+    nodeGas,
   };
 }
 

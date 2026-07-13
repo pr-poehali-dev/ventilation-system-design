@@ -27,6 +27,8 @@ export interface TopoNode {
   computedWallTemp: number;    // °C
   computedPressure: number;    // Па — абсолютное давление
   computedExplosivePressure: number; // кПа
+  computedCO?: number;         // % — концентрация CO (от расчёта пожара)
+  computedCO2?: number;        // % — концентрация CO₂ (от расчёта пожара)
   // ─── Противопожарное водоснабжение ────────────────────────────
   fireNodeType: "none" | "reservoir" | "consumer" | "junction"; // тип узла ППЗ
   fireConsumerType: "fire_hydrant" | "sprinkler" | "monitor" | "other"; // тип потребителя
