@@ -76,21 +76,23 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
       }
     }
     if (items.length > 0) {
-      const legFs = Math.max(7, Math.min(13, rh * 0.018));
-      const legIconSZ = legFs * 2.2;
+      // Фиксированный масштаб по формату листа (как у штампа)
+      const _mmL = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
+      const _paperWmmL = (pl.orientation ?? "landscape") === "landscape" ? Math.max(_mmL.w, _mmL.h) : Math.min(_mmL.w, _mmL.h);
+      const pxPerMmL = rw / _paperWmmL;
+      const legFs = pxPerMmL * 2.6;
+      const legIconSZ = pxPerMmL * 5.5;
       const legLineH = legIconSZ + legFs * 0.4;
       const legPad = legFs * 0.6;
-      const legW = Math.max(120, rw * 0.22);
       const legH = legPad * 2 + items.length * legLineH + legFs * 1.5;
-      const lx = rx + (pl.legendOffsetX ?? 0);
-      const ly = ry + rh - legH + (pl.legendOffsetY ?? 0);
+      const lx = rx + inset + (pl.legendOffsetX ?? 0);
+      const ly = ry + rh - inset - legH + (pl.legendOffsetY ?? 0);
 
-      body += `<rect x="${n(lx)}" y="${n(ly)}" width="${n(legW)}" height="${n(legH)}" fill="white" stroke="#333" stroke-width="${n(Math.max(0.5, rw*0.002))}"/>`;
-      body += `<text x="${n(lx+legPad)}" y="${n(ly+legPad+legFs)}" font-size="${n(legFs)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">Условные обозначения</text>`;
+      body += `<text x="${n(lx)}" y="${n(ly+legPad+legFs)}" font-size="${n(legFs)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">Условные обозначения</text>`;
 
       items.forEach((item, idx) => {
         const iy = ly + legPad + legFs * 1.5 + idx * legLineH;
-        const icX = lx + legPad;
+        const icX = lx;
         const icY = iy + (legLineH - legIconSZ) / 2;
 
         if (!item.isBulkhead && item.svgContent) {
@@ -109,7 +111,7 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
           body += `<line x1="${n(icX)}" y1="${n(pcy)}" x2="${n(icX+legIconSZ)}" y2="${n(pcy)}" stroke="#555" stroke-width="1.2"/>`;
           body += `<rect x="${n(pcx-pw2/2)}" y="${n(pcy-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="${fill2}" stroke="#1a1a1a" stroke-width="1"/>`;
         }
-        body += `<text x="${n(lx+legPad+legIconSZ+legPad*0.5)}" y="${n(iy+legLineH*0.6)}" font-size="${n(legFs*0.88)}" font-family="Arial, sans-serif" fill="#333">${e(item.name)}</text>`;
+        body += `<text x="${n(lx+legIconSZ+legPad*0.8)}" y="${n(iy+legLineH*0.6)}" font-size="${n(legFs*0.88)}" font-family="Arial, sans-serif" fill="#333">${e(item.name)}</text>`;
       });
     }
   }

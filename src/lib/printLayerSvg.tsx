@@ -93,24 +93,27 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     }
     if (items.length === 0) return null;
 
-    const legFontSize = Math.max(7, Math.min(13, rh * 0.018));
-    const legIconSZ = legFontSize * 2.2;
+    // Фиксированный масштаб по формату листа (как у штампа)
+    const _mmL = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
+    const _paperWmmL = (pl.orientation ?? "landscape") === "landscape" ? Math.max(_mmL.w, _mmL.h) : Math.min(_mmL.w, _mmL.h);
+    const pxPerMmL = rw / _paperWmmL;
+    const legFontSize = pxPerMmL * 2.6;
+    const legIconSZ = pxPerMmL * 5.5;
     const legLineH = legIconSZ + legFontSize * 0.4;
     const legPad = legFontSize * 0.6;
-    const legW = Math.max(120, rw * 0.22);
+    const legW = pxPerMmL * 60;
     const legH = legPad * 2 + items.length * legLineH + legFontSize * 1.5;
-    const lx = rx + (pl.legendOffsetX ?? 0);
-    const ly = ry + rh - legH + (pl.legendOffsetY ?? 0);
+    const lx = rx + inset + (pl.legendOffsetX ?? 0);
+    const ly = ry + rh - inset - legH + (pl.legendOffsetY ?? 0);
 
     return (
       <g key="legend-block">
-        <rect x={lx} y={ly} width={legW} height={legH} fill="white" stroke="#333" strokeWidth={Math.max(0.5, rw * 0.002)} />
-        <text x={lx + legPad} y={ly + legPad + legFontSize} fontSize={legFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
+        <text x={lx} y={ly + legPad + legFontSize} fontSize={legFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
           Условные обозначения
         </text>
         {items.map((item, idx) => {
           const iy = ly + legPad + legFontSize * 1.5 + idx * legLineH;
-          const icX = lx + legPad;
+          const icX = lx;
           const icY = iy + (legLineH - legIconSZ) / 2;
           return (
             <g key={idx}>
@@ -133,7 +136,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
                   />
                 </g>
               )}
-              <text x={lx + legPad + legIconSZ + legPad * 0.5} y={iy + legLineH * 0.6}
+              <text x={lx + legIconSZ + legPad * 0.8} y={iy + legLineH * 0.6}
                 fontSize={legFontSize * 0.88} fontFamily="Arial, sans-serif" fill="#333">
                 {item.name}
               </text>
