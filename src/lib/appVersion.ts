@@ -2,7 +2,7 @@
 // В desktop-сборке актуальная версия приходит из C# (electronAPI.getVersion),
 // а это значение — fallback для браузера и диалога «О программе».
 // ВАЖНО: держи это число синхронным с файлом desktop/VERSION.
-export const APP_VERSION = "2.33.98";
+export const APP_VERSION = "2.37.103";
 
 // Дата сборки, отображается в диалоге «О программе».
-export const APP_BUILD_DATE = "13.07.2026";
+export const APP_BUILD_DATE = "14.07.2026";
