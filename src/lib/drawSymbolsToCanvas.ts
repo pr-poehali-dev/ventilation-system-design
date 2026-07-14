@@ -301,8 +301,9 @@ function drawBulkheadOnCanvas(
   const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
   const isFirePP  = tid === "fire_door_pp";
   const isProem   = tid.includes("proem_");
+  const isRegulator = tid === "regulator";
   const isBlind   = !isDoor && !isAuto && !isOpen && !isWindow && !isLattice
-                    && !isWater && !isSail && !isBarrier && !isFirePP && !isProem
+                    && !isWater && !isSail && !isBarrier && !isFirePP && !isProem && !isRegulator
                     && !tid.includes("concrete") && !tid.includes("wood") && !tid.includes("brick")
                     && !tid.includes("metal") && tid !== "fire_door";
 
@@ -347,6 +348,10 @@ function drawBulkheadOnCanvas(
       ctx.fillText("А", cx2, 0);
     }
   } else {
+    if (isRegulator) {
+      ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(1.2, pw * 0.28); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-ph, 0); ctx.lineTo(ph, 0); ctx.stroke();
+    }
     ctx.fillStyle = fill;
     ctx.strokeStyle = isBlind ? "#000000" : stroke;
     ctx.lineWidth   = isBlind ? Math.max(0.8, pw * 0.28) : sw2;

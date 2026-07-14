@@ -3605,6 +3605,7 @@ export default function TopoCanvas(props: Props) {
                   const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
                   const isFirePP  = tid === "fire_door_pp";
                   const isProem   = tid.includes("proem_");
+                  const isRegulator = tid === "regulator";
                   const sw2       = Math.max(0.4, pw * 0.18);  // толщина обводки
 
                   return (
@@ -3685,8 +3686,13 @@ export default function TopoCanvas(props: Props) {
                           )}
                         </>
                       ) : (
-                        // ── Глухая / с окном / решётка / водоподпорная ──
+                        // ── Глухая / с окном / решётка / водоподпорная / регулятор ──
                         <>
+                          {/* Регулятор-шибер: линия-хвостики вдоль ветви сквозь заслонку */}
+                          {isRegulator && (
+                            <line x1={-ph} y1={0} x2={ph} y2={0}
+                              stroke={stroke} strokeWidth={Math.max(1.2, pw * 0.28)} strokeLinecap="round" />
+                          )}
                           <rect x={-pw/2} y={-ph/2} width={pw} height={ph}
                             fill={fill} stroke={stroke} strokeWidth={sw2} />
                           {/* Окно в центре */}
@@ -4603,6 +4609,7 @@ export default function TopoCanvas(props: Props) {
                   const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
                   const isFirePP  = tid === "fire_door_pp";
                   const isProem   = tid.includes("proem_");
+                  const isRegulatorOv = tid === "regulator";
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
                       {isMeasureStationOv ? (() => {
@@ -4632,6 +4639,7 @@ export default function TopoCanvas(props: Props) {
                         <line x1={-pw/2} y1={-ph/2} x2={-pw/2} y2={ph/2} stroke={strokeOv} strokeWidth={Math.max(2,pw*0.35)} strokeLinecap="round" />
                         {isAuto && <g transform={`translate(${pw/2+ph*0.28},0)`}><circle r={ph*0.2} fill="white" stroke={strokeOv} strokeWidth={1.2} /><text textAnchor="middle" dominantBaseline="central" fontSize={ph*0.2} fontWeight="bold" fill={strokeOv}>А</text></g>}
                       </>) : (<>
+                        {isRegulatorOv && <line x1={-ph} y1={0} x2={ph} y2={0} stroke={strokeOv} strokeWidth={Math.max(1.2, pw*0.28)} strokeLinecap="round" />}
                         <rect x={-pw/2} y={-ph/2} width={pw} height={ph} fill={fillOv} stroke={strokeOv} strokeWidth={sw2} />
                         {(isWindow || isProem) && <rect x={-pw*0.25} y={-ph*0.2} width={pw*0.5} height={ph*0.4} fill="white" stroke={strokeOv} strokeWidth={1} />}
                         {isLattice && [[-1,0,1].map(i => <line key={`v${i}`} x1={pw*0.2*i} y1={-ph*0.45} x2={pw*0.2*i} y2={ph*0.45} stroke={strokeOv} strokeWidth={0.8} />), <line key="h0" x1={-pw*0.4} y1={0} x2={pw*0.4} y2={0} stroke={strokeOv} strokeWidth={0.8} />]}

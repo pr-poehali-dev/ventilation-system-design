@@ -770,6 +770,7 @@ export function generateSvg(opts: SvgExportOptions): string {
         const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
         const isWater = tid.includes("water_dam");
         const isOpen = tid.includes("regulator_open") || tid.includes("open_");
+        const isRegulator = tid === "regulator";
 
         parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})">`);
 
@@ -792,6 +793,9 @@ export function generateSvg(opts: SvgExportOptions): string {
             parts.push(`<text x="${n(cx2)}" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${n(ph*0.2)}" font-weight="bold" fill="${stroke2}">А</text>`);
           }
         } else {
+          if (isRegulator) {
+            parts.push(`<line x1="${n(-ph)}" y1="0" x2="${n(ph)}" y2="0" stroke="${stroke2}" stroke-width="${n(Math.max(1.2, pw2*0.28))}" stroke-linecap="round"/>`);
+          }
           parts.push(`<rect x="${n(-pw2/2)}" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="${fill}" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
           if (isWindow) {
             parts.push(`<rect x="${n(-pw2*0.25)}" y="${n(-ph*0.2)}" width="${n(pw2*0.5)}" height="${n(ph*0.4)}" fill="white" stroke="${stroke2}" stroke-width="${n(sw2)}"/>`);
