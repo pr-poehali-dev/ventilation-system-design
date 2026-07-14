@@ -609,7 +609,7 @@ export default function PrintDialog({
     layer: NonNullable<Horizon["printLayer"]>,
     rect: { rx: number; ry: number; rw: number; rh: number },
   ): Promise<void> => {
-    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH, schemaSymbols });
+    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH, schemaSymbols, branches });
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     await new Promise<void>((resolve) => {

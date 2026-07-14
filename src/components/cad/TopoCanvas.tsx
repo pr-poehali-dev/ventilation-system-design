@@ -5,7 +5,7 @@ import {
   PAPER_SIZES_MM, OVERVIEW_HORIZON_ID,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -2183,7 +2183,18 @@ export default function TopoCanvas(props: Props) {
           for (const tid of usedTypeIds) {
             const lt = LEGEND_TYPES.find(l => l.id === tid);
             const isBk = BULKHEAD_SYMBOL_IDS.has(tid);
-            if (lt) legendItems.push({ name: lt.name, svgContent: lt.svgContent, isBulkhead: false, tid });
+            if (tid === "fan") {
+              // Вентилятор: разные УО по назначению ветви (ГВУ/ВВУ — двойное кольцо, ВМП — пропеллер)
+              const fanTypes = new Set(
+                schemaSymbols.filter(s => s.typeId === "fan")
+                  .map(s => branches.find(b => b.id === s.branchId)?.fanType ?? "ВМП")
+              );
+              if (fanTypes.has("ГВУ") || fanTypes.has("ВВУ"))
+                legendItems.push({ name: "Вентиляторная установка (ГВУ/ВВУ)", svgContent: FAN_SVG_STATION, isBulkhead: false, tid });
+              if (fanTypes.has("ВМП") || fanTypes.size === 0)
+                legendItems.push({ name: "Вентилятор местного проветривания (ВМП)", svgContent: FAN_SVG_PROPELLER, isBulkhead: false, tid });
+            }
+            else if (lt) legendItems.push({ name: lt.name, svgContent: lt.svgContent, isBulkhead: false, tid });
             else if (isBk) legendItems.push({ name: tid.replace(/_/g, " "), svgContent: "", isBulkhead: true, tid });
           }
           if (legendItems.length === 0) return null;

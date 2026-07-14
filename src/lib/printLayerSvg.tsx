@@ -2,9 +2,9 @@
 // Используется и в TopoCanvas (рабочая область), и в PrintPreviewCanvas (предпросмотр).
 // Принимает готовые экранные координаты рамки rx,ry,rw,rh.
 import React from "react";
-import type { HorizonPrintLayer, PaperFormat } from "@/lib/topology";
+import type { HorizonPrintLayer, PaperFormat, TopoBranch } from "@/lib/topology";
 import { PAPER_SIZES_MM } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
   computeStampBox, buildStampCells, buildStampGridLines, getStampFieldValue,
 } from "@/lib/stampTemplate";
@@ -21,9 +21,11 @@ export interface PrintLayerSvgOptions {
   rh: number;
   /** УО размещённые на схеме — для блока условных обозначений */
   schemaSymbols?: SchemaSymbol[];
+  /** Ветви — для определения назначения вентиляторов (ГВУ/ВВУ/ВМП) в легенде */
+  branches?: TopoBranch[];
 }
 
-export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols = [] }: PrintLayerSvgOptions): React.ReactNode {
+export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols = [], branches = [] }: PrintLayerSvgOptions): React.ReactNode {
   const inset = Math.max(4, Math.min(rw, rh) * 0.015);
   // Размер заголовка пропорционален формату листа (как штамп/Утв), а не rh.
   const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
@@ -76,7 +78,17 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     for (const tid of usedTypeIds) {
       const lt = LEGEND_TYPES.find(l => l.id === tid);
       const isBk = BULKHEAD_SYMBOL_IDS.has(tid);
-      if (lt) items.push({ name: lt.name, svgContent: lt.svgContent, isBulkhead: false, tid });
+      if (tid === "fan") {
+        const fanTypes = new Set(
+          schemaSymbols.filter(s => s.typeId === "fan")
+            .map(s => branches.find(b => b.id === s.branchId)?.fanType ?? "ВМП")
+        );
+        if (fanTypes.has("ГВУ") || fanTypes.has("ВВУ"))
+          items.push({ name: "Вентиляторная установка (ГВУ/ВВУ)", svgContent: FAN_SVG_STATION, isBulkhead: false, tid });
+        if (fanTypes.has("ВМП") || fanTypes.size === 0)
+          items.push({ name: "Вентилятор местного проветривания (ВМП)", svgContent: FAN_SVG_PROPELLER, isBulkhead: false, tid });
+      }
+      else if (lt) items.push({ name: lt.name, svgContent: lt.svgContent, isBulkhead: false, tid });
       else if (isBk) items.push({ name: tid.replace(/_/g, " "), svgContent: "", isBulkhead: true, tid });
     }
     if (items.length === 0) return null;

@@ -946,6 +946,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       totalW: vbW,
       totalH: vbH,
       schemaSymbols,
+      branches,
     });
     const bodyMatch = frameSvgContent.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
     if (bodyMatch) {
