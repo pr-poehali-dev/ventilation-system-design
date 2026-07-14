@@ -87,6 +87,8 @@ interface Props {
   thinLines?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме. */
   fixedObjectScale?: boolean;
+  /** Порог автопереключения SVG↔Canvas по числу видимых ветвей. По умолчанию CANVAS_THRESHOLD (800). */
+  canvasThreshold?: number;
   /** Пределы масштабов объектов (активны при fixedObjectScale=true). */
   scaleLimits?: {
     textMin: number; textMax: number;
@@ -255,7 +257,7 @@ export default function TopoCanvas(props: Props) {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
-    horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, scaleLimits,
+    horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
     bulkheadScale = 150,
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false,
@@ -1077,7 +1079,7 @@ export default function TopoCanvas(props: Props) {
   //  • SVG (≤ порога): rawObjSF = 1 (полностью фиксировано);
   //  • Canvas (> порога, canvasRenderer): rawObjSF = scale/(xyScale*0.4) с зажимом.
   // Поэтому выбираем формулу под активный режим отрисовки.
-  const _useCanvasRender = visibleBranches.length > CANVAS_THRESHOLD;
+  const _useCanvasRender = visibleBranches.length > canvasThreshold;
   const _rawBranchSF = (fixedObjectScale && !_useCanvasRender)
     ? 1
     : (view.scale / (_xySF * 0.4));
@@ -2393,7 +2395,7 @@ export default function TopoCanvas(props: Props) {
   });
 
   // ─── Автопереключение SVG ↔ Canvas ────────────────────────────────────────
-  const useCanvas = visibleBranches.length > CANVAS_THRESHOLD;
+  const useCanvas = visibleBranches.length > canvasThreshold;
   if (!useCanvas) canvasExportRef.current = null;
 
   // Активен ли слой печати — тогда canvas делаем прозрачным, чтобы рамка/штамп

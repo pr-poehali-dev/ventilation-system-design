@@ -899,6 +899,15 @@ export default function CadPage() {
   // Пределы масштабов (как в АэроСеть)
   const [scaleSettingsOpen, setScaleSettingsOpen] = useState(false);
   const [scaleLimitsEnabled, setScaleLimitsEnabled] = useState(false);
+  // Порог переключения SVG↔Canvas по числу видимых ветвей (настраивается вручную).
+  const [canvasThreshold, setCanvasThreshold] = useState<number>(() => {
+    const raw = localStorage.getItem("vent-cad/canvas-threshold");
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n >= 100 ? n : 800;
+  });
+  useEffect(() => {
+    try { localStorage.setItem("vent-cad/canvas-threshold", String(canvasThreshold)); } catch { /* ignore */ }
+  }, [canvasThreshold]);
   const [scaleTextMin, setScaleTextMin] = useState(80);
   const [scaleTextMax, setScaleTextMax] = useState(150);
   const [scaleBranchMin, setScaleBranchMin] = useState(80);
@@ -8399,6 +8408,7 @@ export default function CadPage() {
               branchBorder={branchBorder}
               thinLines={thinLines}
               fixedObjectScale={scaleLimitsEnabled}
+              canvasThreshold={canvasThreshold}
               scaleLimits={scaleLimitsEnabled ? {
                 textMin: scaleTextMin, textMax: scaleTextMax,
                 branchMin: scaleBranchMin, branchMax: scaleBranchMax,
@@ -9982,6 +9992,30 @@ export default function CadPage() {
                 <div className="flex justify-between text-[10px] text-gray-400">
                   <span>0.1×</span><span>5×</span><span>10×</span>
                 </div>
+                {/* Порог SVG ↔ Canvas */}
+                <div className="border-t border-gray-300 mt-2 pt-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
+                      Порог SVG→Canvas: {canvasThreshold}
+                    </span>
+                    <button onClick={() => setCanvasThreshold(800)}
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
+                      Сброс
+                    </button>
+                  </div>
+                  <input type="range" min="200" max="2000" step="50"
+                    value={canvasThreshold}
+                    onChange={(e) => setCanvasThreshold(parseInt(e.target.value, 10))}
+                    className="w-full"
+                    style={{ accentColor: "#7c3aed" }} />
+                  <div className="flex justify-between text-[10px] text-gray-400">
+                    <span>200</span><span>1000</span><span>2000</span>
+                  </div>
+                  <div className="text-[10px] mt-1" style={{ color: branches.length > canvasThreshold ? "#7c3aed" : "#16a34a" }}>
+                    Ветвей: {branches.length} · режим:{" "}
+                    <b>{branches.length > canvasThreshold ? "Canvas (быстрый)" : "SVG (детальный)"}</b>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -10440,6 +10474,7 @@ export default function CadPage() {
         positions={positions}
         showPositions={showPositions}
         fixedObjectScale={scaleLimitsEnabled}
+        canvasThreshold={canvasThreshold}
         xyScale={xyScale}
         initialOpenExport={printDialogOpenExport}
         onExportDialogOpened={() => setPrintDialogOpenExport(false)}
