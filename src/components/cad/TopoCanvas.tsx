@@ -2223,7 +2223,7 @@ export default function TopoCanvas(props: Props) {
                         <rect
                           x={icX + legIconSZ / 2 - legIconSZ * 0.175} y={icY + legIconSZ * 0.1}
                           width={legIconSZ * 0.35} height={legIconSZ * 0.8}
-                          fill={item.tid.includes("concrete") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : "white"}
+                          fill={item.tid.includes("concrete") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : item.tid.includes("regulator") ? "#ffd600" : "white"}
                           stroke="#1a1a1a" strokeWidth={1}
                         />
                       </g>
@@ -4575,11 +4575,13 @@ export default function TopoCanvas(props: Props) {
                   const fillOv  = isDestroyedOv ? "#ff4444"
                     : tid.includes("concrete") ? "#4caf50" : tid.includes("wood") ? "#ffd600"
                     : tid.includes("brick") ? "#ff9800" : tid.includes("metal") ? "#9c27b0"
+                    : tid.includes("regulator") ? "#ffd600"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
                     : tid === "barrier" ? "#555" : "white";
                   const strokeOv = isDestroyedOv ? "#8b0000"
                     : tid.includes("concrete") ? "#1b5e20" : tid.includes("wood") ? "#e65100"
                     : tid.includes("brick") ? "#bf360c" : tid.includes("metal") ? "#4a148c"
+                    : tid.includes("regulator") ? "#e65100"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800" : "#1a1a1a";
                   const bkBwOv = (bkBrOv?.lineWidth && bkBrOv.lineWidth > 0) ? bkBrOv.lineWidth : branchWidth;
                   // Размер перемычки синхронизирован с реальной шириной ветви на

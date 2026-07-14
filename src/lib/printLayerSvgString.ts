@@ -90,6 +90,7 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
             : item.tid.includes("wood")   ? "#ffd600"
             : item.tid.includes("brick")  ? "#ff9800"
             : item.tid.includes("metal")  ? "#9c27b0"
+            : item.tid.includes("regulator") ? "#ffd600"
             : "white";
           const ph = legIconSZ * 0.8, pw2 = ph * 0.35;
           const pcx = icX + legIconSZ / 2, pcy = icY + legIconSZ / 2;
