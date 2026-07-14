@@ -272,6 +272,7 @@ function drawBulkheadOnCanvas(
     : tid.includes("wood")     ? "#ffd600"
     : tid.includes("brick")    ? "#ff9800"
     : tid.includes("metal")    ? "#9c27b0"
+    : tid.includes("regulator") ? "#ffd600"
     : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
     : (tid === "barrier")      ? "#555"
     : "white";
@@ -279,6 +280,7 @@ function drawBulkheadOnCanvas(
     : tid.includes("wood")     ? "#e65100"
     : tid.includes("brick")    ? "#bf360c"
     : tid.includes("metal")    ? "#4a148c"
+    : tid.includes("regulator") ? "#e65100"
     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800"
     : "#1a1a1a";
 
