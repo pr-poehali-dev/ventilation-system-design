@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { useLicenseContext } from "@/context/LicenseContext";
-import LicenseDialog from "@/components/LicenseDialog";
 import AppLogo from "@/components/AppLogo";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
@@ -17,49 +16,31 @@ import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
-import CadContextMenu, { type ContextMenuItem } from "@/components/cad/CadContextMenu";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
-import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import PositionsPanel from "@/components/cad/PositionsPanel";
 import { type Position, makePosition } from "@/lib/positions";
-import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
 import { type ExcelImportResult } from "@/lib/excelImport";
-import ExcelExportDialog from "@/components/cad/ExcelExportDialog";
-import CombinedImportDialog from "@/components/cad/CombinedImportDialog";
 import { type CombinedImportResult } from "@/lib/combinedImport";
-import CsvImportDialog from "@/components/cad/CsvImportDialog";
-import Vent2CsvImportDialog from "@/components/cad/Vent2CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
-import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
-import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
+import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
-import LegendDialog from "@/components/cad/LegendDialog";
-import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import PrintDialog from "@/components/cad/PrintDialog";
+import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
-import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
-import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
+import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
-import VentPipeDialog from "@/components/cad/VentPipeDialog";
 import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
-import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
-import HelpDialog from "@/components/cad/HelpDialog";
-import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
-import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
-import DepressogramDialog from "@/components/cad/DepressogramDialog";
-import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
 import { calcBranchFirePower } from "@/lib/fireStability";
 import { API_URLS } from "@/lib/api-urls";
 import {
@@ -69,14 +50,15 @@ import {
   makeTextBlock, DEFAULT_EXC, LAYERS,
 } from "./cad/cadTypes";
 export type { SchemaSymbol } from "./cad/cadTypes";
-import { compareBranches, compareNodes } from "./cad/cadUtils";
+import CadImportDialogs from "./cad/CadImportDialogs";
+import CadToolDialogs from "./cad/CadToolDialogs";
+import CadModals from "./cad/CadModals";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn, RibbonSmallBtn,
   PentagonIcon, RectIcon, MiniSquareIcon,
   PropGroup, SelectRow, SelectRowLabeled, FieldRow, CheckRow,
   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit, ComputedRow,
   ToolBtn, toolLabel, ViewBtn, FlowBtn,
-  nodeContextItems, branchContextItems, canvasContextItems,
 } from "./cad/cadComponents";
 
 const AIRFLOW_URL      = API_URLS.airflow;
@@ -10109,844 +10091,182 @@ export default function CadPage() {
       </div>
     </div>
 
-    {/* ═══ ДИАЛОГ НАСТРОЙКИ ПРЕДЕЛОВ МАСШТАБОВ ═══════════════════════ */}
-    {scaleSettingsOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
-        onClick={() => setScaleSettingsOpen(false)}>
-        <div className="bg-white shadow-2xl border border-gray-300 flex"
-          style={{ minWidth: 600, fontFamily: "Segoe UI, Tahoma, sans-serif", borderRadius: 0 }}
-          onClick={e => e.stopPropagation()}>
-          {/* Левая панель (дерево) */}
-          <div className="border-r border-gray-300" style={{ width: 180, background: "#f5f5f5" }}>
-            <div className="px-3 py-2 border-b border-gray-300 text-[12px] font-semibold text-gray-700" style={{ background: "linear-gradient(180deg,#e8e8e8,#d8d8d8)" }}>
-              Настройки технологической схемы
-            </div>
-            <div className="py-1">
-              {["Схема", "Единицы измерения", "Координатная сетка", "Размеры объектов", "Пределы масштабов", "Цвета и шрифты"].map((item, i) => (
-                <div key={i}
-                  className="px-3 py-1 text-[12px] cursor-pointer"
-                  style={{
-                    background: item === "Пределы масштабов" ? "#0078d7" : "transparent",
-                    color: item === "Пределы масштабов" ? "white" : "#222",
-                    paddingLeft: i > 0 ? 24 : 12,
-                  }}>
-                  {item}
-                </div>
-              ))}
-            </div>
-          </div>
+    <CadImportDialogs
+      nodes={nodes}
+      branches={branches}
+      horizons={horizons}
+      projectFileName={projectFileName}
+      unitsConfig={unitsConfig}
+      showDxfImport={showDxfImport}
+      setShowDxfImport={setShowDxfImport}
+      handleDxfImport={handleDxfImport}
+      showExcelImport={showExcelImport}
+      setShowExcelImport={setShowExcelImport}
+      handleExcelImport={handleExcelImport}
+      showExcelExport={showExcelExport}
+      setShowExcelExport={setShowExcelExport}
+      showCombinedImport={showCombinedImport}
+      setShowCombinedImport={setShowCombinedImport}
+      handleCombinedImport={handleCombinedImport}
+      showCsvImport={showCsvImport}
+      setShowCsvImport={setShowCsvImport}
+      handleCsvImport={handleCsvImport}
+      showVent2CsvImport={showVent2CsvImport}
+      setShowVent2CsvImport={setShowVent2CsvImport}
+      handleVent2CsvImport={handleVent2CsvImport}
+      showVentsimImport={showVentsimImport}
+      setShowVentsimImport={setShowVentsimImport}
+      handleVentsimImport={handleVentsimImport}
+      showEquipRef={showEquipRef}
+      setShowEquipRef={setShowEquipRef}
+      equipRefTab={equipRefTab}
+      setEquipRefTab={setEquipRefTab}
+      mineFans={mineFans}
+      setMineFans={setMineFans}
+      mineBulkheads={mineBulkheads}
+      setMineBulkheads={setMineBulkheads}
+      mineTypes={mineTypes}
+      setMineTypes={setMineTypes}
+      setUnitsConfig={setUnitsConfig}
+      showLogPanel={showLogPanel}
+      setShowLogPanel={setShowLogPanel}
+      logEntries={logEntries}
+      setLogEntries={setLogEntries}
+      ctxMenu={ctxMenu}
+      setCtxMenu={setCtxMenu}
+      handleCtxAction={handleCtxAction}
+      branchParamBuffer={branchParamBuffer}
+      selectedNodeIds={selectedNodeIds}
+      selectedBranchIds={selectedBranchIds}
+    />
 
-          {/* Правая панель (содержимое) */}
-          <div className="flex flex-col" style={{ flex: 1 }}>
-            {/* Заголовок */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300"
-              style={{ background: "linear-gradient(180deg,#e8e8e8,#d8d8d8)" }}>
-              <span className="text-[12px] font-semibold text-gray-800">Настройки технологической схемы</span>
-              <button onClick={() => setScaleSettingsOpen(false)}
-                className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">
-                <Icon name="X" size={12} />
-              </button>
-            </div>
+    <CadToolDialogs
+      nodes={nodes}
+      branches={branches}
+      branchesRaw={branchesRaw}
+      horizons={horizons}
+      projectFileName={projectFileName}
+      unitsConfig={unitsConfig}
+      showLegend={showLegend}
+      setShowLegend={setShowLegend}
+      showPrintDialog={showPrintDialog}
+      setShowPrintDialog={setShowPrintDialog}
+      schemaSymbols={schemaSymbols}
+      savedViewStateRef={savedViewStateRef}
+      savedViewState={savedViewState}
+      canvasSize={canvasSize}
+      branchWidth={branchWidth}
+      branchBorder={branchBorder}
+      thinLines={thinLines}
+      colorByHorizon={colorByHorizon}
+      flowDisplay={flowDisplay}
+      infoConfig={infoConfig}
+      zScale={zScale}
+      getSvgRef={getSvgRef}
+      colorMode={colorMode}
+      posColorInner={posColorInner}
+      posColorOuter={posColorOuter}
+      positions={positions}
+      showPositions={showPositions}
+      scaleLimitsEnabled={scaleLimitsEnabled}
+      xyScale={xyScale}
+      printDialogOpenExport={printDialogOpenExport}
+      setPrintDialogOpenExport={setPrintDialogOpenExport}
+      showRenumberDialog={showRenumberDialog}
+      setShowRenumberDialog={setShowRenumberDialog}
+      renumberAll={renumberAll}
+      showSelectSimilar={showSelectSimilar}
+      setShowSelectSimilar={setShowSelectSimilar}
+      selectedBranch={selectedBranch}
+      selectedSymbolId={selectedSymbolId}
+      setSelectedBranchId={setSelectedBranchId}
+      setSelectedBranchIds={setSelectedBranchIds}
+      setSelectedNodeId={setSelectedNodeId}
+      setSelectedSymbolId={setSelectedSymbolId}
+      setSelectedSymbolIds={setSelectedSymbolIds}
+      showDepressogram={showDepressogram}
+      setShowDepressogram={setShowDepressogram}
+      setDepressogramHighlight={setDepressogramHighlight}
+      depressogramPickMode={depressogramPickMode}
+      setDepressogramPickMode={setDepressogramPickMode}
+      depressogramManualBranches={depressogramManualBranches}
+      setDepressogramManualBranches={setDepressogramManualBranches}
+      showFireStability={showFireStability}
+      setShowFireStability={setShowFireStability}
+      solveResult={solveResult}
+      computeFireStabilityFacts={computeFireStabilityFacts}
+      showLicenseDialog={showLicenseDialog}
+      setShowLicenseDialog={setShowLicenseDialog}
+      license={license}
+      isDemo={isDemo}
+      showMultiBranchProps={showMultiBranchProps}
+      setShowMultiBranchProps={setShowMultiBranchProps}
+      selectedBranchIds={selectedBranchIds}
+      pushHistory={pushHistory}
+      updateBranch={updateBranch}
+      showVentPipeDialog={showVentPipeDialog}
+      setShowVentPipeDialog={setShowVentPipeDialog}
+      ventPipeBranchIds={ventPipeBranchIds}
+      showHelpDialog={showHelpDialog}
+      setShowHelpDialog={setShowHelpDialog}
+    />
 
-            <div className="px-6 py-4 flex-1">
-              <div className="text-[14px] font-semibold text-gray-800 mb-4">Пределы масштабов</div>
+    <CadModals
+      nodes={nodes}
+      branches={branches}
+      branchesRaw={branchesRaw}
+      projectFileName={projectFileName}
+      scaleSettingsOpen={scaleSettingsOpen}
+      setScaleSettingsOpen={setScaleSettingsOpen}
+      scaleTextMin={scaleTextMin}
+      setScaleTextMin={setScaleTextMin}
+      scaleTextMax={scaleTextMax}
+      setScaleTextMax={setScaleTextMax}
+      scaleBranchMin={scaleBranchMin}
+      setScaleBranchMin={setScaleBranchMin}
+      scaleBranchMax={scaleBranchMax}
+      setScaleBranchMax={setScaleBranchMax}
+      scalePositionMin={scalePositionMin}
+      setScalePositionMin={setScalePositionMin}
+      scalePositionMax={scalePositionMax}
+      setScalePositionMax={setScalePositionMax}
+      positionGostMm={positionGostMm}
+      setPositionGostMm={setPositionGostMm}
+      bulkheadScale={bulkheadScale}
+      setBulkheadScale={setBulkheadScale}
+      fanScale={fanScale}
+      setFanScale={setFanScale}
+      setScaleLimitsEnabled={setScaleLimitsEnabled}
+      mergeNodeDialog={mergeNodeDialog}
+      setMergeNodeDialog={setMergeNodeDialog}
+      doDeleteNode={doDeleteNode}
+      mergeAdjacentBranches={mergeAdjacentBranches}
+      squadDialog={squadDialog}
+      setSquadDialog={setSquadDialog}
+      squadCount={squadCount}
+      setSquadCount={setSquadCount}
+      addSymbol={addSymbol}
+      setTool={setTool}
+      setActiveSymbolTypeId={setActiveSymbolTypeId}
+      showCloseConfirm={showCloseConfirm}
+      setShowCloseConfirm={setShowCloseConfirm}
+      handleSave={handleSave}
+      showAbout={showAbout}
+      setShowAbout={setShowAbout}
+      compareShowDialog={compareShowDialog}
+      setCompareShowDialog={setCompareShowDialog}
+      compareLoading={compareLoading}
+      setCompareLoading={setCompareLoading}
+      setCompareResult={setCompareResult}
+      setCompareFilter={setCompareFilter}
+      setCompareSelectedId={setCompareSelectedId}
+      setActiveSide={setActiveSide}
+      setLeftPanelOpen={setLeftPanelOpen}
+      setActiveRibbon={setActiveRibbon}
+    />
 
-              {/* Таблица */}
-              <table className="text-[12px] w-full mb-4" style={{ borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th className="text-left py-1 pr-4 font-normal text-gray-500" style={{ width: "50%" }}></th>
-                    <th className="text-center py-1 px-3 font-semibold text-gray-700" style={{ width: "25%" }}>Минимум</th>
-                    <th className="text-center py-1 px-3 font-semibold text-gray-700" style={{ width: "25%" }}>Максимум</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Строка 1: Текстовые объекты */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
-                      Размер текстовых объектов<br />
-                      <span className="text-[11px] text-gray-500">(номер узла, номер ветви, номер устройства, название и т.п.)</span>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scaleTextMin}
-                          onChange={e => setScaleTextMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scaleTextMax}
-                          onChange={e => setScaleTextMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                  </tr>
 
-                  {/* Строка 2: Толщина ветви */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
-                      Толщина ветви
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scaleBranchMin}
-                          onChange={e => setScaleBranchMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scaleBranchMax}
-                          onChange={e => setScaleBranchMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                  </tr>
 
-                  {/* Строка 3: Масштаб перемычек */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                      <div className="text-gray-700">Масштаб перемычек</div>
-                      <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
-                    </td>
-                    <td className="py-2 px-3 text-center" colSpan={2}>
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={20} max={500} value={bulkheadScale}
-                          onChange={e => setBulkheadScale(Math.max(20, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">% от ширины ветви</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Строка 4: Масштаб вентиляторов */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                      <div className="text-gray-700">Масштаб вентиляторов</div>
-                      <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
-                    </td>
-                    <td className="py-2 px-3 text-center" colSpan={2}>
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={50} max={2000} value={fanScale}
-                          onChange={e => setFanScale(Math.max(50, Math.min(2000, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">% от ширины ветви</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Строка 5: Пределы масштаба Позиций ПЛА */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
-                      Размер позиций ПЛА
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scalePositionMin}
-                          onChange={e => setScalePositionMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={10} max={500} value={scalePositionMax}
-                          onChange={e => setScalePositionMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">%</span>
-                      </div>
-                    </td>
-                  </tr>
-
-                  {/* Строка 6: ГОСТ-размер маркера позиции ПЛА */}
-                  <tr style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                      <div className="text-gray-700">Размер позиции по ГОСТ</div>
-                      <span className="text-[11px] text-gray-500">(диаметр маркера позиции ПЛА на чертеже, по умолчанию 13 мм)</span>
-                    </td>
-                    <td className="py-2 px-3 text-center" colSpan={2}>
-                      <div className="flex items-center justify-center gap-1">
-                        <input type="number" min={2} max={100} step={0.5} value={positionGostMm}
-                          onChange={e => setPositionGostMm(Math.max(2, Math.min(100, Number(e.target.value))))}
-                          className="text-right text-[12px] px-1"
-                          style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
-                        <span className="text-gray-500">мм</span>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Подвал диалога */}
-            <div className="flex items-center justify-between px-4 py-2 border-t border-gray-300" style={{ background: "#f5f5f5" }}>
-              <button
-                onClick={() => {
-                  setScaleTextMin(80); setScaleTextMax(150);
-                  setScaleBranchMin(80); setScaleBranchMax(150);
-                  setScalePositionMin(80); setScalePositionMax(150);
-                  setPositionGostMm(13);
-                  setBulkheadScale(150); setFanScale(450);
-                }}
-                className="px-4 py-1 text-[12px] border border-gray-400 bg-white hover:bg-gray-100"
-                style={{ minWidth: 70 }}>
-                Сброс
-              </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setScaleLimitsEnabled(true);
-                    setScaleSettingsOpen(false);
-                  }}
-                  className="px-4 py-1 text-[12px] border border-gray-500 bg-white hover:bg-gray-100"
-                  style={{ minWidth: 70 }}>
-                  ОК
-                </button>
-                <button
-                  onClick={() => setScaleSettingsOpen(false)}
-                  className="px-4 py-1 text-[12px] border border-gray-500 bg-white hover:bg-gray-100"
-                  style={{ minWidth: 70 }}>
-                  Отмена
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* ═══ ПАНЕЛЬ ЛОГА РАСЧЁТА ════════════════════════════════════════ */}
-    {showLogPanel && (
-      <LogPanel
-        entries={logEntries}
-        onClose={() => setShowLogPanel(false)}
-        onClear={() => setLogEntries([])}
-      />
-    )}
-
-    {/* ─── КОНТЕКСТНОЕ МЕНЮ ──────────────────────────────────────────── */}
-    {ctxMenu && (
-      <CadContextMenu
-        x={ctxMenu.x}
-        y={ctxMenu.y}
-        onClose={() => setCtxMenu(null)}
-        onSelect={handleCtxAction}
-        items={
-          ctxMenu.kind === "node" ? nodeContextItems(
-            nodes.find((n) => n.id === ctxMenu.id) ?? null,
-            selectedNodeIds.size
-          ) :
-          ctxMenu.kind === "branch" ? branchContextItems(
-            branches.find((b) => b.id === ctxMenu.id) ?? null,
-            !!branchParamBuffer,
-            selectedBranchIds.size
-          ) :
-          canvasContextItems()
-        }
-      />
-    )}
-
-    {/* ═══ DXF ИМПОРТ ДИАЛОГ ═══════════════════════════════════════════ */}
-    {showDxfImport && (
-      <DxfImportDialog
-        onImport={handleDxfImport}
-        onClose={() => setShowDxfImport(false)}
-      />
-    )}
-
-    {/* ═══ EXCEL ИМПОРТ ДИАЛОГ (Вентиляция 2.0) ══════════════════════════ */}
-    {showExcelImport && (
-      <ExcelImportDialog
-        onImport={handleExcelImport}
-        onClose={() => setShowExcelImport(false)}
-      />
-    )}
-
-    {/* ═══ EXCEL ЭКСПОРТ ДИАЛОГ ═══════════════════════════════════════════ */}
-    {showExcelExport && (
-      <ExcelExportDialog
-        branches={branches}
-        nodes={nodes}
-        horizons={horizons}
-        projectName={projectFileName.replace(/\.vproj$/, "")}
-        onClose={() => setShowExcelExport(false)}
-      />
-    )}
-
-    {/* ═══ КОМБИНИРОВАННЫЙ ИМПОРТ DXF + EXCEL ════════════════════════════ */}
-    {showCombinedImport && (
-      <CombinedImportDialog
-        onImport={handleCombinedImport}
-        onClose={() => setShowCombinedImport(false)}
-      />
-    )}
-
-    {/* ═══ CSV ИМПОРТ (АэроСеть) ══════════════════════════════════════════ */}
-    {showCsvImport && (
-      <CsvImportDialog
-        onImport={handleCsvImport}
-        onClose={() => setShowCsvImport(false)}
-      />
-    )}
-
-    {/* ═══ CSV ИМПОРТ (Вентиляция 2.0) ════════════════════════════════════ */}
-    {showVent2CsvImport && (
-      <Vent2CsvImportDialog
-        onImport={handleVent2CsvImport}
-        onClose={() => setShowVent2CsvImport(false)}
-      />
-    )}
-
-    {/* ═══ CSV ИМПОРТ (Ventsim) ════════════════════════════════════════════ */}
-    {showVentsimImport && (
-      <VentsimImportDialog
-        onImport={handleVentsimImport}
-        onClose={() => setShowVentsimImport(false)}
-      />
-    )}
-
-    {/* ═══ СПРАВОЧНИК ОБОРУДОВАНИЯ ════════════════════════════════════════ */}
-    {showEquipRef && (
-      <EquipmentRefDialog
-        activeTab={equipRefTab}
-        onTabChange={setEquipRefTab}
-        onClose={() => setShowEquipRef(false)}
-        onMineFansChange={setMineFans}
-        onMineBulkheadsChange={setMineBulkheads}
-        onBranchTypesChange={setMineTypes}
-        initialMineFans={mineFans}
-        initialBranchTypes={mineTypes}
-        initialMineBulkheads={mineBulkheads}
-        unitsConfig={unitsConfig}
-        onUnitsConfigChange={setUnitsConfig}
-      />
-    )}
-
-    {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
-    {showLegend && (
-      <LegendDialog onClose={() => setShowLegend(false)} />
-    )}
-
-    {/* ═══ ШИРОКОФОРМАТНАЯ ПЕЧАТЬ ════════════════════════════════════════ */}
-    {showPrintDialog && (
-      <PrintDialog
-        onClose={() => setShowPrintDialog(false)}
-        projectName={projectFileName.replace(/\.vproj$/, "")}
-        nodes={nodes}
-        branches={branches}
-        horizons={horizons}
-        schemaSymbols={schemaSymbols}
-        viewState={savedViewStateRef.current ?? savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
-        canvasSize={canvasSize}
-        branchWidth={branchWidth}
-        branchBorder={branchBorder}
-        thinLines={thinLines}
-        colorByHorizon={colorByHorizon}
-        flowDisplay={flowDisplay}
-        infoConfig={infoConfig}
-        unitsConfig={unitsConfig}
-        zScale={zScale}
-        getSvgRaw={() => getSvgRef.current?.() ?? ""}
-        colorMode={colorMode}
-        posInnerColors={posColorInner && positions.length > 0 ? (() => {
-          const m = new Map<string, string>();
-          positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));
-          return m.size > 0 ? m : undefined;
-        })() : undefined}
-        posOuterColors={posColorOuter && positions.length > 0 ? (() => {
-          const m = new Map<string, string>();
-          positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));
-          return m.size > 0 ? m : undefined;
-        })() : undefined}
-        positions={positions}
-        showPositions={showPositions}
-        fixedObjectScale={scaleLimitsEnabled}
-        canvasThreshold={canvasThreshold}
-        xyScale={xyScale}
-        initialOpenExport={printDialogOpenExport}
-        onExportDialogOpened={() => setPrintDialogOpenExport(false)}
-      />
-    )}
-
-    {/* ═══ ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА — скрыта ══════════════════════════ */}
-
-    {/* ═══ АВТОНУМЕРАЦИЯ ОБЪЕКТОВ ═══════════════════════════════════════ */}
-    {showRenumberDialog && (
-      <RenumberDialog
-        nodeCount={nodes.length}
-        branchCount={branchesRaw.length}
-        horizons={horizons.map((h) => ({ id: h.id, name: h.name }))}
-        onClose={() => setShowRenumberDialog(false)}
-        onConfirm={(opts) => {
-          renumberAll(opts);
-          setShowRenumberDialog(false);
-        }}
-      />
-    )}
-
-    {/* ═══ ВЫДЕЛЕНИЕ ПОДОБНОГО (S+S) ══════════════════════════════════════ */}
-    {showSelectSimilar && (
-      <SelectSimilarDialog
-        selectedBranch={selectedBranch}
-        selectedSymbol={schemaSymbols.find(s => s.id === selectedSymbolId) ?? null}
-        branches={branches}
-        symbols={schemaSymbols}
-        onConfirm={(branchIds, symbolIds) => {
-          if (branchIds.size > 0) {
-            const first = Array.from(branchIds)[0];
-            setSelectedBranchId(first);
-            setSelectedBranchIds(new Set(branchIds));
-            setSelectedNodeId(null);
-            setSelectedSymbolId(null);
-            setSelectedSymbolIds(new Set());
-          }
-          if (symbolIds.size > 0) {
-            setSelectedSymbolId(Array.from(symbolIds)[0]);
-            setSelectedSymbolIds(new Set(symbolIds));
-            setSelectedBranchId(null);
-            setSelectedBranchIds(new Set());
-          }
-          setShowSelectSimilar(false);
-        }}
-        onClose={() => setShowSelectSimilar(false)}
-      />
-    )}
-
-    {/* ═══ ДИАЛОГ: ОБЪЕДИНИТЬ ВЕТВИ ПРИ УДАЛЕНИИ ПРОМЕЖУТОЧНОГО УЗЛА ══════ */}
-    {mergeNodeDialog && (() => {
-      const brA = branchesRaw.find(b => b.id === mergeNodeDialog.branchA);
-      const brB = branchesRaw.find(b => b.id === mergeNodeDialog.branchB);
-      const nameA = brA?.name || mergeNodeDialog.branchA.substring(0, 12);
-      const nameB = brB?.name || mergeNodeDialog.branchB.substring(0, 12);
-      return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
-          <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 360, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
-            {/* Заголовок */}
-            <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-              style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
-              <span className="text-[12px] font-semibold text-gray-800">Удаление узла</span>
-              <button onClick={() => setMergeNodeDialog(null)}
-                className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-                <Icon name="X" size={12} />
-              </button>
-            </div>
-            {/* Тело */}
-            <div className="p-4 flex flex-col gap-3">
-              <p className="text-[12px] text-gray-700">
-                Узел соединяет две выработки. Объединить их в одну?
-              </p>
-              <div className="rounded text-[11px] text-gray-600 px-3 py-2" style={{ background: "#f0f4ff", border: "1px solid #c8d4e8" }}>
-                <div className="font-semibold text-gray-700 mb-1">Будут объединены:</div>
-                <div>· {nameA || "Выработка 1"}</div>
-                <div>· {nameB || "Выработка 2"}</div>
-                <div className="mt-1 text-[10px] text-gray-500">Длина = сумма длин. Параметры берутся от первой выработки.</div>
-              </div>
-            </div>
-            {/* Кнопки */}
-            <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
-              style={{ background: "#f8f8f8" }}>
-              <button
-                onClick={() => { doDeleteNode(mergeNodeDialog.nodeId); setMergeNodeDialog(null); }}
-                className="text-[11px] px-3 py-1 rounded"
-                style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", cursor: "pointer" }}>
-                Удалить без объединения
-              </button>
-              <button
-                onClick={() => {
-                  mergeAdjacentBranches(mergeNodeDialog.nodeId, mergeNodeDialog.branchA, mergeNodeDialog.branchB);
-                  setMergeNodeDialog(null);
-                }}
-                className="text-[11px] px-3 py-1 rounded font-semibold"
-                style={{ background: "#1d4ed8", border: "1px solid #1d4ed8", color: "white", cursor: "pointer" }}>
-                Объединить выработки
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    })()}
-
-    {/* ═══ ДИАЛОГ: ЧИСЛО ЛЮДЕЙ В ОТДЕЛЕНИИ ════════════════════════════════ */}
-    {squadDialog && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
-        onClick={() => setSquadDialog(null)}>
-        <div className="flex flex-col shadow-2xl border border-gray-400"
-          style={{ width: 320, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
-          onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-            style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
-            <span className="text-[12px] font-semibold text-gray-800">Число людей в отделении</span>
-            <button onClick={() => setSquadDialog(null)} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-              <Icon name="X" size={12} />
-            </button>
-          </div>
-          <div className="p-4 flex flex-col gap-3">
-            <label className="text-[11px] text-gray-600">Количество человек:</label>
-            <input
-              autoFocus
-              type="number" min={1} max={99}
-              value={squadCount}
-              onChange={e => setSquadCount(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter") {
-                  const n = parseInt(squadCount) || 5;
-                  addSymbol(squadDialog.typeId, squadDialog.x, squadDialog.y, squadDialog.branchId, `${n} чел.`);
-                  setTool("select"); setActiveSymbolTypeId(null); setSquadDialog(null);
-                }
-                if (e.key === "Escape") setSquadDialog(null);
-              }}
-              className="border border-gray-300 rounded px-2 py-1 text-[13px] text-center w-full outline-none focus:border-blue-500" />
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setSquadDialog(null)}
-                className="h-7 px-3 text-[11px] border border-gray-300 rounded hover:bg-gray-100">Отмена</button>
-              <button onClick={() => {
-                const n = parseInt(squadCount) || 5;
-                addSymbol(squadDialog.typeId, squadDialog.x, squadDialog.y, squadDialog.branchId, `${n} чел.`);
-                setTool("select"); setActiveSymbolTypeId(null); setSquadDialog(null);
-              }}
-                className="h-7 px-3 text-[11px] rounded text-white" style={{ background: "#2563eb" }}>
-                Разместить
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-    {/* ── Диалог подтверждения закрытия ───────────────────────────────── */}
-    {showCloseConfirm && (() => {
-      type W = Window & { __IS_DESKTOP__?: boolean; chrome?: { webview?: { postMessage: (s: string) => void } } };
-      const w = window as W;
-      const isDesktop = !!w.__IS_DESKTOP__;
-      const doClose = () => {
-        setShowCloseConfirm(false);
-        if (isDesktop) {
-          // В десктопе — подтверждаем через C# чтобы окно закрылось
-          w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close-confirmed" }));
-        } else {
-          window.close();
-        }
-      };
-      return (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-        style={{ background: "rgba(0,0,0,0.45)" }}>
-        <div className="bg-white rounded shadow-xl border border-gray-300 w-[340px]"
-          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200"
-            style={{ background: "#f5f5f5", borderRadius: "8px 8px 0 0" }}>
-            <Icon name="FileQuestion" size={16} className="text-yellow-600" />
-            <span className="text-[13px] font-semibold text-gray-800">Несохранённые изменения</span>
-          </div>
-          <div className="px-4 py-4">
-            <p className="text-[13px] text-gray-700 mb-1">
-              Проект <strong>«{projectFileName}»</strong> содержит несохранённые изменения.
-            </p>
-            <p className="text-[12px] text-gray-500">Сохранить перед закрытием?</p>
-          </div>
-          <div className="flex gap-2 justify-end px-4 pb-4">
-            <button
-              onClick={() => setShowCloseConfirm(false)}
-              className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
-              Отмена
-            </button>
-            <button
-              onClick={doClose}
-              className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-red-50 text-red-600">
-              Не сохранять
-            </button>
-            <button
-              onClick={async () => { await handleSave(); doClose(); }}
-              className="h-7 px-3 text-[12px] rounded text-white"
-              style={{ background: "#2563eb" }}>
-              Сохранить
-            </button>
-          </div>
-        </div>
-      </div>
-      );
-    })()}
-
-    {/* ── Окно «О программе» ──────────────────────────────────────────── */}
-    {showAbout && (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-        style={{ background: "rgba(0,0,0,0.45)" }}
-        onClick={() => setShowAbout(false)}>
-        <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[460px] overflow-hidden"
-          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
-          onClick={(e) => e.stopPropagation()}>
-          {/* Шапка диалога */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-            style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)" }}>
-            <span className="text-[12px] font-semibold text-gray-800">О программе</span>
-            <button
-              onClick={() => setShowAbout(false)}
-              className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
-          </div>
-
-          {/* Контент */}
-          <div className="px-6 py-6 flex flex-col items-center text-center"
-            style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
-            <AppLogo
-              className="w-48 object-contain mb-2"
-              style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
-            />
-
-            <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
-              <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">{APP_VERSION}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">{APP_BUILD_DATE}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop</span></div>
-              {(() => {
-                const isOnline = navigator.onLine;
-                return (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Сеть:</span>
-                    <span className="font-medium flex items-center gap-1.5">
-                      <span style={{
-                        width: 8, height: 8, borderRadius: 999,
-                        background: isOnline ? "#22c55e" : "#f59e0b",
-                        display: "inline-block",
-                      }} />
-                      {isOnline ? "Онлайн" : "Офлайн-режим"}
-                    </span>
-                  </div>
-                );
-              })()}
-            </div>
-
-            <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
-              © 2026 ПВ-Система. Все права защищены.<br/>
-              Программа предназначена для проектирования систем<br/>
-              вентиляции и водоснабжения рудников и шахт.
-            </div>
-          </div>
-
-          {/* Футер */}
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <UpdateCheckButton currentVersion={APP_VERSION} />
-            <button
-              onClick={() => setShowAbout(false)}
-              className="h-7 px-4 text-[12px] rounded text-white font-medium flex-shrink-0"
-              style={{ background: "#2563eb" }}>
-              OK
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* ── Руководство пользователя ────────────────────────────────────── */}
-    {showHelpDialog && (
-      <HelpDialog onClose={() => setShowHelpDialog(false)} />
-    )}
-
-    {showDepressogram && (
-      <DepressogramDialog
-        nodes={nodes}
-        branches={branches}
-        onClose={() => {
-          setShowDepressogram(false);
-          setDepressogramHighlight([]);
-          setDepressogramPickMode(false);
-          setDepressogramManualBranches(new Set());
-        }}
-        onHighlightPath={ids => setDepressogramHighlight(ids)}
-        pickMode={depressogramPickMode}
-        onPickModeChange={active => {
-          setDepressogramPickMode(active);
-          if (!active) setDepressogramManualBranches(new Set());
-        }}
-        manualBranchIds={depressogramManualBranches}
-        onClearManual={() => setDepressogramManualBranches(new Set())}
-      />
-    )}
-
-    {/* ── Устойчивость при пожаре (Акт устойчивости) ──────────────────── */}
-    {showFireStability && (
-      <FireStabilityDialog
-        branches={branches}
-        nodes={nodes}
-        positions={positions}
-        projectName={projectFileName.replace(/\.vproj$/, "")}
-        solved={!!solveResult}
-        computeReversalFacts={computeFireStabilityFacts}
-        onClose={() => setShowFireStability(false)}
-      />
-    )}
-
-    {/* ── Диалог лицензии ─────────────────────────────────────────────── */}
-    {showLicenseDialog && (
-      <LicenseDialog
-        license={license}
-        onClose={() => setShowLicenseDialog(false)}
-        required={isDemo && !license.info}
-      />
-    )}
-
-    {/* ── Групповое редактирование ветвей ────────────────────────────── */}
-    {showMultiBranchProps && selectedBranchIds.size > 1 && (() => {
-      const multiBranches = [...selectedBranchIds]
-        .map(id => branches.find(b => b.id === id))
-        .filter(Boolean) as typeof branches;
-      if (multiBranches.length < 2) return null;
-      return (
-        <MultiBranchPropsDialog
-          branches={multiBranches}
-          onClose={() => setShowMultiBranchProps(false)}
-          onApply={(patch) => {
-            pushHistory();
-            [...selectedBranchIds].forEach(id => updateBranch(id, patch, false));
-          }}
-        />
-      );
-    })()}
-
-    {/* ── Диалог вентрубопровода ─────────────────────────────────────── */}
-    {showVentPipeDialog && ventPipeBranchIds.length > 0 && (() => {
-      const vpBranches = ventPipeBranchIds
-        .map(id => branches.find(b => b.id === id))
-        .filter(Boolean) as typeof branches;
-      if (vpBranches.length === 0) return null;
-      return (
-        <VentPipeDialog
-          branches={vpBranches}
-          onClose={() => setShowVentPipeDialog(false)}
-          onApply={(patch) => {
-            ventPipeBranchIds.forEach(id => updateBranch(id, patch, false));
-            // Единственный pushHistory после всех изменений
-            pushHistory();
-          }}
-          onRemove={() => {
-            ventPipeBranchIds.forEach(id => updateBranch(id, { hasVentPipe: false }, false));
-            pushHistory();
-            setShowVentPipeDialog(false);
-          }}
-        />
-      );
-    })()}
-
-    {/* ── Диалог сравнения схем ──────────────────────────────────────── */}
-    {compareShowDialog && (
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-        style={{ background: "rgba(0,0,0,0.45)" }}
-        onClick={() => setCompareShowDialog(false)}>
-        <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[480px]"
-          style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
-          onClick={e => e.stopPropagation()}>
-          {/* Шапка */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-            style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)" }}>
-            <span className="text-[12px] font-semibold text-gray-800">↔ Сравнение схем</span>
-            <button onClick={() => setCompareShowDialog(false)}
-              className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
-          </div>
-
-          <div className="px-6 py-4 space-y-4">
-            {/* Текущая схема */}
-            <div>
-              <div className="text-[11px] text-gray-500 mb-1 font-medium">Исходный файл:</div>
-              <div className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200"
-                style={{ background: "#f9fafb" }}>
-                <Icon name="FileText" size={18} style={{ color: "#2563eb" }} />
-                <span className="text-[12px] font-medium text-gray-800">{projectFileName}</span>
-                <span className="ml-auto text-[10px] text-gray-400">{nodes.length} уз. / {branches.length} вет.</span>
-              </div>
-            </div>
-
-            {/* Выбор файла для сравнения */}
-            <div>
-              <div className="text-[11px] text-gray-500 mb-1 font-medium">Изменённая схема:</div>
-              <button
-                disabled={compareLoading}
-                onClick={() => {
-                  const inp = document.createElement("input");
-                  inp.type = "file";
-                  inp.accept = ".vproj,.json,application/json,text/plain";
-                  inp.onchange = () => {
-                    const file = inp.files?.[0];
-                    if (!file) return;
-                    setCompareLoading(true);
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      try {
-                        const data = JSON.parse(reader.result as string) as Record<string, unknown>;
-                        if (!data.nodes || !Array.isArray(data.nodes)) {
-                          alert("Файл не является проектом ПВ-Система.");
-                          setCompareLoading(false);
-                          return;
-                        }
-                        const oldBranches = branchesRaw;
-                        const oldNodes    = nodes;
-                        const newBranches = (data.branches as typeof branchesRaw) ?? [];
-                        const newNodes    = (data.nodes    as typeof nodes) ?? [];
-                        const branchDiffs = compareBranches(oldBranches, newBranches);
-                        const nodeDiffs   = compareNodes(oldNodes, newNodes);
-                        setCompareResult({
-                          branches: branchDiffs,
-                          nodes:    nodeDiffs,
-                          fileName: file.name,
-                        });
-                        setCompareFilter("all");
-                        setCompareSelectedId(null);
-                        setActiveSide("compare");
-                        setLeftPanelOpen(true);
-                        setCompareShowDialog(false);
-                        setActiveRibbon("vent");
-                      } catch {
-                        alert("Ошибка чтения файла.");
-                      } finally {
-                        setCompareLoading(false);
-                      }
-                    };
-                    reader.readAsText(file);
-                  };
-                  inp.click();
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded border-2 border-dashed transition-colors"
-                style={{
-                  borderColor: compareLoading ? "#93c5fd" : "#d1d5db",
-                  background: compareLoading ? "#eff6ff" : "#f9fafb",
-                  cursor: compareLoading ? "wait" : "pointer",
-                }}>
-                <Icon name={compareLoading ? "Loader" : "FolderOpen"} size={22}
-                  style={{ color: "#2563eb" }} className={compareLoading ? "animate-spin" : ""} />
-                <div className="text-left">
-                  <div className="text-[12px] font-medium text-gray-800">
-                    {compareLoading ? "Загрузка..." : "Выбрать файл для сравнения"}
-                  </div>
-                  <div className="text-[10px] text-gray-400">Формат .vproj</div>
-                </div>
-              </button>
-            </div>
-
-            <div className="text-[10px] text-gray-400 leading-relaxed">
-              Сравнение покажет: добавленные, удалённые и изменённые выработки.
-              Жёлтым выделяются изменённые, зелёным — добавленные, красным — удалённые.
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <button onClick={() => setCompareShowDialog(false)}
-              className="h-7 px-4 text-[12px] rounded border border-gray-300 text-gray-700 hover:bg-gray-100">
-              Отмена
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
 
     </>
   );
