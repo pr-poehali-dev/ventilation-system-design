@@ -9,7 +9,7 @@ import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "./schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
 
 export interface SvgExportOptions {
@@ -861,19 +861,19 @@ export function generateSvg(opts: SvgExportOptions): string {
         const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
         const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
 
-        const isFanStopped = sym.typeId === "fan" && sym.branchId
-          ? (branches.find(b => b.id === sym.branchId)?.fanStopped ?? false)
-          : false;
+        const brForFan = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const isFanStopped = sym.typeId === "fan" ? (brForFan?.fanStopped ?? false) : false;
+        const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForFan?.fanType) : lt.svgContent;
 
         const opacityAttr = isFanStopped ? ` opacity="0.35"` : "";
 
         if (needsRotate) {
           parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})" ${opacityAttr}>`);
-          parts.push(`<svg x="${n(-SZ/2)}" y="${n(-SZ/2-4)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${lt.svgContent}</svg>`);
+          parts.push(`<svg x="${n(-SZ/2)}" y="${n(-SZ/2-4)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${svgHtml}</svg>`);
           parts.push(`</g>`);
         } else {
           parts.push(`<g${opacityAttr}>`);
-          parts.push(`<svg x="${n(HX)}" y="${n(HY)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${lt.svgContent}</svg>`);
+          parts.push(`<svg x="${n(HX)}" y="${n(HY)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${svgHtml}</svg>`);
           parts.push(`</g>`);
         }
 

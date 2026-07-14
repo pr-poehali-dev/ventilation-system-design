@@ -2,7 +2,7 @@
 // Содержит ту же логику что в TopoCanvas, но без интерактивности.
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { type TopoBranch } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 
@@ -336,7 +336,7 @@ export default function SchemaSymbolsOverlay({
                 overflow="visible"
                 opacity={isFanStopped ? 0.35 : 1}
                 style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
-                dangerouslySetInnerHTML={{ __html: lt.svgContent }} /> : null
+                dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : lt.svgContent }} /> : null
             )}
 
             {/* Крестик на остановленном вентиляторе */}

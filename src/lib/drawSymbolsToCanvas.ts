@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 
@@ -134,7 +134,8 @@ export async function drawSymbolsToCanvas(
     } else {
       // SVG-иконка через Image (с поворотом для трубопроводных символов)
       const imgSize = Math.ceil(SZ);
-      const img = await svgToImage(lt.svgContent, imgSize);
+      const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : lt.svgContent;
+      const img = await svgToImage(svgHtml, imgSize);
       ctx.save();
       if (isFanStopped) {
         ctx.globalAlpha = 0.35;

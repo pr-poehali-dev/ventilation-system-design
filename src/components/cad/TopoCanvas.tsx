@@ -5,7 +5,7 @@ import {
   PAPER_SIZES_MM, OVERVIEW_HORIZON_ID,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -3759,13 +3759,14 @@ export default function TopoCanvas(props: Props) {
                 }
                 // Остальные символы — через SVG viewBox без поворота
                 if (!lt) return null;
+                const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : lt.svgContent;
                 return (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible"
                     opacity={isFanStopped ? 0.35 : 1}
                     style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
                     pointerEvents="none"
-                    dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                    dangerouslySetInnerHTML={{ __html: svgHtml }} />
                 );
               })()}
               {/* Крестик на остановленном вентиляторе */}
@@ -4674,7 +4675,7 @@ export default function TopoCanvas(props: Props) {
                     overflow="visible" pointerEvents="none"
                     opacity={isFanStoppedOv ? 0.35 : 1}
                     style={isFanStoppedOv ? { filter: "grayscale(1)" } : undefined}
-                    dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                    dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSymOv?.fanType) : lt.svgContent }} />
                 ) : null}
                 {/* Крестик на остановленном вентиляторе */}
                 {isFanStoppedOv && (
