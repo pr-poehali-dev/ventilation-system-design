@@ -483,7 +483,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     fromSx: number; fromSy: number; toSx: number; toSy: number;
     fromNode: ProjNode["node"]; toNode: ProjNode["node"];
   };
-  const defaultBranchColor = printMode ? "#333333" : "#ffffff";
+  // Цвет заливки ветви по умолчанию (colorMode="none"): белый — точно как в
+  // SVG-рендере рабочей области (TopoCanvas). Ветвь читается за счёт тёмной
+  // обводки #1f2937. Раньше в printMode заливка была #333333, из-за чего в
+  // предпросмотре печати схема выглядела чёрной, в отличие от рабочей области.
+  const defaultBranchColor = "#ffffff";
   const bParamsMap = new Map<string, BranchP>();
   for (const { b, from, to } of sorted) {
     if (!from || !to) continue;
