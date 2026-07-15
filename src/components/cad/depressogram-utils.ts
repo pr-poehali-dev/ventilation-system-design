@@ -15,21 +15,20 @@ export interface DepressogramPoint {
 }
 
 // ─── Алгоритм: маршрут наибольшего расхода воздуха от ГВУ до поверхности ──────
-// НОРМАТИВНОЕ определение (ПБ): маршрут, определяющий аэродинамическое
-// сопротивление шахтной вентиляционной сети — это такой маршрут, по которому
-// проходит НАИБОЛЬШЕЕ КОЛИЧЕСТВО ВОЗДУХА (расход Q) от ГВУ до поверхности,
-// без преграждения вентиляционными сооружениями (перемычками).
+// НОРМАТИВ: маршрут, определяющий аэродинамическое сопротивление шахтной сети —
+// это путь, по которому проходит НАИБОЛЬШЕЕ КОЛИЧЕСТВО ВОЗДУХА (расход Q) от ГВУ
+// до поверхности, БЕЗ преграждения вентиляционными перемычками.
 //
-// Поэтому маршрут выбирается по РАСХОДУ Q (не по депрессии). Строим путь от
-// "шахтного" конца ГВУ вглубь сети до поверхностного узла (atmosphereLink),
-// максимизируя пропускаемый по маршруту расход воздуха (bottleneck по Q —
-// наибольшая струя, которая доходит от ГВУ до поверхности). Ветви с перемычками
-// и с другими вентиляторами не проходим — это преграды для основной струи.
-// Депрессия (|dP|) откладывается по этому маршруту на графике, но НЕ является
-// критерием его выбора.
+// Реализация (проверенная рабочая версия): жадный обход от "шахтного" конца ГВУ
+// вглубь сети — на каждом шаге выбираем соседнюю ветвь с МАКСИМАЛЬНЫМ расходом,
+// НЕ проходя через перемычки (hasBulkhead) и другие вентиляторы (hasFan).
+// Перемычки исключаются в первую очередь (candidatesNoBulk); только если совсем
+// нет свободных соседей — берём остальные. Путь разворачивается и дополняется
+// ветвью ГВУ и поверхностным узлом.
 //
 // ВГП выбирается автоматически (приоритет типу "ГВУ"), либо явно задаётся
 // параметром preferredFanBranchId (пользователь указывает ветвь ВГП).
+// При нескольких ВГП берётся маршрут с наибольшим расходом воздуха через ГВУ.
 export function findMainRoute(
   nodes: TopoNode[],
   branches: TopoBranch[],
@@ -38,7 +37,7 @@ export function findMainRoute(
   const surfaceNodeIds = new Set(nodes.filter(n => n.atmosphereLink).map(n => n.id));
   if (surfaceNodeIds.size === 0) return null;
 
-  // Граф смежности. Каждой ветви — расход |flow| (критерий маршрута) и |dP| (для графика).
+  // Строим граф смежности
   const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; hasBulkhead: boolean; hasFan: boolean }[]>();
   for (const b of branches) {
     if (!adj.has(b.fromId)) adj.set(b.fromId, []);
@@ -60,13 +59,14 @@ export function findMainRoute(
   }
   if (fanBranches.length === 0) return null;
 
+  // Для каждого ВГП строим маршрут; выбираем тот, где расход воздуха наибольший.
   let bestPath: string[] = [];
   let bestBranchPath: string[] = [];
-  let bestFlow = -1;    // критерий выбора между ВГП — расход маршрута
+  let bestFlow = -1;
   let bestFanId: string | undefined;
 
   for (const fan of fanBranches) {
-    // Определяем "шахтный" конец ВГП (не поверхность) — от него идём вглубь сети.
+    // Определяем "шахтный" конец ветви ВГП (не поверхность) — от него идём вглубь.
     const flow = fan.flow ?? 0;
     let shaftNodeId: string;
     let surfNodeId: string;
@@ -86,18 +86,44 @@ export function findMainRoute(
       [shaftNodeId, surfNodeId] = [surfNodeId, shaftNodeId];
     }
 
-    // Путь НАИБОЛЬШЕГО расхода от shaftNodeId (всас ГВУ) вглубь шахты до
-    // поверхностного узла — входа свежей струи. Идём против движения воздуха
-    // по ветвям с максимальным расходом, НЕ пересекая вентиляционные перемычки.
-    const result = findMaxFlowRoute(adj, shaftNodeId, surfaceNodeIds, surfNodeId);
-    if (result.branches.length === 0) continue;
+    // Жадный обход: от shaftNodeId вглубь шахты по МАКС. расходу, без перемычек.
+    const visited = new Set<string>([shaftNodeId]);
+    const nodePath: string[] = [shaftNodeId];
+    const branchPath: string[] = [];
+    let current = shaftNodeId;
+    visited.add(surfNodeId); // поверхностный конец ВГП исключаем из обхода
 
-    // result: [shaftNodeId, ..., вход_свежей_струи (поверхность или глубокий узел)]
-    // Итоговый маршрут читается от ГВУ (выброс, высокое давление) до входа струи.
-    // Собираем: [surfNodeId(выход ГВУ), shaftNodeId, ...путь..., вход]
-    //           ветви: [ВГП, ...путь...]
-    const fullNodes = [surfNodeId, ...result.nodes];
-    const fullBranches = [fan.id, ...result.branches];
+    const MAX_STEPS = 2000;
+    let steps = 0;
+
+    while (steps < MAX_STEPS) {
+      steps++;
+      const neighbors = adj.get(current) ?? [];
+
+      // Приоритет: без перемычек и без других ВГП, по убыванию расхода.
+      const candidatesNoBulk = neighbors
+        .filter(n => !visited.has(n.neighborId) && !n.hasBulkhead && !n.hasFan)
+        .sort((a, b) => b.flow - a.flow);
+
+      // Запасной вариант: если совсем нет свободных — берём без ВГП (но не через перемычку).
+      const candidatesAll = neighbors
+        .filter(n => !visited.has(n.neighborId) && !n.hasFan && !n.hasBulkhead)
+        .sort((a, b) => b.flow - a.flow);
+
+      const chosen = candidatesNoBulk[0] ?? candidatesAll[0];
+      if (!chosen) break;
+
+      visited.add(chosen.neighborId);
+      nodePath.push(chosen.neighborId);
+      branchPath.push(chosen.branchId);
+      current = chosen.neighborId;
+    }
+
+    // Разворачиваем путь (от глубины к ВГП) и добавляем ветвь ВГП + поверхность.
+    const reversedNodes = [...nodePath].reverse();
+    const reversedBranches = [...branchPath].reverse();
+    const fullNodes = [...reversedNodes, surfNodeId];
+    const fullBranches = [...reversedBranches, fan.id];
 
     // Критерий выбора между несколькими ВГП — расход воздуха через ГВУ.
     const routeFlow = Math.abs(fan.flow ?? 0);
@@ -111,105 +137,6 @@ export function findMainRoute(
 
   if (bestBranchPath.length === 0) return null;
   return { path: bestPath, branchPath: bestBranchPath, fanId: bestFanId };
-}
-
-// Поиск маршрута НАИБОЛЬШЕГО расхода воздуха от всаса ГВУ (startNodeId) вглубь
-// сети. Модифицированный Дейкстра с "bottleneck"-метрикой: для каждого узла
-// храним максимальный расход струи, которая может дойти сюда от старта
-// (min расхода по ветвям пути = пропускная способность струи).
-//
-// КРИТЕРИЙ (норматив): маршрут идёт по наибольшему расходу воздуха БЕЗ
-// преграждения вентиляционными перемычками (hasBulkhead) и без пересечения
-// других вентиляторов (hasFan). Такие ветви полностью исключаются из обхода.
-//
-// Финиш — поверхностный узел (вход свежей струи). Если ни один поверхностный
-// узел не достижим без перемычек, берём самый глубокий узел с максимальным
-// расходом (фолбэк), чтобы депрессиограмма построилась в любом случае.
-function findMaxFlowRoute(
-  adj: Map<string, { branchId: string; neighborId: string; flow: number; dP: number; hasBulkhead: boolean; hasFan: boolean }[]>,
-  startNodeId: string,
-  surfaceNodeIds: Set<string>,
-  fanSurfNodeId: string,
-): { nodes: string[]; branches: string[] } {
-  const capAt = new Map<string, number>();
-  const prevNode = new Map<string, string>();
-  const prevBranch = new Map<string, string>();
-  const settled = new Set<string>();
-
-  capAt.set(startNodeId, Infinity);
-
-  // Куча-заменитель: активные узлы отбираем по максимальному cap.
-  // Для больших сетей (>1000 узлов) держим множество "активных" и ищем max в нём.
-  const active = new Set<string>([startNodeId]);
-
-  let bestSurface: string | null = null;
-  let bestSurfaceCap = -1;
-  // Фолбэк — самый глубокий достижимый узел (не поверхность) с макс. расходом.
-  let deepestNode: string | null = null;
-  let deepestCap = -1;
-
-  const MAX_STEPS = 500000;
-  let steps = 0;
-
-  while (active.size > 0 && steps < MAX_STEPS) {
-    steps++;
-    // Выбираем активный узел с максимальной достигнутой пропускной способностью.
-    let cur: string | null = null;
-    let curCap = -1;
-    for (const node of active) {
-      const cap = capAt.get(node) ?? -1;
-      if (cap > curCap) { curCap = cap; cur = node; }
-    }
-    if (cur === null) break;
-    active.delete(cur);
-    if (settled.has(cur)) continue;
-    settled.add(cur);
-
-    // Поверхностный узел (кроме выхода самого ГВУ) — конец струи (вход свежего воздуха).
-    if (cur !== startNodeId && cur !== fanSurfNodeId && surfaceNodeIds.has(cur)) {
-      if (curCap > bestSurfaceCap) { bestSurfaceCap = curCap; bestSurface = cur; }
-      continue; // дальше поверхности не идём
-    }
-
-    // Обновляем самый глубокий узел (фолбэк, если поверхность недостижима).
-    if (cur !== startNodeId && curCap > deepestCap && !surfaceNodeIds.has(cur)) {
-      deepestCap = curCap; deepestNode = cur;
-    }
-
-    const neighbors = adj.get(cur) ?? [];
-    for (const n of neighbors) {
-      if (settled.has(n.neighborId)) continue;
-      if (n.hasBulkhead || n.hasFan) continue; // перемычка/вентилятор — преграда
-      if (n.flow <= 0) continue; // струя не идёт по ветвям без расхода
-      const cap = Math.min(curCap, n.flow);
-      const prev = capAt.get(n.neighborId);
-      if (prev === undefined || cap > prev) {
-        capAt.set(n.neighborId, cap);
-        prevNode.set(n.neighborId, cur);
-        prevBranch.set(n.neighborId, n.branchId);
-        active.add(n.neighborId);
-      }
-    }
-  }
-
-  const target = bestSurface ?? deepestNode;
-  if (!target) return { nodes: [], branches: [] };
-
-  // Восстанавливаем путь от target назад к старту.
-  const nodes: string[] = [];
-  const branches: string[] = [];
-  let node: string | undefined = target;
-  while (node && node !== startNodeId) {
-    nodes.push(node);
-    const b = prevBranch.get(node);
-    if (b) branches.push(b);
-    node = prevNode.get(node);
-  }
-  nodes.push(startNodeId);
-  // Путь: [target, ..., старт] → разворачиваем в [старт, ..., target].
-  nodes.reverse();
-  branches.reverse();
-  return { nodes, branches };
 }
 
 // ─── Построение точек депрессиограммы ────────────────────────────────────────
