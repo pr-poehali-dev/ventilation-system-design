@@ -10002,13 +10002,13 @@ export default function CadPage() {
                     Сброс
                   </button>
                 </div>
-                <input type="range" min="0.1" max="10" step="0.1"
+                <input type="range" min="0.1" max="20" step="0.1"
                   value={zScale}
                   onChange={(e) => setZScale(parseFloat(e.target.value))}
                   className="w-full"
                   style={{ accentColor: "#2563eb" }} />
                 <div className="flex justify-between text-[10px] text-gray-400">
-                  <span>0.1×</span><span>5×</span><span>10×</span>
+                  <span>0.1×</span><span>10×</span><span>20×</span>
                 </div>
                 {/* Порог SVG ↔ Canvas */}
                 <div className="border-t border-gray-300 mt-2 pt-2">
