@@ -14,16 +14,19 @@ export interface DepressogramPoint {
   dP: number;
 }
 
-// ─── Алгоритм: маршрут максимальной депрессии от ВГП до поверхности ──────────
-// Депрессиограмма строится по маршруту, определяющему аэродинамическое
-// сопротивление сети: путь с НАИБОЛЬШИМ количеством воздуха от ВГП до поверхности
-// без преград (перемычек). Маршрут идёт от "шахтного" конца ВГП вглубь сети,
-// накапливая максимальную суммарную депрессию (сумму |dP| по ветвям).
+// ─── Алгоритм: маршрут наибольшего расхода воздуха от ГВУ до поверхности ──────
+// НОРМАТИВНОЕ определение (ПБ): маршрут, определяющий аэродинамическое
+// сопротивление шахтной вентиляционной сети — это такой маршрут, по которому
+// проходит НАИБОЛЬШЕЕ КОЛИЧЕСТВО ВОЗДУХА (расход Q) от ГВУ до поверхности,
+// без преграждения вентиляционными сооружениями (перемычками).
 //
-// Старый жадный одношаговый обход (выбирай соседа с макс. расходом) давал баг
-// "полки на нуле": он мог свернуть в короткую ветку с высоким расходом, где dP≈0,
-// и упереться в тупик, так и не пройдя маршрут до забоя. Здесь применяется
-// корректный поиск пути МАКСИМАЛЬНОЙ депрессии (обход в глубину с накоплением веса).
+// Поэтому маршрут выбирается по РАСХОДУ Q (не по депрессии). Строим путь от
+// "шахтного" конца ГВУ вглубь сети до поверхностного узла (atmosphereLink),
+// максимизируя пропускаемый по маршруту расход воздуха (bottleneck по Q —
+// наибольшая струя, которая доходит от ГВУ до поверхности). Ветви с перемычками
+// и с другими вентиляторами не проходим — это преграды для основной струи.
+// Депрессия (|dP|) откладывается по этому маршруту на графике, но НЕ является
+// критерием его выбора.
 //
 // ВГП выбирается автоматически (приоритет типу "ГВУ"), либо явно задаётся
 // параметром preferredFanBranchId (пользователь указывает ветвь ВГП).
@@ -35,7 +38,7 @@ export function findMainRoute(
   const surfaceNodeIds = new Set(nodes.filter(n => n.atmosphereLink).map(n => n.id));
   if (surfaceNodeIds.size === 0) return null;
 
-  // Граф смежности. Каждой ветви — вес = |dP| (депрессия) и |flow| (расход).
+  // Граф смежности. Каждой ветви — расход |flow| (критерий маршрута) и |dP| (для графика).
   const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; hasBulkhead: boolean; hasFan: boolean }[]>();
   for (const b of branches) {
     if (!adj.has(b.fromId)) adj.set(b.fromId, []);
@@ -59,7 +62,7 @@ export function findMainRoute(
 
   let bestPath: string[] = [];
   let bestBranchPath: string[] = [];
-  let bestDep = -1;
+  let bestFlow = -1;    // критерий выбора между ВГП — расход маршрута
   let bestFanId: string | undefined;
 
   for (const fan of fanBranches) {
@@ -83,28 +86,23 @@ export function findMainRoute(
       [shaftNodeId, surfNodeId] = [surfNodeId, shaftNodeId];
     }
 
-    // Поиск пути МАКСИМАЛЬНОЙ депрессии от shaftNodeId вглубь сети.
-    // Обход в глубину (DFS) с накоплением суммы |dP|; на выходе берём ветку,
-    // где суммарная депрессия максимальна. Ветви с перемычками и другими ВГП
-    // не проходим (это преграды для основной струи).
-    const result = findMaxDepressionPath(adj, shaftNodeId, surfNodeId);
-    const nodePath = result.nodes;      // [shaftNodeId, ..., глубокий_забой]
-    const branchPath = result.branches; // ветви от shaftNodeId до забоя
+    // Путь НАИБОЛЬШЕГО расхода от shaftNodeId до поверхностного узла.
+    const result = findMaxFlowRoute(adj, shaftNodeId, surfNodeId, surfaceNodeIds);
+    if (result.branches.length === 0) continue;
 
-    // Разворачиваем: маршрут идёт от глубины к ВГП, добавляем ветвь ВГП и поверхность.
-    const reversedNodes = [...nodePath].reverse();
-    const reversedBranches = [...branchPath].reverse();
-    const fullNodes = [...reversedNodes, surfNodeId];
-    const fullBranches = [...reversedBranches, fan.id];
+    const nodePath = result.nodes;      // [shaftNodeId, ..., поверхностный_узел]
+    const branchPath = result.branches; // ветви от shaftNodeId до поверхности
 
-    let totalDep = 0;
-    for (const bId of fullBranches) {
-      const b = branches.find(br => br.id === bId);
-      if (b) totalDep += Math.abs(b.dP ?? 0);
-    }
+    // Итоговый маршрут: поверхность (ГВУ) → шахта. Добавляем ветвь ВГП в начало,
+    // а surfNodeId ВГП — как самую первую точку (выход ГВУ на поверхность).
+    // Маршрут читается от ГВУ (высокое давление) до выхода на поверхность (0).
+    const fullNodes = [surfNodeId, ...nodePath];
+    const fullBranches = [fan.id, ...branchPath];
 
-    if (totalDep > bestDep && fullBranches.length > 1) {
-      bestDep = totalDep;
+    // Критерий выбора между несколькими ВГП — расход самого маршрута (по ветви ВГП).
+    const routeFlow = Math.abs(fan.flow ?? 0);
+    if (routeFlow > bestFlow && fullBranches.length > 1) {
+      bestFlow = routeFlow;
       bestPath = fullNodes;
       bestBranchPath = fullBranches;
       bestFanId = fan.id;
@@ -115,64 +113,87 @@ export function findMainRoute(
   return { path: bestPath, branchPath: bestBranchPath, fanId: bestFanId };
 }
 
-// Поиск пути максимальной суммарной депрессии (|dP|) от стартового узла.
-// Итеративный DFS без рекурсии (сети большие — до тысяч ветвей).
-// Возвращает путь до узла, где накопленная депрессия максимальна.
-function findMaxDepressionPath(
+// Поиск маршрута НАИБОЛЬШЕГО расхода воздуха от стартового узла до поверхности.
+// Модифицированный Дейкстра с "bottleneck"-метрикой: для каждого узла храним
+// максимально возможный расход струи, которая может дойти сюда от старта
+// (минимальный расход по ветвям пути = пропускная способность струи).
+// Из всех достижимых поверхностных узлов берём путь с максимальным bottleneck.
+// Перемычки и ветви с вентиляторами не проходим (преграды для основной струи).
+function findMaxFlowRoute(
   adj: Map<string, { branchId: string; neighborId: string; flow: number; dP: number; hasBulkhead: boolean; hasFan: boolean }[]>,
   startNodeId: string,
   excludeNodeId: string,
+  surfaceNodeIds: Set<string>,
 ): { nodes: string[]; branches: string[] } {
-  // best[nodeId] = максимальная депрессия, с которой мы дошли до узла + путь
-  const bestDepAt = new Map<string, number>();
-  let bestNodes: string[] = [startNodeId];
-  let bestBranches: string[] = [];
-  let bestTotal = 0;
+  // capAt[node] = макс. расход струи, которая может дойти до node от старта
+  const capAt = new Map<string, number>();
+  const prevNode = new Map<string, string>();
+  const prevBranch = new Map<string, string>();
 
-  const MAX_VISITS = 200000; // защита от комбинаторного взрыва на больших сетях
-  let visits = 0;
+  capAt.set(startNodeId, Infinity);
+  // Приоритетная обработка: узлы с наибольшей достигнутой пропускной способностью первыми.
+  // Сети большие — используем простой список с выбором максимума (без внешней кучи).
+  const visited = new Set<string>([excludeNodeId]);
 
-  // Стек кадров DFS: текущий узел, накопленная депрессия, путь узлов/ветвей, посещённые
-  type Frame = { node: string; dep: number; nodes: string[]; branches: string[]; visited: Set<string> };
-  const initVisited = new Set<string>([startNodeId, excludeNodeId]);
-  const stack: Frame[] = [{ node: startNodeId, dep: 0, nodes: [startNodeId], branches: [], visited: initVisited }];
+  let reachedSurface: string | null = null;
+  let reachedSurfaceCap = -1;
 
-  while (stack.length > 0 && visits < MAX_VISITS) {
-    visits++;
-    const frame = stack.pop()!;
-    const { node, dep, nodes: pathNodes, branches: pathBranches, visited } = frame;
+  const MAX_STEPS = 100000;
+  let steps = 0;
 
-    // Обновляем лучший маршрут, если сюда пришли с большей депрессией
-    if (dep > bestTotal) {
-      bestTotal = dep;
-      bestNodes = pathNodes;
-      bestBranches = pathBranches;
+  while (steps < MAX_STEPS) {
+    steps++;
+    // Выбираем непосещённый узел с максимальной достигнутой пропускной способностью.
+    let cur: string | null = null;
+    let curCap = -1;
+    for (const [node, cap] of capAt) {
+      if (visited.has(node)) continue;
+      if (cap > curCap) { curCap = cap; cur = node; }
+    }
+    if (cur === null) break;
+    visited.add(cur);
+
+    // Достигли поверхности — запоминаем лучший выход (первый максимальный по cap).
+    if (cur !== startNodeId && surfaceNodeIds.has(cur)) {
+      if (curCap > reachedSurfaceCap) {
+        reachedSurfaceCap = curCap;
+        reachedSurface = cur;
+      }
+      continue; // поверхностный узел — конечная точка струи, дальше не идём
     }
 
-    // Отсекаем ветки, куда до этого узла уже дошли с не меньшей депрессией
-    const prevBest = bestDepAt.get(node);
-    if (prevBest !== undefined && prevBest >= dep) continue;
-    bestDepAt.set(node, dep);
-
-    // Соседи: сперва без перемычек и без ВГП, отсортированы по расходу (основная струя)
-    const neighbors = (adj.get(node) ?? [])
-      .filter(n => !visited.has(n.neighborId) && !n.hasBulkhead && !n.hasFan)
-      .sort((a, b) => a.flow - b.flow); // меньший расход кладём раньше — больший обработается позже (pop)
-
+    const neighbors = adj.get(cur) ?? [];
     for (const n of neighbors) {
-      const nextVisited = new Set(visited);
-      nextVisited.add(n.neighborId);
-      stack.push({
-        node: n.neighborId,
-        dep: dep + n.dP,
-        nodes: [...pathNodes, n.neighborId],
-        branches: [...pathBranches, n.branchId],
-        visited: nextVisited,
-      });
+      if (visited.has(n.neighborId)) continue;
+      if (n.hasBulkhead || n.hasFan) continue; // преграды
+      // Пропускная способность струи до соседа = min(текущая, расход ветви).
+      const cap = Math.min(curCap, n.flow);
+      const prev = capAt.get(n.neighborId);
+      if (prev === undefined || cap > prev) {
+        capAt.set(n.neighborId, cap);
+        prevNode.set(n.neighborId, cur);
+        prevBranch.set(n.neighborId, n.branchId);
+      }
     }
   }
 
-  return { nodes: bestNodes, branches: bestBranches };
+  if (!reachedSurface) return { nodes: [], branches: [] };
+
+  // Восстанавливаем путь от поверхности назад к старту.
+  const nodes: string[] = [];
+  const branches: string[] = [];
+  let node: string | undefined = reachedSurface;
+  while (node && node !== startNodeId) {
+    nodes.push(node);
+    const b = prevBranch.get(node);
+    if (b) branches.push(b);
+    node = prevNode.get(node);
+  }
+  nodes.push(startNodeId);
+  // Сейчас путь: [поверхность, ..., старт]. Разворачиваем → [старт, ..., поверхность].
+  nodes.reverse();
+  branches.reverse();
+  return { nodes, branches };
 }
 
 // ─── Построение точек депрессиограммы ────────────────────────────────────────
