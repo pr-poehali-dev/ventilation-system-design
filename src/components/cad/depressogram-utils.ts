@@ -14,17 +14,27 @@ export interface DepressogramPoint {
   dP: number;
 }
 
+// Перемычка ПРЕГРАЖДАЕТ маршрут (глухая), только если у неё НЕТ прохода воздуха.
+// Перемычки с проходом (открытая дверь, окно/проём, решётчатая) или через которые
+// реально идёт значимый расход воздуха — НЕ преграждают струю, их включаем в маршрут.
+function isBlockingBulkhead(b: TopoBranch): boolean {
+  if (!b.hasBulkhead) return false;                  // перемычки нет
+  if (b.bulkheadDestroyedByExplosion) return false;  // разрушена — не преграда
+  if ((b.bulkheadWindowArea ?? 0) > 0) return false; // есть окно/проём (решётчатая)
+  if (Math.abs(b.flow ?? 0) > 0.05) return false;    // через неё реально идёт воздух → проход открыт
+  return true;                                       // глухая перемычка без прохода — преграждает струю
+}
+
 // ─── Алгоритм: маршрут наибольшего расхода воздуха от ГВУ до поверхности ──────
 // НОРМАТИВ: маршрут, определяющий аэродинамическое сопротивление шахтной сети —
 // это путь, по которому проходит НАИБОЛЬШЕЕ КОЛИЧЕСТВО ВОЗДУХА (расход Q) от ГВУ
 // до поверхности, БЕЗ преграждения вентиляционными перемычками.
 //
-// Реализация (проверенная рабочая версия): жадный обход от "шахтного" конца ГВУ
-// вглубь сети — на каждом шаге выбираем соседнюю ветвь с МАКСИМАЛЬНЫМ расходом,
-// НЕ проходя через перемычки (hasBulkhead) и другие вентиляторы (hasFan).
-// Перемычки исключаются в первую очередь (candidatesNoBulk); только если совсем
-// нет свободных соседей — берём остальные. Путь разворачивается и дополняется
-// ветвью ГВУ и поверхностным узлом.
+// Реализация: жадный обход от "шахтного" конца ГВУ вглубь сети — на каждом шаге
+// выбираем соседнюю ветвь с МАКСИМАЛЬНЫМ расходом, НЕ проходя через ГЛУХИЕ
+// перемычки (см. isBlockingBulkhead) и другие вентиляторы (hasFan).
+// Перемычки с проходом (открытая дверь/окно/решётка/идёт воздух) допускаются.
+// Путь разворачивается и дополняется ветвью ГВУ и поверхностным узлом.
 //
 // ВГП выбирается автоматически (приоритет типу "ГВУ"), либо явно задаётся
 // параметром preferredFanBranchId (пользователь указывает ветвь ВГП).
@@ -37,12 +47,14 @@ export function findMainRoute(
   const surfaceNodeIds = new Set(nodes.filter(n => n.atmosphereLink).map(n => n.id));
   if (surfaceNodeIds.size === 0) return null;
 
-  // Строим граф смежности
-  const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; hasBulkhead: boolean; hasFan: boolean }[]>();
+  // Строим граф смежности.
+  // blocking = перемычка ПРЕГРАЖДАЕТ струю (глухая). Перемычки с проходом
+  // (открытая дверь/окно/решётка) НЕ преграждают — их включаем в маршрут.
+  const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; blocking: boolean; hasFan: boolean }[]>();
   for (const b of branches) {
     if (!adj.has(b.fromId)) adj.set(b.fromId, []);
     if (!adj.has(b.toId)) adj.set(b.toId, []);
-    const entry = { branchId: b.id, flow: Math.abs(b.flow ?? 0), dP: Math.abs(b.dP ?? 0), hasBulkhead: b.hasBulkhead, hasFan: b.hasFan };
+    const entry = { branchId: b.id, flow: Math.abs(b.flow ?? 0), dP: Math.abs(b.dP ?? 0), blocking: isBlockingBulkhead(b), hasFan: b.hasFan };
     adj.get(b.fromId)!.push({ ...entry, neighborId: b.toId });
     adj.get(b.toId)!.push({ ...entry, neighborId: b.fromId });
   }
@@ -100,14 +112,15 @@ export function findMainRoute(
       steps++;
       const neighbors = adj.get(current) ?? [];
 
-      // Приоритет: без перемычек и без других ВГП, по убыванию расхода.
+      // Приоритет: без преграждающих перемычек и без других ВГП, по убыванию расхода.
+      // Перемычки с проходом (окно/открытая дверь/малое сопротивление) допускаются.
       const candidatesNoBulk = neighbors
-        .filter(n => !visited.has(n.neighborId) && !n.hasBulkhead && !n.hasFan)
+        .filter(n => !visited.has(n.neighborId) && !n.blocking && !n.hasFan)
         .sort((a, b) => b.flow - a.flow);
 
-      // Запасной вариант: если совсем нет свободных — берём без ВГП (но не через перемычку).
+      // Запасной вариант: если совсем нет свободных — берём без ВГП (но не через глухую перемычку).
       const candidatesAll = neighbors
-        .filter(n => !visited.has(n.neighborId) && !n.hasFan && !n.hasBulkhead)
+        .filter(n => !visited.has(n.neighborId) && !n.hasFan && !n.blocking)
         .sort((a, b) => b.flow - a.flow);
 
       const chosen = candidatesNoBulk[0] ?? candidatesAll[0];
