@@ -418,7 +418,7 @@ export default function DepressogramDialog({
         )}
         {fanCount > 1 && mode === "auto" && (
           <span style={{ fontSize: 10, background: "#fef3c7", color: "#92400e", borderRadius: 10, padding: "2px 8px", fontWeight: 600 }}>
-            ВГП: {fanCount} · выбран маршрут с макс. депрессией
+            ВГП: {fanCount} · выбран маршрут с наибольшим расходом
           </span>
         )}
         <div style={{ flex: 1 }} />
@@ -446,7 +446,7 @@ export default function DepressogramDialog({
                 onChange={e => setSelectedFanId(e.target.value)}
                 style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid #d1d5db", background: "white", color: "#374151", cursor: "pointer", maxWidth: 220 }}
                 title="Ветвь главного вентилятора, от которой строится маршрут">
-                <option value="">Авто (макс. депрессия)</option>
+                <option value="">Авто (наибольший расход)</option>
                 {fanBranchList.map(f => (
                   <option key={f.id} value={f.id}>
                     {`${f.fanType} · ${f.fanName ? f.fanName : `ветвь ${f.id}`}`}
@@ -531,8 +531,8 @@ export default function DepressogramDialog({
         <div style={{ fontSize: 10, color: "#6b7280" }}>
           {mode === "auto"
             ? (selectedFanId
-                ? `Авто: маршрут макс. депрессии от выбранного ВГП до поверхности`
-                : `Авто: макс. депрессия от ВГП до поверхности${fanCount > 1 ? ` (${fanCount} ВГП в схеме)` : ""}`)
+                ? `Авто: маршрут наибольшего расхода от выбранного ВГП до поверхности (без перемычек)`
+                : `Авто: маршрут наибольшего расхода от ГВУ до поверхности, без перемычек${fanCount > 1 ? ` (${fanCount} ВГП в схеме)` : ""}`)
             : `Ручной: ${manualBranchIds.size} ветв. · кликайте по схеме`}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
