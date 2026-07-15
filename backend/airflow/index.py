@@ -10,7 +10,7 @@ method = "mkr"   — МКР (метод контурных расходов), т
 Оба метода учитывают естественную тягу в итерациях:
   H_nat_i = ρ_i * g * (z_from_i - z_to_i), ρ = 353/(273+T)
 """
-import json, math, collections
+import json, math, collections, time
 import numpy as np  # noqa
 
 CORS = {
@@ -1947,7 +1947,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     log  = []
     diag = []
 
+    # ── Профилирование этапов расчёта (тайминги в мс) ──────────────────────
+    _t_start = time.perf_counter()
+    _timings = {}
+    def _mark(stage):
+        nonlocal _t_start
+        now = time.perf_counter()
+        _timings[stage] = _timings.get(stage, 0.0) + (now - _t_start) * 1000.0
+        _t_start = now
+
     edges, atm = build_graph(nodes_in, branches_in, surface_temp)
+    _mark("Построение графа")
 
     # Диагностика топологии
     gnd_degree = sum(1 for e in edges if e["a"] == GND or e["b"] == GND)
@@ -1985,9 +1995,11 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # Тупиковые ветви
     dead_end_ids = find_dead_ends(edges)
     active_edges_list = [e for e in edges if e["id"] not in dead_end_ids]
+    _mark("Поиск тупиков")
 
     # BFS-дерево
     bfs_order, parent_map, tree_set, chords, node_list = _bfs_tree(active_edges_list)
+    _mark("Построение дерева (BFS)")
     log.append(f"МКР: ветвей={len(edges)} активных={len(active_edges_list)} контуров={len(chords)}")
 
     if not chords:
@@ -2002,10 +2014,15 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
     # Контуры (в локальных индексах active_edges_list)
     contours_local = []
+    _contour_edges_total = 0
     for ci in chords:
         ce = active_edges_list[ci]
         path = _tree_path(ce["b"], ce["a"], active_edges_list, parent_map)
         contours_local.append([(ci, +1)] + path)
+        _contour_edges_total += len(path) + 1
+    _mark("Построение контуров")
+    _avg_len = _contour_edges_total / max(1, len(contours_local))
+    log.append(f"МКР: контуров={len(contours_local)} суммарно рёбер={_contour_edges_total} средняя длина контура={_avg_len:.1f}")
 
     # Q по глобальным индексам
     Q = [0.0] * len(edges)
@@ -2138,6 +2155,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             bal[p_node] += b
 
     sync_tree_q(Q)
+    _mark("Начальное приближение")
 
     # ── Итерации МКР ────────────────────────────────────────────────────────
     max_dh = float("inf")
@@ -2249,6 +2267,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         diag.append({"level": "warning", "category": "convergence",
                      "message": f"МКР не сошлось за {max_iter} итераций. |ΔH|={max_dh:.2f} Па (допуск {tol_h_rel:.2f}), δQ={max_dq:.4f} м³/с"})
 
+    _mark("Итерации МКР")
     log.append(f"МКР итераций={it} |ΔH|={max_dh:.3f} Па δQ={max_dq:.4f} м³/с")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
@@ -2268,6 +2287,14 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
     # ── Проверка 1-го закона Кирхгофа (баланс узлов) ────────────────────
     check_kirchhoff(edges, Q_map, diag, dead_end_ids=dead_end_ids)
+    _mark("Постобработка")
+
+    # ── Сводка таймингов по этапам (для профилирования больших схем) ──────
+    _total_ms = sum(_timings.values())
+    _parts = " · ".join(f"{k}: {v:.0f} мс" for k, v in _timings.items())
+    log.append(f"⏱ ПРОФИЛЬ РАСЧЁТА (всего {_total_ms:.0f} мс): {_parts}")
+    if it > 0:
+        log.append(f"⏱ На итерацию МКР: {_timings.get('Итерации МКР', 0.0) / it:.2f} мс × {it} итераций")
 
     return make_result(edges, Q_map, it, converged, max_dh, log, diag, dead_end_ids=dead_end_ids, R_net=r_total, nodes_in=nodes_in)
 
