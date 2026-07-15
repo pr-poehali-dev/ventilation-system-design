@@ -384,6 +384,70 @@ export const FAN_CATALOG: FanCurve[] = [
     reverseQMin: 1, reverseQMax: 4.2,
     reverseEfficiencyFactor: 0.80,
   },
+
+  // ─── Zitron 1-14-90 — осевой, Ø1.4 м, 1500 об/мин ───────────────────────────
+  // По графику: Q 30..50 м³/с; H 2500..1100 Па (линейный спад);
+  // N 72..89 кВт, максимум ~40 м³/с. Аппроксимация: H = 5000 − 65·Q + 0.2·Q²
+  {
+    id: "ZITRON-1-14-90",
+    name: "Zitron 1-14-90", type: "axial", diameter: 1.4,
+    h0: 5000, h1: -65, h2: 0.2,
+    e0: 0.30, e1: 0.020, e2: -0.00028,
+    qMin: 30, qMax: 50, qNominal: 40, hNominal: 1800,
+    rpmMin: 0, rpmMax: 1500, rpmNominal: 1500,
+    bladeAngles: [0],
+    reverseH0: 3000, reverseH1: -39, reverseH2: 0.12,
+    reverseQMin: 25, reverseQMax: 43,
+    reverseEfficiencyFactor: 0.82,
+  },
+
+  // ─── ВОД-21М — осевой, Ø2.1 м, 750 об/мин, углы 15..40° ─────────────────────
+  // По графику: Q 20..110 м³/с; H 3000..600 Па; N до ~360 кВт (пик ~90 м³/с)
+  // Средняя кривая: H(20)≈2900, H(60)≈2100, H(100)≈900. H = 3200 − 5·Q − 0.15·Q²
+  {
+    id: "VOD-21M",
+    name: "ВОД-21М", type: "axial", diameter: 2.1,
+    h0: 3200, h1: -5, h2: -0.15,
+    e0: 0.32, e1: 0.014, e2: -0.00016,
+    qMin: 20, qMax: 110, qNominal: 65, hNominal: 2000,
+    rpmMin: 0, rpmMax: 750, rpmNominal: 750,
+    bladeAngles: [15, 20, 25, 30, 35, 40],
+    reverseH0: 1920, reverseH1: -3, reverseH2: -0.12,
+    reverseQMin: 16, reverseQMax: 93,
+    reverseEfficiencyFactor: 0.82,
+  },
+
+  // ─── ВОД-30 (500 об/мин) — осевой, Ø3.0 м, углы 20..45° ─────────────────────
+  // По графику: Q 60..220 м³/с; H 1000..3800 Па; N до ~700 кВт.
+  // Средняя кривая: H(80)≈3000, H(140)≈2200, H(200)≈800. H = 3800 − 3·Q − 0.06·Q²
+  {
+    id: "VOD-30-500",
+    name: "ВОД-30 (500 об/мин)", type: "axial", diameter: 3.0,
+    h0: 3800, h1: -3, h2: -0.06,
+    e0: 0.35, e1: 0.0060, e2: -0.000035,
+    qMin: 60, qMax: 220, qNominal: 140, hNominal: 2400,
+    rpmMin: 0, rpmMax: 500, rpmNominal: 500,
+    bladeAngles: [20, 25, 30, 35, 40, 45],
+    reverseH0: 2280, reverseH1: -1.8, reverseH2: -0.05,
+    reverseQMin: 50, reverseQMax: 187,
+    reverseEfficiencyFactor: 0.82,
+  },
+
+  // ─── ВОД-30 (600 об/мин) — осевой, Ø3.0 м, углы 20..45° ─────────────────────
+  // По графику: Q 50..280 м³/с; H 1000..5000 Па; N до ~1300 кВт.
+  // Средняя кривая: H(80)≈4200, H(160)≈3000, H(260)≈1200. H = 5400 − 8·Q − 0.03·Q²
+  {
+    id: "VOD-30-600",
+    name: "ВОД-30 (600 об/мин)", type: "axial", diameter: 3.0,
+    h0: 5400, h1: -8, h2: -0.03,
+    e0: 0.35, e1: 0.0050, e2: -0.000022,
+    qMin: 50, qMax: 280, qNominal: 170, hNominal: 3200,
+    rpmMin: 0, rpmMax: 600, rpmNominal: 600,
+    bladeAngles: [20, 25, 30, 35, 40, 45],
+    reverseH0: 3240, reverseH1: -4.8, reverseH2: -0.025,
+    reverseQMin: 42, reverseQMax: 238,
+    reverseEfficiencyFactor: 0.82,
+  },
 ];
 
 // ─── Вычисление H(Q) и η(Q) ────────────────────────────────────────────────
