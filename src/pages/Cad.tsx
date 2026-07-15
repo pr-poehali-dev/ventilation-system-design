@@ -1480,13 +1480,18 @@ export default function CadPage() {
     const makeBulkheadSymbols = (branches: typeof result.branches, existing: typeof schemaSymbols) => {
       const syms: typeof schemaSymbols = [];
       let notFound = 0;
+      let bkSeq = 0;
       for (const bk of result.bulkheads ?? []) {
         const br = branches.find(b => b.id === bk.branchId);
         if (!br) { notFound++; continue; }
         if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === bk.branchId)) continue;
         const typeId = guessBulkheadTypeId(bk.typeName);
         syms.push({
-          id: `SYM_BK_${Date.now()}_${bk.branchId}`,
+          // Гарантированно уникальный id: Date.now() одинаков для всех перемычек
+          // одного импорта, а на одной ветви может быть несколько перемычек —
+          // раньше это давало дубли id и React-коллизию ключей, из-за чего
+          // удаление перемычки не обновляло схему до переоткрытия файла.
+          id: `SYM_BK_${Date.now()}_${bkSeq++}_${bk.branchId}`,
           typeId,
           x: 0, y: 0,
           branchId: bk.branchId,
@@ -1974,7 +1979,21 @@ export default function CadPage() {
       });
       setHorizons(migratedHorizons);
     }
-    const loadedSymbols = (data.schemaSymbols as SchemaSymbol[]) ?? [];
+    const loadedSymbolsRaw = (data.schemaSymbols as SchemaSymbol[]) ?? [];
+    // Самолечение старых файлов: раньше импорт мог создать несколько символов
+    // с ОДИНАКОВЫМ id (Date.now() совпадал для перемычек на одной ветви).
+    // Дубли id ломали React-ключи и удаление символов. Переприсваиваем
+    // уникальные id всем повторам.
+    const seenIds = new Set<string>();
+    const loadedSymbols = loadedSymbolsRaw.map((s, i) => {
+      if (!s.id || seenIds.has(s.id)) {
+        const uniq = `${s.id || "SYM"}_${i}_${Math.random().toString(36).slice(2, 7)}`;
+        seenIds.add(uniq);
+        return { ...s, id: uniq };
+      }
+      seenIds.add(s.id);
+      return s;
+    });
     // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)
     const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
@@ -2744,7 +2763,7 @@ export default function CadPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, schemaSymbols, symbolClipboard, pendingSymbol, selectedPositionId, leaderDrawMode]);
+  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, selectedSymbolIds, selectedBranchIds, schemaSymbols, symbolClipboard, pendingSymbol, selectedPositionId, leaderDrawMode]);
 
   // Проверяет, является ли узел промежуточным (ровно 2 смежных ветви)
   const getNodeAdjacentBranches = (nodeId: string) => {
