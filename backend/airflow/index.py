@@ -1245,58 +1245,105 @@ def find_dead_ends(edges):
     # Упрощённая версия: ищем узлы, удаление которых отключает часть графа от GND.
     # Отключённая часть — тупиковая петля.
 
+    # Быстрый алгоритм O(V+E) вместо прежнего наивного O(V²·(V+E)):
+    # находим МОСТЫ графа (bridges) и отсекаем поддеревья, отрезанные мостом
+    # от GND. «Висячая петля» = компонента, соединённая с основной сетью
+    # только через одну точку сочленения → воздух входит и выходит через один
+    # узел, сквозного тока нет (Q=0). Результат идентичен прежнему коду.
+    #
+    # Мост v→w отрезает поддерево w от GND, если в этом поддереве нет GND.
+    # Все рёбра такого поддерева (и сам мост) — тупиковые. Повторяем, пока
+    # находятся новые мосты (после удаления поддерева могут появиться новые).
     changed2 = True
     while changed2:
         changed2 = False
 
-        # Строим граф только из активных рёбер
-        adj2 = collections.defaultdict(set)
+        # Граф смежности только из активных рёбер: узел → [(сосед, idx ребра)]
+        adj2 = collections.defaultdict(list)
         for i in active_edges:
             e = edges[i]
-            adj2[e["a"]].add(e["b"])
-            adj2[e["b"]].add(e["a"])
+            adj2[e["a"]].append((e["b"], i))
+            adj2[e["b"]].append((e["a"], i))
 
-        # Все узлы активного графа
-        all_nodes2 = set(adj2.keys())
+        if GND not in adj2:
+            break
 
-        # Для каждого не-GND узла проверяем: достижим ли GND без него?
-        for v in list(all_nodes2):
-            if v == GND:
+        # ── Поиск мостов итеративным DFS (без рекурсии — глубина до тысяч) ──
+        disc = {}          # время входа в узел
+        low = {}           # минимальная достижимая метка
+        timer = [0]
+        bridges = []       # список (parent, child, edge_idx)
+        # subtree_nodes[child] заполняется лениво ниже
+        # Стек DFS: (узел, родитель, idx ребра к родителю, итератор соседей)
+        for root in list(adj2.keys()):
+            if root in disc:
                 continue
+            stack = [(root, None, -1, iter(adj2[root]))]
+            disc[root] = low[root] = timer[0]; timer[0] += 1
+            while stack:
+                node, parent, pe, it = stack[-1]
+                advanced = False
+                for nb, ei in it:
+                    if ei == pe:
+                        continue  # не идём назад по тому же ребру
+                    if nb not in disc:
+                        disc[nb] = low[nb] = timer[0]; timer[0] += 1
+                        stack.append((nb, node, ei, iter(adj2[nb])))
+                        advanced = True
+                        break
+                    else:
+                        if disc[nb] < low[node]:
+                            low[node] = disc[nb]
+                if advanced:
+                    continue
+                # Все соседи обработаны — снимаем узел со стека
+                stack.pop()
+                if parent is not None:
+                    if low[node] < low[parent]:
+                        low[parent] = low[node]
+                    if low[node] > disc[parent]:
+                        bridges.append((parent, node, pe))
 
-            # BFS из GND без узла v
-            reachable = {GND}
-            q2 = [GND]
+        if not bridges:
+            break
+
+        # Для каждого моста определяем поддерево со стороны child и проверяем,
+        # содержит ли оно GND. Обрабатываем мосты от самых глубоких (по disc
+        # child) — так сначала отсекаем самые дальние висячие петли.
+        killed_any = False
+        for parent, child, pe in sorted(bridges, key=lambda b: -disc[b[1]]):
+            if edges[pe]["id"] in dead_edges:
+                continue  # ребро уже удалено в этом же проходе
+            # BFS по стороне child, НЕ переходя обратно через мост pe
+            side = set()
+            q2 = collections.deque([child])
+            side.add(child)
+            has_gnd = (child == GND)
             while q2:
-                cur = q2.pop()
-                for nb in adj2[cur]:
-                    if nb != v and nb not in reachable:
-                        reachable.add(nb)
-                        q2.append(nb)
-
-            # Узлы НЕ достижимые из GND без v — они висят на v
-            hanging = all_nodes2 - reachable - {v}
-            if not hanging:
-                continue
-
-            # Убиваем все ребра полностью внутри hanging (оба конца в hanging)
-            to_kill = set()
+                cur = q2.popleft()
+                for nb, ei in adj2[cur]:
+                    if ei == pe or nb in side:
+                        continue
+                    side.add(nb)
+                    if nb == GND:
+                        has_gnd = True
+                    q2.append(nb)
+            if has_gnd:
+                continue  # GND на этой стороне — не тупик
+            # Сторона child не содержит GND → это висячая петля.
+            # Убиваем все рёбра внутри side и сам мост (кроме защищённых).
             for i in list(active_edges):
                 e = edges[i]
-                if e["a"] in hanging and e["b"] in hanging:
-                    if e["id"] not in protected:
-                        to_kill.add(i)
-                # Рёбра между v и hanging тоже убиваем (они не несут сквозного тока)
-                elif (e["a"] == v and e["b"] in hanging) or (e["b"] == v and e["a"] in hanging):
-                    if e["id"] not in protected:
-                        to_kill.add(i)
-
-            if to_kill:
-                for i in to_kill:
+                if e["id"] in protected:
+                    continue
+                inside = (e["a"] in side and e["b"] in side) or (i == pe)
+                if inside:
                     active_edges.discard(i)
-                    dead_edges.add(edges[i]["id"])
-                changed2 = True
-                break  # пересчитываем граф заново
+                    dead_edges.add(e["id"])
+                    killed_any = True
+
+        if killed_any:
+            changed2 = True
 
     return dead_edges
 
