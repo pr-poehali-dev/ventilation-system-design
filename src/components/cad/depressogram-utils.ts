@@ -32,8 +32,9 @@ function isBlockingBulkhead(b: TopoBranch): boolean {
 //
 // Реализация: жадный обход от "шахтного" конца ГВУ вглубь сети — на каждом шаге
 // выбираем соседнюю ветвь с МАКСИМАЛЬНЫМ расходом, НЕ проходя через ГЛУХИЕ
-// перемычки (см. isBlockingBulkhead) и другие вентиляторы (hasFan).
-// Перемычки с проходом (открытая дверь/окно/решётка/идёт воздух) допускаются.
+// перемычки (см. isBlockingBulkhead) и ГЛАВНЫЕ вентиляторы (ГВУ/ВВУ).
+// Допускаются: перемычки с проходом (открытая дверь/окно/решётка/идёт воздух)
+// и ВМП (вентиляторы местного проветривания) — они не преграждают основную струю.
 // Путь разворачивается и дополняется ветвью ГВУ и поверхностным узлом.
 //
 // ВГП выбирается автоматически (приоритет типу "ГВУ"), либо явно задаётся
@@ -50,11 +51,15 @@ export function findMainRoute(
   // Строим граф смежности.
   // blocking = перемычка ПРЕГРАЖДАЕТ струю (глухая). Перемычки с проходом
   // (открытая дверь/окно/решётка) НЕ преграждают — их включаем в маршрут.
-  const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; blocking: boolean; hasFan: boolean }[]>();
+  // blockingFan = ГЛАВНЫЙ/вспомогательный вентилятор (ГВУ/ВВУ) — граница струи.
+  // ВМП (вентилятор местного проветривания) НЕ преграждает основную струю —
+  // он в тупиковой выработке добавляет напор; такие ветви проходимы.
+  const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; blocking: boolean; blockingFan: boolean }[]>();
   for (const b of branches) {
     if (!adj.has(b.fromId)) adj.set(b.fromId, []);
     if (!adj.has(b.toId)) adj.set(b.toId, []);
-    const entry = { branchId: b.id, flow: Math.abs(b.flow ?? 0), dP: Math.abs(b.dP ?? 0), blocking: isBlockingBulkhead(b), hasFan: b.hasFan };
+    const blockingFan = b.hasFan && !b.fanStopped && b.fanType !== "ВМП";
+    const entry = { branchId: b.id, flow: Math.abs(b.flow ?? 0), dP: Math.abs(b.dP ?? 0), blocking: isBlockingBulkhead(b), blockingFan };
     adj.get(b.fromId)!.push({ ...entry, neighborId: b.toId });
     adj.get(b.toId)!.push({ ...entry, neighborId: b.fromId });
   }
@@ -112,18 +117,14 @@ export function findMainRoute(
       steps++;
       const neighbors = adj.get(current) ?? [];
 
-      // Приоритет: без преграждающих перемычек и без других ВГП, по убыванию расхода.
-      // Перемычки с проходом (окно/открытая дверь/малое сопротивление) допускаются.
-      const candidatesNoBulk = neighbors
-        .filter(n => !visited.has(n.neighborId) && !n.blocking && !n.hasFan)
+      // Кандидаты: не посещённые, без глухих перемычек и без главных вентиляторов
+      // (ГВУ/ВВУ — граница струи). ВМП и проходные перемычки допускаются.
+      // Выбираем ветвь с максимальным расходом воздуха.
+      const candidates = neighbors
+        .filter(n => !visited.has(n.neighborId) && !n.blocking && !n.blockingFan)
         .sort((a, b) => b.flow - a.flow);
 
-      // Запасной вариант: если совсем нет свободных — берём без ВГП (но не через глухую перемычку).
-      const candidatesAll = neighbors
-        .filter(n => !visited.has(n.neighborId) && !n.hasFan && !n.blocking)
-        .sort((a, b) => b.flow - a.flow);
-
-      const chosen = candidatesNoBulk[0] ?? candidatesAll[0];
+      const chosen = candidates[0];
       if (!chosen) break;
 
       visited.add(chosen.neighborId);
