@@ -10,6 +10,15 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Gzip-конверт больших схем (__gzip__ base64)",
+      "method": "POST",
+      "path": "/",
+      "body": {"__gzip__": "H4sIALRSV2oC/31QQWrDQAz8itlzKJvSQugt0BR8SBqKeyrFqI6MDdlds5Kh1PjvnXUwqXPoTZoZaTQajGNtwsk8ZaaKQcSsMiN9rKnigl0H/AGIDycW1B+DaSftttiX+SGJW9mqA6SxZ7Q/KNf31o6rbNYeyufd7mhm0i7ItOj1vfhv0year0i+apY3SNn6NFfH4PKbqzTkN95vaO2dfUTZkLyQvzrV5PcIOP0geFHyai7wMbLgG4naLM6WMvS6NL9azeZ/ss3uU5jQaQsfQAO0Z07Z+CKwa/COvnPlCATxLQA6dw1Ngs04/gICUSesswEAAA=="},
+      "expectedStatus": 200,
+      "expectedBody": {"converged": true},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Естественная тяга — геотерм. градиент 3°C/100м",
       "method": "POST",
       "path": "/",

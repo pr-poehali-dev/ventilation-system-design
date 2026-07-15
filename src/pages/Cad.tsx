@@ -66,24 +66,41 @@ const EXPLOSION_URL    = API_URLS.explosionCalculator;
 const WATER_URL        = API_URLS.waterHydraulics;
 
 // Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
-// ветвей) весят несколько МБ и упираются в лимит размера запроса — поэтому
-// крупный JSON сжимаем gzip прямо в браузере (CompressionStream). Бэкенд
-// распознаёт заголовок Content-Encoding: gzip и распаковывает тело.
-// Если сжатие недоступно или тело маленькое — отправляем как обычный JSON.
+// ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
+// поэтому крупный JSON сжимаем gzip прямо в браузере (CompressionStream).
+//
+// ВАЖНО: сжатое тело передаём НЕ бинарно и НЕ через заголовок
+// Content-Encoding: gzip. И то, и другое ненадёжно — прокси/шлюз (особенно
+// десктопный WebView2/C#) может распаковать тело сам, потерять заголовок или
+// «испортить» бинарные байты, и функция получала мусор → «Ошибка парсинга
+// JSON» на схемах >2000 ветвей.
+//
+// Надёжный транспорт: gzip → base64 → кладём строкой в обычный JSON-конверт
+// {"__gzip__": "<base64>"}. Content-Type остаётся application/json, тело —
+// чистый текст, который ни один прокси не трогает. Бэкенд первым делом
+// распознаёт конверт и распаковывает.
 async function postAirflow(body: unknown): Promise<Response> {
   const json = JSON.stringify(body);
   const canGzip = typeof (globalThis as { CompressionStream?: unknown }).CompressionStream !== "undefined";
-  // Порог 1 МБ: мелкие запросы быстрее отправить без сжатия
-  if (canGzip && json.length > 1_000_000) {
+  // Порог 512 КБ: мелкие запросы быстрее отправить без сжатия
+  if (canGzip && json.length > 512_000) {
     try {
       const stream = new Response(json).body!.pipeThrough(
         new CompressionStream("gzip"),
       );
-      const gz = new Uint8Array(await new Response(stream).arrayBuffer());
+      const gzBuf = await new Response(stream).arrayBuffer();
+      // Uint8Array → base64 порциями (btoa не принимает большие строки целиком)
+      const bytes = new Uint8Array(gzBuf);
+      let bin = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      const b64 = btoa(bin);
       return fetch(AIRFLOW_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
-        body: gz,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ __gzip__: b64 }),
       });
     } catch {
       // fallback ниже

@@ -73,6 +73,15 @@ def handler(event: dict, context) -> dict:
             raw = data.decode("utf-8") if isinstance(data, (bytes, bytearray)) else raw
 
         body = json.loads(raw)
+
+        # НАДЁЖНЫЙ транспорт больших схем: фронтенд кладёт gzip→base64 строкой
+        # в обычный JSON-конверт {"__gzip__": "<base64>"}. Это не бинарное тело
+        # и не Content-Encoding — прокси/шлюз (в т.ч. десктопный WebView2) его
+        # не трогает, поэтому схемы >2000 ветвей больше не падают с «Ошибка
+        # парсинга JSON». Здесь разворачиваем конверт обратно в исходный body.
+        if isinstance(body, dict) and "__gzip__" in body:
+            inner = gzip.decompress(base64.b64decode(body["__gzip__"])).decode("utf-8")
+            body = json.loads(inner)
     except BaseException as ex:
         _hdrs = event.get("headers") or {}
         _b = event.get("body")
