@@ -3116,12 +3116,19 @@ export default function TopoCanvas(props: Props) {
                 const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
                 let waterArrow: JSX.Element | null = null;
                 if (b.hasWaterPipe && showWaterPipes && showWaterDir && Math.abs(wf) > 0.001) {
-                  const dir = wf >= 0 ? 1 : -1;
+                  // ВАЖНО: направление воды НЕ связано с воздухом. Считаем единичный
+                  // вектор геометрически по узлам from→to (не по ux,uy — те развёрнуты
+                  // по потоку воздуха), затем разворачиваем по расчёту воды flowFromTo.
+                  const gdx = to.sx - from.sx, gdy = to.sy - from.sy;
+                  const glen = Math.hypot(gdx, gdy) || 1;
+                  const wux = gdx / glen, wuy = gdy / glen;
+                  const waterFromTo = wbrDir ? (wbrDir.flowFromTo !== false) : true;
+                  const dir = waterFromTo ? 1 : -1;
                   const ox = nx * offset, oy = ny * offset;
                   const mx = (from.sx + to.sx) / 2 + ox;
                   const my = (from.sy + to.sy) / 2 + oy;
                   const ah = Math.max(3, pipeSW * 2.2);
-                  const dux = ux * dir, duy = uy * dir;
+                  const dux = wux * dir, duy = wuy * dir;
                   const p1x = mx + dux * ah, p1y = my + duy * ah;
                   const p2x = mx - dux * ah * 0.5 + nx * ah * 0.6, p2y = my - duy * ah * 0.5 + ny * ah * 0.6;
                   const p3x = mx - dux * ah * 0.5 - nx * ah * 0.6, p3y = my - duy * ah * 0.5 - ny * ah * 0.6;

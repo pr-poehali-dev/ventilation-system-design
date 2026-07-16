@@ -758,12 +758,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         const wbrDir = waterBranchResults?.get(b.id);
         const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
         if (showWaterDir && Math.abs(wf) > 0.001) {
-          const dir = wf >= 0 ? 1 : -1;
+          // ВАЖНО: направление воды НЕ связано с воздухом. Единичный вектор
+          // считаем геометрически по узлам from→to (ux,uy развёрнуты по воздуху),
+          // затем разворачиваем по расчёту воды flowFromTo.
+          const gdx = p.toSx - p.fromSx, gdy = p.toSy - p.fromSy;
+          const glen = Math.hypot(gdx, gdy) || 1;
+          const wux = gdx / glen, wuy = gdy / glen;
+          const waterFromTo = wbrDir ? (wbrDir.flowFromTo !== false) : true;
+          const dir = waterFromTo ? 1 : -1;
           const ox = nx * pipeOffset, oy = ny * pipeOffset;
           const mx = (p.fromSx + p.toSx) / 2 + ox;
           const my = (p.fromSy + p.toSy) / 2 + oy;
           const ah = Math.max(3, pipeLW * 2.2);
-          const dux = ux * dir, duy = uy * dir;
+          const dux = wux * dir, duy = wuy * dir;
           ctx.fillStyle = "#1d4ed8";
           ctx.beginPath();
           ctx.moveTo(mx + dux * ah, my + duy * ah);
