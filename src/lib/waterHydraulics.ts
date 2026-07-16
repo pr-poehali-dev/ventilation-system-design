@@ -39,7 +39,6 @@ export interface WaterBranchResult {
   pumpActive?: boolean;   // насос повышает напор на этой ветви
   pumpHeadM?: number;     // м вод. ст. — напор насоса (суммарно)
   pumpDeltaP?: number;    // МПа — прибавка давления от насоса
-  flowFromTo?: boolean;   // направление течения воды: true = fromId→toId, false = toId→fromId
 }
 
 // ─── Формулы ──────────────────────────────────────────────────────────────────
@@ -312,7 +311,6 @@ export function calcWaterNetwork(
           reducerInP:   pAvailRaw,
           reducerOutP:  pAvail,
           reducerDeltaP,
-          flowFromTo: isFrom, // вода течёт nid → neighborId
         });
 
         // Давление в соседнем узле

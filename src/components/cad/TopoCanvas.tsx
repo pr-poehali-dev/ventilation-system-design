@@ -3116,10 +3116,7 @@ export default function TopoCanvas(props: Props) {
                 const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
                 let waterArrow: JSX.Element | null = null;
                 if (b.hasWaterPipe && showWaterPipes && showWaterDir && Math.abs(wf) > 0.001) {
-                  // ux,uy ориентированы по потоку ВОЗДУХА (reversed), переводим
-                  // направление воды (в терминах fromId→toId) в систему ux,uy.
-                  const waterFromTo = wbrDir ? (wbrDir.flowFromTo !== false) : (wf >= 0);
-                  const dir = (waterFromTo ? 1 : -1) * (reversed ? -1 : 1);
+                  const dir = wf >= 0 ? 1 : -1;
                   const ox = nx * offset, oy = ny * offset;
                   const mx = (from.sx + to.sx) / 2 + ox;
                   const my = (from.sy + to.sy) / 2 + oy;

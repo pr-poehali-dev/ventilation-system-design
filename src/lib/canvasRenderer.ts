@@ -758,10 +758,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         const wbrDir = waterBranchResults?.get(b.id);
         const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
         if (showWaterDir && Math.abs(wf) > 0.001) {
-          // ux,uy ориентированы по потоку ВОЗДУХА (reversed), поэтому переводим
-          // направление воды (в терминах fromId→toId) в систему ux,uy.
-          const waterFromTo = wbrDir ? (wbrDir.flowFromTo !== false) : (wf >= 0);
-          const dir = (waterFromTo ? 1 : -1) * (reversed ? -1 : 1);
+          const dir = wf >= 0 ? 1 : -1;
           const ox = nx * pipeOffset, oy = ny * pipeOffset;
           const mx = (p.fromSx + p.toSx) / 2 + ox;
           const my = (p.fromSy + p.toSy) / 2 + oy;
