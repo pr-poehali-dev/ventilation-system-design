@@ -3433,9 +3433,9 @@ export default function TopoCanvas(props: Props) {
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
             const realBw = Math.max(bkBw * _branchObjSF, 1.0);
             SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
-          } else if ((sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts) {
-            // Вентилятор и насос масштабируются от ширины ветви (как перемычка),
-            // поэтому синхронны с масштабом схемы и не «плавают» в фиксированном режиме.
+          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water") && sym.branchId && hasBranchPts) {
+            // Вентилятор, насос и запорный вентиль масштабируются от ширины ветви
+            // (как перемычка), поэтому синхронны с масштабом схемы и не «плавают».
             const fanBr = branches.find(b => b.id === sym.branchId);
             const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
             const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
@@ -4484,9 +4484,9 @@ export default function TopoCanvas(props: Props) {
               // ph = SZ * 0.85 → SZ = ph / 0.85.
               const ph = realBranchW * (bulkheadScale / 100);
               SZ = Math.max(6, (ph / 0.85) * sc);
-            } else if ((sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts) {
-              // Вентилятор и насос масштабируются от ширины ветви (как перемычка) —
-              // синхронно с масштабом схемы, не «плавают» в фиксированном режиме.
+            } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water") && sym.branchId && hasBranchPts) {
+              // Вентилятор, насос и запорный вентиль масштабируются от ширины ветви
+              // (как перемычка) — синхронно с масштабом схемы, не «плавают».
               const fanBr = branches.find(b => b.id === sym.branchId);
               const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
               const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
