@@ -248,7 +248,9 @@ export default function SchemaSymbolsOverlay({
           }
           if (!lines.length) return null;
 
-          const fSize = Math.max(6, Math.round((sym.msIndFontSize ?? 9) * sc * symScaleFactor));
+          // Масштабируем синхронно с УО замерной станции (SZ), а не по symScaleFactor,
+          // чтобы при уменьшении схемы индикатор уменьшался вместе с УО.
+          const fSize = Math.max(6, Math.round(SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9)));
           const lineH = fSize + 3;
           const boxW  = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
           const boxH  = lines.length * lineH + 6;
@@ -297,7 +299,9 @@ export default function SchemaSymbolsOverlay({
             lines.push(`Q=${uFlow.fromBase(Math.abs(br.flow)).toFixed(uFlow.decimals)} ${uFlow.symbol}`);
           if (!lines.length) return null;
 
-          const fSize = Math.max(6, Math.round(9 * sc * symScale));
+          // Масштабируем синхронно с УО перемычки (SZ), а не по symScale,
+          // чтобы при уменьшении схемы индикатор уменьшался вместе с УО.
+          const fSize = Math.max(6, Math.round(SZ * 0.55 * ((sym.indFontSize ?? 9) / 9)));
           const lineH = fSize + 3;
           const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
           const boxH = lines.length * lineH + 6;
