@@ -11,6 +11,9 @@ POST /  body: {action, password, ...params}
   list_seats       — места конкретной лицензии {license_id}
   revoke_seat      — освободить место {seat_id}
   generate_key     — сгенерировать ключ формата PVS-XXXX-XXXX-XXXX-XXXX
+  monitoring_overview — сводка мониторинга: онлайн-сессии, нарушения,
+                        истекающие лицензии, версии, использование модулей
+  list_events      — журнал событий {license_id?, event_type?, limit?}
 """
 import json
 import os
@@ -193,9 +196,11 @@ def handler(event: dict, context) -> dict:
             lic_id = int(body.get("license_id", 0))
             cur.execute("""
                 SELECT id, fingerprint, activated_at, last_seen_at,
-                       user_agent, hostname, platform, screen_info
+                       user_agent, hostname, platform, screen_info,
+                       app_version, last_ip, last_modules,
+                       (last_seen_at > NOW() - INTERVAL '10 minutes') AS online
                 FROM license_seats WHERE license_id = %s
-                ORDER BY activated_at DESC
+                ORDER BY last_seen_at DESC
             """, (lic_id,))
             seats = []
             for r in cur.fetchall():
@@ -208,17 +213,167 @@ def handler(event: dict, context) -> dict:
                     "hostname":    r[5],
                     "platform":    r[6],
                     "screen_info": r[7],
+                    "app_version": r[8],
+                    "last_ip":     r[9],
+                    "last_modules": r[10],
+                    "online":      bool(r[11]),
                 })
             return resp(200, {"seats": seats})
 
         # ── revoke_seat ──────────────────────────────────────────────────────────
         if action == "revoke_seat":
             seat_id = int(body.get("seat_id", 0))
+            cur.execute(
+                "SELECT license_id, fingerprint, hostname, platform FROM license_seats WHERE id = %s",
+                (seat_id,)
+            )
+            srow = cur.fetchone()
             cur.execute("DELETE FROM license_seats WHERE id = %s RETURNING id", (seat_id,))
             if not cur.fetchone():
                 return resp(404, {"error": "not_found"})
+            if srow:
+                try:
+                    cur.execute("""
+                        INSERT INTO license_events
+                          (license_id, seat_id, event_type, fingerprint, hostname, platform, detail)
+                        VALUES (%s, %s, 'revoked', %s, %s, %s, 'revoked by admin')
+                    """, (srow[0], seat_id, srow[1], srow[2], srow[3]))
+                except Exception as e:
+                    print(f"[admin] revoke log failed: {e}")
             conn.commit()
             return resp(200, {"ok": True})
+
+        # ── monitoring_overview — сводка мониторинга по всем 5 направлениям ───────
+        if action == "monitoring_overview":
+            online_min = int(body.get("online_minutes", 10))
+            expiring_days = int(body.get("expiring_days", 30))
+
+            # 1. Живые сессии: онлайн-места (heartbeat < online_min минут)
+            cur.execute("""
+                SELECT COUNT(*) FROM license_seats
+                WHERE last_seen_at > NOW() - (%s || ' minutes')::interval
+            """, (online_min,))
+            online_seats = int(cur.fetchone()[0])
+
+            cur.execute("SELECT COUNT(*) FROM license_seats")
+            total_seats = int(cur.fetchone()[0])
+
+            # Онлайн-места с деталями
+            cur.execute("""
+                SELECT s.id, l.owner_name, l.key, s.hostname, s.platform,
+                       s.app_version, s.last_ip, s.last_seen_at, s.last_modules
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.last_seen_at > NOW() - (%s || ' minutes')::interval
+                ORDER BY s.last_seen_at DESC
+                LIMIT 100
+            """, (online_min,))
+            online_list = [{
+                "seat_id": r[0], "owner": r[1], "key": r[2], "hostname": r[3],
+                "platform": r[4], "app_version": r[5], "ip": r[6],
+                "last_seen_at": str(r[7]), "modules": r[8],
+            } for r in cur.fetchall()]
+
+            # 3. Нарушения: попытки превышения лимита / доступ к отозв./просроч.
+            cur.execute("""
+                SELECT event_type, COUNT(*) FROM license_events
+                WHERE event_type IN ('seats_exhausted','disabled_attempt','expired_attempt')
+                  AND created_at > NOW() - INTERVAL '30 days'
+                GROUP BY event_type
+            """)
+            violations = {r[0]: int(r[1]) for r in cur.fetchall()}
+
+            # Один ключ с разных IP за сутки (риск шаринга)
+            cur.execute("""
+                SELECT l.owner_name, l.key, COUNT(DISTINCT s.last_ip) AS ips
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.last_ip IS NOT NULL
+                  AND s.last_seen_at > NOW() - INTERVAL '1 day'
+                GROUP BY l.id, l.owner_name, l.key
+                HAVING COUNT(DISTINCT s.last_ip) > 1
+                ORDER BY ips DESC LIMIT 20
+            """)
+            multi_ip = [{"owner": r[0], "key": r[1], "ip_count": int(r[2])} for r in cur.fetchall()]
+
+            # 4. Сроки лицензий: скоро истекают / просрочены
+            cur.execute("""
+                SELECT id, owner_name, key, expires_at,
+                       EXTRACT(DAY FROM (expires_at - NOW()))::int AS days_left
+                FROM licenses
+                WHERE is_active = TRUE AND expires_at IS NOT NULL
+                  AND expires_at <= NOW() + (%s || ' days')::interval
+                ORDER BY expires_at ASC
+            """, (expiring_days,))
+            expiring = [{
+                "id": r[0], "owner": r[1], "key": r[2],
+                "expires_at": str(r[3]), "days_left": int(r[4]) if r[4] is not None else None,
+            } for r in cur.fetchall()]
+
+            # 5. Версии приложения у клиентов
+            cur.execute("""
+                SELECT COALESCE(app_version, '—') AS v, COUNT(*)
+                FROM license_seats
+                GROUP BY app_version ORDER BY COUNT(*) DESC
+            """)
+            versions = [{"version": r[0], "count": int(r[1])} for r in cur.fetchall()]
+
+            # 5b. Использование модулей (за 7 дней по журналу module_use)
+            cur.execute("""
+                SELECT detail, COUNT(*) FROM license_events
+                WHERE event_type = 'module_use' AND detail IS NOT NULL
+                  AND created_at > NOW() - INTERVAL '7 days'
+                GROUP BY detail ORDER BY COUNT(*) DESC LIMIT 20
+            """)
+            modules_usage = [{"modules": r[0], "count": int(r[1])} for r in cur.fetchall()]
+
+            # 2. История активности: входы по часам за последние 24 часа
+            cur.execute("""
+                SELECT COUNT(*) FROM license_events
+                WHERE event_type IN ('check_ok','activate','seat_created')
+                  AND created_at > NOW() - INTERVAL '24 hours'
+            """)
+            logins_24h = int(cur.fetchone()[0])
+
+            return resp(200, {
+                "sessions": {"online": online_seats, "total": total_seats, "list": online_list},
+                "violations": {"counts": violations, "multi_ip": multi_ip},
+                "expiring": expiring,
+                "versions": versions,
+                "modules_usage": modules_usage,
+                "logins_24h": logins_24h,
+            })
+
+        # ── list_events — журнал событий (история активности) ────────────────────
+        if action == "list_events":
+            limit = min(int(body.get("limit", 100)), 500)
+            lic_id = body.get("license_id")
+            etype = (body.get("event_type") or "").strip()
+            where = []
+            params = []
+            if lic_id:
+                where.append("e.license_id = %s")
+                params.append(int(lic_id))
+            if etype:
+                where.append("e.event_type = %s")
+                params.append(etype)
+            where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+            params.append(limit)
+            cur.execute(f"""
+                SELECT e.id, e.event_type, e.license_key, e.hostname, e.platform,
+                       e.app_version, e.ip, e.detail, e.created_at, l.owner_name
+                FROM license_events e
+                LEFT JOIN licenses l ON l.id = e.license_id
+                {where_sql}
+                ORDER BY e.created_at DESC
+                LIMIT %s
+            """, tuple(params))
+            events = [{
+                "id": r[0], "event_type": r[1], "key": r[2], "hostname": r[3],
+                "platform": r[4], "app_version": r[5], "ip": r[6], "detail": r[7],
+                "created_at": str(r[8]), "owner": r[9],
+            } for r in cur.fetchall()]
+            return resp(200, {"events": events})
 
         return resp(400, {"error": "unknown_action"})
 

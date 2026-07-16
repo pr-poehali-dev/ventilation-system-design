@@ -1,4 +1,5 @@
 import { API_URLS } from "@/lib/api-urls";
+import { APP_VERSION } from "@/lib/appVersion";
 const LICENSE_URL = API_URLS.license;
 const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
@@ -205,6 +206,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
       hostname:    machineInfo?.hostname,
       platform:    machineInfo?.platform,
       screen_info: machineInfo?.screen,
+      app_version: APP_VERSION,
     }),
   });
   const data = await res.json();
@@ -246,6 +248,7 @@ export async function activateLicense(
       hostname:    machineInfo?.hostname,
       platform:    machineInfo?.platform,
       screen_info: machineInfo?.screen,
+      app_version: APP_VERSION,
     }),
   });
   const data = await res.json();
@@ -271,4 +274,28 @@ export async function activateLicense(
   };
   saveCache(info);
   return info;
+}
+
+// ── Heartbeat: «я жива» ───────────────────────────────────────────────────────
+// Периодический лёгкий пинг для мониторинга онлайн-сессий. modules — какие
+// разделы программы сейчас используются (например "vent" / "water" / "fire").
+export async function sendHeartbeat(
+  fingerprint: string,
+  machineInfo?: MachineInfo,
+  modules?: string,
+): Promise<void> {
+  try {
+    await fetch(LICENSE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "heartbeat",
+        fingerprint,
+        hostname:    machineInfo?.hostname,
+        platform:    machineInfo?.platform,
+        app_version: APP_VERSION,
+        modules:     modules || undefined,
+      }),
+    });
+  } catch { /* сеть недоступна — не критично */ }
 }

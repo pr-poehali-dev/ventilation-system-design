@@ -35,6 +35,15 @@
       "expectedStatus": 400,
       "expectedBody": {"error": "invalid_key_format"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Heartbeat unknown fingerprint returns not ok",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "heartbeat", "fingerprint": "test-unknown-fp-heartbeat-999", "app_version": "2.44.116", "modules": "vent"},
+      "expectedStatus": 200,
+      "expectedBody": {"ok": false},
+      "bodyMatcher": "partial"
     }
   ]
 }

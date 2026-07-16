@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { API_URLS } from "@/lib/api-urls";
+import MonitoringTab from "@/pages/admin/MonitoringTab";
 
 const ADMIN_URL = API_URLS.adminLicenses;
 
@@ -27,6 +28,26 @@ interface Seat {
   hostname: string | null;
   platform: string | null;
   screen_info: string | null;
+  app_version?: string | null;
+  last_ip?: string | null;
+  last_modules?: string | null;
+  online?: boolean;
+}
+
+export interface MonitoringData {
+  sessions: {
+    online: number;
+    total: number;
+    list: { seat_id: number; owner: string; key: string; hostname: string | null; platform: string | null; app_version: string | null; ip: string | null; last_seen_at: string; modules: string | null }[];
+  };
+  violations: {
+    counts: Record<string, number>;
+    multi_ip: { owner: string; key: string; ip_count: number }[];
+  };
+  expiring: { id: number; owner: string; key: string; expires_at: string; days_left: number | null }[];
+  versions: { version: string; count: number }[];
+  modules_usage: { modules: string; count: number }[];
+  logins_24h: number;
 }
 
 interface LicenseForm {
@@ -89,7 +110,11 @@ export default function Admin() {
   const [editSaving, setEditSaving]     = useState(false);
 
   // Вкладки
-  const [activeTab, setActiveTab]       = useState<"licenses" | "update">("licenses");
+  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update">("licenses");
+
+  // Мониторинг
+  const [monitoring, setMonitoring]     = useState<MonitoringData | null>(null);
+  const [monLoading, setMonLoading]     = useState(false);
 
   // Обновление PVS.exe (установщик)
   const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string} | null>(null);
@@ -118,6 +143,19 @@ export default function Admin() {
       setLoading(false);
     }
   }, []);
+
+  const loadMonitoring = useCallback(async (pwd: string) => {
+    setMonLoading(true);
+    try {
+      const data = await adminApi(pwd, { action: "monitoring_overview" });
+      setMonitoring(data);
+    } catch { /* ignore */ }
+    finally { setMonLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "monitoring" && authed) loadMonitoring(password);
+  }, [activeTab, authed, password, loadMonitoring]);
 
   useEffect(() => {
     localStorage.removeItem("pvs_admin_pwd");
@@ -350,6 +388,10 @@ export default function Admin() {
               className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "licenses" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
               <Icon name="Key" size={12} className="inline mr-1" />Лицензии
             </button>
+            <button onClick={() => setActiveTab("monitoring")}
+              className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "monitoring" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
+              <Icon name="Activity" size={12} className="inline mr-1" />Мониторинг
+            </button>
             <button onClick={() => setActiveTab("update")}
               className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "update" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
               <Icon name="Upload" size={12} className="inline mr-1" />Обновление
@@ -366,6 +408,12 @@ export default function Admin() {
               <Icon name="Plus" size={14} />Создать ключ
             </button>
           </>}
+          {activeTab === "monitoring" && (
+            <button onClick={() => loadMonitoring(password)}
+              className="flex items-center gap-1.5 text-[12px] text-blue-200 hover:text-white transition-colors">
+              <Icon name="RefreshCw" size={14} className={monLoading ? "animate-spin" : ""} />Обновить
+            </button>
+          )}
           <a href="/"
             className="flex items-center gap-1.5 text-[12px] text-blue-300 hover:text-white transition-colors">
             <Icon name="ArrowLeft" size={14} />В приложение
@@ -374,6 +422,11 @@ export default function Admin() {
       </div>
 
       <div className="max-w-5xl mx-auto p-6">
+
+        {/* ── Вкладка: Мониторинг ── */}
+        {activeTab === "monitoring" && (
+          <MonitoringTab data={monitoring} loading={monLoading} />
+        )}
 
         {/* ── Вкладка: Обновление версии ── */}
         {activeTab === "update" && (
@@ -614,6 +667,15 @@ export default function Admin() {
                                     <span className="text-[12px] font-semibold text-gray-800">
                                       Место #{idx + 1}
                                     </span>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium inline-flex items-center gap-1 ${seat.online ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${seat.online ? "bg-green-500" : "bg-gray-400"}`} />
+                                      {seat.online ? "онлайн" : "офлайн"}
+                                    </span>
+                                    {seat.app_version && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-medium font-mono">
+                                        v{seat.app_version}
+                                      </span>
+                                    )}
                                     {seat.platform && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">
                                         {seat.platform}
@@ -641,6 +703,7 @@ export default function Admin() {
                                   <div className="text-[10px] text-gray-400 mt-0.5 flex gap-3 flex-wrap">
                                     <span>Активировано: {fmtDate(seat.activated_at)}</span>
                                     <span>Последняя активность: {fmtDate(seat.last_seen_at)}</span>
+                                    {seat.last_ip && <span>IP: {seat.last_ip}</span>}
                                   </div>
                                 </div>
                                 <button onClick={() => revokeSeat(seat.id)}

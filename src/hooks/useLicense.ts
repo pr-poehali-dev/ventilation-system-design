@@ -5,6 +5,7 @@ import {
   checkLicense,
   activateLicense,
   clearLicenseCache,
+  sendHeartbeat,
   type LicenseInfo,
   type MachineInfo,
 } from "@/lib/license";
@@ -69,6 +70,17 @@ export function useLicense(): UseLicenseReturn {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Периодический heartbeat, пока лицензия активна — для мониторинга онлайн-сессий
+  useEffect(() => {
+    if (status !== "licensed" || !fingerprint) return;
+    const mi = machineInfoRef.current ?? machineInfo ?? undefined;
+    sendHeartbeat(fingerprint, mi);
+    const id = setInterval(() => {
+      sendHeartbeat(fingerprint, machineInfoRef.current ?? undefined);
+    }, 3 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [status, fingerprint, machineInfo]);
 
   const activate = useCallback(async (key: string) => {
     setError(null);
