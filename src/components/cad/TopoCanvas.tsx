@@ -3379,6 +3379,8 @@ export default function TopoCanvas(props: Props) {
           if (!lt && !isBulkheadEarly) return null;
           // Если УО привязано к ветви скрытого горизонта — скрываем его вместе с ветвью
           if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
+          // Видимость запорного вентиля по всей схеме — переключатель в панели информации
+          if (sym.typeId === "valve_water" && infoConfig && !infoConfig.waterGateValve) return null;
 
           let basePx: number, basePy: number;
           let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
@@ -4440,6 +4442,8 @@ export default function TopoCanvas(props: Props) {
             const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
             if (!lt && !isBulkheadOv) return null;
             if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
+            // Видимость запорного вентиля по всей схеме — переключатель в панели информации
+            if (sym.typeId === "valve_water" && infoConfig && !infoConfig.waterGateValve) return null;
 
             let basePx: number, basePy: number;
             let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;

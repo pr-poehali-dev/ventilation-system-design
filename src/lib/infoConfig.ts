@@ -44,6 +44,7 @@ export interface InfoDisplayConfig {
   waterPumpStation: boolean;
   waterPipeJoint: boolean;
   waterReducer: boolean;
+  waterGateValve: boolean;
   waterReducerPressure: boolean;
   waterPipes: boolean;
   waterFlowDirection: boolean;
@@ -95,6 +96,7 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   waterPumpStation: true,
   waterPipeJoint: true,
   waterReducer: true,
+  waterGateValve: true,
   waterReducerPressure: false,
   waterPipes: true,
   waterFlowDirection: true,

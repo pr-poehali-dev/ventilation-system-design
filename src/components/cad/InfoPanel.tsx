@@ -178,6 +178,7 @@ export default function InfoPanel({
             <CheckRow label="Насосная станция" checked={config.waterPumpStation} onChange={set("waterPumpStation")} />
             <CheckRow label="Соединение труб" checked={config.waterPipeJoint} onChange={set("waterPipeJoint")} />
             <CheckRow label="Редукционный клапан" checked={config.waterReducer} onChange={set("waterReducer")} />
+            <CheckRow label="Вентиль запорный" checked={config.waterGateValve} onChange={set("waterGateValve")} />
             <CheckRow label="Входное/выходное давление на редукторе" checked={config.waterReducerPressure} onChange={set("waterReducerPressure")} />
             <CheckRow label="Трубы" checked={config.waterPipes} onChange={set("waterPipes")} />
             <CheckRow label="Направление течения воды" checked={config.waterFlowDirection} onChange={set("waterFlowDirection")} />
