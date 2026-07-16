@@ -280,6 +280,7 @@ def calc_water_network(nodes_in, branches_in):
                     "pumpActive":    has_pump and pump_delta > 0,
                     "pumpHeadM":     round(pump_head_m, 2),
                     "pumpDeltaP":    round(pump_delta, 4),
+                    "flowFromTo":    is_from,
                 }
 
                 prev = node_pressures.get(nbr)

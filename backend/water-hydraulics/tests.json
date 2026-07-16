@@ -29,7 +29,7 @@
         ]
       },
       "expectedStatus": 200,
-      "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6}], "branchResults": [{"branchId": "B1", "flow": 216.581}]},
+      "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6}], "branchResults": [{"branchId": "B1", "flow": 216.581, "flowFromTo": true}]},
       "bodyMatcher": "partial"
     },
     {
