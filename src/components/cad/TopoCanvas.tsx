@@ -3944,9 +3944,9 @@ export default function TopoCanvas(props: Props) {
                 }
                 if (!msLines.length) return null;
 
-                // Масштабируем индикатор как УО перемычки — по _branchObjSF
-                // (синхронно с шириной ветви и зумом схемы), а не фиксированно.
-                const baseFontPx = (sym.msIndFontSize ? sym.msIndFontSize * sc : 9 * sc) * _branchObjSF;
+                // Масштабируем индикатор СТРОГО как УО замерной станции (по SZ),
+                // чтобы при зуме/отдалении он менялся синхронно с обозначением.
+                const baseFontPx = SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9);
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4037,9 +4037,9 @@ export default function TopoCanvas(props: Props) {
                 if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
-                // Масштабируем индикатор как УО перемычки — по _branchObjSF
-                // (синхронно с шириной ветви и зумом схемы), а не фиксированно.
-                const baseFontPx = (sym.indFontSize ? sym.indFontSize * sc : 9 * sc) * _branchObjSF;
+                // Масштабируем индикатор СТРОГО как УО перемычки (по SZ),
+                // чтобы при зуме/отдалении он менялся синхронно с обозначением.
+                const baseFontPx = SZ * 0.55 * ((sym.indFontSize ?? 9) / 9);
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4808,9 +4808,10 @@ export default function TopoCanvas(props: Props) {
                   if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                   if (!lines.length) return null;
 
-                  // Масштабируем индикатор как УО перемычки — по _branchObjSF
-                  // (синхронно с шириной ветви и зумом схемы), а не фиксированно.
-                  const baseFontPx = (sym.indFontSize ? sym.indFontSize * sc : 9 * sc) * _branchObjSF;
+                  // Масштабируем индикатор СТРОГО как УО перемычки: привязываем
+                  // размер шрифта к размеру самого УО (SZ), чтобы при зуме/отдалении
+                  // индикатор рос и уменьшался синхронно с обозначением.
+                  const baseFontPx = SZ * 0.55 * ((sym.indFontSize ?? 9) / 9);
                   const fSize = Math.max(6, Math.round(baseFontPx));
                   const lineH = fSize + 3;
                   const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4851,6 +4852,78 @@ export default function TopoCanvas(props: Props) {
                             textAnchor="middle" fontSize={fSize}
                             fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
                             fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}
+                            style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                            {line}
+                          </text>
+                        ))}
+                      </g>
+                    </g>
+                  );
+                })()}
+
+                {/* ── Индикаторы замерной станции (canvas-режим) ────────────
+                    Дублирует блок из SVG-рендера, т.к. в canvas-режиме основной
+                    SVG скрыт, а символы рисуются этим отдельным оверлеем. */}
+                {view.scale > 0.05 && sym.typeId === "measure_station" && hasBranchPts && (() => {
+                  const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+                  const msLines: string[] = [];
+                  if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
+                  if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
+                  if (sym.msIndFlow) {
+                    const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
+                    msLines.push(`Q=${q.toFixed(2)} м³/с`);
+                  }
+                  if (sym.msIndArea) {
+                    const a = sym.msArea ?? (brMs?.area ?? 0);
+                    msLines.push(`S=${a.toFixed(2)} м²`);
+                  }
+                  if (sym.msIndVelocity) {
+                    const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
+                    msLines.push(`v=${v.toFixed(2)} м/с`);
+                  }
+                  if (!msLines.length) return null;
+
+                  // Масштабируем индикатор СТРОГО как УО замерной станции (по SZ).
+                  const baseFontPx = SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9);
+                  const fSize = Math.max(6, Math.round(baseFontPx));
+                  const lineH = fSize + 3;
+                  const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
+                  const boxH  = msLines.length * lineH + 6;
+                  const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brLen = Math.hypot(brDx, brDy);
+                  const perpX = brLen > 0 ? -brDy / brLen : 0;
+                  const perpY = brLen > 0 ?  brDx / brLen : 0;
+                  const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
+                  const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
+                  const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+
+                  return (
+                    <g opacity={opacity}>
+                      <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
+                        stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                      <g style={{ cursor: "move" }}
+                        onMouseDown={(e) => {
+                          if (tool !== "select") return;
+                          e.stopPropagation();
+                          const startX = e.clientX, startY = e.clientY;
+                          const origOx = sym.msIndOffsetX ?? 0;
+                          const origOy = sym.msIndOffsetY ?? 0;
+                          const onMove = (me: MouseEvent) => {
+                            onSymbolMsIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                          };
+                          const onUp = () => {
+                            window.removeEventListener("mousemove", onMove);
+                            window.removeEventListener("mouseup", onUp);
+                          };
+                          window.addEventListener("mousemove", onMove);
+                          window.addEventListener("mouseup", onUp);
+                        }}>
+                        {msLines.map((line, i) => (
+                          <text key={i}
+                            x={bx} y={by - boxH / 2 + (i + 1) * lineH}
+                            textAnchor="middle" fontSize={fSize}
+                            fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                            fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
                             style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                             {line}
                           </text>
