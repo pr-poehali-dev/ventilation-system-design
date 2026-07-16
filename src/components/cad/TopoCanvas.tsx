@@ -3792,6 +3792,17 @@ export default function TopoCanvas(props: Props) {
                     stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
                 </g>
               )}
+              {/* 🔴 Закрытый запорный вентиль — красная подсветка (перекрыто) */}
+              {sym.typeId === "valve_water" && (brForSym?.wpGateClosed ?? false) && (() => {
+                const r = Math.max(7, SZ * 0.62);
+                return (
+                  <g pointerEvents="none">
+                    <circle cx={px} cy={py} r={r + 4} fill="#ef4444" opacity={0.16} />
+                    <circle cx={px} cy={py} r={r} fill="none" stroke="#dc2626"
+                      strokeWidth={Math.max(1.5, SZ / 12)} />
+                  </g>
+                );
+              })()}
               {/* ⚡ Маркер разрушенной перемычки (взрыв) */}
               {BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts && (() => {
                 const br = branches.find(b => b.id === sym.branchId);
@@ -4700,6 +4711,17 @@ export default function TopoCanvas(props: Props) {
                       stroke="#6b7280" strokeWidth={Math.max(2, SZ / 14)} strokeLinecap="round" />
                   </g>
                 )}
+                {/* 🔴 Закрытый запорный вентиль — красная подсветка (перекрыто) */}
+                {sym.typeId === "valve_water" && (brForSymOv?.wpGateClosed ?? false) && (() => {
+                  const r = Math.max(7, SZ * 0.62);
+                  return (
+                    <g pointerEvents="none">
+                      <circle cx={px} cy={py} r={r + 4} fill="#ef4444" opacity={0.16} />
+                      <circle cx={px} cy={py} r={r} fill="none" stroke="#dc2626"
+                        strokeWidth={Math.max(1.5, SZ / 12)} />
+                    </g>
+                  );
+                })()}
                 {/* Стрелка направления тяги вентилятора / направления насоса */}
                 {!isFanStoppedOv && (sym.typeId === "fan" || sym.typeId === "pump") && sym.branchId && hasBranchPts
                   && (sym.showFanArrow ?? true) && (() => {
