@@ -501,7 +501,7 @@ export default function Admin() {
               Нет созданных лицензий. Нажмите «Создать ключ».
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-gray-100 max-h-[calc(100vh-360px)] overflow-y-auto">
               {licenses.map(lic => (
                 <div key={lic.id}>
                   <div className="px-5 py-4 flex items-start gap-4">
