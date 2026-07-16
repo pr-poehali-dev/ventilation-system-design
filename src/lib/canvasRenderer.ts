@@ -752,9 +752,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const showWaterPipes = !infoConfig || infoConfig.waterPipes;
       if (b.hasWaterPipe && showWaterPipes) {
         drawEdgePipe(+1, "#1d4ed8");
-        // Стрелка направления течения воды (по центру трубы)
+        // Стрелка направления течения воды (по центру трубы).
+        // Расход берём из результата расчёта сети (wpComputedFlow backend'ом не заполняется).
         const showWaterDir = !infoConfig || infoConfig.waterFlowDirection;
-        const wf = b.wpComputedFlow ?? 0;
+        const wbrDir = waterBranchResults?.get(b.id);
+        const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
         if (showWaterDir && Math.abs(wf) > 0.001) {
           const dir = wf >= 0 ? 1 : -1;
           const ox = nx * pipeOffset, oy = ny * pipeOffset;

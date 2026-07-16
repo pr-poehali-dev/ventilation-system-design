@@ -3110,7 +3110,10 @@ export default function TopoCanvas(props: Props) {
                 );
                 const showWaterPipes = !infoConfig || infoConfig.waterPipes;
                 const showWaterDir = !infoConfig || infoConfig.waterFlowDirection;
-                const wf = b.wpComputedFlow ?? 0;
+                // Расход берём из результата гидравлического расчёта сети,
+                // а не из wpComputedFlow (последнее не заполняется backend'ом).
+                const wbrDir = waterBranchResults?.get(b.id);
+                const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
                 let waterArrow: JSX.Element | null = null;
                 if (b.hasWaterPipe && showWaterPipes && showWaterDir && Math.abs(wf) > 0.001) {
                   const dir = wf >= 0 ? 1 : -1;
