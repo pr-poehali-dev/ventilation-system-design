@@ -771,7 +771,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           const my = (p.fromSy + p.toSy) / 2 + oy;
           const ah = Math.max(3, pipeLW * 2.2);
           const dux = wux * dir, duy = wuy * dir;
-          ctx.fillStyle = "#1d4ed8";
+          ctx.fillStyle = "#dc2626";
           ctx.beginPath();
           ctx.moveTo(mx + dux * ah, my + duy * ah);
           ctx.lineTo(mx - dux * ah * 0.5 + nx * ah * 0.6, my - duy * ah * 0.5 + ny * ah * 0.6);

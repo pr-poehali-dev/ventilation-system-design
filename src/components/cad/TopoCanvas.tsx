@@ -3132,7 +3132,7 @@ export default function TopoCanvas(props: Props) {
                   const p1x = mx + dux * ah, p1y = my + duy * ah;
                   const p2x = mx - dux * ah * 0.5 + nx * ah * 0.6, p2y = my - duy * ah * 0.5 + ny * ah * 0.6;
                   const p3x = mx - dux * ah * 0.5 - nx * ah * 0.6, p3y = my - duy * ah * 0.5 - ny * ah * 0.6;
-                  waterArrow = <polygon key="wpdir" points={`${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`} fill="#1d4ed8" />;
+                  waterArrow = <polygon key="wpdir" points={`${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`} fill="#dc2626" />;
                 }
                 return (
                   <>
