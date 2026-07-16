@@ -3944,7 +3944,9 @@ export default function TopoCanvas(props: Props) {
                 }
                 if (!msLines.length) return null;
 
-                const baseFontPx = sym.msIndFontSize ? sym.msIndFontSize * sc : 9 * sc;
+                // Масштабируем индикатор как УО перемычки — по _branchObjSF
+                // (синхронно с шириной ветви и зумом схемы), а не фиксированно.
+                const baseFontPx = (sym.msIndFontSize ? sym.msIndFontSize * sc : 9 * sc) * _branchObjSF;
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4035,8 +4037,9 @@ export default function TopoCanvas(props: Props) {
                 if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
-                // indFontSize задан в мировых единицах (метрах), независимо от масштаба УО
-                const baseFontPx = sym.indFontSize ? sym.indFontSize * sc : 9 * sc;
+                // Масштабируем индикатор как УО перемычки — по _branchObjSF
+                // (синхронно с шириной ветви и зумом схемы), а не фиксированно.
+                const baseFontPx = (sym.indFontSize ? sym.indFontSize * sc : 9 * sc) * _branchObjSF;
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;

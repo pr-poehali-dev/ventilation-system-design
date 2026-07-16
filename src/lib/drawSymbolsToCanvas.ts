@@ -219,7 +219,8 @@ export async function drawSymbolsToCanvas(
         msLines.push(`v=${v.toFixed(2)} м/с`);
       }
       if (msLines.length > 0) {
-        const fsMs = Math.max(6, Math.round((sym.msIndFontSize ?? 9) * sc * ss));
+        // Масштабируем синхронно с УО замерной станции (SZ), а не по ss.
+        const fsMs = Math.max(6, Math.round(SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9)));
         const lhMs = fsMs + 3;
         const boxHMs = msLines.length * lhMs + 6;
         const brDxMs = tsx2 - fsx, brDyMs = tsy2 - fsy;
@@ -413,7 +414,9 @@ function drawBulkheadIndicators(
     lines.push(`Q=${uFlow.fromBase(Math.abs(br.flow)).toFixed(uFlow.decimals)} ${uFlow.symbol}`);
   if (!lines.length) return;
 
-  const fSize = Math.max(6, Math.round(9 * sc * ss));
+  // Масштабируем индикатор синхронно с УО перемычки (его размер SZ уже
+  // масштабируется по ширине ветви и зуму), а не по ss (обратный рост при зуме).
+  const fSize = Math.max(6, Math.round(SZ * 0.55));
   const lineH = fSize + 3;
   const boxH  = lines.length * lineH + 6;
   const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
