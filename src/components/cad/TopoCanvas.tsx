@@ -4726,6 +4726,90 @@ export default function TopoCanvas(props: Props) {
                     </g>
                   );
                 })()}
+                {/* ── Индикаторы перемычки на схеме (canvas-режим) ──────────
+                    Дублирует блок из SVG-рендера, т.к. в canvas-режиме основной
+                    SVG скрыт, а символы рисуются этим отдельным оверлеем. */}
+                {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station" && sym.branchId && hasBranchPts && (() => {
+                  const br = branches.find(b => b.id === sym.branchId);
+                  if (!br) return null;
+                  const lines: string[] = [];
+                  const uResInd  = getUnit(unitsConfig, "resistance");
+                  const uPresInd = getUnit(unitsConfig, "pressure");
+                  const uFlowInd = getUnit(unitsConfig, "flow");
+                  if (sym.indDescription && sym.description) lines.push(sym.description);
+                  if (sym.indResistance) {
+                    const mode = sym.bkResMode ?? "project";
+                    let rBase = 0; // в Мюрг (базовых единицах)
+                    if (mode === "manual") {
+                      rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
+                    } else if (mode === "survey") {
+                      const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
+                      rBase = sq > 0 ? dp / (sq * sq) : 0;
+                    } else {
+                      const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
+                      if (kAir > 0) {
+                        rBase = 1 / (kAir * kAir);
+                      } else {
+                        rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
+                      }
+                    }
+                    if (rBase === 0 && br.bulkheadR > 0) rBase = br.bulkheadR;
+                    if (rBase === 0) rBase = br.resistance / 9.81e-3; // Н·с²/м⁸ → Мюрг
+                    lines.push(`R=${uResInd.fromBase(rBase).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
+                  }
+                  if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);
+                  if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
+                  if (!lines.length) return null;
+
+                  const baseFontPx = sym.indFontSize ? sym.indFontSize * sc : 9 * sc;
+                  const fSize = Math.max(6, Math.round(baseFontPx));
+                  const lineH = fSize + 3;
+                  const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
+                  const boxH = lines.length * lineH + 6;
+
+                  const brDxI = tsx2 - fsx, brDyI = tsy2 - fsy;
+                  const brLenI = Math.hypot(brDxI, brDyI);
+                  const perpXI = brLenI > 0 ? -brDyI / brLenI : 0;
+                  const perpYI = brLenI > 0 ?  brDxI / brLenI : 0;
+                  const bx = px + perpXI * (16 + boxW / 2) + (sym.indOffsetX ?? 0);
+                  const by = py + perpYI * (16 + boxH / 2) + (sym.indOffsetY ?? 0);
+                  const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+
+                  return (
+                    <g opacity={opacity}>
+                      <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
+                        stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                      <g style={{ cursor: "move" }}
+                        onMouseDown={(e) => {
+                          if (tool !== "select") return;
+                          e.stopPropagation();
+                          const startX = e.clientX, startY = e.clientY;
+                          const origOx = sym.indOffsetX ?? 0;
+                          const origOy = sym.indOffsetY ?? 0;
+                          const onMove = (me: MouseEvent) => {
+                            onSymbolIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                          };
+                          const onUp = () => {
+                            window.removeEventListener("mousemove", onMove);
+                            window.removeEventListener("mouseup", onUp);
+                          };
+                          window.addEventListener("mousemove", onMove);
+                          window.addEventListener("mouseup", onUp);
+                        }}>
+                        {lines.map((line, i) => (
+                          <text key={i}
+                            x={bx} y={by - boxH / 2 + (i + 1) * lineH}
+                            textAnchor="middle" fontSize={fSize}
+                            fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                            fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}
+                            style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                            {line}
+                          </text>
+                        ))}
+                      </g>
+                    </g>
+                  );
+                })()}
               </g>
             );
           };
