@@ -72,23 +72,15 @@ export default function FireStabilityDialog({
     }
   }
 
-  // Устойчивость должна определяться ТОЧНО ТАК ЖЕ, как при установке очага
-  // пожара в ветвь (аварийный режим) — по ФАКТУ разворота потока в реальном
-  // итеративном расчёте сети, а не по грубой локальной оценке на расходах без
-  // пожара. Поэтому запускаем факт-расчёт автоматически при открытии диалога
-  // и при изменении температуры воздуха (от неё зависит расход и депрессия).
+  // Факт-расчёт запускается ТОЛЬКО вручную по кнопке — пользователь сначала
+  // настраивает условия отбора (угол, длина, температура), затем считает.
+  // При изменении температуры воздуха ранее посчитанный факт устаревает
+  // (от неё зависит расход и депрессия), поэтому сбрасываем его.
   useEffect(() => {
-    if (!computeReversalFacts || !solved) return;
-    let cancelled = false;
-    const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
-    setComputing(true);
+    setReversalFacts(null);
     setProgress(null);
-    computeReversalFacts(amb, (done, tot) => { if (!cancelled) setProgress({ done, total: tot }); })
-      .then(facts => { if (!cancelled) setReversalFacts(facts); })
-      .finally(() => { if (!cancelled) setComputing(false); });
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [solved, ambientTemp]);
+  }, [ambientTemp]);
 
   function handleExport() {
     exportStabilityAct(result, { projectName });
