@@ -2877,6 +2877,9 @@ export default function CadPage() {
             }, false);
           }
         }
+        if (sym.typeId === "valve_water" && sym.branchId) {
+          updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
+        }
       }
       setSchemaSymbols(prev => prev.filter(s => !selectedSymbolIds.has(s.id)));
       setSelectedSymbolId(null);
@@ -2909,6 +2912,10 @@ export default function CadPage() {
             bulkheadSurveyDP: 0,
           }, false);
         }
+      }
+      // При удалении запорного вентиля — сбрасываем флаг и открываем ветвь
+      if (sym?.typeId === "valve_water" && sym.branchId) {
+        updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
       }
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
@@ -6337,6 +6344,11 @@ export default function CadPage() {
                     wpReducerMaxFlow: 25,
                   });
                 } : undefined}
+                onRemoveGate={selectedBranch.wpHasGate ? () => {
+                  const sym = schemaSymbols.find(s => s.typeId === "valve_water" && s.branchId === selectedBranch.id);
+                  if (sym) removeSymbol(sym.id);
+                  updateBranch(selectedBranch.id, { wpHasGate: false, wpGateClosed: false });
+                } : undefined}
               />
             )}
 
@@ -8638,6 +8650,10 @@ export default function CadPage() {
                     wpReducerMaxFlow: 25,
                   }, false);
                 }
+                // Сброс запорного вентиля при удалении символа
+                if (sym?.typeId === "valve_water" && sym.branchId) {
+                  updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
+                }
                 removeSymbol(id);
                 setSelectedSymbolId(null);
                 setSelectedSymbolIds(new Set());
@@ -9103,6 +9119,22 @@ export default function CadPage() {
                     setSelectedBranchId(branchId);
                     setSelectedNodeId(null);
                     setFanSymbolBranchId(null);
+                    setActiveSide("waterpipes");
+                  } else if (typeId === "valve_water" && branchId) {
+                    // Запорный вентиль на водопроводе — перекрывает/открывает
+                    // течение воды в ветви. По умолчанию установлен открытым.
+                    const br = branches.find(b => b.id === branchId);
+                    const newSym: SchemaSymbol = {
+                      id: `SYM_VW_${Date.now()}`,
+                      typeId, x, y, branchId, t: 0.5,
+                    };
+                    setSchemaSymbols(prev => [...prev, newSym]);
+                    if (br) {
+                      updateBranch(branchId, { wpHasGate: true, wpGateClosed: false });
+                    }
+                    setSelectedSymbolId(newSym.id);
+                    setSelectedBranchId(branchId);
+                    setSelectedNodeId(null);
                     setActiveSide("waterpipes");
                   } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
                     // Каждый символ перемычки хранит свои параметры независимо (bk* поля)

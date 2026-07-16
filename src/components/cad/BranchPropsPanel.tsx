@@ -52,6 +52,7 @@ interface BranchPropsPanelProps {
   waterBranchResult?: WaterBranchResult;
   /** Удалить УО редукционного клапана и сбросить флаг на ветви */
   onRemoveReducer?: () => void;
+  onRemoveGate?: () => void;
 }
 
 const SH = "#e8eef8";
@@ -234,7 +235,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -1624,6 +1625,57 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   onChange={(v) => onUpdate({ wpLocalXi: parseFloat(v) || 0 })}
                 />
               </InlineLabel>
+
+              {/* ─── ЗАПОРНЫЙ ВЕНТИЛЬ ────────────────────────────────── */}
+              {(branch.wpHasGate) && (() => {
+                const closed = branch.wpGateClosed ?? false;
+                return (
+                  <>
+                    <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
+                      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+                      <span>Запорный вентиль</span>
+                      {onRemoveGate && (
+                        <button
+                          onClick={onRemoveGate}
+                          className="text-[10px] px-1.5 py-0.5 rounded"
+                          style={{ background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
+                          title="Удалить запорный вентиль">
+                          Удалить вентиль
+                        </button>
+                      )}
+                    </div>
+                    <div className="px-1 py-1.5 flex items-center gap-2">
+                      <button
+                        onClick={() => onUpdate({ wpGateClosed: false })}
+                        className="flex-1 text-[11px] py-1 rounded font-medium"
+                        style={{
+                          background: !closed ? "#dcfce7" : "#f3f4f6",
+                          color: !closed ? "#166534" : "#6b7280",
+                          border: !closed ? "1px solid #86efac" : "1px solid #e5e7eb",
+                          cursor: "pointer",
+                        }}>
+                        Открыт
+                      </button>
+                      <button
+                        onClick={() => onUpdate({ wpGateClosed: true })}
+                        className="flex-1 text-[11px] py-1 rounded font-medium"
+                        style={{
+                          background: closed ? "#fee2e2" : "#f3f4f6",
+                          color: closed ? "#991b1b" : "#6b7280",
+                          border: closed ? "1px solid #fca5a5" : "1px solid #e5e7eb",
+                          cursor: "pointer",
+                        }}>
+                        Закрыт
+                      </button>
+                    </div>
+                    <div className="px-1 pb-1.5 text-[10px]" style={{ color: closed ? "#991b1b" : "#166534" }}>
+                      {closed
+                        ? "Течение воды в этой ветви перекрыто"
+                        : "Вода свободно проходит через ветвь"}
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* ─── РЕДУКЦИОННЫЙ КЛАПАН ─────────────────────────────── */}
               {(branch.wpHasReducer) && (() => {

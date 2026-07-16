@@ -162,6 +162,9 @@ export interface TopoBranch {
   wpReducerModel: string;          // ID модели из справочника pressureReducingValves
   wpReducerOutPressure: number;    // МПа — настроенное выходное давление
   wpReducerMaxFlow: number;        // м³/ч — макс. расход (для ручного режима)
+  // ─── Запорный вентиль на водопроводе ─────────────────────
+  wpHasGate?: boolean;             // на ветви установлен запорный вентиль
+  wpGateClosed?: boolean;          // вентиль закрыт → течение воды перекрыто
 
   // ─── Воздухопровод (сжатый воздух) ───────────────────────
   hasAirPipe?: boolean;            // ветвь содержит воздухопровод (сжатый воздух)
@@ -541,6 +544,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpReducerModel: "kppr_50",
     wpReducerOutPressure: 0.5,
     wpReducerMaxFlow: 25,
+    wpHasGate: false,
+    wpGateClosed: false,
     // Вентрубопровод
     hasVentPipe: false,
     vpDiameter: 500,

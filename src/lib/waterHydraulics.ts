@@ -112,9 +112,22 @@ export function calcWaterNetwork(
   const nodeResults = new Map<string, WaterNodeResult>();
   const branchResults = new Map<string, WaterBranchResult>();
 
-  // Только трубопроводные ветви
-  const waterBranches = branches.filter(b => b.hasWaterPipe);
+  // Только трубопроводные ветви. Ветви с закрытым запорным вентилем
+  // (wpHasGate && wpGateClosed) полностью исключаются из графа — вода через
+  // них не течёт, что эквивалентно перекрытому участку трубопровода.
+  const waterBranches = branches.filter(b => b.hasWaterPipe && !(b.wpHasGate && b.wpGateClosed));
   if (waterBranches.length === 0) return { nodeResults, branchResults };
+
+  // Для закрытых ветвей всё равно выдаём нулевой результат, чтобы UI показывал
+  // трубу как перекрытую (flow=0), а не «нет данных».
+  for (const b of branches) {
+    if (b.hasWaterPipe && b.wpHasGate && b.wpGateClosed) {
+      branchResults.set(b.id, {
+        branchId: b.id, flow: 0, velocity: 0, deltaP: 0, resistance: 0,
+        reducerActive: false, reducerInP: 0, reducerOutP: 0, reducerDeltaP: 0,
+      });
+    }
+  }
 
   // Инициализация: вычисляем сопротивление каждой трубы
   const pipeR = new Map<string, number>(); // branchId → R [МН·с²/м⁸]
