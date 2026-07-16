@@ -154,10 +154,40 @@ def calc_water_network(nodes_in, branches_in):
 
     reservoir_ids = {r["id"] for r in reservoirs}
 
-    # Начальные расходы потребителей
-    init_p = float(reservoirs[0].get("fireInitPressure", 0) or 0)
+    # ── Связные компоненты графа трубопровода ─────────────────────────────────
+    # Несколько резервуаров могут быть НЕ соединены общей сетью. Тогда открытие
+    # крана в одной сети не должно влиять на резервуары других сетей. Разбиваем
+    # граф на связные компоненты и считаем каждую сеть независимо.
+    comp_of = {}
+    _comp_id = 0
+    for start in list(adj.keys()) + [r["id"] for r in reservoirs] + [c["id"] for c in consumers]:
+        if start in comp_of:
+            continue
+        stack = [start]
+        comp_of[start] = _comp_id
+        while stack:
+            cur = stack.pop()
+            for edge in adj[cur]:
+                nb = edge["neighborId"]
+                if nb not in comp_of:
+                    comp_of[nb] = _comp_id
+                    stack.append(nb)
+        _comp_id += 1
+
+    # Давление резервуара, к которому подключён потребитель (по его компоненте).
+    # Если в компоненте несколько резервуаров — берём максимальное давление.
+    comp_reservoir_p = {}
+    for r in reservoirs:
+        c_id = comp_of.get(r["id"])
+        if c_id is None:
+            continue
+        p = float(r.get("fireInitPressure", 0) or 0)
+        comp_reservoir_p[c_id] = max(comp_reservoir_p.get(c_id, 0.0), p)
+
+    # Начальные расходы потребителей — по давлению резервуара своей сети
     consumer_flow = {}
     for c in consumers:
+        init_p = comp_reservoir_p.get(comp_of.get(c["id"]), 0.0)
         mode = c.get("fireResistanceMode", "project")
         noz_r = calc_nozzle_resistance(float(c.get("fireHydrantDiameter", 0) or 0)) \
                 if mode == "project" else float(c.get("fireManualR", 0) or 0)
@@ -334,7 +364,11 @@ def calc_water_network(nodes_in, branches_in):
                     "drainTime": 0.0,
                 }
         elif ft == "reservoir":
-            total_flow = sum(consumer_flow.get(c["id"], 0.0) for c in consumers)
+            # Суммируем расход ТОЛЬКО потребителей своей сети (связной компоненты),
+            # чтобы кран в несоединённой сети не осушал этот резервуар.
+            r_comp = comp_of.get(nid)
+            total_flow = sum(consumer_flow.get(c["id"], 0.0) for c in consumers
+                             if comp_of.get(c["id"]) == r_comp)
             capacity   = float(n.get("fireCapacity", 0) or 0)
             node_results[nid] = {
                 "nodeId": nid,
