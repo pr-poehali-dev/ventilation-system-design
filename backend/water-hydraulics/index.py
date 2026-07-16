@@ -83,7 +83,25 @@ def calc_water_network(nodes_in, branches_in):
     node_results   = {}
     branch_results = {}
 
-    water_branches = [b for b in branches_in if b.get("hasWaterPipe")]
+    # Ветви с закрытым запорным вентилем (wpHasGate + wpGateClosed) полностью
+    # исключаются из графа — вода через них не течёт, участок перекрыт.
+    def _gate_closed(b):
+        return bool(b.get("wpHasGate")) and bool(b.get("wpGateClosed"))
+
+    water_branches = [b for b in branches_in if b.get("hasWaterPipe") and not _gate_closed(b)]
+
+    # Для перекрытых ветвей всё равно выдаём нулевой результат, чтобы UI показывал
+    # трубу как перекрытую (flow=0), а не «нет данных».
+    for b in branches_in:
+        if b.get("hasWaterPipe") and _gate_closed(b):
+            branch_results[b["id"]] = {
+                "branchId": b["id"], "flow": 0.0, "velocity": 0.0,
+                "deltaP": 0.0, "resistance": 0.0,
+                "reducerActive": False, "reducerInP": 0.0,
+                "reducerOutP": 0.0, "reducerDeltaP": 0.0,
+                "pumpActive": False, "pumpHeadM": 0.0, "pumpDeltaP": 0.0,
+            }
+
     if not water_branches:
         return {"nodeResults": node_results, "branchResults": branch_results}
 
