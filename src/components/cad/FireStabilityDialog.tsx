@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
-import { calcFireStability, type StabilityCategory } from "@/lib/fireStability";
+import { calcFireStability, type StabilityCategory, type FireStabilityFact } from "@/lib/fireStability";
 import { exportStabilityAct } from "@/lib/stabilityActExport";
 
 interface Props {
@@ -13,7 +13,7 @@ interface Props {
   solved: boolean;   // выполнен ли расчёт сети
   // Реальный итеративный расчёт опрокидывания (как в аварийном режиме).
   // Возвращает Map<branchId, reversed> по ветвям с пожарной нагрузкой.
-  computeReversalFacts?: (ambientTemp: number) => Promise<Map<string, boolean>>;
+  computeReversalFacts?: (ambientTemp: number) => Promise<Map<string, FireStabilityFact>>;
   onClose: () => void;
 }
 
@@ -36,7 +36,7 @@ export default function FireStabilityDialog({
   const [lengthFilter, setLengthFilter] = useState("30");
   const [ambientTemp, setAmbientTemp]   = useState("20");
   // Факты опрокидывания из реального расчёта сети (null = ещё не считали)
-  const [reversalFacts, setReversalFacts] = useState<Map<string, boolean> | null>(null);
+  const [reversalFacts, setReversalFacts] = useState<Map<string, FireStabilityFact> | null>(null);
   const [computing, setComputing] = useState(false);
 
   const result = useMemo(() => {

@@ -21,6 +21,16 @@ import {
   calcFireTemp, calcThermalDepression,
 } from "./fireCalculator";
 
+// Факт пожара по ветви из реального итеративного расчёта сети (как в
+// аварийном режиме): развернулся ли поток + параметры ПРИ ПОЖАРЕ.
+export interface FireStabilityFact {
+  reversed: boolean;     // поток фактически развернулся
+  fireFlow: number;      // расход воздуха ПРИ ПОЖАРЕ, м³/с (модуль)
+  firePower: number;     // мощность пожара, МВт
+  fireTemp: number;      // температура продуктов горения, °C
+  thermalDep: number;    // тепловая депрессия пожара, Па (модуль)
+}
+
 // Категория ветви по направлению и характеру выработки
 export type StabilityCategory =
   | "descending-incline"  // нисходящее наклонное
@@ -38,8 +48,10 @@ export interface StabilityRow {
   signedAngleFlow: number;   // угол в направлении потока (знак: - вниз, + вверх)
   length: number;            // длина, м
   area: number;              // сечение, м²
-  velocity: number;          // скорость воздуха, м/с
-  flow: number;              // расход воздуха, м³/с (модуль)
+  velocityNormal: number;    // скорость воздуха ДО пожара, м/с
+  flowNormal: number;        // расход воздуха ДО пожара, м³/с (модуль)
+  velocity: number;          // скорость воздуха ПРИ ПОЖАРЕ, м/с
+  flow: number;              // расход воздуха ПРИ ПОЖАРЕ, м³/с (модуль)
   firePower_MW: number;      // расчётная мощность пожара, МВт
   fireTemp_C: number;        // расчётная температура пожара, °C
   thermalDep_Pa: number;     // тепловая депрессия пожара, Па
@@ -129,10 +141,10 @@ export function calcFireStability(
     lengthFilter?: number;  // мин. длина, м. По умолчанию 30
     ambientTemp?: number;   // °C. По умолчанию 20
     positions?: { branchIds?: string[]; number?: number; name?: string }[]; // позиции ПЛА
-    // Факты опрокидывания из реального итеративного расчёта сети при пожаре
-    // (branchId → true, если поток фактически развернулся). Если передана —
-    // устойчивость определяется по ФАКТУ, а не по локальной оценке.
-    reversalFacts?: Map<string, boolean>;
+    // Факты пожара из реального итеративного расчёта сети (branchId → факт).
+    // Если переданы — устойчивость И параметры (расход/температура/депрессия)
+    // берутся ПО ФАКТУ пожара, а не по локальной оценке на дожаровых расходах.
+    reversalFacts?: Map<string, FireStabilityFact>;
   } = {},
 ): StabilityResult {
   const angleFilter  = opts.angleFilter  ?? 5;
@@ -184,20 +196,22 @@ export function calcFireStability(
       ? (isVertical ? "descending-vertical" : "descending-incline")
       : (isVertical ? "ascending-vertical"  : "ascending-incline");
 
-    const airFlow = Math.abs(flow);
-    const firePower = calcBranchFirePower(b, airFlow);
-    const fireTemp  = calcFireTemp(firePower, airFlow, ambientTemp);
+    // Факт пожара по этой ветви из реального итеративного расчёта сети (если есть).
+    const fact = opts.reversalFacts?.get(b.id);
 
-    // ── Устойчивость: используем ТОТ ЖЕ критерий, что и аварийный режим
-    //    (fireCalculator.calcFireMode), чтобы результаты полностью совпадали.
-    //
-    // Тепловая депрессия пожара считается по ЗНАКОВОМУ углу в направлении
-    // потока: нисходящая струя → отрицательная депрессия → способствует
-    // опрокидыванию. Знак берём из signedAngleFlow (учёт направления воздуха).
-    const thermalDepSigned = calcThermalDepression(
-      fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow,
-    );
-    const thermalDep = Math.abs(thermalDepSigned);
+    // Расход/мощность/температура/депрессия — ПРИ ПОЖАРЕ (по факту), иначе
+    // предварительная оценка на дожаровом расходе. С фактом цифры совпадают
+    // со вкладкой «Аварии» (расход при пожаре меньше → температура выше).
+    const dojarFlow = Math.abs(flow);
+    const airFlow   = fact ? fact.fireFlow : dojarFlow;
+    const firePower = fact ? fact.firePower : calcBranchFirePower(b, dojarFlow);
+    const fireTemp  = fact ? fact.fireTemp  : calcFireTemp(firePower, dojarFlow, ambientTemp);
+
+    // Тепловая депрессия пожара. С фактом — из итеративного расчёта; без факта —
+    // локальная оценка по знаковому углу в направлении потока.
+    const thermalDep = fact
+      ? fact.thermalDep
+      : Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
     const branchDep  = Math.abs(b.dP ?? 0);
 
     // ── Определение устойчивости ────────────────────────────────────────
@@ -208,9 +222,8 @@ export function calcFireStability(
     //
     // Если факта нет (расчёт не запускался) — локальная оценка риска
     // (идентична calcFireMode): нисходящая ветвь И |h_t| > 0.5·|dP|.
-    const fact = opts.reversalFacts?.get(b.id);
     const willReverse = (signedAngleFlow < -1) && (thermalDep > branchDep * 0.5);
-    const stable = fact !== undefined ? !fact : !willReverse;
+    const stable = fact ? !fact.reversed : !willReverse;
 
     const row: StabilityRow = {
       branchId: b.id,
@@ -222,7 +235,9 @@ export function calcFireStability(
       signedAngleFlow: +signedAngleFlow.toFixed(2),
       length: +(b.length ?? 0).toFixed(2),
       area: +(b.area ?? 0).toFixed(2),
-      velocity: +(b.velocity ?? 0).toFixed(3),
+      velocityNormal: +(b.velocity ?? 0).toFixed(3),
+      flowNormal: +dojarFlow.toFixed(3),
+      velocity: +((b.area ?? 0) > 0 ? airFlow / (b.area ?? 1) : (b.velocity ?? 0)).toFixed(3),
       flow: +airFlow.toFixed(3),
       firePower_MW: +firePower.toFixed(2),
       fireTemp_C: +fireTemp.toFixed(1),

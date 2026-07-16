@@ -41,7 +41,7 @@ import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
-import { calcBranchFirePower } from "@/lib/fireStability";
+import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
 import { API_URLS } from "@/lib/api-urls";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
@@ -2386,42 +2386,65 @@ export default function CadPage() {
   // пожарной нагрузки), задаёт тепловую депрессию и пересчитывает сеть.
   // Сравнивает знак расхода до/после — это и есть фактическое опрокидывание,
   // тот же принцип, что в аварийном режиме (actuallyReversed).
-  const computeFireStabilityFacts = async (ambientTemp: number): Promise<Map<string, boolean>> => {
-    const facts = new Map<string, boolean>();
+  const computeFireStabilityFacts = async (ambientTemp: number): Promise<Map<string, FireStabilityFact>> => {
+    const facts = new Map<string, FireStabilityFact>();
     const loaded = branches.filter(b =>
       b.fireLoadTech || b.fireLoadConveyor || b.fireLoadCable || b.fireLoadWoodSupport);
     if (loaded.length === 0) return facts;
 
     const originalFlows = new Map<string, number>(branches.map(b => [b.id, b.flow ?? 0]));
-    const loadedIds = new Set(loaded.map(b => b.id));
 
-    // Готовим ветви: на нагруженных ставим тепловую депрессию по мощности пожара.
-    const branchesWithHt = branches.map(b => {
-      if (!loadedIds.has(b.id)) return b;
-      const airQ = Math.abs(b.flow ?? 0);
-      const power = calcBranchFirePower(b, airQ);         // суммарная мощность пожара, МВт
-      const T_pr  = calcFireTemp(power, airQ, ambientTemp);
-      const fromN = nodes.find(n => n.id === b.fromId);
-      const toN   = nodes.find(n => n.id === b.toId);
-      const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
-      const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1);
-      const h_t = calcThermalDepression(T_pr, ambientTemp, b.length, signedAngle);
-      return { ...b, fireThermalDepression: h_t };
-    });
+    // Для КАЖДОЙ нагруженной ветви моделируем ОТДЕЛЬНЫЙ сценарий пожара —
+    // ровно так же, как при ручной установке очага (аварийный режим):
+    //   • очаг ставится ТОЛЬКО на эту ветвь;
+    //   • сеть пересчитывается ИТЕРАТИВНО (до сходимости расхода), при этом
+    //     на каждой итерации T_пр и h_t уточняются по актуальному расходу
+    //     (расход при пожаре падает → температура растёт).
+    // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
+    // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
+    const FIRE_ITERS = 3;
+    const FIRE_Q_TOL = 0.1;
 
-    const newFlows = await solveFireIteration(branchesWithHt, ambientTemp);
-    if (newFlows.size === 0) {
-      // Сеть не пересчиталась — факт неизвестен, оставляем оценку риска
-      return facts;
-    }
+    for (const target of loaded) {
+      let currentFlows = new Map<string, number>(originalFlows);
+      let firePower = 0, fireTemp = ambientTemp, thermalDep = 0;
 
-    // Факт разворота: знак расхода изменился и новый поток заметен
-    loaded.forEach(b => {
-      const orig = originalFlows.get(b.id) ?? 0;
-      const now  = newFlows.get(b.id) ?? orig;
+      for (let iter = 0; iter < FIRE_ITERS; iter++) {
+        const airQ0 = Math.abs(currentFlows.get(target.id) ?? target.flow ?? 0);
+        firePower = calcBranchFirePower(target, airQ0);
+        fireTemp  = calcFireTemp(firePower, airQ0, ambientTemp);
+        const fromN = nodes.find(n => n.id === target.fromId);
+        const toN   = nodes.find(n => n.id === target.toId);
+        const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
+        const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
+        thermalDep = calcThermalDepression(fireTemp, ambientTemp, target.length, signedAngle);
+
+        // Пожар ТОЛЬКО на целевой ветви, у остальных — актуальные расходы.
+        const branchesIter = branches.map(b => {
+          if (b.id !== target.id) return { ...b, flow: currentFlows.get(b.id) ?? b.flow };
+          return { ...b, flow: currentFlows.get(b.id) ?? b.flow, fireThermalDepression: thermalDep };
+        });
+
+        const newFlows = await solveFireIteration(branchesIter, ambientTemp);
+        if (newFlows.size === 0) break;
+
+        let maxDQ = 0;
+        newFlows.forEach((q, id) => { maxDQ = Math.max(maxDQ, Math.abs(q - (currentFlows.get(id) ?? 0))); });
+        currentFlows = newFlows;
+        if (maxDQ < FIRE_Q_TOL) break;
+      }
+
+      const orig = originalFlows.get(target.id) ?? 0;
+      const now  = currentFlows.get(target.id) ?? orig;
       const reversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
-      facts.set(b.id, reversed);
-    });
+      facts.set(target.id, {
+        reversed,
+        fireFlow: Math.abs(now),
+        firePower,
+        fireTemp,
+        thermalDep: Math.abs(thermalDep),
+      });
+    }
     return facts;
   };
 

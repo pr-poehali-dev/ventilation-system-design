@@ -152,9 +152,9 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
       r.angleDeg,
       r.length,
       r.area,
-      r.velocity,
-      r.flow,
-      r.velocity,       // скорость при пожаре (в образце = обычной)
+      r.velocityNormal, // скорость движения (до пожара)
+      r.flowNormal,     // расход воздуха (до пожара)
+      r.velocity,       // скорость при пожаре
       r.flow,           // расход при пожаре
       r.firePower_MW,
       r.fireTemp_C,
