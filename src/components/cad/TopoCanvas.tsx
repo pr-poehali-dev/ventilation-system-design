@@ -3132,7 +3132,15 @@ export default function TopoCanvas(props: Props) {
                   const p1x = mx + dux * ah, p1y = my + duy * ah;
                   const p2x = mx - dux * ah * 0.5 + nx * ah * 0.6, p2y = my - duy * ah * 0.5 + ny * ah * 0.6;
                   const p3x = mx - dux * ah * 0.5 - nx * ah * 0.6, p3y = my - duy * ah * 0.5 - ny * ah * 0.6;
-                  waterArrow = <polygon key="wpdir" points={`${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`} fill="#dc2626" />;
+                  // Хвостик (стержень) — от основания треугольника назад по потоку
+                  const txBase = mx - dux * ah * 0.5, tyBase = my - duy * ah * 0.5;
+                  const txEnd = mx - dux * ah * 2.2, tyEnd = my - duy * ah * 2.2;
+                  waterArrow = (
+                    <g key="wpdir">
+                      <line x1={txEnd} y1={tyEnd} x2={txBase} y2={tyBase} stroke="#dc2626" strokeWidth={pipeSW} strokeLinecap="round" />
+                      <polygon points={`${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}`} fill="#dc2626" />
+                    </g>
+                  );
                 }
                 return (
                   <>

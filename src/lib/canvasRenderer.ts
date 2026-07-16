@@ -771,6 +771,14 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           const my = (p.fromSy + p.toSy) / 2 + oy;
           const ah = Math.max(3, pipeLW * 2.2);
           const dux = wux * dir, duy = wuy * dir;
+          // Хвостик (стержень) — от основания треугольника назад по потоку
+          ctx.strokeStyle = "#dc2626";
+          ctx.lineWidth = Math.max(1, pipeLW);
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(mx - dux * ah * 2.2, my - duy * ah * 2.2);
+          ctx.lineTo(mx - dux * ah * 0.5, my - duy * ah * 0.5);
+          ctx.stroke();
           ctx.fillStyle = "#dc2626";
           ctx.beginPath();
           ctx.moveTo(mx + dux * ah, my + duy * ah);
