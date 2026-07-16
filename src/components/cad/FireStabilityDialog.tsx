@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
@@ -66,6 +66,23 @@ export default function FireStabilityDialog({
     }
   }
 
+  // Устойчивость должна определяться ТОЧНО ТАК ЖЕ, как при установке очага
+  // пожара в ветвь (аварийный режим) — по ФАКТУ разворота потока в реальном
+  // итеративном расчёте сети, а не по грубой локальной оценке на расходах без
+  // пожара. Поэтому запускаем факт-расчёт автоматически при открытии диалога
+  // и при изменении температуры воздуха (от неё зависит расход и депрессия).
+  useEffect(() => {
+    if (!computeReversalFacts || !solved) return;
+    let cancelled = false;
+    const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
+    setComputing(true);
+    computeReversalFacts(amb)
+      .then(facts => { if (!cancelled) setReversalFacts(facts); })
+      .finally(() => { if (!cancelled) setComputing(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [solved, ambientTemp]);
+
   function handleExport() {
     exportStabilityAct(result, { projectName });
     onClose();
@@ -132,9 +149,11 @@ export default function FireStabilityDialog({
                 {computing ? "Расчёт..." : "Рассчитать факт опрокидывания"}
               </button>
               <span className="text-[10px]" style={{ color: reversalFacts ? "#15803d" : "#9ca3af" }}>
-                {reversalFacts
-                  ? "✓ Устойчивость — по факту разворота потока"
-                  : "Пока — предварительная оценка риска"}
+                {computing
+                  ? "Идёт расчёт сети с пожаром..."
+                  : reversalFacts
+                    ? "✓ Устойчивость — по факту разворота потока (как при очаге пожара)"
+                    : "Предварительная оценка риска"}
               </span>
             </div>
           )}
