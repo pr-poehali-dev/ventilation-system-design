@@ -339,9 +339,12 @@ export interface FireCalculationResult {
   // корректно дорисовывать задымление внутри ветви-очага, когда дым по кольцу
   // возвращается к входному узлу очага.
   nodeArrivalTime: Map<string, number>;
-  // Концентрации продуктов горения в каждом задымлённом узле (% CO и % CO₂).
+  // Концентрации продуктов горения и температуры в каждом задымлённом узле.
   // Заполняется при обходе распространения дыма по узлам сети.
-  nodeGas: Map<string, { co: number; co2: number }>;
+  //  • co, co2 — % CO и % CO₂;
+  //  • airTemp — температура воздуха в узле, °C;
+  //  • wallTemp — температура стенок выработки в узле, °C.
+  nodeGas: Map<string, { co: number; co2: number; airTemp: number; wallTemp: number }>;
 }
 
 // ─── Физические формулы ───────────────────────────────────────────────────────
@@ -700,10 +703,16 @@ export function calcFireMode(
     // Узел задымлён по порогу? Если дым сюда пришёл уже рассеянным (плотность
     // ниже порога) — дальше он НЕ распространяется (обрыв фронта, чистый воздух).
     if (sp.smokeC < SMOKE_DENS_THRESHOLD) continue;
-    // Фиксируем концентрации продуктов горения в этом задымлённом узле.
+    // Фиксируем концентрации продуктов горения и температуры в задымлённом узле.
+    // Температура стенок выработки нагревается медленнее воздуха (сток тепла в
+    // породу) — принимаем как ambient + 0.5·(t_возд − ambient).
+    const nodeAirTemp  = sp.tempC;
+    const nodeWallTemp = ambientTemp_C + 0.5 * (nodeAirTemp - ambientTemp_C);
     nodeGas.set(smokedNodeId, {
       co:  Math.round(sp.coC  * 1000) / 1000,
       co2: Math.round(sp.co2C * 100)  / 100,
+      airTemp:  Math.round(nodeAirTemp  * 100) / 100,
+      wallTemp: Math.round(nodeWallTemp * 100) / 100,
     });
     // Время задымления ВХОДНОГО узла — оно уже оптимально (узел финализирован).
     const arrivalAtIn = optArrival;

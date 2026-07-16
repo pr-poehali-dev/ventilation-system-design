@@ -3912,10 +3912,17 @@ export default function CadPage() {
                     fireComputedCO2: fr.co2Conc,
                   };
                 }));
-                // Записываем расчётные концентрации CO/CO₂ в узлы (распространение по сети)
+                // Записываем расчётные концентрации CO/CO₂ и температуры в узлы
+                // (распространение по сети). Для незадымлённых узлов — фоновые
+                // значения: температура воздуха и стенок = температура на поверхности.
                 setNodes(prev => prev.map(n => {
                   const g = result.nodeGas.get(n.id);
-                  return { ...n, computedCO: g?.co ?? 0, computedCO2: g?.co2 ?? 0 };
+                  return { ...n,
+                    computedCO:  g?.co ?? 0,
+                    computedCO2: g?.co2 ?? 0,
+                    computedAirTemp:  g?.airTemp  ?? AMBIENT_TEMP,
+                    computedWallTemp: g?.wallTemp ?? AMBIENT_TEMP,
+                  };
                 }));
                 setFireResult(result);
                 setFireCalcDone(true);
