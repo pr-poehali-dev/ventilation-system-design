@@ -13,7 +13,10 @@ interface Props {
   solved: boolean;   // выполнен ли расчёт сети
   // Реальный итеративный расчёт опрокидывания (как в аварийном режиме).
   // Возвращает Map<branchId, reversed> по ветвям с пожарной нагрузкой.
-  computeReversalFacts?: (ambientTemp: number) => Promise<Map<string, FireStabilityFact>>;
+  computeReversalFacts?: (
+    ambientTemp: number,
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<Map<string, FireStabilityFact>>;
   onClose: () => void;
 }
 
@@ -38,6 +41,8 @@ export default function FireStabilityDialog({
   // Факты опрокидывания из реального расчёта сети (null = ещё не считали)
   const [reversalFacts, setReversalFacts] = useState<Map<string, FireStabilityFact> | null>(null);
   const [computing, setComputing] = useState(false);
+  // Прогресс проверки: сколько ветвей проверено из скольких
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const result = useMemo(() => {
     const angle  = parseFloat(angleFilter.replace(",", ".")) || 0;
@@ -57,9 +62,10 @@ export default function FireStabilityDialog({
   async function handleComputeFacts() {
     if (!computeReversalFacts) return;
     setComputing(true);
+    setProgress(null);
     try {
       const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
-      const facts = await computeReversalFacts(amb);
+      const facts = await computeReversalFacts(amb, (done, tot) => setProgress({ done, total: tot }));
       setReversalFacts(facts);
     } finally {
       setComputing(false);
@@ -76,7 +82,8 @@ export default function FireStabilityDialog({
     let cancelled = false;
     const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
     setComputing(true);
-    computeReversalFacts(amb)
+    setProgress(null);
+    computeReversalFacts(amb, (done, tot) => { if (!cancelled) setProgress({ done, total: tot }); })
       .then(facts => { if (!cancelled) setReversalFacts(facts); })
       .finally(() => { if (!cancelled) setComputing(false); });
     return () => { cancelled = true; };
@@ -140,21 +147,41 @@ export default function FireStabilityDialog({
 
           {/* Критерий устойчивости + расчёт факта опрокидывания */}
           {computeReversalFacts && (
-            <div className="flex items-center gap-2 pt-1">
-              <button onClick={handleComputeFacts} disabled={computing || !solved}
-                className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5 disabled:opacity-50"
-                style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "#1d4ed8" }}>
-                <Icon name={computing ? "Loader" : "Play"} size={12}
-                  className={computing ? "animate-spin" : ""} />
-                {computing ? "Расчёт..." : "Рассчитать факт опрокидывания"}
-              </button>
-              <span className="text-[10px]" style={{ color: reversalFacts ? "#15803d" : "#9ca3af" }}>
-                {computing
-                  ? "Идёт расчёт сети с пожаром..."
-                  : reversalFacts
-                    ? "✓ Устойчивость — по факту разворота потока (как при очаге пожара)"
-                    : "Предварительная оценка риска"}
-              </span>
+            <div className="pt-1 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <button onClick={handleComputeFacts} disabled={computing || !solved}
+                  className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5 disabled:opacity-50"
+                  style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "#1d4ed8" }}>
+                  <Icon name={computing ? "Loader" : "Play"} size={12}
+                    className={computing ? "animate-spin" : ""} />
+                  {computing ? "Проверка..." : "Рассчитать факт опрокидывания"}
+                </button>
+                <span className="text-[10px]" style={{ color: reversalFacts && !computing ? "#15803d" : "#9ca3af" }}>
+                  {computing
+                    ? (progress
+                        ? `Проверка выработок: ${progress.done} из ${progress.total}`
+                        : "Подготовка расчёта...")
+                    : reversalFacts
+                      ? "✓ Устойчивость — по факту разворота потока (как при очаге пожара)"
+                      : "Предварительная оценка риска"}
+                </span>
+              </div>
+
+              {/* Прогресс-бар проверки выработок */}
+              {computing && progress && progress.total > 0 && (
+                <div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e3e8f2" }}>
+                    <div className="h-full rounded-full transition-all duration-150"
+                      style={{
+                        width: `${Math.round((progress.done / progress.total) * 100)}%`,
+                        background: "#2563eb",
+                      }} />
+                  </div>
+                  <div className="text-[10px] text-gray-400 text-right pt-0.5">
+                    {Math.round((progress.done / progress.total) * 100)}%
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

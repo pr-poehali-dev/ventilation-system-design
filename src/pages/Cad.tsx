@@ -2386,11 +2386,15 @@ export default function CadPage() {
   // пожарной нагрузки), задаёт тепловую депрессию и пересчитывает сеть.
   // Сравнивает знак расхода до/после — это и есть фактическое опрокидывание,
   // тот же принцип, что в аварийном режиме (actuallyReversed).
-  const computeFireStabilityFacts = async (ambientTemp: number): Promise<Map<string, FireStabilityFact>> => {
+  const computeFireStabilityFacts = async (
+    ambientTemp: number,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<Map<string, FireStabilityFact>> => {
     const facts = new Map<string, FireStabilityFact>();
     const loaded = branches.filter(b =>
       b.fireLoadTech || b.fireLoadConveyor || b.fireLoadCable || b.fireLoadWoodSupport);
     if (loaded.length === 0) return facts;
+    onProgress?.(0, loaded.length);
 
     const originalFlows = new Map<string, number>(branches.map(b => [b.id, b.flow ?? 0]));
 
@@ -2444,6 +2448,9 @@ export default function CadPage() {
         fireTemp,
         thermalDep: Math.abs(thermalDep),
       });
+      onProgress?.(facts.size, loaded.length);
+      // Пауза, чтобы React успел перерисовать индикатор прогресса.
+      await new Promise(r => setTimeout(r, 0));
     }
     return facts;
   };
