@@ -78,6 +78,9 @@ const VERTICAL_ANGLE_DEG = 80;
 export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
   let power = 0;
 
+  // Длина ветви — дефолт для длины горючего материала, если поле не заполнено.
+  const branchLenStr = b.length && b.length > 0 ? String(b.length) : "";
+
   if (b.fireLoadTech) {
     const r = calcVehicleFire(
       [b.fireVehicleMassRubber ?? 0, b.fireVehicleMassDiesel ?? 0, b.fireVehicleMassOil ?? 0],
@@ -87,26 +90,30 @@ export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
   }
   if (b.fireLoadConveyor) {
     const r = calcBelt({
-      burnRate: b.fireBeltBurnRate, density: b.fireBeltDensity,
-      width: b.fireBeltWidth, length: b.fireBeltLength,
-      thickness: b.fireBeltThickness, flameSpeed: b.fireBeltFlameSpeed,
+      burnRate: b.fireBeltBurnRate ?? "0.0125", density: b.fireBeltDensity ?? "1100",
+      width: b.fireBeltWidth ?? "1.2", length: b.fireBeltLength ?? (branchLenStr || "100"),
+      thickness: b.fireBeltThickness ?? "0.016", flameSpeed: b.fireBeltFlameSpeed ?? "0.013",
     }, airFlow);
     if (r) power += r.powerMax;
   }
   if (b.fireLoadCable) {
     const r = calcLinearFire({
-      heatValue: b.fireCableHeatValue, burnRate: b.fireCableBurnRate,
-      density: b.fireCableDensity, length: b.fireCableLength,
-      sectionWidth: b.fireCableWidth, sectionThick: b.fireCableThick,
+      heatValue: b.fireCableHeatValue ?? "25", burnRate: b.fireCableBurnRate ?? "0.007",
+      density: b.fireCableDensity ?? "900", length: b.fireCableLength ?? (branchLenStr || "100"),
+      sectionWidth: b.fireCableWidth ?? "0.05", sectionThick: b.fireCableThick ?? "0.05",
     }, airFlow);
     if (r) power += r.powerMW;
   }
   if (b.fireLoadWoodSupport) {
+    // ВАЖНО: flameSpeed и calcTime задают «нарастающий пожар» — площадь горения
+    // за расчётное время, а не по всей длине ветви. Без них calcLinearFire берёт
+    // полную площадь и завышает мощность. Дефолты должны совпадать с вкладкой
+    // «Пожарная нагрузка» (BranchPropsPanel), чтобы результаты не расходились.
     const r = calcLinearFire({
-      heatValue: b.fireWoodHeatValue, burnRate: b.fireWoodBurnRate,
-      density: b.fireWoodDensity, length: b.fireWoodLength,
-      sectionWidth: b.fireWoodWidth, sectionThick: b.fireWoodThick,
-      flameSpeed: b.fireWoodFlameSpeed, calcTime: b.fireWoodCalcTime,
+      heatValue: b.fireWoodHeatValue ?? "13.8", burnRate: b.fireWoodBurnRate ?? "0.027",
+      density: b.fireWoodDensity ?? "500", length: b.fireWoodLength ?? (branchLenStr || "50"),
+      sectionWidth: b.fireWoodWidth ?? "8.9", sectionThick: b.fireWoodThick ?? "0.08",
+      flameSpeed: b.fireWoodFlameSpeed ?? "0.024", calcTime: b.fireWoodCalcTime ?? "10",
     }, airFlow);
     if (r) power += r.powerMW;
   }
