@@ -4452,9 +4452,14 @@ export default function TopoCanvas(props: Props) {
       </svg>
 
       {/* ── Оверлей УО поверх canvas (видим всегда, интерактивен) ───────── */}
+      {/* zIndex должен быть ВЫШЕ canvas-слоя. При активном слое печати canvas
+          поднимается на zIndex:1 (см. CanvasLayer, transparentBg) — если оверлей
+          УО останется на auto(0), canvas перекроет символы и клики по ним не
+          дойдут. Поэтому держим оверлей на zIndex:2. В режиме редактирования
+          печати опускаем его (0), чтобы ручки рамки/штампа были доступны. */}
       {useCanvas && (
         <svg
-          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none", cursor: cursorStyle }}
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "auto", touchAction: "none", userSelect: "none", cursor: cursorStyle, zIndex: editingPrintLayerId ? 0 : 2 }}
           width={size.w} height={size.h}
           onMouseDown={(e) => {
             // В режиме выбора узла/ветви для горноспасателей клик должен доходить
