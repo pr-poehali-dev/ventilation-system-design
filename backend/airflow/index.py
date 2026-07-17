@@ -578,7 +578,8 @@ def check_kirchhoff(edges, Q_map, diag, tol=0.5, dead_end_ids=None):
             })
 
 
-def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
+def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
+          initial_flows=None):
     """
     Метод Кросса (Андрияшев, «Расчёт вентиляционных сетей шахт», классический алгоритм).
 
@@ -986,6 +987,23 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
         log.append(f"⚠ Начальный |ΔQ|_max={max_init_bal:.3f} в узле {worst_node}")
     else:
         log.append(f"✓ Начальный баланс Кирхгофа: |ΔQ|_max={max_init_bal:.4f}")
+
+    # ══ ШАГ 5б: Тёплый старт (warm start) ═══════════════════════════════
+    # Если переданы initial_flows (штатное решение сети), берём их как
+    # стартовое приближение вместо оценки q0/BFS. При локальном возмущении
+    # (например, очаг пожара на одной ветви) решение меняется мало, поэтому
+    # Кросс сходится за единицы итераций вместо сотен. Раскладка выше уже
+    # соблюдает Кирхгофа-1 — она остаётся страховкой для ветвей без факта.
+    if initial_flows:
+        applied = 0
+        for gi, e in enumerate(edges):
+            if e["id"] in dead_end_ids:
+                continue
+            q_hint = initial_flows.get(e["id"])
+            if q_hint is not None and math.isfinite(q_hint):
+                Q[gi] = float(q_hint)
+                applied += 1
+        log.append(f"Тёплый старт: применено {applied} расходов из штатного решения")
 
     # ══ ШАГ 6: Итерации Кросса (Андрияшев-Кросс с демпфированием) ════════
     # ΔH контура = Σ [ R·Qi·|Qi| − fan_dir·H_вент(|Qi|)·sign_i − H_нат·sign_i ]
