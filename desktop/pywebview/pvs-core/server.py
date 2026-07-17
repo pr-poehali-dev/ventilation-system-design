@@ -19,6 +19,22 @@ def resource(path):
     return os.path.join(base, path)
 
 
+def get_core_version():
+    """Версия ядра (server.exe). Читается из server_version.txt рядом с exe —
+    этот же файл сборщик проставляет, а C# сравнивает при обновлении."""
+    try:
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        vfile = os.path.join(exe_dir, "server_version.txt")
+        if os.path.exists(vfile):
+            with open(vfile, "r", encoding="utf-8") as f:
+                v = f.read().strip()
+                if v:
+                    return v
+    except Exception:
+        pass
+    return "1.0.0"
+
+
 # ─── Динамическая загрузка backend-функций (airflow, rescue, hydraulics, svg-to-pdf) ──
 # Реальные функции лежат рядом в папке backend_functions/<name>/index.py и содержат
 # handler(event, context) -> {statusCode, body}. Загружаем handler один раз и кэшируем.
@@ -280,7 +296,7 @@ def api_save_file():
 
 @app.route("/api/status")
 def api_status():
-    return cors_response({"status": "ok", "version": "1.0.0", "mode": "desktop"})
+    return cors_response({"status": "ok", "version": get_core_version(), "mode": "desktop"})
 
 
 if __name__ == "__main__":
