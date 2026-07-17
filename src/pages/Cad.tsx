@@ -2407,88 +2407,50 @@ export default function CadPage() {
     // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
     // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
     const FIRE_ITERS = 3;
+    const FIRE_Q_TOL = 0.1;
 
-    // Батч-режим: сеть отправляется на сервер ОДИН РАЗ за итерацию, а все
-    // очаги считаются пачкой с тёплым стартом (штатные расходы как начальное
-    // приближение). Это заменяет десятки-сотни отдельных HTTP-запросов на 3
-    // (по числу итераций уточнения тепловой депрессии). Физика пожара
-    // (мощность/температура/депрессия) по-прежнему считается здесь на фронте —
-    // цифры в акте совпадают с вкладкой «Аварии» 1-в-1.
-    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    for (const target of loaded) {
+      let currentFlows = new Map<string, number>(originalFlows);
+      let firePower = 0, fireTemp = ambientTemp, thermalDep = 0;
 
-    // Текущий расход по каждой нагруженной ветви ПРИ ПОЖАРЕ (уточняется по итерациям)
-    const fireFlowByTarget = new Map<string, number>(
-      loaded.map(t => [t.id, originalFlows.get(t.id) ?? t.flow ?? 0]),
-    );
-    // Последние посчитанные параметры пожара по ветви (для итогового факта)
-    const lastFire = new Map<string, { firePower: number; fireTemp: number; thermalDep: number }>();
-
-    // Кэш начального приближения (штатное решение) — переиспользуем как тёплый старт
-    const warmFlows: Record<string, number> = {};
-    originalFlows.forEach((q, id) => { warmFlows[id] = q; });
-
-    for (let iter = 0; iter < FIRE_ITERS; iter++) {
-      // Считаем тепловую депрессию каждого очага по актуальному расходу при пожаре
-      const fireBatch = loaded.map(target => {
-        const airQ0 = Math.abs(fireFlowByTarget.get(target.id) ?? 0);
-        const firePower = calcBranchFirePower(target, airQ0);
-        const fireTemp  = calcFireTemp(firePower, airQ0, ambientTemp);
-        const fromN = nodeById.get(target.fromId);
-        const toN   = nodeById.get(target.toId);
+      for (let iter = 0; iter < FIRE_ITERS; iter++) {
+        const airQ0 = Math.abs(currentFlows.get(target.id) ?? target.flow ?? 0);
+        firePower = calcBranchFirePower(target, airQ0);
+        fireTemp  = calcFireTemp(firePower, airQ0, ambientTemp);
+        const fromN = nodes.find(n => n.id === target.fromId);
+        const toN   = nodes.find(n => n.id === target.toId);
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
         const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
-        const thermalDep = calcThermalDepression(fireTemp, ambientTemp, target.length, signedAngle);
-        lastFire.set(target.id, { firePower, fireTemp, thermalDep });
-        return { branchId: target.id, thermalDep };
-      });
+        thermalDep = calcThermalDepression(fireTemp, ambientTemp, target.length, signedAngle);
 
-      const reqBody = {
-        method: calcMode,
-        nodes: nodes.map(n => ({
-          id: n.id,
-          isAtm: n.atmosphereLink,
-          z: n.z ?? 0,
-          airTemp: n.atmosphereLink ? ambientTemp : (n.airTemp ?? ambientTemp),
-          userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
-        })),
-        surfaceTemp: ambientTemp,
-        useNaturalDraft,
-        geoGradient,
-        branches: buildBranchPayload(branches, ambientTemp),
-        options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
-        initialFlows: warmFlows,
-        fireBatch,
-      };
+        // Пожар ТОЛЬКО на целевой ветви, у остальных — актуальные расходы.
+        const branchesIter = branches.map(b => {
+          if (b.id !== target.id) return { ...b, flow: currentFlows.get(b.id) ?? b.flow };
+          return { ...b, flow: currentFlows.get(b.id) ?? b.flow, fireThermalDepression: thermalDep };
+        });
 
-      const resp = await postAirflow(reqBody);
-      if (!resp.ok) break;
-      const data = await resp.json();
-      const batchFacts = data?.facts as Record<string, { normalFlow: number; fireFlow: number }> | undefined;
-      if (!batchFacts) break;
+        const newFlows = await solveFireIteration(branchesIter, ambientTemp);
+        if (newFlows.size === 0) break;
 
-      // Обновляем расходы при пожаре для следующей итерации
-      for (const target of loaded) {
-        const f = batchFacts[target.id];
-        if (f && Number.isFinite(f.fireFlow)) fireFlowByTarget.set(target.id, f.fireFlow);
+        let maxDQ = 0;
+        newFlows.forEach((q, id) => { maxDQ = Math.max(maxDQ, Math.abs(q - (currentFlows.get(id) ?? 0))); });
+        currentFlows = newFlows;
+        if (maxDQ < FIRE_Q_TOL) break;
       }
-      // Прогресс: итерация из FIRE_ITERS
-      onProgress?.(iter + 1, FIRE_ITERS);
-      await new Promise(r => setTimeout(r, 0));
-    }
 
-    // Формируем итоговые факты по последнему расходу при пожаре
-    for (const target of loaded) {
       const orig = originalFlows.get(target.id) ?? 0;
-      const now  = fireFlowByTarget.get(target.id) ?? orig;
+      const now  = currentFlows.get(target.id) ?? orig;
       const reversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
-      const fire = lastFire.get(target.id);
       facts.set(target.id, {
         reversed,
         fireFlow: Math.abs(now),
-        firePower: fire?.firePower ?? 0,
-        fireTemp: fire?.fireTemp ?? ambientTemp,
-        thermalDep: Math.abs(fire?.thermalDep ?? 0),
+        firePower,
+        fireTemp,
+        thermalDep: Math.abs(thermalDep),
       });
+      onProgress?.(facts.size, loaded.length);
+      // Пауза, чтобы React успел перерисовать индикатор прогресса.
+      await new Promise(r => setTimeout(r, 0));
     }
     return facts;
   };
