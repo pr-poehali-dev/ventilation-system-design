@@ -29,6 +29,22 @@ if not exist "%SERVER_VERSION_FILE%" echo 1.0.0> "%SERVER_VERSION_FILE%"
 for /f "usebackq tokens=* delims=" %%v in (`powershell -NoProfile -Command "$p='%SERVER_VERSION_FILE%'; $v=(Get-Content -Raw $p).Trim(); if($v -notmatch '^\d+\.\d+\.\d+$'){$v='1.0.0'}; $a=$v.Split('.'); $a[2]=[int]$a[2]+1; $n=$a -join '.'; Set-Content -NoNewline -Path $p -Value $n; Write-Output $n"`) do set "SERVER_VERSION=%%v"
 echo     Core (server.exe) version bumped to: %SERVER_VERSION%
 
+REM ---------- Auto-commit the bumped SERVER_VERSION ----------
+REM Persist the new number into git right away, so the next build starts from it
+REM and never re-uses the same version (the cause of clients not updating).
+git -C "%ROOT%" rev-parse --is-inside-work-tree >nul 2>&1
+if not errorlevel 1 (
+  git -C "%ROOT%" add "%SERVER_VERSION_FILE%" >nul 2>&1
+  git -C "%ROOT%" commit -m "build: bump server core version to %SERVER_VERSION%" -- "%SERVER_VERSION_FILE%" >nul 2>&1
+  if not errorlevel 1 (
+    echo     SERVER_VERSION committed to git: %SERVER_VERSION%
+  ) else (
+    echo     SERVER_VERSION unchanged in git ^(nothing to commit^)
+  )
+) else (
+  echo     WARNING: not a git repo, SERVER_VERSION not committed - commit it manually!
+)
+
 REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
 echo Build started %DATE% %TIME% > "%BUILD_LOG%"
