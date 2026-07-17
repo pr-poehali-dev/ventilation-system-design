@@ -3958,8 +3958,11 @@ export default function TopoCanvas(props: Props) {
                 const brLen = Math.hypot(brDx, brDy);
                 const perpX = brLen > 0 ? -brDy / brLen : 0;
                 const perpY = brLen > 0 ?  brDx / brLen : 0;
-                const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
-                const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
+                // Фиксированный масштаб (как в Аэросети): отступ и смещение растут/
+                // уменьшаются вместе со схемой — подпись держится у значка.
+                const msGap = 16 * _branchObjSF;
+                const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF;
+                const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF;
                 const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                 return (
@@ -3973,8 +3976,9 @@ export default function TopoCanvas(props: Props) {
                         const startX = e.clientX, startY = e.clientY;
                         const origOx = sym.msIndOffsetX ?? 0;
                         const origOy = sym.msIndOffsetY ?? 0;
+                        const sfDrag = _branchObjSF || 1;
                         const onMove = (me: MouseEvent) => {
-                          onSymbolMsIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                          onSymbolMsIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                         };
                         const onUp = () => {
                           window.removeEventListener("mousemove", onMove);
@@ -4056,10 +4060,13 @@ export default function TopoCanvas(props: Props) {
                 const brLen = Math.hypot(brDx, brDy);
                 const perpX = brLen > 0 ? -brDy / brLen : 0;
                 const perpY = brLen > 0 ?  brDx / brLen : 0;
-                const baseOffX = perpX * (16 + boxW / 2);
-                const baseOffY = perpY * (16 + boxH / 2);
-                const bx = px + baseOffX + (sym.indOffsetX ?? 0);
-                const by = py + baseOffY + (sym.indOffsetY ?? 0);
+                // Фиксированный масштаб (как в Аэросети): отступ и смещение растут/
+                // уменьшаются вместе со схемой — подпись держится у значка.
+                const indGap = 16 * _branchObjSF;
+                const baseOffX = perpX * (indGap + boxW / 2);
+                const baseOffY = perpY * (indGap + boxH / 2);
+                const bx = px + baseOffX + (sym.indOffsetX ?? 0) * _branchObjSF;
+                const by = py + baseOffY + (sym.indOffsetY ?? 0) * _branchObjSF;
                 const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                 // Ближайшая точка рамки бейджа для выноски
@@ -4079,8 +4086,9 @@ export default function TopoCanvas(props: Props) {
                         const startX = e.clientX, startY = e.clientY;
                         const origOx = sym.indOffsetX ?? 0;
                         const origOy = sym.indOffsetY ?? 0;
+                        const sfDrag = _branchObjSF || 1;
                         const onMove = (me: MouseEvent) => {
-                          onSymbolIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                          onSymbolIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                         };
                         const onUp = () => {
                           window.removeEventListener("mousemove", onMove);
@@ -4831,8 +4839,13 @@ export default function TopoCanvas(props: Props) {
                   const brLenI = Math.hypot(brDxI, brDyI);
                   const perpXI = brLenI > 0 ? -brDyI / brLenI : 0;
                   const perpYI = brLenI > 0 ?  brDxI / brLenI : 0;
-                  const bx = px + perpXI * (16 + boxW / 2) + (sym.indOffsetX ?? 0);
-                  const by = py + perpYI * (16 + boxH / 2) + (sym.indOffsetY ?? 0);
+                  // Фиксированный масштаб (как в Аэросети): и базовый отступ, и
+                  // пользовательское смещение масштабируются вместе со схемой
+                  // (_branchObjSF), поэтому подпись «приклеена» к значку и при
+                  // отдалении уменьшается и приближается к нему, а не уплывает.
+                  const indGap = 16 * _branchObjSF;
+                  const bx = px + perpXI * (indGap + boxW / 2) + (sym.indOffsetX ?? 0) * _branchObjSF;
+                  const by = py + perpYI * (indGap + boxH / 2) + (sym.indOffsetY ?? 0) * _branchObjSF;
                   const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                   return (
@@ -4846,8 +4859,9 @@ export default function TopoCanvas(props: Props) {
                           const startX = e.clientX, startY = e.clientY;
                           const origOx = sym.indOffsetX ?? 0;
                           const origOy = sym.indOffsetY ?? 0;
+                          const sfDrag = _branchObjSF || 1;
                           const onMove = (me: MouseEvent) => {
-                            onSymbolIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                            onSymbolIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                           };
                           const onUp = () => {
                             window.removeEventListener("mousemove", onMove);
@@ -4907,8 +4921,11 @@ export default function TopoCanvas(props: Props) {
                   const brLen = Math.hypot(brDx, brDy);
                   const perpX = brLen > 0 ? -brDy / brLen : 0;
                   const perpY = brLen > 0 ?  brDx / brLen : 0;
-                  const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
-                  const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
+                  // Фиксированный масштаб (как в Аэросети): отступ и пользовательское
+                  // смещение масштабируются вместе со схемой.
+                  const msGap = 16 * _branchObjSF;
+                  const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF;
+                  const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF;
                   const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                   return (
@@ -4922,8 +4939,9 @@ export default function TopoCanvas(props: Props) {
                           const startX = e.clientX, startY = e.clientY;
                           const origOx = sym.msIndOffsetX ?? 0;
                           const origOy = sym.msIndOffsetY ?? 0;
+                          const sfDrag = _branchObjSF || 1;
                           const onMove = (me: MouseEvent) => {
-                            onSymbolMsIndOffset?.(sym.id, origOx + me.clientX - startX, origOy + me.clientY - startY);
+                            onSymbolMsIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                           };
                           const onUp = () => {
                             window.removeEventListener("mousemove", onMove);
