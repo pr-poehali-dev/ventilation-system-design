@@ -108,6 +108,19 @@ def handler(event: dict, context) -> dict:
     if not branches_in:
         return ok(empty_result("Нет ветвей"))
 
+    # ══ БАТЧ-РЕЖИМ: устойчивость при пожаре ═════════════════════════════
+    # Один запрос вместо десятков. Клиент присылает сеть ОДИН РАЗ и список
+    # очагов fireBatch=[{branchId, thermalDep}, ...] — по одному сценарию на
+    # ветвь с пожарной нагрузкой. Для каждого очага пересчитываем сеть с
+    # тёплым стартом (initialFlows = штатные расходы), это резко ускоряет
+    # сходимость. Возвращаем расход по целевой ветви ПРИ ПОЖАРЕ и штатный.
+    fire_batch = body.get("fireBatch")
+    if isinstance(fire_batch, list) and fire_batch:
+        return ok(_solve_fire_batch(
+            nodes_in, branches_in, options, normal_flows, surface_temp,
+            method, use_natural_draft, geo_gradient, fire_batch,
+        ))
+
     # Автоматический расчёт температуры узлов по геотермическому градиенту.
     # Применяется ТОЛЬКО для узлов у которых airTemp не задан вручную (userTemp=False).
     # Атмосферные узлы всегда получают surface_temp.
@@ -157,6 +170,76 @@ def handler(event: dict, context) -> dict:
         return err(500, f"Ошибка: {ex}\n{traceback.format_exc()}")
 
     return ok(result)
+
+
+def _patch_node_temps(nodes_in, surface_temp, use_natural_draft, geo_gradient):
+    """Патчит температуры узлов по геотермическому градиенту (та же логика,
+    что в handler). Вынесено, чтобы переиспользовать в батч-режиме."""
+    if use_natural_draft and geo_gradient > 0:
+        z_vals = [float(n.get("z", 0) or 0) for n in nodes_in]
+        z_surface = max(z_vals) if z_vals else 0.0
+        out = []
+        for n in nodes_in:
+            n2 = dict(n)
+            if n2.get("isAtm") or n2.get("atmosphereLink"):
+                n2["airTemp"] = surface_temp
+            elif not n2.get("userTemp"):
+                depth = max(0.0, z_surface - float(n2.get("z", 0) or 0))
+                n2["airTemp"] = surface_temp + geo_gradient * depth / 100.0
+            out.append(n2)
+        return out
+    if not use_natural_draft:
+        return [dict(n, airTemp=surface_temp) for n in nodes_in]
+    return nodes_in
+
+
+def _solve_fire_batch(nodes_in, branches_in, options, normal_flows, surface_temp,
+                      method, use_natural_draft, geo_gradient, fire_batch):
+    """Батч-расчёт устойчивости при пожаре.
+
+    Один запрос вместо десятков: сеть передаётся ОДИН РАЗ, а fire_batch —
+    список очагов [{branchId, thermalDep}]. Для каждого очага ставим тепловую
+    депрессию пожара ТОЛЬКО на его ветвь и пересчитываем сеть с тёплым стартом
+    (штатные расходы как начальное приближение) — Кросс сходится за единицы
+    итераций. Физика пожара (мощность/температура/депрессия) считается на
+    клиенте и приходит готовой в thermalDep — цифры совпадают с «Авариями».
+
+    Возвращает {facts: {branchId: {normalFlow, fireFlow}}}, где знак Q сохранён
+    для определения разворота потока. МКР батч-режим не поддерживает — падаем
+    в обычный Кросс (initial_flows игнорируется методом mkr, но сеть считается).
+    """
+    nodes_patched = _patch_node_temps(nodes_in, surface_temp, use_natural_draft, geo_gradient)
+
+    # Штатное решение сети (без пожара) — источник расходов и тёплого старта.
+    base_res = solve(nodes_patched, branches_in, options, normal_flows, surface_temp)
+    base_flows = {b["id"]: b.get("Q", 0.0) for b in base_res.get("branches", [])}
+
+    facts = {}
+    for item in fire_batch:
+        bid = item.get("branchId")
+        if bid is None:
+            continue
+        thermal_dep = float(item.get("thermalDep", 0) or 0)
+        normal_q = float(base_flows.get(bid, 0.0))
+
+        # Ставим тепловую депрессию пожара только на целевую ветвь.
+        branches_fire = []
+        for b in branches_in:
+            if b.get("id") == bid:
+                branches_fire.append(dict(b, fireThermalDepression=thermal_dep))
+            else:
+                branches_fire.append(b)
+
+        res = solve(nodes_patched, branches_fire, options, normal_flows,
+                    surface_temp, initial_flows=base_flows)
+        fire_q = 0.0
+        for rb in res.get("branches", []):
+            if rb["id"] == bid:
+                fire_q = float(rb.get("Q", 0.0))
+                break
+        facts[bid] = {"normalFlow": normal_q, "fireFlow": fire_q}
+
+    return {"facts": facts, "count": len(facts)}
 
 
 # ══════════════════════════════════════════════════════════════════════
