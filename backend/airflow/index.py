@@ -2120,19 +2120,28 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         nodes_txt = ", ".join(str(n) for n in unreachable[:8])
         if len(unreachable) > 8:
             nodes_txt += f" и ещё {len(unreachable) - 8}"
-        parts = [
-            f"Сеть не связана: {len(unreachable)} узел(ов) не соединены "
-            f"с выходом на поверхность (узлы: {nodes_txt})."
-        ]
+        # Первым называем «худший» узел — как в методе Кросса («узел 594»),
+        # чтобы пользователь сразу нашёл его на схеме.
+        worst_node = unreachable[0]
+        if len(unreachable) == 1:
+            parts = [f"Узел {worst_node} не связан с выходом на поверхность."]
+        else:
+            parts = [
+                f"Узел {worst_node} и ещё {len(unreachable) - 1} "
+                f"не связаны с выходом на поверхность (узлы: {nodes_txt})."
+            ]
         if iso_branch_ids:
             br_txt = ", ".join(str(i) for i in iso_branch_ids[:8])
             if len(iso_branch_ids) > 8:
                 br_txt += f" и ещё {len(iso_branch_ids) - 8}"
             parts.append(f"Изолированные ветви: {br_txt}.")
+        else:
+            parts.append("Висячий узел без ветвей — к нему не подходит ни одна выработка.")
         parts.append(
             "Что сделать: соедините изолированный участок с основной сетью "
-            "(добавьте выработку до ближайшего узла) либо удалите лишние "
-            "узлы/ветви, оставшиеся после импорта. Затем повторите расчёт."
+            "(добавьте выработку до ближайшего узла) либо удалите лишний "
+            f"узел {worst_node} и другие, оставшиеся после импорта. "
+            "Затем повторите расчёт."
         )
         diag.append({"level": "error", "category": "topology",
                      "message": " ".join(parts)})
