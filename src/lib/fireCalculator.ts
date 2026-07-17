@@ -27,16 +27,18 @@ export interface CombustibleProps {
   smokeYield: number;   // кг дыма / кг горючего
   heatValue: number;    // МДж/кг — удельная теплота горения
   spreadRate: number;   // м/мин — скорость распространения
+  burnRate: number;     // кг/(м²·с) — удельная массовая скорость выгорания (ψ)
+  defaultArea: number;  // м² — типовая площадь очага по умолчанию
 }
 
 export const COMBUSTIBLES: CombustibleProps[] = [
-  { id: "vehicle", name: "Техника",           coYield: 0.07, co2Yield: 2.5,  smokeYield: 0.09,  heatValue: 38, spreadRate: 1.5 },
-  { id: "cable",   name: "Кабель",            coYield: 0.10, co2Yield: 1.8,  smokeYield: 0.12,  heatValue: 18, spreadRate: 0.3 },
-  { id: "conveyor",name: "Конвейерная лента", coYield: 0.08, co2Yield: 2.0,  smokeYield: 0.10,  heatValue: 20, spreadRate: 0.8 },
-  { id: "timber",  name: "Деревянная крепь",  coYield: 0.05, co2Yield: 1.5,  smokeYield: 0.015, heatValue: 16, spreadRate: 1.0 },
-  { id: "oil",     name: "Масло/горючее",     coYield: 0.06, co2Yield: 3.1,  smokeYield: 0.08,  heatValue: 42, spreadRate: 2.0 },
-  { id: "custom",  name: "Произвольный",      coYield: 0.05, co2Yield: 2.0,  smokeYield: 0.05,  heatValue: 25, spreadRate: 1.0 },
-  { id: "coal",    name: "Уголь",             coYield: 0.04, co2Yield: 2.2,  smokeYield: 0.03,  heatValue: 25, spreadRate: 0.5 },
+  { id: "vehicle", name: "Техника",           coYield: 0.07, co2Yield: 2.5,  smokeYield: 0.09,  heatValue: 38, spreadRate: 1.5, burnRate: 0.030, defaultArea: 10 },
+  { id: "cable",   name: "Кабель",            coYield: 0.10, co2Yield: 1.8,  smokeYield: 0.12,  heatValue: 18, spreadRate: 0.3, burnRate: 0.007, defaultArea: 1 },
+  { id: "conveyor",name: "Конвейерная лента", coYield: 0.08, co2Yield: 2.0,  smokeYield: 0.10,  heatValue: 20, spreadRate: 0.8, burnRate: 0.013, defaultArea: 2 },
+  { id: "timber",  name: "Деревянная крепь",  coYield: 0.05, co2Yield: 1.5,  smokeYield: 0.015, heatValue: 16, spreadRate: 1.0, burnRate: 0.027, defaultArea: 5 },
+  { id: "oil",     name: "Масло/горючее",     coYield: 0.06, co2Yield: 3.1,  smokeYield: 0.08,  heatValue: 42, spreadRate: 2.0, burnRate: 0.040, defaultArea: 3 },
+  { id: "custom",  name: "Произвольный",      coYield: 0.05, co2Yield: 2.0,  smokeYield: 0.05,  heatValue: 25, spreadRate: 1.0, burnRate: 0.015, defaultArea: 3 },
+  { id: "coal",    name: "Уголь",             coYield: 0.04, co2Yield: 2.2,  smokeYield: 0.03,  heatValue: 25, spreadRate: 0.5, burnRate: 0.013, defaultArea: 5 },
 ];
 
 // ─── Параметры составляющих материалов техники ────────────────────────────────
@@ -164,6 +166,19 @@ export interface FireMaterialProps {
   // Конвейерная лента
   fireBeltBurnRate?: string; fireBeltDensity?: string; fireBeltWidth?: string;
   fireBeltLength?: string; fireBeltThickness?: string; fireBeltFlameSpeed?: string;
+  // Уголь / масло / произвольный — модель «площадь очага»
+  fireSourceArea?: number;   // м² — площадь горения очага
+  fireSourceBurnRate?: number; // кг/(м²·с) — скорость выгорания (переопределение)
+}
+
+// Мощность пожара по площади очага: N = ψ × S × Q_н [МВт]
+// (ψ в кг/(м²·с), S в м², Q_н в МДж/кг → кг/с × МДж/кг = МВт).
+export function calcAreaFire(kind: string, area: number, burnRateOverride?: number): number | null {
+  const c = getCombustible(kind);
+  const psi = (burnRateOverride && burnRateOverride > 0) ? burnRateOverride : c.burnRate;
+  const S = area > 0 ? area : c.defaultArea;
+  if (!(psi > 0) || !(S > 0) || !(c.heatValue > 0)) return null;
+  return psi * S * c.heatValue;
 }
 
 export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
@@ -219,7 +234,11 @@ export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
     return r && r.powerMax > 0 ? r.powerMax : null;
   }
 
-  // coal / oil / custom — детальной модели нет, оставляем ручной ввод
+  // coal / oil / custom — модель «площадь очага»: N = ψ × S × Q_н
+  if (kind === "coal" || kind === "oil" || kind === "custom") {
+    return calcAreaFire(kind, b.fireSourceArea ?? 0, b.fireSourceBurnRate);
+  }
+
   return null;
 }
 

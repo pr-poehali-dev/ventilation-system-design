@@ -322,6 +322,7 @@ export default function CadPage() {
       fireBeltBurnRate: b.fireBeltBurnRate, fireBeltDensity: b.fireBeltDensity,
       fireBeltWidth: b.fireBeltWidth, fireBeltLength: b.fireBeltLength,
       fireBeltThickness: b.fireBeltThickness, fireBeltFlameSpeed: b.fireBeltFlameSpeed,
+      fireSourceArea: b.fireSourceArea, fireSourceBurnRate: b.fireSourceBurnRate,
     });
     if (autoPower == null || autoPower <= 0) return;
     const airQ = Math.abs(b.flow ?? 0);
@@ -350,6 +351,7 @@ export default function CadPage() {
     selectedBranch?.fireBeltBurnRate, selectedBranch?.fireBeltDensity,
     selectedBranch?.fireBeltWidth, selectedBranch?.fireBeltLength,
     selectedBranch?.fireBeltThickness,
+    selectedBranch?.fireSourceArea, selectedBranch?.fireSourceBurnRate,
     selectedBranch?.fireMode,
     selectedBranch?.flow,
     selectedBranch?.length,
@@ -5896,6 +5898,34 @@ export default function CadPage() {
                       {COMBUSTIBLES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
+
+                  {/* ── Уголь / масло / произвольный: площадь очага и скорость выгорания ── */}
+                  {["coal", "oil", "custom"].includes(b.fireCombustible ?? "coal") && (() => {
+                    const comb = COMBUSTIBLES.find(c => c.id === (b.fireCombustible ?? "coal"));
+                    const psiDefault = comb?.burnRate ?? 0.013;
+                    const psi = (b.fireSourceBurnRate ?? 0) > 0 ? b.fireSourceBurnRate! : psiDefault;
+                    const area = (b.fireSourceArea ?? 0) > 0 ? b.fireSourceArea! : (comb?.defaultArea ?? 5);
+                    return (
+                      <>
+                        <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Площадь очага, м²:</span>
+                          <input type="number" step="0.5" min="0.1" max="1000"
+                            value={area}
+                            onChange={e => updateBranch(b.id, { fireSourceArea: parseFloat(e.target.value) || 0 })}
+                            className="flex-1 text-[11px] text-right px-1"
+                            style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                        </div>
+                        <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Скорость выгор. ψ, кг/(м²·с):</span>
+                          <input type="number" step="0.001" min="0" max="1"
+                            value={psi}
+                            onChange={e => updateBranch(b.id, { fireSourceBurnRate: parseFloat(e.target.value) || 0 })}
+                            className="flex-1 text-[11px] text-right px-1"
+                            style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* ── Техника: ввод масс материалов ── */}
                   {(b.fireCombustible ?? "coal") === "vehicle" && (() => {

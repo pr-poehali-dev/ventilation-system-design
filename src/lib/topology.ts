@@ -213,6 +213,9 @@ export interface TopoBranch {
   fireWoodThick: string;           // толщина доски крепи, м
   fireWoodFlameSpeed: string;      // v_пл, м/с — скорость продвижения пламени
   fireWoodCalcTime: string;        // t, мин — время расчёта (нарастающий пожар)
+  // Параметры для угля/масла/произвольного — модель «площадь очага»
+  fireSourceArea: number;          // м² — площадь горения очага
+  fireSourceBurnRate: number;      // кг/(м²·с) — скорость выгорания ψ (0 = из справочника)
   // Вычисленные результаты расчёта пожара
   fireComputedTemp: number;        // °C — вычисленная температура продуктов горения
   fireComputedNatDep: number;      // Па — тепловая депрессия пожара
@@ -596,6 +599,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireWoodLength: "50",
     fireWoodWidth: "0.15",
     fireWoodThick: "0.15",
+    fireSourceArea: 5,
+    fireSourceBurnRate: 0,
     fireComputedTemp: 0,
     fireComputedNatDep: 0,
     fireComputedSmokeDens: 0,
