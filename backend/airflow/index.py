@@ -1811,10 +1811,18 @@ def _tree_path(src, dst, edges, parent):
     ancs_dst = ancestors(dst)
     set_src  = {n: i for i, n in enumerate(ancs_src)}
 
-    lca = ancs_dst[0]; idx_dst = 0
+    lca = None; idx_dst = 0
     for i, n in enumerate(ancs_dst):
         if n in set_src:
             lca = n; idx_dst = i; break
+    if lca is None:
+        # Нет общего предка → узлы в разных компонентах связности.
+        # Должно быть отсечено проверкой связности в solve_mkr; здесь —
+        # страховка, чтобы не ронять расчёт непонятным KeyError.
+        raise ValueError(
+            f"Узлы {src} и {dst} не связаны общим деревом "
+            f"(сеть распадается на несвязные части)."
+        )
     idx_src = set_src[lca]
 
     result = []
@@ -2096,6 +2104,40 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                      "message": "Нет замкнутых контуров — циркуляция невозможна."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
+    # ── Проверка связности сети ──────────────────────────────────────────
+    # BFS-дерево строится от выхода на поверхность (GND). Узлы, не попавшие
+    # в parent_map, не связаны с основной сетью (изолированный кусок после
+    # импорта). Без этой проверки _tree_path падает с KeyError на узле, и в
+    # лог попадает непонятный traceback вместо совета, что исправить.
+    reachable = set(bfs_order)
+    unreachable = [n for n in node_list if n != GND and n not in reachable]
+    if unreachable:
+        # Ветви, целиком лежащие в изолированной части (обе стороны недоступны)
+        iso_branch_ids = [
+            e["id"] for e in active_edges_list
+            if e["a"] in unreachable and e["b"] in unreachable
+        ]
+        nodes_txt = ", ".join(str(n) for n in unreachable[:8])
+        if len(unreachable) > 8:
+            nodes_txt += f" и ещё {len(unreachable) - 8}"
+        parts = [
+            f"Сеть не связана: {len(unreachable)} узел(ов) не соединены "
+            f"с выходом на поверхность (узлы: {nodes_txt})."
+        ]
+        if iso_branch_ids:
+            br_txt = ", ".join(str(i) for i in iso_branch_ids[:8])
+            if len(iso_branch_ids) > 8:
+                br_txt += f" и ещё {len(iso_branch_ids) - 8}"
+            parts.append(f"Изолированные ветви: {br_txt}.")
+        parts.append(
+            "Что сделать: соедините изолированный участок с основной сетью "
+            "(добавьте выработку до ближайшего узла) либо удалите лишние "
+            "узлы/ветви, оставшиеся после импорта. Затем повторите расчёт."
+        )
+        diag.append({"level": "error", "category": "topology",
+                     "message": " ".join(parts)})
+        return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+
     # Активные индексы: active_edges_list → edges (по id)
     id_to_global = {e["id"]: i for i, e in enumerate(edges)}
     # Перестраиваем tree_set и chords в глобальные индексы
@@ -2106,7 +2148,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     _contour_edges_total = 0
     for ci in chords:
         ce = active_edges_list[ci]
-        path = _tree_path(ce["b"], ce["a"], active_edges_list, parent_map)
+        try:
+            path = _tree_path(ce["b"], ce["a"], active_edges_list, parent_map)
+        except ValueError as ex:
+            diag.append({"level": "error", "category": "topology",
+                         "message": (
+                             f"Не удалось построить контур для ветви {ce['id']}: {ex} "
+                             "Что сделать: проверьте связность сети — соедините "
+                             "изолированный участок с основной сетью или удалите "
+                             "лишние узлы/ветви, затем повторите расчёт."
+                         )})
+            return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
         contours_local.append([(ci, +1)] + path)
         _contour_edges_total += len(path) + 1
     _mark("Построение контуров")
