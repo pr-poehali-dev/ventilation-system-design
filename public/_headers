@@ -1,3 +1,23 @@
+# Хешированные ассеты (JS/CSS/картинки со стабильным хешем в имени) —
+# кешируем навсегда, они неизменяемы (при пересборке меняется имя файла).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# index.html — НИКОГДА не кешируем: браузер всегда берёт свежий HTML,
+# который ссылается на актуальные (свежие) JS-бандлы. Это чинит проблему,
+# когда после обновления у пользователя грузился старый код из кеша.
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Служебные файлы, которые не должны застревать в кеше.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+/version.json
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Общие заголовки безопасности для всех страниц.
 /*
   Content-Security-Policy: frame-ancestors https://пвсистема.рф https://xn--e1afmapc.xn--p1ai
   X-Frame-Options: ALLOW-FROM https://пвсистема.рф

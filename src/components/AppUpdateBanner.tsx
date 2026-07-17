@@ -27,8 +27,8 @@ export default function AppUpdateBanner() {
 
   useEffect(() => {
     let cancelled = false;
-    // Небольшая задержка, чтобы не мешать первичной загрузке интерфейса.
-    const t = window.setTimeout(async () => {
+
+    const check = async () => {
       try {
         const d = await fetchRemoteVersion();
         if (cancelled) return;
@@ -42,10 +42,21 @@ export default function AppUpdateBanner() {
       } catch {
         // молча игнорируем — сеть недоступна или сервер молчит
       }
-    }, 4000);
+    };
+
+    // 1. При старте — с небольшой задержкой, чтобы не мешать загрузке интерфейса.
+    const t = window.setTimeout(check, 4000);
+    // 2. Периодически — чтобы длительно открытая вкладка узнала о новой версии.
+    const iv = window.setInterval(check, 30 * 60 * 1000);
+    // 3. При возврате на вкладку — самый частый сценарий, когда вышло обновление.
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
       window.clearTimeout(t);
+      window.clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
