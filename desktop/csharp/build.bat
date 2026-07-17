@@ -18,6 +18,17 @@ set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
 
+REM ---------- Auto-bump server core version ----------
+REM server.exe (interface + core + backend) updates on the fly by server_version.
+REM Each build must be NEWER than the previous one, otherwise clients think they
+REM are already up to date and never download the fresh server.exe.
+REM We read desktop\SERVER_VERSION (X.Y.Z), increment the last number, save it
+REM back, and later write it next to server.exe as server_version.txt.
+set "SERVER_VERSION_FILE=%ROOT%\desktop\SERVER_VERSION"
+if not exist "%SERVER_VERSION_FILE%" echo 1.0.0> "%SERVER_VERSION_FILE%"
+for /f "usebackq tokens=* delims=" %%v in (`powershell -NoProfile -Command "$p='%SERVER_VERSION_FILE%'; $v=(Get-Content -Raw $p).Trim(); if($v -notmatch '^\d+\.\d+\.\d+$'){$v='1.0.0'}; $a=$v.Split('.'); $a[2]=[int]$a[2]+1; $n=$a -join '.'; Set-Content -NoNewline -Path $p -Value $n; Write-Output $n"`) do set "SERVER_VERSION=%%v"
+echo     Core (server.exe) version bumped to: %SERVER_VERSION%
+
 REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
 echo Build started %DATE% %TIME% > "%BUILD_LOG%"
@@ -113,7 +124,10 @@ REM Make sure the target is not locked by a running process before copying
 taskkill /F /IM server.exe >nul 2>nul
 timeout /t 1 /nobreak >nul
 copy /Y "%CS_DIR%\dist\server.exe" "%CS_DIR%\dist\server\server.exe" || goto :fail
-echo     OK (Python core compiled to bytecode)
+REM Stamp the core version next to server.exe. C# reads this file at startup and
+REM compares it with server_version from the server to decide whether to update.
+powershell -NoProfile -Command "Set-Content -NoNewline -Path '%CS_DIR%\dist\server\server_version.txt' -Value '%SERVER_VERSION%'" || goto :fail
+echo     OK (Python core compiled to bytecode, version %SERVER_VERSION%)
 echo.
 
 REM ---------- Step 3: icon ----------
@@ -193,8 +207,14 @@ echo ============================================================
 echo   Build finished successfully.
 echo   User folder: %CS_DIR%\dist
 echo     PVS.exe
-echo     server\server.exe
+echo     server\server.exe   (core version %SERVER_VERSION%)
 echo   Run: PVS.exe
+echo ------------------------------------------------------------
+echo   TO DELIVER THIS UPDATE TO USERS:
+echo     1) Upload  dist\server\server.exe  to poehali.dev storage
+echo     2) In Admin panel -^> Update -^> publish server.exe
+echo        and set server_version = %SERVER_VERSION%
+echo   (Without this step clients keep the old core.)
 echo ============================================================
 echo.
 pause
