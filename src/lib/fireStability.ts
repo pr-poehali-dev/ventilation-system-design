@@ -199,31 +199,58 @@ export function calcFireStability(
     // Факт пожара по этой ветви из реального итеративного расчёта сети (если есть).
     const fact = opts.reversalFacts?.get(b.id);
 
-    // Расход/мощность/температура/депрессия — ПРИ ПОЖАРЕ (по факту), иначе
-    // предварительная оценка на дожаровом расходе. С фактом цифры совпадают
-    // со вкладкой «Аварии» (расход при пожаре меньше → температура выше).
     const dojarFlow = Math.abs(flow);
-    const airFlow   = fact ? fact.fireFlow : dojarFlow;
-    const firePower = fact ? fact.firePower : calcBranchFirePower(b, dojarFlow);
-    const fireTemp  = fact ? fact.fireTemp  : calcFireTemp(firePower, dojarFlow, ambientTemp);
+    const branchDep = Math.abs(b.dP ?? 0);
 
-    // Тепловая депрессия пожара. С фактом — из итеративного расчёта; без факта —
-    // локальная оценка по знаковому углу в направлении потока.
-    const thermalDep = fact
-      ? fact.thermalDep
-      : Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
-    const branchDep  = Math.abs(b.dP ?? 0);
+    // ── Расход/мощность/температура/депрессия ПРИ ПОЖАРЕ ────────────────
+    // Приоритет — ФАКТ из полного сетевого пересчёта (reversalFacts), если он
+    // передан. Иначе — ЛОКАЛЬНЫЙ расчёт по методике Аэросеть/Вентиляция: тепловая
+    // депрессия пожара h_t сравнивается с располагаемой депрессией ветви h_в,
+    // а расход при пожаре уточняется по балансу напоров на самой ветви за
+    // несколько локальных шагов (без пересчёта всей сети — мгновенно).
+    let airFlow: number;
+    let firePower: number;
+    let fireTemp: number;
+    let thermalDep: number;
+    let localReversed = false;
+
+    if (fact) {
+      airFlow    = fact.fireFlow;
+      firePower  = fact.firePower;
+      fireTemp   = fact.fireTemp;
+      thermalDep = fact.thermalDep;
+    } else {
+      // Локальное уточнение расхода при пожаре (2-3 шага).
+      // Модель: пожар меняет доступный напор ветви на ±h_t (знак зависит от
+      // направления струи), а расход по квадратичному закону Q ~ √(H/R):
+      //   нисходящая: тяга пожара против потока → Q падает
+      //   восходящая: тяга пожара по потоку     → Q растёт
+      // h_в берём из штатного расчёта; если он ~0 (нет данных) — не уточняем.
+      const descend = signedAngleFlow < 0;
+      let q = dojarFlow;
+      firePower = 0; fireTemp = ambientTemp; thermalDep = 0;
+      const FIRE_LOCAL_ITERS = 3;
+      for (let i = 0; i < FIRE_LOCAL_ITERS; i++) {
+        firePower  = calcBranchFirePower(b, q);
+        fireTemp   = calcFireTemp(firePower, q, ambientTemp);
+        thermalDep = Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
+        if (branchDep > 1e-6) {
+          const ratio = descend
+            ? Math.max(0, branchDep - thermalDep) / branchDep   // тяга против → напор падает
+            : (branchDep + thermalDep) / branchDep;             // тяга по потоку → напор растёт
+          q = dojarFlow * Math.sqrt(ratio);
+        }
+      }
+      airFlow = q;
+      // Нисходящая струя опрокидывается, когда тяга пожара пересиливает
+      // располагаемую депрессию ветви (h_t > h_в) — критерий Аэросети.
+      localReversed = descend && branchDep > 1e-6 && thermalDep > branchDep;
+    }
 
     // ── Определение устойчивости ────────────────────────────────────────
-    // Приоритет — ФАКТ опрокидывания из реального итеративного расчёта сети
-    // (reversalFacts). Если факт передан — используем его: ветвь устойчива,
-    // если поток НЕ развернулся, даже при большой тепловой депрессии
-    // (соседние ветви компенсируют). Это совпадает с аварийным режимом.
-    //
-    // Если факта нет (расчёт не запускался) — локальная оценка риска
-    // (идентична calcFireMode): нисходящая ветвь И |h_t| > 0.5·|dP|.
-    const willReverse = (signedAngleFlow < -1) && (thermalDep > branchDep * 0.5);
-    const stable = fact ? !fact.reversed : !willReverse;
+    // С фактом — по реальному развороту потока (совпадает с «Авариями»).
+    // Без факта — локальный критерий: нисходящая ветвь И h_t > h_в.
+    const stable = fact ? !fact.reversed : !localReversed;
 
     const row: StabilityRow = {
       branchId: b.id,
