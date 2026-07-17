@@ -1087,6 +1087,17 @@ export default function TopoCanvas(props: Props) {
     ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, _rawBranchSF))
     : Math.max(0.25, _rawBranchSF);
 
+  // Коэффициент масштаба ИНДИКАТОРОВ перемычек/замерных станций при зуме.
+  // В фиксированном режиме толщина ветви (_branchObjSF) не уменьшается ниже
+  // scaleLimits.branchMin, из-за чего индикаторы «упирались» в минимум и
+  // переставали уменьшаться при отдалении, наезжая на схему.
+  // Индикаторы должны сжиматься как ВЕТВИ — т.е. следовать за view.scale.
+  // Поэтому ниже опорного масштаба (_xySF * 0.4, при котором objSF=1)
+  // дополнительно домножаем на view.scale/опорный, чтобы уменьшались вместе
+  // с геометрией схемы. Выше опорного — коэффициент 1 (не раздуваем).
+  const _indZoomRef = _xySF * 0.4;
+  const _indZoomSF = view.scale < _indZoomRef ? view.scale / _indZoomRef : 1;
+
   // Радиус попадания в узел — пропорционален реальному размеру, минимум 8px
   const hitNodeR = (sx: number, sy: number, pn: typeof projNodes, extraR = 0) => {
     const baseW = branchWidth ?? 2.5;
@@ -3948,21 +3959,23 @@ export default function TopoCanvas(props: Props) {
                 // ВЕТВЕЙ (по толщине ветви branchPxLabel), а не по размеру УО —
                 // чтобы подписи станции и ветви совпадали по размеру.
                 const msBwLbl = (thinLines ? 1 : (brMs?.lineWidth && brMs.lineWidth > 0 ? brMs.lineWidth : branchWidth)) * _branchObjSF;
-                const msTextSc = Math.max(0.3, msBwLbl * 0.28);
+                // Индикатор уменьшается вместе со схемой (как ветви): домножаем
+                // масштаб текста на _indZoomSF при отдалении.
+                const msTextSc = Math.max(0.3, msBwLbl * 0.28) * _indZoomSF;
                 const baseFontPx = 8.5 * msTextSc * ((sym.msIndFontSize ?? 9) / 9);
-                const fSize = Math.max(6, Math.round(baseFontPx));
-                const lineH = fSize + 3;
-                const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
-                const boxH  = msLines.length * lineH + 6;
+                const fSize = Math.max(3, baseFontPx);
+                const lineH = fSize + 3 * _indZoomSF;
+                const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+                const boxH  = msLines.length * lineH + 6 * _indZoomSF;
                 const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brLen = Math.hypot(brDx, brDy);
                 const perpX = brLen > 0 ? -brDy / brLen : 0;
                 const perpY = brLen > 0 ?  brDx / brLen : 0;
-                // Фиксированный масштаб (как в Аэросети): отступ и смещение растут/
-                // уменьшаются вместе со схемой — подпись держится у значка.
-                const msGap = 16 * _branchObjSF;
-                const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF;
-                const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF;
+                // Отступ и смещение уменьшаются вместе со схемой — подпись
+                // держится у значка и не наезжает при отдалении.
+                const msGap = 16 * _branchObjSF * _indZoomSF;
+                const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF * _indZoomSF;
+                const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF * _indZoomSF;
                 const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                 return (
@@ -3976,7 +3989,7 @@ export default function TopoCanvas(props: Props) {
                         const startX = e.clientX, startY = e.clientY;
                         const origOx = sym.msIndOffsetX ?? 0;
                         const origOy = sym.msIndOffsetY ?? 0;
-                        const sfDrag = _branchObjSF || 1;
+                        const sfDrag = (_branchObjSF * _indZoomSF) || 1;
                         const onMove = (me: MouseEvent) => {
                           onSymbolMsIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                         };
@@ -4048,25 +4061,27 @@ export default function TopoCanvas(props: Props) {
                 // (по толщине ветви branchPxLabel), а не по размеру УО — чтобы
                 // подписи перемычки и ветви совпадали по размеру.
                 const bkBwLbl = (thinLines ? 1 : (br.lineWidth && br.lineWidth > 0 ? br.lineWidth : branchWidth)) * _branchObjSF;
-                const bkTextSc = Math.max(0.3, bkBwLbl * 0.28);
+                // Индикатор уменьшается вместе со схемой (как ветви): домножаем
+                // масштаб текста на _indZoomSF при отдалении.
+                const bkTextSc = Math.max(0.3, bkBwLbl * 0.28) * _indZoomSF;
                 const baseFontPx = 8.5 * bkTextSc * ((sym.indFontSize ?? 9) / 9);
-                const fSize = Math.max(6, Math.round(baseFontPx));
-                const lineH = fSize + 3;
-                const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
-                const boxH = lines.length * lineH + 6;
+                const fSize = Math.max(3, baseFontPx);
+                const lineH = fSize + 3 * _indZoomSF;
+                const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+                const boxH = lines.length * lineH + 6 * _indZoomSF;
 
                 // Базовая позиция — поперёк ветви, плюс пользовательское смещение
                 const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brLen = Math.hypot(brDx, brDy);
                 const perpX = brLen > 0 ? -brDy / brLen : 0;
                 const perpY = brLen > 0 ?  brDx / brLen : 0;
-                // Фиксированный масштаб (как в Аэросети): отступ и смещение растут/
-                // уменьшаются вместе со схемой — подпись держится у значка.
-                const indGap = 16 * _branchObjSF;
+                // Отступ и смещение уменьшаются вместе со схемой — подпись
+                // держится у значка и не наезжает при отдалении.
+                const indGap = 16 * _branchObjSF * _indZoomSF;
                 const baseOffX = perpX * (indGap + boxW / 2);
                 const baseOffY = perpY * (indGap + boxH / 2);
-                const bx = px + baseOffX + (sym.indOffsetX ?? 0) * _branchObjSF;
-                const by = py + baseOffY + (sym.indOffsetY ?? 0) * _branchObjSF;
+                const bx = px + baseOffX + (sym.indOffsetX ?? 0) * _branchObjSF * _indZoomSF;
+                const by = py + baseOffY + (sym.indOffsetY ?? 0) * _branchObjSF * _indZoomSF;
                 const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                 // Ближайшая точка рамки бейджа для выноски
@@ -4086,7 +4101,7 @@ export default function TopoCanvas(props: Props) {
                         const startX = e.clientX, startY = e.clientY;
                         const origOx = sym.indOffsetX ?? 0;
                         const origOy = sym.indOffsetY ?? 0;
-                        const sfDrag = _branchObjSF || 1;
+                        const sfDrag = (_branchObjSF * _indZoomSF) || 1;
                         const onMove = (me: MouseEvent) => {
                           onSymbolIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                         };
@@ -4833,24 +4848,26 @@ export default function TopoCanvas(props: Props) {
                   // этому подписи перемычки и ветви на одной выработке совпадают
                   // по размеру и одинаково масштабируются при зуме/масштабе XY.
                   const bkBwLbl = (thinLines ? 1 : (br.lineWidth && br.lineWidth > 0 ? br.lineWidth : branchWidth)) * _branchObjSF;
-                  const bkTextSc = Math.max(0.3, bkBwLbl * 0.28);
+                  // Индикатор уменьшается вместе со схемой (как ветви): домножаем
+                  // масштаб текста на _indZoomSF при отдалении.
+                  const bkTextSc = Math.max(0.3, bkBwLbl * 0.28) * _indZoomSF;
                   const baseFontPx = 8.5 * bkTextSc * ((sym.indFontSize ?? 9) / 9);
-                  const fSize = Math.max(6, Math.round(baseFontPx));
-                  const lineH = fSize + 3;
-                  const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
-                  const boxH = lines.length * lineH + 6;
+                  const fSize = Math.max(3, baseFontPx);
+                  const lineH = fSize + 3 * _indZoomSF;
+                  const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+                  const boxH = lines.length * lineH + 6 * _indZoomSF;
 
                   const brDxI = tsx2 - fsx, brDyI = tsy2 - fsy;
                   const brLenI = Math.hypot(brDxI, brDyI);
                   const perpXI = brLenI > 0 ? -brDyI / brLenI : 0;
                   const perpYI = brLenI > 0 ?  brDxI / brLenI : 0;
-                  // Фиксированный масштаб (как в Аэросети): и базовый отступ, и
-                  // пользовательское смещение масштабируются вместе со схемой
-                  // (_branchObjSF), поэтому подпись «приклеена» к значку и при
-                  // отдалении уменьшается и приближается к нему, а не уплывает.
-                  const indGap = 16 * _branchObjSF;
-                  const bx = px + perpXI * (indGap + boxW / 2) + (sym.indOffsetX ?? 0) * _branchObjSF;
-                  const by = py + perpYI * (indGap + boxH / 2) + (sym.indOffsetY ?? 0) * _branchObjSF;
+                  // И базовый отступ, и пользовательское смещение уменьшаются
+                  // вместе со схемой (_branchObjSF * _indZoomSF), поэтому подпись
+                  // «приклеена» к значку и при отдалении уменьшается и приближается
+                  // к нему, а не уплывает.
+                  const indGap = 16 * _branchObjSF * _indZoomSF;
+                  const bx = px + perpXI * (indGap + boxW / 2) + (sym.indOffsetX ?? 0) * _branchObjSF * _indZoomSF;
+                  const by = py + perpYI * (indGap + boxH / 2) + (sym.indOffsetY ?? 0) * _branchObjSF * _indZoomSF;
                   const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                   return (
@@ -4864,7 +4881,7 @@ export default function TopoCanvas(props: Props) {
                           const startX = e.clientX, startY = e.clientY;
                           const origOx = sym.indOffsetX ?? 0;
                           const origOy = sym.indOffsetY ?? 0;
-                          const sfDrag = _branchObjSF || 1;
+                          const sfDrag = (_branchObjSF * _indZoomSF) || 1;
                           const onMove = (me: MouseEvent) => {
                             onSymbolIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                           };
@@ -4916,21 +4933,23 @@ export default function TopoCanvas(props: Props) {
                   // ВЕТВЕЙ (canvasRenderer): размер шрифта привязан к толщине
                   // ветви на экране (branchPxLabel), а не к размеру самого УО.
                   const msBwLbl = (thinLines ? 1 : (brMs?.lineWidth && brMs.lineWidth > 0 ? brMs.lineWidth : branchWidth)) * _branchObjSF;
-                  const msTextSc = Math.max(0.3, msBwLbl * 0.28);
+                  // Индикатор уменьшается вместе со схемой (как ветви): домножаем
+                  // масштаб текста на _indZoomSF при отдалении.
+                  const msTextSc = Math.max(0.3, msBwLbl * 0.28) * _indZoomSF;
                   const baseFontPx = 8.5 * msTextSc * ((sym.msIndFontSize ?? 9) / 9);
-                  const fSize = Math.max(6, Math.round(baseFontPx));
-                  const lineH = fSize + 3;
-                  const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
-                  const boxH  = msLines.length * lineH + 6;
+                  const fSize = Math.max(3, baseFontPx);
+                  const lineH = fSize + 3 * _indZoomSF;
+                  const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+                  const boxH  = msLines.length * lineH + 6 * _indZoomSF;
                   const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brLen = Math.hypot(brDx, brDy);
                   const perpX = brLen > 0 ? -brDy / brLen : 0;
                   const perpY = brLen > 0 ?  brDx / brLen : 0;
-                  // Фиксированный масштаб (как в Аэросети): отступ и пользовательское
-                  // смещение масштабируются вместе со схемой.
-                  const msGap = 16 * _branchObjSF;
-                  const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF;
-                  const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF;
+                  // Отступ и смещение уменьшаются вместе со схемой — подпись
+                  // держится у значка и не наезжает при отдалении.
+                  const msGap = 16 * _branchObjSF * _indZoomSF;
+                  const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF * _indZoomSF;
+                  const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF * _indZoomSF;
                   const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
 
                   return (
@@ -4944,7 +4963,7 @@ export default function TopoCanvas(props: Props) {
                           const startX = e.clientX, startY = e.clientY;
                           const origOx = sym.msIndOffsetX ?? 0;
                           const origOy = sym.msIndOffsetY ?? 0;
-                          const sfDrag = _branchObjSF || 1;
+                          const sfDrag = (_branchObjSF * _indZoomSF) || 1;
                           const onMove = (me: MouseEvent) => {
                             onSymbolMsIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
                           };
