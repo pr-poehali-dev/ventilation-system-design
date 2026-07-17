@@ -67,9 +67,33 @@ def _remap_font_family(svg: str) -> str:
 
     Без этого svglib маппит Arial/Segoe UI/Helvetica на встроенные шрифты
     reportlab, где нет кириллицы -> русский текст превращается в прямоугольники.
+
+    Плюс навешивает font-family="DejaVuSans" на корневой <svg>, чтобы текст
+    БЕЗ явного font-family (индикаторы перемычек, замерных станций, метки
+    А/D/ПП) тоже наследовал кириллический шрифт, а не дефолтный Helvetica
+    reportlab. Иначе такие подписи в PDF превращались в квадратики.
     """
     svg = re.sub(r'font-family\s*=\s*"[^"]*"', 'font-family="DejaVuSans"', svg)
     svg = re.sub(r"font-family\s*:\s*[^;\"']+", "font-family:DejaVuSans", svg)
+
+    # Добавляем шрифт по умолчанию на первый тег <svg>, если его там ещё нет.
+    def _add_root_font(m):
+        tag = m.group(0)
+        if re.search(r'font-family', tag):
+            return tag
+        return tag[:-1] + ' font-family="DejaVuSans">'
+
+    svg = re.sub(r'<svg\b[^>]*>', _add_root_font, svg, count=1)
+
+    # svglib не всегда наследует font-family от родителя, поэтому явно
+    # проставляем DejaVuSans каждому <text>, где шрифт не задан.
+    def _add_text_font(m):
+        tag = m.group(0)
+        if re.search(r'font-family', tag):
+            return tag
+        return tag[:-1] + ' font-family="DejaVuSans">'
+
+    svg = re.sub(r'<text\b[^>]*>', _add_text_font, svg)
     return svg
 
 
