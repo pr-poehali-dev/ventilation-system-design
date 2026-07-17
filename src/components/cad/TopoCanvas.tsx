@@ -3944,9 +3944,12 @@ export default function TopoCanvas(props: Props) {
                 }
                 if (!msLines.length) return null;
 
-                // Масштабируем индикатор СТРОГО как УО замерной станции (по SZ),
-                // чтобы при зуме/отдалении он менялся синхронно с обозначением.
-                const baseFontPx = SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9);
+                // Масштабируем индикатор замерной станции ТАК ЖЕ, как подписи
+                // ВЕТВЕЙ (по толщине ветви branchPxLabel), а не по размеру УО —
+                // чтобы подписи станции и ветви совпадали по размеру.
+                const msBwLbl = (thinLines ? 1 : (brMs?.lineWidth && brMs.lineWidth > 0 ? brMs.lineWidth : branchWidth)) * _branchObjSF;
+                const msTextSc = Math.max(0.3, msBwLbl * 0.28);
+                const baseFontPx = 8.5 * msTextSc * ((sym.msIndFontSize ?? 9) / 9);
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4037,9 +4040,12 @@ export default function TopoCanvas(props: Props) {
                 if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                 if (!lines.length) return null;
 
-                // Масштабируем индикатор СТРОГО как УО перемычки (по SZ),
-                // чтобы при зуме/отдалении он менялся синхронно с обозначением.
-                const baseFontPx = SZ * 0.55 * ((sym.indFontSize ?? 9) / 9);
+                // Масштабируем индикатор перемычки ТАК ЖЕ, как подписи ВЕТВЕЙ
+                // (по толщине ветви branchPxLabel), а не по размеру УО — чтобы
+                // подписи перемычки и ветви совпадали по размеру.
+                const bkBwLbl = (thinLines ? 1 : (br.lineWidth && br.lineWidth > 0 ? br.lineWidth : branchWidth)) * _branchObjSF;
+                const bkTextSc = Math.max(0.3, bkBwLbl * 0.28);
+                const baseFontPx = 8.5 * bkTextSc * ((sym.indFontSize ?? 9) / 9);
                 const fSize = Math.max(6, Math.round(baseFontPx));
                 const lineH = fSize + 3;
                 const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4808,10 +4814,14 @@ export default function TopoCanvas(props: Props) {
                   if (sym.indLeakage && br.flow !== 0) lines.push(`Q=${uFlowInd.fromBase(Math.abs(br.flow)).toFixed(uFlowInd.decimals)} ${uFlowInd.symbol}`);
                   if (!lines.length) return null;
 
-                  // Масштабируем индикатор СТРОГО как УО перемычки: привязываем
-                  // размер шрифта к размеру самого УО (SZ), чтобы при зуме/отдалении
-                  // индикатор рос и уменьшался синхронно с обозначением.
-                  const baseFontPx = SZ * 0.55 * ((sym.indFontSize ?? 9) / 9);
+                  // Масштабируем индикатор перемычки ТАК ЖЕ, как подписи ВЕТВЕЙ
+                  // (canvasRenderer): размер шрифта привязан к толщине ветви на
+                  // экране (branchPxLabel), а не к размеру самого УО. Благодаря
+                  // этому подписи перемычки и ветви на одной выработке совпадают
+                  // по размеру и одинаково масштабируются при зуме/масштабе XY.
+                  const bkBwLbl = (thinLines ? 1 : (br.lineWidth && br.lineWidth > 0 ? br.lineWidth : branchWidth)) * _branchObjSF;
+                  const bkTextSc = Math.max(0.3, bkBwLbl * 0.28);
+                  const baseFontPx = 8.5 * bkTextSc * ((sym.indFontSize ?? 9) / 9);
                   const fSize = Math.max(6, Math.round(baseFontPx));
                   const lineH = fSize + 3;
                   const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
@@ -4883,8 +4893,12 @@ export default function TopoCanvas(props: Props) {
                   }
                   if (!msLines.length) return null;
 
-                  // Масштабируем индикатор СТРОГО как УО замерной станции (по SZ).
-                  const baseFontPx = SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9);
+                  // Масштабируем индикатор замерной станции ТАК ЖЕ, как подписи
+                  // ВЕТВЕЙ (canvasRenderer): размер шрифта привязан к толщине
+                  // ветви на экране (branchPxLabel), а не к размеру самого УО.
+                  const msBwLbl = (thinLines ? 1 : (brMs?.lineWidth && brMs.lineWidth > 0 ? brMs.lineWidth : branchWidth)) * _branchObjSF;
+                  const msTextSc = Math.max(0.3, msBwLbl * 0.28);
+                  const baseFontPx = 8.5 * msTextSc * ((sym.msIndFontSize ?? 9) / 9);
                   const fSize = Math.max(6, Math.round(baseFontPx));
                   const lineH = fSize + 3;
                   const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10;
