@@ -146,7 +146,7 @@ export default function FireStabilityDialog({
                   style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "#1d4ed8" }}>
                   <Icon name={computing ? "Loader" : "Play"} size={12}
                     className={computing ? "animate-spin" : ""} />
-                  {computing ? "Проверка..." : "Уточнить полным пересчётом сети"}
+                  {computing ? "Проверка..." : "Рассчитать факт опрокидывания"}
                 </button>
                 <span className="text-[10px]" style={{ color: reversalFacts && !computing ? "#15803d" : "#9ca3af" }}>
                   {computing
@@ -154,8 +154,8 @@ export default function FireStabilityDialog({
                         ? `Проверка выработок: ${progress.done} из ${progress.total}`
                         : "Подготовка расчёта...")
                     : reversalFacts
-                      ? "✓ Уточнено по факту разворота потока (полный пересчёт сети)"
-                      : "Готово: устойчивость по h_t (методика Аэросеть). Уточнение — опционально, медленно на больших схемах."}
+                      ? "✓ Устойчивость — по факту разворота потока (как при очаге пожара)"
+                      : "Предварительная оценка риска"}
                 </span>
               </div>
 
