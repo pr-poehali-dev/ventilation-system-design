@@ -1,6 +1,24 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
 const LICENSE_URL = API_URLS.license;
+
+// ── Версия расчётного ядра (server.exe) ───────────────────────────────────────
+// Доступна только в десктопе — там локальный сервер отдаёт её через /api/status.
+// В браузере ядра нет, поэтому возвращаем "". Кешируем, чтобы не дёргать каждый раз.
+let _coreVersion: string | null = null;
+export async function getCoreVersion(): Promise<string> {
+  if (_coreVersion !== null) return _coreVersion;
+  const isDesktop = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
+  if (!isDesktop) { _coreVersion = ""; return ""; }
+  try {
+    const res = await fetch("/api/status", { cache: "no-store" });
+    const data = await res.json();
+    _coreVersion = data?.version ? String(data.version) : "";
+  } catch {
+    _coreVersion = "";
+  }
+  return _coreVersion;
+}
 const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
 const MACHINE_UUID_KEY = "pvs_machine_uuid";
@@ -196,6 +214,7 @@ export function clearFingerprintCache() {
 
 // ── Проверка лицензии ─────────────────────────────────────────────────────────
 export async function checkLicense(fingerprint: string, machineInfo?: MachineInfo): Promise<LicenseInfo> {
+  const coreVersion = await getCoreVersion();
   const res = await fetch(LICENSE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -207,6 +226,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
       platform:    machineInfo?.platform,
       screen_info: machineInfo?.screen,
       app_version: APP_VERSION,
+      core_version: coreVersion || undefined,
     }),
   });
   const data = await res.json();
@@ -237,6 +257,7 @@ export async function activateLicense(
   key: string,
   machineInfo?: MachineInfo,
 ): Promise<LicenseInfo> {
+  const coreVersion = await getCoreVersion();
   const res = await fetch(LICENSE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -249,6 +270,7 @@ export async function activateLicense(
       platform:    machineInfo?.platform,
       screen_info: machineInfo?.screen,
       app_version: APP_VERSION,
+      core_version: coreVersion || undefined,
     }),
   });
   const data = await res.json();
@@ -285,6 +307,7 @@ export async function sendHeartbeat(
   modules?: string,
 ): Promise<void> {
   try {
+    const coreVersion = await getCoreVersion();
     await fetch(LICENSE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -294,6 +317,7 @@ export async function sendHeartbeat(
         hostname:    machineInfo?.hostname,
         platform:    machineInfo?.platform,
         app_version: APP_VERSION,
+        core_version: coreVersion || undefined,
         modules:     modules || undefined,
       }),
     });

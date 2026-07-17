@@ -93,6 +93,7 @@ def handler(event: dict, context) -> dict:
     platform       = (body.get("platform") or "")[:100]
     screen_info    = (body.get("screen_info") or "")[:50]
     app_version    = (body.get("app_version") or "")[:32]
+    core_version   = (body.get("core_version") or "")[:32]
     modules        = (body.get("modules") or "")[:200]
     ip             = client_ip(event)
 
@@ -168,11 +169,12 @@ def handler(event: dict, context) -> dict:
                     platform     = COALESCE(NULLIF(%s, ''), platform),
                     screen_info  = COALESCE(NULLIF(%s, ''), screen_info),
                     app_version  = COALESCE(NULLIF(%s, ''), app_version),
+                    core_version = COALESCE(NULLIF(%s, ''), core_version),
                     last_ip      = COALESCE(NULLIF(%s, ''), last_ip),
                     last_modules = COALESCE(NULLIF(%s, ''), last_modules)
                 WHERE id = %s
             """, (fph, user_agent, hostname, platform, screen_info,
-                  app_version, ip, modules, seat_id))
+                  app_version, core_version, ip, modules, seat_id))
         else:
             cur.execute("""
                 UPDATE license_seats
@@ -182,11 +184,12 @@ def handler(event: dict, context) -> dict:
                     platform     = COALESCE(NULLIF(%s, ''), platform),
                     screen_info  = COALESCE(NULLIF(%s, ''), screen_info),
                     app_version  = COALESCE(NULLIF(%s, ''), app_version),
+                    core_version = COALESCE(NULLIF(%s, ''), core_version),
                     last_ip      = COALESCE(NULLIF(%s, ''), last_ip),
                     last_modules = COALESCE(NULLIF(%s, ''), last_modules)
                 WHERE id = %s
             """, (user_agent, hostname, platform, screen_info,
-                  app_version, ip, modules, seat_id))
+                  app_version, core_version, ip, modules, seat_id))
 
         log_event(cur, license_id=lic_id, license_key=key, seat_id=seat_id,
                   event_type="check_ok", fph=fph, hostname=hostname,
@@ -278,11 +281,11 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 INSERT INTO license_seats
                     (license_id, fingerprint, hw_fingerprint, user_agent, hostname,
-                     platform, screen_info, app_version, last_ip, last_modules)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     platform, screen_info, app_version, core_version, last_ip, last_modules)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (lic_id, fph, hw_fph, user_agent or None,
                   hostname or None, platform or None, screen_info or None,
-                  app_version or None, ip or None, modules or None))
+                  app_version or None, core_version or None, ip or None, modules or None))
             log_event(cur, license_id=lic_id, license_key=license_key,
                       event_type="seat_created", fph=fph, hostname=hostname,
                       platform=platform, app_version=app_version, ip=ip)
@@ -299,11 +302,12 @@ def handler(event: dict, context) -> dict:
                     platform       = COALESCE(NULLIF(%s, ''), platform),
                     screen_info    = COALESCE(NULLIF(%s, ''), screen_info),
                     app_version    = COALESCE(NULLIF(%s, ''), app_version),
+                    core_version   = COALESCE(NULLIF(%s, ''), core_version),
                     last_ip        = COALESCE(NULLIF(%s, ''), last_ip),
                     last_modules   = COALESCE(NULLIF(%s, ''), last_modules)
                 WHERE id = %s
             """, (fph, hw_fph, user_agent, hostname, platform, screen_info,
-                  app_version, ip, modules, existing[0]))
+                  app_version, core_version, ip, modules, existing[0]))
             log_event(cur, license_id=lic_id, license_key=license_key, seat_id=existing[0],
                       event_type="activate", fph=fph, hostname=hostname,
                       platform=platform, app_version=app_version, ip=ip)
@@ -350,10 +354,11 @@ def handler(event: dict, context) -> dict:
             UPDATE license_seats
             SET last_seen_at = NOW(),
                 app_version  = COALESCE(NULLIF(%s, ''), app_version),
+                core_version = COALESCE(NULLIF(%s, ''), core_version),
                 last_ip      = COALESCE(NULLIF(%s, ''), last_ip),
                 last_modules = COALESCE(NULLIF(%s, ''), last_modules)
             WHERE id = %s
-        """, (app_version, ip, modules, seat_id))
+        """, (app_version, core_version, ip, modules, seat_id))
 
         # Событие использования модулей пишем только если они переданы
         if modules:

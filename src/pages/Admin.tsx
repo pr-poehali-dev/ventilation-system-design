@@ -32,13 +32,14 @@ interface Seat {
   last_ip?: string | null;
   last_modules?: string | null;
   online?: boolean;
+  core_version?: string | null;
 }
 
 export interface MonitoringData {
   sessions: {
     online: number;
     total: number;
-    list: { seat_id: number; owner: string; key: string; hostname: string | null; platform: string | null; app_version: string | null; ip: string | null; last_seen_at: string; modules: string | null }[];
+    list: { seat_id: number; owner: string; key: string; hostname: string | null; platform: string | null; app_version: string | null; ip: string | null; last_seen_at: string; modules: string | null; core_version?: string | null }[];
   };
   violations: {
     counts: Record<string, number>;
@@ -46,6 +47,7 @@ export interface MonitoringData {
   };
   expiring: { id: number; owner: string; key: string; expires_at: string; days_left: number | null }[];
   versions: { version: string; count: number }[];
+  core_versions?: { version: string; count: number }[];
   modules_usage: { modules: string; count: number }[];
   logins_24h: number;
 }
@@ -674,6 +676,12 @@ export default function Admin() {
                                     {seat.app_version && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-medium font-mono">
                                         v{seat.app_version}
+                                      </span>
+                                    )}
+                                    {seat.core_version && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 font-medium font-mono"
+                                        title="Версия расчётного ядра (server.exe)">
+                                        ядро {seat.core_version}
                                       </span>
                                     )}
                                     {seat.platform && (

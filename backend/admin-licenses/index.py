@@ -198,7 +198,8 @@ def handler(event: dict, context) -> dict:
                 SELECT id, fingerprint, activated_at, last_seen_at,
                        user_agent, hostname, platform, screen_info,
                        app_version, last_ip, last_modules,
-                       (last_seen_at > NOW() - INTERVAL '10 minutes') AS online
+                       (last_seen_at > NOW() - INTERVAL '10 minutes') AS online,
+                       core_version
                 FROM license_seats WHERE license_id = %s
                 ORDER BY last_seen_at DESC
             """, (lic_id,))
@@ -217,6 +218,7 @@ def handler(event: dict, context) -> dict:
                     "last_ip":     r[9],
                     "last_modules": r[10],
                     "online":      bool(r[11]),
+                    "core_version": r[12],
                 })
             return resp(200, {"seats": seats})
 
@@ -261,7 +263,8 @@ def handler(event: dict, context) -> dict:
             # Онлайн-места с деталями
             cur.execute("""
                 SELECT s.id, l.owner_name, l.key, s.hostname, s.platform,
-                       s.app_version, s.last_ip, s.last_seen_at, s.last_modules
+                       s.app_version, s.last_ip, s.last_seen_at, s.last_modules,
+                       s.core_version
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
                 WHERE s.last_seen_at > NOW() - (%s || ' minutes')::interval
@@ -271,7 +274,7 @@ def handler(event: dict, context) -> dict:
             online_list = [{
                 "seat_id": r[0], "owner": r[1], "key": r[2], "hostname": r[3],
                 "platform": r[4], "app_version": r[5], "ip": r[6],
-                "last_seen_at": str(r[7]), "modules": r[8],
+                "last_seen_at": str(r[7]), "modules": r[8], "core_version": r[9],
             } for r in cur.fetchall()]
 
             # 3. Нарушения: попытки превышения лимита / доступ к отозв./просроч.
@@ -318,6 +321,15 @@ def handler(event: dict, context) -> dict:
             """)
             versions = [{"version": r[0], "count": int(r[1])} for r in cur.fetchall()]
 
+            # 5a2. Версии расчётного ядра (server.exe) — только там, где известны
+            cur.execute("""
+                SELECT COALESCE(core_version, '—') AS v, COUNT(*)
+                FROM license_seats
+                WHERE core_version IS NOT NULL AND core_version <> ''
+                GROUP BY core_version ORDER BY COUNT(*) DESC
+            """)
+            core_versions = [{"version": r[0], "count": int(r[1])} for r in cur.fetchall()]
+
             # 5b. Использование модулей (за 7 дней по журналу module_use)
             cur.execute("""
                 SELECT detail, COUNT(*) FROM license_events
@@ -340,6 +352,7 @@ def handler(event: dict, context) -> dict:
                 "violations": {"counts": violations, "multi_ip": multi_ip},
                 "expiring": expiring,
                 "versions": versions,
+                "core_versions": core_versions,
                 "modules_usage": modules_usage,
                 "logins_24h": logins_24h,
             })

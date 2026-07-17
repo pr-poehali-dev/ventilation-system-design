@@ -84,6 +84,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                   <th className="pb-2 pr-3 font-medium">Компьютер</th>
                   <th className="pb-2 pr-3 font-medium">Платформа</th>
                   <th className="pb-2 pr-3 font-medium">Версия</th>
+                  <th className="pb-2 pr-3 font-medium">Ядро</th>
                   <th className="pb-2 pr-3 font-medium">IP</th>
                   <th className="pb-2 pr-3 font-medium">Активность</th>
                 </tr>
@@ -100,6 +101,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                     <td className="py-2 pr-3 text-gray-600">{s.hostname || "—"}</td>
                     <td className="py-2 pr-3 text-gray-500">{s.platform || "—"}</td>
                     <td className="py-2 pr-3 text-gray-500">{s.app_version || "—"}</td>
+                    <td className="py-2 pr-3 text-purple-600 font-mono">{s.core_version || "—"}</td>
                     <td className="py-2 pr-3 text-gray-500 font-mono">{s.ip || "—"}</td>
                     <td className="py-2 pr-3 text-gray-500">{fmtDateTime(s.last_seen_at)}</td>
                   </tr>
@@ -171,6 +173,22 @@ export default function MonitoringTab({ data, loading }: Props) {
               {data.versions.map(row => (
                 <div key={row.version} className="flex items-center justify-between text-[12px]">
                   <span className="text-gray-700 font-mono">{row.version}</span>
+                  <span className="text-gray-500">{row.count} <span className="text-gray-300">мест</span></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* 5a2. Версии расчётного ядра (server.exe, только десктоп) */}
+        <Card title="Версии ядра (десктоп)" icon="Cpu" color="#7c3aed">
+          {!data.core_versions || data.core_versions.length === 0 ? (
+            <div className="text-[12px] text-gray-400">Нет данных о версии ядра.</div>
+          ) : (
+            <div className="space-y-1.5">
+              {data.core_versions.map(row => (
+                <div key={row.version} className="flex items-center justify-between text-[12px]">
+                  <span className="text-purple-700 font-mono">{row.version}</span>
                   <span className="text-gray-500">{row.count} <span className="text-gray-300">мест</span></span>
                 </div>
               ))}
