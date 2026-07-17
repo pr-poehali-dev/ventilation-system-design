@@ -140,6 +140,89 @@ export function getCombustible(id: string): CombustibleProps {
   return COMBUSTIBLES.find(c => c.id === id) ?? COMBUSTIBLES[COMBUSTIBLES.length - 1];
 }
 
+// ─── Мощность очага пожара из свойств горючего материала ──────────────────────
+// Единый источник мощности (МВт) для ОЧАГА ПОЖАРА: считаем ровно так же, как во
+// вкладке «Пожарная нагрузка», чтобы температура продуктов совпадала.
+// Для vehicle — по массам техники, для cable/timber/conveyor — по линейной/
+// ленточной модели. Возвращает null, если авто-расчёт для материала невозможен
+// (тогда используется мощность, заданная пользователем вручную).
+export interface FireMaterialProps {
+  fireCombustible?: string;
+  flow?: number;
+  length?: number;
+  // Техника
+  fireVehicleMassRubber?: number;
+  fireVehicleMassDiesel?: number;
+  fireVehicleMassOil?: number;
+  // Кабель
+  fireCableHeatValue?: string; fireCableBurnRate?: string; fireCableDensity?: string;
+  fireCableLength?: string; fireCableWidth?: string; fireCableThick?: string;
+  // Деревянная крепь
+  fireWoodHeatValue?: string; fireWoodBurnRate?: string; fireWoodDensity?: string;
+  fireWoodLength?: string; fireWoodWidth?: string; fireWoodThick?: string;
+  fireWoodFlameSpeed?: string; fireWoodCalcTime?: string;
+  // Конвейерная лента
+  fireBeltBurnRate?: string; fireBeltDensity?: string; fireBeltWidth?: string;
+  fireBeltLength?: string; fireBeltThickness?: string; fireBeltFlameSpeed?: string;
+}
+
+export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
+  const kind = b.fireCombustible ?? "coal";
+  const airFlow = Math.abs(b.flow ?? 0);
+  const lenStr = b.length && b.length > 0 ? String(b.length) : "";
+
+  if (kind === "vehicle") {
+    const masses: [number, number, number] = [
+      b.fireVehicleMassRubber ?? 1200,
+      b.fireVehicleMassDiesel ?? 400,
+      b.fireVehicleMassOil    ?? 200,
+    ];
+    const vfr = calcVehicleFire(masses, airFlow);
+    return vfr.power_MW > 0 ? vfr.power_MW : null;
+  }
+
+  if (kind === "cable") {
+    const r = calcLinearFire({
+      heatValue:    b.fireCableHeatValue ?? "25",
+      burnRate:     b.fireCableBurnRate  ?? "0.007",
+      density:      b.fireCableDensity   ?? "900",
+      length:       b.fireCableLength    ?? (lenStr || "100"),
+      sectionWidth: b.fireCableWidth     ?? "0.05",
+      sectionThick: b.fireCableThick     ?? "0.05",
+    }, airFlow);
+    return r && r.powerMW > 0 ? r.powerMW : null;
+  }
+
+  if (kind === "timber") {
+    const r = calcLinearFire({
+      heatValue:    b.fireWoodHeatValue   ?? "13.8",
+      burnRate:     b.fireWoodBurnRate    ?? "0.027",
+      density:      b.fireWoodDensity     ?? "500",
+      length:       b.fireWoodLength      ?? (lenStr || "50"),
+      sectionWidth: b.fireWoodWidth       ?? "8.9",
+      sectionThick: b.fireWoodThick       ?? "0.08",
+      flameSpeed:   b.fireWoodFlameSpeed  ?? "0.024",
+      calcTime:     b.fireWoodCalcTime    ?? "10",
+    }, airFlow);
+    return r && r.powerMW > 0 ? r.powerMW : null;
+  }
+
+  if (kind === "conveyor") {
+    const r = calcBelt({
+      burnRate:   b.fireBeltBurnRate   ?? "0.0125",
+      density:    b.fireBeltDensity    ?? "1100",
+      width:      b.fireBeltWidth      ?? "1.2",
+      length:     b.fireBeltLength     ?? (lenStr || "100"),
+      thickness:  b.fireBeltThickness  ?? "0.016",
+      flameSpeed: b.fireBeltFlameSpeed ?? "0.013",
+    }, airFlow);
+    return r && r.powerMax > 0 ? r.powerMax : null;
+  }
+
+  // coal / oil / custom — детальной модели нет, оставляем ручной ввод
+  return null;
+}
+
 // ─── Расчёт пожара конвейерной ленты ─────────────────────────────────────────
 
 export interface BeltInputs {

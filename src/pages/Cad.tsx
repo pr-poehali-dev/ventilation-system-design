@@ -34,7 +34,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, 
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -297,20 +297,40 @@ export default function CadPage() {
     }
   }, [selectedBranchId, selectedBranch?.hasFan]);
 
-  // Синхронизация расчётной мощности техники → fireHeatRelease и температуры → fireTemperature
+  // Синхронизация расчётной мощности пожара из свойств горючего материала →
+  // fireHeatRelease. Мощность считается из физических свойств материала (кабель,
+  // дерево, конвейер, техника) — так же, как во вкладке «Пожарная нагрузка»,
+  // чтобы температура продуктов совпадала. Для угля/масла/произвольного авто-
+  // расчёта нет — там мощность вводится вручную.
   useEffect(() => {
     const b = selectedBranch;
-    if (!b?.hasFire || (b.fireCombustible ?? "vehicle") !== "vehicle") return;
-    const masses: [number, number, number] = [b.fireVehicleMassRubber ?? 1200, b.fireVehicleMassDiesel ?? 400, b.fireVehicleMassOil ?? 200];
+    if (!b?.hasFire) return;
+    const autoPower = calcFirePowerFromMaterial({
+      fireCombustible: b.fireCombustible,
+      flow: b.flow,
+      length: b.length,
+      fireVehicleMassRubber: b.fireVehicleMassRubber,
+      fireVehicleMassDiesel: b.fireVehicleMassDiesel,
+      fireVehicleMassOil: b.fireVehicleMassOil,
+      fireCableHeatValue: b.fireCableHeatValue, fireCableBurnRate: b.fireCableBurnRate,
+      fireCableDensity: b.fireCableDensity, fireCableLength: b.fireCableLength,
+      fireCableWidth: b.fireCableWidth, fireCableThick: b.fireCableThick,
+      fireWoodHeatValue: b.fireWoodHeatValue, fireWoodBurnRate: b.fireWoodBurnRate,
+      fireWoodDensity: b.fireWoodDensity, fireWoodLength: b.fireWoodLength,
+      fireWoodWidth: b.fireWoodWidth, fireWoodThick: b.fireWoodThick,
+      fireWoodFlameSpeed: b.fireWoodFlameSpeed, fireWoodCalcTime: b.fireWoodCalcTime,
+      fireBeltBurnRate: b.fireBeltBurnRate, fireBeltDensity: b.fireBeltDensity,
+      fireBeltWidth: b.fireBeltWidth, fireBeltLength: b.fireBeltLength,
+      fireBeltThickness: b.fireBeltThickness, fireBeltFlameSpeed: b.fireBeltFlameSpeed,
+    });
+    if (autoPower == null || autoPower <= 0) return;
     const airQ = Math.abs(b.flow ?? 0);
-    const vfr = calcVehicleFire(masses, airQ);
-    if (vfr.power_MW <= 0) return;
-    const roundedPower = Math.round(vfr.power_MW * 100) / 100;
+    const roundedPower = Math.round(autoPower * 100) / 100;
     if (Math.abs((b.fireHeatRelease ?? 5) - roundedPower) > 0.01) {
       updateBranch(b.id, { fireHeatRelease: roundedPower });
     }
     if ((b.fireMode ?? "heat") === "temp" && airQ > 0) {
-      const calcTemp = Math.round(vfr.deltaT_C + 20);
+      const calcTemp = Math.round(calcFireTemp(roundedPower, airQ, AMBIENT_TEMP));
       if (Math.abs((b.fireTemperature ?? 300) - calcTemp) > 1) {
         updateBranch(b.id, { fireTemperature: calcTemp });
       }
@@ -321,8 +341,18 @@ export default function CadPage() {
     selectedBranch?.fireVehicleMassRubber,
     selectedBranch?.fireVehicleMassDiesel,
     selectedBranch?.fireVehicleMassOil,
+    selectedBranch?.fireCableHeatValue, selectedBranch?.fireCableBurnRate,
+    selectedBranch?.fireCableDensity, selectedBranch?.fireCableLength,
+    selectedBranch?.fireCableWidth, selectedBranch?.fireCableThick,
+    selectedBranch?.fireWoodHeatValue, selectedBranch?.fireWoodBurnRate,
+    selectedBranch?.fireWoodDensity, selectedBranch?.fireWoodLength,
+    selectedBranch?.fireWoodWidth, selectedBranch?.fireWoodThick,
+    selectedBranch?.fireBeltBurnRate, selectedBranch?.fireBeltDensity,
+    selectedBranch?.fireBeltWidth, selectedBranch?.fireBeltLength,
+    selectedBranch?.fireBeltThickness,
     selectedBranch?.fireMode,
     selectedBranch?.flow,
+    selectedBranch?.length,
   ]);
 
   const updateNode = (id: string, patch: Partial<TopoNode>, saveHistory = true) => {
@@ -3831,16 +3861,15 @@ export default function CadPage() {
                     flow: currentFlows.get(b.id) ?? b.flow,
                   }));
 
-                  // Шаг B: Техника — пересчитать мощность по актуальному расходу
+                  // Шаг B: пересчитать мощность очага из свойств материала по
+                  // актуальному расходу (кабель/дерево/конвейер/техника). Для
+                  // угля/масла/произвольного авто-расчёта нет — мощность ручная.
                   branchesIter = branchesIter.map(b => {
-                    if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return b;
-                    const masses: [number, number, number] = [
-                      b.fireVehicleMassRubber ?? 1200,
-                      b.fireVehicleMassDiesel ?? 400,
-                      b.fireVehicleMassOil    ?? 200,
-                    ];
-                    const vfr = calcVehicleFire(masses, Math.abs(b.flow ?? 0));
-                    return vfr.power_MW > 0 ? { ...b, fireHeatRelease: vfr.power_MW, fireMode: "heat" as const } : b;
+                    if (!b.hasFire) return b;
+                    const autoP = calcFirePowerFromMaterial(b);
+                    return autoP != null && autoP > 0
+                      ? { ...b, fireHeatRelease: autoP, fireMode: "heat" as const }
+                      : b;
                   });
 
                   // Шаг C: вычислить T_пр и h_t для каждого очага
@@ -3883,14 +3912,12 @@ export default function CadPage() {
                   const finalQ = currentFlows.get(b.id) ?? b.flow;
                   // originalFlow — расход ДО пожара (до итераций), для детектирования опрокидывания
                   const bUpdated = { ...b, flow: finalQ, originalFlow: originalFlows.get(b.id) ?? b.flow };
-                  if (!b.hasFire || (b.fireCombustible ?? "coal") !== "vehicle") return bUpdated;
-                  const masses: [number, number, number] = [
-                    b.fireVehicleMassRubber ?? 1200,
-                    b.fireVehicleMassDiesel ?? 400,
-                    b.fireVehicleMassOil    ?? 200,
-                  ];
-                  const vfr = calcVehicleFire(masses, Math.abs(finalQ ?? 0));
-                  return vfr.power_MW > 0 ? { ...bUpdated, fireHeatRelease: vfr.power_MW, fireMode: "heat" as const } : bUpdated;
+                  if (!b.hasFire) return bUpdated;
+                  // Мощность очага из свойств материала по итоговому расходу.
+                  const autoP = calcFirePowerFromMaterial(bUpdated);
+                  return autoP != null && autoP > 0
+                    ? { ...bUpdated, fireHeatRelease: autoP, fireMode: "heat" as const }
+                    : bUpdated;
                 });
 
                 // Обновляем flow в state из итеративного расчёта
@@ -5833,16 +5860,24 @@ export default function CadPage() {
                     </select>
                   </div>
 
-                  {(b.fireMode ?? "heat") === "heat" && (
-                    <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Мощность пожара, МВт:</span>
-                      <input type="number" step="0.5" min="0.1" max="100"
-                        value={b.fireHeatRelease ?? 5}
-                        onChange={e => updateBranch(b.id, { fireHeatRelease: parseFloat(e.target.value) || 5 })}
-                        className="flex-1 text-[11px] text-right px-1"
-                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
-                    </div>
-                  )}
+                  {(b.fireMode ?? "heat") === "heat" && (() => {
+                    // Для материалов с авто-расчётом (кабель/дерево/конвейер/техника)
+                    // мощность считается из свойств — поле только для чтения.
+                    const autoP = calcFirePowerFromMaterial(b);
+                    const isAuto = autoP != null && autoP > 0;
+                    return (
+                      <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Мощность пожара, МВт:</span>
+                        <input type="number" step="0.5" min="0.1" max="100"
+                          value={isAuto ? (Math.round(autoP! * 100) / 100) : (b.fireHeatRelease ?? 5)}
+                          readOnly={isAuto}
+                          onChange={e => { if (!isAuto) updateBranch(b.id, { fireHeatRelease: parseFloat(e.target.value) || 5 }); }}
+                          className="flex-1 text-[11px] text-right px-1"
+                          style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: isAuto ? "#f3f4f6" : "white", color: isAuto ? "#6b7280" : "inherit" }} />
+                        {isAuto && <span className="text-[10px] text-gray-400 flex-shrink-0 ml-1">авто</span>}
+                      </div>
+                    );
+                  })()}
                   {(b.fireMode ?? "heat") === "temp" && (
                     <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Температура очага, °C:</span>
