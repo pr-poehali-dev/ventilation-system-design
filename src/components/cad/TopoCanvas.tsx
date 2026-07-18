@@ -4691,13 +4691,21 @@ export default function TopoCanvas(props: Props) {
                   const bodyCol = branchBodyColor(brBody ?? ({ id: sym.branchId } as TopoBranch));
                   if (!bodyCol) return null;
                   const bDx = tsx2 - fsx, bDy = tsy2 - fsy;
+                  const bLen = Math.hypot(bDx, bDy) || 1;
                   const bAng = Math.atan2(bDy, bDx) * 180 / Math.PI;
                   const uBw = (brBody?.lineWidth && brBody.lineWidth > 0) ? brBody.lineWidth : branchWidth;
                   const uW = Math.max(1.5, uBw * _branchObjSF);
-                  // Длина сегмента вдоль ветви — по габариту символа, но не больше SZ.
-                  const uLen = Math.max(uW, SZ * 0.9);
+                  // Длина сегмента вдоль ветви — покрывает габарит символа (SZ) с запасом.
+                  const uLen = Math.max(uW, SZ + uW);
+                  // Проекция символа на линию ветви (t вдоль from→to) — подложку
+                  // ставим на САМУ ветвь (не на смещённый offset'ом символ), чтобы
+                  // окраска не прерывалась именно в точке пересечения с ветвью.
+                  const tRaw = ((px - fsx) * bDx + (py - fsy) * bDy) / (bLen * bLen);
+                  const tClamp = Math.max(0, Math.min(1, tRaw));
+                  const anchorX = fsx + bDx * tClamp;
+                  const anchorY = fsy + bDy * tClamp;
                   return (
-                    <g transform={`translate(${px},${py}) rotate(${bAng})`} pointerEvents="none">
+                    <g transform={`translate(${anchorX},${anchorY}) rotate(${bAng})`} pointerEvents="none">
                       <rect x={-uLen / 2} y={-uW / 2} width={uLen} height={uW} fill={bodyCol} stroke="none" />
                     </g>
                   );
