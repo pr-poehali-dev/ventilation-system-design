@@ -17,7 +17,7 @@ import {
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
-import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas } from "@/components/cad/CanvasLayerExports";
+import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -349,6 +349,21 @@ export default function TopoCanvas(props: Props) {
     (horizons ?? []).forEach((h) => m.set(h.id, h));
     return m;
   }, [horizons]);
+
+  // Цвет ЗАЛИВКИ ветви (без учёта выделения/утечки) — по той же логике, что в
+  // canvasRenderer/SVG-рендере. Возвращает null, если ветвь белая (окраски нет),
+  // чтобы не подкладывать бесполезную белую полосу под символы УО.
+  const branchBodyColor = useCallback((b: TopoBranch): string | null => {
+    const posInnerCol = posInnerColors?.get(b.id);
+    if (posInnerCol) return posInnerCol;
+    const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
+    if (colorByHorizon && horizonColor) return horizonColor;
+    const Q = Math.abs(b.flow);
+    if (colorMode === "flowQ") return flowQColorFn(Q, flowColorMin, flowColorMax, flowColorHue);
+    if (colorMode === "none") return null;
+    if (Q > 0) return velocityColorFn(b.velocity);
+    return null;
+  }, [posInnerColors, horizonMap, colorByHorizon, colorMode, flowColorMin, flowColorMax, flowColorHue]);
 
   // Видимые ветви: если горизонт привязан и скрыт — фильтруем
   const visibleBranches = useMemo(() => branches.filter((b) => {
@@ -4706,8 +4721,22 @@ export default function TopoCanvas(props: Props) {
                   const isFirePP  = tid === "fire_door_pp";
                   const isProem   = tid.includes("proem_");
                   const isRegulatorOv = tid === "regulator";
+                  // Подложка цвета ветви ПОД символом: в canvas-режиме символы УО
+                  // рисуются в оверлее поверх холста и белым перекрывают окраску
+                  // ветви. Кладём короткий сегмент цвета ветви вдоль неё (по X после
+                  // rotate), чтобы окраска не прерывалась. Только для символов с
+                  // белой/светлой заливкой и только если у ветви есть цвет.
+                  const bodyColOv = branchBodyColor(bkBrOv ?? ({ id: sym.branchId } as TopoBranch));
+                  const showUnderlay = !!bodyColOv && !isMeasureStationOv && !isSailOv;
+                  const underlayLen = ((isDoor || isAuto || isFirePP) ? pw * 2 + gap : pw) + realBwOv * 0.6;
+                  const underlayW = Math.max(1.5, realBwOv);
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+                      {showUnderlay && (
+                        <rect x={-underlayLen / 2} y={-underlayW / 2}
+                          width={underlayLen} height={underlayW}
+                          fill={bodyColOv} stroke="none" />
+                      )}
                       {isMeasureStationOv ? (() => {
                         const ml = ph * 1.1;
                         const mt = Math.max(1.5, ph * 0.22);
