@@ -2558,6 +2558,7 @@ export default function TopoCanvas(props: Props) {
           flowColorMax={flowColorMax}
           flowColorHue={flowColorHue}
           posInnerColors={posInnerColors}
+          posOuterColors={posOuterColors}
           rescuePathNodeIds={rescuePathNodeIds}
           rescueNodeLetters={rescueNodeLetters}
           rescuePathBranchIds={rescuePathBranchIds}

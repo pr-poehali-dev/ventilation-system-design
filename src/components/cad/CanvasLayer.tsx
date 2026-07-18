@@ -76,6 +76,7 @@ interface CanvasLayerProps {
   flowColorMax?: number;
   flowColorHue?: "red" | "blue" | "green";
   posInnerColors?: Map<string, string>;
+  posOuterColors?: Map<string, string>;
   rescuePathNodeIds?: Set<string>;
   rescueNodeLetters?: Map<string, string>;
   rescuePathBranchIds?: Set<string>;
@@ -220,6 +221,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         flowColorMax: p.flowColorMax,
         flowColorHue: p.flowColorHue,
         posInnerColors: p.posInnerColors,
+        posOuterColors: p.posOuterColors,
         rescuePathNodeIds: p.rescuePathNodeIds,
         rescueNodeLetters: p.rescueNodeLetters,
         rescuePathBranchIds: p.rescuePathBranchIds,

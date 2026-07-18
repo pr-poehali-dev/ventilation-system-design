@@ -710,89 +710,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.globalAlpha = 1;
     }
 
-    // ── Вентрубопровод — пунктирная линия параллельно ветви ──────────────
-    if (b.hasVentPipe) {
-      const nx = -uy, ny = ux;
-      const vpOffset = w / 2 + 3;
-      const vpX1 = p.fromSx + nx * vpOffset, vpY1 = p.fromSy + ny * vpOffset;
-      const vpX2 = p.toSx   + nx * vpOffset, vpY2 = p.toSy   + ny * vpOffset;
-      const vpW = Math.max(1.5, w * 0.35);
-      ctx.strokeStyle = "white"; ctx.lineWidth = vpW + 2; ctx.globalAlpha = 0.6; ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
-      ctx.strokeStyle = "#0ea5e9"; ctx.lineWidth = vpW; ctx.globalAlpha = 0.9; ctx.setLineDash([8, 4]);
-      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
-      ctx.setLineDash([]);
-      if (segLen > 60 && view.scale > 0.3) {
-        const mX = (vpX1 + vpX2) / 2, mY = (vpY1 + vpY2) / 2;
-        const fs = Math.max(8, Math.min(12, w * 1.2));
-        ctx.fillStyle = "#0ea5e9"; ctx.font = `bold ${fs}px Arial`;
-        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.globalAlpha = 0.95;
-        ctx.fillText("ВТ", mX, mY);
-      }
-    }
-
-    // ── Трубопроводы у края ветви (под стрелкой направления воздуха) ──────
-    // Синяя линия = водопровод ППЗ (у одного края),
-    // красная линия = воздухопровод (сжатый воздух, у противоположного края).
-    // Рисуем ЗДЕСЬ (до стрелки потока), чтобы стрелка была поверх труб — как в SVG-режиме.
-    if (lodNodes && (b.hasWaterPipe || b.hasAirPipe)) {
-      const nx = -uy, ny = ux;
-      const pipeOffset = w * 0.38;
-      const pipeLW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
-      ctx.lineCap = "round";
-      ctx.globalAlpha = 1;
-      ctx.setLineDash([]);
-      const drawEdgePipe = (sign: number, col: string) => {
-        const ox = nx * pipeOffset * sign, oy = ny * pipeOffset * sign;
-        ctx.strokeStyle = col;
-        ctx.lineWidth = pipeLW;
-        ctx.beginPath();
-        ctx.moveTo(p.fromSx + ox, p.fromSy + oy);
-        ctx.lineTo(p.toSx + ox, p.toSy + oy);
-        ctx.stroke();
-      };
-      const showWaterPipes = !infoConfig || infoConfig.waterPipes;
-      if (b.hasWaterPipe && showWaterPipes) {
-        drawEdgePipe(+1, "#1d4ed8");
-        // Стрелка направления течения воды (по центру трубы).
-        // Расход берём из результата расчёта сети (wpComputedFlow backend'ом не заполняется).
-        const showWaterDir = !infoConfig || infoConfig.waterFlowDirection;
-        const wbrDir = waterBranchResults?.get(b.id);
-        const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
-        if (showWaterDir && Math.abs(wf) > 0.001) {
-          // ВАЖНО: направление воды НЕ связано с воздухом. Единичный вектор
-          // считаем геометрически по узлам from→to (ux,uy развёрнуты по воздуху),
-          // затем разворачиваем по расчёту воды flowFromTo.
-          const gdx = p.toSx - p.fromSx, gdy = p.toSy - p.fromSy;
-          const glen = Math.hypot(gdx, gdy) || 1;
-          const wux = gdx / glen, wuy = gdy / glen;
-          const waterFromTo = wbrDir ? (wbrDir.flowFromTo !== false) : true;
-          const dir = waterFromTo ? 1 : -1;
-          const ox = nx * pipeOffset, oy = ny * pipeOffset;
-          const mx = (p.fromSx + p.toSx) / 2 + ox;
-          const my = (p.fromSy + p.toSy) / 2 + oy;
-          const ah = Math.max(3, pipeLW * 2.2);
-          const dux = wux * dir, duy = wuy * dir;
-          // Хвостик (стержень) — от основания треугольника назад по потоку
-          ctx.strokeStyle = "#dc2626";
-          ctx.lineWidth = Math.max(1, pipeLW);
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(mx - dux * ah * 2.2, my - duy * ah * 2.2);
-          ctx.lineTo(mx - dux * ah * 0.5, my - duy * ah * 0.5);
-          ctx.stroke();
-          ctx.fillStyle = "#dc2626";
-          ctx.beginPath();
-          ctx.moveTo(mx + dux * ah, my + duy * ah);
-          ctx.lineTo(mx - dux * ah * 0.5 + nx * ah * 0.6, my - duy * ah * 0.5 + ny * ah * 0.6);
-          ctx.lineTo(mx - dux * ah * 0.5 - nx * ah * 0.6, my - duy * ah * 0.5 - ny * ah * 0.6);
-          ctx.closePath();
-          ctx.fill();
-        }
-      }
-      if (b.hasAirPipe)   drawEdgePipe(-1, "#dc2626");
-    }
-
     // Бегущий пунктир
     if (showDashes) {
       ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "butt";
@@ -1019,6 +936,104 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     void ux; void uy;
   }
+
+  // ── ПРОХОД 2b: трубопроводы поверх основных линий группы ──────────────────
+  // Рисуем ПОСЛЕ всех основных линий этого горизонта, чтобы белые линии
+  // соседних ветвей не перекрывали трубы (воздухопровод/водопровод/вентрубопровод)
+  // в общих узлах. Внутри группы → z-order между горизонтами сохраняется.
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+  for (const { b } of group) {
+    const p = bParamsMap.get(b.id);
+    if (!p) continue;
+    const { w, ux, uy, segLen } = p;
+
+    // ── Вентрубопровод — пунктирная линия параллельно ветви ──────────────
+    if (b.hasVentPipe) {
+      const nx = -uy, ny = ux;
+      const vpOffset = w / 2 + 3;
+      const vpX1 = p.fromSx + nx * vpOffset, vpY1 = p.fromSy + ny * vpOffset;
+      const vpX2 = p.toSx   + nx * vpOffset, vpY2 = p.toSy   + ny * vpOffset;
+      const vpW = Math.max(1.5, w * 0.35);
+      ctx.strokeStyle = "white"; ctx.lineWidth = vpW + 2; ctx.globalAlpha = 0.6; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
+      ctx.strokeStyle = "#0ea5e9"; ctx.lineWidth = vpW; ctx.globalAlpha = 0.9; ctx.setLineDash([8, 4]);
+      ctx.beginPath(); ctx.moveTo(vpX1, vpY1); ctx.lineTo(vpX2, vpY2); ctx.stroke();
+      ctx.setLineDash([]);
+      if (segLen > 60 && view.scale > 0.3) {
+        const mX = (vpX1 + vpX2) / 2, mY = (vpY1 + vpY2) / 2;
+        const fs = Math.max(8, Math.min(12, w * 1.2));
+        ctx.fillStyle = "#0ea5e9"; ctx.font = `bold ${fs}px Arial`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.globalAlpha = 0.95;
+        ctx.fillText("ВТ", mX, mY);
+      }
+    }
+
+    // ── Трубопроводы у края ветви (под стрелкой направления воздуха) ──────
+    // Синяя линия = водопровод ППЗ (у одного края),
+    // красная линия = воздухопровод (сжатый воздух, у противоположного края).
+    // Рисуем ЗДЕСЬ (до стрелки потока), чтобы стрелка была поверх труб — как в SVG-режиме.
+    if (lodNodes && (b.hasWaterPipe || b.hasAirPipe)) {
+      const nx = -uy, ny = ux;
+      const pipeOffset = w * 0.38;
+      const pipeLW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
+      const drawEdgePipe = (sign: number, col: string) => {
+        const ox = nx * pipeOffset * sign, oy = ny * pipeOffset * sign;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = pipeLW;
+        ctx.beginPath();
+        ctx.moveTo(p.fromSx + ox, p.fromSy + oy);
+        ctx.lineTo(p.toSx + ox, p.toSy + oy);
+        ctx.stroke();
+      };
+      const showWaterPipes = !infoConfig || infoConfig.waterPipes;
+      if (b.hasWaterPipe && showWaterPipes) {
+        drawEdgePipe(+1, "#1d4ed8");
+        // Стрелка направления течения воды (по центру трубы).
+        // Расход берём из результата расчёта сети (wpComputedFlow backend'ом не заполняется).
+        const showWaterDir = !infoConfig || infoConfig.waterFlowDirection;
+        const wbrDir = waterBranchResults?.get(b.id);
+        const wf = wbrDir ? (wbrDir.flow ?? 0) : (b.wpComputedFlow ?? 0);
+        if (showWaterDir && Math.abs(wf) > 0.001) {
+          // ВАЖНО: направление воды НЕ связано с воздухом. Единичный вектор
+          // считаем геометрически по узлам from→to (ux,uy развёрнуты по воздуху),
+          // затем разворачиваем по расчёту воды flowFromTo.
+          const gdx = p.toSx - p.fromSx, gdy = p.toSy - p.fromSy;
+          const glen = Math.hypot(gdx, gdy) || 1;
+          const wux = gdx / glen, wuy = gdy / glen;
+          const waterFromTo = wbrDir ? (wbrDir.flowFromTo !== false) : true;
+          const dir = waterFromTo ? 1 : -1;
+          const ox = nx * pipeOffset, oy = ny * pipeOffset;
+          const mx = (p.fromSx + p.toSx) / 2 + ox;
+          const my = (p.fromSy + p.toSy) / 2 + oy;
+          const ah = Math.max(3, pipeLW * 2.2);
+          const dux = wux * dir, duy = wuy * dir;
+          // Хвостик (стержень) — от основания треугольника назад по потоку
+          ctx.strokeStyle = "#dc2626";
+          ctx.lineWidth = Math.max(1, pipeLW);
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(mx - dux * ah * 2.2, my - duy * ah * 2.2);
+          ctx.lineTo(mx - dux * ah * 0.5, my - duy * ah * 0.5);
+          ctx.stroke();
+          ctx.fillStyle = "#dc2626";
+          ctx.beginPath();
+          ctx.moveTo(mx + dux * ah, my + duy * ah);
+          ctx.lineTo(mx - dux * ah * 0.5 + nx * ah * 0.6, my - duy * ah * 0.5 + ny * ah * 0.6);
+          ctx.lineTo(mx - dux * ah * 0.5 - nx * ah * 0.6, my - duy * ah * 0.5 - ny * ah * 0.6);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      if (b.hasAirPipe)   drawEdgePipe(-1, "#dc2626");
+    }
+  }
+  // Сброс после подпрохода труб внутри слоя
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
   } // конец цикла по слоям-горизонтам
   // Сброс после всех слоёв
   ctx.globalAlpha = 1;
