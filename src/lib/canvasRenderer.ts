@@ -648,14 +648,20 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   ctx.setLineDash([]);
 
   // ── ПРОХОД 2: fill + декор ветвей слоя ────────────────────────────────────
-  // Ветви с цветом позиции ПЛА (posInnerColors) рисуем ПОСЛЕ обычных, чтобы
-  // белые концы (round-cap) соседних ветвей без позиции не перекрывали окраску
-  // позиций в общих узлах. Стабильную исходную сортировку сохраняем.
-  const group2 = posInnerColors
+  // БЕЛЫЕ ветви (defaultBranchColor — нет цвета позиции ПЛА / нулевой расход /
+  // colorMode="none") рисуем ПЕРВЫМИ, окрашенные — ПОВЕРХ них. Иначе белые концы
+  // (round-cap) соседних ветвей перекрывают окраску (позиции ПЛА, расход воздуха)
+  // в общих узлах. Порядок стабильный (не меняем z-order внутри каждой категории).
+  const isPlainWhite = (id: string): boolean => {
+    const c = bParamsMap.get(id)?.color;
+    return c === defaultBranchColor;
+  };
+  const hasColored = group.some(({ b }) => !isPlainWhite(b.id));
+  const group2 = hasColored
     ? [...group].sort((a, bb) => {
-        const ca = posInnerColors.has(a.b.id) ? 1 : 0;
-        const cb = posInnerColors.has(bb.b.id) ? 1 : 0;
-        return ca - cb;
+        const wa = isPlainWhite(a.b.id) ? 0 : 1;
+        const wb = isPlainWhite(bb.b.id) ? 0 : 1;
+        return wa - wb;
       })
     : group;
   for (const { b } of group2) {
