@@ -27,7 +27,8 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
   // Размер заголовка пропорционален формату листа (как штамп/Утв), а не rh.
   const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
   const _paperWmmT = (pl.orientation ?? "landscape") === "landscape" ? Math.max(_mmT.w, _mmT.h) : Math.min(_mmT.w, _mmT.h);
-  const titleFontSize = Math.max(6, (rw / _paperWmmT) * 5.5);
+  const _pxPerMmT = rw / _paperWmmT;
+  const titleFontSize = Math.max(6, _pxPerMmT * 5.5);
   let body = "";
 
   // Рамки (без белой подложки — схема видна из canvas под SVG)
@@ -36,8 +37,8 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
 
   // Заголовок
   if (pl.title) {
-    const tx = rx + rw / 2 + (pl.titleOffsetX ?? 0);
-    const ty = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0);
+    const tx = rx + rw / 2 + (pl.titleOffsetX ?? 0) * _pxPerMmT;
+    const ty = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0) * _pxPerMmT;
     body += `<text x="${n(tx)}" y="${n(ty)}" text-anchor="middle" dominant-baseline="hanging" font-size="${n(titleFontSize)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${e(pl.title)}</text>`;
   }
 

@@ -441,7 +441,7 @@ export default function TopoCanvas(props: Props) {
   >(null);
   // Перетаскивание заголовка слоя печати
   const [draggingPrintTitle, setDraggingPrintTitle] = useState<
-    { horizonId: string; startSx: number; startSy: number; startOffX: number; startOffY: number } | null
+    { horizonId: string; startSx: number; startSy: number; startOffX: number; startOffY: number; pxPerMm: number } | null
   >(null);
   // Редактирование заголовка слоя печати
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
@@ -1468,8 +1468,11 @@ export default function TopoCanvas(props: Props) {
     }
     // ── Drag заголовка слоя печати — тоже до pan ──
     if (draggingPrintTitle && onPrintLayerChange) {
-      const dx = sx - draggingPrintTitle.startSx;
-      const dy = sy - draggingPrintTitle.startSy;
+      // Смещение заголовка хранится в ММ листа → делим пиксельную дельту
+      // на pxPerMm, чтобы блок масштабировался вместе с листом и не убегал.
+      const pxmm = draggingPrintTitle.pxPerMm || 1;
+      const dx = (sx - draggingPrintTitle.startSx) / pxmm;
+      const dy = (sy - draggingPrintTitle.startSy) / pxmm;
       onPrintLayerChange(draggingPrintTitle.horizonId, {
         titleOffsetX: draggingPrintTitle.startOffX + dx,
         titleOffsetY: draggingPrintTitle.startOffY + dy,
@@ -1945,8 +1948,8 @@ export default function TopoCanvas(props: Props) {
           style={{ pointerEvents: "none" }} />
         {/* Заголовок — редактируемый и перетаскиваемый */}
         {(() => {
-          const titleX = rx + rw / 2 + (pl.titleOffsetX ?? 0);
-          const titleY = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0);
+          const titleX = rx + rw / 2 + (pl.titleOffsetX ?? 0) * pxPerMm;
+          const titleY = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0) * pxPerMm;
           const canEdit = !!onPrintLayerChange;
           const isEditingTitle = editingTitleId === h.id;
           if (isEditingTitle) {
@@ -1998,11 +2001,12 @@ export default function TopoCanvas(props: Props) {
                 const startOffY = pl.titleOffsetY ?? 0;
                 const startSx = e.clientX;
                 const startSy = e.clientY;
-                setDraggingPrintTitle({ horizonId: h.id, startSx, startSy, startOffX, startOffY });
+                setDraggingPrintTitle({ horizonId: h.id, startSx, startSy, startOffX, startOffY, pxPerMm });
+                const pxmm = pxPerMm || 1;
                 const onMove = (me: MouseEvent) => {
                   onPrintLayerChange?.(h.id, {
-                    titleOffsetX: startOffX + (me.clientX - startSx),
-                    titleOffsetY: startOffY + (me.clientY - startSy),
+                    titleOffsetX: startOffX + (me.clientX - startSx) / pxmm,
+                    titleOffsetY: startOffY + (me.clientY - startSy) / pxmm,
                   });
                 };
                 const onUp = () => {

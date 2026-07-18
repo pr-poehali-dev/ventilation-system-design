@@ -200,8 +200,8 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
       {/* Заголовок */}
       {pl.title && (
         <text
-          x={rx + rw / 2 + (pl.titleOffsetX ?? 0)}
-          y={ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0)}
+          x={rx + rw / 2 + (pl.titleOffsetX ?? 0) * _pxPerMmT}
+          y={ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0) * _pxPerMmT}
           textAnchor="middle" dominantBaseline="hanging"
           fontSize={titleFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
           {pl.title}
