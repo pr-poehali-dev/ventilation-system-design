@@ -1055,30 +1055,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   ctx.globalAlpha = 1;
   ctx.setLineDash([]);
 
-  // ─── СКВОЗНОЙ ПРОХОД ОКРАШЕННЫХ ВЕТВЕЙ ───────────────────────────────────
-  // Ветви с ЦВЕТОМ (позиции ПЛА / расход / скорость / горизонт) перерисовываем
-  // поверх ВСЕХ слоёв-горизонтов. Иначе БЕЛЫЕ ветви верхних горизонтов
-  // перекрывают окраску ветвей нижних горизонтов в местах пересечения проекций
-  // (в SVG этого дефекта нет — там окраска читается целостно). Перерисовываем
-  // только основную линию, не трогая border (он уже под ней) и декор.
-  {
-    let anyColored = false;
-    for (const { b } of sorted) { const p = bParamsMap.get(b.id); if (p && p.color !== defaultBranchColor) { anyColored = true; break; } }
-    if (anyColored) {
-      ctx.setLineDash([]);
-      for (const { b } of sorted) {
-        const p = bParamsMap.get(b.id);
-        if (!p || p.color === defaultBranchColor) continue;
-        if (p.isLeakage) continue; // у утечек своя пунктирная отрисовка
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = p.w;
-        ctx.globalAlpha = p.flowVisible ? 0.55 : 1;
-        ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-    }
-  }
-
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {
     // Кэш: узел → смежные ветви, строится за O(M) один раз вместо O(N×M) filter в цикле

@@ -5058,9 +5058,10 @@ export default function TopoCanvas(props: Props) {
           const ordersOv = Array.from(new Set(branchesSorted.map(x => x.hOrder))).sort((a, b) => b - a);
           const seenOv = new Set<number>();
           const occColor = (ob: TopoBranch): string => {
-            const hc = ob.horizonId ? horizonMap.get(ob.horizonId)?.color : undefined;
-            if (colorByHorizon && hc) return hc;
-            return "#ffffff";
+            // Перерисовка ветви-окклюдера ДОЛЖНА повторять её реальную окраску
+            // (позиции ПЛА / расход / скорость / горизонт), иначе окрашенные ветви
+            // верхних горизонтов возле символов перекрывались белым.
+            return branchBodyColor(ob) ?? "#ffffff";
           };
           // Экранная позиция символа (для клипа occluder-а — чтобы не перекрашивать
           // ветви целиком, а лишь скрывать символ там, где его перекрывает верхний слой).
