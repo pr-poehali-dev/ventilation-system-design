@@ -648,7 +648,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   ctx.setLineDash([]);
 
   // ── ПРОХОД 2: fill + декор ветвей слоя ────────────────────────────────────
-  for (const { b } of group) {
+  // Ветви с цветом позиции ПЛА (posInnerColors) рисуем ПОСЛЕ обычных, чтобы
+  // белые концы (round-cap) соседних ветвей без позиции не перекрывали окраску
+  // позиций в общих узлах. Стабильную исходную сортировку сохраняем.
+  const group2 = posInnerColors
+    ? [...group].sort((a, bb) => {
+        const ca = posInnerColors.has(a.b.id) ? 1 : 0;
+        const cb = posInnerColors.has(bb.b.id) ? 1 : 0;
+        return ca - cb;
+      })
+    : group;
+  for (const { b } of group2) {
     const p = bParamsMap.get(b.id);
     if (!p) continue;
     const { isSel, isDead, isLeakage, Q, V, overV,
