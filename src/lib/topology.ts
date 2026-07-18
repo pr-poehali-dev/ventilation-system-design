@@ -26,6 +26,7 @@ export interface TopoNode {
   computedAirTemp: number;     // °C
   computedWallTemp: number;    // °C
   computedPressure: number;    // Па — абсолютное давление
+  computedFanPressure: number; // Па — давление вентилятора в узле (изб. над атмосферой = распределение напора по сети)
   computedExplosivePressure: number; // кПа
   computedCO?: number;         // % — концентрация CO (от расчёта пожара)
   computedCO2?: number;        // % — концентрация CO₂ (от расчёта пожара)
@@ -428,6 +429,7 @@ export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
     computedAirTemp: 20,
     computedWallTemp: 0,
     computedPressure: 910,
+    computedFanPressure: 0,
     computedExplosivePressure: 0,
     fireNodeType: "none",
     fireConsumerType: "fire_hydrant",

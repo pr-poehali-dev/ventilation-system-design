@@ -2588,13 +2588,13 @@ export default function CadPage() {
 
       // Применяем давления в узлах из результата расчёта
       if (data.nodes && Array.isArray(data.nodes) && data.nodes.length > 0) {
-        const nodePressures = new Map<string, number>(
-          (data.nodes as { id: string; computedPressure: number }[])
-            .map(n => [n.id, n.computedPressure])
+        const nodePressures = new Map<string, { computedPressure: number; computedFanPressure: number }>(
+          (data.nodes as { id: string; computedPressure: number; computedFanPressure: number }[])
+            .map(n => [n.id, { computedPressure: n.computedPressure, computedFanPressure: n.computedFanPressure }])
         );
         setNodes(prev => prev.map(n => {
-          const P = nodePressures.get(n.id);
-          return P !== undefined ? { ...n, computedPressure: P } : n;
+          const p = nodePressures.get(n.id);
+          return p !== undefined ? { ...n, computedPressure: p.computedPressure, computedFanPressure: p.computedFanPressure } : n;
         }));
       }
 

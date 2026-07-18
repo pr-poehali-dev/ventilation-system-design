@@ -936,7 +936,12 @@ export function solveNetwork(
     const id = n.atmosphereLink ? GND_ID : n.id;
     const P  = pressure.get(id);
     if (P === undefined) return n;
-    return { ...n, computedPressure: Math.round(P + 12 * (-n.z)) };
+    // Давление вентилятора в узле = избыточное над атмосферой (распределение напора по сети)
+    return {
+      ...n,
+      computedPressure: Math.round(P + 12 * (-n.z)),
+      computedFanPressure: Math.round(P - 101325),
+    };
   });
 
   // ──────────────────────────────────────────────────────────────────────────
