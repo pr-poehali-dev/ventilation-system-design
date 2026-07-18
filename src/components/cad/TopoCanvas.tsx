@@ -2899,9 +2899,11 @@ export default function TopoCanvas(props: Props) {
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
             : isLeakage ? "#f97316"
             : overV ? "#dc2626"
+            // Ветвь входит в позицию ПЛА — цвет позиции. Ветви БЕЗ позиции сохраняют
+            // обычный цвет (горизонт/скорость/контур), а не заливаются белым.
+            : posInnerColEarly ? posInnerColEarly
             : (colorByHorizon && horizonColor) ? horizonColor
             : colorMode === "flowQ" ? flowQColor(Math.abs(Q))
-            : posInnerColors ? (posInnerColEarly ?? "#ffffff")
             : colorMode === "none" ? "#ffffff"
             : Q > 0 ? velocityColor(V)
             : "#ffffff";

@@ -508,9 +508,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
+      // Ветвь входит в позицию ПЛА — красим цветом позиции. Ветви БЕЗ позиции
+      // сохраняют обычный цвет (горизонт/скорость/контур), а не заливаются белым.
+      : posInnerCol ? posInnerCol
       : (colorByHorizon && horizonColor) ? horizonColor
       : colorMode === "flowQ" ? flowQColor(Q, flowColorMin, flowColorMax, flowColorHue)
-      : posInnerColors ? (posInnerCol ?? defaultBranchColor)
       : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
       : defaultBranchColor;
