@@ -4681,6 +4681,27 @@ export default function TopoCanvas(props: Props) {
                 }}>
                 {/* hitbox — для valve_reduce сдвинут к линии трубы */}
                 <rect x={vcpx - vSZ / 2 - 4} y={vcpy - vSZ / 2 - 4} width={vSZ + 8} height={vSZ + 8} fill="transparent" stroke="none" />
+                {/* Подложка цвета ветви ПОД символом УО: в canvas-режиме символы
+                    рисуются в оверлее поверх холста и белым перекрывают окраску
+                    ветви. Кладём сегмент цвета ветви вдоль неё, чтобы окраска не
+                    прерывалась (для ЛЮБОГО символа на ветви, кроме valve_reduce —
+                    тот сидит на трубе, а не на теле ветви). */}
+                {sym.branchId && hasBranchPts && sym.typeId !== "valve_reduce" && (() => {
+                  const brBody = branches.find(b => b.id === sym.branchId);
+                  const bodyCol = branchBodyColor(brBody ?? ({ id: sym.branchId } as TopoBranch));
+                  if (!bodyCol) return null;
+                  const bDx = tsx2 - fsx, bDy = tsy2 - fsy;
+                  const bAng = Math.atan2(bDy, bDx) * 180 / Math.PI;
+                  const uBw = (brBody?.lineWidth && brBody.lineWidth > 0) ? brBody.lineWidth : branchWidth;
+                  const uW = Math.max(1.5, uBw * _branchObjSF);
+                  // Длина сегмента вдоль ветви — по габариту символа, но не больше SZ.
+                  const uLen = Math.max(uW, SZ * 0.9);
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${bAng})`} pointerEvents="none">
+                      <rect x={-uLen / 2} y={-uW / 2} width={uLen} height={uW} fill={bodyCol} stroke="none" />
+                    </g>
+                  );
+                })()}
                 {isSel && <circle cx={vcpx} cy={vcpy} r={vSZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
                 {/* Перемычки: рисуем геометрически с поворотом по углу ветви */}
                 {isBulkheadOv && hasBranchPts ? (() => {
@@ -4721,22 +4742,8 @@ export default function TopoCanvas(props: Props) {
                   const isFirePP  = tid === "fire_door_pp";
                   const isProem   = tid.includes("proem_");
                   const isRegulatorOv = tid === "regulator";
-                  // Подложка цвета ветви ПОД символом: в canvas-режиме символы УО
-                  // рисуются в оверлее поверх холста и белым перекрывают окраску
-                  // ветви. Кладём короткий сегмент цвета ветви вдоль неё (по X после
-                  // rotate), чтобы окраска не прерывалась. Только для символов с
-                  // белой/светлой заливкой и только если у ветви есть цвет.
-                  const bodyColOv = branchBodyColor(bkBrOv ?? ({ id: sym.branchId } as TopoBranch));
-                  const showUnderlay = !!bodyColOv && !isMeasureStationOv && !isSailOv;
-                  const underlayLen = ((isDoor || isAuto || isFirePP) ? pw * 2 + gap : pw) + realBwOv * 0.6;
-                  const underlayW = Math.max(1.5, realBwOv);
                   return (
                     <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
-                      {showUnderlay && (
-                        <rect x={-underlayLen / 2} y={-underlayW / 2}
-                          width={underlayLen} height={underlayW}
-                          fill={bodyColOv} stroke="none" />
-                      )}
                       {isMeasureStationOv ? (() => {
                         const ml = ph * 1.1;
                         const mt = Math.max(1.5, ph * 0.22);
