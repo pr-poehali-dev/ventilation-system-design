@@ -18,32 +18,17 @@ set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
 
-REM ---------- Auto-bump server core version ----------
+REM ---------- Read server core version (MANUAL) ----------
 REM server.exe (interface + core + backend) updates on the fly by server_version.
-REM Each build must be NEWER than the previous one, otherwise clients think they
-REM are already up to date and never download the fresh server.exe.
-REM We read desktop\SERVER_VERSION (X.Y.Z), increment the last number, save it
-REM back, and later write it next to server.exe as server_version.txt.
+REM Версия ядра задаётся ВРУЧНУЮ в одном месте — файле desktop\SERVER_VERSION.
+REM Никакого авто-инкремента: сборка берёт число из файла КАК ЕСТЬ.
+REM Чтобы выпустить новую версию ядра — просто впиши новый номер (X.Y.Z) в этот
+REM файл перед сборкой. ВАЖНО: номер должен быть БОЛЬШЕ предыдущего, иначе
+REM клиенты будут считать, что у них уже актуальное ядро, и не обновятся.
 set "SERVER_VERSION_FILE=%ROOT%\desktop\SERVER_VERSION"
 if not exist "%SERVER_VERSION_FILE%" echo 1.0.0> "%SERVER_VERSION_FILE%"
-for /f "usebackq tokens=* delims=" %%v in (`powershell -NoProfile -Command "$p='%SERVER_VERSION_FILE%'; $v=(Get-Content -Raw $p).Trim(); if($v -notmatch '^\d+\.\d+\.\d+$'){$v='1.0.0'}; $a=$v.Split('.'); $a[2]=[int]$a[2]+1; $n=$a -join '.'; Set-Content -NoNewline -Path $p -Value $n; Write-Output $n"`) do set "SERVER_VERSION=%%v"
-echo     Core (server.exe) version bumped to: %SERVER_VERSION%
-
-REM ---------- Auto-commit the bumped SERVER_VERSION ----------
-REM Persist the new number into git right away, so the next build starts from it
-REM and never re-uses the same version (the cause of clients not updating).
-git -C "%ROOT%" rev-parse --is-inside-work-tree >nul 2>&1
-if not errorlevel 1 (
-  git -C "%ROOT%" add "%SERVER_VERSION_FILE%" >nul 2>&1
-  git -C "%ROOT%" commit -m "build: bump server core version to %SERVER_VERSION%" -- "%SERVER_VERSION_FILE%" >nul 2>&1
-  if not errorlevel 1 (
-    echo     SERVER_VERSION committed to git: %SERVER_VERSION%
-  ) else (
-    echo     SERVER_VERSION unchanged in git ^(nothing to commit^)
-  )
-) else (
-  echo     WARNING: not a git repo, SERVER_VERSION not committed - commit it manually!
-)
+for /f "usebackq tokens=* delims=" %%v in (`powershell -NoProfile -Command "$p='%SERVER_VERSION_FILE%'; $v=(Get-Content -Raw $p).Trim(); if($v -notmatch '^\d+\.\d+\.\d+$'){$v='1.0.0'}; Write-Output $v"`) do set "SERVER_VERSION=%%v"
+echo     Core (server.exe) version (from SERVER_VERSION): %SERVER_VERSION%
 
 REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
