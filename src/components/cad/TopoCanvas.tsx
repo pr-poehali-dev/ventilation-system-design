@@ -5121,6 +5121,71 @@ export default function TopoCanvas(props: Props) {
         </svg>
       )}
 
+      {/* ── Оверлей HUD (линейка + ViewCube) поверх canvas ──────────────────
+          В canvas-режиме основной SVG скрыт (visibility:hidden), поэтому линейку
+          и 3D-куб рендерим в отдельном всегда-видимом SVG поверх холста.
+          pointerEvents:none на контейнере — клики проходят к схеме; у куба свои
+          onClick-обработчики на гранях (SVG всё равно ловит их через дочерние). */}
+      {useCanvas && (
+        <svg
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 3 }}
+          width={size.w} height={size.h}>
+          {/* ViewCube — интерактивные грани */}
+          <g style={{ pointerEvents: "auto" }}>
+            <ViewCube
+              x={size.w - 70} y={20}
+              azimuth={view.azimuth} elevation={view.elevation}
+              onPick={applyPreset}
+            />
+          </g>
+          {/* Масштабная линейка */}
+          {(() => {
+            const targetPx = 120;
+            const rawM = targetPx / view.scale;
+            const exp = Math.pow(10, Math.floor(Math.log10(rawM)));
+            const nice = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+            const stepM = nice.find(n => n * view.scale >= 60) ?? nice[nice.length - 1];
+            const barPx = stepM * view.scale;
+            const bx = 16, by = size.h - 36;
+            const segments = 5;
+            const segPx = barPx / segments;
+            void exp;
+            return (
+              <g style={{ pointerEvents: "none" }} data-export-exclude="true">
+                <rect x={bx - 4} y={by - 18} width={barPx + 8} height={36}
+                  fill="white" fillOpacity="0.88" rx="3"
+                  stroke="#c0c0c0" strokeWidth="0.5" />
+                {Array.from({ length: segments }).map((_, i) => (
+                  <rect key={i}
+                    x={bx + i * segPx} y={by - 8}
+                    width={segPx} height={10}
+                    fill={i % 2 === 0 ? "#1a1a1a" : "#ffffff"}
+                    stroke="#1a1a1a" strokeWidth="0.8" />
+                ))}
+                <line x1={bx} y1={by - 8} x2={bx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
+                <line x1={bx + barPx} y1={by - 8} x2={bx + barPx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
+                {Array.from({ length: segments - 1 }).map((_, i) => (
+                  <line key={i}
+                    x1={bx + (i + 1) * segPx} y1={by - 8}
+                    x2={bx + (i + 1) * segPx} y2={by - 12}
+                    stroke="#1a1a1a" strokeWidth="1" />
+                ))}
+                <text x={bx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
+                  fill="#111" textAnchor="middle" fontWeight="600">0</text>
+                <text x={bx + barPx / 2} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
+                  fill="#111" textAnchor="middle">
+                  {stepM / 2 >= 1000 ? `${stepM / 2000}тыс` : `${stepM / 2}`}
+                </text>
+                <text x={bx + barPx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
+                  fill="#111" textAnchor="middle" fontWeight="600">
+                  {stepM >= 1000 ? `${stepM / 1000} км` : `${stepM} м`}
+                </text>
+              </g>
+            );
+          })()}
+        </svg>
+      )}
+
       {/* Индикаторы */}
       <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"
         style={{ color: "#444", marginLeft: "0px", paddingBottom: "0px" }}>
