@@ -85,8 +85,9 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
       const legLineH = legIconSZ + legFs * 0.4;
       const legPad = legFs * 0.6;
       const legH = legPad * 2 + items.length * legLineH + legFs * 1.5;
-      const lx = rx + inset + (pl.legendOffsetX ?? 0);
-      const ly = ry + rh - inset - legH + (pl.legendOffsetY ?? 0);
+      // Смещение УО хранится в ММ листа → масштабируется вместе с листом
+      const lx = rx + inset + (pl.legendOffsetX ?? 0) * pxPerMmL;
+      const ly = ry + rh - inset - legH + (pl.legendOffsetY ?? 0) * pxPerMmL;
 
       body += `<text x="${n(lx)}" y="${n(ly+legPad+legFs)}" font-size="${n(legFs)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">Условные обозначения</text>`;
 

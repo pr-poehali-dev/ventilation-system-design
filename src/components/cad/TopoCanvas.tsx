@@ -2220,8 +2220,11 @@ export default function TopoCanvas(props: Props) {
           const legPad = legFontSize * 0.6;
           const legW = pxPerMmL * 60;
           const legH = legPad * 2 + legendItems.length * legLineH + legFontSize * 1.5;
-          const legOffX = pl.legendOffsetX ?? 0;
-          const legOffY = pl.legendOffsetY ?? 0;
+          // Смещение УО хранится в ММ листа (как внутренние координаты штампа),
+          // поэтому умножаем на pxPerMmL — блок масштабируется вместе с листом
+          // и не "убегает" при зуме.
+          const legOffX = (pl.legendOffsetX ?? 0) * pxPerMmL;
+          const legOffY = (pl.legendOffsetY ?? 0) * pxPerMmL;
           const lx = rx + inset + legOffX;
           const ly = ry + rh - inset - legH + legOffY;
           const canDrag = !!onPrintLayerChange;
@@ -2268,7 +2271,8 @@ export default function TopoCanvas(props: Props) {
                     e.stopPropagation(); e.preventDefault();
                     const startX = e.clientX, startY = e.clientY;
                     const startOX = pl.legendOffsetX ?? 0, startOY = pl.legendOffsetY ?? 0;
-                    const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, { legendOffsetX: startOX + me.clientX - startX, legendOffsetY: startOY + me.clientY - startY });
+                    const pxmm = pxPerMmL || 1;
+                    const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, { legendOffsetX: startOX + (me.clientX - startX) / pxmm, legendOffsetY: startOY + (me.clientY - startY) / pxmm });
                     const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
                     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
                   }}

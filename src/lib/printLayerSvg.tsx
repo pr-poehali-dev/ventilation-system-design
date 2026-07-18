@@ -103,8 +103,9 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     const legPad = legFontSize * 0.6;
     const legW = pxPerMmL * 60;
     const legH = legPad * 2 + items.length * legLineH + legFontSize * 1.5;
-    const lx = rx + inset + (pl.legendOffsetX ?? 0);
-    const ly = ry + rh - inset - legH + (pl.legendOffsetY ?? 0);
+    // Смещение УО хранится в ММ листа → масштабируется вместе с листом
+    const lx = rx + inset + (pl.legendOffsetX ?? 0) * pxPerMmL;
+    const ly = ry + rh - inset - legH + (pl.legendOffsetY ?? 0) * pxPerMmL;
 
     return (
       <g key="legend-block">
