@@ -132,7 +132,7 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
       <Row label="Давление абс. (расч.), Па">
         <ComputedInput value={numVal(node.computedPressure, 0)} />
       </Row>
-      <Row label="Давление вентилятора (расч.), Па">
+      <Row label="Депрессия (расч.), Па">
         <ComputedInput value={numVal(node.computedFanPressure, 0)} />
       </Row>
       <Row label="Давление взрыва (расч.), кПа">

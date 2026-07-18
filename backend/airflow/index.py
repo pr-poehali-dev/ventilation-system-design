@@ -1419,12 +1419,14 @@ def compute_node_pressures(edges, Q, nodes_in):
         pid = GND if (n.get("isAtm") or n.get("atmosphereLink")) else nid
         P = pressure.get(pid)
         if P is None:
-            nodes_out.append({"id": nid, "computedPressure": 0})
+            nodes_out.append({"id": nid, "computedPressure": 0, "computedFanPressure": 0})
             continue
         z = node_z.get(nid, 0.0)
         # Коррекция на высоту: +12 Па/м (вниз давление растёт)
         p_abs = round(P + 12.0 * (-z))
-        nodes_out.append({"id": nid, "computedPressure": p_abs})
+        # Депрессия = избыточное давление над атмосферой (распределение напора по сети)
+        p_fan = round(P - P_ATM)
+        nodes_out.append({"id": nid, "computedPressure": p_abs, "computedFanPressure": p_fan})
     return nodes_out
 
 
