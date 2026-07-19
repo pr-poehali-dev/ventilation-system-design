@@ -1126,18 +1126,18 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.fillStyle = "#16a34a"; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
         ctx.strokeStyle = "#15803d"; ctx.lineWidth = Math.max(0.8, baseNodeR * 0.25); ctx.stroke();
       }
-      // Для fire-узлов иконка заменяет кружок — рисуем маленький кружок только как маркер центра
-      const consumerColor = (n.fireHydrantOpen ?? false) ? "#1d4ed8" : "#dc2626";
-      const nodeColor = fireType === "reservoir" ? "#1d4ed8"
-                      : fireType === "consumer"  ? consumerColor
-                      : fireType === "junction"  ? "#7c3aed"
-                      : color;
-      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, hasFire ? Math.min(r, baseNodeR * 0.5) : r, 0, Math.PI * 2);
-      ctx.fillStyle = nodeColor;
-      ctx.strokeStyle = isSel ? ringColor : (hasFire ? nodeColor : "#1f2937");
-      // Обводка = ~20% от радиуса, но не больше 2px и не меньше 0.5px
-      ctx.lineWidth = Math.min(2, Math.max(0.5, baseNodeR * 0.25));
-      ctx.fill(); ctx.stroke();
+      // Основной кружок — ТОЛЬКО для обычных узлов (как в SVG-рендере).
+      // Водопроводные (fire-)узлы полностью рисуются своими иконками ниже
+      // (резервуар / кран / соединение), поэтому лишний цветной кружок-маркер
+      // под иконкой не рисуем — иначе он частично перекрывает узлы труб.
+      if (!hasFire) {
+        ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.strokeStyle = isSel ? ringColor : "#1f2937";
+        // Обводка = ~20% от радиуса, но не больше 2px и не меньше 0.5px
+        ctx.lineWidth = Math.min(2, Math.max(0.5, baseNodeR * 0.25));
+        ctx.fill(); ctx.stroke();
+      }
 
       // ─── Иконка РЕЗЕРВУАРА С ВОДОЙ ────────────────────────────
       if (fireType === "reservoir" && sc > 0.025) {
@@ -1258,8 +1258,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.restore();
       }
 
-      // Внутреннее кольцо для atmosphereLink (как SVG)
-      if (isAtm) {
+      // Внутреннее кольцо для atmosphereLink (как SVG) — только для обычных узлов
+      if (isAtm && !hasFire) {
         ctx.beginPath(); ctx.arc(pn.sx, pn.sy, Math.max(1.5, r * 0.55), 0, Math.PI * 2);
         ctx.strokeStyle = "#1f2937"; ctx.lineWidth = 1.2;
         ctx.setLineDash([2, 1]); ctx.stroke();
