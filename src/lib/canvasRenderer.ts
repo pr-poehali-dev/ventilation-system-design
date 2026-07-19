@@ -382,11 +382,16 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     rescuePathBranchIds, rescuePathBranchDirs,
     highlightHorizonId = null,
     xyScale,
+    hiddenBranchIds,
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
     // чтобы при случайном обращении к ним не было ReferenceError.
-    nodes: _nodes, horizons: _horizons, hiddenBranchIds: _hiddenBranchIds,
+    nodes: _nodes, horizons: _horizons,
     zScale: _zScale, zLevel: _zLevel,
   } = opts;
+
+  // Множество ID скрытых по горизонту ветвей (для фильтрации узлов/УО).
+  // Пустой Set, если не передано.
+  const hiddenBrIds: Set<string> = hiddenBranchIds ?? new Set<string>();
 
   ctx.clearRect(0, 0, width, height);
 
@@ -1071,6 +1076,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     for (const pn of nodesSorted) {
       const n = pn.node;
       if (n.visible === false) continue;
+
+      // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам
+      // (как в SVG-рендере). Узлы без ветвей остаются видимыми.
+      if (hiddenBrIds.size > 0) {
+        const nAdj = nodeAdjBranchesMap.get(n.id);
+        if (nAdj && nAdj.length > 0 && nAdj.every((b) => hiddenBrIds.has(b.id))) continue;
+      }
 
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
