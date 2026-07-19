@@ -5161,6 +5161,66 @@ export default function TopoCanvas(props: Props) {
             const node = renderOneOv(sym);
             if (node) out.push(<g key={`ovsym-top-${sym.id}`}>{node}</g>);
           }
+          // ── Узлы поверх символов (как в SVG-режиме) ──
+          // В canvas-режиме узлы нарисованы на <canvas> ПОД оверлеем, а символы УО
+          // (перемычки/вентиляторы/замерные станции) — в оверлее ПОВЕРХ, из-за чего
+          // их залитый фон частично перекрывал узлы. В SVG узлы рисуются последними
+          // (сверху). Повторяем это: дорисовываем обычные кружки узлов, попадающих
+          // под символы, поверх оверлея символов. Водопроводные узлы (иконки) не
+          // трогаем — они рисуются на canvas и своей формой не конфликтуют.
+          {
+            // bbox всех символов (с запасом) — рисуем только близкие узлы
+            let sMinX = Infinity, sMinY = Infinity, sMaxX = -Infinity, sMaxY = -Infinity;
+            let symCount = 0;
+            for (const sym of schemaSymbolsSorted) {
+              const p = symScreenPos(sym);
+              if (!p) continue;
+              symCount++;
+              if (p.x < sMinX) sMinX = p.x; if (p.x > sMaxX) sMaxX = p.x;
+              if (p.y < sMinY) sMinY = p.y; if (p.y > sMaxY) sMaxY = p.y;
+            }
+            if (symCount > 0) {
+              const pad = clipR;
+              sMinX -= pad; sMinY -= pad; sMaxX += pad; sMaxY += pad;
+              const _xyScaleN = xyScale ?? 1;
+              const _rawNodeSF = fixedObjectScale ? 1 : (view.scale / (_xyScaleN * 0.4));
+              const nodeSF = fixedObjectScale && scaleLimits
+                ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, _rawNodeSF))
+                : Math.max(0.25, _rawNodeSF);
+              for (const { node, sx, sy } of nodesSorted) {
+                if (node.visible === false) continue;
+                if (hiddenNodeIds.has(node.id)) continue;
+                if (sx < sMinX || sx > sMaxX || sy < sMinY || sy > sMaxY) continue;
+                // только обычные узлы — водопроводные рисует canvas своими иконками
+                const rawFT = node.fireNodeType ?? "none";
+                const wtVis =
+                  rawFT === "reservoir" ? (!infoConfig || infoConfig.waterReservoir)
+                : rawFT === "consumer"  ? (!infoConfig || infoConfig.waterConsumer)
+                : rawFT === "junction"  ? (!infoConfig || infoConfig.waterPipeJoint)
+                : true;
+                if (wtVis && rawFT !== "none") continue;
+                const isSelN = selectedNodeId === node.id || (selectedNodeIds?.has(node.id) ?? false);
+                const adjBrN = branches.filter(b => b.fromId === node.id || b.toId === node.id);
+                const adjAvgWN = adjBrN.length > 0
+                  ? adjBrN.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBrN.length
+                  : branchWidth;
+                const baseNodeRN = Math.max(1.5, (thinLines ? 1 : adjAvgWN) * nodeSF * 0.55);
+                const rN = isSelN ? baseNodeRN * 1.5 : baseNodeRN;
+                const colorN = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
+                const ringColorN = (selectedNodeIds?.has(node.id) ?? false) ? "#f59e0b" : "#2563eb";
+                out.push(
+                  <g key={`ovnode-${node.id}`} transform={`translate(${sx},${sy})`} pointerEvents="none">
+                    <circle r={rN} fill={colorN} stroke={isSelN ? ringColorN : "#1f2937"}
+                      strokeWidth={Math.min(2, Math.max(0.5, baseNodeRN * 0.25))} />
+                    {node.atmosphereLink && (
+                      <circle r={rN * 0.5} fill="none" stroke="#1f2937"
+                        strokeWidth={Math.min(1.5, Math.max(0.5, baseNodeRN * 0.2))} strokeDasharray="2 1" />
+                    )}
+                  </g>
+                );
+              }
+            }
+          }
           return <>{out}</>;
           })()}
         </svg>
