@@ -4711,9 +4711,35 @@ export default function TopoCanvas(props: Props) {
                   const tClamp = Math.max(0, Math.min(1, tRaw));
                   const anchorX = fsx + bDx * tClamp;
                   const anchorY = fsy + bDy * tClamp;
+                  // Стрелка направления воздуха ПОВЕРХ подложки — иначе цветная
+                  // подложка символа перекрывала бы стрелку потока (в SVG-режиме
+                  // стрелка рисуется в проходе ветвей и не перекрывается).
+                  const Qb = Math.abs(brBody?.flow ?? 0);
+                  const arrLod = view.scale >= 0.15;
+                  const showArr = showFlowArrows && !thinLines && arrLod && Qb > 0.1;
+                  const reversedArr = (brBody?.flow ?? 0) < 0 || (!!brBody?.hasFan && (brBody?.fanReverse ?? false) && (brBody?.flow ?? 0) >= 0);
+                  const aAx = reversedArr ? tsx2 : fsx, aAy = reversedArr ? tsy2 : fsy;
+                  const aBx = reversedArr ? fsx : tsx2, aBy = reversedArr ? fsy : tsy2;
+                  const aDx = aBx - aAx, aDy = aBy - aAy;
+                  const aLen = Math.hypot(aDx, aDy) || 1;
+                  const aAng = Math.atan2(aDy, aDx) * 180 / Math.PI;
+                  const tipH = uW * 2.2, tipW = uW * 0.5, tailLen = uW * 3.0, tailW = Math.max(0.5, uW * 0.15);
+                  const arrColor = pollutedBranchIds.has(sym.branchId!) ? "#2563eb" : "#dc2626";
+                  const arrPts = `0,-${tipW} ${tipH},0 0,${tipW}`;
+                  const showThisArr = showArr && aLen >= (tailLen + tipH) * 2;
                   return (
-                    <g transform={`translate(${anchorX},${anchorY}) rotate(${bAng})`} pointerEvents="none">
-                      <rect x={-uLen / 2} y={-uW / 2} width={uLen} height={uW} fill={bodyCol} stroke="none" />
+                    <g pointerEvents="none">
+                      <g transform={`translate(${anchorX},${anchorY}) rotate(${bAng})`}>
+                        <rect x={-uLen / 2} y={-uW / 2} width={uLen} height={uW} fill={bodyCol} stroke="none" />
+                      </g>
+                      {showThisArr && (
+                        <g transform={`translate(${(aAx + aDx * 0.5).toFixed(1)},${(aAy + aDy * 0.5).toFixed(1)}) rotate(${aAng.toFixed(1)})`}>
+                          <line x1={-tailLen} y1={0} x2={0} y2={0} stroke="white" strokeWidth={tailW + 1.5} strokeLinecap="round" />
+                          <polygon points={arrPts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                          <line x1={-tailLen} y1={0} x2={0} y2={0} stroke={arrColor} strokeWidth={tailW} strokeLinecap="round" />
+                          <polygon points={arrPts} fill={arrColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
+                        </g>
+                      )}
                     </g>
                   );
                 })()}
