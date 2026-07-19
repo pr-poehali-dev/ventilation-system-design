@@ -2107,17 +2107,39 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
     # ── Проверка связности сети ──────────────────────────────────────────
-    # BFS-дерево строится от выхода на поверхность (GND). Узлы, не попавшие
-    # в parent_map, не связаны с основной сетью (изолированный кусок после
-    # импорта). Без этой проверки _tree_path падает с KeyError на узле, и в
-    # лог попадает непонятный traceback вместо совета, что исправить.
-    reachable = set(bfs_order)
-    unreachable = [n for n in node_list if n != GND and n not in reachable]
+    # ВАЖНО: связность проверяем по ПОЛНОМУ графу (все ветви, включая тупиковые),
+    # а НЕ по active_edges_list. Иначе узлы, соединённые с сетью только
+    # тупиковыми выработками, ложно объявлялись «изолированными» — хотя на схеме
+    # они реально подключены (пользователь их находит связанными). Настоящая
+    # изоляция — это когда до узла нельзя дойти от выхода на поверхность вообще
+    # ни по одной выработке (обычно мусор, оставшийся после импорта).
+    full_adj = collections.defaultdict(list)
+    for e in edges:
+        full_adj[e["a"]].append(e["b"])
+        full_adj[e["b"]].append(e["a"])
+    all_nodes = set(full_adj.keys())
+    reachable = set()
+    if GND in all_nodes:
+        _stack = [GND]
+        reachable.add(GND)
+        while _stack:
+            _u = _stack.pop()
+            for _v in full_adj[_u]:
+                if _v not in reachable:
+                    reachable.add(_v)
+                    _stack.append(_v)
+    unreachable = [n for n in all_nodes if n != GND and n not in reachable]
+    # Детерминированный порядок вывода: по номеру узла, если это число.
+    def _node_sort_key(n):
+        s = str(n)
+        return (0, int(s)) if s.lstrip("-").isdigit() else (1, s)
+    unreachable.sort(key=_node_sort_key)
     if unreachable:
+        _unreach_set = set(unreachable)
         # Ветви, целиком лежащие в изолированной части (обе стороны недоступны)
         iso_branch_ids = [
-            e["id"] for e in active_edges_list
-            if e["a"] in unreachable and e["b"] in unreachable
+            e["id"] for e in edges
+            if e["a"] in _unreach_set and e["b"] in _unreach_set
         ]
         nodes_txt = ", ".join(str(n) for n in unreachable[:8])
         if len(unreachable) > 8:
