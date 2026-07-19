@@ -5172,6 +5172,22 @@ export default function TopoCanvas(props: Props) {
                       const ow = Math.max((thinLines ? 1 : obw) * _branchObjSF, 1);
                       const bb = (ob.lineBorder !== undefined && ob.lineBorder >= 0) ? ob.lineBorder : branchBorder;
                       const bw = (thinLines || !(bb > 0)) ? 0 : Math.max(bb * _branchObjSF, 0.5);
+                      // Стрелка потока ветви-окклюдера — перерисовываем ВМЕСТЕ с телом,
+                      // иначе occluder закрашивал стрелку направления воздуха (в SVG
+                      // ветвь со стрелкой рисуется целиком выше символов нижнего слоя).
+                      const oQ = Math.abs(ob.flow ?? 0);
+                      const oArrLod = view.scale >= 0.15;
+                      const oShowArr = showFlowArrows && !thinLines && oArrLod && oQ > 0.1;
+                      const oRev = (ob.flow ?? 0) < 0 || (!!ob.hasFan && (ob.fanReverse ?? false) && (ob.flow ?? 0) >= 0);
+                      const oAx = oRev ? tN.sx : f.sx, oAy = oRev ? tN.sy : f.sy;
+                      const oBx = oRev ? f.sx : tN.sx, oBy = oRev ? f.sy : tN.sy;
+                      const oDx = oBx - oAx, oDy = oBy - oAy;
+                      const oLen = Math.hypot(oDx, oDy) || 1;
+                      const oAng = Math.atan2(oDy, oDx) * 180 / Math.PI;
+                      const oTipH = ow * 2.2, oTipW = ow * 0.5, oTailLen = ow * 3.0, oTailW = Math.max(0.5, ow * 0.15);
+                      const oArrCol = pollutedBranchIds.has(ob.id) ? "#2563eb" : "#dc2626";
+                      const oArrPts = `0,-${oTipW} ${oTipH},0 0,${oTipW}`;
+                      const oShowThis = oShowArr && oLen >= (oTailLen + oTipH) * 2;
                       return (
                         <g key={`ovoccl-${ob.id}`}>
                           {bw > 0 && (
@@ -5180,6 +5196,14 @@ export default function TopoCanvas(props: Props) {
                           )}
                           <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
                             stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round" />
+                          {oShowThis && (
+                            <g transform={`translate(${(oAx + oDx * 0.5).toFixed(1)},${(oAy + oDy * 0.5).toFixed(1)}) rotate(${oAng.toFixed(1)})`}>
+                              <line x1={-oTailLen} y1={0} x2={0} y2={0} stroke="white" strokeWidth={oTailW + 1.5} strokeLinecap="round" />
+                              <polygon points={oArrPts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                              <line x1={-oTailLen} y1={0} x2={0} y2={0} stroke={oArrCol} strokeWidth={oTailW} strokeLinecap="round" />
+                              <polygon points={oArrPts} fill={oArrCol} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
+                            </g>
+                          )}
                         </g>
                       );
                     })}
