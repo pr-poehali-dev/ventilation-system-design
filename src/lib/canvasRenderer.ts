@@ -511,6 +511,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const posInnerCol = posInnerColors?.get(b.id);
     const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
+      : b.isVentPipeBranch ? "#374151"
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
       // Ветвь входит в позицию ПЛА — красим цветом позиции. Ветви БЕЗ позиции

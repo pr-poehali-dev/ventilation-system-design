@@ -751,6 +751,119 @@ export default function CadPage() {
     return id;
   };
 
+  // ─── ПОСТРОЕНИЕ ВЕНТ. ТРУБОПРОВОДА КАК ПАРАЛЛЕЛЬНОЙ НИТИ ─────────────
+  // По выбранным ветвям строим ОТДЕЛЬНУЮ нить трубопровода: дубликаты узлов
+  // маршрута со смещением вбок, соединённые узкими тёмно-серыми ветвями
+  // (isVentPipeBranch). Концы нити привязаны к первому и последнему узлу
+  // маршрута — так через трубопровод пойдёт воздух (можно поставить ВМП).
+  const buildVentPipeLine = (branchIds: string[], vpPatch: Partial<TopoBranch>): void => {
+    const brMap = new Map(branchesRaw.map((b) => [b.id, b]));
+    const selected = branchIds.map((id) => brMap.get(id)).filter(Boolean) as TopoBranch[];
+    if (selected.length === 0) return;
+
+    // 1) Упорядочиваем ветви в цепочку from→to и получаем последовательность узлов.
+    type Item = { b: TopoBranch; fromId: string; toId: string };
+    const chain: Item[] = [{ b: selected[0], fromId: selected[0].fromId, toId: selected[0].toId }];
+    const rest = selected.slice(1);
+    let changed = true;
+    while (rest.length && changed) {
+      changed = false;
+      for (let i = 0; i < rest.length; i++) {
+        const b = rest[i];
+        const head = chain[0], tail = chain[chain.length - 1];
+        if (b.fromId === tail.toId) { chain.push({ b, fromId: b.fromId, toId: b.toId }); rest.splice(i, 1); changed = true; break; }
+        if (b.toId === tail.toId)   { chain.push({ b, fromId: b.toId, toId: b.fromId }); rest.splice(i, 1); changed = true; break; }
+        if (b.toId === head.fromId) { chain.unshift({ b, fromId: b.fromId, toId: b.toId }); rest.splice(i, 1); changed = true; break; }
+        if (b.fromId === head.fromId){ chain.unshift({ b, fromId: b.toId, toId: b.fromId }); rest.splice(i, 1); changed = true; break; }
+      }
+    }
+    // Ветви, не примкнувшие к цепочке (разрыв) — добавляем как есть в конец.
+    for (const b of rest) chain.push({ b, fromId: b.fromId, toId: b.toId });
+
+    // 2) Последовательность узлов маршрута.
+    const nodeSeq: string[] = [chain[0].fromId];
+    for (const c of chain) nodeSeq.push(c.toId);
+
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+    // Смещение нити вбок — перпендикулярно среднему направлению маршрута.
+    const firstN = nodeMap.get(nodeSeq[0]);
+    const lastN = nodeMap.get(nodeSeq[nodeSeq.length - 1]);
+    if (!firstN || !lastN) return;
+    const dxAll = (lastN.x - firstN.x), dyAll = (lastN.y - firstN.y);
+    const lenAll = Math.hypot(dxAll, dyAll) || 1;
+    // Перпендикуляр (нормированный) × величина смещения (доля длины маршрута, но в разумных пределах)
+    const off = Math.max(2, Math.min(15, lenAll * 0.04));
+    const perpX = (-dyAll / lenAll) * off;
+    const perpY = (dxAll / lenAll) * off;
+
+    pushHistory();
+
+    // 3) Создаём дубликаты узлов маршрута со смещением.
+    const workNodes = [...nodes];
+    const workBranches = [...branchesRaw];
+    const dupNodeId = new Map<string, string>(); // исходный узел → узел нити
+
+    for (const origId of nodeSeq) {
+      if (dupNodeId.has(origId)) continue;
+      const orig = nodeMap.get(origId);
+      if (!orig) continue;
+      const nid = nextNodeId(workNodes);
+      const usedNums = new Set(workNodes.map((n) => parseInt(n.number, 10)).filter((v) => !isNaN(v)));
+      let num = 1; while (usedNums.has(num)) num++;
+      const nn = makeNode(nid, {
+        x: orig.x + perpX, y: orig.y + perpY, z: orig.z,
+        name: "", number: String(num),
+        horizonId: orig.horizonId,
+      } as Partial<TopoNode>);
+      workNodes.push(nn);
+      dupNodeId.set(origId, nid);
+    }
+
+    // 4) Соединяем дубликаты ветвями-трубопроводом (узкими, тёмно-серыми).
+    const createdIds: string[] = [];
+    for (const c of chain) {
+      const fromDup = dupNodeId.get(c.fromId);
+      const toDup = dupNodeId.get(c.toId);
+      if (!fromDup || !toDup) continue;
+      const bid = nextBranchId(workBranches);
+      const nb = makeBranch(bid, fromDup, toDup, {
+        horizonId: c.b.horizonId,
+        type: "Вентрубопровод",
+        length: c.b.length,
+        manualLength: true,
+        lineWidth: Math.max(1, (c.b.lineWidth && c.b.lineWidth > 0 ? c.b.lineWidth : branchWidth) * 0.4),
+        isVentPipeBranch: true,
+        ...vpPatch,
+      });
+      workBranches.push(nb);
+      createdIds.push(bid);
+    }
+
+    // 5) Привязываем концы нити к исходным узлам маршрута (вход/выход воздуха).
+    const startDup = dupNodeId.get(nodeSeq[0]);
+    const endDup = dupNodeId.get(nodeSeq[nodeSeq.length - 1]);
+    if (startDup && startDup !== nodeSeq[0]) {
+      const bid = nextBranchId(workBranches);
+      workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
+        horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: 0, manualLength: true,
+        lineWidth: Math.max(1, branchWidth * 0.4), isVentPipeBranch: true, ...vpPatch,
+      }));
+    }
+    if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
+      const bid = nextBranchId(workBranches);
+      workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
+        horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: 0, manualLength: true,
+        lineWidth: Math.max(1, branchWidth * 0.4), isVentPipeBranch: true, ...vpPatch,
+      }));
+    }
+
+    setNodes(workNodes);
+    setBranches(workBranches);
+    setSelectedBranchIds(new Set(createdIds));
+    setSelectedBranchId(createdIds[0] ?? null);
+    setSelectedNodeId(null);
+  };
+
   // ─── РАЗДЕЛЕНИЕ ВЕТВИ НОВЫМ УЗЛОМ ───────────────────────────────────
   // Используется когда инструмент «Узел» кликает прямо на существующую ветвь
   // (snap к ветви) или из меню «Разделить выработку».
@@ -10386,6 +10499,7 @@ export default function CadPage() {
       showVentPipeDialog={showVentPipeDialog}
       setShowVentPipeDialog={setShowVentPipeDialog}
       ventPipeBranchIds={ventPipeBranchIds}
+      buildVentPipeLine={buildVentPipeLine}
       showHelpDialog={showHelpDialog}
       setShowHelpDialog={setShowHelpDialog}
     />

@@ -111,6 +111,7 @@ export interface CadToolDialogsProps {
   showVentPipeDialog: boolean;
   setShowVentPipeDialog: (v: boolean) => void;
   ventPipeBranchIds: string[];
+  buildVentPipeLine: (branchIds: string[], vpPatch: Partial<TopoBranch>) => void;
 
   // Помощь
   showHelpDialog: boolean;
@@ -280,10 +281,12 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
             branches={vpBranches}
             onClose={() => p.setShowVentPipeDialog(false)}
             onApply={(patch) => {
-              p.ventPipeBranchIds.forEach(id => p.updateBranch(id, patch, false));
-              p.pushHistory();
+              // Строим РЕАЛЬНУЮ параллельную нить трубопровода по выбранным ветвям
+              // (отдельные тёмно-серые ветви isVentPipeBranch со смещением вбок).
+              p.buildVentPipeLine(p.ventPipeBranchIds, patch);
             }}
             onRemove={() => {
+              // Удаляем ранее навешенный флаг-оверлей на выбранных ветвях (legacy).
               p.ventPipeBranchIds.forEach(id => p.updateBranch(id, { hasVentPipe: false }, false));
               p.pushHistory();
               p.setShowVentPipeDialog(false);
