@@ -418,7 +418,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // Используем objSF-скорректированный sc для LOD чтобы учесть минимальный размер объектов.
   const lodChevrons = printMode || sc >= 0.25;
   const lodArrows   = printMode || sc >= 0.15;
-  const lodLabels   = printMode || sc >= 0.04;
+  // Авто-скрытие подписей выработок (номер/расход) при отдалении. Чем больше
+  // ветвей на схеме — тем выше масштаб, при котором подписи начинают
+  // показываться: при отдалении они всё равно сливаются, а тысячи fillText()
+  // тормозят canvas. При печати (printMode) скрытие отключено.
+  const _branchCount = visibleBranches.length;
+  const _labelLod =
+    _branchCount > 20000 ? 0.55 :
+    _branchCount > 10000 ? 0.32 :
+    _branchCount > 5000  ? 0.16 :
+    0.04;
+  const lodLabels   = printMode || sc >= _labelLod;
   // Border всегда включён — без него белые ветви невидимы на светлом фоне
   const lodBorder   = true;
   // Узлы: всегда показываем (при малом scale они маленькие но видимы благодаря min objSF)
@@ -871,7 +881,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const ic = (b.indicators && Object.keys(b.indicators).length > 0)
         ? { ...(infoConfig ?? {}), ...b.indicators } as typeof infoConfig
         : infoConfig;
-      const labelOpacity = Math.min(1, (sc - 0.04) / 0.08);
+      const labelOpacity = Math.min(1, Math.max(0, (sc - _labelLod) / Math.max(0.08, _labelLod * 1.5)));
       const branchNum = b.id.replace(/^B/, "");
       const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
       const showNum = !ic || ic.branchNumber;
