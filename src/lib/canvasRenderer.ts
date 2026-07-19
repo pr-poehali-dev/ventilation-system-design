@@ -710,6 +710,23 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
     }
 
+    // ── Подсветка маршрута/пути: аура + штрих — рисуется ПОД основной линией
+    //    (как в SVG). Основная линия ложится поверх, зелёная аура видна по краям.
+    //    Стрелки направления рисуются ПОСЛЕ основной линии (ниже).
+    if (rescuePathBranchIds?.has(b.id)) {
+      ctx.save();
+      ctx.setLineDash([]);
+      // Зелёная аура
+      ctx.strokeStyle = "#16a34a"; ctx.globalAlpha = 0.4;
+      ctx.lineWidth = Math.max(w + 10, 7); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      // Зелёная штриховая линия
+      ctx.strokeStyle = "#4ade80"; ctx.globalAlpha = 0.9;
+      ctx.lineWidth = Math.max(w + 3, 3); ctx.setLineDash([14, 6]);
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      ctx.restore();
+    }
+
     // Основная линия
     ctx.strokeStyle = color;
     ctx.lineWidth = w;
@@ -763,18 +780,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.beginPath(); ctx.arc(sxA, syA, 2.5, 0, Math.PI * 2); ctx.fill();
     }
 
-    // ── Подсветка маршрута горноспасателей + стрелки направления (как в SVG) ──
+    // ── Стрелки направления маршрута/пути (как в SVG) — рисуются ПОВЕРХ
+    //    основной линии, аура+штрих уже нарисованы ПОД ней выше.
     if (rescuePathBranchIds?.has(b.id)) {
       ctx.save();
-      ctx.setLineDash([]);
-      // Зелёная аура
-      ctx.strokeStyle = "#16a34a"; ctx.globalAlpha = 0.4;
-      ctx.lineWidth = Math.max(w + 10, 7); ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
-      // Зелёная штриховая линия
-      ctx.strokeStyle = "#4ade80"; ctx.globalAlpha = 0.9;
-      ctx.lineWidth = Math.max(w + 3, 3); ctx.setLineDash([14, 6]);
-      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
       ctx.setLineDash([]);
 
       // Направление движения по ветви
