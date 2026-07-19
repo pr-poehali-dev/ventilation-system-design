@@ -837,6 +837,7 @@ export default function CadPage() {
         length: c.b.length,
         manualLength: true,
         lineWidth: Math.max(0.6, (c.b.lineWidth && c.b.lineWidth > 0 ? c.b.lineWidth : branchWidth) * 0.2),
+        lineBorder: 0.1,
         isVentPipeBranch: true,
         ...vpPatch,
       });
@@ -851,14 +852,14 @@ export default function CadPage() {
       const bid = nextBranchId(workBranches);
       workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
         horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: 0, manualLength: true,
-        lineWidth: Math.max(0.6, branchWidth * 0.2), isVentPipeBranch: true, ...vpPatch,
+        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch,
       }));
     }
     if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
       const bid = nextBranchId(workBranches);
       workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
         horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: 0, manualLength: true,
-        lineWidth: Math.max(0.6, branchWidth * 0.2), isVentPipeBranch: true, ...vpPatch,
+        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch,
       }));
     }
 
