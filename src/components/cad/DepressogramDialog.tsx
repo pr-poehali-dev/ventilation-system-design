@@ -189,12 +189,19 @@ export default function DepressogramDialog({
 
   const handleExport = async () => {
     // ── 1. Рисуем график в canvas (800×380) ──────────────────────────────────
+    // Рендерим в увеличенном разрешении (супер-сэмплинг ×SCALE) — при вставке в
+    // Excel картинка занимает ту же область, но остаётся чёткой (без пикселизации).
     const CW = 800, CH = 380;
+    const SCALE = 3;
     const padL = 65, padR = 24, padT = 24, padB = 50;
     const GW = CW - padL - padR, GH = CH - padT - padB;
     const canvas = document.createElement("canvas");
-    canvas.width = CW; canvas.height = CH;
+    canvas.width = CW * SCALE; canvas.height = CH * SCALE;
     const ctx = canvas.getContext("2d")!;
+    // Масштабируем контекст — весь код рисования использует логические координаты
+    ctx.scale(SCALE, SCALE);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
     // Фон
     ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, CW, CH);
