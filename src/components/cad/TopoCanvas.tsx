@@ -1674,6 +1674,13 @@ export default function TopoCanvas(props: Props) {
     return m;
   }, [branches]);
 
+  // Быстрый доступ к типу УО по id (O(1) вместо LEGEND_TYPES.find на каждый символ).
+  const legendTypeById = useMemo(() => {
+    const m = new Map<string, (typeof LEGEND_TYPES)[number]>();
+    for (const lt of LEGEND_TYPES) m.set(lt.id, lt);
+    return m;
+  }, []);
+
   // Слои ветвей по горизонтам (публикуются при отрисовке ветвей и переиспользуются
   // блоком УО, чтобы символы имели корректный z-order между горизонтами).
   const branchLayerGroupsRef = useRef<{ order: number; node: React.ReactNode }[]>([]);
@@ -1702,7 +1709,7 @@ export default function TopoCanvas(props: Props) {
   const schemaSymbolsSorted = useMemo(() => {
     const branchHorizonOrder = (branchId: string | null): number => {
       if (!branchId) return 9999;
-      const br = branches.find(b => b.id === branchId);
+      const br = branchById.get(branchId);
       if (!br || !br.horizonId) return 9999;
       return horizonOrderMap.get(br.horizonId) ?? 9999;
     };
@@ -1710,7 +1717,7 @@ export default function TopoCanvas(props: Props) {
       .map((sym, i) => ({ sym, i, ord: branchHorizonOrder(sym.branchId) }))
       .sort((a, b) => (a.ord !== b.ord ? b.ord - a.ord : a.i - b.i))
       .map(x => x.sym);
-  }, [schemaSymbols, branches, horizonOrderMap]);
+  }, [schemaSymbols, branchById, horizonOrderMap]);
 
   const nodesSorted = useMemo(
     () => [...projNodes].sort((a, b) => a.depth - b.depth),
@@ -3446,11 +3453,14 @@ export default function TopoCanvas(props: Props) {
           // Видимость запорного вентиля по всей схеме — переключатель в панели информации
           if (sym.typeId === "valve_water" && infoConfig && !infoConfig.waterGateValve) return null;
 
+          // Ветвь символа (один раз, O(1)) — переиспользуем ниже.
+          const symBrSvg = sym.branchId ? branchById.get(sym.branchId) : null;
+
           let basePx: number, basePy: number;
           let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
 
           if (sym.branchId) {
-            const br = branches.find(b => b.id === sym.branchId);
+            const br = symBrSvg;
             const fN = br ? projNodesMap.get(br.fromId) : null;
             const tN = br ? projNodesMap.get(br.toId) : null;
             if (fN && tN) {
@@ -3487,13 +3497,11 @@ export default function TopoCanvas(props: Props) {
           // Авто-масштаб УО «Очаг пожара» и перемычек от ширины ветви
           let SZ: number;
           if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
-            const fireBrSvg = branches.find(b => b.id === sym.branchId);
-            const fireBwSvg = (fireBrSvg?.lineWidth && fireBrSvg.lineWidth > 0) ? fireBrSvg.lineWidth : branchWidth;
+            const fireBwSvg = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
           } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
-            const bkBr = branches.find(b => b.id === sym.branchId);
-            const bkBw = (bkBr?.lineWidth && bkBr.lineWidth > 0) ? bkBr.lineWidth : branchWidth;
+            const bkBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             // Размер перемычки = реальная ширина ветви на экране × bulkheadScale%.
             // _objSF — тот же коэффициент толщины ветви, что и при отрисовке ветвей,
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
@@ -3502,8 +3510,7 @@ export default function TopoCanvas(props: Props) {
           } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water") && sym.branchId && hasBranchPts) {
             // Вентилятор, насос и запорный вентиль масштабируются от ширины ветви
             // (как перемычка), поэтому синхронны с масштабом схемы и не «плавают».
-            const fanBr = branches.find(b => b.id === sym.branchId);
-            const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
+            const fanBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
             SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
           } else {
@@ -3516,7 +3523,7 @@ export default function TopoCanvas(props: Props) {
           const HY = py - SZ / 2 - 4;
 
           // Вентилятор остановлен — серый фильтр на символ
-          const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+          const brForSym = symBrSvg;
           const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
 
           return (
@@ -3638,7 +3645,7 @@ export default function TopoCanvas(props: Props) {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
                   const tid = sym.typeId;
-                  const brForDestroy = branches.find(b => b.id === sym.branchId);
+                  const brForDestroy = symBrSvg;
                   const isDestroyedBk = brForDestroy?.bulkheadDestroyedByExplosion ?? false;
 
                   // Цвет заливки и обводки по материалу (красный если разрушена)
@@ -3813,7 +3820,7 @@ export default function TopoCanvas(props: Props) {
                   // нормаль — совпадает с canvasRenderer (nx=-ddy/segL, ny=ddx/segL)
                   const nx = -ay, ny = ax;
                   // ширина ветви — из самой ветви или дефолт
-                  const brObj = branches.find(b => b.id === sym.branchId);
+                  const brObj = symBrSvg;
                   const bw = (brObj?.lineWidth && brObj.lineWidth > 0) ? brObj.lineWidth : branchWidth;
                   // смещение трубы от оси — ровно как в canvasRenderer: bw * 0.38
                   const pipeOff = bw * 0.38;
@@ -3871,7 +3878,7 @@ export default function TopoCanvas(props: Props) {
               })()}
               {/* ⚡ Маркер разрушенной перемычки (взрыв) */}
               {BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts && (() => {
-                const br = branches.find(b => b.id === sym.branchId);
+                const br = symBrSvg;
                 if (!br?.bulkheadDestroyedByExplosion) return null;
                 const cx = px, cy = py;
                 const r = Math.max(8, SZ * 0.7);
@@ -3972,7 +3979,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Индикаторы замерной станции на схеме ─────────────── */}
               {view.scale > 0.05 && sym.typeId === "measure_station" && hasBranchPts && (() => {
-                const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+                const brMs = symBrSvg;
                 const msLines: string[] = [];
                 if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
                 if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
@@ -4052,7 +4059,7 @@ export default function TopoCanvas(props: Props) {
 
               {/* ── Индикаторы перемычки на схеме ────────────────────── */}
               {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station" && sym.branchId && (() => {
-                const br = branches.find(b => b.id === sym.branchId);
+                const br = symBrSvg;
                 if (!br) return null;
                 const lines: string[] = [];
                 const uResInd  = getUnit(unitsConfig, "resistance");
@@ -4527,18 +4534,26 @@ export default function TopoCanvas(props: Props) {
           // оверлей УО (на больших схемах это тормозит и даёт «шлейф»). Ветви
           // на canvas двигаются дёшево, а символы вернутся сразу после остановки.
           if (panStart || rotStart || isZooming) return null;
+          // Границы видимой области для отсечения (culling) символов вне экрана.
+          // На больших схемах (>10000 УО) это убирает тысячи невидимых DOM-нод,
+          // из-за которых тормозила вся программа.
+          const OV_CULL = 120;
+          const ovMinX = -OV_CULL, ovMaxX = size.w + OV_CULL;
+          const ovMinY = -OV_CULL, ovMaxY = size.h + OV_CULL;
           const renderOneOv = (sym: typeof schemaSymbolsSorted[number]): React.ReactNode => {
             const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
-            const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
+            const lt = legendTypeById.get(sym.typeId);
             if (!lt && !isBulkheadOv) return null;
             if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
             // Видимость запорного вентиля по всей схеме — переключатель в панели информации
             if (sym.typeId === "valve_water" && infoConfig && !infoConfig.waterGateValve) return null;
+            // Ветвь символа (один раз) — переиспользуем ниже вместо branches.find.
+            const symBr = sym.branchId ? branchById.get(sym.branchId) : null;
 
             let basePx: number, basePy: number;
             let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
             if (sym.branchId) {
-              const br = branches.find(b => b.id === sym.branchId);
+              const br = symBr;
               const fN = br ? projNodesMap.get(br.fromId) : null;
               const tN = br ? projNodesMap.get(br.toId) : null;
               if (fN && tN) {
@@ -4558,7 +4573,11 @@ export default function TopoCanvas(props: Props) {
 
             const px = basePx + (sym.offsetX ?? 0);
             const py = basePy + (sym.offsetY ?? 0);
-            const isSel = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
+            // Viewport culling: символ вне видимой области — не создаём DOM-ноду.
+            // Выделенные символы не отсекаем (могут понадобиться ручки/подсветка).
+            const isSelCull = selectedSymbolId === sym.id || (selectedSymbolIds?.has(sym.id) ?? false);
+            if (!isSelCull && (px < ovMinX || px > ovMaxX || py < ovMinY || py > ovMaxY)) return null;
+            const isSel = isSelCull;
             const sc = sym.scale ?? 1;
             // Режим 1 (fixedObjectScale=true): фиксированный размер символов при зуме.
             // Режим 2 (fixedObjectScale=false): символы масштабируются вместе с объектами (objSF).
@@ -4574,13 +4593,11 @@ export default function TopoCanvas(props: Props) {
             // Если у пользователя явно задан scale ≠ 1, используем его поверх авто-базы.
             let SZ: number;
             if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
-              const fireBr = branches.find(b => b.id === sym.branchId);
-              const fireBw = (fireBr?.lineWidth && fireBr.lineWidth > 0) ? fireBr.lineWidth : branchWidth;
+              const fireBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               const autoSZ = Math.max(8, fireBw * view.scale * 4);
               SZ = Math.max(8, autoSZ * sc);
             } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
-              const msBr = branches.find(b => b.id === sym.branchId);
-              const msBw = (msBr?.lineWidth && msBr.lineWidth > 0) ? msBr.lineWidth : branchWidth;
+              const msBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               // Реальная толщина ветви в пикселях на экране (тот же objSF, что и
               // при отрисовке ветвей в canvasRenderer). Благодаря этому перемычка
               // масштабируется СИНХРОННО с шириной ветви при любом масштабе XY.
@@ -4592,8 +4609,7 @@ export default function TopoCanvas(props: Props) {
             } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water") && sym.branchId && hasBranchPts) {
               // Вентилятор, насос и запорный вентиль масштабируются от ширины ветви
               // (как перемычка) — синхронно с масштабом схемы, не «плавают».
-              const fanBr = branches.find(b => b.id === sym.branchId);
-              const fanBw = (fanBr?.lineWidth && fanBr.lineWidth > 0) ? fanBr.lineWidth : branchWidth;
+              const fanBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
               SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
             } else {
@@ -4609,15 +4625,14 @@ export default function TopoCanvas(props: Props) {
               const vDx = tsx2 - fsx, vDy = tsy2 - fsy;
               const vLen = Math.hypot(vDx, vDy);
               const vnx = vLen > 0 ? -vDy / vLen : 0, vny = vLen > 0 ? vDx / vLen : 0;
-              const vbObj = branches.find(b => b.id === sym.branchId);
-              const vbw = (vbObj?.lineWidth && vbObj.lineWidth > 0) ? vbObj.lineWidth : branchWidth;
+              const vbw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               vcpx = px + vnx * vbw * 0.38;
               vcpy = py + vny * vbw * 0.38;
               vSZ = Math.max(4, vbw * view.scale * 4) * 1.2;
             }
 
             // Вентилятор: остановлен ли (берём из branch.fanStopped)
-            const brForSymOv = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+            const brForSymOv = symBr;
             const isFanStoppedOv = sym.typeId === "fan" && (brForSymOv?.fanStopped ?? false);
 
             return (
@@ -4696,7 +4711,7 @@ export default function TopoCanvas(props: Props) {
                     прерывалась (для ЛЮБОГО символа на ветви, кроме valve_reduce —
                     тот сидит на трубе, а не на теле ветви). */}
                 {sym.branchId && hasBranchPts && sym.typeId !== "valve_reduce" && (() => {
-                  const brBody = branches.find(b => b.id === sym.branchId);
+                  const brBody = symBr;
                   const bodyCol = branchBodyColor(brBody ?? ({ id: sym.branchId } as TopoBranch));
                   if (!bodyCol) return null;
                   const bDx = tsx2 - fsx, bDy = tsy2 - fsy;
@@ -4751,7 +4766,7 @@ export default function TopoCanvas(props: Props) {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
                   const tid = sym.typeId;
-                  const bkBrOv = branches.find(b => b.id === sym.branchId);
+                  const bkBrOv = symBr;
                   const isDestroyedOv = bkBrOv?.bulkheadDestroyedByExplosion ?? false;
                   const fillOv  = isDestroyedOv ? "#ff4444"
                     : tid.includes("concrete") ? "#4caf50" : tid.includes("wood") ? "#ffd600"
@@ -4828,7 +4843,7 @@ export default function TopoCanvas(props: Props) {
                   const brLen = Math.hypot(brDx, brDy);
                   const ax = brLen > 0 ? brDx / brLen : 1, ay = brLen > 0 ? brDy / brLen : 0;
                   const nx = -ay, ny = ax; // нормаль как в canvasRenderer
-                  const brObj = branches.find(b => b.id === sym.branchId);
+                  const brObj = symBr;
                   const bw = (brObj?.lineWidth && brObj.lineWidth > 0) ? brObj.lineWidth : branchWidth;
                   const pipeOff = bw * 0.38;
                   const cpx = px + nx * pipeOff;
@@ -4901,7 +4916,7 @@ export default function TopoCanvas(props: Props) {
                     Дублирует блок из SVG-рендера, т.к. в canvas-режиме основной
                     SVG скрыт, а символы рисуются этим отдельным оверлеем. */}
                 {view.scale > 0.05 && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station" && sym.branchId && hasBranchPts && (() => {
-                  const br = branches.find(b => b.id === sym.branchId);
+                  const br = symBr;
                   if (!br) return null;
                   const lines: string[] = [];
                   const uResInd  = getUnit(unitsConfig, "resistance");
@@ -5001,7 +5016,7 @@ export default function TopoCanvas(props: Props) {
                     Дублирует блок из SVG-рендера, т.к. в canvas-режиме основной
                     SVG скрыт, а символы рисуются этим отдельным оверлеем. */}
                 {view.scale > 0.05 && sym.typeId === "measure_station" && hasBranchPts && (() => {
-                  const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+                  const brMs = symBr;
                   const msLines: string[] = [];
                   if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
                   if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
