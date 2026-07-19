@@ -753,13 +753,18 @@ export default function CadPage() {
 
   // ─── ПОСТРОЕНИЕ ВЕНТ. ТРУБОПРОВОДА КАК ПАРАЛЛЕЛЬНОЙ НИТИ ─────────────
   // По выбранным ветвям строим ОТДЕЛЬНУЮ нить трубопровода: дубликаты узлов
-  // маршрута со смещением вбок, соединённые узкими тёмно-серыми ветвями
-  // (isVentPipeBranch). Концы нити привязаны к первому и последнему узлу
-  // маршрута — так через трубопровод пойдёт воздух (можно поставить ВМП).
-  const buildVentPipeLine = (branchIds: string[], vpPatch: Partial<TopoBranch>): void => {
+  // маршрута со смещением вбок, соединённые узкими светло-серыми ветвями
+  // (isVentPipeBranch, ширина ~20% от ветви). Концы нити привязаны к первому и
+  // последнему узлу маршрута — через трубопровод пойдёт воздух (можно ставить ВМП).
+  const buildVentPipeLine = (branchIds: string[], vpPatchRaw: Partial<TopoBranch>): void => {
     const brMap = new Map(branchesRaw.map((b) => [b.id, b]));
     const selected = branchIds.map((id) => brMap.get(id)).filter(Boolean) as TopoBranch[];
     if (selected.length === 0) return;
+
+    // Параметры трубы для расчёта переносим, НО флаг legacy-оверлея hasVentPipe
+    // на новых ветвях не ставим — иначе рядом с реальной ниткой рисуется старый
+    // пунктирный трубопровод. Реальная нить помечается только isVentPipeBranch.
+    const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: false };
 
     // 1) Упорядочиваем ветви в цепочку from→to и получаем последовательность узлов.
     type Item = { b: TopoBranch; fromId: string; toId: string };
@@ -831,7 +836,7 @@ export default function CadPage() {
         type: "Вентрубопровод",
         length: c.b.length,
         manualLength: true,
-        lineWidth: Math.max(1, (c.b.lineWidth && c.b.lineWidth > 0 ? c.b.lineWidth : branchWidth) * 0.4),
+        lineWidth: Math.max(0.6, (c.b.lineWidth && c.b.lineWidth > 0 ? c.b.lineWidth : branchWidth) * 0.2),
         isVentPipeBranch: true,
         ...vpPatch,
       });
@@ -846,14 +851,14 @@ export default function CadPage() {
       const bid = nextBranchId(workBranches);
       workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
         horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: 0, manualLength: true,
-        lineWidth: Math.max(1, branchWidth * 0.4), isVentPipeBranch: true, ...vpPatch,
+        lineWidth: Math.max(0.6, branchWidth * 0.2), isVentPipeBranch: true, ...vpPatch,
       }));
     }
     if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
       const bid = nextBranchId(workBranches);
       workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
         horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: 0, manualLength: true,
-        lineWidth: Math.max(1, branchWidth * 0.4), isVentPipeBranch: true, ...vpPatch,
+        lineWidth: Math.max(0.6, branchWidth * 0.2), isVentPipeBranch: true, ...vpPatch,
       }));
     }
 

@@ -2913,7 +2913,7 @@ export default function TopoCanvas(props: Props) {
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const posInnerColEarly = posInnerColors?.get(b.id);
           const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
-            : b.isVentPipeBranch ? "#374151"
+            : b.isVentPipeBranch ? "#9ca3af"
             : isLeakage ? "#f97316"
             : overV ? "#dc2626"
             // Ветвь входит в позицию ПЛА — цвет позиции. Ветви БЕЗ позиции сохраняют
