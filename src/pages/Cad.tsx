@@ -8,7 +8,7 @@ import {
   DEMO_NODES, DEMO_BRANCHES, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane, calcBranchLength,
 } from "@/lib/topology";
-import { SURFACE_TYPES } from "@/lib/aerodynamics";
+import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
 import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
@@ -833,6 +833,18 @@ export default function CadPage() {
       : (vpPatchRaw.vpComputedR ?? 0);
     const chainTotalLen = chain.reduce((s, c) => s + (c.b.length ?? 0), 0) || 1;
 
+    // Геометрия сечения ветвей нити = КРУГЛАЯ труба диаметром vpDiameter (мм → м).
+    const pipeDiaM = (vpPatchRaw.vpDiameter ?? 500) / 1000;
+    const pipeSec = calcSection({ shape: "round", diameter: pipeDiaM });
+    const pipeGeom: Partial<TopoBranch> = {
+      shape: "round",
+      diameter: pipeDiaM,
+      area: Math.round(pipeSec.area * 1000) / 1000,
+      perimeter: Math.round(pipeSec.perimeter * 1000) / 1000,
+      dh: Math.round(pipeSec.dh * 1000) / 1000,
+      manualSection: false,
+    };
+
     // 4) Соединяем дубликаты ветвями-трубопроводом (узкими, светло-серыми).
     const createdIds: string[] = [];
     for (const c of chain) {
@@ -850,6 +862,7 @@ export default function CadPage() {
         lineBorder: 0.1,
         isVentPipeBranch: true,
         ...vpPatch,
+        ...pipeGeom,
         // Сопротивление ветви = доля R трубы (ручной режим), видна во вкладке «Топология».
         resistanceMode: "manual",
         manualR: segR,
@@ -865,14 +878,14 @@ export default function CadPage() {
       const bid = nextBranchId(workBranches);
       workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
         horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: 0, manualLength: true,
-        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch,
+        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
       }));
     }
     if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
       const bid = nextBranchId(workBranches);
       workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
         horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: 0, manualLength: true,
-        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch,
+        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
       }));
     }
 
