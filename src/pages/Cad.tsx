@@ -8635,7 +8635,6 @@ export default function CadPage() {
                 setSelectedBranchIds(prev => prev.has(id) ? prev : new Set([id]));
                 setCtxMenu({ kind: "branch", id, x, y });
               }}
-              onCanvasContextMenu={(x, y) => setCtxMenu({ kind: "canvas", x, y })}
               selectedBranchIds={selectedBranchIds}
               onBranchMultiSelect={handleBranchMultiSelect}
               selectedNodeIds={selectedNodeIds}
