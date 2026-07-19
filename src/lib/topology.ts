@@ -33,6 +33,7 @@ export interface TopoNode {
   // ─── Противопожарное водоснабжение ────────────────────────────
   fireNodeType: "none" | "reservoir" | "consumer" | "junction"; // тип узла ППЗ
   fireConsumerType: "fire_hydrant" | "sprinkler" | "monitor" | "other"; // тип потребителя
+  fireConsumerModelId?: string;       // id модели из справочника потребителей (пожарный ствол и т.п.)
   fireHydrantOpen: boolean;           // кран открыт
   fireRequiredFlow: number;           // м³/ч — требуемый расход
   fireInitPressure: number;           // МПа — начальное давление (для резервуара)

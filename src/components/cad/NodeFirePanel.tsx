@@ -1,5 +1,6 @@
 import { type TopoNode } from "@/lib/topology";
 import { type WaterNodeResult } from "@/lib/waterHydraulics";
+import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, getConsumerById, type ConsumerGroup } from "@/lib/waterConsumers";
 
 interface NodeFirePanelProps {
   node: TopoNode;
@@ -236,6 +237,34 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
             options={CONSUMER_TYPES}
             onChange={(v) => onUpdate({ fireConsumerType: v as TopoNode["fireConsumerType"] })}
           />
+        </Row>
+        <Row label="Модель (из библиотеки):">
+          <select
+            value={node.fireConsumerModelId ?? ""}
+            onChange={(e) => {
+              const id = e.target.value;
+              const m = getConsumerById(id);
+              if (m) {
+                onUpdate({
+                  fireConsumerModelId: id,
+                  fireRequiredFlow: m.flowM3h,
+                  fireHydrantDiameter: m.outletDiameter,
+                });
+              } else {
+                onUpdate({ fireConsumerModelId: "" });
+              }
+            }}
+            className="w-full text-[11px] px-1"
+            style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none", fontFamily: "inherit" }}>
+            <option value="">— выбрать вручную —</option>
+            {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
+              <optgroup key={g} label={CONSUMER_GROUP_NAMES[g]}>
+                {CONSUMER_CATALOG.filter((c) => c.group === g).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </Row>
         <Row label="Требуемый расход:">
           <EditInput type="number" step="0.1" suffix="м³/ч"

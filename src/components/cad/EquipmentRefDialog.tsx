@@ -9,9 +9,10 @@ import {
 import UnitsConfigPanel from "@/components/cad/UnitsConfigPanel";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, type PumpModel } from "@/lib/pumps";
+import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, type ConsumerGroup } from "@/lib/waterConsumers";
 import PumpChart from "@/components/cad/PumpChart";
 
-type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport" | "units";
+type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
 
 export interface MineFanExport {
   catalogId: string;
@@ -54,6 +55,7 @@ const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
   { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии" },
   { id: "typical",   label: "Типовые меры",        icon: "FileText",  group: "Аварии" },
   { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод" },
+  { id: "consumers", label: "Потребители",         icon: "Flame",     group: "Трубопровод" },
   { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод" },
   { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее" },
   { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее" },
@@ -1610,6 +1612,46 @@ function PumpsSection() {
   );
 }
 
+// ─── Справочник потребителей воды (пожарные стволы, распылители, пеногенераторы)
+function ConsumersSection() {
+  return (
+    <>
+      <div className="text-[11px] text-gray-500 mb-2">
+        Библиотека потребителей противопожарного водопровода. Выбрать модель для узла можно
+        в свойствах узла-потребителя (вкладка «Трубы» → «Модель из библиотеки») —
+        требуемый расход и диаметр выходного отверстия подставятся автоматически.
+      </div>
+      {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
+        <div key={g} className="mb-3">
+          <div className="text-[12px] font-semibold mb-1" style={{ color: "#b91c1c" }}>
+            {CONSUMER_GROUP_NAMES[g]}
+          </div>
+          <table className="w-full border-collapse">
+            <thead><tr>
+              {["Наименование", "Ø отв., мм", "Расход, л/с", "Расход, м³/ч", "Расход, л/мин", "Площадь туш., м²", "Дальность струи", "Раб. давл., МПа", "кгс/см²"].map(h => <Th key={h}>{h}</Th>)}
+            </tr></thead>
+            <tbody>
+              {CONSUMER_CATALOG.filter(c => c.group === g).map((c, i) => (
+                <tr key={c.id} style={{ background: i % 2 === 0 ? "#fafafa" : "#fff" }} className="hover:bg-blue-50">
+                  <Td>{c.name}</Td>
+                  <Td>{c.outletDiameter > 0 ? c.outletDiameter : "—"}</Td>
+                  <Td>{c.flowLps.toLocaleString("ru")}</Td>
+                  <Td>{c.flowM3h.toLocaleString("ru")}</Td>
+                  <Td>{c.flowLmin.toLocaleString("ru")}</Td>
+                  <Td>{c.extinguishArea.toLocaleString("ru")}</Td>
+                  <Td>{c.jetRange}</Td>
+                  <Td>{c.workPressureMPa}</Td>
+                  <Td>{c.workPressureAtm}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </>
+  );
+}
+
 // Модальная карта характеристик выбранного насоса
 function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: () => void }) {
   return (
@@ -1690,6 +1732,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
     headers={["Мероприятие", "Шагов", "Ответственный", "Время"]}
     rows={DEMO_TYPICAL.map(r => [r.name, r.steps, r.resp, r.dur])} />;
   if (tab === "pumps") return <PumpsSection />;
+  if (tab === "consumers") return <ConsumersSection />;
   if (tab === "pipes") return <SimpleTable
     headers={["Материал", "DN", "Стенка", "Давление"]}
     rows={DEMO_PIPES.map(r => [r.name, r.dn, r.wall, r.p])} />;

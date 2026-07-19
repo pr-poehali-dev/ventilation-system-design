@@ -1646,7 +1646,7 @@ export default function CadPage() {
 
   // ─── СПРАВОЧНИК ОБОРУДОВАНИЯ ─────────────────────────────────────────
   const [showEquipRef, setShowEquipRef] = useState(false);
-  const [equipRefTab, setEquipRefTab] = useState<"fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "pipes" | "transport">("fans");
+  const [equipRefTab, setEquipRefTab] = useState<"fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units">("fans");
   const [showLegend, setShowLegend] = useState(false);
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
@@ -3776,6 +3776,7 @@ export default function CadPage() {
         <RibbonGroup label="Трубопровод">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="Gauge" label="Насосы" sublabel="" onClick={() => { setEquipRefTab("pumps"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Flame" label="Потребители" sublabel="" onClick={() => { setEquipRefTab("consumers"); setShowEquipRef(true); }} />
             <RibbonBigBtn icon="GitBranch" label="Трубы" sublabel="" onClick={() => { setEquipRefTab("pipes"); setShowEquipRef(true); }} />
           </div>
         </RibbonGroup>
