@@ -761,10 +761,11 @@ export default function CadPage() {
     const selected = branchIds.map((id) => brMap.get(id)).filter(Boolean) as TopoBranch[];
     if (selected.length === 0) return;
 
-    // Параметры трубы для расчёта переносим, НО флаг legacy-оверлея hasVentPipe
-    // на новых ветвях не ставим — иначе рядом с реальной ниткой рисуется старый
-    // пунктирный трубопровод. Реальная нить помечается только isVentPipeBranch.
-    const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: false };
+    // Параметры трубы (диаметр, материал, R, утечки и т.д.) переносим на ветви
+    // нити — тогда они видны и редактируемы во вкладке свойств ветви. Флаг
+    // hasVentPipe оставляем true (нужен для отображения параметров), а лишний
+    // пунктирный legacy-оверлей для таких ветвей скрыт по isVentPipeBranch.
+    const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: true };
 
     // 1) Упорядочиваем ветви в цепочку from→to и получаем последовательность узлов.
     type Item = { b: TopoBranch; fromId: string; toId: string };
@@ -824,13 +825,22 @@ export default function CadPage() {
       dupNodeId.set(origId, nid);
     }
 
-    // 4) Соединяем дубликаты ветвями-трубопроводом (узкими, тёмно-серыми).
+    // Аэродинамическое сопротивление трубы (R трубы из диалога) распределяем по
+    // ветвям нити пропорционально длине — чтобы во вкладке «Топология» ветви
+    // отображали корректное сопротивление и расчёт сети учитывал трубу.
+    const totalPipeR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0
+      ? vpPatchRaw.vpManualR
+      : (vpPatchRaw.vpComputedR ?? 0);
+    const chainTotalLen = chain.reduce((s, c) => s + (c.b.length ?? 0), 0) || 1;
+
+    // 4) Соединяем дубликаты ветвями-трубопроводом (узкими, светло-серыми).
     const createdIds: string[] = [];
     for (const c of chain) {
       const fromDup = dupNodeId.get(c.fromId);
       const toDup = dupNodeId.get(c.toId);
       if (!fromDup || !toDup) continue;
       const bid = nextBranchId(workBranches);
+      const segR = totalPipeR * ((c.b.length ?? 0) / chainTotalLen);
       const nb = makeBranch(bid, fromDup, toDup, {
         horizonId: c.b.horizonId,
         type: "Вентрубопровод",
@@ -840,6 +850,9 @@ export default function CadPage() {
         lineBorder: 0.1,
         isVentPipeBranch: true,
         ...vpPatch,
+        // Сопротивление ветви = доля R трубы (ручной режим), видна во вкладке «Топология».
+        resistanceMode: "manual",
+        manualR: segR,
       });
       workBranches.push(nb);
       createdIds.push(bid);

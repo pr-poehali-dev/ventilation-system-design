@@ -980,7 +980,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const { w, ux, uy, segLen } = p;
 
     // ── Вентрубопровод — пунктирная линия параллельно ветви ──────────────
-    if (b.hasVentPipe) {
+    // Для реальных ветвей-нити трубопровода (isVentPipeBranch) пунктир не рисуем.
+    if (b.hasVentPipe && !b.isVentPipeBranch) {
       const nx = -uy, ny = ux;
       const vpOffset = w / 2 + 3;
       const vpX1 = p.fromSx + nx * vpOffset, vpY1 = p.fromSy + ny * vpOffset;

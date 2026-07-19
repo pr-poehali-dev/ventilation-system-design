@@ -3066,7 +3066,9 @@ export default function TopoCanvas(props: Props) {
               })()}
 
               {/* ── Вентрубопровод — пунктирная линия параллельно ветви ── */}
-              {b.hasVentPipe && (() => {
+              {/* Для реальных ветвей-нити трубопровода (isVentPipeBranch) пунктир
+                  НЕ рисуем — сама ветвь уже является трубопроводом. */}
+              {b.hasVentPipe && !b.isVentPipeBranch && (() => {
                 const nx = -uy;
                 const ny = ux;
                 const vpOff = w / 2 + 3;

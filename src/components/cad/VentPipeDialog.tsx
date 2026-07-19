@@ -138,8 +138,8 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
     onClose();
   };
 
-  const inputCls = "w-full border border-gray-300 rounded px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-400";
-  const labelCls = "block text-[11px] font-semibold text-gray-600 mb-0.5";
+  const inputCls = "w-full border border-gray-300 rounded px-2 py-1 text-[12px] text-gray-900 bg-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400";
+  const labelCls = "block text-[11px] font-semibold text-gray-800 mb-0.5";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
@@ -207,7 +207,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                   <option>Металл</option>
                   <option>Гибкий рукав</option>
                 </select>
-                <div className="text-[10px] text-gray-400 mt-1">
+                <div className="text-[10px] text-gray-500 mt-1">
                   Шероховатость: {ROUGHNESS_BY_MATERIAL[material] ?? 0.2} мм
                 </div>
               </div>
@@ -244,7 +244,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               <input type="number" min={0} max={30} step={0.1} value={leakage}
                 onChange={e => setLeakage(Number(e.target.value))}
                 className={inputCls} />
-              <div className="text-[10px] text-gray-400 mt-0.5">
+              <div className="text-[10px] text-gray-500 mt-0.5">
                 Норма: 0.5–2% (пластик), 1–3% (металл)
               </div>
             </div>
@@ -253,7 +253,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               <input type="number" min={0} step={1} value={joints}
                 onChange={e => setJoints(Number(e.target.value))}
                 className={inputCls} />
-              <div className="text-[10px] text-gray-400 mt-0.5">
+              <div className="text-[10px] text-gray-500 mt-0.5">
                 ξ стыка ≈ 0.05 за шт.
               </div>
             </div>
@@ -314,17 +314,17 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               Расчётные параметры
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-              <div className="text-gray-500">Диаметр:</div>
-              <div className="font-semibold">{diameter} мм</div>
-              <div className="text-gray-500">Площадь сечения:</div>
-              <div className="font-semibold">
+              <div className="text-gray-700">Диаметр:</div>
+              <div className="font-semibold text-gray-900">{diameter} мм</div>
+              <div className="text-gray-700">Площадь сечения:</div>
+              <div className="font-semibold text-gray-900">
                 {(Math.PI * (diameter/1000) ** 2 / 4).toFixed(4)} м²
               </div>
-              <div className="text-gray-500">Длина:</div>
-              <div className="font-semibold">{effLength.toFixed(1)} м</div>
-              <div className="text-gray-500">λ Дарси:</div>
-              <div className="font-semibold">{calc.lambda.toFixed(4)}</div>
-              <div className="text-gray-500 font-bold">R трубы:</div>
+              <div className="text-gray-700">Длина:</div>
+              <div className="font-semibold text-gray-900">{effLength.toFixed(1)} м</div>
+              <div className="text-gray-700">λ Дарси:</div>
+              <div className="font-semibold text-gray-900">{calc.lambda.toFixed(4)}</div>
+              <div className="text-gray-700 font-bold">R трубы:</div>
               <div className="font-bold text-green-800">{R.toFixed(3)} Н·с²/м⁸</div>
               <div className="text-gray-500">Утечки на маршруте:</div>
               <div className="font-semibold text-orange-700">
