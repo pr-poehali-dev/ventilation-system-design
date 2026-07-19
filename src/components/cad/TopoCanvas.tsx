@@ -1153,8 +1153,14 @@ export default function TopoCanvas(props: Props) {
     }
     const hitB = hitBranch(sx, sy, projNodesMap, branches);
     if (hitB) {
-      onSelectBranch(hitB);
-      onSelectNode(null);
+      // При правом клике НЕ сбрасываем мультивыбор ветвей — если ветвь уже
+      // выделена, оставляем весь Set (иначе, например, вентрубопровод строился
+      // бы по одной ветви вместо выбранного маршрута). onSelectBranch сбросил бы
+      // selectedBranchIds, поэтому вызываем его только если ветвь ещё не выбрана.
+      if (!selectedBranchIds?.has(hitB)) {
+        onSelectBranch(hitB);
+        onSelectNode(null);
+      }
       onBranchContextMenu?.(hitB, e.clientX, e.clientY);
       return;
     }
