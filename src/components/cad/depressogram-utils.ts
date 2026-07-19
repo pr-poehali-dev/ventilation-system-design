@@ -178,28 +178,8 @@ export function buildPointsFromBranchIds(
     else chain.push({ b, fromId: b.fromId, toId: b.toId });
   }
 
-  // Депрессия (потеря давления) на КАЖДОЙ выработке = чистая потеря на её
-  // АЭРОДИНАМИЧЕСКОМ СОПРОТИВЛЕНИИ R·Q², в Па.
-  // ВАЖНО: поле b.dP для ветви с ВЕНТИЛЯТОРОМ занижено — оно равно R·Q² − H
-  // (напор вентилятора гасит потерю на его же ветви). Из-за этого сумма dP по
-  // маршруту «теряла» напор вентилятора и депрессия рудника получалась заниженной.
-  // Берём именно R·Q² (истинную потерю на выработке, без вычета напора) — тогда
-  // суммарная депрессия по замкнутому маршруту равна полной депрессии рудника,
-  // которую и развивает ГВУ. Напор вентилятора (H) НЕ добавляем — это источник
-  // давления, а не потеря; он набирается суммой потерь всех выработок контура.
-  const branchDrop = (b: TopoBranch): number => {
-    const R = b.resistance ?? 0;
-    const Q = b.flow ?? 0;
-    const rq2 = Math.abs(R * Q * Q);
-    if (rq2 > 0) return rq2;
-    // Fallback (нет R или Q): для обычной ветви — |dP|; для ветви с работающим
-    // вентилятором восстанавливаем потерю сопротивления как |dP + H|.
-    if (b.hasFan && !b.fanStopped) return Math.abs((b.dP ?? 0) + (b.fanPressure ?? 0));
-    return Math.abs(b.dP ?? 0);
-  };
-
   let totalDP = 0;
-  for (const c of chain) totalDP += branchDrop(c.b);
+  for (const c of chain) totalDP += Math.abs(c.b.dP ?? 0);
 
   const points: DepressogramPoint[] = [];
   let cumLen = 0;
@@ -210,7 +190,7 @@ export function buildPointsFromBranchIds(
 
   for (const c of chain) {
     cumLen += c.b.length ?? 0;
-    const dp = branchDrop(c.b);
+    const dp = Math.abs(c.b.dP ?? 0);
     pressure -= dp;
     const toNode = nodeMap.get(c.toId);
     points.push({ nodeId: c.toId, nodeName: toNode?.name ?? "", nodeNumber: toNode?.number ?? "", branchId: c.b.id, branchName: c.b.type || c.b.id, branchNumber: c.b.id, cumulativeLength: Math.round(cumLen * 100) / 100, pressure: Math.round(pressure * 100) / 100, dP: Math.round(dp * 100) / 100 });
