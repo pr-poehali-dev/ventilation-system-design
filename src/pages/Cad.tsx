@@ -8742,6 +8742,15 @@ export default function CadPage() {
                   setActiveSide("fan");
                   return;
                 }
+                // Одиночный клик по запорному вентилю (водопровод) —
+                // открываем вкладку "Трубы: вода" с его настройками.
+                if ((sym?.typeId === "valve_water" || (sym && REDUCER_SYMBOL_IDS.has(sym.typeId))) && sym.branchId) {
+                  setSelectedBranchId(sym.branchId);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
+                  setActiveSide("waterpipes");
+                  return;
+                }
                 // Для перемычек, замерных станций и насосов — НЕ выбираем ветвь,
                 // чтобы открылась панель символа (а не свойства ветви).
                 if (sym?.branchId && sym.typeId !== "pump" && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
@@ -8775,7 +8784,7 @@ export default function CadPage() {
                   setFanSymbolBranchId(null);
                   setActiveSide("blast");
                   setActiveRibbon("involve");
-                } else if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+                } else if ((sym?.typeId === "valve_water" || (sym && REDUCER_SYMBOL_IDS.has(sym.typeId))) && sym.branchId) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
