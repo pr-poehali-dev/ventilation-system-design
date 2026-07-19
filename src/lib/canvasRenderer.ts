@@ -1084,9 +1084,18 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
     // O(1) при анимации — projNodes не меняется между кадрами
     const nodesSorted = getSortedNodes(projNodes, opts.sortEpoch);
+    // Viewport culling для узлов: на больших схемах (>10000 узлов) отрисовка
+    // кружка + текста (fillText — дорогая операция) для КАЖДОГО узла вне экрана
+    // подвешивала весь canvas при включённой видимости номеров узлов.
+    // Запас 80px — учитывает радиус узла и смещённую подпись справа/сверху.
+    const NODE_CULL = 80;
+    const nCullMinX = -NODE_CULL, nCullMaxX = width + NODE_CULL;
+    const nCullMinY = -NODE_CULL, nCullMaxY = height + NODE_CULL;
     for (const pn of nodesSorted) {
       const n = pn.node;
       if (n.visible === false) continue;
+      // Узел вне видимой области — полностью пропускаем (кружок + текст).
+      if (pn.sx < nCullMinX || pn.sx > nCullMaxX || pn.sy < nCullMinY || pn.sy > nCullMaxY) continue;
 
       // Узел скрыт, если ВСЕ его ветви принадлежат скрытым горизонтам
       // (как в SVG-рендере). Узлы без ветвей остаются видимыми.

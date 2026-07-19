@@ -1681,6 +1681,16 @@ export default function TopoCanvas(props: Props) {
     return m;
   }, []);
 
+  // Смежные ветви по узлу (O(1) вместо branches.filter на КАЖДЫЙ узел при рендере).
+  const nodeAdjBranches = useMemo(() => {
+    const m = new Map<string, TopoBranch[]>();
+    for (const b of branches) {
+      let a = m.get(b.fromId); if (!a) { a = []; m.set(b.fromId, a); } a.push(b);
+      let c = m.get(b.toId);   if (!c) { c = []; m.set(b.toId, c); }   c.push(b);
+    }
+    return m;
+  }, [branches]);
+
   // Слои ветвей по горизонтам (публикуются при отрисовке ветвей и переиспользуются
   // блоком УО, чтобы символы имели корректный z-order между горизонтами).
   const branchLayerGroupsRef = useRef<{ order: number; node: React.ReactNode }[]>([]);
@@ -4229,7 +4239,7 @@ export default function TopoCanvas(props: Props) {
             ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, _rawNodeSF))
             : Math.max(0.25, _rawNodeSF);
           // Средняя ширина прилегающих ветвей для синхронного масштабирования узла
-          const adjBr = branches.filter(b => b.fromId === node.id || b.toId === node.id);
+          const adjBr = nodeAdjBranches.get(node.id) ?? [];
           const adjAvgW = adjBr.length > 0
             ? adjBr.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBr.length
             : branchWidth;
@@ -5274,7 +5284,7 @@ export default function TopoCanvas(props: Props) {
                 : true;
                 if (wtVis && rawFT !== "none") continue;
                 const isSelN = selectedNodeId === node.id || (selectedNodeIds?.has(node.id) ?? false);
-                const adjBrN = branches.filter(b => b.fromId === node.id || b.toId === node.id);
+                const adjBrN = nodeAdjBranches.get(node.id) ?? [];
                 const adjAvgWN = adjBrN.length > 0
                   ? adjBrN.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBrN.length
                   : branchWidth;
