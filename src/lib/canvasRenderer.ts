@@ -1091,6 +1091,20 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const NODE_CULL = 80;
     const nCullMinX = -NODE_CULL, nCullMaxX = width + NODE_CULL;
     const nCullMinY = -NODE_CULL, nCullMaxY = height + NODE_CULL;
+
+    // ─── Авто-скрытие номеров узлов при сильном отдалении ─────────────────────
+    // На очень крупных схемах при отдалении подписи узлов сливаются в кашу и
+    // при этом тысячи fillText() тормозят весь canvas. Поэтому чем больше узлов,
+    // тем выше масштаб, при котором номера начинают показываться. При печати
+    // (printMode) скрытие отключено — там важна полнота, а не скорость.
+    const _nodeCount = _nodes?.length ?? nodesSorted.length;
+    const _labelScaleMin = printMode
+      ? 0
+      : _nodeCount > 20000 ? 0.55
+      : _nodeCount > 10000 ? 0.32
+      : _nodeCount > 5000  ? 0.16
+      : 0;
+    const _nodeLabelThresh = Math.max(_xyScaleCR * 0.04, _labelScaleMin * _xyScaleCR);
     for (const pn of nodesSorted) {
       const n = pn.node;
       if (n.visible === false) continue;
@@ -1287,7 +1301,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       // Метки узла (как SVG: смещение +8,-8, fontSize=9)
-      const _scThresh = _xyScaleCR * 0.04;
+      // На крупных схемах порог поднят (_nodeLabelThresh) — номера скрываются
+      // при отдалении, чтобы не рисовать тысячи fillText и не сливать подписи.
+      const _scThresh = _nodeLabelThresh;
       if (sc > _scThresh) {
         const ic = infoConfig;
         const nodeOpacity = Math.min(1, (sc - _scThresh) / (_scThresh * 1.5));
