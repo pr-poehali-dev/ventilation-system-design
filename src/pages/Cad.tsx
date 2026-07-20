@@ -765,7 +765,10 @@ export default function CadPage() {
     // нити — тогда они видны и редактируемы во вкладке свойств ветви. Флаг
     // hasVentPipe оставляем true (нужен для отображения параметров), а лишний
     // пунктирный legacy-оверлей для таких ветвей скрыт по isVentPipeBranch.
-    const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: true };
+    // Вентилятор на ветви вентрубопровода НЕ ставим — явно снимаем hasFan,
+    // иначе на нити появляется лишний символ ВМП.
+    const noFan: Partial<TopoBranch> = { hasFan: false };
+    const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: true, ...noFan };
 
     // ── РЕДАКТИРОВАНИЕ существующей нити ────────────────────────────────
     // Если ВСЕ выбранные ветви — уже ветви вентрубопровода (isVentPipeBranch),
