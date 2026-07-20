@@ -17,7 +17,7 @@ import {
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
-import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
+import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, hitBranchLabelCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
@@ -440,6 +440,8 @@ export default function TopoCanvas(props: Props) {
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [hoverBranchId, setHoverBranchId] = useState<string | null>(null);
+  // Курсор наведён на подпись ветви в canvas-режиме (для cursor: grab).
+  const [hoverBranchLabel, setHoverBranchLabel] = useState(false);
   const [hoverScreenPos, setHoverScreenPos] = useState<{ sx: number; sy: number } | null>(null);
 
   // Перетаскивание угла подложки горизонта: какой именно угол тащим.
@@ -1240,6 +1242,37 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
+    // ─── ПЕРЕТАСКИВАНИЕ ПОДПИСИ ВЕТВИ (canvas-режим) ──────────────────
+    // В SVG подпись двигается своим onMouseDown. В canvas подписи рисуются
+    // на холсте, поэтому ловим попадание курсора в bbox подписи (собранный
+    // при отрисовке) и двигаем labelOffset так же, как в SVG. Проверяем ДО
+    // hit-теста ветви/узла, чтобы подпись перетаскивалась поверх линий.
+    if (useCanvas && onBranchLabelOffset && e.button === 0 && !branchBindMode
+        && !pendingSymbolTypeId && !positionPlaceMode && !rescuePickMode) {
+      const lblId = hitBranchLabelCanvas(sx, sy);
+      if (lblId) {
+        const lblBr = branchById.get(lblId);
+        if (lblBr) {
+          const divSF = Math.max(0.05, _branchObjSF);
+          const startCX = e.clientX, startCY = e.clientY;
+          const origOx = lblBr.labelOffsetX ?? 0;
+          const origOy = lblBr.labelOffsetY ?? -16;
+          if (!selectedBranchIds?.has(lblId)) { onSelectBranch(lblId); onSelectNode(null); }
+          const onMove = (me: MouseEvent) => {
+            onBranchLabelOffset(lblId, origOx + (me.clientX - startCX) / divSF, origOy + (me.clientY - startCY) / divSF);
+          };
+          const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+          };
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+          e.stopPropagation();
+          return;
+        }
+      }
+    }
+
     // ─── РЕЖИМ ВЫБОРА УЗЛА/ВЕТВИ ДЛЯ ГОРНОСПАСАТЕЛЕЙ (pick-mode) ──────
     // ВАЖНО: проверяем ДО early-return по [data-sym]. В canvas-режиме поверх
     // схемы лежит SVG-оверлей с символами УО (позиции ПЛА, отделения) — многие
@@ -1507,6 +1540,15 @@ export default function TopoCanvas(props: Props) {
     else setHoverPos(null);
 
     setHoverScreenPos({ sx, sy });
+
+    // Наведение на подпись ветви (canvas-режим) — для курсора «grab».
+    if (useCanvas && onBranchLabelOffset && tool === "select"
+        && !panStart && !rotStart && !pendingSymbolTypeId && !branchBindMode && !rescuePickMode) {
+      const overLbl = hitBranchLabelCanvas(sx, sy) != null;
+      if (overLbl !== hoverBranchLabel) setHoverBranchLabel(overLbl);
+    } else if (hoverBranchLabel) {
+      setHoverBranchLabel(false);
+    }
 
     // Подсветка ветви при tool=symbol или pendingSymbol
     if (tool === "symbol" || pendingSymbolTypeId) {
@@ -2482,7 +2524,8 @@ export default function TopoCanvas(props: Props) {
     : tool === "node" ? "crosshair"
     : tool === "symbol" ? "copy"
     : tool === "rotate" ? "grab"
-    : tool === "pan" ? "grab" : "default";
+    : tool === "pan" ? "grab"
+    : hoverBranchLabel ? "grab" : "default";
 
   // Canvas-обёртки: перенаправляем события HTMLCanvasElement → обработчикам SVG
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2492,6 +2535,14 @@ export default function TopoCanvas(props: Props) {
   const onMouseUpCanvas     = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseUp(asS(e));
   const onWheelCanvas       = (e: React.WheelEvent<HTMLCanvasElement>)  => onWheel(asS(e));
   const onContextMenuCanvas = (e: React.MouseEvent<HTMLCanvasElement>)  => onContextMenuSVG(asS(e));
+  // Двойной клик по подписи ветви в canvas-режиме — сброс смещения в дефолт
+  // (как onDoubleClick подписи в SVG). Ловим попадание в bbox подписи.
+  const onDoubleClickCanvas = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!onBranchLabelOffset) return;
+    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
+    const lblId = hitBranchLabelCanvas(e.clientX - rect.left, e.clientY - rect.top);
+    if (lblId) { e.stopPropagation(); onBranchLabelOffset(lblId, 0, -16); }
+  };
   // Touch для canvas теперь регистрируются нативно в CanvasLayer (passive:false)
 
   // Обработчик клика по УО: одиночный клик = выбор + открыть свойства,
@@ -4537,6 +4588,7 @@ export default function TopoCanvas(props: Props) {
           }}
           onMouseMove={(e) => onMouseMoveCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onMouseUp={(e) => onMouseUpCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
+          onDoubleClick={(e) => onDoubleClickCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onContextMenu={(e) => onContextMenuCanvas(e as unknown as React.MouseEvent<HTMLCanvasElement>)}
           onWheel={(e) => onWheelCanvas(e as unknown as React.WheelEvent<HTMLCanvasElement>)}>
           {(() => {

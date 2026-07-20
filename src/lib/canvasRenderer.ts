@@ -360,6 +360,12 @@ function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
   ctx.restore();
 }
 
+// ─── BBox подписей ветвей (для hit-теста перетаскивания в canvas-режиме) ────
+// Заполняется при каждой отрисовке меток ветвей и используется
+// hitBranchLabelCanvas() из TopoCanvas, чтобы поймать курсор на подписи.
+type BranchLabelBox = { id: string; cx: number; cy: number; halfW: number; halfH: number; ang: number };
+let _branchLabelBoxes: BranchLabelBox[] = [];
+
 // ─── Основной рендер всей схемы ────────────────────────────────────────────
 // ВАЖНО: все поля CanvasRenderOptions ДОЛЖНЫ быть перечислены в деструктуризации ниже.
 // Если поле добавлено в интерфейс но пропущено здесь — TypeScript не ошибётся,
@@ -394,6 +400,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   const hiddenBrIds: Set<string> = hiddenBranchIds ?? new Set<string>();
 
   ctx.clearRect(0, 0, width, height);
+
+  // Сбрасываем bbox подписей ветвей — заполним заново при отрисовке меток.
+  _branchLabelBoxes = [];
 
   // ─── LOD пороги ───────────────────────────────────────────────────────────
   const sc = view.scale;
@@ -960,12 +969,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const dataFont = `600 ${dataFontSize}px "Segoe UI",sans-serif`;
       let lastFont = "";
 
+      let maxLineW = 0;
       for (let li = 0; li < allLines.length; li++) {
         const ln = allLines[li];
         const ty = -bh / 2 + lh * (li + 0.6);
         const isNumLine = li === 0 && showNum;
         const font = isNumLine ? numFont : dataFont;
         if (font !== lastFont) { ctx.font = font; lastFont = font; }
+        const w = ctx.measureText(ln).width;
+        if (w > maxLineW) maxLineW = w;
         ctx.strokeStyle = "white"; ctx.lineWidth = 3 * textSc;
         ctx.strokeText(ln, 0, ty);
         ctx.fillStyle = isNumLine ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f");
@@ -973,6 +985,16 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
 
       ctx.restore();
+
+      // Сохраняем bbox подписи для hit-теста перетаскивания (в canvas-режиме).
+      // Прямоугольник центрирован в (anchorX, anchorY) и повёрнут на labelAng.
+      _branchLabelBoxes.push({
+        id: b.id,
+        cx: anchorX, cy: anchorY,
+        halfW: Math.max(6, maxLineW / 2 + 2 * textSc),
+        halfH: Math.max(6, bh / 2),
+        ang: labelAng,
+      });
     }
 
     void ux; void uy;
@@ -1376,6 +1398,23 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.restore();
     }
   }
+}
+
+// ─── Hit-тест подписи ветви (для перетаскивания метки в canvas-режиме) ──────
+// Возвращает id ветви, если курсор (sx,sy) попал в bbox её подписи.
+// Bboxы собираются при последней отрисовке (renderCanvas). Проверяем с конца —
+// подписи, нарисованные позже (верхние слои), имеют приоритет.
+export function hitBranchLabelCanvas(sx: number, sy: number): string | null {
+  for (let i = _branchLabelBoxes.length - 1; i >= 0; i--) {
+    const bx = _branchLabelBoxes[i];
+    // Переводим точку в локальные координаты подписи (обратный поворот).
+    const dx = sx - bx.cx, dy = sy - bx.cy;
+    const cos = Math.cos(-bx.ang), sin = Math.sin(-bx.ang);
+    const lx = dx * cos - dy * sin;
+    const ly = dx * sin + dy * cos;
+    if (Math.abs(lx) <= bx.halfW && Math.abs(ly) <= bx.halfH) return bx.id;
+  }
+  return null;
 }
 
 // ─── Hit-тесты (переиспользуются из TopoCanvas) ────────────────────────────
