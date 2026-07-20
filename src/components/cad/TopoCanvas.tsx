@@ -4922,6 +4922,52 @@ export default function TopoCanvas(props: Props) {
                     </g>
                   );
                 })()}
+                {/* ⚡ Маркер разрушенной перемычки (взрыв) — canvas-режим.
+                    Дублирует блок из SVG-рендера, чтобы состояние «разрушена
+                    взрывом» одинаково отображалось в обоих режимах. */}
+                {BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts && (() => {
+                  const br = symBr;
+                  if (!br?.bulkheadDestroyedByExplosion) return null;
+                  const cx = px, cy = py;
+                  const r = Math.max(8, SZ * 0.7);
+                  const lw = Math.max(2.5, SZ * 0.22);
+                  const brDxD = tsx2 - fsx, brDyD = tsy2 - fsy;
+                  const brAngleD = Math.atan2(brDyD, brDxD) * 180 / Math.PI;
+                  const fp = br.bulkheadFailurePressure;
+                  const fpText = fp && fp > 0 ? `${fp} МПа` : null;
+                  return (
+                    <g pointerEvents="none">
+                      {/* Красное свечение */}
+                      <circle cx={cx} cy={cy} r={r + 8} fill="#ef4444" opacity={0.18} />
+                      <circle cx={cx} cy={cy} r={r + 4} fill="#ef4444" opacity={0.28} />
+                      {/* Основной круг */}
+                      <circle cx={cx} cy={cy} r={r}
+                        fill="#fef08a" stroke="#dc2626" strokeWidth={Math.max(2, lw * 0.6)} opacity={0.95} />
+                      {/* Зубчатый разрыв вдоль оси ветви */}
+                      <g transform={`translate(${cx},${cy}) rotate(${brAngleD})`}>
+                        <polyline
+                          points={`${-r * 0.9},0 ${-r * 0.45},${-r * 0.35} ${0},${r * 0.35} ${r * 0.45},${-r * 0.35} ${r * 0.9},0`}
+                          fill="none" stroke="#dc2626" strokeWidth={lw} strokeLinecap="round" strokeLinejoin="round" />
+                      </g>
+                      {/* Подпись «РАЗР.» */}
+                      <text x={cx} y={cy - r - 5}
+                        textAnchor="middle" fontSize={Math.max(8, SZ * 0.38)}
+                        fontWeight="bold" fontFamily="sans-serif"
+                        fill="#dc2626" stroke="white" strokeWidth={2} paintOrder="stroke">
+                        РАЗР.
+                      </text>
+                      {/* Давление разрушения */}
+                      {fpText && (
+                        <text x={cx} y={cy + r + Math.max(10, SZ * 0.45)}
+                          textAnchor="middle" fontSize={Math.max(7, SZ * 0.3)}
+                          fontFamily="sans-serif" fill="#7f1d1d"
+                          stroke="white" strokeWidth={1.5} paintOrder="stroke">
+                          {fpText}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })()}
                 {/* ── Индикаторы перемычки на схеме (canvas-режим) ──────────
                     Дублирует блок из SVG-рендера, т.к. в canvas-режиме основной
                     SVG скрыт, а символы рисуются этим отдельным оверлеем. */}
