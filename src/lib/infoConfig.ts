@@ -38,6 +38,10 @@ export interface InfoDisplayConfig {
   branchCOEnd: boolean;
   branchQCOStart: boolean;
   branchQCOEnd: boolean;
+  // ─── Индикаторы вентилятора ─────────────────────────────────────
+  fanPressure: boolean;
+  fanShaftPower: boolean;
+  fanEfficiency: boolean;
   // ─── Водопровод (общие данные по схеме) ─────────────────────────
   waterReservoir: boolean;
   waterConsumer: boolean;
@@ -91,6 +95,9 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   branchCOEnd: false,
   branchQCOStart: false,
   branchQCOEnd: false,
+  fanPressure: false,
+  fanShaftPower: false,
+  fanEfficiency: false,
   waterReservoir: true,
   waterConsumer: true,
   waterPumpStation: true,

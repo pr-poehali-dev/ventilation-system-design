@@ -7915,7 +7915,6 @@ export default function CadPage() {
                     indRow("fanPressure", "Напор вентилятора"),
                     indRow("fanShaftPower", "Мощность вентилятора"),
                     indRow("fanEfficiency", "КПД вентилятора"),
-                    indRow("fanMaxPressure", "Макс. напор вентилятора"),
                   ])}
                   {indSection("Описание", [
                     indRow("branchName", "Описание объекта"),
