@@ -1084,6 +1084,8 @@ export default function CadPage() {
   useEffect(() => {
     try { localStorage.setItem("vent-cad/canvas-threshold", String(canvasThreshold)); } catch { /* ignore */ }
   }, [canvasThreshold]);
+  // Свёрнут ли блок «Порог SVG→Canvas» (по умолчанию — свёрнут)
+  const [thresholdOpen, setThresholdOpen] = useState(false);
   const [scaleTextMin, setScaleTextMin] = useState(80);
   const [scaleTextMax, setScaleTextMax] = useState(150);
   const [scaleBranchMin, setScaleBranchMin] = useState(80);
@@ -10297,29 +10299,36 @@ export default function CadPage() {
                 <div className="flex justify-between text-[10px] text-gray-400">
                   <span>0.1×</span><span>10×</span><span>20×</span>
                 </div>
-                {/* Порог SVG ↔ Canvas */}
+                {/* Порог SVG ↔ Canvas (сворачиваемый, по умолчанию свёрнут) */}
                 <div className="border-t border-gray-300 mt-2 pt-2">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
-                      Порог SVG→Canvas: {canvasThreshold}
-                    </span>
-                    <button onClick={() => setCanvasThreshold(800)}
-                      className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
-                      Сброс
-                    </button>
-                  </div>
-                  <input type="range" min="200" max="2000" step="50"
-                    value={canvasThreshold}
-                    onChange={(e) => setCanvasThreshold(parseInt(e.target.value, 10))}
-                    className="w-full"
-                    style={{ accentColor: "#7c3aed" }} />
-                  <div className="flex justify-between text-[10px] text-gray-400">
-                    <span>200</span><span>1000</span><span>2000</span>
-                  </div>
-                  <div className="text-[10px] mt-1" style={{ color: branches.length > canvasThreshold ? "#7c3aed" : "#16a34a" }}>
-                    Ветвей: {branches.length} · режим:{" "}
-                    <b>{branches.length > canvasThreshold ? "Canvas (быстрый)" : "SVG (детальный)"}</b>
-                  </div>
+                  <button onClick={() => setThresholdOpen((v) => !v)}
+                    className="w-full flex items-center gap-1 text-[11px] font-semibold hover:opacity-80"
+                    style={{ color: "#1a3a6b" }}>
+                    <Icon name={thresholdOpen ? "ChevronDown" : "ChevronRight"} size={12} />
+                    <span>Порог SVG→Canvas: {canvasThreshold}</span>
+                  </button>
+                  {thresholdOpen && (
+                    <div className="mt-2">
+                      <div className="flex items-center justify-end mb-1">
+                        <button onClick={() => setCanvasThreshold(800)}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200">
+                          Сброс
+                        </button>
+                      </div>
+                      <input type="range" min="200" max="2000" step="50"
+                        value={canvasThreshold}
+                        onChange={(e) => setCanvasThreshold(parseInt(e.target.value, 10))}
+                        className="w-full"
+                        style={{ accentColor: "#7c3aed" }} />
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>200</span><span>1000</span><span>2000</span>
+                      </div>
+                      <div className="text-[10px] mt-1" style={{ color: branches.length > canvasThreshold ? "#7c3aed" : "#16a34a" }}>
+                        Ветвей: {branches.length} · режим:{" "}
+                        <b>{branches.length > canvasThreshold ? "Canvas (быстрый)" : "SVG (детальный)"}</b>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
