@@ -910,19 +910,28 @@ export default function CadPage() {
     }
 
     // 5) Привязываем концы нити к исходным узлам маршрута (вход/выход воздуха).
+    // Длину этих соединительных ветвей считаем ПО КООРДИНАТАМ (узел маршрута →
+    // смещённый дубликат), а не оставляем 0 — иначе проверка ругается «L=0».
+    const workNodeMap = new Map(workNodes.map((n) => [n.id, n]));
     const startDup = dupNodeId.get(nodeSeq[0]);
     const endDup = dupNodeId.get(nodeSeq[nodeSeq.length - 1]);
     if (startDup && startDup !== nodeSeq[0]) {
       const bid = nextBranchId(workBranches);
+      const a = workNodeMap.get(nodeSeq[0]);
+      const b = workNodeMap.get(startDup);
+      const segLen = a && b ? Math.round(calcBranchLength(a, b)) : 0;
       workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
-        horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: 0, manualLength: true,
+        horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: segLen, manualLength: false,
         lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
       }));
     }
     if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
       const bid = nextBranchId(workBranches);
+      const a = workNodeMap.get(endDup);
+      const b = workNodeMap.get(nodeSeq[nodeSeq.length - 1]);
+      const segLen = a && b ? Math.round(calcBranchLength(a, b)) : 0;
       workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
-        horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: 0, manualLength: true,
+        horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: segLen, manualLength: false,
         lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
       }));
     }
