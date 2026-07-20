@@ -767,6 +767,44 @@ export default function CadPage() {
     // пунктирный legacy-оверлей для таких ветвей скрыт по isVentPipeBranch.
     const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: true };
 
+    // ── РЕДАКТИРОВАНИЕ существующей нити ────────────────────────────────
+    // Если ВСЕ выбранные ветви — уже ветви вентрубопровода (isVentPipeBranch),
+    // значит пользователь повторно открыл диалог для готовой нити. В этом случае
+    // НЕ создаём дубликат, а обновляем эти ветви на месте (синхронизируем
+    // геометрию сечения и распределённое сопротивление трубы).
+    if (selected.every((b) => b.isVentPipeBranch)) {
+      pushHistory();
+      const editDiaM = (vpPatchRaw.vpDiameter ?? 500) / 1000;
+      const editSec = calcSection({ shape: "round", diameter: editDiaM });
+      const editGeom: Partial<TopoBranch> = {
+        shape: "round",
+        diameter: editDiaM,
+        area: Math.round(editSec.area * 1000) / 1000,
+        perimeter: Math.round(editSec.perimeter * 1000) / 1000,
+        dh: Math.round(editSec.dh * 1000) / 1000,
+        manualSection: false,
+      };
+      const editPipeR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0
+        ? vpPatchRaw.vpManualR
+        : (vpPatchRaw.vpComputedR ?? 0);
+      // Сопротивление распределяем по «магистральным» сегментам нити (у входа/
+      // выхода length=0 — им R не назначаем), пропорционально длине.
+      const mainLen = selected.reduce((s, b) => s + (b.length ?? 0), 0) || 1;
+      const idSet = new Set(branchIds);
+      setBranches((prev) => prev.map((b) => {
+        if (!idSet.has(b.id)) return b;
+        const segR = editPipeR * ((b.length ?? 0) / mainLen);
+        return {
+          ...b,
+          ...vpPatch,
+          ...editGeom,
+          resistanceMode: "manual",
+          manualR: segR,
+        };
+      }));
+      return;
+    }
+
     // 1) Упорядочиваем ветви в цепочку from→to и получаем последовательность узлов.
     type Item = { b: TopoBranch; fromId: string; toId: string };
     const chain: Item[] = [{ b: selected[0], fromId: selected[0].fromId, toId: selected[0].toId }];
