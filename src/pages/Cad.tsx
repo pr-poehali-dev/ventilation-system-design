@@ -784,22 +784,21 @@ export default function CadPage() {
         dh: Math.round(editSec.dh * 1000) / 1000,
         manualSection: false,
       };
-      const editPipeR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0
-        ? vpPatchRaw.vpManualR
-        : (vpPatchRaw.vpComputedR ?? 0);
-      // Сопротивление распределяем по «магистральным» сегментам нити (у входа/
-      // выхода length=0 — им R не назначаем), пропорционально длине.
+      // Ручной R (если задан) распределяем по длине сегментов; иначе каждый
+      // сегмент считает R по формуле R=6.48·α·L/D⁵ (режим "pipe" из vpPatch).
+      const editManualR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0 ? vpPatchRaw.vpManualR : 0;
       const mainLen = selected.reduce((s, b) => s + (b.length ?? 0), 0) || 1;
       const idSet = new Set(branchIds);
       setBranches((prev) => prev.map((b) => {
         if (!idSet.has(b.id)) return b;
-        const segR = editPipeR * ((b.length ?? 0) / mainLen);
+        const manualOverride: Partial<TopoBranch> = editManualR > 0
+          ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen) }
+          : {};
         return {
           ...b,
           ...vpPatch,
           ...editGeom,
-          resistanceMode: "manual",
-          manualR: segR,
+          ...manualOverride,
         };
       }));
       return;
@@ -863,12 +862,11 @@ export default function CadPage() {
       dupNodeId.set(origId, nid);
     }
 
-    // Аэродинамическое сопротивление трубы (R трубы из диалога) распределяем по
-    // ветвям нити пропорционально длине — чтобы во вкладке «Топология» ветви
-    // отображали корректное сопротивление и расчёт сети учитывал трубу.
-    const totalPipeR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0
-      ? vpPatchRaw.vpManualR
-      : (vpPatchRaw.vpComputedR ?? 0);
+    // Аэродинамическое сопротивление трубы.
+    // Если R задан вручную (vpManualR) — распределяем его по длине сегментов.
+    // Иначе каждый сегмент считает R сам по формуле R=6.48·α·L/D⁵ (режим "pipe"),
+    // как во вкладке «Топология» — vpPatch уже содержит resistanceMode/pipeAlpha/pipeDiameter.
+    const manualPipeR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0 ? vpPatchRaw.vpManualR : 0;
     const chainTotalLen = chain.reduce((s, c) => s + (c.b.length ?? 0), 0) || 1;
 
     // Геометрия сечения ветвей нити = КРУГЛАЯ труба диаметром vpDiameter (мм → м).
@@ -890,7 +888,10 @@ export default function CadPage() {
       const toDup = dupNodeId.get(c.toId);
       if (!fromDup || !toDup) continue;
       const bid = nextBranchId(workBranches);
-      const segR = totalPipeR * ((c.b.length ?? 0) / chainTotalLen);
+      // В ручном режиме — доля общего R по длине; иначе оставляем режим "pipe" из vpPatch.
+      const manualOverride: Partial<TopoBranch> = manualPipeR > 0
+        ? { resistanceMode: "manual", manualR: manualPipeR * ((c.b.length ?? 0) / chainTotalLen) }
+        : {};
       const nb = makeBranch(bid, fromDup, toDup, {
         horizonId: c.b.horizonId,
         type: "Вентрубопровод",
@@ -901,9 +902,7 @@ export default function CadPage() {
         isVentPipeBranch: true,
         ...vpPatch,
         ...pipeGeom,
-        // Сопротивление ветви = доля R трубы (ручной режим), видна во вкладке «Топология».
-        resistanceMode: "manual",
-        manualR: segR,
+        ...manualOverride,
       });
       workBranches.push(nb);
       createdIds.push(bid);

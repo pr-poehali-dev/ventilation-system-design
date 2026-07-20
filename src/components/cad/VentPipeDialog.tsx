@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { type TopoBranch } from "@/lib/topology";
+import { resistanceFromPipe, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 
 // ─── Справочник диаметров вентиляционных труб ────────────────────────────────
 const VENT_PIPE_DIAMETERS = [
@@ -14,57 +15,24 @@ const VENT_PIPE_DIAMETERS = [
   { d: 1200, label: "Ø 1200 мм" },
 ];
 
-// Шероховатость по материалу (мм)
-const ROUGHNESS_BY_MATERIAL: Record<string, number> = {
-  "Пластик": 0.1,
-  "Металл": 0.5,
-  "Гибкий рукав": 3.0,
-};
-
 // ─── Расчёт аэродинамического сопротивления вентрубопровода ──────────────────
+// Используем ту же формулу, что и во вкладке «Топология» → «Способ задания R»
+// → «Трубопровод (R=6.48·α·L/D⁵)»: resistanceFromPipe(α, L, D).
+// Стыки учитываем добавкой к α (каждый стык слегка увеличивает сопротивление).
 function calcVentPipeR(params: {
   diameter: number;     // мм
   length: number;       // м
-  material: string;
-  roughness: number;    // мм (при ручном режиме)
-  roughnessMode: "auto" | "manual";
-  localXi: number;
-  leakageCoeff: number; // % на 100 м
+  pipeAlpha: number;    // α, ×10⁻⁴ Н·с²/м⁴
   jointCount: number;
-}): { R: number; lambda: number; leakage: number; dP_at1: number } {
-  const D = params.diameter / 1000; // м
+  leakageCoeff: number; // % на 100 м
+}): { R: number; leakage: number } {
+  const D = params.diameter / 1000; // мм → м
   const L = params.length;
-  if (D <= 0 || L <= 0) return { R: 0, lambda: 0, leakage: 0, dP_at1: 0 };
-
-  const eps = (params.roughnessMode === "auto"
-    ? ROUGHNESS_BY_MATERIAL[params.material] ?? 0.2
-    : params.roughness) / 1000; // м
-
-  // Относительная шероховатость
-  const relRough = eps / D;
-
-  // Коэффициент Дарси-Вейсбаха (формула Колбрука–Уайта, упрощение для турбулентного режима)
-  // λ ≈ 0.11 * (eps/D)^0.25 — для шероховатых труб (Re > 10^5)
-  const lambda = Math.max(0.011, 0.11 * Math.pow(relRough, 0.25));
-
-  const A = Math.PI * D * D / 4; // м²
-  const rho = 1.2; // кг/м³
-
-  // Учёт стыков: каждый стык +0.05 к xi
-  const xiJoints = params.jointCount * 0.05;
-  const xiTotal = params.localXi + xiJoints;
-
-  // R = (lambda * L / D + xi) * rho / (2 * A²)  [Н·с²/м⁸]
-  const R = (lambda * L / D + xiTotal) * rho / (2 * A * A);
-
-  // Утечки: Q_утечка = leakageCoeff% * Q на каждые 100 м
-  // Суммарные утечки как доля от расхода
+  // Стыки: каждый стык эквивалентен +2% к α трубопровода.
+  const effAlpha = params.pipeAlpha * (1 + params.jointCount * 0.02);
+  const R = resistanceFromPipe(effAlpha, L, D);
   const leakageFraction = (params.leakageCoeff / 100) * (L / 100);
-
-  // Давление при Q=1 м³/с (для индикации)
-  const dP_at1 = R * 1.0;
-
-  return { R, lambda, leakage: leakageFraction, dP_at1 };
+  return { R, leakage: leakageFraction };
 }
 
 // ─── Интерфейс пропсов ───────────────────────────────────────────────────────
@@ -83,30 +51,26 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
   const totalLength = branches.reduce((s, b) => s + (b.vpLengthManual ? b.vpLength : b.length), 0);
 
   const [diameter, setDiameter]       = useState(first.vpDiameter || 500);
-  const [material, setMaterial]       = useState(first.vpMaterial || "Пластик");
+  const [pipeType, setPipeType]       = useState(first.vpPipeType || "flex_standard");
+  const [pipeAlpha, setPipeAlpha]     = useState(first.vpPipeAlpha ?? 0.45);
   const [lengthManual, setLengthManual] = useState(first.vpLengthManual || false);
   const [length, setLength]           = useState(first.vpLengthManual ? first.vpLength : totalLength);
   const [leakage, setLeakage]         = useState(first.vpLeakageCoeff ?? 0.5);
   const [joints, setJoints]           = useState(first.vpJointCount ?? 0);
   const [localXi, setLocalXi]         = useState(first.vpLocalXi ?? 0);
-  const [roughnessMode, setRoughnessMode] = useState<"auto" | "manual">(first.vpRoughnessMode ?? "auto");
-  const [roughness, setRoughness]     = useState(first.vpRoughness ?? 0.2);
-  const [manualR, setManualR]         = useState<boolean>(false);
+  const [manualR, setManualR]         = useState<boolean>((first.vpManualR ?? 0) > 0);
   const [manualRVal, setManualRVal]   = useState(first.vpManualR ?? 0);
 
   // Итоговая длина (авто или ручная)
   const effLength = lengthManual ? length : totalLength;
 
-  // Расчёт
+  // Расчёт (формула R=6.48·α·L/D⁵, как во вкладке «Топология»)
   const calc = calcVentPipeR({
     diameter,
     length: effLength,
-    material,
-    roughness,
-    roughnessMode,
-    localXi,
-    leakageCoeff: leakage,
+    pipeAlpha,
     jointCount: joints,
+    leakageCoeff: leakage,
   });
 
   const R = manualR ? manualRVal : calc.R;
@@ -119,20 +83,25 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
     const patch: Partial<TopoBranch> = {
       hasVentPipe: true,
       vpDiameter: diameter,
-      vpMaterial: material,
+      vpPipeType: pipeType,
+      vpPipeAlpha: pipeAlpha,
       vpLengthManual: lengthManual,
       vpLength: lengthManual ? length : totalLength,
       vpLeakageCoeff: leakage,
       vpJointCount: joints,
       vpLocalXi: localXi,
-      vpRoughnessMode: roughnessMode,
-      vpRoughness: roughness,
       vpManualR: manualR ? manualRVal : 0,
       vpComputedR: R,
       vpComputedFlow: 0,
       vpComputedVelocity: 0,
       vpComputedDeltaP: 0,
       vpComputedLeakage: calc.leakage,
+      // Синхронизация с вкладкой «Топология»: та же формула R=6.48·α·L/D⁵.
+      // Если R задан вручную — режим "manual", иначе "pipe" с α и диаметром трубы.
+      resistanceMode: manualR ? "manual" : "pipe",
+      pipeAlpha,
+      pipeDiameter: diameter / 1000,
+      localXi,
     };
     onApply(patch);
     onClose();
@@ -200,15 +169,23 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                   className={`${inputCls} mt-1`} placeholder="Другой диаметр, мм" />
               </div>
               <div>
-                <label className={labelCls}>Материал</label>
-                <select value={material} onChange={e => setMaterial(e.target.value)}
+                <label className={labelCls}>Тип трубопровода</label>
+                <select
+                  value={PIPE_ALPHA_TYPES.find(p => p.id === pipeType) ? pipeType : ""}
+                  onChange={e => {
+                    const p = PIPE_ALPHA_TYPES.find(x => x.id === e.target.value);
+                    if (p) { setPipeType(p.id); setPipeAlpha(p.alpha); }
+                  }}
                   className={inputCls}>
-                  <option>Пластик</option>
-                  <option>Металл</option>
-                  <option>Гибкий рукав</option>
+                  <option value="">— задан вручную —</option>
+                  {PIPE_ALPHA_TYPES.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.alphaMin}–{p.alphaMax})
+                    </option>
+                  ))}
                 </select>
                 <div className="text-[10px] text-gray-500 mt-1">
-                  Шероховатость: {ROUGHNESS_BY_MATERIAL[material] ?? 0.2} мм
+                  Коэф. α: {pipeAlpha} ×10⁻⁴ Н·с²/м⁴
                 </div>
               </div>
             </div>
@@ -267,26 +244,15 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               className={inputCls} />
           </div>
 
-          {/* Шероховатость */}
+          {/* Коэффициент α трубопровода (формула R=6.48·α·L/D⁵) */}
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <label className={`${labelCls} mb-0`}>Шероховатость</label>
-              <label className="flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer">
-                <input type="radio" value="auto" checked={roughnessMode === "auto"}
-                  onChange={() => setRoughnessMode("auto")} className="accent-blue-600" />
-                Авто (по материалу)
-              </label>
-              <label className="flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer">
-                <input type="radio" value="manual" checked={roughnessMode === "manual"}
-                  onChange={() => setRoughnessMode("manual")} className="accent-blue-600" />
-                Вручную
-              </label>
+            <label className={labelCls}>Коэф. α, ×10⁻⁴ Н·с²/м⁴</label>
+            <input type="number" min={0} step={0.05} value={pipeAlpha}
+              onChange={e => { setPipeAlpha(Number(e.target.value)); setPipeType(""); }}
+              className={inputCls} placeholder="α ×10⁻⁴" />
+            <div className="text-[10px] text-gray-500 mt-0.5">
+              R = 6.48·α·L/D⁵ (как во вкладке «Топология» → «Способ задания R»)
             </div>
-            {roughnessMode === "manual" && (
-              <input type="number" min={0.01} max={10} step={0.01} value={roughness}
-                onChange={e => setRoughness(Number(e.target.value))}
-                className={inputCls} placeholder="мм" />
-            )}
           </div>
 
           {/* Ручное сопротивление */}
@@ -322,10 +288,10 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               </div>
               <div className="text-gray-700">Длина:</div>
               <div className="font-semibold text-gray-900">{effLength.toFixed(1)} м</div>
-              <div className="text-gray-700">λ Дарси:</div>
-              <div className="font-semibold text-gray-900">{calc.lambda.toFixed(4)}</div>
-              <div className="text-gray-700 font-bold">R трубы:</div>
-              <div className="font-bold text-green-800">{R.toFixed(3)} Н·с²/м⁸</div>
+              <div className="text-gray-700">Коэф. α:</div>
+              <div className="font-semibold text-gray-900">{pipeAlpha} ×10⁻⁴</div>
+              <div className="text-gray-700 font-bold">R трубы (6.48·α·L/D⁵):</div>
+              <div className="font-bold text-green-800">{R.toFixed(4)} кМюрг</div>
               <div className="text-gray-500">Утечки на маршруте:</div>
               <div className="font-semibold text-orange-700">
                 {(calc.leakage * 100).toFixed(1)}% от расхода

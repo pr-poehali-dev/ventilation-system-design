@@ -247,6 +247,9 @@ export interface TopoBranch {
   vpManualR: number;               // Н·с²/м⁸ — ручное сопротивление (если задан вручную)
   vpRoughnessMode: "auto" | "manual"; // авто = по материалу, ручной = vpRoughness
   vpRoughness: number;             // мм — шероховатость (при ручном режиме)
+  // Аэродинамическое сопротивление по формуле R=6.48·α·L/D⁵ (как во вкладке «Топология»)
+  vpPipeType: string;              // id типа трубопровода из справочника PIPE_ALPHA_TYPES
+  vpPipeAlpha: number;             // α трубопровода, ×10⁻⁴ Н·с²/м⁴
   // Вычисленные параметры вентрубопровода
   vpComputedR: number;             // Н·с²/м⁸ — аэродинамическое сопротивление трубы
   vpComputedFlow: number;          // м³/с — расход в трубе
@@ -565,6 +568,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     vpManualR: 0,
     vpRoughnessMode: "auto",
     vpRoughness: 0.2,
+    vpPipeType: "flex_standard",
+    vpPipeAlpha: 0.45,
     vpComputedR: 0,
     vpComputedFlow: 0,
     vpComputedVelocity: 0,
