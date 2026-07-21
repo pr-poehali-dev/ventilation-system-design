@@ -131,7 +131,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
               <div className="text-[24px] font-bold text-blue-900">
                 {totalLen} м
               </div>
-              <div className="text-[10px] text-gray-500">от {nodeName(result.startNodeId)} до {nodeName(result.targetNodeId)}</div>
+              <div className="text-[10px] text-gray-500">{result.segments.length} сегм. маршрута</div>
             </div>
           </div>
 
