@@ -65,21 +65,9 @@ echo.
 REM ---------- Step 1: frontend ----------
 echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
-
-REM Vite config lives in project ROOT. Use an ABSOLUTE path so vite finds it
-REM no matter which folder build.bat was launched from (fixes UNRESOLVED_ENTRY
-REM "Cannot resolve entry module vite.config.desktop.ts" on other PCs).
-set "VITE_CFG=%ROOT%\vite.config.desktop.ts"
-if not exist "%VITE_CFG%" (
-    echo ERROR: vite.config.desktop.ts not found in project root:
-    echo        %VITE_CFG%
-    echo        Make sure the FULL project (webapp + desktop) is copied to this PC,
-    echo        and run this script from ^<project^>\desktop\csharp\build.bat
-    goto :fail
-)
 call npm install || goto :fail
 REM Run vite via npx so it finds the local binary regardless of launcher name.
-call npx --no-install vite build --config "%VITE_CFG%" || goto :fail
+call npx --no-install vite build --config vite.config.desktop.ts || goto :fail
 
 echo     Copying frontend into calc core...
 if exist "%CORE_DIR%\dist" rmdir /S /Q "%CORE_DIR%\dist"
