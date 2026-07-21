@@ -32,17 +32,32 @@ interface SectionHeaderProps {
   label: string;
   expanded: boolean;
   onToggle: () => void;
+  onAll?: (on: boolean) => void; // если задан — показываем кнопки вкл/выкл
 }
 
-function SectionHeader({ label, expanded, onToggle }: SectionHeaderProps) {
+function SectionHeader({ label, expanded, onToggle, onAll }: SectionHeaderProps) {
   return (
-    <button
-      onClick={onToggle}
-      className="w-full flex items-center gap-1 px-1 py-0.5 text-left select-none hover:bg-gray-100"
+    <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
       style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
-      <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={10} />
-      <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>{label}</span>
-    </button>
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-1 flex-1 text-left hover:bg-gray-100">
+        <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={10} />
+        <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>{label}</span>
+      </button>
+      {onAll && (
+        <div className="flex gap-1 flex-shrink-0">
+          <button onClick={() => onAll(true)}
+            className="text-[10px] px-1 rounded hover:bg-green-100 text-green-700 border border-green-300">
+            вкл
+          </button>
+          <button onClick={() => onAll(false)}
+            className="text-[10px] px-1 rounded hover:bg-red-50 text-red-600 border border-red-200">
+            выкл
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -108,6 +123,16 @@ export default function InfoPanel({
     setPreset(0);
   };
 
+  // Массовое вкл/выкл всех индикаторов секции по префиксу ключа (node/branch/water)
+  const setGroup = (prefix: string) => (on: boolean) => {
+    const patch: Partial<InfoDisplayConfig> = {};
+    (Object.keys(DEFAULT_INFO_CONFIG) as (keyof InfoDisplayConfig)[]).forEach((k) => {
+      if (k.startsWith(prefix)) patch[k] = on;
+    });
+    onChange(patch);
+    setPreset(0);
+  };
+
   return (
     <div className="flex flex-col h-full text-xs" style={{ background: "#f5f5f5" }}>
       {/* Пресет */}
@@ -133,7 +158,7 @@ export default function InfoPanel({
       <div className="flex-1 overflow-y-auto">
 
         {/* ─── Узлы (параметры отображения) ─── */}
-        <SectionHeader label="Узлы" expanded={nodesOpen} onToggle={() => setNodesOpen((v) => !v)} />
+        <SectionHeader label="Узлы" expanded={nodesOpen} onToggle={() => setNodesOpen((v) => !v)} onAll={setGroup("node")} />
         {nodesOpen && (
           <div>
             <CheckRow label="Номер сопряжения" checked={config.nodeNumber} onChange={set("nodeNumber")} />
@@ -149,7 +174,7 @@ export default function InfoPanel({
         )}
 
         {/* ─── Ветви ─── */}
-        <SectionHeader label="Ветви" expanded={branchesOpen} onToggle={() => setBranchesOpen((v) => !v)} />
+        <SectionHeader label="Ветви" expanded={branchesOpen} onToggle={() => setBranchesOpen((v) => !v)} onAll={setGroup("branch")} />
         {branchesOpen && (
           <div>
             <CheckRow label="Номер ветви" checked={config.branchNumber} onChange={set("branchNumber")} />
@@ -170,7 +195,7 @@ export default function InfoPanel({
         )}
 
         {/* ─── Водопровод ─── */}
-        <SectionHeader label="Водопровод" expanded={waterOpen} onToggle={() => setWaterOpen((v) => !v)} />
+        <SectionHeader label="Водопровод" expanded={waterOpen} onToggle={() => setWaterOpen((v) => !v)} onAll={setGroup("water")} />
         {waterOpen && (
           <div>
             <CheckRow label="Резервуар с водой" checked={config.waterReservoir} onChange={set("waterReservoir")} />
