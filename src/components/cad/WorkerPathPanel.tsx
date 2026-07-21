@@ -52,6 +52,7 @@ interface Props {
   onPickedStartChange: (id: string) => void;
   onPickedTargetChange: (id: string) => void;
   onRouteChange: (branchIds: Set<string>, nodeIds: Set<string>, branchDirs: Map<string, boolean>) => void;
+  onWaypointsChange?: (waypointIds: string[]) => void;
 }
 
 function numFmt(v: number, decimals = 1) {
@@ -98,12 +99,41 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
   const totalLen = Math.round(result.segments.reduce((a, s) => a + s.length, 0));
   const hasSmoky = result.segments.some(s => s.zone && s.zone !== "clean");
 
+  // ── Перемещаемое окно (drag за заголовок) ──
+  const DIALOG_W = 760;
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
+    x: Math.max(8, (window.innerWidth - DIALOG_W) / 2),
+    y: 90,
+  }));
+  const dragRef = React.useRef<{ dx: number; dy: number } | null>(null);
+  const onDragStart = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return; // не тащим за кнопку закрытия
+    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const x = Math.min(window.innerWidth - 60, Math.max(0, ev.clientX - dragRef.current.dx));
+      const y = Math.min(window.innerHeight - 40, Math.max(0, ev.clientY - dragRef.current.dy));
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
-      <div className="bg-white rounded-lg shadow-2xl flex flex-col" style={{ width: 760, maxHeight: "90vh", minWidth: 420 }}>
-        {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ background: "#f0f9ff", borderRadius: "8px 8px 0 0" }}>
+    <div className="fixed z-50" style={{ left: pos.x, top: pos.y }}>
+      <div className="bg-white rounded-lg shadow-2xl flex flex-col border border-gray-300"
+        style={{ width: DIALOG_W, maxHeight: "85vh", minWidth: 420 }}>
+        {/* Заголовок — область перетаскивания */}
+        <div onMouseDown={onDragStart}
+          className="flex items-center justify-between px-4 py-3 border-b select-none"
+          style={{ background: "#f0f9ff", borderRadius: "8px 8px 0 0", cursor: "move" }}>
           <div className="flex items-center gap-2">
+            <Icon name="Move" size={14} style={{ color: "#94a3b8" }} />
             <Icon name="PersonStanding" size={18} style={{ color: "#0369a1" }} />
             <span className="font-semibold text-[13px] text-blue-900">
               Время хода горнорабочего — {method}
@@ -241,13 +271,19 @@ export default function WorkerPathPanel({
   pickMode, onPickModeChange, onRegisterPickHandler,
   pickedStartId, pickedTargetId,
   onPickedStartChange, onPickedTargetChange,
-  onRouteChange,
+  onRouteChange, onWaypointsChange,
 }: Props) {
   const [method, setMethod] = useState<"rd" | "fnip">("rd");
   const [useWaypoints, setUseWaypoints] = useState(false);
   const [waypointIds, setWaypointIds] = useState<string[]>([]);
   const [result, setResult] = useState<WorkerPathResult | null>(null);
   const [showDialog, setShowDialog] = useState(false);
+
+  // Сообщаем родителю о промежуточных узлах — для подсветки букв «В» на схеме
+  React.useEffect(() => {
+    onWaypointsChange?.(useWaypoints ? waypointIds.filter(Boolean) : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useWaypoints, waypointIds]);
 
   // Регистрируем обработчик pick-клика
   const pickHandlerRef = React.useRef<(nodeId: string) => void>(() => {});

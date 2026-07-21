@@ -1039,6 +1039,16 @@ export default function CadPage() {
   const [workerPathBranchIds, setWorkerPathBranchIds] = useState<Set<string>>(new Set());
   const [workerPathBranchDirs, setWorkerPathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [workerPathNodeIds, setWorkerPathNodeIds] = useState<Set<string>>(new Set());
+  const [workerWaypointIds, setWorkerWaypointIds] = useState<string[]>([]);
+  // Буквенные метки узлов горнорабочего: А — начальный, Б — целевой, В — промежуточные
+  const workerNodeLetters = React.useMemo(() => {
+    const m = new Map<string, string>();
+    if (activeSide !== "workerPath") return m;
+    workerWaypointIds.forEach(id => { if (id) m.set(id, "В"); });
+    if (workerStartNodeId)  m.set(workerStartNodeId, "А");
+    if (workerTargetNodeId) m.set(workerTargetNodeId, "Б");
+    return m;
+  }, [activeSide, workerStartNodeId, workerTargetNodeId, workerWaypointIds]);
   // ─── Вентрубопровод ────────────────────────────────────────────────
   const [showVentPipeDialog, setShowVentPipeDialog] = useState(false);
   const [ventPipeBranchIds, setVentPipeBranchIds] = useState<string[]>([]);
@@ -8229,6 +8239,7 @@ export default function CadPage() {
                   setWorkerPathNodeIds(nIds);
                   setWorkerPathBranchDirs(bDirs);
                 }}
+                onWaypointsChange={setWorkerWaypointIds}
               />
             )}
 
@@ -9289,7 +9300,11 @@ export default function CadPage() {
                 : rescuePathNodeIds.size > 0 ? rescuePathNodeIds
                 : undefined
               }
-              rescueNodeLetters={rescueNodeLetters.size > 0 ? rescueNodeLetters : undefined}
+              rescueNodeLetters={
+                workerNodeLetters.size > 0 ? workerNodeLetters
+                : rescueNodeLetters.size > 0 ? rescueNodeLetters
+                : undefined
+              }
               rescuePickMode={depressogramPickMode ? "depress" : (rescuePickMode ?? workerPickMode)}
               onRescueNodePick={(nodeId) => {
                 if (rescuePickMode) rescuePickHandlerRef.current?.(nodeId);
