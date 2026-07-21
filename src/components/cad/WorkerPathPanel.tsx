@@ -65,19 +65,19 @@ function exportCsv(result: WorkerPathResult) {
   rows.push([`Начало: ${result.startNodeId}`, `Цель: ${result.targetNodeId}`]);
   rows.push([`Время хода (в одну сторону), мин`, result.totalTime.toFixed(1)]);
   rows.push([]);
-  rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t туда, мин", "t обратно, мин", "Σt туда, мин"]);
+  rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "Σt, мин"]);
   for (const s of result.segments) {
     const zl = !s.zone || s.zone === "clean" ? "Чистая" : s.zone === "smoky_low" ? "Задым. 5-10м" : "Задым. <5м";
     rows.push([
       s.branchName, String(s.segmentNumber),
       String(Math.round(s.length)), s.angle.toFixed(0),
       zl, String(s.speed_mpm), s.time_min.toFixed(2),
-      s.time_back_min.toFixed(2), s.cumulTime.toFixed(2),
+      s.cumulTime.toFixed(2),
     ]);
   }
   rows.push(["ИТОГО", "",
     String(Math.round(result.segments.reduce((a, s) => a + s.length, 0))), "",
-    "", result.totalTimeForward.toFixed(2), result.totalTimeBack.toFixed(2), "",
+    "", "", result.totalTime.toFixed(2), "",
   ]);
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
@@ -169,10 +169,8 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Длина, м</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Угол, °</th>
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">Зона</th>
-                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V туда, м/мин</th>
-                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V обр., м/мин</th>
-                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t туда, мин</th>
-                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t обр., мин</th>
+                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">V, м/мин</th>
+                    <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">t, мин</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Σt, мин</th>
                   </tr>
                 </thead>
@@ -194,9 +192,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                         </span>
                       </td>
                       <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "#b45309" : "#1d4ed8" }}>{s.speed_mpm}</td>
-                      <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "#b45309" : "#059669" }}>{s.speed_back_mpm}</td>
                       <td className="px-2 py-0.5 text-right font-medium">{numFmt(s.time_min, 2)}</td>
-                      <td className="px-2 py-0.5 text-right">{numFmt(s.time_back_min, 2)}</td>
                       <td className="px-2 py-0.5 text-right font-semibold text-blue-800">{numFmt(s.cumulTime, 2)}</td>
                     </tr>
                     );
@@ -209,10 +205,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
-                    <td className="px-2 py-1"></td>
-                    <td className="px-2 py-1 text-right font-bold text-blue-900">{numFmt(result.totalTimeForward, 2)}</td>
-                    <td className="px-2 py-1 text-right font-bold text-blue-900">{numFmt(result.totalTimeBack, 2)}</td>
-                    <td className="px-2 py-1"></td>
+                    <td className="px-2 py-1 text-right font-bold text-blue-900">{numFmt(result.totalTime, 2)}</td>
                   </tr>
                 </tfoot>
               </table>

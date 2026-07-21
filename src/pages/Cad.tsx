@@ -8207,11 +8207,15 @@ export default function CadPage() {
             {activeSide === "workerPath" && (
               <WorkerPathPanel
                 nodes={nodes}
-                branches={branches.map(b => ({
-                  ...b,
-                  fireComputedSmokeDens: b.fireComputedSmokeDens,
-                  fireComputedCO: b.fireComputedCO,
-                }))}
+                branches={branches.map(b => {
+                  // Как у горноспасателей: если bulkheadId не задан на ветви —
+                  // берём typeId символа перемычки на этой ветви, иначе ветвь
+                  // ошибочно считается глухой непроходимой перемычкой и выпадает
+                  // из графа (маршрут «не найден»).
+                  if (!b.hasBulkhead || b.bulkheadId) return b;
+                  const sym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+                  return sym ? { ...b, bulkheadId: sym.typeId, bulkheadName: sym.typeId } : b;
+                })}
                 fireCalcDone={fireCalcDone}
                 pickMode={workerPickMode}
                 onPickModeChange={setWorkerPickMode}
