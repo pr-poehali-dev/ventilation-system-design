@@ -632,15 +632,24 @@ export function calcWorkerPath(
   // Строим граф (все ветви проходимы для горнорабочего, включая перемычки с дверями)
   // Индекс ветвей по id — быстрый доступ внутри Дейкстры (без branches.find на каждом ребре)
   const branchById = new Map(branches.map(b => [b.id, b]));
+  const nodePos = new Map(nodes.map(n => [n.id, n]));
+  // Эффективная длина ветви: если length не задана/некорректна — считаем по
+  // координатам узлов, чтобы связная «по прямой» ветвь не выпадала из графа и
+  // маршрут между соседними узлами всегда находился.
+  const effLength = (b: TopoBranchLite): number => {
+    if (Number.isFinite(b.length) && (b.length as number) > 0) return b.length as number;
+    const a = nodePos.get(b.fromId);
+    const c = nodePos.get(b.toId);
+    if (a && c) {
+      const d = Math.hypot((c.x ?? 0) - (a.x ?? 0), (c.y ?? 0) - (a.y ?? 0), (c.z ?? 0) - (a.z ?? 0));
+      if (Number.isFinite(d) && d > 0) return d;
+    }
+    return 1; // минимальная длина, чтобы сохранить связность
+  };
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
     if (b.isLeakage) continue;
-    // ВАЖНО: длина должна быть конечным положительным числом.
-    // Проверка `(b.length ?? 0) <= 0` НЕ отсекает NaN (NaN <= 0 === false),
-    // из-за чего ветвь с некорректной длиной попадала в граф и давала t=NaN,
-    // ломая сортировку очереди Дейкстры — маршрут «терялся» (0.0 мин).
-    if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     // Узлы ветви обязаны существовать в графе (иначе adj.get вернёт undefined)
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     // Горнорабочий проходит через двери, паруса, регуляторы; глухие перемычки — нет
@@ -673,7 +682,7 @@ export function calcWorkerPath(
         const sz = getZone(sdens);
         const smokeK = sz === "clean" ? 1.0 : sz === "smoky_low" ? 0.75 : 0.55;
         const speed = Math.max(1, Math.round(getWorkerSpeed(method, signedAngle) * smokeK));
-        const len = Number.isFinite(b.length) ? b.length : 0;
+        const len = effLength(b);
         const t = len > 0 ? len / speed : 0;
         const nd = curD + t;
         if (nd < (dist.get(edge.toId) ?? Infinity)) {
@@ -716,7 +725,7 @@ export function calcWorkerPath(
     const isForward = edge.forward;
     const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
     const signedAngle = isForward ? rawAngle : -rawAngle;
-    const segLen = Number.isFinite(b.length) && b.length > 0 ? b.length : 0;
+    const segLen = effLength(b);
     // Учёт задымления: в задымлённых зонах горнорабочий движется медленнее
     const smokeDensity = b.fireComputedSmokeDens ?? 0;
     const zone = getZone(smokeDensity);
@@ -772,7 +781,10 @@ export function calcWorkerPath(
 
   const totalTimeForward = segments.reduce((s, seg) => s + seg.time_min, 0);
   const totalTimeBack    = segments.reduce((s, seg) => s + seg.time_back_min, 0);
-  const totalTime = totalTimeForward + totalTimeBack;
+  // Итоговое время хода горнорабочего — только в ОДНУ сторону (от начального
+  // узла А до целевого Б, при необходимости через промежуточный В).
+  // Обратный путь и добавка «на помощь» здесь не учитываются.
+  const totalTime = totalTimeForward;
 
   const branchDirs = new Map<string, boolean>();
   for (const edge of allPathEdges) branchDirs.set(edge.branchId, edge.forward);

@@ -63,9 +63,7 @@ function exportCsv(result: WorkerPathResult) {
   const method = result.method === "rd" ? "РД 15-11-2007" : "ФНиП №467";
   rows.push([`Расчёт времени хода горнорабочего (${method})`]);
   rows.push([`Начало: ${result.startNodeId}`, `Цель: ${result.targetNodeId}`]);
-  rows.push([`Время туда, мин`, result.totalTimeForward.toFixed(1)]);
-  rows.push([`Время обратно, мин`, result.totalTimeBack.toFixed(1)]);
-  rows.push([`Общее время, мин`, result.totalTime.toFixed(1)]);
+  rows.push([`Время хода (в одну сторону), мин`, result.totalTime.toFixed(1)]);
   rows.push([]);
   rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t туда, мин", "t обратно, мин", "Σt туда, мин"]);
   for (const s of result.segments) {
@@ -118,29 +116,22 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
 
         <div className="flex flex-col overflow-y-auto flex-1 p-4 gap-4">
           {/* Итоговые метрики */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="border rounded p-3" style={{ background: "#f0f9ff" }}>
-              <div className="text-[10px] text-gray-500 mb-1 font-medium">ТУДА</div>
-              <div className="text-[24px] font-bold text-blue-900">
-                {numFmt(result.totalTimeForward, 1)} мин
-              </div>
-              <div className="text-[10px] text-gray-500">{totalLen} м пути</div>
-            </div>
-            <div className="border rounded p-3" style={{ background: "#f0fdf4" }}>
-              <div className="text-[10px] text-gray-500 mb-1 font-medium">ОБРАТНО</div>
-              <div className="text-[24px] font-bold text-green-800">
-                {numFmt(result.totalTimeBack, 1)} мин
-              </div>
-              <div className="text-[10px] text-gray-500">{totalLen} м пути</div>
-            </div>
+          <div className="grid grid-cols-2 gap-3">
             <div className={`border rounded p-3 ${result.ok ? "bg-green-50" : "bg-red-50"}`}>
-              <div className="text-[10px] text-gray-500 mb-1 font-medium">ИТОГО ТУДА + ОБРАТНО</div>
-              <div className={`text-[20px] font-bold ${result.ok ? "text-green-800" : "text-red-700"}`}>
+              <div className="text-[10px] text-gray-500 mb-1 font-medium">ВРЕМЯ ХОДА (В ОДНУ СТОРОНУ)</div>
+              <div className={`text-[24px] font-bold ${result.ok ? "text-blue-900" : "text-red-700"}`}>
                 {numFmt(result.totalTime, 1)} мин
               </div>
               <div className={`text-[11px] font-medium mt-0.5 ${result.ok ? "text-green-700" : "text-red-700"}`}>
                 {result.ok ? "✓ Маршрут построен" : "✗ Маршрут не найден"}
               </div>
+            </div>
+            <div className="border rounded p-3" style={{ background: "#f0f9ff" }}>
+              <div className="text-[10px] text-gray-500 mb-1 font-medium">ДЛИНА МАРШРУТА</div>
+              <div className="text-[24px] font-bold text-blue-900">
+                {totalLen} м
+              </div>
+              <div className="text-[10px] text-gray-500">от {nodeName(result.startNodeId)} до {nodeName(result.targetNodeId)}</div>
             </div>
           </div>
 
@@ -493,16 +484,8 @@ export default function WorkerPathPanel({
               <div className="text-[10px] text-gray-500 font-medium mb-1">Результат расчёта</div>
               <div className="flex gap-3">
                 <div>
-                  <div className="text-[10px] text-gray-500">Туда</div>
-                  <div className="text-[16px] font-bold text-blue-900">{numFmt(result.totalTimeForward)} мин</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-gray-500">Обратно</div>
-                  <div className="text-[16px] font-bold text-green-800">{numFmt(result.totalTimeBack)} мин</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-gray-500">Итого</div>
-                  <div className="text-[16px] font-bold text-gray-800">{numFmt(result.totalTime)} мин</div>
+                  <div className="text-[10px] text-gray-500">Время хода (в одну сторону)</div>
+                  <div className="text-[16px] font-bold text-blue-900">{numFmt(result.totalTime)} мин</div>
                 </div>
               </div>
               <button
