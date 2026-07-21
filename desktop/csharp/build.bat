@@ -42,38 +42,32 @@ echo   Log file: %BUILD_LOG%
 echo ============================================================
 echo.
 
-REM ---------- Check environment (auto-install missing tools) ----------
-REM Fully autonomous: if a required tool is missing, the script tries to install
-REM it automatically via winget (built into Windows 10/11). This lets the build
-REM run on a fresh PC without manual pre-setup. Requires internet on first run.
+REM ---------- Check environment ----------
 echo [0/5] Checking environment...
-
-REM winget is the installer we rely on for auto-setup.
-where winget >nul 2>nul
-if errorlevel 1 set "NO_WINGET=1"
-
-call :ensure_tool node   "OpenJS.NodeJS.LTS"        "Node.js"     || goto :fail
-call :ensure_tool python "Python.Python.3.12"       "Python 3"    || goto :fail
-call :ensure_tool dotnet "Microsoft.DotNet.SDK.8"   ".NET 8 SDK"  || goto :fail
+where node >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: Node.js not found - install from nodejs.org
+    goto :fail
+)
+where python >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: Python not found - install from python.org
+    goto :fail
+)
+where dotnet >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: .NET 8 SDK not found - install dotnet 8.0
+    goto :fail
+)
 echo     OK
 echo.
 
 REM ---------- Step 1: frontend ----------
 echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
-
-REM Absolute path to the vite config so it resolves no matter where the script
-REM was launched from (prevents "Cannot resolve entry vite.config.desktop.ts").
-set "VITE_CFG=%ROOT%\vite.config.desktop.ts"
-if not exist "%VITE_CFG%" (
-    echo ERROR: vite.config.desktop.ts not found at:
-    echo        %VITE_CFG%
-    echo        Copy the WHOLE project (webapp root + desktop folder) to this PC.
-    goto :fail
-)
 call npm install || goto :fail
 REM Run vite via npx so it finds the local binary regardless of launcher name.
-call npx --no-install vite build --config "%VITE_CFG%" || goto :fail
+call npx --no-install vite build --config vite.config.desktop.ts || goto :fail
 
 echo     Copying frontend into calc core...
 if exist "%CORE_DIR%\dist" rmdir /S /Q "%CORE_DIR%\dist"
@@ -225,37 +219,6 @@ echo   (Without this step clients keep the old core.)
 echo ============================================================
 echo.
 pause
-exit /b 0
-
-REM ---------- helper: ensure a build tool exists (auto-install via winget) ----
-REM %1 = command to probe (node/python/dotnet)
-REM %2 = winget package id
-REM %3 = human-readable name
-:ensure_tool
-where %~1 >nul 2>nul
-if not errorlevel 1 (
-    echo     %~3: found
-    exit /b 0
-)
-echo     %~3: NOT found - attempting automatic install...
-if defined NO_WINGET (
-    echo     ERROR: %~3 is missing and winget is unavailable.
-    echo            Install %~3 manually, then re-run this script.
-    exit /b 1
-)
-winget install --id %~2 -e --source winget --accept-package-agreements --accept-source-agreements --silent
-REM Refresh PATH in the current session so the freshly installed tool is visible.
-for /f "usebackq tokens=2,*" %%a in (`reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul ^| findstr /i "Path"`) do set "MPATH=%%b"
-for /f "usebackq tokens=2,*" %%a in (`reg query "HKCU\Environment" /v Path 2^>nul ^| findstr /i "Path"`) do set "UPATH=%%b"
-set "PATH=%MPATH%;%UPATH%;%PATH%"
-where %~1 >nul 2>nul
-if errorlevel 1 (
-    echo     ERROR: %~3 still not found after install.
-    echo            Close this window, open a NEW terminal and re-run the script
-    echo            (Windows needs a fresh session to pick up the new PATH).
-    exit /b 1
-)
-echo     %~3: installed OK
 exit /b 0
 
 REM ---------- helper: copy one backend function ----------
