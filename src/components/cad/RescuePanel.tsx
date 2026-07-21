@@ -285,20 +285,43 @@ function RescueResultDialog({
   const [tableTab, setTableTab] = useState<"forward" | "back">("forward");
   const hasBack = result.operationType !== "scout" && result.operationType !== "liquidation";
 
+  // ── Перемещаемое окно (drag за заголовок) ──
+  const DIALOG_W = 700;
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
+    x: Math.max(8, (window.innerWidth - DIALOG_W) / 2),
+    y: 80,
+  }));
+  const dragRef = React.useRef<{ dx: number; dy: number } | null>(null);
+  const onDragStart = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const x = Math.min(window.innerWidth - 60, Math.max(0, ev.clientX - dragRef.current.dx));
+      const y = Math.min(window.innerHeight - 40, Math.max(0, ev.clientY - dragRef.current.dy));
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.35)" }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
+    <div className="fixed z-50" style={{ left: pos.x, top: pos.y }}>
       <div
-        className="bg-white rounded shadow-2xl flex flex-col"
-        style={{ width: 700, maxHeight: "90vh", overflow: "hidden" }}
+        className="bg-white rounded shadow-2xl flex flex-col border border-gray-300"
+        style={{ width: DIALOG_W, maxHeight: "85vh", overflow: "hidden" }}
       >
-        {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-2 border-b"
-          style={{ background: "#1e40af", color: "white" }}>
+        {/* Заголовок — область перетаскивания */}
+        <div onMouseDown={onDragStart}
+          className="flex items-center justify-between px-4 py-2 border-b select-none"
+          style={{ background: "#1e40af", color: "white", cursor: "move" }}>
           <div className="flex items-center gap-2">
+            <Icon name="Move" size={13} style={{ color: "#93c5fd" }} />
             <Icon name="ShieldCheck" size={16} />
             <span className="text-[13px] font-semibold">
               График времени движения горноспасателей — {OP_LABELS[result.operationType]}
