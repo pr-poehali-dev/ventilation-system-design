@@ -1100,6 +1100,8 @@ export default function CadPage() {
   const [showSolverParams, setShowSolverParams] = useState(false);
   // Диалог «Устойчивость при пожаре» (Акт устойчивости)
   const [showFireStability, setShowFireStability] = useState(false);
+  // Диалог «ВДС» (воздушно-депрессионная съёмка)
+  const [showVds, setShowVds] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const logIdRef = useRef(0);
@@ -5023,6 +5025,13 @@ export default function CadPage() {
               sublabel="при пожаре"
               title="Проверка устойчивости вентиляционных режимов при пожаре и формирование Акта устойчивости"
               onClick={() => setShowFireStability(true)}
+            />
+            <RibbonBigBtn
+              icon="Gauge"
+              label="ВДС"
+              sublabel=""
+              title="Воздушно-депрессионная съёмка: эквивалентное отверстие шахты и другие расчёты по схеме"
+              onClick={() => setShowVds(true)}
             />
           </RibbonGroup>
         )}
@@ -10593,6 +10602,8 @@ export default function CadPage() {
       setDepressogramManualBranches={setDepressogramManualBranches}
       showFireStability={showFireStability}
       setShowFireStability={setShowFireStability}
+      showVds={showVds}
+      setShowVds={setShowVds}
       solveResult={solveResult}
       computeFireStabilityFacts={computeFireStabilityFacts}
       showLicenseDialog={showLicenseDialog}

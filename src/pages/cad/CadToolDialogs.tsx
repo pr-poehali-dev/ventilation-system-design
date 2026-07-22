@@ -12,6 +12,7 @@ import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberD
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
+import VdsDialog from "@/components/cad/VdsDialog";
 import LicenseDialog from "@/components/LicenseDialog";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
@@ -90,6 +91,9 @@ export interface CadToolDialogsProps {
   // Устойчивость при пожаре
   showFireStability: boolean;
   setShowFireStability: (v: boolean) => void;
+  // ВДС (воздушно-депрессионная съёмка)
+  showVds: boolean;
+  setShowVds: (v: boolean) => void;
   solveResult: SolveResult | null;
   computeFireStabilityFacts: (ambientTemp: number) => Promise<Map<string, boolean>>;
 
@@ -241,6 +245,11 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           computeReversalFacts={p.computeFireStabilityFacts}
           onClose={() => p.setShowFireStability(false)}
         />
+      )}
+
+      {/* ── ВДС (воздушно-депрессионная съёмка) ─────────────────────────── */}
+      {p.showVds && (
+        <VdsDialog onClose={() => p.setShowVds(false)} />
       )}
 
       {/* ── Диалог лицензии ─────────────────────────────────────────────── */}
