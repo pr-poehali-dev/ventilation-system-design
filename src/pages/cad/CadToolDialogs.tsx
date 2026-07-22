@@ -249,7 +249,12 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
 
       {/* ── ВДС (воздушно-депрессионная съёмка) ─────────────────────────── */}
       {p.showVds && (
-        <VdsDialog onClose={() => p.setShowVds(false)} />
+        <VdsDialog
+          branches={p.branches}
+          nodes={p.nodes}
+          solved={!!p.solveResult}
+          onClose={() => p.setShowVds(false)}
+        />
       )}
 
       {/* ── Диалог лицензии ─────────────────────────────────────────────── */}
