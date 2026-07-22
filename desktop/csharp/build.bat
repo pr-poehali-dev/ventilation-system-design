@@ -231,9 +231,14 @@ cd /d "%CS_DIR%\PvsApp"
 
 set "OBF_OUTDIR=bin\Release\net8.0-windows\win-x64"
 
-REM 4.1 - compile (produces PVS.dll, does NOT pack into single file yet)
+REM 4.1 - compile (produces PVS.dll, and prepares single-file host).
+REM IMPORTANT: keep PublishSingleFile=true HERE too, so the .NET SDK builds the
+REM helper singlefilehost.exe into obj\. Step 4.3 runs publish with --no-build
+REM and would otherwise fail with "Could not find singlefilehost.exe" on a clean
+REM machine (obj\ empty). PVS.dll is still emitted as a plain dll here, so we can
+REM obfuscate it before the single-file packing happens in 4.3.
 echo     Compiling...
-call dotnet build -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "%OBF_OUTDIR%" || goto :fail
+call dotnet build -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OBF_OUTDIR%" || goto :fail
 
 if "%OBFUSCATE%"=="0" goto :publish
 
