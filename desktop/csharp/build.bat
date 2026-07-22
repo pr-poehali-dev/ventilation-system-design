@@ -18,6 +18,13 @@ set "CS_DIR=%ROOT%\desktop\csharp"
 set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
 
+REM ---------- Build mode ----------
+REM Optional arg "noobf" builds PVS.exe WITHOUT obfuscation. Use it to check
+REM whether a broken build is caused by obfuscation or by the code itself:
+REM     desktop\csharp\build.bat noobf
+set "OBFUSCATE=1"
+if /i "%~1"=="noobf" set "OBFUSCATE=0"
+
 REM ---------- Read server core version (MANUAL) ----------
 REM server.exe (interface + core + backend) updates on the fly by server_version.
 REM Версия ядра задаётся ВРУЧНУЮ в одном месте — файле desktop\SERVER_VERSION.
@@ -42,21 +49,77 @@ echo   Log file: %BUILD_LOG%
 echo ============================================================
 echo.
 
-REM ---------- Check environment ----------
+REM ---------- Check environment (tools + versions) ----------
 echo [0/5] Checking environment...
+if "%OBFUSCATE%"=="0" echo     MODE: build WITHOUT obfuscation ^(noobf^)
+
+REM --- Node.js present? ---
 where node >nul 2>nul
 if errorlevel 1 (
-    echo ERROR: Node.js not found - install from nodejs.org
+    echo ERROR: Node.js not found - install LTS from https://nodejs.org
     goto :fail
 )
+for /f "delims=" %%v in ('node --version 2^>nul') do set "NODE_VER=%%v"
+echo     Node.js: %NODE_VER%
+
+REM --- Python present and a supported version (3.11 / 3.12)? ---
 where python >nul 2>nul
 if errorlevel 1 (
-    echo ERROR: Python not found - install from python.org
+    echo ERROR: Python not found - install 3.11 or 3.12 from https://python.org
+    echo        During setup tick "Add python.exe to PATH".
     goto :fail
 )
+for /f "tokens=2" %%v in ('python --version 2^>^&1') do set "PY_VER=%%v"
+echo     Python: %PY_VER%
+echo %PY_VER% | findstr /r "^3\.1[12]\." >nul
+if errorlevel 1 (
+    echo ERROR: Python %PY_VER% is not supported for this build.
+    echo        Install Python 3.11 or 3.12 - PyInstaller/numpy wheels must match.
+    goto :fail
+)
+
+REM --- pip must point to the SAME python (common cross-PC failure) ---
+python -m pip --version >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: pip is not available for this Python.
+    echo        Run: python -m ensurepip --upgrade
+    goto :fail
+)
+
+REM --- .NET SDK present AND version 8.x installed? ---
 where dotnet >nul 2>nul
 if errorlevel 1 (
-    echo ERROR: .NET 8 SDK not found - install dotnet 8.0
+    echo ERROR: .NET SDK not found - install .NET 8 SDK from
+    echo        https://dotnet.microsoft.com/download/dotnet/8.0
+    goto :fail
+)
+dotnet --list-sdks 2>nul | findstr /r "^8\." >nul
+if errorlevel 1 (
+    echo ERROR: .NET 8 SDK not found. Installed SDKs:
+    dotnet --list-sdks
+    echo        Install the .NET 8 SDK ^(not just Runtime^) from
+    echo        https://dotnet.microsoft.com/download/dotnet/8.0
+    goto :fail
+)
+echo     .NET 8 SDK: OK
+echo.
+
+REM ---------- Check project is copied whole ----------
+echo [0/5] Checking project files...
+set "VITE_CFG=%ROOT%\vite.config.desktop.ts"
+if not exist "%ROOT%\package.json" (
+    echo ERROR: package.json not found at %ROOT%
+    echo        Copy the WHOLE project ^(webapp root + desktop folder^) to this PC,
+    echo        not just the desktop folder.
+    goto :fail
+)
+if not exist "%VITE_CFG%" (
+    echo ERROR: vite.config.desktop.ts not found at %VITE_CFG%
+    echo        Copy the WHOLE project to this PC, not just the desktop folder.
+    goto :fail
+)
+if not exist "%CORE_DIR%\server.py" if not exist "%CORE_DIR%" (
+    echo ERROR: calc core folder missing: %CORE_DIR%
     goto :fail
 )
 echo     OK
@@ -67,7 +130,7 @@ echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
 call npm install || goto :fail
 REM Run vite via npx so it finds the local binary regardless of launcher name.
-call npx --no-install vite build --config vite.config.desktop.ts || goto :fail
+call npx --no-install vite build --config "%VITE_CFG%" || goto :fail
 
 echo     Copying frontend into calc core...
 if exist "%CORE_DIR%\dist" rmdir /S /Q "%CORE_DIR%\dist"
@@ -99,7 +162,10 @@ call :copyfn svg-to-pdf
 call :copyfn explosion-calculator
 call :copyfn aerodynamics
 
-call pip install pyinstaller flask numpy svglib reportlab || goto :fail
+REM Install pinned build deps into the SAME python (python -m pip), so the wheels
+REM always match the interpreter regardless of a stray global pip on the machine.
+python -m pip install --upgrade pip >nul 2>nul
+python -m pip install -r "%CS_DIR%\requirements-build.txt" || goto :fail
 
 REM --- Protect Python core: compile .py -> .pyc, pack only bytecode ---
 REM Compile the whole core to .pyc and pack ONLY the bytecode copy,
@@ -156,7 +222,11 @@ if exist "%CS_DIR%\PvsApp\vproj.ico" (
 echo.
 
 REM ---------- Step 4: PVS.exe (build -> obfuscate -> publish) ----------
-echo [4/5] Building PVS.exe (C#) with obfuscation...
+if "%OBFUSCATE%"=="1" (
+    echo [4/5] Building PVS.exe ^(C#^) with obfuscation...
+) else (
+    echo [4/5] Building PVS.exe ^(C#^) WITHOUT obfuscation ^(noobf mode^)...
+)
 cd /d "%CS_DIR%\PvsApp"
 
 set "OBF_OUTDIR=bin\Release\net8.0-windows\win-x64"
@@ -165,12 +235,19 @@ REM 4.1 - compile (produces PVS.dll, does NOT pack into single file yet)
 echo     Compiling...
 call dotnet build -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o "%OBF_OUTDIR%" || goto :fail
 
+if "%OBFUSCATE%"=="0" goto :publish
+
 REM 4.2 - install Obfuscar tool locally (idempotent) and obfuscate PVS.dll
 echo     Installing Obfuscar tool...
-call dotnet tool install --tool-path "%CS_DIR%\.tools" Obfuscar.GlobalTool >nul 2>nul
+REM Do NOT swallow the output: if install fails we must SEE the real reason
+REM (no internet, blocked nuget, proxy). The tool is a no-op if already present.
+call dotnet tool install --tool-path "%CS_DIR%\.tools" Obfuscar.GlobalTool
 set "OBFUSCAR=%CS_DIR%\.tools\obfuscar.console.exe"
 if not exist "%OBFUSCAR%" (
-    echo     ERROR: Obfuscar tool not installed. Check internet/nuget access.
+    echo     ERROR: Obfuscar tool did not install.
+    echo            Likely no internet / blocked nuget.org / proxy on this PC.
+    echo            Fix network access, or run WITHOUT obfuscation:
+    echo                desktop\csharp\build.bat noobf
     goto :fail
 )
 
@@ -185,10 +262,11 @@ powershell -NoProfile -Command "(Get-Content -Raw -LiteralPath '%CS_DIR%\PvsApp\
 REM Replace the clean dll with the obfuscated one
 copy /Y "%CS_DIR%\PvsApp\%OBF_OUTDIR%\obf\PVS.dll" "%CS_DIR%\PvsApp\%OBF_OUTDIR%\PVS.dll" || goto :fail
 
-REM 4.3 - publish WITHOUT recompiling, so the obfuscated dll is packed as-is
+:publish
+REM 4.3 - publish WITHOUT recompiling, so the (obfuscated) dll is packed as-is
 echo     Packing single-file PVS.exe...
 call dotnet publish -c Release -r win-x64 --self-contained true --no-build -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%CS_DIR%\dist" || goto :fail
-echo     OK (obfuscated)
+if "%OBFUSCATE%"=="1" ( echo     OK ^(obfuscated^) ) else ( echo     OK ^(NOT obfuscated^) )
 echo.
 
 REM ---------- Step 5: smoke test (verify server.exe APIs) ----------
