@@ -7,10 +7,8 @@
 //   Для нескольких ГВУ (25):
 //                          A_общ = 0.38 * Σ Q_i / sqrt( Σ (h_i * Q_i) / Σ Q_i )
 //
-//   Q — подача воздуха ГВУ, м³/с;  H (h) — депрессия ГВУ.
-//   ВНИМАНИЕ: коэффициент 0.38 в формулах рассчитан на депрессию в даПа.
-//   В интерфейсе депрессия вводится/показывается в Па (как во всей программе),
-//   а внутри расчёта переводится в даПа делением на 10.
+//   Q — подача воздуха ГВУ, м³/с;  H (h) — депрессия ГВУ, Па.
+//   Депрессия вводится, показывается И считается в Па (как во всей программе).
 //
 // Список ГВУ синхронизирован со схемой: в строке можно выбрать вентилятор,
 // установленный в открытой схеме, и Q с депрессией подставятся автоматически
@@ -22,8 +20,6 @@
 import { useMemo, useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
-
-const PA_PER_DAPA = 10; // 1 даПа = 10 Па
 
 interface Props {
   branches: TopoBranch[];
@@ -106,29 +102,29 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
   }
 
   const calc = useMemo(() => {
-    // Учитываем только строки с положительными Q и H. Депрессию переводим Па → даПа.
+    // Учитываем только строки с положительными Q и H. Депрессия — в Па (без перевода).
     const valid = rows
-      .map(r => ({ q: num(r.q), h: num(r.h) / PA_PER_DAPA }))
+      .map(r => ({ q: num(r.q), h: num(r.h) }))
       .filter(r => r.q > 0 && r.h > 0);
 
     const sumQ = valid.reduce((s, r) => s + r.q, 0);
     const sumHQ = valid.reduce((s, r) => s + r.h * r.q, 0);
 
     let A = 0;
-    let HavgDaPa = 0; // эквивалентная депрессия шахты, даПа
+    let HavgPa = 0; // эквивалентная депрессия шахты, Па
     if (valid.length === 1) {
       // формула (24)
       A = (0.38 * valid[0].q) / Math.sqrt(valid[0].h);
-      HavgDaPa = valid[0].h;
+      HavgPa = valid[0].h;
     } else if (valid.length > 1 && sumQ > 0) {
       // формула (25)
-      HavgDaPa = sumHQ / sumQ;
-      A = (0.38 * sumQ) / Math.sqrt(HavgDaPa);
+      HavgPa = sumHQ / sumQ;
+      A = (0.38 * sumQ) / Math.sqrt(HavgPa);
     }
     return {
       count: valid.length,
       sumQ,
-      HavgPa: HavgDaPa * PA_PER_DAPA,
+      HavgPa,
       A,
       formula: valid.length <= 1 ? "(24)" : "(25)",
     };
