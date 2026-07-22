@@ -1,4 +1,7 @@
 @echo off
+REM Force a stable code page so this .bat is parsed identically on any PC.
+REM (This file is pure ASCII - no national characters in commands/comments.)
+chcp 65001 >nul 2>nul
 setlocal enabledelayedexpansion
 
 REM ============================================================
@@ -27,11 +30,11 @@ if /i "%~1"=="noobf" set "OBFUSCATE=0"
 
 REM ---------- Read server core version (MANUAL) ----------
 REM server.exe (interface + core + backend) updates on the fly by server_version.
-REM Версия ядра задаётся ВРУЧНУЮ в одном месте — файле desktop\SERVER_VERSION.
-REM Никакого авто-инкремента: сборка берёт число из файла КАК ЕСТЬ.
-REM Чтобы выпустить новую версию ядра — просто впиши новый номер (X.Y.Z) в этот
-REM файл перед сборкой. ВАЖНО: номер должен быть БОЛЬШЕ предыдущего, иначе
-REM клиенты будут считать, что у них уже актуальное ядро, и не обновятся.
+REM The core version is set MANUALLY in one place: the file desktop\SERVER_VERSION.
+REM No auto-increment: the build takes the number from that file AS IS.
+REM To release a new core version, just write a new number (X.Y.Z) into that file
+REM before building. IMPORTANT: the number must be GREATER than the previous one,
+REM otherwise clients will think their core is already up to date and won't update.
 set "SERVER_VERSION_FILE=%ROOT%\desktop\SERVER_VERSION"
 if not exist "%SERVER_VERSION_FILE%" echo 1.0.0> "%SERVER_VERSION_FILE%"
 for /f "usebackq tokens=* delims=" %%v in (`powershell -NoProfile -Command "$p='%SERVER_VERSION_FILE%'; $v=(Get-Content -Raw $p).Trim(); if($v -notmatch '^\d+\.\d+\.\d+$'){$v='1.0.0'}; Write-Output $v"`) do set "SERVER_VERSION=%%v"
