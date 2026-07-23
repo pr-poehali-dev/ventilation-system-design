@@ -2646,9 +2646,9 @@ export default function CadPage() {
     //     (расход при пожаре падает → температура растёт).
     // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
     // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
-    const FIRE_ITERS = 40;
-    const FIRE_Q_TOL = 0.05;
-    const FIRE_RELAX = 0.4; // демпфирование обратной связи T↑→Q↓ (иначе поток схлопывается)
+    const FIRE_ITERS = 12;
+    const FIRE_Q_TOL = 0.2;
+    const FIRE_RELAX = 0.5; // демпфирование обратной связи T↑→Q↓ (иначе поток схлопывается)
 
     for (const target of loaded) {
       let currentFlows = new Map<string, number>(originalFlows);
@@ -2661,9 +2661,9 @@ export default function CadPage() {
         const fromN = nodes.find(n => n.id === target.fromId);
         const toN   = nodes.find(n => n.id === target.toId);
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
-        // Знак угла — по направлению потока (см. основной аварийный расчёт).
-        const flowSign = (currentFlows.get(target.id) ?? target.flow ?? 0) >= 0 ? 1 : -1;
-        const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1) * flowSign;
+        // Знак угла — геометрический (from→to). Направление потока учтёт
+        // решатель (naturalDraft * sign(Q)) — как в основном аварийном расчёте.
+        const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
         thermalDep = calcThermalDepression(fireTemp, ambientTemp, target.length, signedAngle);
 
         // Пожар ТОЛЬКО на целевой ветви, у остальных — актуальные расходы.
@@ -4062,9 +4062,9 @@ export default function CadPage() {
                 //   Итерация 2–3: уточняем T_пр по новым расходам, повторяем
                 //   Критерий: max|ΔQ| < 0.1 м³/с или 3 итерации
                 // ──────────────────────────────────────────────────────────────
-                const FIRE_ITERS   = 40;   // макс. итераций
-                const FIRE_Q_TOL   = 0.05; // м³/с — допуск сходимости
-                const FIRE_RELAX   = 0.4;  // коэф. релаксации (демпфирование обратной связи T↑→Q↓)
+                const FIRE_ITERS   = 12;   // макс. итераций
+                const FIRE_Q_TOL   = 0.2;  // м³/с — допуск сходимости (уровень шума сети)
+                const FIRE_RELAX   = 0.5;  // коэф. релаксации (демпфирование обратной связи T↑→Q↓)
                 const AMBIENT_TEMP = surfaceTemp;
 
                 // Исходные расходы ДО пожара — сохраняем для обнаружения опрокидывания
@@ -4103,17 +4103,16 @@ export default function CadPage() {
                     const T_pr  = b.fireMode === "temp"
                       ? b.fireTemperature
                       : calcFireTemp(Q_MW, airQ, AMBIENT_TEMP);
-                    // Знак угла — по НАПРАВЛЕНИЮ ПОТОКА, а не только по геометрии.
-                    // Геометрический знак берём из высот узлов (to выше from → +),
-                    // затем разворачиваем по знаку расхода: поток «сверху вниз»
-                    // (нисходящее проветривание) → отрицательный угол → тепловая
-                    // депрессия работает на опрокидывание. При flow<0 воздух идёт
-                    // to→from, значит фактический наклон по потоку меняет знак.
+                    // Знак угла — ГЕОМЕТРИЧЕСКИЙ, в ориентации ветви from→to
+                    // (to выше from → +). Направление потока учитывать ЗДЕСЬ НЕ
+                    // нужно: решатель сам разворачивает тепловую тягу по знаку
+                    // расхода (naturalDraft * sign(Q)), как и для естественной
+                    // тяги. Домножение на flowSign здесь → двойной учёт и ложное
+                    // опрокидывание.
                     const fromNode = nodes.find(n => n.id === b.fromId);
                     const toNode   = nodes.find(n => n.id === b.toId);
                     const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
-                    const flowSign = (b.flow ?? 0) >= 0 ? 1 : -1;
-                    const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1) * flowSign;
+                    const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1);
                     const h_t = calcThermalDepression(T_pr, AMBIENT_TEMP, b.length, signedAngle);
                     return { ...b, fireThermalDepression: h_t };
                   });
