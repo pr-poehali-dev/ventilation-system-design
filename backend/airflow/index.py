@@ -2334,15 +2334,29 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # ── Итерации МКР ────────────────────────────────────────────────────────
     max_dh = float("inf")
     max_dq = float("inf")
-    # При наличии вентилятора можно стартовать с 0.5; без вентилятора (только тяга)
-    # нужна более осторожная релаксация чтобы не осциллировать
-    relaxation = 0.5 if active_fans else 0.15
+    # Стартовый шаг фактора сходимости (релаксация) задаётся пользователем
+    # (options.alpha) — как «шаг сходимости» в Аэросети для МКР. По умолчанию:
+    # с вентилятором можно смелее (0.5), без вентилятора (только тяга) —
+    # осторожнее (0.15), чтобы не осциллировать. Пользовательское значение
+    # ускоряет сходимость на устойчивых сетях.
+    user_alpha = float(options.get("alpha", 0) or 0)
+    if user_alpha > 0:
+        relaxation = max(0.05, min(1.0, user_alpha))
+    else:
+        relaxation = 0.5 if active_fans else 0.15
     prev_dh = float("inf")
     it = 0
     min_iter = 10  # минимум итераций перед проверкой сходимости (больше для шахт)
 
     # Относительный допуск: 0.5% от макс. напора в сети (≈ 10 Па для 2000 Па ГВУ)
     tol_h_rel = max(tol_h, 0.005 * h_char)
+
+    # Относительный допуск по расходу: не строже 0.05% от характерного расхода
+    # сети. Абсолютный tol_q=0.001 м³/с на крупной шахте (сотни м³/с) недостижим
+    # и заставляет метод крутить тысячи итераций без выигрыша в точности — как
+    # раз причина «долгого расчёта». Аэросеть тоже использует относительный
+    # критерий. Нижняя граница 0.01 м³/с гарантирует физически точный баланс.
+    tol_q_rel = max(tol_q, min(0.05, 0.0005 * max(q0, 1.0)))
 
     # ── БЫСТРЫЙ ПУТЬ для больших сетей ────────────────────────────────────────
     # На больших схемах (тысячи контуров) горячий цикл с обращением к dict/объектам
@@ -2354,7 +2368,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         it, max_dh, max_dq = _mkr_iterate_fast(
             contours_local, active_edges_list, local_to_global, Q,
             sync_tree_q, q0, relaxation, prev_dh, min_iter, max_iter,
-            tol_h_rel, tol_q, log,
+            tol_h_rel, tol_q_rel, log,
         )
     else:
       for it in range(1, max_iter + 1):
@@ -2431,17 +2445,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
         # Критерий остановки: двойной (по ΔH И по δQ) с относительным допуском.
         # tol_h_rel для больших сетей вместо абсолютного tol_h.
-        if it >= min_iter and max_dh < tol_h_rel and max_dq < tol_q:
+        if it >= min_iter and max_dh < tol_h_rel and max_dq < tol_q_rel:
             it += 1
             break
 
     # Двойной критерий — обе невязки малы: идеальная сходимость.
-    converged = max_dh < tol_h_rel and max_dq < tol_q
+    converged = max_dh < tol_h_rel and max_dq < tol_q_rel
     # Приемлемое решение: расход сбалансирован (δQ мал → 1-й закон Кирхгофа
     # выполнен), а ΔH застряла на «полке» метода. Для больших сетей с
     # перемычками (большой разброс R) это физически корректный результат —
     # метод Кросса достиг своего предела точности по давлению.
-    q_ok = max_dq < tol_q * 5.0
+    q_ok = max_dq < tol_q_rel * 5.0
     if not converged:
         if q_ok:
             converged = True  # результат достоверен: баланс расходов сошёлся

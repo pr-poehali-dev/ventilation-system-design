@@ -5002,14 +5002,19 @@ export default function CadPage() {
                       onChange={e => setSolverMaxIter(Number(e.target.value))}
                       className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
                   </div>
-                  {calcMode === "cross" && (
-                    <div className="mb-2">
-                      <label className="text-[10px] text-gray-500 block mb-1">Фактор сходимости α (Кросс)</label>
-                      <input type="number" value={solverAlpha} step="0.05" min="0.1" max="1.0"
-                        onChange={e => setSolverAlpha(Number(e.target.value))}
-                        className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                    </div>
-                  )}
+                  <div className="mb-2">
+                    <label className="text-[10px] text-gray-500 block mb-1">
+                      {calcMode === "mkr" ? "Шаг фактора сходимости (МКР)" : "Фактор сходимости α (Кросс)"}
+                    </label>
+                    <input type="number" value={solverAlpha} step="0.05" min="0.1" max="1.0"
+                      onChange={e => setSolverAlpha(Number(e.target.value))}
+                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                    <p className="text-[9px] text-gray-400 mt-0.5 leading-tight">
+                      {calcMode === "mkr"
+                        ? "Больше шаг — быстрее сходимость (0.5–0.8). Слишком большой может вызвать колебания."
+                        : "Демпфирование итераций Кросса (0.5–0.8)."}
+                    </p>
+                  </div>
                   <div className="border-t border-gray-200 pt-2 mt-1 mb-2">
                     <div className="flex items-center gap-1.5 mb-2">
                       <input
