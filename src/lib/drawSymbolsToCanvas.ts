@@ -270,7 +270,7 @@ function drawBulkheadOnCanvas(
   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
   const brAngle = Math.atan2(brDy, brDx);
 
-  const fill   = tid.includes("concrete") ? "#4caf50"
+  const fill   = tid.includes("conc") ? "#4caf50"
     : tid.includes("wood")     ? "#ffd600"
     : tid.includes("brick")    ? "#ff9800"
     : tid.includes("metal")    ? "#9c27b0"
@@ -278,7 +278,7 @@ function drawBulkheadOnCanvas(
     : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
     : (tid === "barrier")      ? "#555"
     : "white";
-  const stroke = tid.includes("concrete") ? "#1b5e20"
+  const stroke = tid.includes("conc") ? "#1b5e20"
     : tid.includes("wood")     ? "#e65100"
     : tid.includes("brick")    ? "#bf360c"
     : tid.includes("metal")    ? "#4a148c"
@@ -306,7 +306,7 @@ function drawBulkheadOnCanvas(
   const isRegulator = tid === "regulator";
   const isBlind   = !isDoor && !isAuto && !isOpen && !isWindow && !isLattice
                     && !isWater && !isSail && !isBarrier && !isFirePP && !isProem && !isRegulator
-                    && !tid.includes("concrete") && !tid.includes("wood") && !tid.includes("brick")
+                    && !tid.includes("conc") && !tid.includes("wood") && !tid.includes("brick")
                     && !tid.includes("metal") && tid !== "fire_door";
 
   ctx.save();

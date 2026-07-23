@@ -2335,7 +2335,7 @@ export default function TopoCanvas(props: Props) {
                         <rect
                           x={icX + legIconSZ / 2 - legIconSZ * 0.175} y={icY + legIconSZ * 0.1}
                           width={legIconSZ * 0.35} height={legIconSZ * 0.8}
-                          fill={item.tid.includes("concrete") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : item.tid.includes("regulator") ? "#ffd600" : "white"}
+                          fill={item.tid.includes("conc") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : item.tid.includes("regulator") ? "#ffd600" : "white"}
                           stroke="#1a1a1a" strokeWidth={1}
                         />
                       </g>
@@ -3717,7 +3717,7 @@ export default function TopoCanvas(props: Props) {
 
                   // Цвет заливки и обводки по материалу (красный если разрушена)
                   const fill  = isDestroyedBk ? "#ff4444"
-                    : tid.includes("concrete") ? "#4caf50"
+                    : tid.includes("conc") ? "#4caf50"
                     : tid.includes("wood")     ? "#ffd600"
                     : tid.includes("brick")    ? "#ff9800"
                     : tid.includes("metal")    ? "#9c27b0"
@@ -3726,7 +3726,7 @@ export default function TopoCanvas(props: Props) {
                     : (tid === "barrier")      ? "#555"
                     : "white";
                   const stroke = isDestroyedBk ? "#8b0000"
-                    : tid.includes("concrete") ? "#1b5e20"
+                    : tid.includes("conc") ? "#1b5e20"
                     : tid.includes("wood")     ? "#e65100"
                     : tid.includes("brick")    ? "#bf360c"
                     : tid.includes("metal")    ? "#4a148c"
@@ -4837,13 +4837,13 @@ export default function TopoCanvas(props: Props) {
                   const bkBrOv = symBr;
                   const isDestroyedOv = bkBrOv?.bulkheadDestroyedByExplosion ?? false;
                   const fillOv  = isDestroyedOv ? "#ff4444"
-                    : tid.includes("concrete") ? "#4caf50" : tid.includes("wood") ? "#ffd600"
+                    : tid.includes("conc") ? "#4caf50" : tid.includes("wood") ? "#ffd600"
                     : tid.includes("brick") ? "#ff9800" : tid.includes("metal") ? "#9c27b0"
                     : tid.includes("regulator") ? "#ffd600"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
                     : tid === "barrier" ? "#555" : "white";
                   const strokeOv = isDestroyedOv ? "#8b0000"
-                    : tid.includes("concrete") ? "#1b5e20" : tid.includes("wood") ? "#e65100"
+                    : tid.includes("conc") ? "#1b5e20" : tid.includes("wood") ? "#e65100"
                     : tid.includes("brick") ? "#bf360c" : tid.includes("metal") ? "#4a148c"
                     : tid.includes("regulator") ? "#e65100"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800" : "#1a1a1a";

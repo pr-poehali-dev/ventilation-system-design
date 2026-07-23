@@ -112,7 +112,7 @@ export default function SchemaSymbolsOverlay({
           const tid = sym.typeId;
 
           const fill  = isDestroyed ? "#ff4444"
-            : tid.includes("concrete") ? "#4caf50"
+            : tid.includes("conc") ? "#4caf50"
             : tid.includes("wood")     ? "#ffd600"
             : tid.includes("brick")    ? "#ff9800"
             : tid.includes("metal")    ? "#9c27b0"
@@ -121,7 +121,7 @@ export default function SchemaSymbolsOverlay({
             : (tid === "barrier")      ? "#555"
             : "white";
           const stroke = isDestroyed ? "#8b0000"
-            : tid.includes("concrete") ? "#1b5e20"
+            : tid.includes("conc") ? "#1b5e20"
             : tid.includes("wood")     ? "#e65100"
             : tid.includes("brick")    ? "#bf360c"
             : tid.includes("metal")    ? "#4a148c"
@@ -150,7 +150,7 @@ export default function SchemaSymbolsOverlay({
           // Глухая перемычка — нет материала, двери, открытия, окна, решётки, воды, паруса, барьера
           const isBlind   = !isDestroyed && !isDoor && !isAuto && !isOpen && !isWindow && !isLattice
                             && !isWater && !isSail && !isBarrier && !isFirePP && !isProem && !isRegulator
-                            && !tid.includes("concrete") && !tid.includes("wood") && !tid.includes("brick")
+                            && !tid.includes("conc") && !tid.includes("wood") && !tid.includes("brick")
                             && !tid.includes("metal") && tid !== "fire_door";
 
           return (

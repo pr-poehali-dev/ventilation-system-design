@@ -132,7 +132,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
                     x={icX + legIconSZ / 2 - legIconSZ * 0.175}
                     y={icY + legIconSZ * 0.1}
                     width={legIconSZ * 0.35} height={legIconSZ * 0.8}
-                    fill={item.tid.includes("concrete") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : item.tid.includes("regulator") ? "#ffd600" : "white"}
+                    fill={item.tid.includes("conc") ? "#4caf50" : item.tid.includes("wood") ? "#ffd600" : item.tid.includes("brick") ? "#ff9800" : item.tid.includes("metal") ? "#9c27b0" : item.tid.includes("regulator") ? "#ffd600" : "white"}
                     stroke="#1a1a1a" strokeWidth={1}
                   />
                 </g>

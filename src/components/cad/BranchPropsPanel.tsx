@@ -1306,12 +1306,19 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
                         rBase = q > 0 ? (dp / (q * q)) * 1e3 : 0;
                       } else {
-                        const A = (sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm)
-                          ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
-                          : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
-                        const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
-                        // 1/A² уже в Мюрг (baseUnit); rFallback в кМюрг → ×1000 → Мюрг
-                        rBase = A > 0 ? (1 / (A * A)) : rFallback * 1e3;
+                        // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг → ×1000 → Мюрг.
+                        const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
+                        const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
+                        if (isWindow && winA > 0.001) {
+                          rBase = (1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81)) * 1e3;
+                        } else {
+                          const A = (sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm)
+                            ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
+                            : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
+                          const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
+                          // 1/A² уже в Мюрг (baseUnit); rFallback в кМюрг → ×1000 → Мюрг
+                          rBase = A > 0 ? (1 / (A * A)) : rFallback * 1e3;
+                        }
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
                       return `${uRes.fromBase(rBase).toFixed(uRes.decimals)} ${uRes.symbol}`;
@@ -1389,9 +1396,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const customAirPerm = sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0;
                         const airPerm = sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0;
                         const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
+                        const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
+                        const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
                         // 1/A² → Мюрг → /1000 → кМюрг; rFallback/bkBulkheadR/bulkheadR в кМюрг
                         let rBulk = 0;
-                        if (isManualAirPerm && customAirPerm > 0) {
+                        if (isWindow && winA > 0.001) {
+                          rBulk = 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81); // кМюрг
+                        } else if (isManualAirPerm && customAirPerm > 0) {
                           rBulk = (1 / (customAirPerm * customAirPerm)) / 1000;
                         } else if (airPerm > 0) {
                           rBulk = (1 / (airPerm * airPerm)) / 1000;

@@ -102,7 +102,7 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
           body += `<svg x="${n(icX)}" y="${n(icY)}" width="${n(legIconSZ)}" height="${n(legIconSZ)}" viewBox="0 0 48 40">${item.svgContent}</svg>`;
         } else {
           // Перемычка — упрощённый символ
-          const fill2 = item.tid.includes("concrete") ? "#4caf50"
+          const fill2 = item.tid.includes("conc") ? "#4caf50"
             : item.tid.includes("wood")   ? "#ffd600"
             : item.tid.includes("brick")  ? "#ff9800"
             : item.tid.includes("metal")  ? "#9c27b0"

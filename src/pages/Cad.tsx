@@ -71,6 +71,10 @@ const safeFixed = (v: unknown, digits = 1): string => {
   return Number.isFinite(n) ? n.toFixed(digits) : "—";
 };
 
+// Коэффициент расхода вентиляционного окна (перемычка с окном/проёмом).
+// Используется в формуле R = ρ/(2·μ²·S²·g) кМюрг (совпадает с Аэросетью).
+const WINDOW_MU = 0.75;
+
 // Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
 // ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
 // поэтому крупный JSON сжимаем gzip прямо в браузере (CompressionStream).
@@ -2526,8 +2530,11 @@ export default function CadPage() {
           if (isFullyOpen) {
             r = 0;
           } else if (sw > 0.001) {
-            const mu = 0.65;
-            r = rho / (2 * mu * mu * sw * sw);
+            // Сопротивление вентиляционного окна (кМюрг):
+            //   R = ρ / (2·μ²·S²·g),  μ=0.75 — коэф. расхода окна, g=9.81.
+            // Деление на g переводит результат сразу в кМюрг (Н·с²/м⁸),
+            // как в Аэросети. Проверка: S=5.5 м² → R≈0.0036 кМюрг.
+            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -2547,6 +2554,9 @@ export default function CadPage() {
           const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
           return q > 0 ? dp / (q * q) : 0;
         }
+        // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг (см. формулу выше).
+        const winA = b.bulkheadWindowArea ?? 0;
+        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
         // 1/A² → Мюрг → /1000 → кМюрг; bulkheadR уже в кМюрг
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return (1 / (b.bulkheadCustomAirPerm! * b.bulkheadCustomAirPerm!)) / 1000;

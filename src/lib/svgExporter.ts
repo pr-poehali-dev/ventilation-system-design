@@ -743,7 +743,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       } else if (isBulkhead && hasBranchPts) {
         // Перемычка — рисуем SVG-примитивами поперёк ветви
         const tid = sym.typeId;
-        const fill = tid.includes("concrete") ? "#4caf50"
+        const fill = tid.includes("conc") ? "#4caf50"
           : tid.includes("wood")   ? "#ffd600"
           : tid.includes("brick")  ? "#ff9800"
           : tid.includes("metal")  ? "#9c27b0"
@@ -751,7 +751,7 @@ export function generateSvg(opts: SvgExportOptions): string {
           : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
           : (tid === "barrier")    ? "#555"
           : "white";
-        const stroke2 = tid.includes("concrete") ? "#1b5e20"
+        const stroke2 = tid.includes("conc") ? "#1b5e20"
           : tid.includes("wood")   ? "#e65100"
           : tid.includes("brick")  ? "#bf360c"
           : tid.includes("metal")  ? "#4a148c"
