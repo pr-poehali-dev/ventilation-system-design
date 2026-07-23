@@ -117,7 +117,12 @@ export function calcVehicleFire(
   // Шаг 6: суммарная энергия и максимальное время выгорания → мощность
   const totalEnergy_MJ = items.reduce((s, it) => s + it.energy_MJ, 0);
   const maxBurnTime_h  = Math.max(...items.map(it => it.burnTime_h));
-  const power_MW       = totalEnergy_MJ / (maxBurnTime_h * 3600);
+  // Защита от деления на ноль/NaN: при вырожденных исходных данных возвращаем
+  // нулевой результат, а не NaN/Infinity (иначе .toFixed() в UI роняет рендер).
+  const power_MW = maxBurnTime_h > 0 ? totalEnergy_MJ / (maxBurnTime_h * 3600) : 0;
+  if (!Number.isFinite(power_MW) || power_MW <= 0) {
+    return { power_MW: 0, burnTime_h: 0, burnTime_min: 0, deltaT_C: 0, materials: items, airFlow_m3s: airFlow };
+  }
 
   // Шаг 7: время горения всей техники
   const burnTime_h   = totalEnergy_MJ / (power_MW * 3600);

@@ -334,17 +334,23 @@ export default function CadPage() {
       fireBeltThickness: b.fireBeltThickness, fireBeltFlameSpeed: b.fireBeltFlameSpeed,
       fireSourceArea: b.fireSourceArea, fireSourceBurnRate: b.fireSourceBurnRate,
     });
-    if (autoPower == null || autoPower <= 0) return;
+    if (autoPower == null || !Number.isFinite(autoPower) || autoPower <= 0) return;
     const airQ = Math.abs(b.flow ?? 0);
     const roundedPower = Math.round(autoPower * 100) / 100;
-    if (Math.abs((b.fireHeatRelease ?? 5) - roundedPower) > 0.01) {
-      updateBranch(b.id, { fireHeatRelease: roundedPower });
+    const patch: Partial<TopoBranch> = {};
+    if (Number.isFinite(roundedPower) && Math.abs((b.fireHeatRelease ?? 5) - roundedPower) > 0.01) {
+      patch.fireHeatRelease = roundedPower;
     }
     if ((b.fireMode ?? "heat") === "temp" && airQ > 0) {
       const calcTemp = Math.round(calcFireTemp(roundedPower, airQ, AMBIENT_TEMP));
-      if (Math.abs((b.fireTemperature ?? 300) - calcTemp) > 1) {
-        updateBranch(b.id, { fireTemperature: calcTemp });
+      if (Number.isFinite(calcTemp) && Math.abs((b.fireTemperature ?? 300) - calcTemp) > 1) {
+        patch.fireTemperature = calcTemp;
       }
+    }
+    // Одним обновлением (без спама истории) — чтобы не крутить лишние ре-рендеры
+    // при переключении режима «Температурой»/«Мощностью».
+    if (Object.keys(patch).length > 0) {
+      updateBranch(b.id, patch, false);
     }
   }, [
     selectedBranchId,
@@ -4635,8 +4641,8 @@ export default function CadPage() {
         {fireCalcDone && fireResult && (
           <RibbonGroup label="Результат: пожар">
             <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
-              <div className="font-semibold" style={{ color: "#b91c1c" }}>T очага: {fireResult.fireTemp.toFixed(1)} °C</div>
-              <div style={{ color: "#c2410c" }}>h_t = {fireResult.fireThermalDep.toFixed(1)} Па</div>
+              <div className="font-semibold" style={{ color: "#b91c1c" }}>T очага: {safeFixed(fireResult.fireTemp, 1)} °C</div>
+              <div style={{ color: "#c2410c" }}>h_t = {safeFixed(fireResult.fireThermalDep, 1)} Па</div>
               <div style={{ color: "#374151" }}>Задымлено: {fireResult.branches.size} вет.</div>
               {fireResult.reversedBranches.size > 0
                 ? <div className="font-semibold px-1 rounded" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}>⚠ Опрокид.: {fireResult.reversedBranches.size}</div>
@@ -6343,17 +6349,17 @@ export default function CadPage() {
                                 </thead>
                                 <tbody>
                                   <tr>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "#b91c1c" }}>{vfr.power_MW.toFixed(2)}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#15803d" }}>{airQ > 0 ? airQ.toFixed(1) : "—"}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? (vfr.deltaT_C + 20).toFixed(1) : "—"}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "#b91c1c" }}>{safeFixed(vfr.power_MW, 2)}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#15803d" }}>{airQ > 0 ? safeFixed(airQ, 1) : "—"}</td>
+                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? safeFixed(vfr.deltaT_C + 20, 1) : "—"}</td>
                                   </tr>
                                 </tbody>
                               </table>
                               <div className="flex items-center gap-3 mt-0.5 px-0.5">
                                 <span style={{ fontSize: 10, color: "#6b7280" }}>Время горения:</span>
-                                <span style={{ fontSize: 10, fontWeight: 700 }}>{vfr.burnTime_h.toFixed(2)} ч</span>
+                                <span style={{ fontSize: 10, fontWeight: 700 }}>{safeFixed(vfr.burnTime_h, 2)} ч</span>
                                 <span style={{ fontSize: 10, color: "#6b7280" }}>или</span>
-                                <span style={{ fontSize: 10, fontWeight: 700 }}>{vfr.burnTime_min.toFixed(1)} мин</span>
+                                <span style={{ fontSize: 10, fontWeight: 700 }}>{safeFixed(vfr.burnTime_min, 1)} мин</span>
                               </div>
                             </div>
                             {/* Мощность автоматически подставляется в расчёт пожара при нажатии кнопки «Расчёт» */}
@@ -6402,17 +6408,17 @@ export default function CadPage() {
                           <>
                             <Row
                               label="Дым входит через:"
-                              value={arrT === 0 ? "сразу" : `${arrT.toFixed(1)} мин`}
+                              value={arrT === 0 ? "сразу" : `${safeFixed(arrT, 1)} мин`}
                               bold={arrT < 5}
                             />
                             <Row
                               label="Ветвь заполнится через:"
-                              value={speed > 0 ? `${fillT.toFixed(1)} мин` : "—"}
+                              value={speed > 0 ? `${safeFixed(fillT, 1)} мин` : "—"}
                               bold={fillT < 10}
                             />
                             <Row
                               label="Скорость воздуха, м/с:"
-                              value={speed > 0 ? speed.toFixed(2) : "—"}
+                              value={speed > 0 ? safeFixed(speed, 2) : "—"}
                             />
                           </>
                         );
