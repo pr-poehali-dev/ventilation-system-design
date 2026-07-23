@@ -21,7 +21,6 @@ export async function getCoreVersion(): Promise<string> {
 }
 const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
-const MACHINE_UUID_KEY = "pvs_machine_uuid";
 const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
 
 // ── Слой хранилища: electron-store (десктоп) или localStorage (веб) ──────────
@@ -65,7 +64,6 @@ if (eAPI) {
   Promise.all([
     storage.init(STORAGE_KEY),
     storage.init(HW_FP_KEY),
-    storage.init(MACHINE_UUID_KEY),
   ]).catch(() => {});
 }
 
@@ -114,21 +112,6 @@ function detectPlatform(): string {
   return pl || "Unknown";
 }
 
-// ── UUID машины (localStorage) ────────────────────────────────────────────────
-// Живёт пока не сброшен PWA/браузер. Используется как дополнительный компонент
-// для точного fingerprint — чтобы различать два одинаковых ПК.
-function getMachineUUID(): string {
-  try {
-    const existing = storage.get(MACHINE_UUID_KEY);
-    if (existing) return existing;
-    const uuid = crypto.randomUUID();
-    storage.set(MACHINE_UUID_KEY, uuid);
-    return uuid;
-  } catch {
-    return "fallback";
-  }
-}
-
 // ── Аппаратные компоненты (без UUID) ─────────────────────────────────────────
 // Эти данные НЕ зависят от localStorage — выживают после переустановки PWA.
 // Используются как hw_fingerprint для восстановления лицензии после переустановки.
@@ -162,9 +145,10 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   const hwComponents = getHwComponents();
   const hwFingerprint = await sha256hex(hwComponents.join("||"));
 
-  // Точный fingerprint = UUID + аппаратные компоненты
-  const uuid = getMachineUUID();
-  const fingerprint = await sha256hex([uuid, ...hwComponents].join("||"));
+  // Привязка к рабочему месту — ТОЛЬКО по железу: fingerprint = hwFingerprint.
+  // Один ПК = одно место в любом браузере (localStorage/UUID не влияет).
+  // UUID больше не входит в идентификатор места (оставлен только для истории).
+  const fingerprint = hwFingerprint;
 
   const platform = detectPlatform();
   const scr = `${window.screen.width}×${window.screen.height}`;

@@ -108,21 +108,15 @@ def handler(event: dict, context) -> dict:
 
     # ── check ──────────────────────────────────────────────────────────────────
     if action == "check":
-        # 1. Ищем по точному fingerprint
-        cur.execute("""
-            SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
-                   (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
-                   s.id AS seat_id, FALSE AS hw_match, l.id
-            FROM license_seats s
-            JOIN licenses l ON l.id = s.license_id
-            WHERE s.fingerprint = %s
-            ORDER BY s.activated_at DESC LIMIT 1
-        """, (fph,))
-        row = cur.fetchone()
-
-        # 2. Не найден по точному — ищем по hw_fingerprint (переустановка PWA)
+        # Привязка к рабочему месту — ТОЛЬКО по железу (hw_fingerprint).
+        # Один ПК = одно место в любом браузере: у всех браузеров на одном ПК
+        # hw_fingerprint совпадает, поэтому лицензия «подхватывается» автоматически
+        # без повторного ввода ключа.
         hw_restored = False
-        if not row and hw_fph:
+        row = None
+
+        # 1. Ищем место по железу (hw_fingerprint) — основной способ привязки
+        if hw_fph:
             cur.execute("""
                 SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
                        (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
@@ -133,8 +127,26 @@ def handler(event: dict, context) -> dict:
                 ORDER BY s.last_seen_at DESC LIMIT 1
             """, (hw_fph,))
             row = cur.fetchone()
-            if row:
+            # Совпало по железу, но точный fingerprint (браузер) другой —
+            # значит это другой браузер на том же ПК: обновим fingerprint на текущий.
+            if row and row[6] is not None:
+                # seat_id есть; проверим, отличается ли текущий fingerprint
                 hw_restored = True
+
+        # 2. Запасной вариант: найти по точному fingerprint
+        #    (например, hw_fingerprint не передан или ещё не заполнен в БД)
+        if not row:
+            cur.execute("""
+                SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
+                       (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
+                       s.id AS seat_id, FALSE AS hw_match, l.id
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.fingerprint = %s
+                ORDER BY s.activated_at DESC LIMIT 1
+            """, (fph,))
+            row = cur.fetchone()
+            hw_restored = False
 
         if not row:
             conn.close()
@@ -243,16 +255,11 @@ def handler(event: dict, context) -> dict:
 
         hw_restored = False
 
-        # 1. Ищем существующий seat по точному fingerprint
-        cur.execute(
-            "SELECT id FROM license_seats WHERE license_id = %s AND fingerprint = %s",
-            (lic_id, fph)
-        )
-        existing = cur.fetchone()
-
-        # 2. Не найден по точному — ищем по hw_fingerprint для ЭТОГО ключа
-        #    Это случай: переустановка PWA на том же железе с тем же ключом
-        if not existing and hw_fph:
+        # Привязка к рабочему месту — по железу (hw_fingerprint).
+        # 1. Ищем существующий seat по железу для ЭТОГО ключа.
+        #    Покрывает: другой браузер на том же ПК, переустановка PWA/ОС.
+        existing = None
+        if hw_fph:
             cur.execute(
                 "SELECT id FROM license_seats WHERE license_id = %s AND hw_fingerprint = %s",
                 (lic_id, hw_fph)
@@ -260,6 +267,15 @@ def handler(event: dict, context) -> dict:
             existing = cur.fetchone()
             if existing:
                 hw_restored = True
+
+        # 2. Запасной вариант: seat по точному fingerprint
+        #    (если hw_fingerprint пустой или ещё не заполнен в БД)
+        if not existing:
+            cur.execute(
+                "SELECT id FROM license_seats WHERE license_id = %s AND fingerprint = %s",
+                (lic_id, fph)
+            )
+            existing = cur.fetchone()
 
         if not existing:
             # Новое место — проверяем лимит
