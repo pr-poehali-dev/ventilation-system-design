@@ -435,6 +435,10 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
             "angle":       abs(float(b.get("angle", 0) or 0)),
             # Естественная тяга (Па) + тепловая депрессия пожара (Па)
             "naturalDraft": h_nat + h_fire,
+            # Отдельно сохраняем депрессию пожара — чтобы решатель мог
+            # распознать «пожарные» контуры и демпфировать в них
+            # математическую неустойчивость (h_fire ≫ R·Q² на ветви с малым R).
+            "fireDep": h_fire,
         })
     return edges, atm
 
@@ -1141,6 +1145,19 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
 
             # Поправка с демпфированием α: δQ = -α·ΔH / Σ(2·R·|Q|)
             dq = alpha_cur * (-sum_H / sum_2RQ)
+
+            # ── Демпфирование неустойчивости пожара ──────────────────────────
+            # Если контур содержит очаг пожара, у которого тепловая депрессия
+            # h_fire ≫ аэродинамической жёсткости контура Σ(2R|Q|), поправка δQ
+            # «прыгает» и вызывает ложные автоколебания/опрокидывание. Гасим
+            # ТОЛЬКО этот численный эффект: масштабируем δQ коэффициентом
+            # k = stiffness/(stiffness+|h_fire|) ∈ (0..1]. Это НЕ меняет точку
+            # сходимости (в решении δQ→0), лишь сглаживает путь к ней —
+            # реальные опрокидывания сохраняются.
+            h_fire_loop = sum(abs(edges[gi].get("fireDep", 0.0)) for gi, _ in loop)
+            if h_fire_loop > 0.0:
+                fire_damp = sum_2RQ / (sum_2RQ + h_fire_loop)
+                dq *= max(0.15, fire_damp)
 
             # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0)
             q_max_loop = max((abs(Q[gi]) for gi, _ in loop), default=q0)
@@ -2486,6 +2503,14 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                 continue
 
             dq_raw = -num / den
+            # ── Демпфирование неустойчивости пожара (см. коммент. в solve) ────
+            # В «пожарном» контуре, где h_fire ≫ жёсткости den, поправка δQ
+            # прыгает и вызывает ложное опрокидывание. Масштабируем δQ на
+            # k = den/(den+|h_fire|) — точка сходимости не меняется (δQ→0),
+            # уходят лишь численные автоколебания. Реальные реверсы сохраняются.
+            h_fire_loop = sum(abs(active_edges_list[li].get("fireDep", 0.0)) for li, _ in contour)
+            if h_fire_loop > 0.0:
+                dq_raw *= max(0.15, den / (den + h_fire_loop))
             # Защита от взрыва: ограничиваем только по max|Q| в контуре, БЕЗ q0
             # (для большой сети q0 мал — это душило сходимость).
             q_ref_mkr = max((abs(Q[local_to_global[li]]) for li, _ in contour), default=0.0)

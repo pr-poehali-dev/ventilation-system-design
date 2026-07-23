@@ -1651,6 +1651,61 @@
     "converged": true
    },
    "bodyMatcher": "partial"
+  },
+  {
+   "name": "Демпфирование пожара — сильный h_t на малом R сходится",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "A",
+      "isAtm": true
+     },
+     {
+      "id": "B"
+     },
+     {
+      "id": "C",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "A",
+      "toId": "B",
+      "R": 0.02,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 2000
+     },
+     {
+      "id": "incline",
+      "fromId": "B",
+      "toId": "C",
+      "R": 5e-05,
+      "fireThermalDepression": 150
+     },
+     {
+      "id": "e2",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.15
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 5000,
+     "alpha": 0.7
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
   }
  ]
 }
