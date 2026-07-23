@@ -23,49 +23,62 @@ const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
 const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
 
-// ── Слой хранилища: electron-store (десктоп) или localStorage (веб) ──────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const eAPI = (window as any).electronAPI as {
-  storeGet: (key: string) => Promise<unknown>;
-  storeSet: (key: string, value: unknown) => Promise<void>;
-  storeDelete: (key: string) => Promise<void>;
-} | undefined;
+const IS_DESKTOP = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
+
+// ── Слой хранилища ───────────────────────────────────────────────────────────
+// Веб:     localStorage.
+// Десктоп: localStorage (быстрый синхронный доступ) + файл на диске через
+//          server.exe (/api/license-store). Файл переживает чистку кэша WebView2,
+//          поэтому лицензия не слетает.
+async function fileStoreSet(key: string, value: string): Promise<void> {
+  try {
+    await fetch("/api/license-store", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value }),
+    });
+  } catch { /* ignore */ }
+}
+async function fileStoreRemove(key: string): Promise<void> {
+  try {
+    await fetch("/api/license-store", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, remove: true }),
+    });
+  } catch { /* ignore */ }
+}
 
 const storage = {
   get(key: string): string | null {
-    if (eAPI) {
-      // В электроне читаем синхронно из кэша — реальный get асинхронный,
-      // поэтому используем localStorage как синхронный прокси, а electron-store — как постоянный
-      return localStorage.getItem(key);
-    }
     return localStorage.getItem(key);
   },
   set(key: string, value: string): void {
     localStorage.setItem(key, value);
-    if (eAPI) eAPI.storeSet(key, value).catch(() => {});
+    if (IS_DESKTOP) fileStoreSet(key, value);
   },
   remove(key: string): void {
     localStorage.removeItem(key);
-    if (eAPI) eAPI.storeDelete(key).catch(() => {});
+    if (IS_DESKTOP) fileStoreRemove(key);
   },
-  async init(key: string): Promise<void> {
-    if (!eAPI) return;
+  // Восстановление значений с диска в localStorage при запуске (десктоп).
+  async init(): Promise<void> {
+    if (!IS_DESKTOP) return;
     try {
-      const val = await eAPI.storeGet(key);
-      if (val && typeof val === "string" && !localStorage.getItem(key)) {
-        localStorage.setItem(key, val);
+      const res = await fetch("/api/license-store", { cache: "no-store" });
+      const data = await res.json();
+      const store = (data?.store ?? {}) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(store)) {
+        if (typeof v === "string" && !localStorage.getItem(k)) {
+          localStorage.setItem(k, v);
+        }
       }
     } catch { /* ignore */ }
   },
 };
 
-// Инициализируем постоянное хранилище при загрузке (восстанавливаем в localStorage)
-if (eAPI) {
-  Promise.all([
-    storage.init(STORAGE_KEY),
-    storage.init(HW_FP_KEY),
-  ]).catch(() => {});
-}
+// Восстанавливаем лицензию с диска при загрузке (десктоп)
+export const storageReady: Promise<void> = storage.init();
 
 export interface LicenseInfo {
   licensed: boolean;
@@ -126,9 +139,27 @@ function getHwComponents(): string[] {
   ];
 }
 
+// ── Настоящий аппаратный ID машины (только десктоп) ──────────────────────────
+// server.exe отдаёт реальный machine-id ОС (MachineGuid/UUID платы,
+// /etc/machine-id) и имя компьютера. В браузере эндпоинта нет — вернём пусто.
+async function getDesktopMachine(): Promise<{ machineId: string; hostname: string }> {
+  if (!IS_DESKTOP) return { machineId: "", hostname: "" };
+  try {
+    const res = await fetch("/api/machine", { cache: "no-store" });
+    const data = await res.json();
+    return {
+      machineId: data?.machineId ? String(data.machineId) : "",
+      hostname: data?.hostname ? String(data.hostname) : "",
+    };
+  } catch {
+    return { machineId: "", hostname: "" };
+  }
+}
+
 // ── Генерация MachineInfo ─────────────────────────────────────────────────────
-// fingerprint    = SHA256(UUID + железо) — точный идентификатор сессии
-// hwFingerprint  = SHA256(только железо) — стабилен при переустановке PWA
+// hwFingerprint = SHA256(железо). fingerprint = hwFingerprint.
+//   Веб:     железо = браузерные характеристики (screen/CPU/ОС/таймзона).
+//   Десктоп: железо = настоящий machine-id ОС (стабильнее, привязка к ПК).
 export async function getMachineInfo(): Promise<MachineInfo> {
   // Кэш на 30 дней
   try {
@@ -142,12 +173,15 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     }
   } catch { /* ignore */ }
 
-  const hwComponents = getHwComponents();
+  const { machineId, hostname: pcName } = await getDesktopMachine();
+
+  // Основа отпечатка: в десктопе — настоящий machine-id ОС; иначе — браузерное железо.
+  const hwComponents = machineId
+    ? [`mid:${machineId}`, ...getHwComponents()]
+    : getHwComponents();
   const hwFingerprint = await sha256hex(hwComponents.join("||"));
 
   // Привязка к рабочему месту — ТОЛЬКО по железу: fingerprint = hwFingerprint.
-  // Один ПК = одно место в любом браузере (localStorage/UUID не влияет).
-  // UUID больше не входит в идентификатор места (оставлен только для истории).
   const fingerprint = hwFingerprint;
 
   const platform = detectPlatform();
@@ -157,7 +191,10 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     : ua.includes("Firefox") ? "Firefox"
     : ua.includes("Safari") && !ua.includes("Chrome") ? "Safari"
     : ua.includes("Edg") ? "Edge" : "Browser";
-  const hostname = `${browser} / ${platform}`;
+  // В десктопе показываем имя компьютера, в браузере — браузер/ОС.
+  const hostname = IS_DESKTOP
+    ? `ПВ-Система (десктоп)${pcName ? ` · ${pcName}` : ""} / ${platform}`
+    : `${browser} / ${platform}`;
 
   const info: MachineInfo = { fingerprint, hwFingerprint, hostname, platform, screen: scr };
 

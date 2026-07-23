@@ -6,6 +6,7 @@ import {
   activateLicense,
   clearLicenseCache,
   sendHeartbeat,
+  storageReady,
   type LicenseInfo,
   type MachineInfo,
 } from "@/lib/license";
@@ -33,7 +34,8 @@ export function useLicense(): UseLicenseReturn {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Получаем стабильный аппаратный fingerprint
+      // Дожидаемся восстановления лицензии с диска (десктоп), затем — fingerprint
+      await storageReady;
       const mi = await getMachineInfo();
       if (cancelled) return;
       setFingerprint(mi.fingerprint);

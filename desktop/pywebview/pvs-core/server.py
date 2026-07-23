@@ -35,6 +35,138 @@ def get_core_version():
     return "1.0.0"
 
 
+# ─── Настоящий аппаратный идентификатор машины ───────────────────────────────
+# В десктопе (в отличие от браузера) есть доступ к реальному «железу» ОС.
+# Собираем стабильные системные идентификаторы, которые НЕ зависят от браузера
+# и переустановки программы. Кэшируем — читается один раз.
+_MACHINE_ID = None
+
+
+def _win_machine_id():
+    """Windows: MachineGuid из реестра + серийник тома системного диска."""
+    parts = []
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Cryptography",
+            0,
+            winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+        )
+        guid, _ = winreg.QueryValueEx(key, "MachineGuid")
+        winreg.CloseKey(key)
+        if guid:
+            parts.append(str(guid).strip())
+    except Exception:
+        pass
+    try:
+        # UUID материнской платы через WMIC (если доступен)
+        import subprocess
+        out = subprocess.check_output(
+            ["wmic", "csproduct", "get", "UUID"],
+            stderr=subprocess.DEVNULL, timeout=5,
+        ).decode(errors="ignore")
+        for line in out.splitlines():
+            s = line.strip()
+            if s and s.upper() != "UUID" and s.upper() != "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF":
+                parts.append(s)
+                break
+    except Exception:
+        pass
+    return parts
+
+
+def _unix_machine_id():
+    """Linux/macOS: /etc/machine-id или IOPlatformUUID (mac)."""
+    parts = []
+    for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    v = f.read().strip()
+                    if v:
+                        parts.append(v)
+                        break
+        except Exception:
+            pass
+    if not parts and sys.platform == "darwin":
+        try:
+            import subprocess
+            out = subprocess.check_output(
+                ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                stderr=subprocess.DEVNULL, timeout=5,
+            ).decode(errors="ignore")
+            import re as _re
+            m = _re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
+            if m:
+                parts.append(m.group(1))
+        except Exception:
+            pass
+    return parts
+
+
+def get_machine_id():
+    """Стабильный аппаратный ID машины (или '' если не удалось получить)."""
+    global _MACHINE_ID
+    if _MACHINE_ID is not None:
+        return _MACHINE_ID
+    try:
+        import platform
+        parts = _win_machine_id() if sys.platform.startswith("win") else _unix_machine_id()
+        parts.append(platform.node())  # имя компьютера как доп. компонент
+        raw = "||".join([p for p in parts if p])
+        _MACHINE_ID = raw
+    except Exception:
+        _MACHINE_ID = ""
+    return _MACHINE_ID
+
+
+def get_hostname():
+    """Имя компьютера в сети (для отображения рабочего места)."""
+    try:
+        import platform
+        return platform.node() or ""
+    except Exception:
+        return ""
+
+
+# ─── Файловое хранилище лицензии (переживает чистку кэша WebView2) ───────────
+def _license_store_path():
+    """Путь к файлу лицензии в профиле пользователя (не в кэше браузера)."""
+    if sys.platform.startswith("win"):
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        d = os.path.join(base, "PVS-System")
+    elif sys.platform == "darwin":
+        d = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "PVS-System")
+    else:
+        d = os.path.join(os.path.expanduser("~"), ".config", "pvs-system")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(d, "license_store.json")
+
+
+def _load_store():
+    try:
+        p = _license_store_path()
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _save_store(data: dict):
+    try:
+        with open(_license_store_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+
 # ─── Динамическая загрузка backend-функций (airflow, rescue, hydraulics, svg-to-pdf) ──
 # Реальные функции лежат рядом в папке backend_functions/<name>/index.py и содержат
 # handler(event, context) -> {statusCode, body}. Загружаем handler один раз и кэшируем.
@@ -290,6 +422,43 @@ def api_save_file():
     if request.method == "OPTIONS":
         return handle_options()
     return cors_response({"ok": False, "error": "use window.chrome.webview in C# wrapper"}, 501)
+
+
+# ─── Настоящий аппаратный ID машины (только десктоп) ─────────────────────────
+
+@app.route("/api/machine", methods=["GET", "OPTIONS"])
+def api_machine():
+    if request.method == "OPTIONS":
+        return handle_options()
+    return cors_response({
+        "machineId": get_machine_id(),
+        "hostname": get_hostname(),
+    })
+
+
+# ─── Файловое хранилище лицензии (переживает чистку кэша WebView2) ───────────
+
+@app.route("/api/license-store", methods=["GET", "POST", "DELETE", "OPTIONS"])
+def api_license_store():
+    if request.method == "OPTIONS":
+        return handle_options()
+    if request.method == "GET":
+        return cors_response({"store": _load_store()})
+    if request.method == "DELETE":
+        _save_store({})
+        return cors_response({"ok": True})
+    # POST — сохранить { key, value }
+    body = request.get_json(force=True, silent=True) or {}
+    key = str(body.get("key", "")).strip()
+    if not key:
+        return cors_response({"ok": False, "error": "key_required"}, 400)
+    store = _load_store()
+    if body.get("remove"):
+        store.pop(key, None)
+    else:
+        store[key] = body.get("value")
+    ok = _save_store(store)
+    return cors_response({"ok": ok})
 
 
 # ─── Статус сервера ───────────────────────────────────────────────────────────
