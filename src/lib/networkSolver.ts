@@ -364,6 +364,12 @@ export function solveNetwork(
           const dp = b.bulkheadSurveyDP ?? 0;
           return q > 0 ? dp / (q * q) : 1e9; // Па/м⁶·с² = Н·с²/м⁸ ✓
         }
+        // project: перемычка с окном/проёмом — R = ρ/(2·μ²·S²·g) кМюрг.
+        // μ=0.75 — коэф. расхода окна, g=9.81. Проверка: S=5.5 м² → 0.0036 кМюрг.
+        const winA = b.bulkheadWindowArea ?? 0;
+        if (winA > 0.001) {
+          return (rho * 1.2) / (2 * 0.75 * 0.75 * winA * winA * 9.81);
+        }
         // project: если задана воздухопроницаемость вручную — R = 1/A² Мюрг → /1000 → кМюрг
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
           return airPermToR(b.bulkheadCustomAirPerm!) / 1000;

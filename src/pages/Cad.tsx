@@ -6737,8 +6737,8 @@ export default function CadPage() {
                   const tF2 = fnFrom2 ? (fnFrom2.atmosphereLink ? surfaceTemp : (fnFrom2.airTemp ?? surfaceTemp)) : surfaceTemp;
                   const tT2 = fnTo2   ? (fnTo2.atmosphereLink   ? surfaceTemp : (fnTo2.airTemp   ?? surfaceTemp)) : surfaceTemp;
                   const rho2 = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF2 + tT2) / 2)));
-                  const mu = 0.65;
-                  r = rho2 / (2 * mu * mu * sw * sw);
+                  // R окна = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, g=9.81). S=5.5 → 0.0036.
+                  r = rho2 / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
                 } else {
                   const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                     : (sym.bkAirPerm
@@ -6953,9 +6953,9 @@ export default function CadPage() {
                               if (isFullyOpen) {
                                 rKmu = 0;
                               } else if (sw > 0.001) {
-                                // ρ/(2μ²S²) = кМюрг (Па·с²/м⁶)
-                                const mu = 0.65;
-                                rKmu = rho / (2 * mu * mu * sw * sw);
+                                // R окна = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, g=9.81).
+                                // Проверка: S=5.5 м² → 0.0036 кМюрг (как в Аэросети).
+                                rKmu = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm

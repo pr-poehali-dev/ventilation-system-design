@@ -338,6 +338,7 @@ export function branchBulkheadRkMurg(b: {
   bulkheadManualAirPerm?: boolean;
   bulkheadCustomAirPerm?: number;
   bulkheadAirPerm?: number;
+  bulkheadWindowArea?: number;
   bulkheadR?: number;
 }): number {
   if (!b.hasBulkhead) return 0;
@@ -347,6 +348,12 @@ export function branchBulkheadRkMurg(b: {
     const q = b.bulkheadSurveyQ ?? 0;
     const dp = b.bulkheadSurveyDP ?? 0;
     return q > 0 ? dp / (q * q) : 1e9;                            // Н·с²/м⁸ = кМюрг
+  }
+  // project: перемычка с окном — R = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, ρ=1.2, g=9.81).
+  // Проверка: S=5.5 м² → 0.0036 кМюрг (совпадает с Аэросетью).
+  const winA = b.bulkheadWindowArea ?? 0;
+  if (winA > 0.001) {
+    return 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81);
   }
   // project: воздухопроницаемость вручную → R = 1/A² Мюрг → /1000 → кМюрг
   if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
