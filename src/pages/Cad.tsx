@@ -2626,6 +2626,12 @@ export default function CadPage() {
       geoGradient,
       branches: buildBranchPayload(branchesWithFire, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
+      // Тёплый старт: текущие расходы ветвей — стартовое приближение решателя.
+      // При пожаре сеть меняется локально, поэтому расчёт сходится за единицы
+      // итераций вместо тысяч (особенно важно для больших схем на МКР).
+      normalFlows: Object.fromEntries(
+        branchesWithFire.filter(b => Number.isFinite(b.flow)).map(b => [b.id, b.flow as number]),
+      ),
     };
 
     const resp = await postAirflow(reqBody);
@@ -2666,6 +2672,10 @@ export default function CadPage() {
       geoGradient,
       branches: buildBranchPayload(baseBranches, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
+      // Тёплый старт для каждого сценария: расходы базовой сети как приближение.
+      normalFlows: Object.fromEntries(
+        baseBranches.filter(b => Number.isFinite(b.flow)).map(b => [b.id, b.flow as number]),
+      ),
       scenarios,
     };
     const resp = await postAirflow(reqBody);

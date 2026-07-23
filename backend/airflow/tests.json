@@ -1591,6 +1591,66 @@
    "expectedStatus": 200,
    "expectedBody": {},
    "bodyMatcher": "partial"
+  },
+  {
+   "name": "Тёплый старт МКР — пожар с normalFlows сходится",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "mkr",
+    "nodes": [
+     {
+      "id": "A",
+      "isAtm": true
+     },
+     {
+      "id": "B"
+     },
+     {
+      "id": "C",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "A",
+      "toId": "B",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500
+     },
+     {
+      "id": "e1",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.1,
+      "fireThermalDepression": 200
+     },
+     {
+      "id": "e2",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.2
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 5000,
+     "alpha": 0.5
+    },
+    "normalFlows": {
+     "fan": 110.0,
+     "e1": 70.0,
+     "e2": 40.0
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
   }
  ]
 }

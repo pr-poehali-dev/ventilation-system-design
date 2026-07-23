@@ -171,10 +171,15 @@ def handler(event: dict, context) -> dict:
                         br_sc.append(b2)
                     else:
                         br_sc.append(b)
+                # Тёплый старт: расходы штатного решения передаём как стартовое
+                # приближение — при пожаре сеть меняется локально, решатель
+                # сходится за единицы итераций вместо тысяч.
                 if method == "mkr":
-                    r = solve_mkr(nodes_in, br_sc, options, normal_flows, surface_temp)
+                    r = solve_mkr(nodes_in, br_sc, options, normal_flows, surface_temp,
+                                  initial_flows=normal_flows or None)
                 else:
-                    r = solve(nodes_in, br_sc, options, normal_flows, surface_temp)
+                    r = solve(nodes_in, br_sc, options, normal_flows, surface_temp,
+                              initial_flows=normal_flows or None)
                 out.append({
                     "id": tgt,
                     "converged": bool(r.get("converged", False)),
@@ -187,10 +192,19 @@ def handler(event: dict, context) -> dict:
             return err(500, f"Ошибка батч-расчёта: {ex}\n{traceback.format_exc()}")
 
     try:
+        # Тёплый старт для одиночного расчёта: применяем ТОЛЬКО при пожаре
+        # (есть ветвь с тепловой депрессией) — там сеть меняется локально
+        # относительно штатного решения, и normalFlows ускоряют сходимость.
+        # Для штатного F9 (в т.ч. реверс ГВУ) оставляем «холодный» старт как был.
+        is_fire = any(abs(float(b.get("fireThermalDepression", 0) or 0)) > 1e-9
+                      for b in branches_in)
+        warm = (normal_flows or None) if is_fire else None
         if method == "mkr":
-            result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp)
+            result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp,
+                               initial_flows=warm)
         else:
-            result = solve(nodes_in, branches_in, options, normal_flows, surface_temp)
+            result = solve(nodes_in, branches_in, options, normal_flows, surface_temp,
+                           initial_flows=warm)
         # Добавляем лог о тяге в начало
         result["log"] = nat_draft_log + result.get("log", [])
     except BaseException as ex:
@@ -2074,7 +2088,8 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
     return it, max_dh, max_dq
 
 
-def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0):
+def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
+              initial_flows=None):
     """
     МКР — Метод контурных расходов.
     Адаптивное демпфирование, двойной критерий: max|ΔH| < eps1 ИЛИ max|δQ| < eps2.
@@ -2370,6 +2385,25 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             bal[p_node] += b
 
     sync_tree_q(Q)
+
+    # ── Тёплый старт (warm start) для МКР ────────────────────────────────────
+    # Если переданы initial_flows (расходы штатного/предыдущего решения), берём
+    # их как стартовое приближение. При локальном возмущении (очаг пожара на
+    # одной ветви) решение меняется мало → МКР сходится за единицы итераций,
+    # а не за тысячи. Штатное решение уже удовлетворяет Кирхгофу-1.
+    if initial_flows:
+        applied = 0
+        # Свободные переменные МКР — расходы хорд. Задаём их из штатного решения,
+        # а расходы древесных ветвей выводит sync_tree_q по 1-му закону Кирхгофа.
+        for ci in chords:
+            e = active_edges_list[ci]
+            q_hint = initial_flows.get(e["id"])
+            if q_hint is not None and math.isfinite(q_hint):
+                Q[local_to_global[ci]] = float(q_hint)
+                applied += 1
+        if applied:
+            sync_tree_q(Q)
+            log.append(f"Тёплый старт (МКР): применено {applied} расходов хорд из штатного решения")
     _mark("Начальное приближение")
 
     # ── Итерации МКР ────────────────────────────────────────────────────────

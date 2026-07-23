@@ -1,14 +1,3 @@
 {
-  "app-version": "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16",
-  "svg-to-pdf": "https://functions.poehali.dev/0a5327b3-6628-4b3b-8aea-f9f8050e2b61",
-  "admin-licenses": "https://functions.poehali.dev/bd72524f-fb9c-4866-8bcd-69ced85263d4",
-  "license": "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023",
-  "aerodynamics": "https://functions.poehali.dev/8feac1ae-a53a-4239-9fa5-2becc831c338",
-  "rescue-calculator": "https://functions.poehali.dev/54272d78-8eb2-479f-bd8f-791e927326bf",
-  "water-hydraulics": "https://functions.poehali.dev/5a02e83b-6fa6-42c7-a3f0-812738795419",
-  "explosion-calculator": "https://functions.poehali.dev/c9d97d78-bfd7-48f2-960f-1cb0ba8ddafc",
-  "make-ico": "https://functions.poehali.dev/30b2dc5d-fb36-4f5b-bf25-0c74d47327f4",
-  "icon-pack": "https://functions.poehali.dev/5b9c9835-a6d1-408d-a95c-90e9cf03c64c",
-  "download-fonts": "https://functions.poehali.dev/612340b8-d163-4f3d-8d43-408588bd2681",
   "airflow": "https://functions.poehali.dev/6f3b59d0-8ac9-4085-a3d0-720f0e0d30bd"
 }
