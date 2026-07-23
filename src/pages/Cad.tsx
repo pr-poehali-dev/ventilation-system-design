@@ -2646,8 +2646,9 @@ export default function CadPage() {
     //     (расход при пожаре падает → температура растёт).
     // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
     // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
-    const FIRE_ITERS = 3;
-    const FIRE_Q_TOL = 0.1;
+    const FIRE_ITERS = 40;
+    const FIRE_Q_TOL = 0.05;
+    const FIRE_RELAX = 0.4; // демпфирование обратной связи T↑→Q↓ (иначе поток схлопывается)
 
     for (const target of loaded) {
       let currentFlows = new Map<string, number>(originalFlows);
@@ -2660,7 +2661,9 @@ export default function CadPage() {
         const fromN = nodes.find(n => n.id === target.fromId);
         const toN   = nodes.find(n => n.id === target.toId);
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
-        const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
+        // Знак угла — по направлению потока (см. основной аварийный расчёт).
+        const flowSign = (currentFlows.get(target.id) ?? target.flow ?? 0) >= 0 ? 1 : -1;
+        const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1) * flowSign;
         thermalDep = calcThermalDepression(fireTemp, ambientTemp, target.length, signedAngle);
 
         // Пожар ТОЛЬКО на целевой ветви, у остальных — актуальные расходы.
@@ -2672,9 +2675,17 @@ export default function CadPage() {
         const newFlows = await solveFireIteration(branchesIter, ambientTemp);
         if (newFlows.size === 0) break;
 
+        // Релаксация: смешиваем новый расход со старым, чтобы обратная связь
+        // «расход↓ → температура↑ → депрессия↑» сходилась, а не расходилась.
         let maxDQ = 0;
-        newFlows.forEach((q, id) => { maxDQ = Math.max(maxDQ, Math.abs(q - (currentFlows.get(id) ?? 0))); });
-        currentFlows = newFlows;
+        const relaxedFlows = new Map<string, number>();
+        newFlows.forEach((q, id) => {
+          const prev = currentFlows.get(id) ?? 0;
+          const relaxed = prev + FIRE_RELAX * (q - prev);
+          relaxedFlows.set(id, relaxed);
+          maxDQ = Math.max(maxDQ, Math.abs(relaxed - prev));
+        });
+        currentFlows = relaxedFlows;
         if (maxDQ < FIRE_Q_TOL) break;
       }
 
@@ -4051,8 +4062,9 @@ export default function CadPage() {
                 //   Итерация 2–3: уточняем T_пр по новым расходам, повторяем
                 //   Критерий: max|ΔQ| < 0.1 м³/с или 3 итерации
                 // ──────────────────────────────────────────────────────────────
-                const FIRE_ITERS   = 3;    // макс. итераций
-                const FIRE_Q_TOL   = 0.1;  // м³/с — допуск сходимости
+                const FIRE_ITERS   = 40;   // макс. итераций
+                const FIRE_Q_TOL   = 0.05; // м³/с — допуск сходимости
+                const FIRE_RELAX   = 0.4;  // коэф. релаксации (демпфирование обратной связи T↑→Q↓)
                 const AMBIENT_TEMP = surfaceTemp;
 
                 // Исходные расходы ДО пожара — сохраняем для обнаружения опрокидывания
@@ -4091,12 +4103,17 @@ export default function CadPage() {
                     const T_pr  = b.fireMode === "temp"
                       ? b.fireTemperature
                       : calcFireTemp(Q_MW, airQ, AMBIENT_TEMP);
-                    // Знак угла: определяем из высот узлов (to выше from → +, to ниже → −)
-                    // b.angle всегда ≥ 0, поэтому берём знак из dz узлов
+                    // Знак угла — по НАПРАВЛЕНИЮ ПОТОКА, а не только по геометрии.
+                    // Геометрический знак берём из высот узлов (to выше from → +),
+                    // затем разворачиваем по знаку расхода: поток «сверху вниз»
+                    // (нисходящее проветривание) → отрицательный угол → тепловая
+                    // депрессия работает на опрокидывание. При flow<0 воздух идёт
+                    // to→from, значит фактический наклон по потоку меняет знак.
                     const fromNode = nodes.find(n => n.id === b.fromId);
                     const toNode   = nodes.find(n => n.id === b.toId);
                     const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
-                    const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1);
+                    const flowSign = (b.flow ?? 0) >= 0 ? 1 : -1;
+                    const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1) * flowSign;
                     const h_t = calcThermalDepression(T_pr, AMBIENT_TEMP, b.length, signedAngle);
                     return { ...b, fireThermalDepression: h_t };
                   });
@@ -4105,14 +4122,22 @@ export default function CadPage() {
                   const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP);
                   if (newFlows.size === 0) break; // ошибка сети — прерываем
 
-                  // Шаг E: проверка сходимости
+                  // Шаг E: релаксация (демпфирование) + проверка сходимости.
+                  // Без релаксации обратная связь «расход↓ → температура↑ →
+                  // тепловая депрессия↑ → расход↓» расходится: поток схлопывается,
+                  // а температура ложно упирается в потолок 1200°C и ветвь
+                  // помечается неустойчивой. Смешиваем новый расход со старым.
                   let maxDQ = 0;
+                  const relaxedFlows = new Map<string, number>();
                   newFlows.forEach((q, id) => {
-                    maxDQ = Math.max(maxDQ, Math.abs(q - (currentFlows.get(id) ?? 0)));
+                    const prev = currentFlows.get(id) ?? 0;
+                    const relaxed = prev + FIRE_RELAX * (q - prev);
+                    relaxedFlows.set(id, relaxed);
+                    maxDQ = Math.max(maxDQ, Math.abs(relaxed - prev));
                   });
                   addLog("info", `  Итерация ${iter + 1}: max|ΔQ|=${maxDQ.toFixed(3)} м³/с`);
 
-                  currentFlows = newFlows;
+                  currentFlows = relaxedFlows;
                   if (maxDQ < FIRE_Q_TOL) break;
                 }
 

@@ -585,12 +585,16 @@ export function calcFireMode(
       ? fb.fireTemperature
       : calcFireTemp(Q_MW, airQ, ambientTemp_C);
 
-    // Знаковый угол: определяем из высот узлов (to выше from → +, to ниже → −)
-    // fb.angle может быть без знака (старые данные), поэтому используем dz узлов
+    // Знаковый угол: из высот узлов (to выше from → +), с учётом НАПРАВЛЕНИЯ
+    // ПОТОКА. При flow<0 воздух идёт to→from, значит фактический наклон по
+    // потоку меняет знак — это определяет, работает ли тепловая депрессия на
+    // опрокидывание (нисходящее проветривание) или на усиление тяги.
     const fromNode = nodes.find(n => n.id === fb.fromId);
     const toNode   = nodes.find(n => n.id === fb.toId);
     const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
-    const signedAngle = Math.abs(fb.angle ?? 0) * (dz !== 0 ? Math.sign(dz) : Math.sign(fb.angle ?? 0) || 1);
+    const geomSign = dz !== 0 ? Math.sign(dz) : (Math.sign(fb.angle ?? 0) || 1);
+    const flowSign = (fb.flow ?? 0) >= 0 ? 1 : -1;
+    const signedAngle = Math.abs(fb.angle ?? 0) * geomSign * flowSign;
 
     // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание)
     const thermalDep = calcThermalDepression(fireTemp, ambientTemp_C, fb.length, signedAngle);
