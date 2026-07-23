@@ -50,6 +50,25 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   const isOffline        = license.info?.offline;
   const warnDaysLeft     = isOffline && typeof daysLeft === "number" && daysLeft <= 3;
 
+  const mi = license.machineInfo;
+  // Короткий идентификатор рабочего места (для поддержки) — первые символы отпечатка железа.
+  const seatId = license.fingerprint ? license.fingerprint.slice(0, 8).toUpperCase() : "";
+
+  const workplaceRow = mi && (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 mb-1">
+        <Icon name="MonitorSmartphone" size={12} />
+        Это рабочее место
+      </div>
+      <div className="text-[12px] text-gray-700">{mi.hostname}</div>
+      <div className="text-[11px] text-gray-400">
+        {mi.platform}
+        {mi.screen ? ` · экран ${mi.screen}` : ""}
+        {seatId ? ` · ID ${seatId}` : ""}
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-[420px] mx-4 overflow-hidden">
@@ -130,6 +149,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                   </div>
                 )}
               </div>
+              {workplaceRow}
               <button onClick={() => { license.deactivate(); setDone(false); setKey(""); }}
                 className="mt-3 text-[11px] text-red-500 hover:text-red-700 underline">
                 Деактивировать на этом устройстве
@@ -192,6 +212,11 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                   </span>
                 ) : "Активировать лицензию"}
               </button>
+
+              {workplaceRow}
+              <div className="mt-1 text-[10px] text-gray-400">
+                Ключ привяжется к этому рабочему месту (по конфигурации ПК).
+              </div>
             </>
           )}
 
