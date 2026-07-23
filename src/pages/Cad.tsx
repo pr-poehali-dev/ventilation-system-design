@@ -2652,9 +2652,8 @@ export default function CadPage() {
     //     (расход при пожаре падает → температура растёт).
     // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
     // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
-    const FIRE_ITERS = 6;
+    const FIRE_ITERS = 4;
     const FIRE_Q_TOL = 0.3;
-    const FIRE_RELAX = 0.5; // демпфирование обратной связи T↑→Q↓ (иначе поток схлопывается)
 
     for (const target of loaded) {
       let currentFlows = new Map<string, number>(originalFlows);
@@ -2681,17 +2680,25 @@ export default function CadPage() {
         const newFlows = await solveFireIteration(branchesIter, ambientTemp);
         if (newFlows.size === 0) break;
 
-        // Релаксация: смешиваем новый расход со старым, чтобы обратная связь
-        // «расход↓ → температура↑ → депрессия↑» сходилась, а не расходилась.
+        // Скорость: 1-я итерация — без релаксации (быстрый честный ответ, как
+        // раньше). Релаксацию включаем ТОЛЬКО если поток нестабилен (резко
+        // упал/сменил знак) — тогда демпфируем обратную связь T↑→Q↓. Так
+        // устойчивые ветви сходятся за 1-2 запроса, а не крутят все итерации.
+        const qPrevTgt = currentFlows.get(target.id) ?? 0;
+        const qNewTgt  = newFlows.get(target.id) ?? 0;
+        const unstable = Math.sign(qPrevTgt || 1) !== Math.sign(qNewTgt || 1)
+          || Math.abs(qNewTgt) < Math.abs(qPrevTgt) * 0.5;
+        const relax = (iter === 0 || !unstable) ? 1.0 : 0.5;
+
         let maxDQ = 0;
-        const relaxedFlows = new Map<string, number>();
+        const nextFlows = new Map<string, number>();
         newFlows.forEach((q, id) => {
           const prev = currentFlows.get(id) ?? 0;
-          const relaxed = prev + FIRE_RELAX * (q - prev);
-          relaxedFlows.set(id, relaxed);
-          maxDQ = Math.max(maxDQ, Math.abs(relaxed - prev));
+          const val = relax >= 1 ? q : prev + relax * (q - prev);
+          nextFlows.set(id, val);
+          maxDQ = Math.max(maxDQ, Math.abs(val - prev));
         });
-        currentFlows = relaxedFlows;
+        currentFlows = nextFlows;
         if (maxDQ < FIRE_Q_TOL) break;
       }
 
@@ -4068,9 +4075,8 @@ export default function CadPage() {
                 //   Итерация 2–3: уточняем T_пр по новым расходам, повторяем
                 //   Критерий: max|ΔQ| < 0.1 м³/с или 3 итерации
                 // ──────────────────────────────────────────────────────────────
-                const FIRE_ITERS   = 6;    // макс. итераций (каждая = пересчёт всей сети)
+                const FIRE_ITERS   = 4;    // макс. итераций (каждая = пересчёт всей сети)
                 const FIRE_Q_TOL   = 0.3;  // м³/с — допуск сходимости (уровень шума сети)
-                const FIRE_RELAX   = 0.5;  // коэф. релаксации (демпфирование обратной связи T↑→Q↓)
                 const AMBIENT_TEMP = surfaceTemp;
 
                 // Исходные расходы ДО пожара — сохраняем для обнаружения опрокидывания
@@ -4130,22 +4136,32 @@ export default function CadPage() {
                   const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP);
                   if (newFlows.size === 0) break; // ошибка сети — прерываем
 
-                  // Шаг E: релаксация (демпфирование) + проверка сходимости.
-                  // Без релаксации обратная связь «расход↓ → температура↑ →
-                  // тепловая депрессия↑ → расход↓» расходится: поток схлопывается,
-                  // а температура ложно упирается в потолок 1200°C и ветвь
-                  // помечается неустойчивой. Смешиваем новый расход со старым.
+                  // Шаг E: адаптивная релаксация + проверка сходимости.
+                  // 1-я итерация — без демпфирования (быстрый честный ответ).
+                  // Релаксацию 0.5 включаем ТОЛЬКО если поток нестабилен (резко
+                  // упал/сменил знак): тогда обратная связь «расход↓→T↑→h_t↑→
+                  // расход↓» иначе расходится (поток схлопывается, T упирается в
+                  // 1200°C, ложное опрокидывание). Устойчивый режим сходится
+                  // за 1-2 пересчёта — как раньше, без лишних запросов к серверу.
+                  const fireBr = branchesWithHt.find(b => b.hasFire);
+                  const qPrevF = fireBr ? (currentFlows.get(fireBr.id) ?? 0) : 0;
+                  const qNewF  = fireBr ? (newFlows.get(fireBr.id) ?? 0) : 0;
+                  const unstable = fireBr != null && (
+                    Math.sign(qPrevF || 1) !== Math.sign(qNewF || 1)
+                    || Math.abs(qNewF) < Math.abs(qPrevF) * 0.5);
+                  const relax = (iter === 0 || !unstable) ? 1.0 : 0.5;
+
                   let maxDQ = 0;
-                  const relaxedFlows = new Map<string, number>();
+                  const nextFlows = new Map<string, number>();
                   newFlows.forEach((q, id) => {
                     const prev = currentFlows.get(id) ?? 0;
-                    const relaxed = prev + FIRE_RELAX * (q - prev);
-                    relaxedFlows.set(id, relaxed);
-                    maxDQ = Math.max(maxDQ, Math.abs(relaxed - prev));
+                    const val = relax >= 1 ? q : prev + relax * (q - prev);
+                    nextFlows.set(id, val);
+                    maxDQ = Math.max(maxDQ, Math.abs(val - prev));
                   });
-                  addLog("info", `  Итерация ${iter + 1}: max|ΔQ|=${maxDQ.toFixed(3)} м³/с`);
+                  addLog("info", `  Итерация ${iter + 1}: max|ΔQ|=${maxDQ.toFixed(3)} м³/с${relax < 1 ? " (демпфирование)" : ""}`);
 
-                  currentFlows = relaxedFlows;
+                  currentFlows = nextFlows;
                   if (maxDQ < FIRE_Q_TOL) break;
                 }
 
