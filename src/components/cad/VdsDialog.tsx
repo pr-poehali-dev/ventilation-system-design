@@ -7,8 +7,10 @@
 //   Для нескольких ГВУ (25):
 //                          A_общ = 0.38 * Σ Q_i / sqrt( Σ (h_i * Q_i) / Σ Q_i )
 //
-//   Q — подача воздуха ГВУ, м³/с;  H (h) — депрессия ГВУ, Па.
-//   Депрессия вводится, показывается И считается в Па (как во всей программе).
+//   Q — подача воздуха ГВУ, м³/с;  H (h) — депрессия ГВУ, даПа (= мм вод. ст.).
+//   Коэффициент 0.38 в формуле рассчитан на депрессию в даПа/мм вод.ст.
+//   Давление вентилятора в схеме хранится в Па, поэтому при автоподстановке
+//   переводим Па → даПа делением на 10.
 //
 // Список ГВУ синхронизирован со схемой: в строке можно выбрать вентилятор,
 // установленный в открытой схеме, и Q с депрессией подставятся автоматически
@@ -33,7 +35,7 @@ interface GvuRow {
   branchId: string; // "" = ручной ввод, иначе id ветви-вентилятора со схемы
   name: string;
   q: string; // подача воздуха, м³/с
-  h: string; // депрессия, Па
+  h: string; // депрессия, даПа (= мм вод. ст.)
 }
 
 let nextId = 1;
@@ -83,7 +85,8 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
     setRows(rs => (rs.length > 1 ? rs.filter(r => r.id !== id) : rs));
   }
 
-  // Выбор вентилятора из схемы: подставляем Q (flow) и депрессию (fanPressure, Па).
+  // Выбор вентилятора из схемы: подставляем Q (flow) и депрессию.
+  // Давление вентилятора в схеме — в Па, а расчёт требует даПа → делим на 10.
   function pickFan(rowId: number, branchId: string) {
     if (!branchId) {
       updateRow(rowId, { branchId: "" });
@@ -92,17 +95,17 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
     const b = fanBranches.find(x => x.id === branchId);
     if (!b) return;
     const q = Math.abs(b.flow ?? 0);
-    const hPa = Math.abs(b.fanPressure ?? 0);
+    const hDaPa = Math.abs(b.fanPressure ?? 0) / 10;
     updateRow(rowId, {
       branchId,
       name: b.fanName || fanLabel(b),
       q: q ? q.toFixed(2) : "",
-      h: hPa ? hPa.toFixed(1) : "",
+      h: hDaPa ? hDaPa.toFixed(2) : "",
     });
   }
 
   const calc = useMemo(() => {
-    // Учитываем только строки с положительными Q и H. Депрессия — в Па (без перевода).
+    // Учитываем только строки с положительными Q и H. Депрессия — в даПа (мм вод. ст.).
     const valid = rows
       .map(r => ({ q: num(r.q), h: num(r.h) }))
       .filter(r => r.q > 0 && r.h > 0);
@@ -111,20 +114,20 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
     const sumHQ = valid.reduce((s, r) => s + r.h * r.q, 0);
 
     let A = 0;
-    let HavgPa = 0; // эквивалентная депрессия шахты, Па
+    let HavgDaPa = 0; // эквивалентная депрессия шахты, даПа
     if (valid.length === 1) {
-      // формула (24)
+      // формула (24): A = 0.38 * Q / sqrt(H), H в даПа
       A = (0.38 * valid[0].q) / Math.sqrt(valid[0].h);
-      HavgPa = valid[0].h;
+      HavgDaPa = valid[0].h;
     } else if (valid.length > 1 && sumQ > 0) {
       // формула (25)
-      HavgPa = sumHQ / sumQ;
-      A = (0.38 * sumQ) / Math.sqrt(HavgPa);
+      HavgDaPa = sumHQ / sumQ;
+      A = (0.38 * sumQ) / Math.sqrt(HavgDaPa);
     }
     return {
       count: valid.length,
       sumQ,
-      HavgPa,
+      HavgDaPa,
       A,
       formula: valid.length <= 1 ? "(24)" : "(25)",
     };
@@ -174,8 +177,8 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
             <div className="text-[11px] text-gray-500 leading-snug">
               Расчёт по числу ГВУ: при одной установке — формула (24), при
               нескольких — формула (25). Q — подача воздуха ГВУ (м³/с), H —
-              депрессия ГВУ (Па). Выберите вентилятор из схемы — данные
-              подставятся автоматически.
+              депрессия ГВУ (даПа, = мм вод. ст.). Выберите вентилятор из схемы —
+              данные подставятся автоматически (давление переводится из Па в даПа).
             </div>
           </div>
 
@@ -196,7 +199,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
                 <th className="text-left font-medium px-2 py-1 border border-gray-200 w-8">№</th>
                 <th className="text-left font-medium px-2 py-1 border border-gray-200">ГВУ со схемы</th>
                 <th className="text-left font-medium px-2 py-1 border border-gray-200 w-24">Q, м³/с</th>
-                <th className="text-left font-medium px-2 py-1 border border-gray-200 w-24">H, Па</th>
+                <th className="text-left font-medium px-2 py-1 border border-gray-200 w-24">H, даПа</th>
                 <th className="text-center font-medium px-2 py-1 border border-gray-200 w-8"></th>
               </tr>
             </thead>
@@ -283,7 +286,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
 
               <span className="text-gray-600">Эквивалентная депрессия H:</span>
               <span className="text-gray-900 font-medium">
-                {calc.HavgPa ? calc.HavgPa.toFixed(1) : "—"} Па
+                {calc.HavgDaPa ? calc.HavgDaPa.toFixed(2) : "—"} даПа
               </span>
 
               <span className="text-gray-600">Формула:</span>
