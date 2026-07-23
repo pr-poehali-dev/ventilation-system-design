@@ -496,11 +496,18 @@ export function calcThermalDepression(
   const len = Number(branchLength_m);
   const ang = Number(branchAngle_deg);
   if (!Number.isFinite(tf) || !Number.isFinite(t0) || !Number.isFinite(len) || !Number.isFinite(ang)) return 0;
-  const Tf = tf + 273;
-  const T0 = t0 + 273;
+  // Строгая физика теплового столба (как в Аэросети):
+  //   h_t = g · Δz · (ρ₀ − ρ_гор),  Δz = L·sinα  — высота столба горячего воздуха,
+  //   ρ = 353/(273+T)               — плотность воздуха по идеальному газу.
+  // Раньше применялась линеаризация ρ·(ΔT/T₀), которая при большом перегреве
+  // (ΔT > 100°) завышала депрессию на ~40%. Строгая разность плотностей точнее.
+  // Знак Δz (= sinα) сам задаёт направление тяги (восходящая/нисходящая ветвь),
+  // поэтому дополнительный Math.sign не нужен.
   const sinA = Math.sin((ang * Math.PI) / 180);
-  const rho = RHO_AIR_0 * 293 / T0;
-  const res = G * len * Math.abs(sinA) * ((Tf - T0) / T0) * rho * Math.sign(sinA);
+  const dz   = len * sinA;                 // высота столба, м (со знаком)
+  const rho0   = 353.0 / (273.0 + t0);     // плотность холодного воздуха
+  const rhoHot = 353.0 / (273.0 + tf);     // плотность горячих продуктов горения
+  const res = G * dz * (rho0 - rhoHot);
   return Number.isFinite(res) ? res : 0;
 }
 
