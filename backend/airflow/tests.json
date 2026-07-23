@@ -1,602 +1,1596 @@
 {
-  "tests": [
-    {
-      "name": "Пустая сеть",
-      "method": "POST",
-      "path": "/",
-      "body": {"method": "cross", "nodes": [], "branches": [], "options": {}},
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Gzip-конверт больших схем (__gzip__ base64)",
-      "method": "POST",
-      "path": "/",
-      "body": {"__gzip__": "H4sIALRSV2oC/31QQWrDQAz8itlzKJvSQugt0BR8SBqKeyrFqI6MDdlds5Kh1PjvnXUwqXPoTZoZaTQajGNtwsk8ZaaKQcSsMiN9rKnigl0H/AGIDycW1B+DaSftttiX+SGJW9mqA6SxZ7Q/KNf31o6rbNYeyufd7mhm0i7ItOj1vfhv0year0i+apY3SNn6NFfH4PKbqzTkN95vaO2dfUTZkLyQvzrV5PcIOP0geFHyai7wMbLgG4naLM6WMvS6NL9azeZ/ss3uU5jQaQsfQAO0Z07Z+CKwa/COvnPlCATxLQA6dw1Ngs04/gICUSesswEAAA=="},
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Естественная тяга — геотерм. градиент 3°C/100м",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "surfaceTemp": 4,
-        "useNaturalDraft": true,
-        "geoGradient": 3.0,
-        "nodes": [
-          {"id": "ATM_IN",  "isAtm": true,  "z": 1200},
-          {"id": "N_DEEP",                  "z": 1000},
-          {"id": "ATM_OUT", "isAtm": true,  "z": 1200}
-        ],
-        "branches": [
-          {"id": "stvol_in",  "fromId": "ATM_IN",  "toId": "N_DEEP",  "R": 0.05,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 800},
-          {"id": "stvol_out", "fromId": "N_DEEP",  "toId": "ATM_OUT", "R": 0.05}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 2000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Естественная тяга ОТКЛЮЧЕНА — H_nat=0",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "surfaceTemp": 4,
-        "useNaturalDraft": false,
-        "geoGradient": 3.0,
-        "nodes": [
-          {"id": "ATM_IN",  "isAtm": true,  "z": 1200},
-          {"id": "N_DEEP",                  "z": 1000},
-          {"id": "ATM_OUT", "isAtm": true,  "z": 1200}
-        ],
-        "branches": [
-          {"id": "stvol_in",  "fromId": "ATM_IN",  "toId": "N_DEEP",  "R": 0.05,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 800},
-          {"id": "stvol_out", "fromId": "N_DEEP",  "toId": "ATM_OUT", "R": 0.05}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 2000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Линейная цепь — метод Кросса",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "U2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1, "hasFan": true, "fanMode": "constant", "fanPressure": 1000}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 1000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "DEMO: линейная цепь 7 ветвей с вентилятором",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"}, {"id": "N2"}, {"id": "N3"},
-          {"id": "N4"}, {"id": "N5"}, {"id": "N6"},
-          {"id": "U2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.01},
-          {"id": "B2", "fromId": "N1", "toId": "N2", "R": 0.02},
-          {"id": "B3", "fromId": "N2", "toId": "N3", "R": 0.05},
-          {"id": "B4", "fromId": "N3", "toId": "N4", "R": 0.03},
-          {"id": "B5", "fromId": "N4", "toId": "N5", "R": 0.08},
-          {"id": "B6", "fromId": "N5", "toId": "N6", "R": 0.02},
-          {"id": "B7", "fromId": "N6", "toId": "U2", "R": 0.01,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 2700}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 5000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Тупик с ВМП — расход не нулевой",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "nodes": [
-          {"id": "ATM", "isAtm": true},
-          {"id": "J1"},
-          {"id": "J2"},
-          {"id": "DEAD"}
-        ],
-        "branches": [
-          {"id": "MAIN", "fromId": "ATM", "toId": "J1", "R": 0.05, "hasFan": true, "fanMode": "constant", "fanPressure": 1500},
-          {"id": "RING1", "fromId": "J1", "toId": "J2", "R": 0.1},
-          {"id": "RING2", "fromId": "J2", "toId": "ATM", "R": 0.15},
-          {"id": "VMP", "fromId": "J1", "toId": "DEAD", "R": 0.5, "hasFan": true, "fanMode": "constant", "fanPressure": 300, "area": 3.5}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 2000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Шахтная сеть — 2 ствола + 5 выработок (как на схеме пользователя)",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM", "isAtm": true},
-          {"id": "N1"}, {"id": "N2"}, {"id": "N3"},
-          {"id": "N4"}, {"id": "N5"}
-        ],
-        "branches": [
-          {"id": "svt",  "fromId": "ATM", "toId": "N1",  "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 500},
-          {"id": "kv",   "fromId": "N1",  "toId": "N2",  "R": 0.02},
-          {"id": "ukl",  "fromId": "N2",  "toId": "N3",  "R": 0.03},
-          {"id": "och",  "fromId": "N3",  "toId": "N4",  "R": 0.04},
-          {"id": "sho",  "fromId": "N4",  "toId": "N5",  "R": 0.02},
-          {"id": "shv",  "fromId": "N5",  "toId": "N2",  "R": 0.05},
-          {"id": "yuvs", "fromId": "N1",  "toId": "ATM", "R": 0.01}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 5000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "2 вентилятора в параллели — Q вдвое больше",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "U2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanParallel": 2}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 1000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Реверс — Q всех ветвей должен быть отрицательным",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "U2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanReverse": true}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 2000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Остановка вентилятора — Q=0 во всей сети",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "U2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanStopped": true}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 1000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "3 ATM-узла — 2 ствола + 1 тупиковый ATM",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "ATM2", "isAtm": true},
-          {"id": "ATM3", "isAtm": true},
-          {"id": "J1"},
-          {"id": "J2"}
-        ],
-        "branches": [
-          {"id": "fan",   "fromId": "ATM1", "toId": "J1",  "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 1000},
-          {"id": "ring1", "fromId": "J1",   "toId": "J2",  "R": 0.1},
-          {"id": "ring2", "fromId": "J2",   "toId": "ATM2","R": 0.1},
-          {"id": "dead",  "fromId": "J1",   "toId": "ATM3","R": 0.1}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 3000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Кольцевая сеть — 2 параллельных ветви, Кросс",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "A", "isAtm": true},
-          {"id": "B"},
-          {"id": "C", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "fan", "fromId": "A", "toId": "B", "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 500},
-          {"id": "e1",  "fromId": "B", "toId": "C", "R": 0.1},
-          {"id": "e2",  "fromId": "B", "toId": "C", "R": 0.2}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 5000, "alpha": 0.8}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Тупиковая цепочка 3 ветви — Q=0 во всех тупиках",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "ATM2", "isAtm": true},
-          {"id": "J1"},
-          {"id": "J2"},
-          {"id": "D1"},
-          {"id": "D2"},
-          {"id": "D3"}
-        ],
-        "branches": [
-          {"id": "main_fan", "fromId": "ATM1", "toId": "J1",  "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 2000},
-          {"id": "ring1",    "fromId": "J1",   "toId": "J2",  "R": 0.05},
-          {"id": "ring2",    "fromId": "J2",   "toId": "ATM2","R": 0.05},
-          {"id": "dead1",    "fromId": "J1",   "toId": "D1",  "R": 0.1},
-          {"id": "dead2",    "fromId": "D1",   "toId": "D2",  "R": 0.1},
-          {"id": "dead3",    "fromId": "D2",   "toId": "D3",  "R": 0.1}
-        ],
-        "options": {"tolerance": 0.001, "maxIter": 3000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
+ "tests": [
+  {
+   "name": "Пустая сеть",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [],
+    "branches": [],
+    "options": {}
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Gzip-конверт больших схем (__gzip__ base64)",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "__gzip__": "H4sIALRSV2oC/31QQWrDQAz8itlzKJvSQugt0BR8SBqKeyrFqI6MDdlds5Kh1PjvnXUwqXPoTZoZaTQajGNtwsk8ZaaKQcSsMiN9rKnigl0H/AGIDycW1B+DaSftttiX+SGJW9mqA6SxZ7Q/KNf31o6rbNYeyufd7mhm0i7ItOj1vfhv0year0i+apY3SNn6NFfH4PKbqzTkN95vaO2dfUTZkLyQvzrV5PcIOP0geFHyai7wMbLgG4naLM6WMvS6NL9azeZ/ss3uU5jQaQsfQAO0Z07Z+CKwa/COvnPlCATxLQA6dw1Ngs04/gICUSesswEAAA=="
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Естественная тяга — геотерм. градиент 3°C/100м",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "surfaceTemp": 4,
+    "useNaturalDraft": true,
+    "geoGradient": 3.0,
+    "nodes": [
+     {
+      "id": "ATM_IN",
+      "isAtm": true,
+      "z": 1200
+     },
+     {
+      "id": "N_DEEP",
+      "z": 1000
+     },
+     {
+      "id": "ATM_OUT",
+      "isAtm": true,
+      "z": 1200
+     }
+    ],
+    "branches": [
+     {
+      "id": "stvol_in",
+      "fromId": "ATM_IN",
+      "toId": "N_DEEP",
+      "R": 0.05,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 800
+     },
+     {
+      "id": "stvol_out",
+      "fromId": "N_DEEP",
+      "toId": "ATM_OUT",
+      "R": 0.05
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 2000,
+     "alpha": 0.8
     }
-    ,
-    {
-      "name": "МКР — линейная цепь, сходимость",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "mkr",
-        "nodes": [
-          {"id": "U1", "isAtm": true, "z": 0, "airTemp": 20},
-          {"id": "N1", "z": -100, "airTemp": 15},
-          {"id": "U2", "isAtm": true, "z": 0, "airTemp": 20}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.05, "hasFan": true, "fanMode": "constant", "fanPressure": 1000}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 2000},
-        "surfaceTemp": 20
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "МКР — кольцевая сеть 2 параллельных ветви",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "mkr",
-        "nodes": [
-          {"id": "A", "isAtm": true, "z": 0, "airTemp": 20},
-          {"id": "B", "z": -50, "airTemp": 18},
-          {"id": "C", "isAtm": true, "z": 0, "airTemp": 20}
-        ],
-        "branches": [
-          {"id": "fan", "fromId": "A", "toId": "B", "R": 0.01, "hasFan": true, "fanMode": "constant", "fanPressure": 500},
-          {"id": "e1",  "fromId": "B", "toId": "C", "R": 0.1},
-          {"id": "e2",  "fromId": "B", "toId": "C", "R": 0.2}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 2000},
-        "surfaceTemp": 20
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Кросс — естественная тяга без вентилятора",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "U1", "isAtm": true, "z": 100, "airTemp": 5},
-          {"id": "N1", "z": -200, "airTemp": 25},
-          {"id": "U2", "isAtm": true, "z": 80, "airTemp": 5}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.05},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.05}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 5000},
-        "surfaceTemp": 5
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Вентилятор GND→GND (Без перемычки) — напор и Q должны быть ненулевыми",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "N2"},
-          {"id": "ATM2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "fan", "fromId": "ATM1", "toId": "ATM2", "R": 0.001,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000,
-           "fanInstall": "Без перемычки"},
-          {"id": "b1", "fromId": "ATM1", "toId": "N1", "R": 0.1},
-          {"id": "b2", "fromId": "N1",   "toId": "N2", "R": 0.1},
-          {"id": "b3", "fromId": "N2",   "toId": "ATM2","R": 0.1}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 2000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "ЭТАЛОН Аэросеть: кольцо с реверсом ГВУ — поток меняет направление",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "J1"},
-          {"id": "J2"},
-          {"id": "ATM2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "gvu", "fromId": "ATM1", "toId": "J1", "R": 0.01,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 2000, "fanReverse": true},
-          {"id": "left",  "fromId": "J1", "toId": "J2", "R": 0.05},
-          {"id": "right", "fromId": "J2", "toId": "ATM2", "R": 0.05}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 3000, "alpha": 0.7}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "ЭТАЛОН Вентиляция-2: термосифон 2 ствола (естественная тяга)",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true, "z": 0, "airTemp": -5},
-          {"id": "BOTTOM", "z": -300, "airTemp": 20},
-          {"id": "ATM2", "isAtm": true, "z": 0, "airTemp": -5}
-        ],
-        "branches": [
-          {"id": "shaft1", "fromId": "ATM1", "toId": "BOTTOM", "R": 0.02},
-          {"id": "shaft2", "fromId": "BOTTOM", "toId": "ATM2", "R": 0.02}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 3000, "alpha": 0.5},
-        "surfaceTemp": -5
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "ЭТАЛОН Вентсим: МКР с реверсом — сходимость по двойному критерию",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "mkr",
-        "nodes": [
-          {"id": "U1", "isAtm": true},
-          {"id": "N1"},
-          {"id": "U2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "B1", "fromId": "U1", "toId": "N1", "R": 0.1},
-          {"id": "B2", "fromId": "N1", "toId": "U2", "R": 0.1,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000, "fanReverse": true}
-        ],
-        "options": {"tolerance": 0.01, "tolPressure": 1.0, "maxIter": 3000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "БАЛАНС: Кросс сложная сеть 6 узлов + ВМП — должен сойтись без нарушений Кирхгофа",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "ATM2", "isAtm": true},
-          {"id": "J1"}, {"id": "J2"}, {"id": "J3"}, {"id": "J4"},
-          {"id": "VMP1"}
-        ],
-        "branches": [
-          {"id": "shaft1", "fromId": "ATM1", "toId": "J1", "R": 0.01,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 3000, "fanType": "ГВУ"},
-          {"id": "br1", "fromId": "J1", "toId": "J2", "R": 0.05},
-          {"id": "br2", "fromId": "J2", "toId": "J3", "R": 0.08},
-          {"id": "br3", "fromId": "J3", "toId": "J4", "R": 0.05},
-          {"id": "br4", "fromId": "J4", "toId": "ATM2", "R": 0.02},
-          {"id": "by1", "fromId": "J1", "toId": "J3", "R": 0.1},
-          {"id": "by2", "fromId": "J2", "toId": "J4", "R": 0.12},
-          {"id": "vmp_pipe", "fromId": "J2", "toId": "VMP1", "R": 0.5,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 500, "fanType": "ВМП"}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 5000, "alpha": 0.7}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "БАЛАНС МКР: та же сеть 6 узлов",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "mkr",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "ATM2", "isAtm": true},
-          {"id": "J1"}, {"id": "J2"}, {"id": "J3"}, {"id": "J4"},
-          {"id": "VMP1"}
-        ],
-        "branches": [
-          {"id": "shaft1", "fromId": "ATM1", "toId": "J1", "R": 0.01,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 3000, "fanType": "ГВУ"},
-          {"id": "br1", "fromId": "J1", "toId": "J2", "R": 0.05},
-          {"id": "br2", "fromId": "J2", "toId": "J3", "R": 0.08},
-          {"id": "br3", "fromId": "J3", "toId": "J4", "R": 0.05},
-          {"id": "br4", "fromId": "J4", "toId": "ATM2", "R": 0.02},
-          {"id": "by1", "fromId": "J1", "toId": "J3", "R": 0.1},
-          {"id": "by2", "fromId": "J2", "toId": "J4", "R": 0.12},
-          {"id": "vmp_pipe", "fromId": "J2", "toId": "VMP1", "R": 0.5,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 500, "fanType": "ВМП"}
-        ],
-        "options": {"tolerance": 0.01, "tolPressure": 1.0, "maxIter": 5000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "РЕВЕРС ГВУ + ВМП в перемычке (нерезерсная) — сходимость",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "mkr",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "ATM2", "isAtm": true},
-          {"id": "J1"}, {"id": "J2"}, {"id": "TUP"}
-        ],
-        "branches": [
-          {"id": "gvu", "fromId": "ATM1", "toId": "J1", "R": 0.01,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 2000,
-           "fanType": "ГВУ", "fanReverse": true},
-          {"id": "main", "fromId": "J1", "toId": "J2", "R": 0.05},
-          {"id": "exit", "fromId": "J2", "toId": "ATM2", "R": 0.03},
-          {"id": "vmp",  "fromId": "J1", "toId": "TUP", "R": 0.4,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 800, "fanType": "ВМП"}
-        ],
-        "options": {"tolerance": 0.01, "tolPressure": 1.0, "maxIter": 5000}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Тепловая депрессия пожара: восходящая выработка — h_t усиливает расход",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "J1"},
-          {"id": "ATM2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "fan_branch", "fromId": "ATM1", "toId": "J1", "R": 0.05,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000},
-          {"id": "fire_branch", "fromId": "J1", "toId": "ATM2", "R": 0.05,
-           "fireThermalDepression": 120.0}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 3000, "alpha": 0.7}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
-    },
-    {
-      "name": "Тепловая депрессия пожара: нисходящая выработка — h_t тормозит расход",
-      "method": "POST",
-      "path": "/",
-      "body": {
-        "method": "cross",
-        "nodes": [
-          {"id": "ATM1", "isAtm": true},
-          {"id": "J1"},
-          {"id": "ATM2", "isAtm": true}
-        ],
-        "branches": [
-          {"id": "fan_branch", "fromId": "ATM1", "toId": "J1", "R": 0.05,
-           "hasFan": true, "fanMode": "constant", "fanPressure": 1000},
-          {"id": "fire_branch_down", "fromId": "J1", "toId": "ATM2", "R": 0.05,
-           "fireThermalDepression": -80.0}
-        ],
-        "options": {"tolerance": 0.01, "maxIter": 3000, "alpha": 0.7}
-      },
-      "expectedStatus": 200,
-      "expectedBody": {"converged": true},
-      "bodyMatcher": "partial"
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Естественная тяга ОТКЛЮЧЕНА — H_nat=0",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "surfaceTemp": 4,
+    "useNaturalDraft": false,
+    "geoGradient": 3.0,
+    "nodes": [
+     {
+      "id": "ATM_IN",
+      "isAtm": true,
+      "z": 1200
+     },
+     {
+      "id": "N_DEEP",
+      "z": 1000
+     },
+     {
+      "id": "ATM_OUT",
+      "isAtm": true,
+      "z": 1200
+     }
+    ],
+    "branches": [
+     {
+      "id": "stvol_in",
+      "fromId": "ATM_IN",
+      "toId": "N_DEEP",
+      "R": 0.05,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 800
+     },
+     {
+      "id": "stvol_out",
+      "fromId": "N_DEEP",
+      "toId": "ATM_OUT",
+      "R": 0.05
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 2000,
+     "alpha": 0.8
     }
-  ]
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Линейная цепь — метод Кросса",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "U2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.1
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.1,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 1000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "DEMO: линейная цепь 7 ветвей с вентилятором",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "N2"
+     },
+     {
+      "id": "N3"
+     },
+     {
+      "id": "N4"
+     },
+     {
+      "id": "N5"
+     },
+     {
+      "id": "N6"
+     },
+     {
+      "id": "U2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.01
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "N2",
+      "R": 0.02
+     },
+     {
+      "id": "B3",
+      "fromId": "N2",
+      "toId": "N3",
+      "R": 0.05
+     },
+     {
+      "id": "B4",
+      "fromId": "N3",
+      "toId": "N4",
+      "R": 0.03
+     },
+     {
+      "id": "B5",
+      "fromId": "N4",
+      "toId": "N5",
+      "R": 0.08
+     },
+     {
+      "id": "B6",
+      "fromId": "N5",
+      "toId": "N6",
+      "R": 0.02
+     },
+     {
+      "id": "B7",
+      "fromId": "N6",
+      "toId": "U2",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 2700
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 5000,
+     "alpha": 0.8
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Тупик с ВМП — расход не нулевой",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "nodes": [
+     {
+      "id": "ATM",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     },
+     {
+      "id": "DEAD"
+     }
+    ],
+    "branches": [
+     {
+      "id": "MAIN",
+      "fromId": "ATM",
+      "toId": "J1",
+      "R": 0.05,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1500
+     },
+     {
+      "id": "RING1",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.1
+     },
+     {
+      "id": "RING2",
+      "fromId": "J2",
+      "toId": "ATM",
+      "R": 0.15
+     },
+     {
+      "id": "VMP",
+      "fromId": "J1",
+      "toId": "DEAD",
+      "R": 0.5,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 300,
+      "area": 3.5
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 2000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Шахтная сеть — 2 ствола + 5 выработок (как на схеме пользователя)",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "N2"
+     },
+     {
+      "id": "N3"
+     },
+     {
+      "id": "N4"
+     },
+     {
+      "id": "N5"
+     }
+    ],
+    "branches": [
+     {
+      "id": "svt",
+      "fromId": "ATM",
+      "toId": "N1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500
+     },
+     {
+      "id": "kv",
+      "fromId": "N1",
+      "toId": "N2",
+      "R": 0.02
+     },
+     {
+      "id": "ukl",
+      "fromId": "N2",
+      "toId": "N3",
+      "R": 0.03
+     },
+     {
+      "id": "och",
+      "fromId": "N3",
+      "toId": "N4",
+      "R": 0.04
+     },
+     {
+      "id": "sho",
+      "fromId": "N4",
+      "toId": "N5",
+      "R": 0.02
+     },
+     {
+      "id": "shv",
+      "fromId": "N5",
+      "toId": "N2",
+      "R": 0.05
+     },
+     {
+      "id": "yuvs",
+      "fromId": "N1",
+      "toId": "ATM",
+      "R": 0.01
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 5000,
+     "alpha": 0.8
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "2 вентилятора в параллели — Q вдвое больше",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "U2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.1
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.1,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000,
+      "fanParallel": 2
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 1000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Реверс — Q всех ветвей должен быть отрицательным",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "U2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.1
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.1,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000,
+      "fanReverse": true
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 2000,
+     "alpha": 0.8
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Остановка вентилятора — Q=0 во всей сети",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "U2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.1
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.1,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000,
+      "fanStopped": true
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 1000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "3 ATM-узла — 2 ствола + 1 тупиковый ATM",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     },
+     {
+      "id": "ATM3",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000
+     },
+     {
+      "id": "ring1",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.1
+     },
+     {
+      "id": "ring2",
+      "fromId": "J2",
+      "toId": "ATM2",
+      "R": 0.1
+     },
+     {
+      "id": "dead",
+      "fromId": "J1",
+      "toId": "ATM3",
+      "R": 0.1
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 3000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Кольцевая сеть — 2 параллельных ветви, Кросс",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "A",
+      "isAtm": true
+     },
+     {
+      "id": "B"
+     },
+     {
+      "id": "C",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "A",
+      "toId": "B",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500
+     },
+     {
+      "id": "e1",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.1
+     },
+     {
+      "id": "e2",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.2
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 5000,
+     "alpha": 0.8
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Тупиковая цепочка 3 ветви — Q=0 во всех тупиках",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     },
+     {
+      "id": "D1"
+     },
+     {
+      "id": "D2"
+     },
+     {
+      "id": "D3"
+     }
+    ],
+    "branches": [
+     {
+      "id": "main_fan",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 2000
+     },
+     {
+      "id": "ring1",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.05
+     },
+     {
+      "id": "ring2",
+      "fromId": "J2",
+      "toId": "ATM2",
+      "R": 0.05
+     },
+     {
+      "id": "dead1",
+      "fromId": "J1",
+      "toId": "D1",
+      "R": 0.1
+     },
+     {
+      "id": "dead2",
+      "fromId": "D1",
+      "toId": "D2",
+      "R": 0.1
+     },
+     {
+      "id": "dead3",
+      "fromId": "D2",
+      "toId": "D3",
+      "R": 0.1
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 3000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "МКР — линейная цепь, сходимость",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "mkr",
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true,
+      "z": 0,
+      "airTemp": 20
+     },
+     {
+      "id": "N1",
+      "z": -100,
+      "airTemp": 15
+     },
+     {
+      "id": "U2",
+      "isAtm": true,
+      "z": 0,
+      "airTemp": 20
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.05
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.05,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 2000
+    },
+    "surfaceTemp": 20
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "МКР — кольцевая сеть 2 параллельных ветви",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "mkr",
+    "nodes": [
+     {
+      "id": "A",
+      "isAtm": true,
+      "z": 0,
+      "airTemp": 20
+     },
+     {
+      "id": "B",
+      "z": -50,
+      "airTemp": 18
+     },
+     {
+      "id": "C",
+      "isAtm": true,
+      "z": 0,
+      "airTemp": 20
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "A",
+      "toId": "B",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500
+     },
+     {
+      "id": "e1",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.1
+     },
+     {
+      "id": "e2",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.2
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 2000
+    },
+    "surfaceTemp": 20
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Кросс — естественная тяга без вентилятора",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true,
+      "z": 100,
+      "airTemp": 5
+     },
+     {
+      "id": "N1",
+      "z": -200,
+      "airTemp": 25
+     },
+     {
+      "id": "U2",
+      "isAtm": true,
+      "z": 80,
+      "airTemp": 5
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.05
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.05
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 5000
+    },
+    "surfaceTemp": 5
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Вентилятор GND→GND (Без перемычки) — напор и Q должны быть ненулевыми",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "N2"
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "ATM1",
+      "toId": "ATM2",
+      "R": 0.001,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000,
+      "fanInstall": "Без перемычки"
+     },
+     {
+      "id": "b1",
+      "fromId": "ATM1",
+      "toId": "N1",
+      "R": 0.1
+     },
+     {
+      "id": "b2",
+      "fromId": "N1",
+      "toId": "N2",
+      "R": 0.1
+     },
+     {
+      "id": "b3",
+      "fromId": "N2",
+      "toId": "ATM2",
+      "R": 0.1
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 2000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "ЭТАЛОН Аэросеть: кольцо с реверсом ГВУ — поток меняет направление",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "gvu",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 2000,
+      "fanReverse": true
+     },
+     {
+      "id": "left",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.05
+     },
+     {
+      "id": "right",
+      "fromId": "J2",
+      "toId": "ATM2",
+      "R": 0.05
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 3000,
+     "alpha": 0.7
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "ЭТАЛОН Вентиляция-2: термосифон 2 ствола (естественная тяга)",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true,
+      "z": 0,
+      "airTemp": -5
+     },
+     {
+      "id": "BOTTOM",
+      "z": -300,
+      "airTemp": 20
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true,
+      "z": 0,
+      "airTemp": -5
+     }
+    ],
+    "branches": [
+     {
+      "id": "shaft1",
+      "fromId": "ATM1",
+      "toId": "BOTTOM",
+      "R": 0.02
+     },
+     {
+      "id": "shaft2",
+      "fromId": "BOTTOM",
+      "toId": "ATM2",
+      "R": 0.02
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 3000,
+     "alpha": 0.5
+    },
+    "surfaceTemp": -5
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "ЭТАЛОН Вентсим: МКР с реверсом — сходимость по двойному критерию",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "mkr",
+    "nodes": [
+     {
+      "id": "U1",
+      "isAtm": true
+     },
+     {
+      "id": "N1"
+     },
+     {
+      "id": "U2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "B1",
+      "fromId": "U1",
+      "toId": "N1",
+      "R": 0.1
+     },
+     {
+      "id": "B2",
+      "fromId": "N1",
+      "toId": "U2",
+      "R": 0.1,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000,
+      "fanReverse": true
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "tolPressure": 1.0,
+     "maxIter": 3000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "БАЛАНС: Кросс сложная сеть 6 узлов + ВМП — должен сойтись без нарушений Кирхгофа",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     },
+     {
+      "id": "J3"
+     },
+     {
+      "id": "J4"
+     },
+     {
+      "id": "VMP1"
+     }
+    ],
+    "branches": [
+     {
+      "id": "shaft1",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 3000,
+      "fanType": "ГВУ"
+     },
+     {
+      "id": "br1",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.05
+     },
+     {
+      "id": "br2",
+      "fromId": "J2",
+      "toId": "J3",
+      "R": 0.08
+     },
+     {
+      "id": "br3",
+      "fromId": "J3",
+      "toId": "J4",
+      "R": 0.05
+     },
+     {
+      "id": "br4",
+      "fromId": "J4",
+      "toId": "ATM2",
+      "R": 0.02
+     },
+     {
+      "id": "by1",
+      "fromId": "J1",
+      "toId": "J3",
+      "R": 0.1
+     },
+     {
+      "id": "by2",
+      "fromId": "J2",
+      "toId": "J4",
+      "R": 0.12
+     },
+     {
+      "id": "vmp_pipe",
+      "fromId": "J2",
+      "toId": "VMP1",
+      "R": 0.5,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500,
+      "fanType": "ВМП"
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 5000,
+     "alpha": 0.7
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "БАЛАНС МКР: та же сеть 6 узлов",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "mkr",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     },
+     {
+      "id": "J3"
+     },
+     {
+      "id": "J4"
+     },
+     {
+      "id": "VMP1"
+     }
+    ],
+    "branches": [
+     {
+      "id": "shaft1",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 3000,
+      "fanType": "ГВУ"
+     },
+     {
+      "id": "br1",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.05
+     },
+     {
+      "id": "br2",
+      "fromId": "J2",
+      "toId": "J3",
+      "R": 0.08
+     },
+     {
+      "id": "br3",
+      "fromId": "J3",
+      "toId": "J4",
+      "R": 0.05
+     },
+     {
+      "id": "br4",
+      "fromId": "J4",
+      "toId": "ATM2",
+      "R": 0.02
+     },
+     {
+      "id": "by1",
+      "fromId": "J1",
+      "toId": "J3",
+      "R": 0.1
+     },
+     {
+      "id": "by2",
+      "fromId": "J2",
+      "toId": "J4",
+      "R": 0.12
+     },
+     {
+      "id": "vmp_pipe",
+      "fromId": "J2",
+      "toId": "VMP1",
+      "R": 0.5,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500,
+      "fanType": "ВМП"
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "tolPressure": 1.0,
+     "maxIter": 5000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "РЕВЕРС ГВУ + ВМП в перемычке (нерезерсная) — сходимость",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "mkr",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "J2"
+     },
+     {
+      "id": "TUP"
+     }
+    ],
+    "branches": [
+     {
+      "id": "gvu",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 2000,
+      "fanType": "ГВУ",
+      "fanReverse": true
+     },
+     {
+      "id": "main",
+      "fromId": "J1",
+      "toId": "J2",
+      "R": 0.05
+     },
+     {
+      "id": "exit",
+      "fromId": "J2",
+      "toId": "ATM2",
+      "R": 0.03
+     },
+     {
+      "id": "vmp",
+      "fromId": "J1",
+      "toId": "TUP",
+      "R": 0.4,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 800,
+      "fanType": "ВМП"
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "tolPressure": 1.0,
+     "maxIter": 5000
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Тепловая депрессия пожара: восходящая выработка — h_t усиливает расход",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan_branch",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.05,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000
+     },
+     {
+      "id": "fire_branch",
+      "fromId": "J1",
+      "toId": "ATM2",
+      "R": 0.05,
+      "fireThermalDepression": 120.0
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 3000,
+     "alpha": 0.7
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "Тепловая депрессия пожара: нисходящая выработка — h_t тормозит расход",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "ATM1",
+      "isAtm": true
+     },
+     {
+      "id": "J1"
+     },
+     {
+      "id": "ATM2",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan_branch",
+      "fromId": "ATM1",
+      "toId": "J1",
+      "R": 0.05,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 1000
+     },
+     {
+      "id": "fire_branch_down",
+      "fromId": "J1",
+      "toId": "ATM2",
+      "R": 0.05,
+      "fireThermalDepression": -80.0
+     }
+    ],
+    "options": {
+     "tolerance": 0.01,
+     "maxIter": 3000,
+     "alpha": 0.7
+    }
+   },
+   "expectedStatus": 200,
+   "expectedBody": {
+    "converged": true
+   },
+   "bodyMatcher": "partial"
+  },
+  {
+   "name": "БАТЧ пожара — 2 сценария в одном запросе",
+   "method": "POST",
+   "path": "/",
+   "body": {
+    "method": "cross",
+    "nodes": [
+     {
+      "id": "A",
+      "isAtm": true
+     },
+     {
+      "id": "B"
+     },
+     {
+      "id": "C",
+      "isAtm": true
+     }
+    ],
+    "branches": [
+     {
+      "id": "fan",
+      "fromId": "A",
+      "toId": "B",
+      "R": 0.01,
+      "hasFan": true,
+      "fanMode": "constant",
+      "fanPressure": 500
+     },
+     {
+      "id": "e1",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.1
+     },
+     {
+      "id": "e2",
+      "fromId": "B",
+      "toId": "C",
+      "R": 0.2
+     }
+    ],
+    "options": {
+     "tolerance": 0.001,
+     "maxIter": 5000,
+     "alpha": 0.8
+    },
+    "scenarios": [
+     {
+      "id": "e1",
+      "thermalDepression": 200
+     },
+     {
+      "id": "e2",
+      "thermalDepression": -150
+     }
+    ]
+   },
+   "expectedStatus": 200,
+   "expectedBody": {},
+   "bodyMatcher": "partial"
+  }
+ ]
 }

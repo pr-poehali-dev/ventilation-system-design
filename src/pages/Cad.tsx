@@ -2637,6 +2637,49 @@ export default function CadPage() {
     return flowMap;
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // БАТЧ-расчёт пожара: все сценарии одного раунда — ОДНИМ запросом.
+  // scenarios = [{ id: targetBranchId, thermalDepression: Па }].
+  // Базовая сеть (branches с актуальными расходами) отправляется один раз,
+  // сервер накладывает депрессию пожара на целевую ветвь каждого сценария и
+  // пересчитывает. Возвращает Map<targetId, Map<branchId, Q>>.
+  // Это заменяет сотни последовательных запросов одним.
+  // ─────────────────────────────────────────────────────────────────────────
+  const solveFireBatch = async (
+    baseBranches: typeof branches,
+    scenarios: { id: string; thermalDepression: number }[],
+    surfaceTempVal: number,
+  ): Promise<Map<string, Map<string, number>>> => {
+    const out = new Map<string, Map<string, number>>();
+    if (scenarios.length === 0) return out;
+    const reqBody = {
+      method: calcMode,
+      nodes: nodes.map(n => ({
+        id: n.id,
+        isAtm: n.atmosphereLink,
+        z: n.z ?? 0,
+        airTemp: n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal),
+        userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
+      })),
+      surfaceTemp: surfaceTempVal,
+      useNaturalDraft,
+      geoGradient,
+      branches: buildBranchPayload(baseBranches, surfaceTempVal),
+      options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
+      scenarios,
+    };
+    const resp = await postAirflow(reqBody);
+    if (!resp.ok) return out;
+    const data = await resp.json();
+    if (data.error || !data.scenarios) return out;
+    (data.scenarios as { id: string; branches: { id: string; Q: number }[] }[]).forEach(sc => {
+      const m = new Map<string, number>();
+      sc.branches.forEach(rb => m.set(rb.id, rb.Q));
+      out.set(sc.id, m);
+    });
+    return out;
+  };
+
   // ── Факт опрокидывания для Акта устойчивости ──────────────────────────────
   // Ставит очаг пожара на КАЖДУЮ ветвь с пожарной нагрузкой (мощность из
   // пожарной нагрузки), задаёт тепловую депрессию и пересчитывает сеть.
@@ -2660,42 +2703,61 @@ export default function CadPage() {
     //   • сеть пересчитывается ИТЕРАТИВНО (до сходимости расхода), при этом
     //     на каждой итерации T_пр и h_t уточняются по актуальному расходу
     //     (расход при пожаре падает → температура растёт).
-    // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
-    // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
+    //
+    // БАТЧ: раньше каждая ветвь слала свой запрос (N×4 запросов подряд —
+    // минуты ожидания). Теперь все сценарии одного раунда считаются ОДНИМ
+    // запросом (solveFireBatch), поэтому весь расчёт — максимум 4 запроса
+    // независимо от числа ветвей. Математика (T→h_t, релаксация, критерий
+    // сходимости) — та же, что была.
     const FIRE_ITERS = 4;
     const FIRE_Q_TOL = 0.3;
 
-    for (const target of loaded) {
-      let currentFlows = new Map<string, number>(originalFlows);
-      let firePower = 0, fireTemp = ambientTemp, thermalDep = 0;
+    // Состояние каждого сценария ведём параллельно.
+    type ScState = {
+      target: typeof loaded[number];
+      flows: Map<string, number>;
+      firePower: number; fireTemp: number; thermalDep: number;
+      done: boolean;
+    };
+    const states: ScState[] = loaded.map(target => ({
+      target,
+      flows: new Map(originalFlows),
+      firePower: 0, fireTemp: ambientTemp, thermalDep: 0,
+      done: false,
+    }));
 
-      for (let iter = 0; iter < FIRE_ITERS; iter++) {
-        const airQ0 = Math.abs(currentFlows.get(target.id) ?? target.flow ?? 0);
-        firePower = calcBranchFirePower(target, airQ0);
-        fireTemp  = calcFireTemp(firePower, airQ0, ambientTemp);
+    for (let iter = 0; iter < FIRE_ITERS; iter++) {
+      const active = states.filter(s => !s.done);
+      if (active.length === 0) break;
+
+      // 1) Пересчитываем T_пр и h_t по актуальному расходу каждого сценария.
+      const scenarios: { id: string; thermalDepression: number }[] = [];
+      for (const s of active) {
+        const target = s.target;
+        const airQ0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
+        s.firePower = calcBranchFirePower(target, airQ0);
+        s.fireTemp  = calcFireTemp(s.firePower, airQ0, ambientTemp);
         const fromN = nodes.find(n => n.id === target.fromId);
         const toN   = nodes.find(n => n.id === target.toId);
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
-        // Знак угла — геометрический (from→to). Направление потока учтёт
-        // решатель (naturalDraft * sign(Q)) — как в основном аварийном расчёте.
         const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
-        thermalDep = calcThermalDepression(fireTemp, ambientTemp, target.length, signedAngle);
+        s.thermalDep = calcThermalDepression(s.fireTemp, ambientTemp, target.length, signedAngle);
+        scenarios.push({ id: target.id, thermalDepression: s.thermalDep });
+      }
 
-        // Пожар ТОЛЬКО на целевой ветви, у остальных — актуальные расходы.
-        const branchesIter = branches.map(b => {
-          if (b.id !== target.id) return { ...b, flow: currentFlows.get(b.id) ?? b.flow };
-          return { ...b, flow: currentFlows.get(b.id) ?? b.flow, fireThermalDepression: thermalDep };
-        });
+      // 2) Один запрос на весь раунд. Базовая сеть — с расходами первого
+      //    сценария (расходы влияют только на стартовое приближение решателя,
+      //    результат от него не зависит — важна лишь топология и R).
+      const baseBranches = branches.map(b => ({ ...b, flow: active[0].flows.get(b.id) ?? b.flow }));
+      const results = await solveFireBatch(baseBranches, scenarios, ambientTemp);
+      if (results.size === 0) break;
 
-        const newFlows = await solveFireIteration(branchesIter, ambientTemp);
-        if (newFlows.size === 0) break;
-
-        // Скорость: 1-я итерация — без релаксации (быстрый честный ответ, как
-        // раньше). Релаксацию включаем ТОЛЬКО если поток нестабилен (резко
-        // упал/сменил знак) — тогда демпфируем обратную связь T↑→Q↓. Так
-        // устойчивые ветви сходятся за 1-2 запроса, а не крутят все итерации.
-        const qPrevTgt = currentFlows.get(target.id) ?? 0;
-        const qNewTgt  = newFlows.get(target.id) ?? 0;
+      // 3) Обновляем расходы каждого сценария + проверяем сходимость.
+      for (const s of active) {
+        const newFlows = results.get(s.target.id);
+        if (!newFlows || newFlows.size === 0) { s.done = true; continue; }
+        const qPrevTgt = s.flows.get(s.target.id) ?? 0;
+        const qNewTgt  = newFlows.get(s.target.id) ?? 0;
         const unstable = Math.sign(qPrevTgt || 1) !== Math.sign(qNewTgt || 1)
           || Math.abs(qNewTgt) < Math.abs(qPrevTgt) * 0.5;
         const relax = (iter === 0 || !unstable) ? 1.0 : 0.5;
@@ -2703,29 +2765,31 @@ export default function CadPage() {
         let maxDQ = 0;
         const nextFlows = new Map<string, number>();
         newFlows.forEach((q, id) => {
-          const prev = currentFlows.get(id) ?? 0;
+          const prev = s.flows.get(id) ?? 0;
           const val = relax >= 1 ? q : prev + relax * (q - prev);
           nextFlows.set(id, val);
           maxDQ = Math.max(maxDQ, Math.abs(val - prev));
         });
-        currentFlows = nextFlows;
-        if (maxDQ < FIRE_Q_TOL) break;
+        s.flows = nextFlows;
+        if (maxDQ < FIRE_Q_TOL) s.done = true;
       }
-
-      const orig = originalFlows.get(target.id) ?? 0;
-      const now  = currentFlows.get(target.id) ?? orig;
-      const reversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
-      facts.set(target.id, {
-        reversed,
-        fireFlow: Math.abs(now),
-        firePower,
-        fireTemp,
-        thermalDep: Math.abs(thermalDep),
-      });
-      onProgress?.(facts.size, loaded.length);
-      // Пауза, чтобы React успел перерисовать индикатор прогресса.
+      onProgress?.(states.filter(s => s.done).length, loaded.length);
       await new Promise(r => setTimeout(r, 0));
     }
+
+    for (const s of states) {
+      const orig = originalFlows.get(s.target.id) ?? 0;
+      const now  = s.flows.get(s.target.id) ?? orig;
+      const reversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
+      facts.set(s.target.id, {
+        reversed,
+        fireFlow: Math.abs(now),
+        firePower: s.firePower,
+        fireTemp: s.fireTemp,
+        thermalDep: Math.abs(s.thermalDep),
+      });
+    }
+    onProgress?.(loaded.length, loaded.length);
     return facts;
   };
 

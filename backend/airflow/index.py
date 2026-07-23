@@ -145,6 +145,47 @@ def handler(event: dict, context) -> dict:
     else:
         nat_draft_log.append("Естественная тяга: геотерм.градиент=0, используются температуры узлов")
 
+    # ── БАТЧ-РЕЖИМ РАСЧЁТА ПОЖАРА ─────────────────────────────────────────────
+    # Раньше устойчивость при пожаре считалась так: для каждой пожарной ветви
+    # фронтенд слал ОТДЕЛЬНЫЙ HTTP-запрос (и по 4 итерации на каждую) — сотни
+    # последовательных запросов, расчёт занимал минуты.
+    #
+    # Здесь все сценарии одного «раунда» приходят ОДНИМ запросом. Сценарий =
+    # {id: <targetБранчId>, thermalDepression: <Па>}. Для каждого сценария
+    # берём базовую сеть, накладываем тепловую депрессию пожара ТОЛЬКО на
+    # целевую ветвь и пересчитываем. Всё в одном процессе — без HTTP-накладных.
+    # Возвращаем {scenarios: [{id, branches:[{id,Q}], converged}]}.
+    scenarios = body.get("scenarios")
+    if scenarios:
+        try:
+            out = []
+            for sc in scenarios:
+                tgt = sc.get("id")
+                h_fire = float(sc.get("thermalDepression", 0) or 0)
+                # Накладываем депрессию пожара на целевую ветвь (остальные — как есть)
+                br_sc = []
+                for b in branches_in:
+                    if b.get("id") == tgt:
+                        b2 = dict(b)
+                        b2["fireThermalDepression"] = h_fire
+                        br_sc.append(b2)
+                    else:
+                        br_sc.append(b)
+                if method == "mkr":
+                    r = solve_mkr(nodes_in, br_sc, options, normal_flows, surface_temp)
+                else:
+                    r = solve(nodes_in, br_sc, options, normal_flows, surface_temp)
+                out.append({
+                    "id": tgt,
+                    "converged": bool(r.get("converged", False)),
+                    "branches": [{"id": rb["id"], "Q": rb.get("Q", 0.0)}
+                                 for rb in r.get("branches", [])],
+                })
+            return ok({"scenarios": out})
+        except BaseException as ex:
+            import traceback
+            return err(500, f"Ошибка батч-расчёта: {ex}\n{traceback.format_exc()}")
+
     try:
         if method == "mkr":
             result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp)
