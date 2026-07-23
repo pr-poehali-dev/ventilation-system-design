@@ -65,6 +65,12 @@ const AIRFLOW_URL      = API_URLS.airflow;
 const EXPLOSION_URL    = API_URLS.explosionCalculator;
 const WATER_URL        = API_URLS.waterHydraulics;
 
+// Безопасное форматирование числа: не роняет рендер на NaN/undefined/Infinity.
+const safeFixed = (v: unknown, digits = 1): string => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits) : "—";
+};
+
 // Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
 // ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
 // поэтому крупный JSON сжимаем gzip прямо в браузере (CompressionStream).
@@ -2646,8 +2652,8 @@ export default function CadPage() {
     //     (расход при пожаре падает → температура растёт).
     // Возвращаем факт разворота + расход/температуру/мощность ПРИ ПОЖАРЕ,
     // чтобы акт устойчивости показывал те же цифры, что и вкладка «Аварии».
-    const FIRE_ITERS = 12;
-    const FIRE_Q_TOL = 0.2;
+    const FIRE_ITERS = 6;
+    const FIRE_Q_TOL = 0.3;
     const FIRE_RELAX = 0.5; // демпфирование обратной связи T↑→Q↓ (иначе поток схлопывается)
 
     for (const target of loaded) {
@@ -4062,8 +4068,8 @@ export default function CadPage() {
                 //   Итерация 2–3: уточняем T_пр по новым расходам, повторяем
                 //   Критерий: max|ΔQ| < 0.1 м³/с или 3 итерации
                 // ──────────────────────────────────────────────────────────────
-                const FIRE_ITERS   = 12;   // макс. итераций
-                const FIRE_Q_TOL   = 0.2;  // м³/с — допуск сходимости (уровень шума сети)
+                const FIRE_ITERS   = 6;    // макс. итераций (каждая = пересчёт всей сети)
+                const FIRE_Q_TOL   = 0.3;  // м³/с — допуск сходимости (уровень шума сети)
                 const FIRE_RELAX   = 0.5;  // коэф. релаксации (демпфирование обратной связи T↑→Q↓)
                 const AMBIENT_TEMP = surfaceTemp;
 
@@ -4098,11 +4104,14 @@ export default function CadPage() {
                   // Шаг C: вычислить T_пр и h_t для каждого очага
                   const branchesWithHt = branchesIter.map(b => {
                     if (!b.hasFire) return b;
-                    const Q_MW  = b.fireMode === "heat" ? b.fireHeatRelease : 0;
                     const airQ  = Math.abs(b.flow ?? 0);
+                    // Температура очага: в режиме «температурой» — заданная T
+                    // (с защитой от пустого/битого значения), иначе из мощности.
                     const T_pr  = b.fireMode === "temp"
-                      ? b.fireTemperature
-                      : calcFireTemp(Q_MW, airQ, AMBIENT_TEMP);
+                      ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) > AMBIENT_TEMP
+                          ? Math.min(1200, Number(b.fireTemperature))
+                          : AMBIENT_TEMP + 500)
+                      : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);
                     // Знак угла — ГЕОМЕТРИЧЕСКИЙ, в ориентации ветви from→to
                     // (to выше from → +). Направление потока учитывать ЗДЕСЬ НЕ
                     // нужно: решатель сам разворачивает тепловую тягу по знаку
@@ -6266,15 +6275,15 @@ export default function CadPage() {
                   {fr && (
                     <>
                       <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Результаты расчёта пожара</div>
-                      <Row label="Температура продуктов, °C:" value={`${fr.airTempOut.toFixed(1)}`} bold />
-                      <Row label="Тепловая депрессия h_t, Па:" value={`${fr.thermalDepression.toFixed(1)}`} bold={Math.abs(fr.thermalDepression) > 10} />
+                      <Row label="Температура продуктов, °C:" value={safeFixed(fr.airTempOut, 1)} bold />
+                      <Row label="Тепловая депрессия h_t, Па:" value={safeFixed(fr.thermalDepression, 1)} bold={Math.abs(fr.thermalDepression) > 10} />
                       {(fr.flowDelta ?? 0) !== 0 && (
-                        <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${fr.flowDelta!.toFixed(2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
+                        <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${safeFixed(fr.flowDelta, 2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
                       )}
-                      <Row label="Концентрация CO, %:" value={`${fr.coConc.toFixed(3)}`} bold={fr.coConc > 0.02} />
-                      <Row label="Концентрация CO₂, %:" value={`${fr.co2Conc.toFixed(2)}`} bold={fr.co2Conc > 1} />
-                      <Row label="Опт. плотность дыма, м⁻¹:" value={`${fr.smokeDensity.toFixed(2)}`} />
-                      <Row label="Видимость в дыму, м:" value={`${fr.visibility.toFixed(1)}`} bold={fr.visibility < 5} />
+                      <Row label="Концентрация CO, %:" value={safeFixed(fr.coConc, 3)} bold={fr.coConc > 0.02} />
+                      <Row label="Концентрация CO₂, %:" value={safeFixed(fr.co2Conc, 2)} bold={fr.co2Conc > 1} />
+                      <Row label="Опт. плотность дыма, м⁻¹:" value={safeFixed(fr.smokeDensity, 2)} />
+                      <Row label="Видимость в дыму, м:" value={safeFixed(fr.visibility, 1)} bold={fr.visibility < 5} />
                       {/* Время задымления */}
                       {(() => {
                         if (b.hasFire) {

@@ -465,17 +465,38 @@ export function calcFireTemp(
   return Math.min(1200, ambientTemp_C + deltaT);
 }
 
+// Обратная формула к calcFireTemp: мощность пожара (МВт) из заданной
+// температуры продуктов горения. Нужна в режиме «температурой», чтобы
+// концентрации газов считались по реальному тепловыделению.
+export function tempToPower_MW(
+  fireTemp_C: number,
+  airFlow_m3s: number,
+  ambientTemp_C = 20,
+): number {
+  if (!(airFlow_m3s > 0)) return 0;
+  const deltaT = Math.max(0, fireTemp_C - ambientTemp_C);
+  const massFlow = 1.25 * airFlow_m3s;
+  const Q_W = deltaT * massFlow * CP_AIR * 1000;
+  return Q_W / 1e6;
+}
+
 export function calcThermalDepression(
   fireTemp_C: number,
   ambientTemp_C: number,
   branchLength_m: number,
   branchAngle_deg: number,
 ): number {
-  const Tf = fireTemp_C + 273;
-  const T0 = ambientTemp_C + 273;
-  const sinA = Math.sin((branchAngle_deg * Math.PI) / 180);
+  const tf = Number(fireTemp_C);
+  const t0 = Number(ambientTemp_C);
+  const len = Number(branchLength_m);
+  const ang = Number(branchAngle_deg);
+  if (!Number.isFinite(tf) || !Number.isFinite(t0) || !Number.isFinite(len) || !Number.isFinite(ang)) return 0;
+  const Tf = tf + 273;
+  const T0 = t0 + 273;
+  const sinA = Math.sin((ang * Math.PI) / 180);
   const rho = RHO_AIR_0 * 293 / T0;
-  return G * branchLength_m * Math.abs(sinA) * ((Tf - T0) / T0) * rho * Math.sign(sinA);
+  const res = G * len * Math.abs(sinA) * ((Tf - T0) / T0) * rho * Math.sign(sinA);
+  return Number.isFinite(res) ? res : 0;
 }
 
 export function calcGasConcentrations(
@@ -577,13 +598,25 @@ export function calcFireMode(
   };
 
   for (const fb of fireBranches) {
-    const Q_MW = fb.fireMode === "heat" ? fb.fireHeatRelease : 0;
     const airQ = Math.abs(fb.flow ?? 0);
 
-    // Температура на выходе очага
-    const fireTemp = fb.fireMode === "temp"
-      ? fb.fireTemperature
-      : calcFireTemp(Q_MW, airQ, ambientTemp_C);
+    // Температура на выходе очага.
+    // В режиме «температурой» берём заданную T (с защитой от пустого/битого
+    // значения и ограничением потолком 1200°C), иначе считаем из мощности.
+    let Q_MW: number;
+    let fireTemp: number;
+    if (fb.fireMode === "temp") {
+      const tRaw = Number(fb.fireTemperature);
+      fireTemp = Number.isFinite(tRaw) && tRaw > ambientTemp_C
+        ? Math.min(1200, tRaw)
+        : ambientTemp_C + 500; // дефолт, если температура не задана/битая
+      // Эквивалентная мощность из температуры — чтобы концентрации газов
+      // считались корректно (обратная формула к calcFireTemp).
+      Q_MW = tempToPower_MW(fireTemp, airQ, ambientTemp_C);
+    } else {
+      Q_MW = Number.isFinite(fb.fireHeatRelease) ? fb.fireHeatRelease : 0;
+      fireTemp = calcFireTemp(Q_MW, airQ, ambientTemp_C);
+    }
 
     // Знаковый угол: из высот узлов (to выше from → +, to ниже → −).
     // Геометрический знак в ориентации ветви from→to — тот же, что и у
