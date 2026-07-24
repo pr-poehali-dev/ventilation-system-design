@@ -1670,73 +1670,21 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                     "fromNode": e["a"], "toNode": e["b"]})
 
     # ══════════════════════════════════════════════════════════════════════
-    # ПОСТОБРАБОТКА: Распространяем Q ВМП на тупиковые ветви за ним.
-    # Физика: ВМП нагнетает Q в трубопровод → через каждую ветвь цепочки
-    # за ВМП должен идти тот же Q (закон сохранения массы).
-    # Проблема без этого: МКР не знает о тупиковой цепочке за ВМП
-    # и может дать трубопроводу Q ≠ Q_ВМП.
-    # Алгоритм: для каждого ВМП в active (не тупика) — идём BFS по тупиковым
-    # ветвям от его выходного узла, назначаем им Q = Q_ВМП.
+    # ТУПИКОВЫЕ ВЫРАБОТКИ ЗА ВМП: расход в САМОЙ выработке = 0.
+    #
+    # Физика проветривания забоя ВМП-толкачом: вентилятор гонит воздух по
+    # ВЕНТИЛЯЦИОННОМУ ТРУБОПРОВОДУ (ставу) до забоя, а обратно воздух идёт по
+    # самой горной выработке. Приток по трубе и отток по выработке равны и
+    # противоположны → результирующий расход воздуха В САМОЙ ВЫРАБОТКЕ ≈ 0
+    # (воздух движется по трубе, а не «потоком по выработке»). Именно так это
+    # показывает АэроСеть: тупиковая выработка с ВМП-толкачом = 0 м³/с.
+    #
+    # Поэтому мы НЕ распространяем производительность ВМП на тупиковые ветви
+    # за ним — они остаются с Q=0 (как задано выше для тупиков). Расход
+    # переносит труба (vp*), а не выработка. Сам ВМП показывает свою
+    # производительность (рабочую точку), рассчитанную выше.
     # ══════════════════════════════════════════════════════════════════════
-    # Строим карту: id ветви → результат
     out_by_id = {b["id"]: b for b in out}
-    # Карта тупиковых ветвей: узел → список тупиковых ветвей, инцидентных ему
-    dead_adj = collections.defaultdict(list)
-    for b in out:
-        if b["isDead"]:
-            dead_adj[b["fromNode"]].append(b)
-            dead_adj[b["toNode"]].append(b)
-    # Для каждого активного ВМП — находим тупиковую цепочку за ним
-    for b in out:
-        if b["isDead"] or not out_by_id[b["id"]]:
-            continue
-        # Проверяем: является ли ветвь ВМП
-        src_edge = next((e for e in edges if e["id"] == b["id"]), None)
-        if not src_edge or not src_edge.get("hasFan"):
-            continue
-        q_vmp = b["Q"]
-        if abs(q_vmp) < 1e-4:
-            continue
-        # Выходной узел ВМП — сторона забоя (куда нагнетается воздух).
-        # Забой определяется топологически: это тот конец ветви ВМП, за которым
-        # есть тупиковые выработки (dead_adj). Так разворот ВМП (swap fromId/toId)
-        # НЕ лишает забой проветривания — воздух всегда идёт в тупиковую цепочку,
-        # а не в действующую сеть.
-        from_has_dead = any(db["id"] != b["id"] for db in dead_adj.get(b["fromNode"], []))
-        to_has_dead   = any(db["id"] != b["id"] for db in dead_adj.get(b["toNode"],   []))
-        if to_has_dead and not from_has_dead:
-            out_node = b["toNode"]
-        elif from_has_dead and not to_has_dead:
-            out_node = b["fromNode"]
-        else:
-            # Неоднозначно — берём по знаку потока (прежнее поведение)
-            out_node = b["toNode"] if q_vmp >= 0 else b["fromNode"]
-        # BFS по тупиковым ветвям от out_node
-        visited_dead = set()
-        queue_dead = [out_node]
-        while queue_dead:
-            node = queue_dead.pop()
-            for db in dead_adj.get(node, []):
-                if db["id"] in visited_dead:
-                    continue
-                visited_dead.add(db["id"])
-                # Определяем знак Q: поток входит в node — значит из node идёт дальше
-                # Ребро db: fromNode→toNode. Если node == fromNode → Q > 0, иначе Q < 0
-                if db["fromNode"] == node:
-                    db["Q"] = round(abs(q_vmp), 4)
-                    db["actualQ"] = round(abs(q_vmp), 4)
-                    next_node = db["toNode"]
-                else:
-                    db["Q"] = round(-abs(q_vmp), 4)
-                    db["actualQ"] = round(abs(q_vmp), 4)
-                    next_node = db["fromNode"]
-                db["flowDir"] = "a->b" if db["Q"] >= 0 else "b->a"
-                # Пересчёт депрессии с новым Q
-                dead_edge = next((e for e in edges if e["id"] == db["id"]), None)
-                if dead_edge:
-                    db["H"] = round(dead_edge["R"] * abs(q_vmp) * abs(q_vmp), 3)
-                    db["velocity"] = round(abs(q_vmp) / dead_edge["area"], 3) if dead_edge.get("area", 0) > 0.01 else 0.0
-                queue_dead.append(next_node)
     out = list(out_by_id.values())
 
     # Реверс: после унификации build_graph рёбра больше не разворачиваются,
@@ -1744,11 +1692,37 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
     # потока относительно fromId→toId для всех ветвей. Дополнительная
     # инверсия больше не требуется (как в Вентсим/Аэросеть).
 
+    # ── Помечаем ВМП-толкачи, проветривающие только тупиковый забой ──────────
+    # Такой ВМП образует локальную петлю «труба ↔ выработка»: воздух он гонит по
+    # ставу в забой и тот же расход возвращается по выработке. Для ГЛОБАЛЬНОЙ
+    # сети это замкнутый контур — узел забоя не отдаёт этот расход дальше.
+    # Поэтому производительность ВМП НЕ должна учитываться в балансе Кирхгофа
+    # (иначе ложное «нарушение баланса масс» на узле забоя).
+    # Признак: конец ветви ВМП, обращённый в тупик, инцидентен только
+    # тупиковым (isDead) ветвям и самому ВМП — активного выхода из него нет.
+    node_active = collections.defaultdict(int)  # узел → число активных ветвей
+    for b in out:
+        if not b.get("isDead"):
+            node_active[b["fromNode"]] += 1
+            node_active[b["toNode"]] += 1
+    for b in out:
+        src_edge = next((e for e in edges if e["id"] == b["id"]), None)
+        if not src_edge or not src_edge.get("hasFan"):
+            continue
+        if src_edge.get("fanType", "ГВУ") != "ВМП":
+            continue
+        # Забойный конец — тот, где нет других активных ветвей (кроме ВМП).
+        fromN, toN = b["fromNode"], b["toNode"]
+        from_face = node_active.get(fromN, 0) <= 1
+        to_face   = node_active.get(toN, 0) <= 1
+        if from_face or to_face:
+            b["localLoop"] = True  # локальная петля забоя — вне баланса сети
+
     # ФИНАЛЬНАЯ ПРОВЕРКА БАЛАНСА КИРХГОФА в каждом узле (≠ GND)
     # Σ Q_in - Σ Q_out должно быть 0 в любом узле кроме источника/стока (GND).
     final_bal = collections.defaultdict(float)
     for branch_out in out:
-        if branch_out.get("isDead"):
+        if branch_out.get("isDead") or branch_out.get("localLoop"):
             continue
         q_val = branch_out["Q"]
         final_bal[branch_out["fromNode"]] -= q_val

@@ -1853,6 +1853,83 @@
         "converged": true
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "ВМП-толкач: забой Q=0, баланс масс сохранён",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {
+            "id": "ATM",
+            "isAtm": true
+          },
+          {
+            "id": "J1"
+          },
+          {
+            "id": "J2"
+          },
+          {
+            "id": "D1"
+          },
+          {
+            "id": "FACE"
+          }
+        ],
+        "branches": [
+          {
+            "id": "MAIN",
+            "fromId": "ATM",
+            "toId": "J1",
+            "R": 0.05,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "constant",
+            "fanPressure": 1500
+          },
+          {
+            "id": "RING1",
+            "fromId": "J1",
+            "toId": "J2",
+            "R": 0.1
+          },
+          {
+            "id": "RING2",
+            "fromId": "J2",
+            "toId": "ATM",
+            "R": 0.15
+          },
+          {
+            "id": "VMP",
+            "fromId": "J1",
+            "toId": "D1",
+            "R": 0.3,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 300,
+            "area": 3.5
+          },
+          {
+            "id": "FACE",
+            "fromId": "D1",
+            "toId": "FACE",
+            "R": 0.4,
+            "area": 8
+          }
+        ],
+        "options": {
+          "tolerance": 0.001,
+          "maxIter": 2000
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true,
+        "kirchhoffBalance": 0.0
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }
