@@ -2742,9 +2742,17 @@ export default function CadPage() {
       done: false,
     }));
 
+    // Прогресс отражает РАУНДЫ итераций (каждый раунд = один пересчёт сети —
+    // это и есть основная работа). Раньше прогресс считал только сошедшиеся
+    // ветви, а они сходятся все разом на последнем раунде → шкала «0 из N»
+    // висела до самого конца. Теперь шкала честно растёт по мере расчёта.
     for (let iter = 0; iter < FIRE_ITERS; iter++) {
       const active = states.filter(s => !s.done);
       if (active.length === 0) break;
+      // Начало раунда: показываем прогресс по пройденным раундам (0..1),
+      // масштабируя на общее число ветвей, чтобы шкала двигалась плавно.
+      onProgress?.(Math.round((iter / FIRE_ITERS) * loaded.length), loaded.length);
+      await new Promise(r => setTimeout(r, 0));
 
       // 1) Пересчитываем T_пр и h_t по актуальному расходу каждого сценария.
       const scenarios: { id: string; thermalDepression: number }[] = [];
@@ -2789,7 +2797,11 @@ export default function CadPage() {
         s.flows = nextFlows;
         if (maxDQ < FIRE_Q_TOL) s.done = true;
       }
-      onProgress?.(states.filter(s => s.done).length, loaded.length);
+      // Конец раунда: берём максимум из «пройдено раундов» и «сошлось ветвей»,
+      // чтобы шкала двигалась плавно и никогда не откатывалась назад.
+      const byRounds  = Math.round(((iter + 1) / FIRE_ITERS) * loaded.length);
+      const byBranches = states.filter(s => s.done).length;
+      onProgress?.(Math.min(loaded.length, Math.max(byRounds, byBranches)), loaded.length);
       await new Promise(r => setTimeout(r, 0));
     }
 

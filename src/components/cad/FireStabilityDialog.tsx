@@ -62,10 +62,13 @@ export default function FireStabilityDialog({
   async function handleComputeFacts() {
     if (!computeReversalFacts) return;
     setComputing(true);
-    setProgress(null);
+    // Стартовое значение >0, чтобы шкала сразу показывала активность во время
+    // первого (самого долгого) пересчёта сети, а не висела на 0%.
+    setProgress({ done: 0, total: Math.max(1, total) });
     try {
       const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
-      const facts = await computeReversalFacts(amb, (done, tot) => setProgress({ done, total: tot }));
+      const facts = await computeReversalFacts(amb, (done, tot) =>
+        setProgress(prev => ({ done: Math.max(prev?.done ?? 0, done), total: tot })));
       setReversalFacts(facts);
     } finally {
       setComputing(false);
@@ -150,8 +153,8 @@ export default function FireStabilityDialog({
                 </button>
                 <span className="text-[10px]" style={{ color: reversalFacts && !computing ? "#15803d" : "#9ca3af" }}>
                   {computing
-                    ? (progress
-                        ? `Проверка выработок: ${progress.done} из ${progress.total}`
+                    ? (progress && progress.total > 0
+                        ? `Расчёт устойчивости… ${Math.round((progress.done / progress.total) * 100)}%`
                         : "Подготовка расчёта...")
                     : reversalFacts
                       ? "✓ Устойчивость — по факту разворота потока (как при очаге пожара)"
@@ -160,20 +163,21 @@ export default function FireStabilityDialog({
               </div>
 
               {/* Прогресс-бар проверки выработок */}
-              {computing && progress && progress.total > 0 && (
-                <div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e3e8f2" }}>
-                    <div className="h-full rounded-full transition-all duration-150"
-                      style={{
-                        width: `${Math.round((progress.done / progress.total) * 100)}%`,
-                        background: "#2563eb",
-                      }} />
+              {computing && progress && progress.total > 0 && (() => {
+                const pct = Math.round((progress.done / progress.total) * 100);
+                // Минимальная видимая ширина 8% + пульсация, пока прогресс мал —
+                // чтобы шкала всегда показывала активность (первый пересчёт долгий).
+                const barW = Math.max(8, pct);
+                return (
+                  <div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e3e8f2" }}>
+                      <div className={`h-full rounded-full transition-all duration-300 ${pct < 100 ? "animate-pulse" : ""}`}
+                        style={{ width: `${barW}%`, background: "#2563eb" }} />
+                    </div>
+                    <div className="text-[10px] text-gray-400 text-right pt-0.5">{pct}%</div>
                   </div>
-                  <div className="text-[10px] text-gray-400 text-right pt-0.5">
-                    {Math.round((progress.done / progress.total) * 100)}%
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>
