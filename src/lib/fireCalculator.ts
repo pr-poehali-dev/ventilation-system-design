@@ -678,12 +678,6 @@ export function calcFireMode(
     // Вносим задымление в ВЫХОДНОЙ узел очага
     const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
     const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
-    const nc = getNC(outNodeId);
-    nc.smokedQ += airQ;
-    nc.wCO += coConc * airQ;
-    nc.wCO2 += co2Conc * airQ;
-    nc.wSmoke += smokeDensity * airQ;
-    nc.wTemp += fireTemp * airQ;
 
     // Позиция очага вдоль ветви: fireT=0 → у fromId, fireT=1 → у toId
     const fireT = (fb.fireT ?? 0.5);
@@ -692,6 +686,27 @@ export function calcFireMode(
 
     // Время от очага до ВЫХОДНОГО узла (по направлению потока)
     const fracToOut = (fb.flow ?? 0) >= 0 ? (1 - fireT) : fireT;
+
+    // Остывание продуктов горения от точки очага до ВЫХОДНОГО узла очага
+    // (сток тепла в стенки на участке ветви очага длиной branchLen·fracToOut).
+    // Без этого выходной узел очага получал полную температуру очага (468°C),
+    // а не остывшую (~147°C, как в Аэросети).
+    const fbPer = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
+    const fbSegLen = branchLen * fracToOut;
+    // Остывание считаем по ФАКТИЧЕСКОМУ расходу продуктов горения (после пожара),
+    // а не по штатному: продукты движутся с реальной, часто малой, скоростью —
+    // чем меньше расход, тем сильнее остывание о стенки.
+    const fbActualQ = Math.abs(fb.flow ?? airQ);
+    const fbMassFlow = Math.max(0.5, 1.25 * fbActualQ);
+    const fbCoolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * fbPer * fbSegLen) / (fbMassFlow * CP_AIR * 1000)));
+    const fireTempAtOut = ambientTemp_C + (fireTemp - ambientTemp_C) * fbCoolExp;
+
+    const nc = getNC(outNodeId);
+    nc.smokedQ += airQ;
+    nc.wCO += coConc * airQ;
+    nc.wCO2 += co2Conc * airQ;
+    nc.wSmoke += smokeDensity * airQ;
+    nc.wTemp += fireTempAtOut * airQ;
     const outTime = branchLen > 0 ? (branchLen * fracToOut) / smokeSpeed / 60 : 0;
 
     // Время от очага до ВХОДНОГО узла (против направления потока — при опрокидывании/диффузии)
