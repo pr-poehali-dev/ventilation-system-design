@@ -398,8 +398,150 @@ export function buildVent2Files(
   };
 }
 
-// Упаковка 5 файлов в ZIP и скачивание.
-export async function downloadVent2Zip(files: Vent2Files, zipName: string): Promise<void> {
+// ═════════════════════════════════════════════════════════════════════════════
+// Экспорт «АэроСеть» — 5 ОТДЕЛЬНЫХ файлов в ZIP-архиве:
+//   nodes.csv, excavations.csv, bulkheads.csv, fans.csv, positions.csv
+//
+// Формат (как в примере программы «АэроСеть»):
+//   • разделитель — «;», десятичный разделитель — «,»;
+//   • текстовые поля с разделителем/кавычками экранируются кавычками;
+//   • полные названия столбцов в заголовках.
+//   • fans.csv БЕЗ столбца «тип» (только Ид; Смещение; Напор).
+// ═════════════════════════════════════════════════════════════════════════════
+
+export interface AeroSetFiles {
+  "nodes.csv": string;
+  "excavations.csv": string;
+  "bulkheads.csv": string;
+  "fans.csv": string;
+  "positions.csv": string;
+}
+
+export function buildAeroSetFiles(
+  nodes: TopoNode[],
+  branches: TopoBranch[],
+  positions: Position[],
+  units: CsvExportUnits = DEFAULT_CSV_UNITS,
+): AeroSetFiles {
+  const u = units;
+  const sep: CsvSep = ";";
+  const dec: CsvDecimal = ",";
+  const num = (v: number, d = 6) => fmtNum(v, dec, d);
+  const txt = (s: string) => esc(s, sep, dec);
+  const line = (cells: (string | number)[]) =>
+    cells.map(c => (typeof c === "number" ? num(c) : c)).join(sep);
+
+  // ── nodes.csv ───────────────────────────────────────────────────────────────
+  const nodeLines: string[] = [
+    line(["Идентификатор вершины", "X координата", "Y координата", "Высотная отметка", "Связь с атмосферой"]),
+  ];
+  for (const n of nodes) {
+    nodeLines.push([
+      txt(n.id),
+      num((n.x ?? 0) * u.coord, 3),
+      num((n.y ?? 0) * u.coord, 3),
+      num((n.z ?? 0) * u.coord, 2),
+      n.atmosphereLink ? "Да" : "Нет",
+    ].join(sep));
+  }
+
+  // Карта: branchId → id первой привязанной позиции
+  const branchToPos = new Map<string, string>();
+  for (const p of positions) {
+    for (const bid of (p.branchIds ?? [])) {
+      if (!branchToPos.has(bid)) branchToPos.set(bid, p.id);
+    }
+  }
+
+  // ── excavations.csv ─────────────────────────────────────────────────────────
+  const excLines: string[] = [
+    line([
+      "Идентификатор выработки", "Идентификатор начального узла", "Идентификатор конечного узла",
+      "Название выработки", "Длина выработки, м", "Тип выработки",
+      "Площадь поперечного сечения выработки, м2", "Периметр выработки, м",
+      "Расход выработки, м3/с", "Сопротивление выработки, кМюрг",
+      "Слой выработки", "Идентификатор позиции",
+    ]),
+  ];
+  for (const b of branches) {
+    excLines.push([
+      txt(b.id),
+      txt(b.fromId),
+      txt(b.toId),
+      txt(b.type || ""),
+      num((b.length ?? 0) * u.length, 2),
+      txt(b.shape || ""),
+      num((b.area ?? 0) * u.area, 4),
+      num((b.perimeter ?? 0) * u.perimeter, 4),
+      num((b.flow ?? 0) * u.flow, 4),
+      num(branchResistance(b, u), 6),
+      txt(b.layer || ""),
+      txt(branchToPos.get(b.id) ?? ""),
+    ].join(sep));
+  }
+
+  // ── bulkheads.csv (перемычки) ───────────────────────────────────────────────
+  const bkLines: string[] = [
+    line(["Идентификатор выработки", "Смещение перемычки, %", "Тип перемычки", "Сопротивление перемычки, кМюрг"]),
+  ];
+  for (const b of branches.filter(x => x.hasBulkhead)) {
+    const rKmu = b.bulkheadR ?? 0;
+    const rOut = u.resistanceUnit === "kmu" ? rKmu : rKmu * 9.81e-3;
+    bkLines.push([
+      txt(b.id),
+      num(0.5, 4),                 // смещение вдоль выработки (0..1)
+      bulkheadKind(b),             // "seal" / "vent"
+      num(rOut, 6),
+    ].join(sep));
+  }
+
+  // ── fans.csv (источники тяги) — БЕЗ столбца «тип» ────────────────────────────
+  const fanLines: string[] = [
+    line(["Идентификатор выработки", "Смещение источника тяги, %", "Напор источника тяги, Па"]),
+  ];
+  for (const b of branches.filter(x => x.hasFan)) {
+    fanLines.push([
+      txt(b.id),
+      num(0.2, 4),                 // смещение источника тяги (0..1)
+      num((b.fanPressure ?? 0) * u.pressure, 4),
+    ].join(sep));
+  }
+
+  // ── positions.csv (позиции ПЛА) ─────────────────────────────────────────────
+  const posLines: string[] = [
+    line([
+      "Ид позиции", "Координата X, м", "Координата Y, м", "Координата Z, м",
+      "Номер позиции", "Название позиции", "Тип позиции", "Цвет границы",
+    ]),
+  ];
+  for (const p of positions) {
+    posLines.push([
+      txt(p.id),
+      num((p.x ?? 0) * u.coord, 3),
+      num((p.y ?? 0) * u.coord, 3),
+      num((p.z ?? 0) * u.coord, 2),
+      String(p.number ?? ""),
+      txt(p.name || ""),
+      p.positionType === "reverse" ? "Реверсивная" : "Безреверсивная",
+      txt(p.borderColor || ""),
+    ].join(sep));
+  }
+
+  const join = (l: string[]) => l.join("\r\n") + "\r\n";
+  return {
+    "nodes.csv": join(nodeLines),
+    "excavations.csv": join(excLines),
+    "bulkheads.csv": join(bkLines),
+    "fans.csv": join(fanLines),
+    "positions.csv": join(posLines),
+  };
+}
+
+// Упаковка набора файлов в ZIP и скачивание (для «Вентиляция 2.0» и «АэроСеть»).
+export async function downloadCsvZip(
+  files: Record<string, string> | Vent2Files | AeroSetFiles,
+  zipName: string,
+): Promise<void> {
   const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   const bom = "\uFEFF"; // UTF-8 BOM — кириллица корректно читается
@@ -415,6 +557,11 @@ export async function downloadVent2Zip(files: Vent2Files, zipName: string): Prom
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Обратная совместимость: экспорт «Вентиляция 2.0» через общий упаковщик.
+export async function downloadVent2Zip(files: Vent2Files, zipName: string): Promise<void> {
+  return downloadCsvZip(files as unknown as Record<string, string>, zipName);
 }
 
 // Скачивание файла в браузере.

@@ -3,15 +3,13 @@ import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
 import {
-  buildCsv,
-  downloadCsv,
   buildVent2Files,
-  downloadVent2Zip,
+  buildAeroSetFiles,
+  downloadCsvZip,
   DEFAULT_CSV_FIELDS,
   DEFAULT_CSV_UNITS,
   type CsvExportSchema,
   type CsvSep,
-  type CsvDecimal,
   type CsvExportFields,
   type CsvExportUnits,
 } from "@/lib/csvExport";
@@ -92,8 +90,6 @@ function UnitsDialog({ units, onSave, onCancel }: {
 
 export default function CsvExportDialog({ branches, nodes, positions, projectName = "ПВ-Система", onClose }: Props) {
   const [schema, setSchema] = useState<CsvExportSchema>("vent2");
-  const [sep, setSep] = useState<CsvSep>(";");
-  const [decimal, setDecimal] = useState<CsvDecimal>(",");
   const [fields, setFields] = useState<CsvExportFields>({ ...DEFAULT_CSV_FIELDS });
   const [units, setUnits] = useState<CsvExportUnits>({ ...DEFAULT_CSV_UNITS });
   const [showUnits, setShowUnits] = useState(false);
@@ -103,14 +99,14 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
 
   function handleExport() {
     if (schema === "vent2") {
-      // «Вентиляция 2.0» — 5 отдельных файлов в ZIP-архиве.
+      // «Вентиляция 2.0» — 5 файлов: nodes, links, jumpers, fans, positions.
       const files = buildVent2Files(nodes, branches, positions, units);
-      void downloadVent2Zip(files, `${projectName}_vent2`);
-      onClose();
-      return;
+      void downloadCsvZip(files, `${projectName}_vent2`);
+    } else {
+      // «АэроСеть» — 5 файлов: nodes, excavations, bulkheads, fans, positions.
+      const files = buildAeroSetFiles(nodes, branches, positions, units);
+      void downloadCsvZip(files, `${projectName}_aeroset`);
     }
-    const csv = buildCsv(nodes, branches, positions, { schema, sep, decimal, fields, units });
-    downloadCsv(csv, `${projectName}_aeroset.csv`);
     onClose();
   }
 
@@ -139,14 +135,14 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-gray-700">Разделитель:</span>
-            <select value={schema === "vent2" ? "," : sep} disabled={schema === "vent2"} onChange={e => setSep(e.target.value as CsvSep)}
+            <select value={schema === "vent2" ? "," : ";"} disabled
               className="text-[12px] px-2 py-0.5 border rounded bg-white disabled:bg-gray-100 disabled:text-gray-400" style={{ borderColor: "#d1d5db", width: 56 }}>
               {([";", ",", "\t"] as CsvSep[]).map(s => <option key={s} value={s}>{sepLabel(s)}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-gray-500">дробная часть:</span>
-            <select value={schema === "vent2" ? "." : decimal} disabled={schema === "vent2"} onChange={e => setDecimal(e.target.value as CsvDecimal)}
+            <select value={schema === "vent2" ? "." : ","} disabled
               className="text-[12px] px-2 py-0.5 border rounded bg-white disabled:bg-gray-100 disabled:text-gray-400" style={{ borderColor: "#d1d5db", width: 56 }}>
               <option value=",">,</option>
               <option value=".">.</option>
@@ -154,12 +150,14 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
           </div>
         </div>
 
-        {schema === "vent2" && (
-          <div className="px-4 py-1.5 text-[11px] text-gray-500 flex items-center gap-1.5" style={{ background: "#f5f8ff", borderBottom: "1px solid #e0e4ee" }}>
-            <Icon name="Info" size={13} className="text-blue-500 flex-shrink-0" />
+        <div className="px-4 py-1.5 text-[11px] text-gray-500 flex items-center gap-1.5" style={{ background: "#f5f8ff", borderBottom: "1px solid #e0e4ee" }}>
+          <Icon name="Info" size={13} className="text-blue-500 flex-shrink-0" />
+          {schema === "vent2" ? (
             <span>Выгружается ZIP-архив из 5 файлов: nodes.csv, links.csv, jumpers.csv, fans.csv, positions.csv. Формат фиксирован (разделитель «,», точка).</span>
-          </div>
-        )}
+          ) : (
+            <span>Выгружается ZIP-архив из 5 файлов: nodes.csv, excavations.csv, bulkheads.csv, fans.csv, positions.csv. Формат фиксирован (разделитель «;», запятая).</span>
+          )}
+        </div>
 
         {/* Тело — прокрутка */}
         <div className="overflow-y-auto px-4 py-3 space-y-3">
@@ -224,7 +222,7 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
           </button>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-gray-400 mr-1">узлов {nodes.length} · ветвей {branches.length}</span>
-            <button onClick={handleExport} className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#2563eb" }}>{schema === "vent2" ? "Экспорт (ZIP)" : "Экспорт"}</button>
+            <button onClick={handleExport} className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#2563eb" }}>Экспорт (ZIP)</button>
             <button onClick={onClose} className="text-[12px] px-4 py-1 rounded border" style={{ borderColor: "#c8c8c8" }}>Отмена</button>
           </div>
         </div>
