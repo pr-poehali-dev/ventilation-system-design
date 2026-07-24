@@ -222,6 +222,8 @@ export default function CadPage() {
   const textBlocksRef = useRef<TextBlock[]>([]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { branchesRef.current = branchesRaw; }, [branchesRaw]);
+  // Очистка таймера индикатора расчёта сети при размонтировании.
+  useEffect(() => () => { if (solveProgressTimer.current) window.clearInterval(solveProgressTimer.current); }, []);
   useEffect(() => { textBlocksRef.current = textBlocks; }, [textBlocks]);
 
   const pushHistory = () => {
@@ -1102,6 +1104,10 @@ export default function CadPage() {
   // Расходы прямого режима для проверки норматива реверса (k_rev >= 0.6)
   const [normalFlows, setNormalFlows] = useState<Record<string, number>>({});
   const [vcSolving, setVcSolving] = useState(false);
+  // Индикатор хода расчёта сети (0..100). Расчёт — один запрос к серверу, точный
+  // процент недоступен, поэтому шкала «ползёт» к ~90% пока ждём ответ, затем 100%.
+  const [solveProgress, setSolveProgress] = useState<number | null>(null);
+  const solveProgressTimer = useRef<number | null>(null);
   const [vcError, setVcError] = useState<string | null>(null);
   // Метод расчёта: cross = Кросс, mkr = МКР
   const [calcMode, setCalcMode] = useState<"cross" | "mkr">("cross");
@@ -2823,9 +2829,30 @@ export default function CadPage() {
     return facts;
   };
 
+  // Запуск «ползущего» индикатора: быстро до 60%, затем всё медленнее к 90%,
+  // чтобы пользователь видел активность, пока ждём ответ сервера.
+  const startSolveProgress = () => {
+    if (solveProgressTimer.current) window.clearInterval(solveProgressTimer.current);
+    setSolveProgress(8);
+    solveProgressTimer.current = window.setInterval(() => {
+      setSolveProgress(p => {
+        const cur = p ?? 8;
+        if (cur >= 90) return 90;              // упираемся в 90% до ответа
+        const step = cur < 60 ? 7 : cur < 80 ? 3 : 1; // замедляемся к концу
+        return Math.min(90, cur + step);
+      });
+    }, 200);
+  };
+  const finishSolveProgress = () => {
+    if (solveProgressTimer.current) { window.clearInterval(solveProgressTimer.current); solveProgressTimer.current = null; }
+    setSolveProgress(100);
+    window.setTimeout(() => setSolveProgress(null), 400);
+  };
+
   // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
+    startSolveProgress();
     setVcError(null);
     const methodName = calcMode === "cross" ? "Кросс" : "МКР";
     addLog("info", `Запуск расчёта: метод ${methodName}, узлов ${nodes.length}, ветвей ${branches.length}`);
@@ -2979,6 +3006,7 @@ export default function CadPage() {
       addLog("error", msg);
     } finally {
       setVcSolving(false);
+      finishSolveProgress();
     }
   };
 
@@ -5082,14 +5110,20 @@ export default function CadPage() {
         <RibbonGroup label="Расчёт сети">
             {/* Кнопка запуска */}
             <button onClick={handleSolve} disabled={vcSolving}
-              className="flex flex-col items-center justify-center rounded disabled:opacity-50 transition-colors"
-              style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: "pointer" }}
+              className="relative overflow-hidden flex flex-col items-center justify-center rounded disabled:opacity-100 transition-colors"
+              style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: vcSolving ? "wait" : "pointer" }}
               onMouseEnter={e => { if (!vcSolving) { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; } }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
+              onMouseLeave={e => { if (!vcSolving) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}
               title="Запустить расчёт воздухораспределения (F9)">
-              <Icon name={vcSolving ? "Loader" : "Play"} size={20} className={vcSolving ? "text-gray-400 animate-spin" : "text-green-600"} />
-              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#15803d", marginTop: 2 }}>
-                <div>Расчёт</div><div>сети</div>
+              {solveProgress !== null && (
+                <div style={{ position: "absolute", left: 0, bottom: 0, width: "100%", height: `${solveProgress}%`,
+                  background: "rgba(34,197,94,0.20)", transition: "height 0.2s linear" }} />
+              )}
+              <Icon name={vcSolving ? "Loader" : "Play"} size={20} className={`relative ${vcSolving ? "text-green-500 animate-spin" : "text-green-600"}`} />
+              <div style={{ position: "relative", fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#15803d", marginTop: 2 }}>
+                {solveProgress !== null
+                  ? <div style={{ fontWeight: 700 }}>{solveProgress}%</div>
+                  : <><div>Расчёт</div><div>сети</div></>}
               </div>
             </button>
 
