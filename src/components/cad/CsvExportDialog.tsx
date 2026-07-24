@@ -5,6 +5,8 @@ import type { Position } from "@/lib/positions";
 import {
   buildCsv,
   downloadCsv,
+  buildVent2Files,
+  downloadVent2Zip,
   DEFAULT_CSV_FIELDS,
   DEFAULT_CSV_UNITS,
   type CsvExportSchema,
@@ -100,9 +102,15 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
     setFields(prev => ({ ...prev, [k]: !prev[k] }));
 
   function handleExport() {
+    if (schema === "vent2") {
+      // «Вентиляция 2.0» — 5 отдельных файлов в ZIP-архиве.
+      const files = buildVent2Files(nodes, branches, positions, units);
+      void downloadVent2Zip(files, `${projectName}_vent2`);
+      onClose();
+      return;
+    }
     const csv = buildCsv(nodes, branches, positions, { schema, sep, decimal, fields, units });
-    const suffix = schema === "vent2" ? "vent2" : "aeroset";
-    downloadCsv(csv, `${projectName}_${suffix}.csv`);
+    downloadCsv(csv, `${projectName}_aeroset.csv`);
     onClose();
   }
 
@@ -131,20 +139,27 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-gray-700">Разделитель:</span>
-            <select value={sep} onChange={e => setSep(e.target.value as CsvSep)}
-              className="text-[12px] px-2 py-0.5 border rounded bg-white" style={{ borderColor: "#d1d5db", width: 56 }}>
+            <select value={schema === "vent2" ? "," : sep} disabled={schema === "vent2"} onChange={e => setSep(e.target.value as CsvSep)}
+              className="text-[12px] px-2 py-0.5 border rounded bg-white disabled:bg-gray-100 disabled:text-gray-400" style={{ borderColor: "#d1d5db", width: 56 }}>
               {([";", ",", "\t"] as CsvSep[]).map(s => <option key={s} value={s}>{sepLabel(s)}</option>)}
             </select>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-gray-500">дробная часть:</span>
-            <select value={decimal} onChange={e => setDecimal(e.target.value as CsvDecimal)}
-              className="text-[12px] px-2 py-0.5 border rounded bg-white" style={{ borderColor: "#d1d5db", width: 56 }}>
+            <select value={schema === "vent2" ? "." : decimal} disabled={schema === "vent2"} onChange={e => setDecimal(e.target.value as CsvDecimal)}
+              className="text-[12px] px-2 py-0.5 border rounded bg-white disabled:bg-gray-100 disabled:text-gray-400" style={{ borderColor: "#d1d5db", width: 56 }}>
               <option value=",">,</option>
               <option value=".">.</option>
             </select>
           </div>
         </div>
+
+        {schema === "vent2" && (
+          <div className="px-4 py-1.5 text-[11px] text-gray-500 flex items-center gap-1.5" style={{ background: "#f5f8ff", borderBottom: "1px solid #e0e4ee" }}>
+            <Icon name="Info" size={13} className="text-blue-500 flex-shrink-0" />
+            <span>Выгружается ZIP-архив из 5 файлов: nodes.csv, links.csv, jumpers.csv, fans.csv, positions.csv. Формат фиксирован (разделитель «,», точка).</span>
+          </div>
+        )}
 
         {/* Тело — прокрутка */}
         <div className="overflow-y-auto px-4 py-3 space-y-3">
@@ -209,7 +224,7 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
           </button>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-gray-400 mr-1">узлов {nodes.length} · ветвей {branches.length}</span>
-            <button onClick={handleExport} className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#2563eb" }}>Экспорт</button>
+            <button onClick={handleExport} className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#2563eb" }}>{schema === "vent2" ? "Экспорт (ZIP)" : "Экспорт"}</button>
             <button onClick={onClose} className="text-[12px] px-4 py-1 rounded border" style={{ borderColor: "#c8c8c8" }}>Отмена</button>
           </div>
         </div>

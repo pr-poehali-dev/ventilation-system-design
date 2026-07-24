@@ -105,8 +105,6 @@ export function buildCsv(
 ): string {
   const { sep, decimal, fields: f, units: u } = opts;
   const rows: string[] = [];
-  const row = (...cells: (string | number)[]) => rows.push(cells.map(c =>
-    typeof c === "number" ? fmtNum(c, decimal) : esc(c, sep, decimal)).join(sep));
   const raw = (s: string) => rows.push(s);
 
   const isVent2 = opts.schema === "vent2";
@@ -237,6 +235,186 @@ export function buildCsv(
 
   // BOM для корректного открытия кириллицы в Excel.
   return rows.join("\r\n");
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Экспорт «Вентиляция 2.0» — 5 ОТДЕЛЬНЫХ файлов в ZIP-архиве:
+//   nodes.csv, links.csv, jumpers.csv, fans.csv, positions.csv
+//
+// Формат (как в примере программы «Вентиляция 2.0»):
+//   • разделитель — запятая, десятичный разделитель — точка;
+//   • каждое поле, кроме первого (ID), заключено в кавычки;
+//   • каждая строка (включая заголовок) заканчивается запятой;
+//   • без строк-комментариев с «#».
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Число для формата Вентиляции 2.0: точка-разделитель, фикс. кол-во знаков.
+function v2num(v: number, digits = 2): string {
+  if (!Number.isFinite(v)) v = 0;
+  return v.toFixed(digits);
+}
+
+// Строка Вентиляции 2.0: первое поле без кавычек (ID), остальные — в кавычках,
+// строка завершается запятой.
+function v2row(idCell: string | number, rest: (string | number)[]): string {
+  const head = String(idCell);
+  const tail = rest.map(c => `"${String(c).replace(/"/g, '""')}"`);
+  return [head, ...tail].join(",") + ",";
+}
+
+// Тип перемычки для Вентиляции 2.0: "vent" (вентиляционная) / "seal" (глухая).
+function bulkheadKind(b: TopoBranch): "vent" | "seal" {
+  const name = (b.bulkheadName || "").toLowerCase();
+  const hasWindow = (b.bulkheadWindowArea ?? 0) > 0;
+  if (hasWindow || name.includes("вент") || name.includes("окн") || name.includes("двер")) return "vent";
+  return "seal";
+}
+
+// Тип источника тяги: "main" (главная/вспомогательная — ГВУ/ВВУ) / "simple" (ВМП).
+function fanKind(b: TopoBranch): "main" | "simple" {
+  return b.fanType === "ВМП" ? "simple" : "main";
+}
+
+export interface Vent2Files {
+  "nodes.csv": string;
+  "links.csv": string;
+  "jumpers.csv": string;
+  "fans.csv": string;
+  "positions.csv": string;
+}
+
+// Построение 5 CSV для «Вентиляция 2.0». Возвращает { имяФайла: содержимое }.
+export function buildVent2Files(
+  nodes: TopoNode[],
+  branches: TopoBranch[],
+  positions: Position[],
+  units: CsvExportUnits = DEFAULT_CSV_UNITS,
+): Vent2Files {
+  const u = units;
+
+  // ── nodes.csv ───────────────────────────────────────────────────────────────
+  const nodeLines: string[] = [
+    v2row("Идентификатор вершины", ["X", "Y", "Z", "Связь с атмосферой"]),
+  ];
+  for (const n of nodes) {
+    nodeLines.push(v2row(n.id, [
+      v2num((n.x ?? 0) * u.coord),
+      v2num((n.y ?? 0) * u.coord),
+      v2num((n.z ?? 0) * u.coord),
+      n.atmosphereLink ? "Да" : "Нет",
+    ]));
+  }
+
+  // Карта: branchId → id первой привязанной позиции
+  const branchToPos = new Map<string, string>();
+  for (const p of positions) {
+    for (const bid of (p.branchIds ?? [])) {
+      if (!branchToPos.has(bid)) branchToPos.set(bid, p.id);
+    }
+  }
+
+  // ── links.csv ───────────────────────────────────────────────────────────────
+  const linkLines: string[] = [
+    v2row("Идентификатор выработки", [
+      "Идентификатор начального узла", "Идентификатор конечного узла",
+      "Название выработки", "Длина выработки, м", "Тип выработки",
+      "Площадь поперечного сечения выработки, м2", "Периметр выработки, м",
+      "Расход выработки, м3/с", "Сопротивление выработки, кМюрг",
+      "Слой выработки", "Идентификатор позиции",
+    ]),
+  ];
+  for (const b of branches) {
+    linkLines.push(v2row(b.id, [
+      b.fromId,
+      b.toId,
+      b.type || "",
+      v2num((b.length ?? 0) * u.length),
+      b.shape || "",
+      v2num((b.area ?? 0) * u.area),
+      v2num((b.perimeter ?? 0) * u.perimeter),
+      v2num((b.flow ?? 0) * u.flow),
+      v2num(branchResistance(b, u), 7),
+      b.layer || "",
+      branchToPos.get(b.id) ?? "",
+    ]));
+  }
+
+  // ── jumpers.csv (перемычки) ─────────────────────────────────────────────────
+  const jumperLines: string[] = [
+    v2row("Идентификатор выработки", [
+      "Смещение перемычки, %", "Тип перемычки", "Сопротивление перемычки, кМюрг",
+    ]),
+  ];
+  for (const b of branches.filter(x => x.hasBulkhead)) {
+    const rKmu = b.bulkheadR ?? 0;
+    const rOut = u.resistanceUnit === "kmu" ? rKmu : rKmu * 9.81e-3;
+    jumperLines.push(v2row(b.id, [
+      v2num(0.5, 4),          // смещение вдоль выработки (0..1), центр по умолчанию
+      bulkheadKind(b),
+      v2num(rOut, 7),
+    ]));
+  }
+
+  // ── fans.csv (источники тяги) ───────────────────────────────────────────────
+  const fanLines: string[] = [
+    v2row("Идентификатор выработки", [
+      "Смещение источника тяги, %", "Тип источника тяги", "Напор источника тяги, Па",
+    ]),
+  ];
+  for (const b of branches.filter(x => x.hasFan)) {
+    fanLines.push(v2row(b.id, [
+      v2num(0.2, 4),          // смещение источника тяги (0..1)
+      fanKind(b),
+      v2num((b.fanPressure ?? 0) * u.pressure),
+    ]));
+  }
+
+  // ── positions.csv (позиции ПЛА) ─────────────────────────────────────────────
+  const posLines: string[] = [
+    v2row("Идентификатор позиции", [
+      "Координата X, м", "Координата Y, м", "Координата Z, м",
+      "Номер позиции", "Название позиции", "Тип позиции", "Цвет границы",
+    ]),
+  ];
+  for (const p of positions) {
+    posLines.push(v2row(p.id, [
+      v2num((p.x ?? 0) * u.coord),
+      v2num((p.y ?? 0) * u.coord),
+      v2num((p.z ?? 0) * u.coord),
+      String(p.number ?? ""),
+      p.name || "",
+      p.positionType === "reverse" ? "Реверсивная" : "Безреверсивная",
+      p.borderColor || "",
+    ]));
+  }
+
+  const join = (l: string[]) => l.join("\r\n") + "\r\n";
+  return {
+    "nodes.csv": join(nodeLines),
+    "links.csv": join(linkLines),
+    "jumpers.csv": join(jumperLines),
+    "fans.csv": join(fanLines),
+    "positions.csv": join(posLines),
+  };
+}
+
+// Упаковка 5 файлов в ZIP и скачивание.
+export async function downloadVent2Zip(files: Vent2Files, zipName: string): Promise<void> {
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const bom = "\uFEFF"; // UTF-8 BOM — кириллица корректно читается
+  for (const [name, content] of Object.entries(files)) {
+    zip.file(name, bom + content);
+  }
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = zipName.endsWith(".zip") ? zipName : `${zipName}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Скачивание файла в браузере.
