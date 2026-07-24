@@ -114,13 +114,17 @@ export const FAN_CATALOG: FanCurve[] = [
   {
     id: "VOD-18",
     name: "ВО-18/12АВР", type: "axial", diameter: 1.8,
-    h0: 1800, h1: 8, h2: -0.18,
+    // Характеристика H(Q)=h0+h1·Q+h2·Q² для среднего угла лопаток 35°, 1300 об/мин.
+    // Сверено с паспортной характеристикой ВО-18/12АВР (как в «АэроСеть»):
+    // H(0)≈2100 Па, рабочая зона ~40–60 м³/с, H(53)≈840 Па. Прежние коэффициенты
+    // (h0=1800, h1=8, h2=−0.18) давали слишком пологую кривую → завышенный Q.
+    h0: 2100, h1: 3.95, h2: -0.52,
     e0: 0.30, e1: 0.018, e2: -0.00025,
-    qMin: 15, qMax: 90, qNominal: 50, hNominal: 1900,
+    qMin: 15, qMax: 65, qNominal: 50, hNominal: 950,
     rpmMin: 600, rpmMax: 1500, rpmNominal: 1300,
     bladeAngles: [20, 25, 30, 35, 40, 45, 50],
-    reverseH0: 1080, reverseH1: 4.8, reverseH2: -0.15,
-    reverseQMin: 12, reverseQMax: 76,
+    reverseH0: 1300, reverseH1: 2.4, reverseH2: -0.34,
+    reverseQMin: 12, reverseQMax: 58,
     reverseEfficiencyFactor: 0.82,
   },
   {
