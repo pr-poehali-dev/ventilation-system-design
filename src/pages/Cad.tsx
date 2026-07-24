@@ -1028,6 +1028,8 @@ export default function CadPage() {
   // ─── Результат расчёта пожара ───────────────────────────────────────
   const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
   const [fireCalcDone, setFireCalcDone] = useState(false);
+  // Прогресс расчёта пожара (0..100) для индикатора на кнопке; null — не идёт.
+  const [fireCalcProgress, setFireCalcProgress] = useState<number | null>(null);
   // ─── Горноспасатели ────────────────────────────────────────────────
   const [rescuePickMode, setRescuePickMode] = useState<import("@/components/cad/RescuePanel").RescuePickMode>(null);
   const [rescueStartNodeId, setRescueStartNodeId] = useState("");
@@ -4191,7 +4193,16 @@ export default function CadPage() {
 
                 addLog("info", "🔥 Итеративный расчёт аварийного режима (учёт тепловой депрессии)...");
 
+                // Индикатор на кнопке: старт с небольшого значения, чтобы сразу
+                // была видна активность во время первого (долгого) пересчёта сети.
+                setFireCalcProgress(5);
+                await new Promise(r => setTimeout(r, 0));
+
                 for (let iter = 0; iter < FIRE_ITERS; iter++) {
+                  // Прогресс по раундам итераций (каждый раунд = пересчёт сети).
+                  // Оставляем ~15% на финальный расчёт характеристик после цикла.
+                  setFireCalcProgress(Math.round(5 + (iter / FIRE_ITERS) * 80));
+                  await new Promise(r => setTimeout(r, 0));
                   // Шаг A: подставить актуальные расходы в ветви
                   let branchesIter = branches.map(b => ({
                     ...b,
@@ -4273,6 +4284,10 @@ export default function CadPage() {
                   if (maxDQ < FIRE_Q_TOL) break;
                 }
 
+                // Итерации сети завершены — идёт финальный расчёт характеристик.
+                setFireCalcProgress(90);
+                await new Promise(r => setTimeout(r, 0));
+
                 // ── Финальный расчёт характеристик пожара по сошедшимся расходам ──
                 // Подставляем итоговые Q и пересчитываем мощность (Техника) ещё раз.
                 // originalFlow = исходный расход ДО итераций (для обнаружения опрокидывания).
@@ -4335,13 +4350,25 @@ export default function CadPage() {
                 setSmokeTimeMinutes(initMax);
                 addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
+                setFireCalcProgress(100);
+                setTimeout(() => setFireCalcProgress(null), 400);
               }}
-              disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
-              className="flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] disabled:opacity-40"
-              style={{ width: 52, height: 60, background: "#dc2626", color: "white", borderColor: "#b91c1c", cursor: "pointer", flexShrink: 0 }}
+              disabled={fireCalcProgress !== null || !schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
+              className="relative flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] overflow-hidden"
+              style={{ width: 52, height: 60, background: "#dc2626", color: "white", borderColor: "#b91c1c",
+                cursor: fireCalcProgress !== null ? "wait" : "pointer", flexShrink: 0,
+                opacity: (fireCalcProgress === null && !schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))) ? 0.4 : 1 }}
               title="Расчёт распространения задымления и тепловой депрессии">
-              <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b103762c-b3b1-4749-8268-7b41f4e07a77.png" alt="Расчёт пожара" style={{ width: 22, height: 22, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
-              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2 }}><div>Расчёт</div><div>пожара</div></div>
+              {fireCalcProgress !== null && (
+                <div style={{ position: "absolute", left: 0, bottom: 0, width: "100%", height: `${fireCalcProgress}%`,
+                  background: "rgba(255,255,255,0.28)", transition: "height 0.25s ease" }} />
+              )}
+              <img src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/b103762c-b3b1-4749-8268-7b41f4e07a77.png" alt="Расчёт пожара" style={{ width: 22, height: 22, objectFit: "contain", filter: "brightness(0) invert(1)", position: "relative" }} />
+              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2, position: "relative" }}>
+                {fireCalcProgress !== null
+                  ? <div style={{ fontWeight: 700 }}>{fireCalcProgress}%</div>
+                  : <><div>Расчёт</div><div>пожара</div></>}
+              </div>
             </button>
             <RibbonBigBtn
               icon={showSmoke ? "EyeOff" : "Eye"}
