@@ -6915,9 +6915,9 @@ export default function CadPage() {
                       ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                       ?? brForSym.bulkheadAirPerm ?? 0);
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  // 1/A² → Мюрг → /1000 → кМюрг; rMkyurg/bkBulkheadR/bulkheadR в кМюрг
+                  // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
                   if (kAir > 0) {
-                    r = (1 / (kAir * kAir)) / 1000;
+                    r = solidBulkheadRkMurg(kAir, branchArea);
                   } else {
                     r = sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0;
                   }
@@ -7132,8 +7132,8 @@ export default function CadPage() {
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
                                 const rRefKmu = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                // 1/A² → Мюрг → /1000 → кМюрг; rMkyurg/bkBulkheadR/bulkheadR в кМюрг
-                                rKmu = kAir > 0 ? (1 / (kAir * kAir)) / 1000 : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
+                                // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+                                rKmu = kAir > 0 ? solidBulkheadRkMurg(kAir, branchArea) : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
                             if (rKmu === 0) return "0 кМюрг";
@@ -7390,8 +7390,8 @@ export default function CadPage() {
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {
-                            // 1/A² = Мюрг → /1000 = кМюрг
-                            rMkyurg = (1 / (kAir * kAir)) / 1000;
+                            // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+                            rMkyurg = solidBulkheadRkMurg(kAir, brForSym.area ?? 0);
                           } else {
                             rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000; // Мюрг → кМюрг
                           }
