@@ -51,6 +51,7 @@ import {
 } from "./cad/cadTypes";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
+import CsvExportDialog from "@/components/cad/CsvExportDialog";
 import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
 import {
@@ -1663,6 +1664,7 @@ export default function CadPage() {
   const [showDxfImport, setShowDxfImport] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
   const [showExcelExport, setShowExcelExport] = useState(false);
+  const [showCsvExport, setShowCsvExport] = useState(false);
   const [showCombinedImport, setShowCombinedImport] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showVentsimImport, setShowVentsimImport] = useState(false);
@@ -3928,6 +3930,16 @@ export default function CadPage() {
                       <div>
                         <div className="text-[12px] font-medium text-gray-700">Экспорт в PDF</div>
                         <div className="text-[10px] text-gray-400">Графический план — слой печати, высокое качество</div>
+                      </div>
+                    </button>
+                    <button onClick={() => { setActiveRibbon("home"); setShowCsvExport(true); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-green-50 border border-gray-200 group mb-1">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "#f0fdf4" }}>
+                        <Icon name="Table" size={16} className="text-green-600" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Экспорт в CSV</div>
+                        <div className="text-[10px] text-gray-400">Для ПО «АэроСеть» и «Вентиляция 2.0»</div>
                       </div>
                     </button>
                   </>
@@ -10823,6 +10835,16 @@ export default function CadPage() {
       selectedNodeIds={selectedNodeIds}
       selectedBranchIds={selectedBranchIds}
     />
+
+    {showCsvExport && (
+      <CsvExportDialog
+        nodes={nodes}
+        branches={branches}
+        positions={positions}
+        projectName={projectFileName.replace(/\.vproj$/, "")}
+        onClose={() => setShowCsvExport(false)}
+      />
+    )}
 
     <CadToolDialogs
       nodes={nodes}
