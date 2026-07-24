@@ -3466,6 +3466,7 @@ export default function CadPage() {
 
   const handleReverseBranch = (id: string) => {
     pushHistory();
+    const reversed = branches.find((b) => b.id === id);
     setBranches((p) => p.map((b) => {
       if (b.id !== id) return b;
       const isVmp = b.fanType === "ВМП";
@@ -3479,6 +3480,11 @@ export default function CadPage() {
         ...(!isVmp && b.hasFan ? { fanReverse: !(b.fanReverse ?? false) } : {}),
       };
     }));
+    // При развороте ветви с вентилятором (в т.ч. ВМП) — сразу пересчитываем сеть,
+    // чтобы новое направление нагнетания и расходы отобразились немедленно.
+    if (reversed?.hasFan) {
+      setTimeout(() => handleSolveRef.current?.(), 100);
+    }
   };
 
   const handleCtxAction = (action: string) => {

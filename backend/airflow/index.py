@@ -1544,9 +1544,17 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             q = 0.0  # тупиковые выработки без вентилятора — Q=0
         elif is_dead and e.get("hasFan"):
             # Тупиковая ветвь с ВМП: рабочая точка H_вент(Q) = R·Q²
-            # ВМП всегда нагнетает в направлении a→b (fromId→toId).
-            # Разворот ВМП выполняется через разворот ветви (swap fromId/toId),
-            # поэтому fanReverse для ВМП игнорируем — Q всегда > 0.
+            #
+            # ВМП всасывает воздух ИЗ активной сети и нагнетает его В забой.
+            # Поэтому вход (inlet) — это тот конец ветви, который примыкает к
+            # действующей сети (имеет активную питающую струю), а забой (outlet)
+            # — противоположный, тупиковый конец.
+            #
+            # Раньше вход был жёстко = e["a"] (fromId). При развороте ветви
+            # (swap fromId/toId) вход становился забойным узлом → ВМП «сосал» из
+            # тупика и нагнетал в сеть, из-за чего в тупиковой выработке ложно
+            # появлялся расход и нарушалась сеть. Теперь вход определяется
+            # физически, поэтому разворот меняет только сторону нагнетания.
             R = e["R"] if e["R"] > 1e-6 else 1e-3
             q_lo = float(e.get("qMin", 0.1))
             q_hi = float(e.get("qMax", 90.0))
@@ -1576,30 +1584,44 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 q = q_lo
             else:
                 q = q_hi
-            # Q > 0: поток всегда в направлении a→b (fromId→toId)
+            q_mag = abs(q)  # производительность ВМП, модуль (Q>0)
+
+            # ── Определяем вход (сторону активной сети) и забой ──────────
+            # Питающая струя на конце — максимальный |Q| активных ветвей узла.
+            def _supply(node):
+                s = 0.0
+                for feed in active_adj.get(node, []):
+                    fq = abs(Q.get(feed["id"], 0.0))
+                    if fq > s:
+                        s = fq
+                return s
+            supply_a = _supply(e["a"])
+            supply_b = _supply(e["b"])
+            # Вход — тот конец, где есть активная струя (или её больше).
+            # Если оба нулевые (изолированная петля ВМП) — вход = a (a→b).
+            if supply_b > supply_a:
+                inlet_node = e["b"]
+                q_supply = supply_b
+                q = -q_mag          # поток b→a: нагнетание в забой у узла a
+            else:
+                inlet_node = e["a"]
+                q_supply = supply_a
+                q = q_mag           # поток a→b: нагнетание в забой у узла b
 
             # ── Ограничение по подходящей струе ─────────────────────────
-            # ВМП всасывает воздух из узла a (вход). Питающая ветвь — активная
-            # ветвь, инцидентная узлу a. Расход ВМП не может превышать расход,
-            # который подводит питающая струя к этому узлу.
-            inlet_node = e["a"]
-            q_supply = 0.0
-            for feed in active_adj.get(inlet_node, []):
-                fq = abs(Q.get(feed["id"], 0.0))
-                if fq > q_supply:
-                    q_supply = fq
-            if q_supply > 0.1 and q > q_supply:
+            # Расход ВМП не может превышать расход питающей струи на входе.
+            if q_supply > 0.1 and q_mag > q_supply:
                 diag.append({
                     "level": "warning",
                     "category": "vmp_supply",
                     "objectId": e["id"],
                     "message": (
-                        f"ВМП (ветвь {e['id']}): производительность {q:.2f} м³/с "
+                        f"ВМП (ветвь {e['id']}): производительность {q_mag:.2f} м³/с "
                         f"превышает подходящую струю {q_supply:.2f} м³/с. "
                         f"Расход ограничен до {q_supply:.2f} м³/с."
                     ),
                 })
-                q = q_supply
+                q = q_supply if q >= 0 else -q_supply
         elif force_zero:
             q = 0.0
         elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
@@ -1675,8 +1697,20 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         q_vmp = b["Q"]
         if abs(q_vmp) < 1e-4:
             continue
-        # Выходной узел ВМП (в направлении потока)
-        out_node = b["toNode"] if q_vmp >= 0 else b["fromNode"]
+        # Выходной узел ВМП — сторона забоя (куда нагнетается воздух).
+        # Забой определяется топологически: это тот конец ветви ВМП, за которым
+        # есть тупиковые выработки (dead_adj). Так разворот ВМП (swap fromId/toId)
+        # НЕ лишает забой проветривания — воздух всегда идёт в тупиковую цепочку,
+        # а не в действующую сеть.
+        from_has_dead = any(db["id"] != b["id"] for db in dead_adj.get(b["fromNode"], []))
+        to_has_dead   = any(db["id"] != b["id"] for db in dead_adj.get(b["toNode"],   []))
+        if to_has_dead and not from_has_dead:
+            out_node = b["toNode"]
+        elif from_has_dead and not to_has_dead:
+            out_node = b["fromNode"]
+        else:
+            # Неоднозначно — берём по знаку потока (прежнее поведение)
+            out_node = b["toNode"] if q_vmp >= 0 else b["fromNode"]
         # BFS по тупиковым ветвям от out_node
         visited_dead = set()
         queue_dead = [out_node]
