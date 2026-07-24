@@ -18,6 +18,15 @@ const CP_AIR = 1.005;          // кДж/(кг·К)
 const RHO_AIR_0 = 1.2;        // кг/м³ при 20°C
 const G = 9.81;                // м/с²
 
+// Коэффициент теплоотдачи продуктов горения в стенки выработки, Вт/(м²·К).
+// По мере движения по выработке горячий воздух остывает, отдавая тепло породе,
+// и его температура экспоненциально приближается к температуре стенок (≈ ambient):
+//   T_out = T_ст + (T_in − T_ст)·exp( −α·P·L / (ρ·cp·Q) )
+// где P — периметр (м), L — длина (м), Q — расход (м³/с). Чем длиннее выработка
+// и меньше расход — тем сильнее остывание (как в Аэросети). Значение α подобрано
+// по эталону Аэросети (падение ~595→147°C на транспортном съезде).
+const WALL_HEAT_ALPHA = 14.0;  // Вт/(м²·К)
+
 // ─── Характеристики горючих материалов ───────────────────────────────────────
 export interface CombustibleProps {
   id: string;
@@ -893,7 +902,20 @@ export function calcFireMode(
       const coOut    = sp.coC    * lf;
       const smokeOut = sp.smokeC * lf;
       const co2Out   = Math.max(0.04, sp.co2C * lf);
-      const tempOut  = ambientTemp_C + (sp.tempC - ambientTemp_C) * Math.exp(-(b.length ?? 0) * 0.001);
+      // Остывание продуктов горения о стенки выработки (сток тепла в породу).
+      // Температура экспоненциально приближается к температуре стенок (≈ ambient)
+      // по мере движения: T = T_ст + (T_вх − T_ст)·exp(−α·P·L/(ρ·cp·Q)).
+      // Чем длиннее выработка и меньше расход — тем сильнее остывание (как в
+      // Аэросети). Раньше стоял слабый exp(−L·0.001) без учёта периметра и
+      // расхода — температура почти не падала (435°C в узле вместо ~147°C).
+      const bLen  = b.length ?? 0;
+      const bPer  = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, b.area ?? 1));
+      const bMassFlow = Math.max(0.5, 1.25 * Math.abs(flow)); // кг/с
+      // Ограничиваем остывание на ОДНОЙ ветви: за один короткий участок воздух
+      // не успевает полностью сравняться со стенками — оставляем ≥30% перегрева,
+      // чтобы на коротких приочаговых ветвях температура не «схлопывалась».
+      const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
+      const tempOut  = ambientTemp_C + (sp.tempC - ambientTemp_C) * coolExp;
       const visOut   = smokeOut > 0 ? Math.min(100, 3 / smokeOut) : 100;
       const hazard   = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
 
