@@ -223,7 +223,10 @@ export default function CadPage() {
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { branchesRef.current = branchesRaw; }, [branchesRaw]);
   // Очистка таймера индикатора расчёта сети при размонтировании.
-  useEffect(() => () => { if (solveProgressTimer.current) window.clearInterval(solveProgressTimer.current); }, []);
+  useEffect(() => () => {
+    if (solveProgressTimer.current) window.clearInterval(solveProgressTimer.current);
+    if (fireProgressTimer.current) window.clearInterval(fireProgressTimer.current);
+  }, []);
   useEffect(() => { textBlocksRef.current = textBlocks; }, [textBlocks]);
 
   const pushHistory = () => {
@@ -1108,6 +1111,7 @@ export default function CadPage() {
   // процент недоступен, поэтому шкала «ползёт» к ~90% пока ждём ответ, затем 100%.
   const [solveProgress, setSolveProgress] = useState<number | null>(null);
   const solveProgressTimer = useRef<number | null>(null);
+  const fireProgressTimer = useRef<number | null>(null);
   const [vcError, setVcError] = useState<string | null>(null);
   // Метод расчёта: cross = Кросс, mkr = МКР
   const [calcMode, setCalcMode] = useState<"cross" | "mkr">("cross");
@@ -2862,6 +2866,27 @@ export default function CadPage() {
     window.setTimeout(() => setSolveProgress(null), 400);
   };
 
+  // Плавная шкала «Расчёт пожара» — как в воздухораспределении. Расчёт состоит
+  // из нескольких пересчётов сети (блокирующих), точный процент недоступен,
+  // поэтому шкала непрерывно «ползёт» к ~95% таймером, а по завершении — 100%.
+  const startFireProgress = () => {
+    if (fireProgressTimer.current) window.clearInterval(fireProgressTimer.current);
+    setFireCalcProgress(5);
+    fireProgressTimer.current = window.setInterval(() => {
+      setFireCalcProgress(p => {
+        const cur = p ?? 5;
+        if (cur >= 95) return 95;                         // упираемся в 95% до конца
+        const step = cur < 50 ? 4 : cur < 80 ? 2 : 1;     // замедляемся к концу
+        return Math.min(95, cur + step);
+      });
+    }, 200);
+  };
+  const finishFireProgress = () => {
+    if (fireProgressTimer.current) { window.clearInterval(fireProgressTimer.current); fireProgressTimer.current = null; }
+    setFireCalcProgress(100);
+    window.setTimeout(() => setFireCalcProgress(null), 400);
+  };
+
   // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
@@ -4234,15 +4259,12 @@ export default function CadPage() {
 
                 addLog("info", "🔥 Итеративный расчёт аварийного режима (учёт тепловой депрессии)...");
 
-                // Индикатор на кнопке: старт с небольшого значения, чтобы сразу
-                // была видна активность во время первого (долгого) пересчёта сети.
-                setFireCalcProgress(5);
+                // Индикатор на кнопке: плавная шкала (таймер) ползёт к ~95%
+                // во время расчёта, как в воздухораспределении.
+                startFireProgress();
                 await new Promise(r => setTimeout(r, 0));
 
                 for (let iter = 0; iter < FIRE_ITERS; iter++) {
-                  // Прогресс по раундам итераций (каждый раунд = пересчёт сети).
-                  // Оставляем ~15% на финальный расчёт характеристик после цикла.
-                  setFireCalcProgress(Math.round(5 + (iter / FIRE_ITERS) * 80));
                   await new Promise(r => setTimeout(r, 0));
                   // Шаг A: подставить актуальные расходы в ветви
                   let branchesIter = branches.map(b => ({
@@ -4324,8 +4346,8 @@ export default function CadPage() {
                   if (maxDQ < FIRE_Q_TOL) break;
                 }
 
-                // Итерации сети завершены — идёт финальный расчёт характеристик.
-                setFireCalcProgress(90);
+                // Итерации сети завершены — идёт финальный расчёт характеристик
+                // (шкала продолжает плавно ползти к 95% таймером).
                 await new Promise(r => setTimeout(r, 0));
 
                 // ── Финальный расчёт характеристик пожара по сошедшимся расходам ──
@@ -4390,8 +4412,7 @@ export default function CadPage() {
                 setSmokeTimeMinutes(initMax);
                 addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
-                setFireCalcProgress(100);
-                setTimeout(() => setFireCalcProgress(null), 400);
+                finishFireProgress();
               }}
               disabled={fireCalcProgress !== null || !schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
               className="relative flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] overflow-hidden"
