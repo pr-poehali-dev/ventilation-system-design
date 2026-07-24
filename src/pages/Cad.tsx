@@ -3169,11 +3169,8 @@ export default function CadPage() {
         return;
       }
 
-      // Ctrl+R — развернуть выбранную ветвь / вентилятор.
-      // Проверяем по e.code === "KeyR" (физическая клавиша), чтобы работало
-      // независимо от раскладки (в русской раскладке e.key='к', а code='KeyR').
-      const isRKey = e.code === "KeyR" || e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К";
-      if (e.ctrlKey && isRKey && !isEditing) {
+      // Ctrl+R — развернуть выбранную ветвь
+      if (e.ctrlKey && (e.key === "r" || e.key === "R") && !isEditing) {
         e.preventDefault();
         if (selectedBranchId) handleReverseBranch(selectedBranchId);
         return;
@@ -3468,25 +3465,18 @@ export default function CadPage() {
   };
 
   const handleReverseBranch = (id: string) => {
-    const target = branches.find((b) => b.id === id);
-    // ── ВМП: разворачиваем ТОЛЬКО вентилятор, а не ветвь ─────────────────────
-    // Раньше кнопка «Развернуть» меняла местами fromId/toId, из-за чего рёбра
-    // сети перестраивались и тупиковая выработка переставала проветриваться.
-    // Направление нагнетания ВМП задаётся флагом fanReverse (как у ГВУ/ВВУ),
-    // рёбра остаются на месте — тупик проветривается корректно.
-    if (target && target.hasFan && target.fanType === "ВМП") {
-      updateBranch(id, { fanReverse: !(target.fanReverse ?? false) });
-      return;
-    }
     pushHistory();
     setBranches((p) => p.map((b) => {
       if (b.id !== id) return b;
+      const isVmp = b.fanType === "ВМП";
       return {
         ...b,
         fromId: b.toId,
         toId: b.fromId,
         // Для ГВУ/ВВУ разворот ветви инвертирует fanReverse (направление нагнетания сохраняется физически).
-        ...(b.hasFan ? { fanReverse: !(b.fanReverse ?? false) } : {}),
+        // Для ВМП fanReverse не используется — ВМП нагнетает всегда по fromId→toId,
+        // поэтому разворот ветви = разворот направления нагнетания, fanReverse не трогаем.
+        ...(!isVmp && b.hasFan ? { fanReverse: !(b.fanReverse ?? false) } : {}),
       };
     }));
   };
