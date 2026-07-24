@@ -364,7 +364,8 @@ export function branchBulkheadRkMurg(b: {
   if (mode === "survey") {
     const q = b.bulkheadSurveyQ ?? 0;
     const dp = b.bulkheadSurveyDP ?? 0;
-    return q > 0 ? dp / (q * q) : 1e9;                            // Н·с²/м⁸ = кМюрг
+    // R = ΔP/(Q²·9.81) кМюрг: ΔP в Па → кгс/м² (÷9.81), как в АэроСети.
+    return q > 0 ? dp / (q * q * 9.81) : 1e9;                     // кМюрг
   }
   // project: перемычка с окном — R = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, ρ=1.2, g=9.81).
   // Проверка: S=5.5 м² → 0.0036 кМюрг (совпадает с Аэросетью).

@@ -1305,7 +1305,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                       } else if (mode === "survey") {
                         const q = sym?.bkSurveyQ ?? branch.bulkheadSurveyQ ?? 0;
                         const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
-                        rBase = q > 0 ? (dp / (q * q)) * 1e3 : 0;
+                        // R = ΔP/(Q²·9.81) кМюрг (ΔP в Па → кгс/м²), как в АэроСети.
+                        rBase = q > 0 ? (dp / (q * q * 9.81)) * 1e3 : 0;
                       } else {
                         // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг → ×1000 → Мюрг.
                         const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
@@ -1460,7 +1461,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const sym = bulkheadSymbol;
                         const q = sym?.bkSurveyQ ?? branch.bulkheadSurveyQ ?? 0;
                         const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
-                        const rBulk = q > 0 ? dp / (q * q) : 0;
+                        // R = ΔP/(Q²·9.81) кМюрг (как в АэроСети). ΔP = R·Q²
+                        // (та же свёртка кМюрг→ΔP, что в расчёте сети).
+                        const rBulk = q > 0 ? dp / (q * q * 9.81) : 0;
                         const Q = branch.flow ?? 0;
                         const dpCalc = rBulk * Q * Math.abs(Q);
                         if (rBulk === 0 || Q === 0) return "—";

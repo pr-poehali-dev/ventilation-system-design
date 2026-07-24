@@ -1354,7 +1354,7 @@ export default function CadPage() {
           r = (s.bkManualR ?? 0);
         } else if (mode === "survey") {
           const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
-          r = q > 0 ? dp / (q * q) : 0;
+          r = q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         } else {
           const sw = s.bkWindowArea ?? 0;
           const branchArea = b.area ?? 0;
@@ -1380,7 +1380,7 @@ export default function CadPage() {
         if (mode === "manual") return (b.bulkheadManualR ?? 0);
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
-          return q > 0 ? dp / (q * q) : 0;
+          return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         }
         const winA = b.bulkheadWindowArea ?? 0;
         if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
@@ -2598,7 +2598,7 @@ export default function CadPage() {
           r = (s.bkManualR ?? 0); // кМюрг = Па·с²/м⁶, коэффициент = 1
         } else if (mode === "survey") {
           const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
-          r = q > 0 ? dp / (q * q) : 0;
+          r = q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         } else {
           const sw = s.bkWindowArea ?? 0;
           const branchArea = b.area ?? 0;
@@ -2629,7 +2629,7 @@ export default function CadPage() {
         if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг = Па·с²/м⁶
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
-          return q > 0 ? dp / (q * q) : 0;
+          return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         }
         // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг (см. формулу выше).
         const winA = b.bulkheadWindowArea ?? 0;
@@ -7014,7 +7014,9 @@ export default function CadPage() {
                 }
                 if (mode === "survey") {
                   const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                  const r = sq > 0 ? dp / (sq * sq) : 0;
+                  // R = ΔP/(Q²·9.81) кМюрг (как в АэроСети). Дальше ΔP=R·q²
+                  // (как у manual/window — единая свёртка кМюрг→ΔP в этом блоке).
+                  const r = sq > 0 ? dp / (sq * sq * 9.81) : 0;
                   return r * q * Math.abs(q);
                 }
                 // project
@@ -7234,10 +7236,10 @@ export default function CadPage() {
                             if (mode === "manual") {
                               rKmu = sym.bkManualR ?? 0; // кМюрг
                             } else if (mode === "survey") {
-                              // ΔP/Q² = Па/(м³/с)² = Па·с²/м⁶ = кМюрг
+                              // R = ΔP/(Q²·9.81) кМюрг (ΔP в Па → кгс/м²), как в АэроСети
                               const q = sym.bkSurveyQ ?? 0;
                               const dp = sym.bkSurveyDP ?? 0;
-                              rKmu = q > 0 ? dp / (q * q) : 0;
+                              rKmu = q > 0 ? dp / (q * q * 9.81) : 0;
                             } else {
                               const sw = sym.bkWindowArea ?? 0;
                               const branchArea = brForSym?.area ?? 0;
@@ -7508,8 +7510,8 @@ export default function CadPage() {
                           rMkyurg = sym.bkManualR ?? 0; // уже в кМюрг
                         } else if (mode === "survey") {
                           const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                          // ΔP/Q² = Мюрг → /1000 = кМюрг
-                          rMkyurg = (sq > 0 ? dp / (sq * sq) : 0) / 1000;
+                          // R = ΔP/(Q²·9.81) кМюрг (ΔP в Па → кгс/м²), как в АэроСети
+                          rMkyurg = sq > 0 ? dp / (sq * sq * 9.81) : 0;
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {

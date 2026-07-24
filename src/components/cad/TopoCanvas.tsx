@@ -4146,8 +4146,8 @@ export default function TopoCanvas(props: Props) {
                     rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
                   } else if (mode === "survey") {
                     const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                    // ΔP/Q² = Па/(м³/с)² = Мюрг (базовая единица)
-                    rBase = sq > 0 ? dp / (sq * sq) : 0;
+                    // R = ΔP/(Q²·9.81) кМюрг → ×1000 → Мюрг (как в АэроСети)
+                    rBase = sq > 0 ? (dp / (sq * sq * 9.81)) * 1000 : 0;
                   } else {
                     // project: используем bkAirPerm или bkBulkheadR
                     const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
@@ -5054,7 +5054,8 @@ export default function TopoCanvas(props: Props) {
                       rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
                     } else if (mode === "survey") {
                       const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                      rBase = sq > 0 ? dp / (sq * sq) : 0;
+                      // R = ΔP/(Q²·9.81) кМюрг → ×1000 → Мюрг (как в АэроСети)
+                      rBase = sq > 0 ? (dp / (sq * sq * 9.81)) * 1000 : 0;
                     } else {
                       const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                       if (kAir > 0) {
