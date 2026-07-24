@@ -522,6 +522,72 @@ export function calcThermalDepression(
   return Number.isFinite(res) ? res : 0;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Температуры узлов вдоль пути горячих газов пожара.
+//
+// Правильная модель тепловой тяги (как в Аэросети): вместо того чтобы прикладывать
+// сосредоточенную депрессию h_fire «насосом» на одну короткую ветвь очага (что
+// нефизично опрокидывает соседние выработки), горячий газ РАСПРОСТРАНЯЕТСЯ по
+// пути дыма и НАГРЕВАЕТ узлы. Решатель сети считает тягу как замкнутый интеграл
+// плотности по высоте контура (natural_draft_h по узловым T) — восходящий горячий
+// столб автоматически уравновешивается встречным холодным столбом выхода на
+// поверхность. Соседние ветви меняются слабо.
+//
+// Здесь по актуальным расходам строим карту nodeId → T,°C от очага вниз по потоку.
+// Газ остывает о стенки выработки: T_out = T_ст + (T_in − T_ст)·exp(−α·P·L/(ρ·cp·Q)).
+// Возвращаем ТОЛЬКО заметно перегретые узлы (> ambient+2°C).
+export function computeHotNodeTemps(
+  fireBranches: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; length?: number; area?: number; perimeter?: number }[],
+  allBranches: { id: string; fromId: string; toId: string; flow?: number; length?: number; area?: number; perimeter?: number }[],
+  ambientTemp_C: number,
+): Record<string, number> {
+  const hot: Record<string, number> = {};
+  if (fireBranches.length === 0) return hot;
+
+  // Ветви, для которых узел является ВХОДНЫМ (по знаку расхода) — дым идёт вниз.
+  const branchesByInNode = new Map<string, typeof allBranches>();
+  for (const b of allBranches) {
+    const inNode = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
+    const arr = branchesByInNode.get(inNode) ?? [];
+    arr.push(b);
+    branchesByInNode.set(inNode, arr);
+  }
+  const fireIds = new Set(fireBranches.map(f => f.id));
+
+  // Очередь: [nodeId, T_на_входе_узла]. Старт — выходной узел ветви очага.
+  const queue: [string, number][] = [];
+  const setHot = (nid: string, t: number) => {
+    if (t > ambientTemp_C + 2 && (hot[nid] === undefined || t > hot[nid])) {
+      hot[nid] = Math.round(t * 100) / 100;
+      queue.push([nid, t]);
+    }
+  };
+  for (const fb of fireBranches) {
+    const outNode = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
+    setHot(outNode, Math.min(1200, fb.fireTemp));
+  }
+
+  let guard = 0;
+  while (queue.length > 0 && guard++ < 5000) {
+    const [nodeId, tIn] = queue.shift()!;
+    if ((hot[nodeId] ?? -1e9) > tIn + 1e-6) continue; // устаревшая запись
+    const down = branchesByInNode.get(nodeId) ?? [];
+    for (const b of down) {
+      if (fireIds.has(b.id)) continue; // очаг сам не остывает от себя
+      const flow = Math.abs(b.flow ?? 0);
+      const outNode = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+      const bLen = b.length ?? 0;
+      const bArea = b.area ?? 1;
+      const bPer = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, bArea));
+      const bMassFlow = Math.max(0.5, 1.25 * flow);
+      const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
+      const tOut = ambientTemp_C + (tIn - ambientTemp_C) * coolExp;
+      setHot(outNode, tOut);
+    }
+  }
+  return hot;
+}
+
 export function calcGasConcentrations(
   heatRelease_MW: number,
   airFlow_m3s: number,

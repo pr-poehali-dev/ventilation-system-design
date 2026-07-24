@@ -34,7 +34,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, 
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireMode, calcFireTemp, calcThermalDepression, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireMode, calcFireTemp, calcThermalDepression, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -2625,16 +2625,23 @@ export default function CadPage() {
   const solveFireIteration = async (
     branchesWithFire: typeof branches,
     surfaceTempVal: number,
+    hotNodeTemps?: Record<string, number>,
   ): Promise<Map<string, number>> => {
     const reqBody = {
       method: calcMode,
-      nodes: nodes.map(n => ({
-        id: n.id,
-        isAtm: n.atmosphereLink,
-        z: n.z ?? 0,
-        airTemp: n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal),
-        userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
-      })),
+      nodes: nodes.map(n => {
+        // Горячие узлы пути дыма пожара: T перегрета → решатель считает
+        // тепловую тягу через natural_draft_h (сбалансированный контур).
+        const hotT = hotNodeTemps?.[n.id];
+        const isHot = hotT !== undefined && !n.atmosphereLink;
+        return {
+          id: n.id,
+          isAtm: n.atmosphereLink,
+          z: n.z ?? 0,
+          airTemp: n.atmosphereLink ? surfaceTempVal : (isHot ? hotT : (n.airTemp ?? surfaceTempVal)),
+          userTemp: isHot ? true : (!n.atmosphereLink && (n.airTemp ?? 20) !== 20),
+        };
+      }),
       surfaceTemp: surfaceTempVal,
       useNaturalDraft,
       geoGradient,
@@ -2667,7 +2674,7 @@ export default function CadPage() {
   // ─────────────────────────────────────────────────────────────────────────
   const solveFireBatch = async (
     baseBranches: typeof branches,
-    scenarios: { id: string; thermalDepression: number }[],
+    scenarios: { id: string; thermalDepression: number; hotNodeTemps?: Record<string, number> }[],
     surfaceTempVal: number,
   ): Promise<Map<string, Map<string, number>>> => {
     const out = new Map<string, Map<string, number>>();
@@ -2763,7 +2770,7 @@ export default function CadPage() {
       await new Promise(r => setTimeout(r, 0));
 
       // 1) Пересчитываем T_пр и h_t по актуальному расходу каждого сценария.
-      const scenarios: { id: string; thermalDepression: number }[] = [];
+      const scenarios: { id: string; thermalDepression: number; hotNodeTemps?: Record<string, number> }[] = [];
       for (const s of active) {
         const target = s.target;
         const airQ0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
@@ -2774,7 +2781,13 @@ export default function CadPage() {
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
         const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
         s.thermalDep = calcThermalDepression(s.fireTemp, ambientTemp, target.length, signedAngle);
-        scenarios.push({ id: target.id, thermalDepression: s.thermalDep });
+        // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
+        const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
+        const hotNodeTemps = computeHotNodeTemps(
+          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: s.fireTemp, flow: s.flows.get(target.id) ?? target.flow ?? 0, length: target.length, area: target.area, perimeter: target.perimeter }],
+          branchesForHot, ambientTemp,
+        );
+        scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
       }
 
       // 2) Один запрос на весь раунд. Базовая сеть — с расходами первого
@@ -4251,36 +4264,35 @@ export default function CadPage() {
                       : b;
                   });
 
-                  // Шаг C: вычислить T_пр и h_t для каждого очага
+                  // Шаг C: температура продуктов горения T_пр для каждого очага
+                  // + карта горячих узлов пути дыма (правильная модель тяги).
+                  // Тепловая тяга считается решателем через ТЕМПЕРАТУРЫ УЗЛОВ
+                  // (natural_draft_h): горячий восходящий столб уравновешивается
+                  // встречным холодным столбом выхода на поверхность — соседние
+                  // выработки меняются слабо (как в Аэросети). Сосредоточенный
+                  // h_fire на одной ветви (старый способ) нефизично опрокидывал
+                  // соседей.
+                  const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; length?: number; area?: number; perimeter?: number }[] = [];
                   const branchesWithHt = branchesIter.map(b => {
                     if (!b.hasFire) return b;
-                    // Расход для T_пр и h_t — ШТАТНЫЙ (до пожара), как в Аэросети.
-                    // Иначе обратная связь h_t→расход↓→T↑→h_t↑ разгоняет депрессию
-                    // и схлопывает расход в ветви очага (T взлетает до 729°C).
+                    // Расход для T_пр — ШТАТНЫЙ (до пожара), как в Аэросети.
                     const airQ  = Math.abs(originalFlows.get(b.id) ?? b.flow ?? 0);
-                    // Температура очага: в режиме «температурой» — заданная T
-                    // (с защитой от пустого/битого значения), иначе из мощности.
                     const T_pr  = b.fireMode === "temp"
                       ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) > AMBIENT_TEMP
                           ? Math.min(1200, Number(b.fireTemperature))
                           : AMBIENT_TEMP + 500)
                       : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);
-                    // Знак угла — ГЕОМЕТРИЧЕСКИЙ, в ориентации ветви from→to
-                    // (to выше from → +). Направление потока учитывать ЗДЕСЬ НЕ
-                    // нужно: решатель сам разворачивает тепловую тягу по знаку
-                    // расхода (naturalDraft * sign(Q)), как и для естественной
-                    // тяги. Домножение на flowSign здесь → двойной учёт и ложное
-                    // опрокидывание.
-                    const fromNode = nodes.find(n => n.id === b.fromId);
-                    const toNode   = nodes.find(n => n.id === b.toId);
-                    const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
-                    const signedAngle = Math.abs(b.angle ?? 0) * Math.sign(dz || 1);
-                    const h_t = calcThermalDepression(T_pr, AMBIENT_TEMP, b.length, signedAngle);
-                    return { ...b, fireThermalDepression: h_t };
+                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_pr, flow: currentFlows.get(b.id) ?? b.flow ?? 0, length: b.length, area: b.area, perimeter: b.perimeter });
+                    // fireThermalDepression больше НЕ прикладываем как источник.
+                    return { ...b, fireThermalDepression: 0 };
                   });
 
-                  // Шаг D: пересчитать сеть с h_t
-                  const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP);
+                  // Карта горячих узлов по актуальным расходам.
+                  const branchesForHot = branchesIter.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: currentFlows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
+                  const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP);
+
+                  // Шаг D: пересчитать сеть с горячими узлами
+                  const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP, hotNodeTemps);
                   if (newFlows.size === 0) break; // ошибка сети — прерываем
 
                   // Шаг E: адаптивная релаксация + проверка сходимости.

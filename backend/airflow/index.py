@@ -162,10 +162,32 @@ def handler(event: dict, context) -> dict:
             for sc in scenarios:
                 tgt = sc.get("id")
                 h_fire = float(sc.get("thermalDepression", 0) or 0)
-                # Накладываем депрессию пожара на целевую ветвь (остальные — как есть)
+                # ── Тепловая тяга пожара через ТЕМПЕРАТУРЫ УЗЛОВ пути дыма ──────
+                # Правильная модель (как в Аэросети): горячий газ течёт по пути
+                # дыма и нагревает узлы; тяга считается замкнутым интегралом
+                # плотности по высоте контура (natural_draft_h по узловым T) —
+                # встречный холодный столб выхода на поверхность компенсирует
+                # восходящий горячий. Раньше h_fire лумпился как «насос» на одну
+                # короткую ветвь очага → сосед опрокидывался нефизично.
+                # hotNodeTemps: {nodeId: T,°C} — узлы пути дыма (шлёт фронтенд).
+                hot_temps = sc.get("hotNodeTemps") or {}
+                if hot_temps:
+                    nodes_sc = []
+                    for n in nodes_in:
+                        t = hot_temps.get(n.get("id"))
+                        if t is not None and not (n.get("isAtm") or n.get("atmosphereLink")):
+                            n2 = dict(n)
+                            n2["airTemp"] = float(t)
+                            n2["userTemp"] = True  # не перетирать геоградиентом
+                            nodes_sc.append(n2)
+                        else:
+                            nodes_sc.append(n)
+                else:
+                    nodes_sc = nodes_in
+                # Совместимость: если фронтенд ещё шлёт только депрессию — лумпим.
                 br_sc = []
                 for b in branches_in:
-                    if b.get("id") == tgt:
+                    if b.get("id") == tgt and not hot_temps:
                         b2 = dict(b)
                         b2["fireThermalDepression"] = h_fire
                         br_sc.append(b2)
@@ -175,10 +197,10 @@ def handler(event: dict, context) -> dict:
                 # приближение — при пожаре сеть меняется локально, решатель
                 # сходится за единицы итераций вместо тысяч.
                 if method == "mkr":
-                    r = solve_mkr(nodes_in, br_sc, options, normal_flows, surface_temp,
+                    r = solve_mkr(nodes_sc, br_sc, options, normal_flows, surface_temp,
                                   initial_flows=normal_flows or None)
                 else:
-                    r = solve(nodes_in, br_sc, options, normal_flows, surface_temp,
+                    r = solve(nodes_sc, br_sc, options, normal_flows, surface_temp,
                               initial_flows=normal_flows or None)
                 out.append({
                     "id": tgt,
