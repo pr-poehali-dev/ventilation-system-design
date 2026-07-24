@@ -1885,7 +1885,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
         )}
 
         {innerTab === "Пож.нагрузка" && (() => {
-          const airFlow = Math.abs(branch.flow ?? 0);
+          // Расход для расчёта t продуктов — ШТАТНЫЙ (до пожара), как в Аэросети.
+          // При активном пожаре flow ветви очага может быть локально снижен
+          // тепловой депрессией; если считать t по нему, температура нефизично
+          // завышается (729°C вместо ~226°C). originalFlow = расход до пожара.
+          const bWithOrig = branch as typeof branch & { originalFlow?: number };
+          const airFlow = Math.abs(bWithOrig.originalFlow ?? branch.flow ?? 0);
           // Длина ветви (по координатам узлов) — дефолт длины для источников пож.нагрузки
           const branchLenStr = branch.length > 0 ? String(Math.round(branch.length)) : "";
           const massRubber  = branch.fireVehicleMassRubber  ?? 1200;

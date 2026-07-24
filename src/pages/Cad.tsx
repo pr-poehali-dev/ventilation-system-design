@@ -1423,7 +1423,7 @@ export default function CadPage() {
         );
         if (!ok) return;
         existing.forEach(s => {
-          if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 });
+          if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
           removeSymbol(s.id);
         });
         setFireResult(null);
@@ -4137,7 +4137,7 @@ export default function CadPage() {
               disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
               onClick={() => {
                 schemaSymbols.filter(s => FIRE_SYMBOL_IDS.has(s.typeId)).forEach(s => {
-                  if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 });
+                  if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
                   removeSymbol(s.id);
                 });
                 setFireResult(null);
@@ -4191,7 +4191,10 @@ export default function CadPage() {
                   // угля/масла/произвольного авто-расчёта нет — мощность ручная.
                   branchesIter = branchesIter.map(b => {
                     if (!b.hasFire) return b;
-                    const autoP = calcFirePowerFromMaterial(b);
+                    // Мощность очага — по ШТАТНОМУ расходу (до пожара), как в
+                    // Аэросети: расход в ветви очага не должен разгонять мощность.
+                    const origQ = originalFlows.get(b.id) ?? b.flow;
+                    const autoP = calcFirePowerFromMaterial({ ...b, flow: origQ });
                     return autoP != null && autoP > 0
                       ? { ...b, fireHeatRelease: autoP, fireMode: "heat" as const }
                       : b;
@@ -4200,7 +4203,10 @@ export default function CadPage() {
                   // Шаг C: вычислить T_пр и h_t для каждого очага
                   const branchesWithHt = branchesIter.map(b => {
                     if (!b.hasFire) return b;
-                    const airQ  = Math.abs(b.flow ?? 0);
+                    // Расход для T_пр и h_t — ШТАТНЫЙ (до пожара), как в Аэросети.
+                    // Иначе обратная связь h_t→расход↓→T↑→h_t↑ разгоняет депрессию
+                    // и схлопывает расход в ветви очага (T взлетает до 729°C).
+                    const airQ  = Math.abs(originalFlows.get(b.id) ?? b.flow ?? 0);
                     // Температура очага: в режиме «температурой» — заданная T
                     // (с защитой от пустого/битого значения), иначе из мощности.
                     const T_pr  = b.fireMode === "temp"
@@ -4263,17 +4269,23 @@ export default function CadPage() {
                   // originalFlow — расход ДО пожара (до итераций), для детектирования опрокидывания
                   const bUpdated = { ...b, flow: finalQ, originalFlow: originalFlows.get(b.id) ?? b.flow };
                   if (!b.hasFire) return bUpdated;
-                  // Мощность очага из свойств материала по итоговому расходу.
-                  const autoP = calcFirePowerFromMaterial(bUpdated);
+                  // Мощность очага — по ШТАТНОМУ расходу (до пожара), как в
+                  // Аэросети (calcFireMode тоже считает T по originalFlow).
+                  const origQ = originalFlows.get(b.id) ?? b.flow;
+                  const autoP = calcFirePowerFromMaterial({ ...bUpdated, flow: origQ });
                   return autoP != null && autoP > 0
                     ? { ...bUpdated, fireHeatRelease: autoP, fireMode: "heat" as const }
                     : bUpdated;
                 });
 
-                // Обновляем flow в state из итеративного расчёта
+                // Обновляем flow в state из итеративного расчёта.
+                // Сохраняем originalFlow (расход до пожара) — панель «Пож.нагрузка»
+                // считает по нему t продуктов (как в Аэросети).
                 setBranches(prev => prev.map(b => {
                   const q = currentFlows.get(b.id);
-                  return q !== undefined ? { ...b, flow: q } : b;
+                  return q !== undefined
+                    ? { ...b, flow: q, originalFlow: originalFlows.get(b.id) ?? b.flow }
+                    : b;
                 }));
 
                 const result = calcFireMode(branchesForFire, nodes, AMBIENT_TEMP, smokeVisThreshold);
@@ -6179,7 +6191,7 @@ export default function CadPage() {
                     {fireSymId && (
                       <button onClick={() => {
                         removeSymbol(fireSymId.id);
-                        updateBranch(b.id, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 });
+                        updateBranch(b.id, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
                         setFireResult(null); setFireCalcDone(false);
                       }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
                         Убрать
