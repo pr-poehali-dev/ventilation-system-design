@@ -346,12 +346,10 @@ export default function CadPage() {
     if (Number.isFinite(roundedPower) && Math.abs((b.fireHeatRelease ?? 5) - roundedPower) > 0.01) {
       patch.fireHeatRelease = roundedPower;
     }
-    if ((b.fireMode ?? "heat") === "temp" && airQ > 0) {
-      const calcTemp = Math.round(calcFireTemp(roundedPower, airQ, AMBIENT_TEMP));
-      if (Number.isFinite(calcTemp) && Math.abs((b.fireTemperature ?? 300) - calcTemp) > 1) {
-        patch.fireTemperature = calcTemp;
-      }
-    }
+    // В режиме «Температурой» температуру задаёт пользователь ВРУЧНУЮ —
+    // авто-подстановку из мощности материала НЕ делаем (иначе введённое
+    // значение, напр. 1000°C, постоянно затиралось бы расчётным).
+    // Авто-мощность fireHeatRelease продолжаем обновлять для справки.
     // Одним обновлением (без спама истории) — чтобы не крутить лишние ре-рендеры
     // при переключении режима «Температурой»/«Мощностью».
     if (Object.keys(patch).length > 0) {
@@ -4237,6 +4235,7 @@ export default function CadPage() {
                   return;
                 }
 
+                try {
                 // ── Итеративный учёт тепловой депрессии пожара ────────────────
                 // Алгоритм (Аэросеть / Вентиляция-2):
                 //   Итерация 1: берём расходы из штатного расчёта сети
@@ -4277,6 +4276,10 @@ export default function CadPage() {
                   // угля/масла/произвольного авто-расчёта нет — мощность ручная.
                   branchesIter = branchesIter.map(b => {
                     if (!b.hasFire) return b;
+                    // В режиме «Температурой» температура задана вручную —
+                    // мощность из материала НЕ пересчитываем и режим не меняем
+                    // (иначе ручная T=1000°C затиралась бы авто-мощностью).
+                    if (b.fireMode === "temp") return b;
                     // Мощность очага — по ШТАТНОМУ расходу (до пожара), как в
                     // Аэросети: расход в ветви очага не должен разгонять мощность.
                     const origQ = originalFlows.get(b.id) ?? b.flow;
@@ -4358,6 +4361,8 @@ export default function CadPage() {
                   // originalFlow — расход ДО пожара (до итераций), для детектирования опрокидывания
                   const bUpdated = { ...b, flow: finalQ, originalFlow: originalFlows.get(b.id) ?? b.flow };
                   if (!b.hasFire) return bUpdated;
+                  // Режим «Температурой» — оставляем ручную T (не пересчитываем).
+                  if (b.fireMode === "temp") return bUpdated;
                   // Мощность очага — по ШТАТНОМУ расходу (до пожара), как в
                   // Аэросети (calcFireMode тоже считает T по originalFlow).
                   const origQ = originalFlows.get(b.id) ?? b.flow;
@@ -4412,7 +4417,15 @@ export default function CadPage() {
                 setSmokeTimeMinutes(initMax);
                 addLog("info", `🔥 Расчёт пожара завершён. Задымлено ветвей: ${result.branches.size}`);
                 result.log.forEach(l => addLog(l.includes("⚠️") ? "warn" : "info", l));
-                finishFireProgress();
+                } catch (err) {
+                  // Любая ошибка расчёта пожара НЕ должна ронять интерфейс
+                  // («чёрный экран»). Логируем и показываем сообщение.
+                  console.error("Ошибка расчёта пожара:", err);
+                  addLog("error", `Ошибка расчёта пожара: ${err instanceof Error ? err.message : String(err)}`);
+                  alert("Не удалось выполнить расчёт пожара. Проверьте параметры очага (температура/мощность) и повторите.");
+                } finally {
+                  finishFireProgress();
+                }
               }}
               disabled={fireCalcProgress !== null || !schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
               className="relative flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] overflow-hidden"
