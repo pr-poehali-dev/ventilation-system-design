@@ -18,6 +18,7 @@ interface Props {
   branches: TopoBranch[];
   nodes: TopoNode[];
   positions: Position[];
+  bulkheadRByBranch?: Map<string, number>; // R перемычки по ветвям, кМюрг
   projectName?: string;
   onClose: () => void;
 }
@@ -88,7 +89,7 @@ function UnitsDialog({ units, onSave, onCancel }: {
   );
 }
 
-export default function CsvExportDialog({ branches, nodes, positions, projectName = "ПВ-Система", onClose }: Props) {
+export default function CsvExportDialog({ branches, nodes, positions, bulkheadRByBranch, projectName = "ПВ-Система", onClose }: Props) {
   const [schema, setSchema] = useState<CsvExportSchema>("vent2");
   const [fields, setFields] = useState<CsvExportFields>({ ...DEFAULT_CSV_FIELDS });
   const [units, setUnits] = useState<CsvExportUnits>({ ...DEFAULT_CSV_UNITS });
@@ -100,11 +101,11 @@ export default function CsvExportDialog({ branches, nodes, positions, projectNam
   function handleExport() {
     if (schema === "vent2") {
       // «Вентиляция 2.0» — 5 файлов: nodes, links, jumpers, fans, positions.
-      const files = buildVent2Files(nodes, branches, positions, units);
+      const files = buildVent2Files(nodes, branches, positions, units, bulkheadRByBranch);
       void downloadCsvZip(files, `${projectName}_vent2`);
     } else {
       // «АэроСеть» — 5 файлов: nodes, excavations, bulkheads, fans, positions.
-      const files = buildAeroSetFiles(nodes, branches, positions, units);
+      const files = buildAeroSetFiles(nodes, branches, positions, units, bulkheadRByBranch);
       void downloadCsvZip(files, `${projectName}_aeroset`);
     }
     onClose();

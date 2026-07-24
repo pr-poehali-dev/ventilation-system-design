@@ -1336,6 +1336,65 @@ export default function CadPage() {
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
+
+  // Сопротивление перемычек по ветвям (кМюрг) — для экспорта в CSV.
+  // Перемычка чаще задаётся символом на схеме (bk*) и её R сворачивается
+  // в общий R ветви, а не в b.bulkheadR. Здесь считаем R перемычки отдельно
+  // (та же логика, что в buildBranchPayload), чтобы выгрузить в jumpers/bulkheads.
+  const bulkheadRByBranch = useMemo(() => {
+    const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
+    const map = new Map<string, number>();
+    for (const b of branches) {
+      const bkSyms = schemaSymbols.filter(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+      const rho = 353.0 / (273.0 + 20); // плотность при 20°C — достаточно для окна перемычки
+      const rSyms = bkSyms.reduce((sum, s) => {
+        const mode = s.bkResMode ?? "project";
+        let r = 0;
+        if (mode === "manual") {
+          r = (s.bkManualR ?? 0);
+        } else if (mode === "survey") {
+          const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
+          r = q > 0 ? dp / (q * q) : 0;
+        } else {
+          const sw = s.bkWindowArea ?? 0;
+          const branchArea = b.area ?? 0;
+          const isFullyOpen = (OPEN_DOOR_IDS.has(s.typeId) && sw <= 0.001)
+            || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
+          if (isFullyOpen) {
+            r = 0;
+          } else if (sw > 0.001) {
+            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
+          } else {
+            const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
+            const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
+              : (s.bkAirPerm ?? bkEntry?.airPermeability ?? b.bulkheadAirPerm ?? 0);
+            const rRef = bkEntry?.rMkyurg ?? 0;
+            r = kAir > 0 ? solidBulkheadRkMurg(kAir, branchArea) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
+          }
+        }
+        return sum + r;
+      }, 0);
+      // Перемычка задана через вкладку ветви (без символа на схеме)
+      const rBranch = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
+        const mode = b.bulkheadResMode ?? "project";
+        if (mode === "manual") return (b.bulkheadManualR ?? 0);
+        if (mode === "survey") {
+          const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
+          return q > 0 ? dp / (q * q) : 0;
+        }
+        const winA = b.bulkheadWindowArea ?? 0;
+        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
+        if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
+          return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, b.area ?? 0);
+        if ((b.bulkheadAirPerm ?? 0) > 0)
+          return solidBulkheadRkMurg(b.bulkheadAirPerm, b.area ?? 0);
+        return b.bulkheadR ?? 0;
+      })() : 0;
+      const total = rSyms + rBranch;
+      if (total > 0 || bkSyms.length > 0 || b.hasBulkhead) map.set(b.id, total);
+    }
+    return map;
+  }, [branches, schemaSymbols, mineBulkheads]);
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
 
@@ -10847,6 +10906,7 @@ export default function CadPage() {
         nodes={nodes}
         branches={branches}
         positions={positions}
+        bulkheadRByBranch={bulkheadRByBranch}
         projectName={projectFileName.replace(/\.vproj$/, "")}
         onClose={() => setShowCsvExport(false)}
       />

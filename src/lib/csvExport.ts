@@ -288,8 +288,12 @@ export function buildVent2Files(
   branches: TopoBranch[],
   positions: Position[],
   units: CsvExportUnits = DEFAULT_CSV_UNITS,
+  bulkheadRByBranch?: Map<string, number>,
 ): Vent2Files {
   const u = units;
+  // R перемычки берём из карты (реальное R символа на схеме), иначе — из ветви.
+  const bkR = (b: TopoBranch) => bulkheadRByBranch?.get(b.id) ?? b.bulkheadR ?? 0;
+  const hasBk = (b: TopoBranch) => (bulkheadRByBranch?.has(b.id) ?? false) || b.hasBulkhead;
 
   // ── nodes.csv ───────────────────────────────────────────────────────────────
   const nodeLines: string[] = [
@@ -344,13 +348,12 @@ export function buildVent2Files(
       "Смещение перемычки, %", "Тип перемычки", "Сопротивление перемычки, кМюрг",
     ]),
   ];
-  for (const b of branches.filter(x => x.hasBulkhead)) {
-    // bulkheadR хранится в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
-    const rOut = b.bulkheadR ?? 0;
+  for (const b of branches.filter(hasBk)) {
+    // R перемычки в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
     jumperLines.push(v2row(b.id, [
       v2num(0.5, 4),          // смещение вдоль выработки (0..1), центр по умолчанию
       bulkheadKind(b),
-      v2num(rOut, 7),
+      v2num(bkR(b), 7),
     ]));
   }
 
@@ -421,8 +424,11 @@ export function buildAeroSetFiles(
   branches: TopoBranch[],
   positions: Position[],
   units: CsvExportUnits = DEFAULT_CSV_UNITS,
+  bulkheadRByBranch?: Map<string, number>,
 ): AeroSetFiles {
   const u = units;
+  const bkR = (b: TopoBranch) => bulkheadRByBranch?.get(b.id) ?? b.bulkheadR ?? 0;
+  const hasBk = (b: TopoBranch) => (bulkheadRByBranch?.has(b.id) ?? false) || b.hasBulkhead;
   const sep: CsvSep = ";";
   const dec: CsvDecimal = ",";
   const num = (v: number, d = 6) => fmtNum(v, dec, d);
@@ -483,14 +489,13 @@ export function buildAeroSetFiles(
   const bkLines: string[] = [
     line(["Идентификатор выработки", "Смещение перемычки, %", "Тип перемычки", "Сопротивление перемычки, кМюрг"]),
   ];
-  for (const b of branches.filter(x => x.hasBulkhead)) {
-    // bulkheadR хранится в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
-    const rOut = b.bulkheadR ?? 0;
+  for (const b of branches.filter(hasBk)) {
+    // R перемычки в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
     bkLines.push([
       txt(b.id),
       num(0.5, 4),                 // смещение вдоль выработки (0..1)
       bulkheadKind(b),             // "seal" / "vent"
-      num(rOut, 6),
+      num(bkR(b), 6),
     ].join(sep));
   }
 
