@@ -89,11 +89,11 @@ function esc(s: string, sep: CsvSep, decimal: CsvDecimal): string {
 }
 
 // Эффективное сопротивление ветви в кМюрг (или Н·с²/м⁸).
-function branchResistance(b: TopoBranch, units: CsvExportUnits): number {
-  // resistance хранится в Н·с²/м⁸; перемычка (bulkheadR, кМюрг) добавляется отдельно.
-  const rNsm8 = b.resistance ?? 0;
-  const kmu = rNsm8 / 9.81e-3;
-  return units.resistanceUnit === "kmu" ? kmu : rNsm8;
+function branchResistance(b: TopoBranch): number {
+  // resistance хранится в кМюрг (в системе расчёта 1 кМюрг = 1 Н·с²/м⁸),
+  // именно это значение показывается в панели свойств ветви. Поэтому
+  // выгружаем его как есть — без деления на 9.81e-3 (иначе R завышался ~в 102 раза).
+  return b.resistance ?? 0;
 }
 
 // ── Основной построитель CSV ─────────────────────────────────────────────────
@@ -168,7 +168,7 @@ export function buildCsv(
       if (f.brArea)       cells.push(fmtNum((b.area ?? 0) * u.area, decimal));
       if (f.brPerimeter)  cells.push(fmtNum((b.perimeter ?? 0) * u.perimeter, decimal));
       if (f.brFlow)       cells.push(fmtNum((b.flow ?? 0) * u.flow, decimal));
-      if (f.brResistance) cells.push(fmtNum(branchResistance(b, u), decimal, 6));
+      if (f.brResistance) cells.push(fmtNum(branchResistance(b), decimal, 6));
       if (f.brLayer)      cells.push(esc(b.layer || "", sep, decimal));
       if (f.brPositionId) cells.push(esc(branchToPos.get(b.id) ?? "", sep, decimal));
       raw(cells.join(sep));
@@ -202,9 +202,8 @@ export function buildCsv(
       raw(isVent2 ? "# Перемычки" : "# Bulkheads");
       raw(["Ид выработки", "Смещение, %", "Тип перемычки", "Сопротивление"].join(sep));
       for (const b of withBk) {
-        // bulkheadR хранится в кМюрг → при "si" переводим в Н·с²/м⁸.
-        const rKmu = b.bulkheadR ?? 0;
-        const rOut = u.resistanceUnit === "kmu" ? rKmu : rKmu * 9.81e-3;
+        // bulkheadR хранится в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
+        const rOut = b.bulkheadR ?? 0;
         raw([
           esc(b.id, sep, decimal),
           "50",
@@ -333,7 +332,7 @@ export function buildVent2Files(
       v2num((b.area ?? 0) * u.area),
       v2num((b.perimeter ?? 0) * u.perimeter),
       v2num((b.flow ?? 0) * u.flow),
-      v2num(branchResistance(b, u), 7),
+      v2num(branchResistance(b), 7),
       b.layer || "",
       branchToPos.get(b.id) ?? "",
     ]));
@@ -346,8 +345,8 @@ export function buildVent2Files(
     ]),
   ];
   for (const b of branches.filter(x => x.hasBulkhead)) {
-    const rKmu = b.bulkheadR ?? 0;
-    const rOut = u.resistanceUnit === "kmu" ? rKmu : rKmu * 9.81e-3;
+    // bulkheadR хранится в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
+    const rOut = b.bulkheadR ?? 0;
     jumperLines.push(v2row(b.id, [
       v2num(0.5, 4),          // смещение вдоль выработки (0..1), центр по умолчанию
       bulkheadKind(b),
@@ -474,7 +473,7 @@ export function buildAeroSetFiles(
       num((b.area ?? 0) * u.area, 4),
       num((b.perimeter ?? 0) * u.perimeter, 4),
       num((b.flow ?? 0) * u.flow, 4),
-      num(branchResistance(b, u), 6),
+      num(branchResistance(b), 6),
       txt(b.layer || ""),
       txt(branchToPos.get(b.id) ?? ""),
     ].join(sep));
@@ -485,8 +484,8 @@ export function buildAeroSetFiles(
     line(["Идентификатор выработки", "Смещение перемычки, %", "Тип перемычки", "Сопротивление перемычки, кМюрг"]),
   ];
   for (const b of branches.filter(x => x.hasBulkhead)) {
-    const rKmu = b.bulkheadR ?? 0;
-    const rOut = u.resistanceUnit === "kmu" ? rKmu : rKmu * 9.81e-3;
+    // bulkheadR хранится в кМюрг (в системе 1 кМюрг = 1 Н·с²/м⁸) — выгружаем как есть.
+    const rOut = b.bulkheadR ?? 0;
     bkLines.push([
       txt(b.id),
       num(0.5, 4),                 // смещение вдоль выработки (0..1)
