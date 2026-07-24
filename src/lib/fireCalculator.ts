@@ -18,13 +18,6 @@ const CP_AIR = 1.005;          // кДж/(кг·К)
 const RHO_AIR_0 = 1.2;        // кг/м³ при 20°C
 const G = 9.81;                // м/с²
 
-// Доля тепловой мощности пожара, идущая на нагрев вентиляционной струи.
-// Остальная часть теряется в породу/стенки выработки, на неполноту сгорания и
-// излучение (тепловой баланс очага по методике РД / как в Аэросети). Без этого
-// коэффициента (k=1.0) температура продуктов горения завышалась в ~3 раза
-// (например 729°C вместо ~222°C при той же мощности и расходе воздуха).
-const K_HEAT_TO_AIR = 0.3;
-
 // ─── Характеристики горючих материалов ───────────────────────────────────────
 export interface CombustibleProps {
   id: string;
@@ -324,7 +317,7 @@ export function calcBelt(inp: BeltInputs, airFlow: number): BeltFireResult | nul
   const power60   = rows.find(r => r.t === 60)?.powerMW ?? 0;
   const powerMax  = Math.max(power30, power60);
   const deltaTRaw = (airFlow > 0)
-    ? powerMax * 1_000_000 * K_HEAT_TO_AIR / (airFlow * 1.25 * 1005)
+    ? powerMax * 1_000_000 / (airFlow * 1.25 * 1005)
     : 0;
   const deltaT_C  = Math.min(deltaTRaw, 1200);
 
@@ -395,8 +388,8 @@ export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFi
   // Мощность: N = ψ × S × Q_н [МВт]
   const powerMW = psi * surfaceArea * Q_н;
 
-  // ΔT воздушного потока, ограниченная 1200°C (с учётом доли тепла в воздух)
-  const deltaTRaw = airFlow > 0 ? powerMW * 1_000_000 * K_HEAT_TO_AIR / (airFlow * 1.25 * 1005) : 0;
+  // ΔT воздушного потока, ограниченная 1200°C
+  const deltaTRaw = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
   const deltaT_C  = Math.min(deltaTRaw, 1200);
 
   // Время полного выгорания: масса / (ψ × S_макс)
@@ -469,10 +462,11 @@ export function calcFireTemp(
   ambientTemp_C = 20,
 ): number {
   if (airFlow_m3s <= 0) return ambientTemp_C + 500;
-  // Δt = k·Q×10⁶ / (L × 1.25 × 1005) — методика ВНИМИ/РД с тепловым балансом.
-  // k = K_HEAT_TO_AIR — доля тепла, идущая в воздух (остальное — в породу/стенки).
+  // Δt = Q×10⁶ / (L × 1.25 × 1005) — методика ВНИМИ (как в Аэросети).
+  // Вся тепловая мощность идёт в нагрев струи (без коэффициента теплопотерь) —
+  // так считает Аэросеть: при 8.52 МВт и 31.8 м³/с даёт ~233°C (Аэросеть 226.5°C).
   // ρ = 1.25 кг/м³ фиксированная, CP = 1005 Дж/(кг·К)
-  const Q_W = heatRelease_MW * 1e6 * K_HEAT_TO_AIR;
+  const Q_W = heatRelease_MW * 1e6;
   const massFlow = 1.25 * airFlow_m3s;
   const deltaT = Q_W / (massFlow * CP_AIR * 1000);
   return Math.min(1200, ambientTemp_C + deltaT);
@@ -489,9 +483,7 @@ export function tempToPower_MW(
   if (!(airFlow_m3s > 0)) return 0;
   const deltaT = Math.max(0, fireTemp_C - ambientTemp_C);
   const massFlow = 1.25 * airFlow_m3s;
-  // Обратная к calcFireTemp: ΔT = k·P/(…) → P = ΔT·(…)/k. Делим на K_HEAT_TO_AIR,
-  // чтобы восстановить ПОЛНУЮ мощность пожара из температуры воздуха.
-  const Q_W = deltaT * massFlow * CP_AIR * 1000 / K_HEAT_TO_AIR;
+  const Q_W = deltaT * massFlow * CP_AIR * 1000;
   return Q_W / 1e6;
 }
 
