@@ -9,6 +9,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConf
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
+import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -1316,8 +1317,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                             ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
                             : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
                           const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
-                          // 1/A² уже в Мюрг (baseUnit); rFallback в кМюрг → ×1000 → Мюрг
-                          rBase = A > 0 ? (1 / (A * A)) : rFallback * 1e3;
+                          // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения S).
+                          rBase = A > 0 ? solidBulkheadRkMurg(A, branch.area ?? 0) * 1e3 : rFallback * 1e3;
                         }
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
@@ -1398,14 +1399,14 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
                         const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
                         const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
-                        // 1/A² → Мюрг → /1000 → кМюрг; rFallback/bkBulkheadR/bulkheadR в кМюрг
+                        // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
                         let rBulk = 0;
                         if (isWindow && winA > 0.001) {
                           rBulk = 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81); // кМюрг
                         } else if (isManualAirPerm && customAirPerm > 0) {
-                          rBulk = (1 / (customAirPerm * customAirPerm)) / 1000;
+                          rBulk = solidBulkheadRkMurg(customAirPerm, branch.area ?? 0);
                         } else if (airPerm > 0) {
-                          rBulk = (1 / (airPerm * airPerm)) / 1000;
+                          rBulk = solidBulkheadRkMurg(airPerm, branch.area ?? 0);
                         } else {
                           rBulk = rFallback; // кМюрг = Па·с²/м⁶
                         }

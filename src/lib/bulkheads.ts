@@ -319,6 +319,22 @@ export function airPermToR(A: number): number {
   return 1 / (A * A);
 }
 
+// Масштабный коэффициент для перевода 1/(A·S)² → кМюрг (калибровка по Аэросети).
+// Проверено на эталоне: A=0,003074, S=16 м² → R≈42; S=33,2 м² → R≈10.
+const BULKHEAD_R_SCALE = 9.7;
+
+// Сопротивление ГЛУХОЙ перемычки (кМюрг) по УДЕЛЬНОЙ воздухопроницаемости A
+// (м²/(с·√Па) на м² сечения) с учётом сечения выработки S (м²):
+//   R = 1 / (A·S)² / SCALE
+// Чем БОЛЬШЕ сечение выработки — тем МЕНЬШЕ сопротивление перемычки (как в
+// Аэросети: S=16 м²→R≈42, S=33,2 м²→R≈10). Раньше сечение не учитывалось и R
+// был константой 105,8 кМюрг во всех ветвях.
+export function solidBulkheadRkMurg(A: number, area: number): number {
+  const S = area > 0 ? area : 1;
+  if (A <= 0) return 1e9;
+  return 1 / (A * S * A * S) / BULKHEAD_R_SCALE;
+}
+
 // R перемычки в Мюрг → суммируется с R выработки последовательно
 // При hasBulkhead=true: R_итог = R_выработка + R_перемычка
 export function bulkheadR(item: BulkheadCatalogItem): number {
@@ -340,6 +356,7 @@ export function branchBulkheadRkMurg(b: {
   bulkheadAirPerm?: number;
   bulkheadWindowArea?: number;
   bulkheadR?: number;
+  area?: number;
 }): number {
   if (!b.hasBulkhead) return 0;
   const mode = b.bulkheadResMode ?? "project";
@@ -355,13 +372,13 @@ export function branchBulkheadRkMurg(b: {
   if (winA > 0.001) {
     return 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81);
   }
-  // project: воздухопроницаемость вручную → R = 1/A² Мюрг → /1000 → кМюрг
+  // project: глухая перемычка → R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
+  const area = b.area ?? 0;
   if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-    return airPermToR(b.bulkheadCustomAirPerm!) / 1000;
+    return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, area);
   }
-  // project: воздухопроницаемость из справочника → кМюрг
   if ((b.bulkheadAirPerm ?? 0) > 0) {
-    return airPermToR(b.bulkheadAirPerm!) / 1000;
+    return solidBulkheadRkMurg(b.bulkheadAirPerm!, area);
   }
   return b.bulkheadR ?? 0;                                        // fallback: кМюрг
 }

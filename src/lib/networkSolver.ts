@@ -27,7 +27,7 @@
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
-import { airPermToR } from "./bulkheads";
+import { solidBulkheadRkMurg } from "./bulkheads";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -370,13 +370,13 @@ export function solveNetwork(
         if (winA > 0.001) {
           return (rho * 1.2) / (2 * 0.75 * 0.75 * winA * winA * 9.81);
         }
-        // project: если задана воздухопроницаемость вручную — R = 1/A² Мюрг → /1000 → кМюрг
+        // project: глухая перемычка — R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+        // Чем больше сечение S — тем меньше R (как в Аэросети).
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadCustomAirPerm!) / 1000;
+          return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, b.area ?? 0);
         }
-        // project: воздухопроницаемость из справочника — R = 1/A² Мюрг → /1000 → кМюрг
         if ((b.bulkheadAirPerm ?? 0) > 0) {
-          return airPermToR(b.bulkheadAirPerm!) / 1000;
+          return solidBulkheadRkMurg(b.bulkheadAirPerm!, b.area ?? 0);
         }
         // fallback: bulkheadR в кМюрг
         return (b.bulkheadR ?? 0);
