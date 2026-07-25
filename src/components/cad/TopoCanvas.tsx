@@ -4779,7 +4779,13 @@ export default function TopoCanvas(props: Props) {
                     ветви. Кладём сегмент цвета ветви вдоль неё, чтобы окраска не
                     прерывалась (для ЛЮБОГО символа на ветви, кроме valve_reduce —
                     тот сидит на трубе, а не на теле ветви). */}
-                {sym.branchId && hasBranchPts && sym.typeId !== "valve_reduce" && (() => {
+                {sym.branchId && hasBranchPts && sym.typeId !== "valve_reduce"
+                  // Для иконок-изображений (вентилятор/насос/запорный вентиль)
+                  // подложка НЕ нужна: сама иконка непрозрачна (белый фон-круг) и
+                  // перекрывает разрыв окраски ветви. Прямоугольная подложка у них
+                  // «вылезала» вдоль ветви за пределы иконки (как было у перемычек).
+                  && sym.typeId !== "fan" && sym.typeId !== "pump" && sym.typeId !== "valve_water"
+                  && (() => {
                   const brBody = symBr;
                   const bodyCol = branchBodyColor(brBody ?? ({ id: sym.branchId } as TopoBranch));
                   if (!bodyCol) return null;
