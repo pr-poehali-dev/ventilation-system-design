@@ -2339,7 +2339,22 @@ export default function CadPage() {
     {
       const loaded = data.mineBulkheads as MineBulkheadExport[] | undefined;
       if (loaded && loaded.length > 0) {
-        setMineBulkheads(loaded);
+        // Миграция: обновляем воздухопроницаемость и R из актуального каталога
+        // BULKHEAD_CATALOG (по id вида "mb_<catalogId>"), чтобы исправленные
+        // значения (напр. глухая деревянная A=0,01065 → R≈8,8 кМюрг) применялись
+        // и к ранее сохранённым проектам. Ручные пользовательские записи (id без
+        // префикса "mb_" или не найденные в каталоге) не трогаем.
+        setMineBulkheads(loaded.map(mb => {
+          const catId = mb.id.startsWith("mb_") ? mb.id.slice(3) : mb.id;
+          const cat = BULKHEAD_CATALOG.find(c => c.id === catId);
+          if (!cat) return mb;
+          return {
+            ...mb,
+            airPermeability: cat.airPermeability,
+            rMkyurg: airPermToR(cat.airPermeability) / 1000,
+            failurePressure: cat.failurePressure,
+          };
+        }));
       } else {
         setMineBulkheads(BULKHEAD_CATALOG.map(item => ({
           id: `mb_${item.id}`,
