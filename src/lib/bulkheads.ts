@@ -319,39 +319,28 @@ export function airPermToR(A: number): number {
   return 1 / (A * A);
 }
 
-// Сопротивление ГЛУХОЙ перемычки (кМюрг) по воздухопроницаемости A
-// (м²/(с·√Па) — суммарная для перемычки):
-//   R[Мюрг] = 1/A²,  R[кМюрг] = 1/A² / 1000
-// Формула и единицы совпадают с АэроСети. Проверка по эталону АэроСети:
-//   A=0,01065 → R = 1/0,01065² / 1000 ≈ 8,8 кМюрг.
-// Сечение выработки в формулу НЕ входит (как в АэроСети): параметр area
-// сохранён только для совместимости вызовов.
-export function solidBulkheadRkMurg(A: number, _area?: number): number {
+// Масштабный коэффициент формулы 1/(A·S)² → кМюрг (калибровка по АэроСети).
+// Проверено по эталонам АэроСети (для S≈10,5–15,5 м²):
+//   деревянная A=0,01065, S=10,5 → R≈8,2;  кирпичная A=0,003765 → R≈66;
+//   дверь кирп. A=0,003863 → R≈62,7;  парус A=0,09, S=15,5 → R≈0,053.
+const BULKHEAD_R_SCALE = 9.7;
+
+// Сопротивление ГЛУХОЙ перемычки/паруса (кМюрг) по УДЕЛЬНОЙ воздухопроницаемости
+// A (м²/(с·√Па) на м² сечения) с учётом сечения выработки S (м²):
+//   R = 1 / (A·S)² / SCALE
+// Сечение входит в формулу (как в АэроСети): чем больше S — тем меньше R.
+export function solidBulkheadRkMurg(A: number, area?: number): number {
+  const S = area && area > 0 ? area : 1;
   if (A <= 0) return 1e9;
-  return 1 / (A * A) / 1000;
+  return 1 / (A * S * A * S) / BULKHEAD_R_SCALE;
 }
 
-// Калибровочный коэффициент паруса вентиляционного (АэроСеть).
-// Парус — частичная (не глухая) преграда, его сопротивление ниже глухой.
-// Калибровка по эталону АэроСети: A=0,09 → R=0,052 кМюрг
-// (1/A²/1000 = 0,1235 кМюрг; 0,1235 / 2,374 ≈ 0,052).
-const SAIL_R_CALIB = 2.374;
-
-// Сопротивление ПАРУСА вентиляционного (кМюрг) по воздухопроницаемости A:
-//   R = 1/A² / 1000 / 2,374
-export function sailBulkheadRkMurg(A: number): number {
-  if (A <= 0) return 1e9;
-  return 1 / (A * A) / 1000 / SAIL_R_CALIB;
+// Парус вентиляционный считается по той же формуле, что и глухая перемычка
+// (сечение входит в формулу). Проверка: A=0,09, S=15,5 → R≈0,053 кМюрг.
+// Отдельная функция оставлена для совместимости внешних вызовов.
+export function sailBulkheadRkMurg(A: number, area?: number): number {
+  return solidBulkheadRkMurg(A, area);
 }
-
-// Проверка «это парус вентиляционный» по идентификатору символа / типу / названию.
-export function isSailBulkhead(typeOrId?: string, name?: string): boolean {
-  const t = (typeOrId ?? "").toLowerCase();
-  if (t === "sail" || t === "mb_sail") return true;
-  return /парус/i.test(name ?? "");
-}
-
-
 
 // R перемычки в Мюрг → суммируется с R выработки последовательно
 // При hasBulkhead=true: R_итог = R_выработка + R_перемычка
@@ -393,15 +382,13 @@ export function branchBulkheadRkMurg(b: {
   if (winA > 0.001) {
     return 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81);
   }
-  // project: глухая перемычка → R = 1/A²/1000 кМюрг; парус — калиброванная формула.
+  // project: глухая перемычка/парус → R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
   const area = b.area ?? 0;
-  const bSail = isSailBulkhead(b.bulkheadId, b.bulkheadName);
-  const rSolid = (A: number) => bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, area);
   if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-    return rSolid(b.bulkheadCustomAirPerm!);
+    return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, area);
   }
   if ((b.bulkheadAirPerm ?? 0) > 0) {
-    return rSolid(b.bulkheadAirPerm!);
+    return solidBulkheadRkMurg(b.bulkheadAirPerm!, area);
   }
   return b.bulkheadR ?? 0;                                        // fallback: кМюрг
 }

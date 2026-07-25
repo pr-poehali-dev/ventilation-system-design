@@ -15,7 +15,7 @@ import {
   type ApproverFieldKey,
 } from "@/lib/approverTemplate";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
-import { solidBulkheadRkMurg, sailBulkheadRkMurg } from "@/lib/bulkheads";
+import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, hitBranchLabelCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
@@ -4150,8 +4150,8 @@ export default function TopoCanvas(props: Props) {
                     // project: используем bkAirPerm или bkBulkheadR
                     const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                     if (kAir > 0) {
-                      // Глухая: R=1/A²/1000 кМюрг; парус — калиброванная формула. →×1000→Мюрг.
-                      rBase = (sym.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, br.area ?? 0)) * 1000;
+                      // Глухая/парус: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения).
+                      rBase = solidBulkheadRkMurg(kAir, br.area ?? 0) * 1000;
                     } else {
                       rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
                     }
@@ -5042,8 +5042,8 @@ export default function TopoCanvas(props: Props) {
                     } else {
                       const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                       if (kAir > 0) {
-                        // Глухая: R=1/A²/1000 кМюрг; парус — калиброванная формула. →×1000→Мюрг.
-                        rBase = (sym.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, br.area ?? 0)) * 1000;
+                        // Глухая/парус: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения).
+                        rBase = solidBulkheadRkMurg(kAir, br.area ?? 0) * 1000;
                       } else {
                         rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
                       }

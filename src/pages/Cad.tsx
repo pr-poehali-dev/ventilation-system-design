@@ -27,7 +27,7 @@ import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, sailBulkheadRkMurg, isSailBulkhead } from "@/lib/bulkheads";
+import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
@@ -196,7 +196,7 @@ export default function CadPage() {
       name: item.name,
       type: item.type,
       airPermeability: item.airPermeability,
-      rMkyurg: item.type === "sail" ? sailBulkheadRkMurg(item.airPermeability) : airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг (парус — калиброванная формула)
+      rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
       failurePressure: item.failurePressure,
       note: item.note,
       color: item.color,
@@ -1370,7 +1370,7 @@ export default function CadPage() {
               : (s.bkAirPerm ?? bkEntry?.airPermeability ?? b.bulkheadAirPerm ?? 0);
             const rRef = bkEntry?.rMkyurg ?? 0;
             r = kAir > 0
-              ? (s.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, branchArea))
+              ? solidBulkheadRkMurg(kAir, branchArea)
               : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
           }
         }
@@ -1386,8 +1386,7 @@ export default function CadPage() {
         }
         const winA = b.bulkheadWindowArea ?? 0;
         if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
-        const bSail = isSailBulkhead(b.bulkheadId, b.bulkheadName);
-        const rSolid = (A: number) => bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, b.area ?? 0);
+        const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return rSolid(b.bulkheadCustomAirPerm!);
         if ((b.bulkheadAirPerm ?? 0) > 0)
@@ -2355,7 +2354,7 @@ export default function CadPage() {
           return {
             ...mb,
             airPermeability: cat.airPermeability,
-            rMkyurg: cat.type === "sail" ? sailBulkheadRkMurg(cat.airPermeability) : airPermToR(cat.airPermeability) / 1000,
+            rMkyurg: airPermToR(cat.airPermeability) / 1000,
             failurePressure: cat.failurePressure,
           };
         }));
@@ -2365,7 +2364,7 @@ export default function CadPage() {
           name: item.name,
           type: item.type,
           airPermeability: item.airPermeability,
-          rMkyurg: item.type === "sail" ? sailBulkheadRkMurg(item.airPermeability) : airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг (парус — калиброванная формула)
+          rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
           failurePressure: item.failurePressure,
           note: item.note,
           color: item.color,
@@ -2526,7 +2525,7 @@ export default function CadPage() {
       name: item.name,
       type: item.type,
       airPermeability: item.airPermeability,
-      rMkyurg: item.type === "sail" ? sailBulkheadRkMurg(item.airPermeability) : airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг (парус — калиброванная формула)
+      rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
       failurePressure: item.failurePressure,
       note: item.note,
       color: item.color,
@@ -2638,7 +2637,7 @@ export default function CadPage() {
             const rRef = bkEntry?.rMkyurg ?? 0;
             // Глухая: R=1/A²/1000; парус — калиброванная формула.
             r = kAir > 0
-              ? (s.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, branchArea))
+              ? solidBulkheadRkMurg(kAir, branchArea)
               : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
           }
         }
@@ -2656,8 +2655,7 @@ export default function CadPage() {
         const winA = b.bulkheadWindowArea ?? 0;
         if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
         // Глухая: R=1/A²/1000; парус — калиброванная формула.
-        const bSail = isSailBulkhead(b.bulkheadId, b.bulkheadName);
-        const rSolid = (A: number) => bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, b.area ?? 0);
+        const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return rSolid(b.bulkheadCustomAirPerm!);
         if ((b.bulkheadAirPerm ?? 0) > 0)
@@ -7066,7 +7064,7 @@ export default function CadPage() {
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
                   // Глухая: R=1/A²/1000; парус — калиброванная формула.
                   if (kAir > 0) {
-                    r = sym.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, branchArea);
+                    r = solidBulkheadRkMurg(kAir, branchArea);
                   } else {
                     r = sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0;
                   }
@@ -7283,7 +7281,7 @@ export default function CadPage() {
                                 const rRefKmu = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
                                 // Глухая: R=1/A²/1000; парус — калиброванная формула.
                                 rKmu = kAir > 0
-                                  ? (sym.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, branchArea))
+                                  ? solidBulkheadRkMurg(kAir, branchArea)
                                   : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
@@ -7542,7 +7540,7 @@ export default function CadPage() {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {
                             // Глухая: R=1/A²/1000; парус — калиброванная формула.
-                            rMkyurg = sym.typeId === "sail" ? sailBulkheadRkMurg(kAir) : solidBulkheadRkMurg(kAir, brForSym.area ?? 0);
+                            rMkyurg = solidBulkheadRkMurg(kAir, brForSym.area ?? 0);
                           } else {
                             rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000; // Мюрг → кМюрг
                           }
