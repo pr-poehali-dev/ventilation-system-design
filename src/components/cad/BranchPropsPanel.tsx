@@ -47,6 +47,8 @@ interface BranchPropsPanelProps {
   onUpdateBulkheadSym?: (patch: Record<string, unknown>) => void;
   /** Конфигурация единиц измерения */
   unitsConfig?: UnitsConfig;
+  /** Суммарное сопротивление перемычек/окон на ветви, кМюрг (для «Общего сопротивления») */
+  bulkheadRKmu?: number;
   /** Все узлы — для отображения коротких имён начального/конечного */
   nodes?: TopoNode[];
   /** Результат гидравлического расчёта водопровода для этой ветви */
@@ -236,7 +238,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -259,7 +261,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set([
-      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_geom_r", "v_unit_r", "v_unit_r_100",
+      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_total_r", "v_geom_r", "v_unit_r", "v_unit_r_100",
       "v_velocity", "v_adddep", "v_flow", "v_dep",
       "v_r_friction", "v_r_local", "v_reynolds", "v_power",
     ])
@@ -680,6 +682,18 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     )}
                   </div>
                 );
+              })()}
+            </ParamRow>
+
+            <ParamRow id="v_total_r" label={`Общее сопротивление, ${uRes.symbol}`} visible={visible.has("v_total_r")} onToggle={toggle}>
+              {(() => {
+                // Общее R ветви = сопротивление выработки + сопротивление
+                // перемычки (если установлена) + сопротивление вентилятора,
+                // установленного «Внутри перемычки». Единицы: Н·с²/м⁸ (= кМюрг).
+                const fanCrossingKmu = (branch.hasFan && (branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
+                  ? (branch.fanCrossingR ?? 0) / 1000 : 0;
+                const totalNsm8 = branch.resistance + (bulkheadRKmu ?? 0) + fanCrossingKmu;
+                return <ComputedInput value={fmtR(rToDisplay(totalNsm8), uRes.decimals)} />;
               })()}
             </ParamRow>
 

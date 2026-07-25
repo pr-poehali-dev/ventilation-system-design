@@ -6972,6 +6972,7 @@ export default function CadPage() {
                   ));
                 }}
                 unitsConfig={unitsConfig}
+                bulkheadRKmu={bulkheadRByBranch.get(selectedBranch.id) ?? 0}
                 nodes={nodes}
                 waterBranchResult={waterNetwork.branchResults.get(selectedBranch.id)}
                 onRemoveReducer={selectedBranch.wpHasReducer ? () => {
