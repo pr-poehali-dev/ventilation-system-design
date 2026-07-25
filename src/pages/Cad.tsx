@@ -2617,7 +2617,7 @@ export default function CadPage() {
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
               : (s.bkAirPerm ?? bkEntry?.airPermeability ?? b.bulkheadAirPerm ?? 0);
             const rRef = bkEntry?.rMkyurg ?? 0;
-            // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+            // Глухая перемычка: R = 1/A²/1000 кМюрг (как в АэроСети).
             r = kAir > 0 ? solidBulkheadRkMurg(kAir, branchArea) : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
           }
         }
@@ -2634,7 +2634,7 @@ export default function CadPage() {
         // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг (см. формулу выше).
         const winA = b.bulkheadWindowArea ?? 0;
         if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
-        // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+        // Глухая перемычка: R = 1/A²/1000 кМюрг (как в АэроСети).
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, b.area ?? 0);
         if ((b.bulkheadAirPerm ?? 0) > 0)
@@ -7041,7 +7041,7 @@ export default function CadPage() {
                       ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                       ?? brForSym.bulkheadAirPerm ?? 0);
                   const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+                  // Глухая перемычка: R = 1/A²/1000 кМюрг (как в АэроСети).
                   if (kAir > 0) {
                     r = solidBulkheadRkMurg(kAir, branchArea);
                   } else {
@@ -7258,7 +7258,7 @@ export default function CadPage() {
                                     ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
                                     ?? brForSym?.bulkheadAirPerm ?? 0);
                                 const rRefKmu = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+                                // Глухая перемычка: R = 1/A²/1000 кМюрг (как в АэроСети).
                                 rKmu = kAir > 0 ? solidBulkheadRkMurg(kAir, branchArea) : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
@@ -7516,7 +7516,7 @@ export default function CadPage() {
                         } else {
                           const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
                           if (kAir > 0) {
-                            // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
+                            // Глухая перемычка: R = 1/A²/1000 кМюрг (как в АэроСети).
                             rMkyurg = solidBulkheadRkMurg(kAir, brForSym.area ?? 0);
                           } else {
                             rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000; // Мюрг → кМюрг

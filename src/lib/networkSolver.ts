@@ -373,8 +373,8 @@ export function solveNetwork(
         if (winA > 0.001) {
           return (rho * 1.2) / (2 * 0.75 * 0.75 * winA * winA * 9.81);
         }
-        // project: глухая перемычка — R = 1/(A·S)²/SCALE кМюрг (учёт сечения выработки).
-        // Чем больше сечение S — тем меньше R (как в Аэросети).
+        // project: глухая перемычка — R = 1/A²/1000 кМюрг (как в АэроСети,
+        // A — суммарная воздухопроницаемость перемычки, м²/(с·√Па)).
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
           return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, b.area ?? 0);
         }
