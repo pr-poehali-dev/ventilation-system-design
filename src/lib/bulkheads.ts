@@ -147,7 +147,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     name: "Парус вентиляционный",
     type: "sail",
     airPermeability: 0.09,
-    rMin: 123, rMax: 123,
+    rMin: 52, rMax: 52,
     failurePressure: 0.005,
     note: "A=0,09 м²/(с·√Па), временная",
     color: "#ff6f00",
@@ -331,6 +331,28 @@ export function solidBulkheadRkMurg(A: number, _area?: number): number {
   return 1 / (A * A) / 1000;
 }
 
+// Калибровочный коэффициент паруса вентиляционного (АэроСеть).
+// Парус — частичная (не глухая) преграда, его сопротивление ниже глухой.
+// Калибровка по эталону АэроСети: A=0,09 → R=0,052 кМюрг
+// (1/A²/1000 = 0,1235 кМюрг; 0,1235 / 2,374 ≈ 0,052).
+const SAIL_R_CALIB = 2.374;
+
+// Сопротивление ПАРУСА вентиляционного (кМюрг) по воздухопроницаемости A:
+//   R = 1/A² / 1000 / 2,374
+export function sailBulkheadRkMurg(A: number): number {
+  if (A <= 0) return 1e9;
+  return 1 / (A * A) / 1000 / SAIL_R_CALIB;
+}
+
+// Проверка «это парус вентиляционный» по идентификатору символа / типу / названию.
+export function isSailBulkhead(typeOrId?: string, name?: string): boolean {
+  const t = (typeOrId ?? "").toLowerCase();
+  if (t === "sail" || t === "mb_sail") return true;
+  return /парус/i.test(name ?? "");
+}
+
+
+
 // R перемычки в Мюрг → суммируется с R выработки последовательно
 // При hasBulkhead=true: R_итог = R_выработка + R_перемычка
 export function bulkheadR(item: BulkheadCatalogItem): number {
@@ -352,6 +374,8 @@ export function branchBulkheadRkMurg(b: {
   bulkheadAirPerm?: number;
   bulkheadWindowArea?: number;
   bulkheadR?: number;
+  bulkheadId?: string;
+  bulkheadName?: string;
   area?: number;
 }): number {
   if (!b.hasBulkhead) return 0;
@@ -369,13 +393,15 @@ export function branchBulkheadRkMurg(b: {
   if (winA > 0.001) {
     return 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81);
   }
-  // project: глухая перемычка → R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
+  // project: глухая перемычка → R = 1/A²/1000 кМюрг; парус — калиброванная формула.
   const area = b.area ?? 0;
+  const bSail = isSailBulkhead(b.bulkheadId, b.bulkheadName);
+  const rSolid = (A: number) => bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, area);
   if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-    return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, area);
+    return rSolid(b.bulkheadCustomAirPerm!);
   }
   if ((b.bulkheadAirPerm ?? 0) > 0) {
-    return solidBulkheadRkMurg(b.bulkheadAirPerm!, area);
+    return rSolid(b.bulkheadAirPerm!);
   }
   return b.bulkheadR ?? 0;                                        // fallback: кМюрг
 }

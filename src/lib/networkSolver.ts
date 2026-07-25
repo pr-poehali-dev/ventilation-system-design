@@ -27,7 +27,7 @@
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
-import { solidBulkheadRkMurg } from "./bulkheads";
+import { solidBulkheadRkMurg, sailBulkheadRkMurg, isSailBulkhead } from "./bulkheads";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -375,11 +375,14 @@ export function solveNetwork(
         }
         // project: глухая перемычка — R = 1/A²/1000 кМюрг (как в АэроСети,
         // A — суммарная воздухопроницаемость перемычки, м²/(с·√Па)).
+        // Парус вентиляционный — по калиброванной формуле.
+        const bSail = isSailBulkhead(b.bulkheadId, b.bulkheadName);
+        const rSolid = (A: number) => bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
-          return solidBulkheadRkMurg(b.bulkheadCustomAirPerm!, b.area ?? 0);
+          return rSolid(b.bulkheadCustomAirPerm!);
         }
         if ((b.bulkheadAirPerm ?? 0) > 0) {
-          return solidBulkheadRkMurg(b.bulkheadAirPerm!, b.area ?? 0);
+          return rSolid(b.bulkheadAirPerm!);
         }
         // fallback: bulkheadR в кМюрг
         return (b.bulkheadR ?? 0);

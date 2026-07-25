@@ -9,7 +9,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConf
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
-import { solidBulkheadRkMurg } from "@/lib/bulkheads";
+import { solidBulkheadRkMurg, sailBulkheadRkMurg, isSailBulkhead } from "@/lib/bulkheads";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -1332,8 +1332,11 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                             ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
                             : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
                           const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
-                          // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения S).
-                          rBase = A > 0 ? solidBulkheadRkMurg(A, branch.area ?? 0) * 1e3 : rFallback * 1e3;
+                          // Глухая: R=1/A²/1000 кМюрг; парус — калиброванная формула. →×1000→Мюрг.
+                          const bSail = isSailBulkhead(bulkheadSymTypeId ?? branch.bulkheadId, branch.bulkheadName);
+                          rBase = A > 0
+                            ? (bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, branch.area ?? 0)) * 1e3
+                            : rFallback * 1e3;
                         }
                       }
                       if (rBase === 0) return `— ${uRes.symbol}`;
@@ -1414,14 +1417,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
                         const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
                         const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
-                        // Глухая перемычка: R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
+                        // Глухая: R=1/A²/1000 кМюрг; парус — калиброванная формула.
+                        const bSail = isSailBulkhead(bulkheadSymTypeId ?? branch.bulkheadId, branch.bulkheadName);
+                        const rSolid = (A: number) => bSail ? sailBulkheadRkMurg(A) : solidBulkheadRkMurg(A, branch.area ?? 0);
                         let rBulk = 0;
                         if (isWindow && winA > 0.001) {
                           rBulk = 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81); // кМюрг
                         } else if (isManualAirPerm && customAirPerm > 0) {
-                          rBulk = solidBulkheadRkMurg(customAirPerm, branch.area ?? 0);
+                          rBulk = rSolid(customAirPerm);
                         } else if (airPerm > 0) {
-                          rBulk = solidBulkheadRkMurg(airPerm, branch.area ?? 0);
+                          rBulk = rSolid(airPerm);
                         } else {
                           rBulk = rFallback; // кМюрг = Па·с²/м⁶
                         }
