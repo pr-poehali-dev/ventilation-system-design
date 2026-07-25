@@ -3726,14 +3726,12 @@ export default function TopoCanvas(props: Props) {
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
                     : (tid === "barrier")      ? "#555"
                     : "white";
+                  // Контур перемычки — всегда чёрный (кроме разрушенной и
+                  // противопожарной), чтобы не сливался с заливкой по материалу
+                  // (напр. деревянная — жёлтая: жёлтая заливка + жёлтый контур).
                   const stroke = isDestroyedBk ? "#8b0000"
-                    : tid.includes("conc") ? "#1b5e20"
-                    : tid.includes("wood")     ? "#e65100"
-                    : tid.includes("brick")    ? "#bf360c"
-                    : tid.includes("metal")    ? "#4a148c"
-                    : tid.includes("regulator") ? "#e65100"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800"
-                    : "#1a1a1a";  // всегда чёрный контур
+                    : "#1a1a1a";
 
                   // ── Размеры символа ──────────────────────────────────
                   // После rotate(brAngle): X — вдоль ветви, Y — поперёк
@@ -4838,10 +4836,9 @@ export default function TopoCanvas(props: Props) {
                     : tid.includes("regulator") ? "#ffd600"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
                     : tid === "barrier" ? "#555" : "white";
+                  // Контур перемычки — всегда чёрный (кроме разрушенной и
+                  // противопожарной), чтобы не сливался с заливкой по материалу.
                   const strokeOv = isDestroyedOv ? "#8b0000"
-                    : tid.includes("conc") ? "#1b5e20" : tid.includes("wood") ? "#e65100"
-                    : tid.includes("brick") ? "#bf360c" : tid.includes("metal") ? "#4a148c"
-                    : tid.includes("regulator") ? "#e65100"
                     : (tid === "fire_door" || tid === "fire_door_pp") ? "#800" : "#1a1a1a";
                   const bkBwOv = (bkBrOv?.lineWidth && bkBrOv.lineWidth > 0) ? bkBrOv.lineWidth : branchWidth;
                   // Размер перемычки синхронизирован с реальной шириной ветви на

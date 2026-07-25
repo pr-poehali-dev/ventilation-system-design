@@ -120,12 +120,9 @@ export default function SchemaSymbolsOverlay({
             : (tid === "fire_door" || tid === "fire_door_pp") ? "#c00"
             : (tid === "barrier")      ? "#555"
             : "white";
+          // Контур перемычки — всегда чёрный (кроме разрушенной и
+          // противопожарной), чтобы не сливался с заливкой по материалу.
           const stroke = isDestroyed ? "#8b0000"
-            : tid.includes("conc") ? "#1b5e20"
-            : tid.includes("wood")     ? "#e65100"
-            : tid.includes("brick")    ? "#bf360c"
-            : tid.includes("metal")    ? "#4a148c"
-            : tid.includes("regulator") ? "#e65100"
             : (tid === "fire_door" || tid === "fire_door_pp") ? "#800"
             : "#1a1a1a";
 
