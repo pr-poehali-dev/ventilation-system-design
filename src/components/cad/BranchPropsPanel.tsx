@@ -1384,7 +1384,19 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                           <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>Тип:</span>
                           <input type="checkbox"
                             checked={branch.bulkheadManualAirPerm ?? false}
-                            onChange={e => onUpdate({ bulkheadManualAirPerm: e.target.checked })}
+                            onChange={e => onUpdate(
+                              e.target.checked
+                                ? {
+                                    bulkheadManualAirPerm: true,
+                                    // при включении ручного режима подставляем ТОЧНОЕ
+                                    // каталожное значение (не округлённое отображаемое),
+                                    // чтобы сопротивление не менялось
+                                    bulkheadCustomAirPerm: (branch.bulkheadCustomAirPerm ?? 0) > 0
+                                      ? branch.bulkheadCustomAirPerm
+                                      : (branch.bulkheadAirPerm ?? 0),
+                                  }
+                                : { bulkheadManualAirPerm: false }
+                            )}
                             style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
                           <span className="text-[11px] text-gray-600">Задается вручную</span>
                         </div>
