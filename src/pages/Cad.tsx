@@ -74,7 +74,9 @@ const safeFixed = (v: unknown, digits = 1): string => {
 
 // Коэффициент расхода вентиляционного окна (перемычка с окном/проёмом).
 // Используется в формуле R = ρ/(2·μ²·S²·g) кМюрг (совпадает с Аэросетью).
-const WINDOW_MU = 0.75;
+// μ=0.82 — коэффициент расхода регулируемого окна (как в АэроСети).
+// Проверка: S=4 м², g=9.80665 → R≈0,005687 кМюрг (эталон 0,00569569).
+const WINDOW_MU = 0.82;
 
 // Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
 // ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
@@ -1363,7 +1365,7 @@ export default function CadPage() {
           if (isFullyOpen) {
             r = 0;
           } else if (sw > 0.001) {
-            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
+            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -1385,7 +1387,7 @@ export default function CadPage() {
           return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         }
         const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
+        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.80665);
         const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return rSolid(b.bulkheadCustomAirPerm!);
@@ -2629,7 +2631,7 @@ export default function CadPage() {
             //   R = ρ / (2·μ²·S²·g),  μ=0.75 — коэф. расхода окна, g=9.81.
             // Деление на g переводит результат сразу в кМюрг (Н·с²/м⁸),
             // как в Аэросети. Проверка: S=5.5 м² → R≈0.0036 кМюрг.
-            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
+            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -2653,7 +2655,7 @@ export default function CadPage() {
         }
         // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг (см. формулу выше).
         const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.81);
+        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.80665);
         // Глухая: R=1/A²/1000; парус — калиброванная формула.
         const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
@@ -7055,7 +7057,7 @@ export default function CadPage() {
                   const tT2 = fnTo2   ? (fnTo2.atmosphereLink   ? surfaceTemp : (fnTo2.airTemp   ?? surfaceTemp)) : surfaceTemp;
                   const rho2 = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF2 + tT2) / 2)));
                   // R окна = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, g=9.81). S=5.5 → 0.0036.
-                  r = rho2 / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
+                  r = rho2 / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
                 } else {
                   const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                     : (sym.bkAirPerm
@@ -7272,7 +7274,7 @@ export default function CadPage() {
                               } else if (sw > 0.001) {
                                 // R окна = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, g=9.81).
                                 // Проверка: S=5.5 м² → 0.0036 кМюрг (как в Аэросети).
-                                rKmu = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.81);
+                                rKmu = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
