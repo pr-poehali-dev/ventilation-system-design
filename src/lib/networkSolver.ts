@@ -27,7 +27,7 @@
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
-import { solidBulkheadRkMurg } from "./bulkheads";
+import { solidBulkheadRkMurg, windowBulkheadRkMurg } from "./bulkheads";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -367,12 +367,11 @@ export function solveNetwork(
           // формулы перемычек и как в АэроСети (Q=3.2, ΔP=757 → R≈7.54 кМюрг).
           return q > 0 ? dp / (q * q * 9.81) : 1e9; // кМюрг
         }
-        // project: перемычка с окном/проёмом — R = ρ/(2·μ²·S²·g) кМюрг.
-        // μ=0.82 — коэф. расхода окна, g=9.80665 (как в АэроСети).
-        // Проверка: S=4 м² → ≈0.005687 кМюрг (эталон 0.00569569).
+        // project: перемычка с регулируемым окном — формула диафрагмы с учётом
+        // сечения выработки (как в АэроСети). См. windowBulkheadRkMurg.
         const winA = b.bulkheadWindowArea ?? 0;
         if (winA > 0.001) {
-          return 1.2 / (2 * 0.82 * 0.82 * winA * winA * 9.80665);
+          return windowBulkheadRkMurg(winA, b.area ?? 0);
         }
         // project: глухая перемычка/парус — R = 1/(A·S)²/SCALE кМюрг (как в
         // АэроСети, с учётом сечения выработки S).

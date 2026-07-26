@@ -343,6 +343,24 @@ export function sailBulkheadRkMurg(A: number, area?: number): number {
   return solidBulkheadRkMurg(A, area);
 }
 
+// Коэффициент расхода регулируемого окна/проёма (как в АэроСети).
+const WINDOW_MU = 0.62;
+
+// Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ (кМюрг). Формула диафрагмы
+// (местное сопротивление отверстия в потоке) с учётом сечения выработки S:
+//   n = Sок / S,  R = (1/(μ·n) − 1)² · ρ / (2·S²·g)
+// где ρ=1,2 кг/м³, μ=0,62, g=9,80665. Совпадает с АэроСети:
+//   Sок=4, S=10,5 → R≈0,0058;  Sок=0,5, S=15,5 → R≈0,61 кМюрг.
+export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number): number {
+  const Sok = windowArea;
+  const S = sectionArea && sectionArea > 0 ? sectionArea : Sok;
+  if (Sok <= 0.001 || S <= 0) return 0;
+  const n = Sok / S;
+  if (n >= 1) return 0; // окно ≥ сечения — сопротивление отсутствует
+  const zeta = (1 / (WINDOW_MU * n) - 1) ** 2;
+  return (zeta * 1.2) / (2 * S * S * 9.80665);
+}
+
 // R перемычки в Мюрг → суммируется с R выработки последовательно
 // При hasBulkhead=true: R_итог = R_выработка + R_перемычка
 export function bulkheadR(item: BulkheadCatalogItem): number {

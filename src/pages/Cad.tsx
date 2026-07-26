@@ -27,7 +27,7 @@ import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg } from "@/lib/bulkheads";
+import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
@@ -72,11 +72,6 @@ const safeFixed = (v: unknown, digits = 1): string => {
   return Number.isFinite(n) ? n.toFixed(digits) : "—";
 };
 
-// Коэффициент расхода вентиляционного окна (перемычка с окном/проёмом).
-// Используется в формуле R = ρ/(2·μ²·S²·g) кМюрг (совпадает с Аэросетью).
-// μ=0.82 — коэффициент расхода регулируемого окна (как в АэроСети).
-// Проверка: S=4 м², g=9.80665 → R≈0,005687 кМюрг (эталон 0,00569569).
-const WINDOW_MU = 0.82;
 
 // Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
 // ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
@@ -1365,7 +1360,7 @@ export default function CadPage() {
           if (isFullyOpen) {
             r = 0;
           } else if (sw > 0.001) {
-            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
+            r = windowBulkheadRkMurg(sw, branchArea);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -1387,7 +1382,7 @@ export default function CadPage() {
           return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         }
         const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.80665);
+        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0);
         const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return rSolid(b.bulkheadCustomAirPerm!);
@@ -2627,11 +2622,8 @@ export default function CadPage() {
           if (isFullyOpen) {
             r = 0;
           } else if (sw > 0.001) {
-            // Сопротивление вентиляционного окна (кМюрг):
-            //   R = ρ / (2·μ²·S²·g),  μ=0.75 — коэф. расхода окна, g=9.81.
-            // Деление на g переводит результат сразу в кМюрг (Н·с²/м⁸),
-            // как в Аэросети. Проверка: S=5.5 м² → R≈0.0036 кМюрг.
-            r = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
+            // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
+            r = windowBulkheadRkMurg(sw, branchArea);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -2653,9 +2645,9 @@ export default function CadPage() {
           const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
           return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         }
-        // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг (см. формулу выше).
+        // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
         const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return rho / (2 * WINDOW_MU * WINDOW_MU * winA * winA * 9.80665);
+        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0);
         // Глухая: R=1/A²/1000; парус — калиброванная формула.
         const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
@@ -7051,13 +7043,8 @@ export default function CadPage() {
                 if (isFullyOpen) return 0;
                 let r = 0;
                 if (sw > 0.001) {
-                  const fnFrom2 = nodes.find(n => n.id === brForSym.fromId);
-                  const fnTo2   = nodes.find(n => n.id === brForSym.toId);
-                  const tF2 = fnFrom2 ? (fnFrom2.atmosphereLink ? surfaceTemp : (fnFrom2.airTemp ?? surfaceTemp)) : surfaceTemp;
-                  const tT2 = fnTo2   ? (fnTo2.atmosphereLink   ? surfaceTemp : (fnTo2.airTemp   ?? surfaceTemp)) : surfaceTemp;
-                  const rho2 = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF2 + tT2) / 2)));
-                  // R окна = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, g=9.81). S=5.5 → 0.0036.
-                  r = rho2 / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
+                  // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
+                  r = windowBulkheadRkMurg(sw, branchArea);
                 } else {
                   const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                     : (sym.bkAirPerm
@@ -7272,9 +7259,8 @@ export default function CadPage() {
                               if (isFullyOpen) {
                                 rKmu = 0;
                               } else if (sw > 0.001) {
-                                // R окна = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, g=9.81).
-                                // Проверка: S=5.5 м² → 0.0036 кМюрг (как в Аэросети).
-                                rKmu = rho / (2 * WINDOW_MU * WINDOW_MU * sw * sw * 9.80665);
+                                // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
+                                rKmu = windowBulkheadRkMurg(sw, branchArea);
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm
