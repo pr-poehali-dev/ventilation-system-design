@@ -1835,9 +1835,15 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
     # Расчёт давлений в узлах (BFS от атмосферы)
     nodes_out = compute_node_pressures(edges, Q, nodes_in or []) if nodes_in else []
 
+    # Максимальный по модулю расход в сети — сводка для быстрой проверки
+    # «сеть не проветривается» (Q≈0 везде) без разбора всех ветвей.
+    max_abs_flow = max((abs(b.get("Q", 0.0)) for b in out), default=0.0)
+    max_abs_flow = round(max_abs_flow, 4) + 0.0  # +0.0 нормализует -0.0 → 0.0
     return {"branches": out, "nodes": nodes_out, "iterations": it,
             "converged": converged, "maxResidual": round(max_res, 6),
             "kirchhoffBalance": round(worst_bal, 4),
+            "maxAbsFlow": max_abs_flow,
+            "ventilated": bool(max_abs_flow > 0.01),
             "log": log, "diagnostics": diag}
 
 
@@ -2468,6 +2474,20 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     log.append(f"МКР R_net={r_total:.4f} (путь BFS от вентилятора)")
 
     q0 = _estimate_q0_mkr(active_edges_list, r_total)
+    # Нет активного вентилятора → движущая сила только естественная тяга.
+    # q0 берём по ЧИСТОЙ (net) тяге контуров с дедбандом симметрии (как в Кросс:
+    # q0_from_draft). Прежний _estimate_q0_mkr суммировал |H_нат| ВСЕХ ветвей
+    # (для симметричных стволов ~50 Па) → огромный старт (~158 м³/с), из которого
+    # итерации за maxIter не успевали вернуться к 0 → ложная тяга при равных
+    # высотах. По net-тяге симметричные стволы дают 0 (сокращаются в контуре).
+    active_fans_mkr = [e for e in active_edges_list if e.get("hasFan") and not e.get("fanStopped")]
+    if not active_fans_mkr and contours_local:
+        max_net = 0.0
+        for cnt in contours_local:
+            s_nat = sum(active_edges_list[li].get("naturalDraft", 0.0) * sg for li, sg in cnt)
+            if abs(s_nat) >= 1.0:  # дедбанд симметрии, как в Кросс
+                max_net = max(max_net, abs(s_nat))
+        q0 = math.sqrt(max_net / r_total) if (max_net > 0 and r_total > 0) else 0.0
     log.append(f"МКР Q₀={q0:.3f} м³/с")
 
     # Инициализация хорд: одинаковое q0 для всех хорд.

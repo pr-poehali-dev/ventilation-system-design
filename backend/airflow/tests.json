@@ -1930,6 +1930,150 @@
         "kirchhoffBalance": 0.0
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Остановленный ГВУ + равные высоты (Кросс) — Q=0",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "nodes": [
+          {
+            "id": "A",
+            "isAtm": true,
+            "z": 500
+          },
+          {
+            "id": "B",
+            "isAtm": true,
+            "z": 500
+          },
+          {
+            "id": "C",
+            "z": 0
+          },
+          {
+            "id": "D",
+            "z": 0
+          }
+        ],
+        "branches": [
+          {
+            "id": "S1",
+            "fromId": "A",
+            "toId": "C",
+            "R": 0.001,
+            "area": 20,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "curve",
+            "h0": 2100,
+            "h1": 3.95,
+            "h2": -0.52,
+            "qMax": 65,
+            "fanStopped": true
+          },
+          {
+            "id": "S2",
+            "fromId": "B",
+            "toId": "D",
+            "R": 0.001,
+            "area": 20
+          },
+          {
+            "id": "X",
+            "fromId": "C",
+            "toId": "D",
+            "R": 0.001,
+            "area": 10
+          }
+        ],
+        "surfaceTemp": 20,
+        "useNaturalDraft": true,
+        "geoGradient": 0.5,
+        "options": {
+          "tolerance": 0.001,
+          "maxIter": 3000
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true,
+        "ventilated": false
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Остановленный ГВУ + равные высоты (МКР) — Q=0",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {
+            "id": "A",
+            "isAtm": true,
+            "z": 500
+          },
+          {
+            "id": "B",
+            "isAtm": true,
+            "z": 500
+          },
+          {
+            "id": "C",
+            "z": 0
+          },
+          {
+            "id": "D",
+            "z": 0
+          }
+        ],
+        "branches": [
+          {
+            "id": "S1",
+            "fromId": "A",
+            "toId": "C",
+            "R": 0.001,
+            "area": 20,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "curve",
+            "h0": 2100,
+            "h1": 3.95,
+            "h2": -0.52,
+            "qMax": 65,
+            "fanStopped": true
+          },
+          {
+            "id": "S2",
+            "fromId": "B",
+            "toId": "D",
+            "R": 0.001,
+            "area": 20
+          },
+          {
+            "id": "X",
+            "fromId": "C",
+            "toId": "D",
+            "R": 0.001,
+            "area": 10
+          }
+        ],
+        "surfaceTemp": 20,
+        "useNaturalDraft": true,
+        "geoGradient": 0.5,
+        "options": {
+          "tolerance": 0.001,
+          "maxIter": 3000
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true,
+        "ventilated": false
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }
