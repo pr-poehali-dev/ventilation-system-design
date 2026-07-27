@@ -304,10 +304,12 @@ def fan_H(e, Q):
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
             if q_one > q_max_fan:
-                # За паспортом напор резко уходит ВНИЗ (торможение потока), не в 0.
+                # За паспортом напор резко уходит ВНИЗ (торможение потока), но НЕ
+                # в минус: прямой вентилятор не создаёт отрицательного напора в своём
+                # направлении (иначе становится сопротивлением и опрокидывает соседа).
                 h_at_max = h0 + h1 * q_max_fan + h2 * q_max_fan * q_max_fan
                 slope = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
-                return h_at_max + slope * (q_one - q_max_fan)
+                return max(0.0, h_at_max + slope * (q_one - q_max_fan))
             return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
 
         return _h_one() * N
@@ -1826,10 +1828,12 @@ def _mkr_fan_H(e, Q):
             h1v = float(e.get("h1", 0))
             h2v = float(e.get("h2", 0))
             if q_one > q_max_fan:
-                # За паспортом напор резко уходит ВНИЗ (торможение потока), не в 0.
+                # За паспортом напор резко уходит ВНИЗ (торможение потока), но НЕ в
+                # минус: прямой вентилятор не создаёт отрицательного напора в своём
+                # направлении (иначе становится сопротивлением и опрокидывает соседа).
                 h_at_max = h0v + h1v * q_max_fan + h2v * q_max_fan * q_max_fan
                 slope = min(h1v + 2.0 * h2v * q_max_fan, -abs(h2v) * q_max_fan * 4.0 - 50.0)
-                return (h_at_max + slope * (q_one - q_max_fan)) * N
+                return max(0.0, h_at_max + slope * (q_one - q_max_fan)) * N
             h = h0v + h1v * q_one + h2v * q_one * q_one
         return max(0.0, h) * N
     # Constant с qMax — резкий спад при выходе за паспорт (как Вентиляция-2)
