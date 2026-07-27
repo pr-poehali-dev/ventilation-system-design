@@ -114,7 +114,13 @@ def handler(event: dict, context) -> dict:
     # Формула: T(z) = surface_temp + gradient * (z_surface - z_node) / 100
     # где z_surface — высотная отметка самого высокого узла (поверхность),
     # z_node — высотная отметка текущего узла, gradient °C/100 м.
-    if use_natural_draft and geo_gradient > 0:
+    if use_natural_draft:
+        # Тяга включена. Температуру узлов ВСЕГДА нормализуем к поверхности +
+        # геотермическому градиенту (даже при grad=0 → изотермия → тяга=0).
+        # РАНЕЕ при grad=0 патч НЕ выполнялся: подземные узлы сохраняли исходную
+        # airTemp (обычно 20°C), а атмосфера была −40°C → ложная разность
+        # плотностей давала фантомную тягу, разгонявшую вентилятор (Q удваивался).
+        # Теперь при grad=0 все узлы = surface_temp → тяга строго 0 (как в АэроСети).
         z_vals = [float(n.get("z", 0) or 0) for n in nodes_in]
         z_surface = max(z_vals) if z_vals else 0.0
         nodes_in_patched = []
@@ -123,12 +129,12 @@ def handler(event: dict, context) -> dict:
             if n2.get("isAtm") or n2.get("atmosphereLink"):
                 n2["airTemp"] = surface_temp
             elif not n2.get("userTemp"):
-                # узел под землёй — считаем температуру по глубине
+                # узел под землёй — температура по глубине (при grad=0 → surface_temp)
                 depth = max(0.0, z_surface - float(n2.get("z", 0) or 0))
                 n2["airTemp"] = surface_temp + geo_gradient * depth / 100.0
             nodes_in_patched.append(n2)
         nodes_in = nodes_in_patched
-    elif not use_natural_draft:
+    else:
         # Галочка снята — обнуляем тягу: все узлы получают одинаковую температуру
         nodes_in = [dict(n, airTemp=surface_temp) for n in nodes_in]
 
