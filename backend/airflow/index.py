@@ -283,25 +283,29 @@ def fan_H(e, Q):
         # При реверсе — используем отдельную характеристику если передана
         if e.get("fanReverse") and e.get("reverseH0") is not None:
             q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-            if q_one > q_max_rev:
-                return 0.0
             rh0 = float(e.get("reverseH0", 0))
             rh1 = float(e.get("reverseH1", 0))
             rh2 = float(e.get("reverseH2", 0))
+            if q_one > q_max_rev:
+                # За пределом паспорта напор резко уходит ВНИЗ (вентилятор тормозит
+                # избыточный поток), а НЕ обнуляется. Жёсткий 0 создавал ложное
+                # равновесие: при реверсе поток улетал за характеристику и
+                # естественная тяга разгоняла его (баг Q=145 м³/с).
+                h_at_max = rh0 + rh1 * q_max_rev + rh2 * q_max_rev * q_max_rev
+                slope = min(rh1 + 2.0 * rh2 * q_max_rev, -abs(rh2) * q_max_rev * 4.0 - 50.0)
+                return h_at_max + slope * (q_one - q_max_rev)
             return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
         # Прямая характеристика
         q_max_fan = float(e.get("qMax", 1e9))
-        if q_one > q_max_fan:
-            # За паспортом — резкий спад до 0 на 1.1×qMax (как Вентиляция-2)
-            decay = max(0.0, 1.0 - (q_one - q_max_fan) / (0.1 * q_max_fan))
-            h0 = float(e.get("h0", 0))
-            h1 = float(e.get("h1", 0))
-            h2 = float(e.get("h2", 0))
-            h_at_max = max(0.0, h0 + h1 * q_max_fan + h2 * q_max_fan * q_max_fan)
-            return h_at_max * decay
         h0 = float(e.get("h0", 0))
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
+        if q_one > q_max_fan:
+            # За паспортом напор резко уходит ВНИЗ (торможение потока), а не в 0 —
+            # предотвращает разгон расхода за характеристику.
+            h_at_max = h0 + h1 * q_max_fan + h2 * q_max_fan * q_max_fan
+            slope = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
+            return h_at_max + slope * (q_one - q_max_fan)
         return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
     # Constant-режим: применяем qMax для защиты от Q→∞ (как в Вентиляция-2):
     # при Q > qMax напор резко падает (вентилятор выходит из рабочей зоны).
@@ -354,9 +358,21 @@ def fan_dH(e, Q):
         q_one = abs(Q) / N
         # При реверсе с отдельной кривой — используем её коэффициенты
         if e.get("fanReverse") and e.get("reverseH0") is not None:
-            dh_one = float(e.get("reverseH1", 0)) + 2.0 * float(e.get("reverseH2", 0)) * q_one
+            rh1 = float(e.get("reverseH1", 0))
+            rh2 = float(e.get("reverseH2", 0))
+            q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+            if q_one > q_max_rev:
+                dh_one = min(rh1 + 2.0 * rh2 * q_max_rev, -abs(rh2) * q_max_rev * 4.0 - 50.0)
+            else:
+                dh_one = rh1 + 2.0 * rh2 * q_one
         else:
-            dh_one = float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one
+            h1 = float(e.get("h1", 0))
+            h2 = float(e.get("h2", 0))
+            q_max_fan = float(e.get("qMax", 1e9))
+            if q_one > q_max_fan:
+                dh_one = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
+            else:
+                dh_one = h1 + 2.0 * h2 * q_one
         return abs(dh_one) / N
     return 0.0
 
