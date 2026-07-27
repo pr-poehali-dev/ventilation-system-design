@@ -2659,11 +2659,20 @@ export default function CadPage() {
       const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
         ? (b.fanCrossingR ?? 0) / 1000 : 0; // Мюрг → кМюрг
 
+      // R вентиляционного окна ГВУ «Внутри перемычки»: диафрагма (окно вентсооружения).
+      // R = ρ/(2·μ²·ΔS²) [Па·с²/м⁶ = кМюрг в системе расчёта], μ=0.8 — коэф. расхода окна.
+      // ВАЖНО: раньше площадь окна вообще НЕ уходила в решатель (backend), поэтому окно
+      // не создавало сопротивления → завышенный расход. Сверено с «АэроСеть»: ΔS=1.8 →
+      // R≈0.29 кМюрг → Q≈53.6 м³/с (как в АэроСети).
+      const winA = b.fanWindowArea ?? 0;
+      const fanWindowR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && winA > 0.001)
+        ? 1.2 / (2 * 0.8 * 0.8 * winA * winA) : 0;
+
       return {
         id: b.id,
         fromId: b.fromId,
         toId: b.toId,
-        R: b.resistance + rBulkheads + rBranchBulkhead, // fanCrossingR Python добавляет сам в get_R
+        R: b.resistance + rBulkheads + rBranchBulkhead + fanWindowR, // fanCrossingR Python добавляет сам в get_R
         area: b.area,
         angle: b.angle ?? 0,
         hasFan: b.hasFan,

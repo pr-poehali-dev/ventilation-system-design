@@ -1228,7 +1228,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             {(branch.fanWindowArea ?? 0) > 0 && (
               <InlineLabel label="R окна, кМюрг">
                 <ComputedInput value={numFmt(
-                  (1.2 / (2 * Math.pow(branch.fanWindowArea!, 2))) / 9.81,
+                  1.2 / (2 * 0.8 * 0.8 * Math.pow(branch.fanWindowArea!, 2)),
                   4
                 )} />
               </InlineLabel>

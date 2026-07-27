@@ -410,9 +410,10 @@ export function solveNetwork(
         return (b.bulkheadR ?? 0);
       })() : 0)
       + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) / 1000 : 0) // Мюрг → кМюрг
-      // R вентиляционного окна: R = ρ/(2·ΔS²), ΔS — площадь окна вентсооружения
-      // rho здесь = airRho(T)/1.2 (поправочный коэф.), фактическая ρ = rho*1.2
-      + (b.hasFan && (b.fanWindowArea ?? 0) > 0 ? (rho * 1.2) / (2 * Math.pow(b.fanWindowArea!, 2)) : 0)),
+      // R вентиляционного окна ГВУ: R = ρ/(2·μ²·ΔS²), μ=0.8 — коэф. расхода окна.
+      // Только при установке «Внутри перемычки». rho здесь = airRho(T)/1.2, ρ = rho*1.2.
+      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (b.fanWindowArea ?? 0) > 0
+          ? (rho * 1.2) / (2 * 0.8 * 0.8 * Math.pow(b.fanWindowArea!, 2)) : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",
