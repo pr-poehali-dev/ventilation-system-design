@@ -396,7 +396,7 @@ export function solveNetwork(
         // сечения выработки (как в АэроСети). См. windowBulkheadRkMurg.
         const winA = b.bulkheadWindowArea ?? 0;
         if (winA > 0.001) {
-          return windowBulkheadRkMurg(winA, b.area ?? 0);
+          return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
         }
         // project: глухая перемычка/парус — R = 1/(A·S)²/SCALE кМюрг (как в
         // АэроСети, с учётом сечения выработки S).

@@ -1360,7 +1360,7 @@ export default function CadPage() {
           if (isFullyOpen) {
             r = 0;
           } else if (sw > 0.001) {
-            r = windowBulkheadRkMurg(sw, branchArea);
+            r = windowBulkheadRkMurg(sw, branchArea, s.typeId);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -1382,7 +1382,7 @@ export default function CadPage() {
           return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
         }
         const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0);
+        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
         const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
           return rSolid(b.bulkheadCustomAirPerm!);
@@ -2623,7 +2623,7 @@ export default function CadPage() {
             r = 0;
           } else if (sw > 0.001) {
             // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-            r = windowBulkheadRkMurg(sw, branchArea);
+            r = windowBulkheadRkMurg(sw, branchArea, s.typeId);
           } else {
             const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
             const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
@@ -2647,7 +2647,7 @@ export default function CadPage() {
         }
         // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
         const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0);
+        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
         // Глухая: R=1/A²/1000; парус — калиброванная формула.
         const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
         if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
@@ -7057,7 +7057,7 @@ export default function CadPage() {
                 let r = 0;
                 if (sw > 0.001) {
                   // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-                  r = windowBulkheadRkMurg(sw, branchArea);
+                  r = windowBulkheadRkMurg(sw, branchArea, sym.typeId);
                 } else {
                   const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                     : (sym.bkAirPerm
@@ -7274,7 +7274,7 @@ export default function CadPage() {
                                 rKmu = 0;
                               } else if (sw > 0.001) {
                                 // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-                                rKmu = windowBulkheadRkMurg(sw, branchArea);
+                                rKmu = windowBulkheadRkMurg(sw, branchArea, sym.typeId);
                               } else {
                                 const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
                                   : (sym.bkAirPerm

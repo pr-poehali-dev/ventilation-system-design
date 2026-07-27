@@ -1327,7 +1327,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
                         const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
                         if (isWindow && winA > 0.001) {
-                          rBase = windowBulkheadRkMurg(winA, branch.area ?? 0) * 1e3;
+                          rBase = windowBulkheadRkMurg(winA, branch.area ?? 0, bulkheadSymTypeId ?? branch.bulkheadId) * 1e3;
                         } else {
                           const A = (sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm)
                             ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
@@ -1431,7 +1431,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         const rSolid = (A: number) => solidBulkheadRkMurg(A, branch.area ?? 0);
                         let rBulk = 0;
                         if (isWindow && winA > 0.001) {
-                          rBulk = windowBulkheadRkMurg(winA, branch.area ?? 0); // кМюрг
+                          rBulk = windowBulkheadRkMurg(winA, branch.area ?? 0, bulkheadSymTypeId ?? branch.bulkheadId); // кМюрг
                         } else if (isManualAirPerm && customAirPerm > 0) {
                           rBulk = rSolid(customAirPerm);
                         } else if (airPerm > 0) {

@@ -343,25 +343,45 @@ export function sailBulkheadRkMurg(A: number, area?: number): number {
   return solidBulkheadRkMurg(A, area);
 }
 
-// Коэффициент расхода регулируемого окна/проёма (диафрагма с острой кромкой),
-// как в АэроСети: μ=0,59. Проверено по эталону АэроСети (см. ниже).
-const WINDOW_MU = 0.59;
+// Коэффициент расхода регулируемого окна/проёма (диафрагма с острой кромкой).
+// Зависит от ТИПА двери (материала), как в АэроСети:
+//   металлическая/прочие — μ=0,59 (эталон: окно 2 м² → 0,044 кМюрг);
+//   бетонная            — μ=0,75 с учётом скорости подхода в выработке
+//                         (эталон: окно 5,5 м², сечение 19,3 м² → 0,00326 кМюрг).
+const WINDOW_MU = 0.59;          // по умолчанию (металл и пр.)
+const WINDOW_MU_CONCRETE = 0.75; // бетонная дверь с окном
 // Ускорение свободного падения — переводной множитель между «нашими» единицами
 // сопротивления (Н·с²/м⁸, ΔP = R·Q² в Па) и рудничными кМюрг АэроСети
 // (кгс·с²/м⁸, ΔP = R·Q²·g). R_нашего = R_АэроСети · g.
 export const G_ACCEL = 9.80665;
 
+// Тип окна БЕТОННЫЙ? (id заканчивается на "_conc"): для него АэроСеть считает
+// диафрагму с учётом скорости подхода в выработке.
+function isConcreteWindow(typeId?: string): boolean {
+  return !!typeId && /_conc$/.test(typeId);
+}
+
 // Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ в кМюрг (кгс·с²/м⁸ — те же
-// единицы, что и solidBulkheadRkMurg). Формула истечения через отверстие
-// (диафрагму): перепад определяется СКОРОСТЬЮ ВОЗДУХА В ОКНЕ (Q/Sок), а не в
-// сечении выработки:
-//   ΔP_Па = ρ/2 · (Q/(μ·Sок))²  ⇒  R_кМюрг = ρ / (2·g·μ²·Sок²)
-// где ρ=1,2 кг/м³, μ=0,59, g=9,80665. Проверка (эталон АэроСети):
-//   Sок=2 → R≈0,044 кМюрг (точно совпадает с АэроСетью).
-// Сечение выработки S на сопротивление окна НЕ влияет (влияет только площадь окна).
-export function windowBulkheadRkMurg(windowArea: number, _sectionArea?: number): number {
+// единицы, что и solidBulkheadRkMurg).
+//
+// Металлическая/прочие двери (μ=0,59): перепад определяется СКОРОСТЬЮ ВОЗДУХА
+// В ОКНЕ (Q/Sок), сечение выработки не влияет:
+//   ΔP_Па = ρ/2·(Q/(μ·Sок))²  ⇒  R_кМюрг = ρ/(2·g·μ²·Sок²)
+//   Проверка: Sок=2 → R≈0,044 кМюрг (совпадает с АэроСетью).
+//
+// Бетонная дверь (μ=0,75): диафрагма С УЧЁТОМ скорости подхода в выработке —
+// вычитается динамический напор набегающего потока (1/Sвыр²):
+//   R_кМюрг = ρ/(2·g·μ²)·(1/Sок² − 1/Sвыр²)
+//   Проверка: Sок=5,5, Sвыр=19,3 → R≈0,00326 кМюрг (совпадает с АэроСетью).
+export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, typeId?: string): number {
   const Sok = windowArea;
   if (Sok <= 0.001) return 0;
+  if (isConcreteWindow(typeId)) {
+    const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
+    const approach = S > 0 ? 1 / (S * S) : 0;
+    const r = 1.2 / (2 * G_ACCEL * WINDOW_MU_CONCRETE * WINDOW_MU_CONCRETE) * (1 / (Sok * Sok) - approach);
+    return r > 0 ? r : 0;
+  }
   return 1.2 / (2 * G_ACCEL * WINDOW_MU * WINDOW_MU * Sok * Sok);
 }
 
@@ -403,7 +423,7 @@ export function branchBulkheadRkMurg(b: {
   // Перепад по скорости в окне (диафрагма), как в АэроСети. См. windowBulkheadRkMurg.
   const winA = b.bulkheadWindowArea ?? 0;
   if (winA > 0.001) {
-    return windowBulkheadRkMurg(winA, b.area ?? 0);
+    return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
   }
   // project: глухая перемычка/парус → R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
   const area = b.area ?? 0;
