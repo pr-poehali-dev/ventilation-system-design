@@ -1737,6 +1737,10 @@ export default function TopoCanvas(props: Props) {
   // Слои ветвей по горизонтам (публикуются при отрисовке ветвей и переиспользуются
   // блоком УО, чтобы символы имели корректный z-order между горизонтами).
   const branchLayerGroupsRef = useRef<{ order: number; node: React.ReactNode }[]>([]);
+  // Задымление (дым) — публикуем из блока ВЕТВИ, рисуем САМЫМ ПОСЛЕДНИМ (после
+  // блока УО, который перерисовывает ветви верхних горизонтов и иначе перекрыл
+  // бы дым). Так дым всегда виден поверх всех слоёв-горизонтов и символов.
+  const smokePassRef = useRef<React.ReactNode>(null);
 
   // Сортировка ветвей: сначала по иерархии горизонтов (как слои в Фотошопе / Аэросети),
   // затем по глубине 3D внутри одного горизонта.
@@ -3475,7 +3479,10 @@ export default function TopoCanvas(props: Props) {
                 );
               })
             : null;
-          return <>{comparePass}{posOuterPass}{highlightPass}{layered}{smokePass}</>;
+          // Публикуем дым — рисуем его ПОСЛЕ блока УО (см. smokePassRef ниже),
+          // иначе перерисовка ветвей верхних горизонтов перекрывает дым.
+          smokePassRef.current = smokePass;
+          return <>{comparePass}{posOuterPass}{highlightPass}{layered}</>;
         })()}
 
         {/* Превью создания ветви */}
@@ -4296,6 +4303,11 @@ export default function TopoCanvas(props: Props) {
           }
           return <>{symOut}</>;
         })()}
+
+        {/* ─── ЗАДЫМЛЕНИЕ (дым) — поверх ветвей И символов всех горизонтов ── */}
+        {/* Рисуем ПОСЛЕ блока УО: тот перерисовывает ветви верхних горизонтов */}
+        {/* для z-order символов и иначе перекрыл бы дым нижних горизонтов. */}
+        {!useCanvas && smokePassRef.current}
 
         {/* ─── УЗЛЫ (отсортированы по глубине, ближние сверху) ─────────── */}
         {!useCanvas && nodesSorted.map(({ node, sx, sy }) => {
