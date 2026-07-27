@@ -7287,10 +7287,15 @@ export default function CadPage() {
                                   : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
-                            if (rKmu === 0) return "0 кМюрг";
-                            const mag = Math.floor(Math.log10(Math.abs(rKmu)));
-                            const d = Math.max(4, -mag + 2);
-                            return `${rKmu.toFixed(d)} кМюрг`;
+                            if (rKmu === 0) return "0 Н·с²/м⁸";
+                            const fmt = (v: number) => {
+                              const mag = Math.floor(Math.log10(Math.abs(v)));
+                              return v.toFixed(Math.max(4, -mag + 2));
+                            };
+                            // Наши единицы: Н·с²/м⁸ (ΔP=R·Q² в Па). Рядом — рудничные
+                            // кМюрг АэроСети (кгс·с²/м⁸ = Н·с²/м⁸ ÷ g), как в справочниках.
+                            const rKgs = rKmu / 9.80665;
+                            return `${fmt(rKmu)} Н·с²/м⁸  (${fmt(rKgs)} кМюрг)`;
                           })()}
                         </span>
                       </div>
