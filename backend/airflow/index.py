@@ -1299,20 +1299,16 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
 
     # ── Защита от «фантомного» расхода без источника напора ──────────────
     # Метод Кросса стартует с ненулевого начального Q (init_flows). Если в сети
-    # НЕТ активного вентилятора и НЕТ чистой естественной тяги в контурах
-    # (симметричные стволы равной высоты → тяги ветвей взаимно сокращаются,
-    # дедбанд обнуляет net-тягу контура), то невязка ΔH≈0 достигается уже на
-    # старте, и итерации НЕ убирают начальную циркуляцию → ложный расход.
-    # Физически при отсутствии движущей силы решение единственно: Q=0 везде.
+    # НЕТ активного вентилятора и НЕТ реальной тяги, итерации не убирают эту
+    # начальную циркуляцию (невязка ΔH≈0 уже на старте) → ложный расход.
+    # Критерий движущей силы — МАКСИМАЛЬНАЯ по ветвям |H_нат| (та же величина
+    # H_nat, что реально действует в контурах). Если она пренебрежимо мала
+    # (симметрия/изотермия/равные высоты) — расход строго 0.
     if not active_fans:
-        max_loop_draft = 0.0
-        for lp in loops_global:
-            s_nat = sum(edges[gi].get("naturalDraft", 0.0) * sg for gi, sg in lp)
-            if abs(s_nat) >= 1.0:  # тот же порог, что дедбанд в итерациях
-                max_loop_draft = max(max_loop_draft, abs(s_nat))
-        if max_loop_draft < 1.0:
+        max_edge_draft = max((abs(e.get("naturalDraft", 0.0)) for e in edges), default=0.0)
+        if max_edge_draft < 1.0:
             Q_map = {e["id"]: 0.0 for e in edges}
-            log.append("Нет активного вентилятора и чистой тяги в контурах — "
+            log.append("Нет активного вентилятора и естественной тяги — "
                        "расход обнулён (устранена фантомная циркуляция)")
 
     # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
@@ -2732,16 +2728,12 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 
     # ── Защита от «фантомного» расхода без источника напора (см. Кросс) ──
-    # Нет активного вентилятора и нет чистой тяги в контурах → Q=0 везде.
+    # Нет активного вентилятора и нет реальной тяги ни на одной ветви → Q=0.
     if not active_fans:
-        max_loop_draft = 0.0
-        for cnt in contours_local:
-            s_nat = sum(edges[local_to_global[li]].get("naturalDraft", 0.0) * sg for li, sg in cnt)
-            if abs(s_nat) >= 1.0:
-                max_loop_draft = max(max_loop_draft, abs(s_nat))
-        if max_loop_draft < 1.0:
+        max_edge_draft = max((abs(e.get("naturalDraft", 0.0)) for e in edges), default=0.0)
+        if max_edge_draft < 1.0:
             Q_map = {e["id"]: 0.0 for e in edges}
-            log.append("Нет активного вентилятора и чистой тяги в контурах — "
+            log.append("Нет активного вентилятора и естественной тяги — "
                        "расход обнулён (устранена фантомная циркуляция)")
 
     # ── Коррекция Q для вентилятора GND→GND ("Без перемычки") ───────────
