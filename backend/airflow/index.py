@@ -103,7 +103,7 @@ def handler(event: dict, context) -> dict:
     surface_temp      = float(body.get("surfaceTemp", 20.0))
     method            = body.get("method", "cross")  # "cross" или "mkr"
     use_natural_draft = bool(body.get("useNaturalDraft", True))
-    geo_gradient      = float(body.get("geoGradient", 3.0))   # °C / 100 м глубины
+    geo_gradient      = float(body.get("geoGradient", 0.5))   # °C / 100 м глубины (согласовано с АэроСетью)
 
     if not branches_in:
         return ok(empty_result("Нет ветвей"))
