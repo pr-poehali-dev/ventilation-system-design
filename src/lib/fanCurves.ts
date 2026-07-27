@@ -230,8 +230,10 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 50, qMax: 850, qNominal: 500, hNominal: 4000,
     rpmMin: 0, rpmMax: 750, rpmNominal: 750,
     bladeAngles: [1, 2, 3, 4, 5, 6],
-    reverseH0: 3640, reverseH1: 1.4, reverseH2: -0.0053,
-    reverseQMin: 40, reverseQMax: 720,
+    // Реверс: расход ~0.81 от прямого (кривая круче прямой). Прежние коэффициенты
+    // (h2=−0.0053) давали слишком пологую кривую → завышенный Q в реверсе.
+    reverseH0: 3500, reverseH1: 1.3, reverseH2: -0.0062,
+    reverseQMin: 40, reverseQMax: 700,
     reverseEfficiencyFactor: 0.82,
   },
   {
@@ -245,7 +247,8 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 20, qMax: 43, qNominal: 32, hNominal: 3500,
     rpmMin: 0, rpmMax: 1500, rpmNominal: 1200,
     bladeAngles: [1, 2, 3, 4],
-    reverseH0: 5040, reverseH1: -48, reverseH2: -2.0,
+    // Реверс: расход ~0.83 от прямого (кривая круче прямой).
+    reverseH0: 4680, reverseH1: -46, reverseH2: -2.35,
     reverseQMin: 16, reverseQMax: 36,
     reverseEfficiencyFactor: 0.82,
   },
