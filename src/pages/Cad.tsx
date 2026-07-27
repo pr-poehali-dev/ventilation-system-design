@@ -1312,42 +1312,6 @@ export default function CadPage() {
     }));
   }, [branches]);
 
-  // Автопривязка «висящих» символов перемычек к ближайшей ветви.
-  // Если у перемычки-символа нет branchId (например, поставлен мимо ветви или
-  // импортирован без привязки), его сопротивление теряется в расчёте. Здесь
-  // находим ближайшую ветвь по МИРОВЫМ координатам и привязываем символ к ней,
-  // чтобы R перемычки всегда попадал и в панель, и в солвер.
-  useEffect(() => {
-    const orphans = schemaSymbols.filter(s =>
-      BULKHEAD_SYMBOL_IDS.has(s.typeId) && !s.branchId
-      && Number.isFinite(s.x) && Number.isFinite(s.y));
-    if (orphans.length === 0) return;
-    const nodeById = new Map(nodes.map(n => [n.id, n]));
-    // Ближайшая ветвь к мировой точке (x,y): расстояние до отрезка from→to.
-    const nearest = (px: number, py: number): { id: string; t: number } | null => {
-      let bestId: string | null = null, bestT = 0.5, bestD = Infinity;
-      for (const b of branches) {
-        const f = nodeById.get(b.fromId), t = nodeById.get(b.toId);
-        if (!f || !t) continue;
-        const cx = t.x - f.x, cy = t.y - f.y;
-        const lenSq = cx * cx + cy * cy;
-        if (lenSq < 1e-9) continue;
-        const tt = Math.max(0, Math.min(1, ((px - f.x) * cx + (py - f.y) * cy) / lenSq));
-        const d = Math.hypot(px - (f.x + cx * tt), py - (f.y + cy * tt));
-        if (d < bestD) { bestD = d; bestId = b.id; bestT = tt; }
-      }
-      return bestId ? { id: bestId, t: bestT } : null;
-    };
-    const patch = new Map<string, { branchId: string; t: number }>();
-    for (const s of orphans) {
-      const hit = nearest(s.x, s.y);
-      if (hit) patch.set(s.id, { branchId: hit.id, t: hit.t });
-    }
-    if (patch.size === 0) return;
-    setSchemaSymbols(prev => prev.map(s =>
-      patch.has(s.id) ? { ...s, branchId: patch.get(s.id)!.branchId, t: s.t ?? patch.get(s.id)!.t } : s));
-  }, [schemaSymbols, branches, nodes]);
-
   // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
   const [branchWidth, setBranchWidth] = useState<number>(7);    // px
   const [branchBorder, setBranchBorder] = useState<number>(0.6); // px
