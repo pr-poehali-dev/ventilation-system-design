@@ -1627,8 +1627,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         is_dead = e["id"] in dead_ends
         q = Q.get(e["id"], 0.0)
 
-        if is_dead and not e.get("hasFan"):
-            q = 0.0  # тупиковые выработки без вентилятора — Q=0
+        if is_dead and (not e.get("hasFan") or e.get("fanStopped")):
+            q = 0.0  # тупиковая выработка без вентилятора ИЛИ с остановленным — Q=0
         elif is_dead and e.get("hasFan"):
             # Тупиковая ветвь с ВМП: рабочая точка H_вент(Q) = R·Q²
             #
@@ -1711,9 +1711,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 q = q_supply if q >= 0 else -q_supply
         elif force_zero:
             q = 0.0
-        elif e["hasFan"] and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
+        elif e["hasFan"] and not e.get("fanStopped") and (abs(q) < 1e-6 or (e["a"] == GND and e["b"] == GND)):
             # Главный вентилятор GND→GND ("Без перемычки") выпадает из итераций —
             # считаем рабочую точку через R_net всей сети.
+            # ВАЖНО: только для РАБОТАЮЩЕГО вентилятора. У остановленного (fanStopped)
+            # fan_H=0, и bisect возвращал q_lo=qMin (≈1) → ложный расход при Q≈0.
             R = R_net if R_net > 0 else e["R"]
             if R > 0:
                 q_lo = float(e.get("qMin", 1.0))
