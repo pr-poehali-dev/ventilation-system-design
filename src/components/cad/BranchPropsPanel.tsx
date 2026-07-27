@@ -519,7 +519,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             )}
 
             {branch.resistanceMode === "manual" && (
-              <InlineLabel label="Сопротивление R, Н·с²/м⁸">
+              <InlineLabel label="Сопротивление R, кМюрг">
                 <EditInput
                   type="number" step="0.001"
                   value={branch.manualR}
@@ -1511,7 +1511,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 {/* Режим: Вручную */}
                 {(branch.bulkheadResMode ?? "project") === "manual" && (
                   <>
-                    <InlineLabel label="R (Н·с²/м⁸):">
+                    <InlineLabel label="R (кМюрг):">
                       <EditInput
                         type="number" step="0.0001"
                         value={branch.bulkheadManualR ?? 0}
