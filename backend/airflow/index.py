@@ -409,13 +409,19 @@ def natural_draft_h(from_z, to_z, from_temp, to_temp, atm_temp=None):
     возврат, и остаётся только «избыток» плотности рудничного воздуха.
 
     Изотермия (T_ветви = T_поверхности) → ρ_ветви = ρ_атм → H_nat = 0.
+
+    ЗНАК: при холодной атмосфере (T_пов < T рудника, напр. −40°C) наружный
+    воздух плотнее рудничного → тяжёлый столб АТМОСФЕРЫ проталкивает воздух
+    ВНИЗ по стволу с устьем (нисходящая струя ОТ вентилятора в шахту), как в
+    АэроСети. Поэтому берём знак (ρ_атм − ρ_ветви): при ρ_атм > ρ_ветви и
+    нисходящей ориентации (from сверху) тяга положительна в направлении from→to.
     """
     g = 9.81
     t_atm = atm_temp if atm_temp is not None else (from_temp + to_temp) / 2.0
     rho_atm  = 353.0 / (273.0 + max(-60.0, min(100.0, t_atm)))
     t_mean   = (from_temp + to_temp) / 2.0
     rho_mean = 353.0 / (273.0 + max(-60.0, min(100.0, t_mean)))
-    return g * (from_z - to_z) * (rho_mean - rho_atm)
+    return g * (from_z - to_z) * (rho_atm - rho_mean)
 
 
 def build_graph(nodes_in, branches_in, surface_temp=20.0):
