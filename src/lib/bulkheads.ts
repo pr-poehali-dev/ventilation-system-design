@@ -346,19 +346,17 @@ export function sailBulkheadRkMurg(A: number, area?: number): number {
 // Коэффициент расхода регулируемого окна/проёма (как в АэроСети).
 const WINDOW_MU = 0.62;
 
-// Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ (кМюрг). Формула диафрагмы
-// (местное сопротивление отверстия в потоке) с учётом сечения выработки S:
-//   n = Sок / S,  R = (1/(μ·n) − 1)² · ρ / (2·S²·g)
-// где ρ=1,2 кг/м³, μ=0,62, g=9,80665. Совпадает с АэроСети:
-//   Sок=4, S=10,5 → R≈0,0058;  Sок=0,5, S=15,5 → R≈0,61 кМюрг.
-export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number): number {
+// Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ (кМюрг = Па·с²/м⁶, ΔP=R·Q²).
+// Формула истечения через отверстие (диафрагму): перепад определяется
+// СКОРОСТЬЮ ВОЗДУХА В ОКНЕ (Q/Sок), а не в сечении выработки — как в АэроСети:
+//   ΔP = ρ/2 · (Q/(μ·Sок))²  ⇒  R = ρ / (2·μ²·Sок²)
+// где ρ=1,2 кг/м³, μ=0,62. Проверка (эталон АэроСети):
+//   Sок=5,5, Q≈100 → R≈0,0516 кМюрг → ΔP≈516 Па (совпадает с 536 Па АэроСети).
+// Сечение выработки S на сопротивление окна НЕ влияет (влияет только площадь окна).
+export function windowBulkheadRkMurg(windowArea: number, _sectionArea?: number): number {
   const Sok = windowArea;
-  const S = sectionArea && sectionArea > 0 ? sectionArea : Sok;
-  if (Sok <= 0.001 || S <= 0) return 0;
-  const n = Sok / S;
-  if (n >= 1) return 0; // окно ≥ сечения — сопротивление отсутствует
-  const zeta = (1 / (WINDOW_MU * n) - 1) ** 2;
-  return (zeta * 1.2) / (2 * S * S * 9.80665);
+  if (Sok <= 0.001) return 0;
+  return 1.2 / (2 * WINDOW_MU * WINDOW_MU * Sok * Sok);
 }
 
 // R перемычки в Мюрг → суммируется с R выработки последовательно
@@ -395,11 +393,11 @@ export function branchBulkheadRkMurg(b: {
     // R = ΔP/(Q²·9.81) кМюрг: ΔP в Па → кгс/м² (÷9.81), как в АэроСети.
     return q > 0 ? dp / (q * q * 9.81) : 1e9;                     // кМюрг
   }
-  // project: перемычка с окном — R = ρ/(2·μ²·S²·g) кМюрг (μ=0.75, ρ=1.2, g=9.81).
-  // Проверка: S=5.5 м² → 0.0036 кМюрг (совпадает с Аэросетью).
+  // project: перемычка с окном — R = ρ/(2·μ²·Sок²) кМюрг (μ=0.62, ρ=1.2).
+  // Перепад по скорости в окне (диафрагма), как в АэроСети. См. windowBulkheadRkMurg.
   const winA = b.bulkheadWindowArea ?? 0;
   if (winA > 0.001) {
-    return 1.2 / (2 * 0.75 * 0.75 * winA * winA * 9.81);
+    return windowBulkheadRkMurg(winA, b.area ?? 0);
   }
   // project: глухая перемычка/парус → R = 1/(A·S)²/SCALE кМюрг (учёт сечения S).
   const area = b.area ?? 0;
