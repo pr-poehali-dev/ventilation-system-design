@@ -1094,14 +1094,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
   }
 
-  // ── ПОДПРОХОД: задымление (дым) поверх ВСЕХ заливок слоя ──────────────────
-  // Дым тёмно-серой полосой ВНУТРИ ветви. Рисуем в конце fill-прохода слоя,
-  // чтобы окрашенные соседние ветви того же горизонта не перекрывали его в
-  // общих узлах (как в SVG). Между горизонтами порядок сохраняется: дым
-  // нижнего слоя перекрывается ветвями верхнего — это корректно.
+  // Сброс после подпрохода труб внутри слоя
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+  } // конец цикла по слоям-горизонтам
+  // Сброс после всех слоёв
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+
+  // ── ГЛОБАЛЬНЫЙ ПРОХОД: задымление (дым) ПОВЕРХ ВСЕХ слоёв-горизонтов ───────
+  // Дым тёмно-серой полосой ВНУТРИ ветви. ВАЖНО: рисуем ЕДИНЫМ проходом ПОСЛЕ
+  // всех горизонтов (а НЕ внутри цикла по слоям), иначе ветви вышележащих
+  // горизонтов перекрывали дым нижних. Теперь дым виден поверх любых слоёв.
   if (branchFireColors && branchFireColors.size > 0) {
     ctx.setLineDash([]);
-    for (const { b } of group) {
+    for (const { b } of sorted) {
       const fireSeg = branchFireColors.get(b.id);
       if (!fireSeg) continue;
       const p = bParamsMap.get(b.id);
@@ -1116,15 +1123,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
   }
-
-  // Сброс после подпрохода труб внутри слоя
-  ctx.globalAlpha = 1;
-  ctx.setLineDash([]);
-  } // конец цикла по слоям-горизонтам
-  // Сброс после всех слоёв
-  ctx.globalAlpha = 1;
-  ctx.setLineDash([]);
 
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {

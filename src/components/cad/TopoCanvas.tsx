@@ -3025,8 +3025,7 @@ export default function TopoCanvas(props: Props) {
 
           // ── Подсветка в F3-режиме привязки ────────────────────────────────
           const posBindInfo = branchPositionColors?.get(b.id);
-          // ── Подсветка задымления от пожара ────────────────────────────────
-          const fireSeg = branchFireColors?.get(b.id);
+          // Задымление (fireSeg) рисуется отдельным проходом smokePass ниже.
           // ── Подсветка зон взрыва ───────────────────────────────────────────
           const expSeg = branchExplosionColors?.get(b.id);
 
@@ -3120,19 +3119,9 @@ export default function TopoCanvas(props: Props) {
                 stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1}
                 strokeDasharray={isLeakage ? "6 4" : undefined} />
 
-              {/* Задымление (дым) — тёмно-серая полоса ВНУТРИ ветви, поверх основной линии */}
-              {fireSeg && (() => {
-                const { color: fireCol, fromT, toT } = fireSeg;
-                // sxA/syA — начало по направлению потока (с учётом reversed)
-                const fsx = sxA + (sxB - sxA) * fromT;
-                const fsy = syA + (syB - syA) * fromT;
-                const tsx = sxA + (sxB - sxA) * toT;
-                const tsy = syA + (syB - syA) * toT;
-                return (
-                  <line x1={fsx} y1={fsy} x2={tsx} y2={tsy}
-                    stroke={fireCol} strokeWidth={Math.max(w * 0.7, 2)} strokeLinecap="round" opacity="0.95" />
-                );
-              })()}
+              {/* Задымление (дым) рисуется ОТДЕЛЬНЫМ проходом smokePass ПОВЕРХ
+                  всех слоёв-горизонтов — см. ниже. Здесь НЕ рисуем, иначе ветви
+                  вышележащих горизонтов перекрывали бы дым нижних. */}
 
               {/* ── Вентрубопровод — пунктирная линия параллельно ветви ── */}
               {/* Для реальных ветвей-нити трубопровода (isVentPipeBranch) пунктир
@@ -3456,7 +3445,37 @@ export default function TopoCanvas(props: Props) {
           // Публикуем слои ветвей — их переиспользует блок УО для корректного
           // z-order символов между горизонтами (см. блок УСЛОВНЫЕ ОБОЗНАЧЕНИЯ).
           branchLayerGroupsRef.current = layerGroups;
-          return <>{comparePass}{posOuterPass}{highlightPass}{layered}</>;
+          // ── ПРОХОД ЗАДЫМЛЕНИЯ: дым ПОВЕРХ всех слоёв-горизонтов ───────────
+          // Рисуем единым проходом ПОСЛЕ {layered}, чтобы ветви вышележащих
+          // горизонтов не перекрывали дым нижних (в SVG порядок = z-order).
+          const smokePass = (branchFireColors && branchFireColors.size > 0)
+            ? branchesSorted.map(({ branch: b }) => {
+                const fireSeg = branchFireColors.get(b.id);
+                if (!fireSeg) return null;
+                const from = projNodesMap.get(b.fromId);
+                const to   = projNodesMap.get(b.toId);
+                if (!from || !to) return null;
+                const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && b.flow >= 0;
+                const reversed = b.flow < 0 || fanReverseOverride;
+                const sxA = reversed ? to.sx : from.sx;
+                const syA = reversed ? to.sy : from.sy;
+                const sxB = reversed ? from.sx : to.sx;
+                const syB = reversed ? from.sy : to.sy;
+                const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+                const w = thinLines ? 1 : Math.max(bw * objSF, 1.0);
+                const { color: fireCol, fromT, toT } = fireSeg;
+                const fsx = sxA + (sxB - sxA) * fromT;
+                const fsy = syA + (syB - syA) * fromT;
+                const tsx = sxA + (sxB - sxA) * toT;
+                const tsy = syA + (syB - syA) * toT;
+                return (
+                  <line key={`smoke-${b.id}`} x1={fsx} y1={fsy} x2={tsx} y2={tsy}
+                    stroke={fireCol} strokeWidth={Math.max(w * 0.7, 2)}
+                    strokeLinecap="round" opacity="0.95" pointerEvents="none" />
+                );
+              })
+            : null;
+          return <>{comparePass}{posOuterPass}{highlightPass}{layered}{smokePass}</>;
         })()}
 
         {/* Превью создания ветви */}
