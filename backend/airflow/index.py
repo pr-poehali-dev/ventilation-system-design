@@ -441,25 +441,6 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
         if n.get("isAtm") or n.get("atmosphereLink"):
             node_temp[nid] = surface_temp
 
-    # ПОТЕНЦИАЛ ТЯГИ каждого узла Φ(node) (Па) — вес столба воздуха от поверхности
-    # до узла ОТНОСИТЕЛЬНО атмосферного столба той же высоты:
-    #     Φ = g · (z_surface − z_node) · (ρ_node − ρ_атм)
-    # Тяга ветви = Φ(from) − Φ(to). Такая форма ТЕЛЕСКОПИРУЕТСЯ: если ствол
-    # разбит промежуточными узлами, их Φ взаимно сокращаются, и суммарная тяга
-    # ствола НЕ зависит от числа сегментов. Благодаря этому симметричные стволы
-    # одинаковой высоты дают строго нулевую тягу в контуре (как в АэроСети),
-    # без паразитного остатка от нелинейности ρ(T) при дроблении.
-    _g = 9.81
-    _z_vals = [node_z[n["id"]] for n in nodes_in] or [0.0]
-    _z_surface = max(_z_vals)
-    _rho_atm = 353.0 / (273.0 + max(-60.0, min(100.0, surface_temp)))
-    node_phi = {}
-    for n in nodes_in:
-        nid = n["id"]
-        _t = max(-60.0, min(100.0, node_temp[nid]))
-        _rho = 353.0 / (273.0 + _t)
-        node_phi[nid] = _g * (_z_surface - node_z[nid]) * (_rho - _rho_atm)
-
     def to_gnd(nid):
         return GND if nid in atm else nid
 
@@ -480,12 +461,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
         tz  = node_z.get(orig_to,   float(b.get("toZ",   0.0) or 0.0))
         ft  = node_temp.get(orig_from, surface_temp)
         tt  = node_temp.get(orig_to,   surface_temp)
-        # Тяга ветви = разность узловых потенциалов Φ (телескопируется по стволу).
-        # Fallback на прямую формулу, если узел не найден в карте потенциалов.
-        if orig_from in node_phi and orig_to in node_phi:
-            h_nat = node_phi[orig_from] - node_phi[orig_to]
-        else:
-            h_nat = natural_draft_h(fz, tz, ft, tt, atm_temp=surface_temp)
+        h_nat = natural_draft_h(fz, tz, ft, tt, atm_temp=surface_temp)
 
         # Тепловая депрессия пожара (Па): добавляется к естественной тяге.
         # Передаётся фронтендом при итеративном расчёте аварийного режима.
@@ -979,12 +955,30 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
         Q ≤ qMax_паспорта (вентилятор не может работать за паспортом).
         Если qMax задан — Q₀ берём в зоне 50-80% от qMax (зона макс КПД).
         """
+        # Q₀ по ЧИСТОЙ (loop-net) естественной тяге первого контура. Используется
+        # когда вентиляторов нет: q0 = √(|ΣH_нат·sign| / ΣR). Для симметричных
+        # стволов тяга в контуре сокращается (~0) → старт строго 0, пассивная
+        # сеть даёт Q=0 (как в АэроСети). Дедбанд <1 Па гасит FP-остаток.
+        def q0_from_draft():
+            if loops_global:
+                lp = loops_global[0]
+                h_sum = abs(sum(edges[gi].get("naturalDraft", 0.0) * s for gi, s in lp))
+                if h_sum < 1.0:
+                    h_sum = 0.0
+                r_sum = sum(edges[gi]["R"] for gi, _ in lp)
+                if h_sum > 0 and r_sum > 1e-9:
+                    return math.sqrt(h_sum / r_sum)
+                return 0.0
+            H_nat = max((abs(e.get("naturalDraft", 0.0)) for e in active_edges), default=0.0)
+            return math.sqrt(H_nat / R_net) if H_nat > 0 else 0.0
+
         # Главный вентилятор — с максимальным h0 (или fanPressure)
         main_fans = [e for e in active_fans if e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ")]
         if not main_fans:
             main_fans = active_fans
         if not main_fans:
-            return 1.0
+            # Вентиляторов нет — движущая сила только естественная тяга.
+            return q0_from_draft()
         # Берём qMax главного вентилятора как верхнюю границу
         q_max_main = 0.0
         for e in main_fans:
@@ -1018,15 +1012,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                 # Ограничиваем паспортным qMax (зона 70-90% макс КПД)
                 return min(q_calc, q_max_main * 0.9)
             return q_calc
-        # Без вентилятора — естественная тяга. Q₀ через суммарную тягу первого контура.
-        if loops_global:
-            lp = loops_global[0]
-            h_sum = abs(sum(edges[gi].get("naturalDraft", 0.0) * s for gi, s in lp))
-            r_sum = sum(edges[gi]["R"] for gi, _ in lp)
-            if h_sum > 0 and r_sum > 1e-9:
-                return math.sqrt(h_sum / r_sum)
-        H_nat = max((abs(e.get("naturalDraft", 0.0)) for e in active_edges), default=0.0)
-        return math.sqrt(H_nat / R_net) if H_nat > 0 else 1.0
+        # Напор вентилятора не определился (H0≤0) — старт по естественной тяге.
+        return q0_from_draft()
 
     q0 = bisect_q0()
     log.append(f"Q₀={q0:.3f} м³/с")
@@ -1185,8 +1172,9 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
 
         for loop in loops_global:
             # Невязка давлений по контуру (Па)
-            sum_H   = 0.0   # ΣH = Σ(R·Q·|Q|) - ΣH_вент - ΣH_нат
-            sum_2RQ = 0.0   # Σ(2·R·|Q|) + Σ(dH_вент/dQ)
+            sum_H    = 0.0   # ΣH = Σ(R·Q·|Q|) - ΣH_вент - ΣH_нат
+            sum_2RQ  = 0.0   # Σ(2·R·|Q|) + Σ(dH_вент/dQ)
+            sum_Hnat = 0.0   # ΣH_нат по контуру (для дедбанда симметрии)
 
             for gi, sign in loop:
                 e  = edges[gi]
@@ -1222,10 +1210,21 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
                 # Естественная тяга: вклад в обход = h_nat * sign (фиксированный знак,
-                # не зависит от знака потока, как и вентилятор)
+                # не зависит от знака потока, как и вентилятор). Копим ОТДЕЛЬНО,
+                # чтобы применить дедбанд симметрии ниже.
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
-                    sum_H -= h_nat * sign
+                    sum_Hnat += h_nat * sign
+
+            # ДЕДБАНД СИММЕТРИИ: для симметричных стволов одинаковой высоты тяги
+            # ветвей (~50 Па) в контуре взаимно сокращаются, но из-за накопления
+            # чисел с плавающей точкой остаётся ~1e-5 Па. Так как Q ~ √H, даже
+            # микро-остаток даёт видимый ложный расход (~0.01 м³/с). Обнуляем
+            # чистую тягу контура, если она физически пренебрежима (< 1 Па) —
+            # тогда симметричная схема даёт строго 0, как в АэроСети.
+            if abs(sum_Hnat) < 1.0:
+                sum_Hnat = 0.0
+            sum_H -= sum_Hnat
 
             if sum_2RQ < 1e-12:
                 continue
@@ -2139,6 +2138,7 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
             num = 0.0
             den = 0.0
             q_ref = 0.0
+            nat_sum = 0.0   # ΣH_нат по контуру (для дедбанда симметрии)
             for gi, sign in contour:
                 qg = Q[gi]
                 qd = qg * sign
@@ -2160,11 +2160,18 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
 
                 hn = nat_edge[gi]
                 if hn != 0.0:
-                    num -= hn * sign
+                    nat_sum += hn * sign
 
                 aqg = qg if qg >= 0.0 else -qg
                 if aqg > q_ref:
                     q_ref = aqg
+
+            # Дедбанд симметрии: чистую тягу контура < 1 Па (остаток от взаимного
+            # сокращения тяг симметричных стволов) считаем нулём — иначе Q ~ √H
+            # даёт ложный микрорасход. Симметричная схема → строго 0, как в АэроСети.
+            if nat_sum < 1.0 and nat_sum > -1.0:
+                nat_sum = 0.0
+            num -= nat_sum
 
             if den < 1e-12:
                 continue
@@ -2592,6 +2599,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         for contour in contours_local:
             num = 0.0
             den = 0.0
+            nat_sum = 0.0   # ΣH_нат по контуру (для дедбанда симметрии)
 
             for li, sign in contour:
                 e  = active_edges_list[li]
@@ -2619,7 +2627,12 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
 
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
-                    num -= h_nat * sign
+                    nat_sum += h_nat * sign
+
+            # Дедбанд симметрии: чистую тягу контура < 1 Па считаем нулём.
+            if -1.0 < nat_sum < 1.0:
+                nat_sum = 0.0
+            num -= nat_sum
 
             if den < 1e-12:
                 continue
