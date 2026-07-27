@@ -7287,15 +7287,16 @@ export default function CadPage() {
                                   : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
                               }
                             }
-                            if (rKmu === 0) return "0 Н·с²/м⁸";
+                            if (rKmu === 0) return "0 кМюрг";
                             const fmt = (v: number) => {
                               const mag = Math.floor(Math.log10(Math.abs(v)));
                               return v.toFixed(Math.max(4, -mag + 2));
                             };
-                            // Наши единицы: Н·с²/м⁸ (ΔP=R·Q² в Па). Рядом — рудничные
-                            // кМюрг АэроСети (кгс·с²/м⁸ = Н·с²/м⁸ ÷ g), как в справочниках.
-                            const rKgs = rKmu / 9.80665;
-                            return `${fmt(rKmu)} Н·с²/м⁸  (${fmt(rKgs)} кМюрг)`;
+                            // rKmu уже в кМюрг (рудничные, кгс·с²/м⁸) — как в АэроСети
+                            // (кирпичная перемычка = 65 кМюрг). Рядом показываем
+                            // эквивалент в Н·с²/м⁸ = кМюрг × g (ΔP=R·Q² в Па).
+                            const rNsm8 = rKmu * 9.80665;
+                            return `${fmt(rKmu)} кМюрг  (${fmt(rNsm8)} Н·с²/м⁸)`;
                           })()}
                         </span>
                       </div>
