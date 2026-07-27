@@ -9,7 +9,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConf
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
-import { solidBulkheadRkMurg, windowBulkheadRkMurg } from "@/lib/bulkheads";
+import { solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -1440,7 +1440,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                           rBulk = rFallback; // кМюрг = Па·с²/м⁶
                         }
                         const Q = branch.flow ?? 0;
-                        const dpCalc = rBulk * Q * Math.abs(Q);
+                        // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                        const dpCalc = rBulk * Q * Math.abs(Q) * G_ACCEL;
                         if (rBulk === 0 || Q === 0) return "—";
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
@@ -1493,7 +1494,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         // (та же свёртка кМюрг→ΔP, что в расчёте сети).
                         const rBulk = q > 0 ? dp / (q * q * 9.81) : 0;
                         const Q = branch.flow ?? 0;
-                        const dpCalc = rBulk * Q * Math.abs(Q);
+                        // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                        const dpCalc = rBulk * Q * Math.abs(Q) * G_ACCEL;
                         if (rBulk === 0 || Q === 0) return "—";
                         return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
@@ -1531,7 +1533,8 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         // R берём из символа перемычки (bkManualR) если он есть, иначе из поля ветви
                         const rBulk = (bulkheadSymbol?.bkManualR ?? branch.bulkheadManualR ?? 0);
                         const Q = branch.flow ?? 0;
-                        const dp = rBulk * Q * Math.abs(Q);
+                        // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                        const dp = rBulk * Q * Math.abs(Q) * G_ACCEL;
                         if (rBulk === 0 || Q === 0) return "—";
                         return `${u.fromBase(dp).toFixed(u.decimals)} ${u.symbol}`;
                       })()} />
