@@ -265,7 +265,7 @@ export default function BranchTopologyTab({
       )}
 
       {branch.resistanceMode === "manual" && (
-        <InlineLabel label="Сопротивление R, кμ">
+        <InlineLabel label="Сопротивление R, Н·с²/м⁸">
           <EditInput
             type="number" step="0.001"
             value={branch.manualR}
