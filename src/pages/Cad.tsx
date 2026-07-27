@@ -27,7 +27,7 @@ import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg } from "@/lib/bulkheads";
+import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
@@ -7038,16 +7038,15 @@ export default function CadPage() {
                 const q = brForSym.flow ?? 0;
                 const mode = sym.bkResMode ?? "project";
                 if (mode === "manual") {
-                  // кМюрг = Па·с²/м⁶, коэффициент = 1
+                  // кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
                   const r = (sym.bkManualR ?? 0);
-                  return r * q * Math.abs(q);
+                  return r * q * Math.abs(q) * G_ACCEL;
                 }
                 if (mode === "survey") {
                   const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                  // R = ΔP/(Q²·9.81) кМюрг (как в АэроСети). Дальше ΔP=R·q²
-                  // (как у manual/window — единая свёртка кМюрг→ΔP в этом блоке).
+                  // R = ΔP/(Q²·9.81) кМюрг (как в АэроСети). Дальше ΔP=R·q²·g в Па.
                   const r = sq > 0 ? dp / (sq * sq * 9.81) : 0;
-                  return r * q * Math.abs(q);
+                  return r * q * Math.abs(q) * G_ACCEL;
                 }
                 // project
                 const sw = sym.bkWindowArea ?? 0;
@@ -7072,7 +7071,8 @@ export default function CadPage() {
                     r = sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0;
                   }
                 }
-                return r * q * Math.abs(q);
+                // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                return r * q * Math.abs(q) * G_ACCEL;
               })();
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
