@@ -754,19 +754,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     ctx.setLineDash(isLeakage ? [6, 4] : []);
     ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
 
-    // Задымление (дым) — тёмно-серая полоса ВНУТРИ ветви, поверх основной линии
-    const fireSeg = branchFireColors?.get(b.id);
-    if (fireSeg) {
-      const { color: fireCol, fromT, toT } = fireSeg;
-      const fsx = sxA + (sxB - sxA) * fromT, fsy = syA + (syB - syA) * fromT;
-      const tsx = sxA + (sxB - sxA) * toT,   tsy = syA + (syB - syA) * toT;
-      ctx.strokeStyle = fireCol;
-      ctx.lineWidth = Math.max(w * 0.7, 2);
-      ctx.globalAlpha = 0.95;
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
+    // Задымление (дым) рисуется отдельным подпроходом ПОСЛЕ всех заливок слоя
+    // (см. ниже), чтобы соседние окрашенные ветви того же горизонта (рисуемые
+    // позже из-за сортировки «белые первыми») не перекрывали дым круглыми
+    // торцами в общих узлах. В SVG порядок сохраняется естественно, здесь —
+    // выносим дым в конец fill-прохода слоя.
 
     // Бегущий пунктир
     if (showDashes) {
@@ -1101,6 +1093,31 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (b.hasAirPipe)   drawEdgePipe(-1, "#dc2626");
     }
   }
+
+  // ── ПОДПРОХОД: задымление (дым) поверх ВСЕХ заливок слоя ──────────────────
+  // Дым тёмно-серой полосой ВНУТРИ ветви. Рисуем в конце fill-прохода слоя,
+  // чтобы окрашенные соседние ветви того же горизонта не перекрывали его в
+  // общих узлах (как в SVG). Между горизонтами порядок сохраняется: дым
+  // нижнего слоя перекрывается ветвями верхнего — это корректно.
+  if (branchFireColors && branchFireColors.size > 0) {
+    ctx.setLineDash([]);
+    for (const { b } of group) {
+      const fireSeg = branchFireColors.get(b.id);
+      if (!fireSeg) continue;
+      const p = bParamsMap.get(b.id);
+      if (!p) continue;
+      const { sxA, syA, sxB, syB, w } = p;
+      const { color: fireCol, fromT, toT } = fireSeg;
+      const fsx = sxA + (sxB - sxA) * fromT, fsy = syA + (syB - syA) * fromT;
+      const tsx = sxA + (sxB - sxA) * toT,   tsy = syA + (syB - syA) * toT;
+      ctx.strokeStyle = fireCol;
+      ctx.lineWidth = Math.max(w * 0.7, 2);
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Сброс после подпрохода труб внутри слоя
   ctx.globalAlpha = 1;
   ctx.setLineDash([]);
