@@ -126,13 +126,27 @@ function fanH(e: Edge, Q: number): number {
     // При реверсе — используем реверсную P–Q характеристику если она есть в каталоге
     if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
       const qMax = (e.reverseQMax ?? c.qMax) * k;
-      if (Qn > qMax) return 0;
+      // За пределом Qmax напор экстраполируется РЕЗКО ВНИЗ (вентилятор тормозит
+      // поток), а НЕ обнуляется. Жёсткий 0 создавал ложное равновесие при большом
+      // расходе (Q улетал за характеристику и естественная тяга гнала поток).
+      if (Qn > qMax) {
+        const dH = (e.reverseH1 + 2 * e.reverseH2 * qMax);          // наклон в Qmax
+        const Hq = e.reverseH0 + e.reverseH1 * qMax + e.reverseH2 * qMax * qMax;
+        const slope = Math.min(dH, -Math.abs(e.reverseH2) * qMax * 4 - 50); // круче вниз
+        return (Hq + slope * (Qn - qMax)) * k * k * e.fanRhoFactor;
+      }
       return Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
     }
 
     // Прямая характеристика (или реверс без отдельной кривой)
     const af = angleFactor(c, e.fanBladeAngle);
-    if (Qn > c.qMax * af) return 0;
+    const qMaxF = c.qMax * af;
+    if (Qn > qMaxF) {
+      const dH = (c.h1 + 2 * c.h2 * qMaxF);
+      const Hq = c.h0 * af + c.h1 * qMaxF + c.h2 * qMaxF * qMaxF;
+      const slope = Math.min(dH, -Math.abs(c.h2) * qMaxF * 4 - 50);
+      return (Hq + slope * (Qn - qMaxF)) * k * k * e.fanRhoFactor;
+    }
     return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
@@ -148,9 +162,20 @@ function fanDH(e: Edge, Q: number): number {
   const Qn = Math.abs(Q) / N / Math.max(0.001, k);
   // При реверсе с отдельной кривой — используем её коэффициенты
   if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+    const qMax = (e.reverseQMax ?? c.qMax) * k;
+    if (Qn > qMax) {
+      const slope = Math.min(e.reverseH1 + 2 * e.reverseH2 * qMax, -Math.abs(e.reverseH2) * qMax * 4 - 50);
+      return Math.abs(slope * k * e.fanRhoFactor) / N;
+    }
     return Math.abs((e.reverseH1 + 2 * e.reverseH2 * Qn) * k * e.fanRhoFactor) / N;
   }
   // dH/dQ_total = dH/dQ_one * (1/N) — цепное правило
+  const af = angleFactor(c, e.fanBladeAngle);
+  const qMaxF = c.qMax * af;
+  if (Qn > qMaxF) {
+    const slope = Math.min(c.h1 + 2 * c.h2 * qMaxF, -Math.abs(c.h2) * qMaxF * 4 - 50);
+    return Math.abs(slope * k * e.fanRhoFactor) / N;
+  }
   return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor) / N;
 }
 
