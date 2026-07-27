@@ -1312,6 +1312,28 @@ export default function CadPage() {
     }));
   }, [branches]);
 
+  // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
+  const [branchWidth, setBranchWidth] = useState<number>(7);    // px
+  const [branchBorder, setBranchBorder] = useState<number>(0.6); // px
+  const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
+  const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
+  const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
+
+  // ─── ПАНЕЛЬ ИНФОРМАЦИИ + Z-МАСШТАБ ─────────────────────────────────
+  const [infoConfig, setInfoConfig] = useState<InfoDisplayConfig>(DEFAULT_INFO_CONFIG);
+  const updateInfoConfig = (patch: Partial<InfoDisplayConfig>) =>
+    setInfoConfig((prev) => ({ ...prev, ...patch }));
+  const [zScale, setZScale] = useState<number>(1);
+  const [xyScale, setXyScale] = useState<number>(1);
+
+  // ─── ЕДИНИЦЫ ИЗМЕРЕНИЯ ───────────────────────────────────────────
+  const [unitsConfig, setUnitsConfig] = useState<UnitsConfig>(DEFAULT_UNITS_CONFIG);
+
+  // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
+  // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
+  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
+  useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
+
   // Автопривязка «висящих» символов перемычек к ближайшей ветви.
   // Если у перемычки-символа нет branchId (например, поставлен мимо ветви или
   // импортирован без привязки), его сопротивление теряется в расчёте. Здесь
@@ -1347,28 +1369,6 @@ export default function CadPage() {
     setSchemaSymbols(prev => prev.map(s =>
       patch.has(s.id) ? { ...s, branchId: patch.get(s.id)!.branchId, t: s.t ?? patch.get(s.id)!.t } : s));
   }, [schemaSymbols, branches, nodes]);
-
-  // ─── ОБЩИЕ НАСТРОЙКИ ОТОБРАЖЕНИЯ ВЕТВЕЙ ─────────────────────────────
-  const [branchWidth, setBranchWidth] = useState<number>(7);    // px
-  const [branchBorder, setBranchBorder] = useState<number>(0.6); // px
-  const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
-  const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
-  const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
-
-  // ─── ПАНЕЛЬ ИНФОРМАЦИИ + Z-МАСШТАБ ─────────────────────────────────
-  const [infoConfig, setInfoConfig] = useState<InfoDisplayConfig>(DEFAULT_INFO_CONFIG);
-  const updateInfoConfig = (patch: Partial<InfoDisplayConfig>) =>
-    setInfoConfig((prev) => ({ ...prev, ...patch }));
-  const [zScale, setZScale] = useState<number>(1);
-  const [xyScale, setXyScale] = useState<number>(1);
-
-  // ─── ЕДИНИЦЫ ИЗМЕРЕНИЯ ───────────────────────────────────────────
-  const [unitsConfig, setUnitsConfig] = useState<UnitsConfig>(DEFAULT_UNITS_CONFIG);
-
-  // ─── УСЛОВНЫЕ ОБОЗНАЧЕНИЯ НА СХЕМЕ ─────────────────────────────────
-  // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
-  const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
-  useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
 
   // Сопротивление перемычек по ветвям (кМюрг) — для экспорта в CSV.
   // Перемычка чаще задаётся символом на схеме (bk*) и её R сворачивается
