@@ -441,6 +441,25 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
         if n.get("isAtm") or n.get("atmosphereLink"):
             node_temp[nid] = surface_temp
 
+    # ПОТЕНЦИАЛ ТЯГИ каждого узла Φ(node) (Па) — вес столба воздуха от поверхности
+    # до узла ОТНОСИТЕЛЬНО атмосферного столба той же высоты:
+    #     Φ = g · (z_surface − z_node) · (ρ_node − ρ_атм)
+    # Тяга ветви = Φ(from) − Φ(to). Такая форма ТЕЛЕСКОПИРУЕТСЯ: если ствол
+    # разбит промежуточными узлами, их Φ взаимно сокращаются, и суммарная тяга
+    # ствола НЕ зависит от числа сегментов. Благодаря этому симметричные стволы
+    # одинаковой высоты дают строго нулевую тягу в контуре (как в АэроСети),
+    # без паразитного остатка от нелинейности ρ(T) при дроблении.
+    _g = 9.81
+    _z_vals = [node_z[n["id"]] for n in nodes_in] or [0.0]
+    _z_surface = max(_z_vals)
+    _rho_atm = 353.0 / (273.0 + max(-60.0, min(100.0, surface_temp)))
+    node_phi = {}
+    for n in nodes_in:
+        nid = n["id"]
+        _t = max(-60.0, min(100.0, node_temp[nid]))
+        _rho = 353.0 / (273.0 + _t)
+        node_phi[nid] = _g * (_z_surface - node_z[nid]) * (_rho - _rho_atm)
+
     def to_gnd(nid):
         return GND if nid in atm else nid
 
@@ -461,7 +480,12 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
         tz  = node_z.get(orig_to,   float(b.get("toZ",   0.0) or 0.0))
         ft  = node_temp.get(orig_from, surface_temp)
         tt  = node_temp.get(orig_to,   surface_temp)
-        h_nat = natural_draft_h(fz, tz, ft, tt, atm_temp=surface_temp)
+        # Тяга ветви = разность узловых потенциалов Φ (телескопируется по стволу).
+        # Fallback на прямую формулу, если узел не найден в карте потенциалов.
+        if orig_from in node_phi and orig_to in node_phi:
+            h_nat = node_phi[orig_from] - node_phi[orig_to]
+        else:
+            h_nat = natural_draft_h(fz, tz, ft, tt, atm_temp=surface_temp)
 
         # Тепловая депрессия пожара (Па): добавляется к естественной тяге.
         # Передаётся фронтендом при итеративном расчёте аварийного режима.
