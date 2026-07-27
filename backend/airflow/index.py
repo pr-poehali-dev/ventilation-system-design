@@ -1793,20 +1793,28 @@ def _mkr_fan_H(e, Q):
             return max(0.0, float(e.get("h0", 0)))
         if e.get("fanReverse") and e.get("reverseH0") is not None:
             q_max = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+            rh0 = float(e.get("reverseH0", 0))
+            rh1 = float(e.get("reverseH1", 0))
+            rh2 = float(e.get("reverseH2", 0))
             if q_one > q_max:
-                return 0.0
-            h = float(e.get("reverseH0", 0)) + float(e.get("reverseH1", 0)) * q_one + float(e.get("reverseH2", 0)) * q_one * q_one
+                # За паспортом напор резко уходит ВНИЗ (вентилятор тормозит поток),
+                # а НЕ обнуляется. Жёсткий 0 создавал ложное равновесие: при реверсе
+                # с включённой тягой поток улетал за характеристику (баг Q=145 м³/с).
+                h_at_max = rh0 + rh1 * q_max + rh2 * q_max * q_max
+                slope = min(rh1 + 2.0 * rh2 * q_max, -abs(rh2) * q_max * 4.0 - 50.0)
+                return h_at_max + slope * (q_one - q_max)
+            h = rh0 + rh1 * q_one + rh2 * q_one * q_one
         else:
             q_max_fan = float(e.get("qMax", 1e9))
+            h0v = float(e.get("h0", 0))
+            h1v = float(e.get("h1", 0))
+            h2v = float(e.get("h2", 0))
             if q_one > q_max_fan:
-                # Резкий спад до 0 на 1.1×qMax (как Вентиляция-2)
-                decay = max(0.0, 1.0 - (q_one - q_max_fan) / (0.1 * q_max_fan))
-                h0v = float(e.get("h0", 0))
-                h1v = float(e.get("h1", 0))
-                h2v = float(e.get("h2", 0))
-                h_at_max = max(0.0, h0v + h1v * q_max_fan + h2v * q_max_fan * q_max_fan)
-                return h_at_max * decay
-            h = float(e.get("h0", 0)) + float(e.get("h1", 0)) * q_one + float(e.get("h2", 0)) * q_one * q_one
+                # За паспортом напор резко уходит ВНИЗ (торможение потока), не в 0.
+                h_at_max = h0v + h1v * q_max_fan + h2v * q_max_fan * q_max_fan
+                slope = min(h1v + 2.0 * h2v * q_max_fan, -abs(h2v) * q_max_fan * 4.0 - 50.0)
+                return h_at_max + slope * (q_one - q_max_fan)
+            h = h0v + h1v * q_one + h2v * q_one * q_one
         return max(0.0, h)
     # Constant с qMax — резкий спад при выходе за паспорт (как Вентиляция-2)
     fp = max(0.0, float(e.get("fanPressure", 0)))
@@ -1826,9 +1834,21 @@ def _mkr_fan_dH(e, Q):
     N = max(1, int(e.get("fanParallel", 1) or 1))
     q_one = abs(Q) / N
     if e.get("fanReverse") and e.get("reverseH0") is not None:
-        dh = abs(float(e.get("reverseH1", 0)) + 2.0 * float(e.get("reverseH2", 0)) * q_one)
+        rh1 = float(e.get("reverseH1", 0))
+        rh2 = float(e.get("reverseH2", 0))
+        q_max = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+        if q_one > q_max:
+            dh = abs(min(rh1 + 2.0 * rh2 * q_max, -abs(rh2) * q_max * 4.0 - 50.0))
+        else:
+            dh = abs(rh1 + 2.0 * rh2 * q_one)
     else:
-        dh = abs(float(e.get("h1", 0)) + 2.0 * float(e.get("h2", 0)) * q_one)
+        h1 = float(e.get("h1", 0))
+        h2 = float(e.get("h2", 0))
+        q_max_fan = float(e.get("qMax", 1e9))
+        if q_one > q_max_fan:
+            dh = abs(min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0))
+        else:
+            dh = abs(h1 + 2.0 * h2 * q_one)
     return dh / N
 
 
