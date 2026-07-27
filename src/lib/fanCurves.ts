@@ -123,8 +123,12 @@ export const FAN_CATALOG: FanCurve[] = [
     qMin: 15, qMax: 65, qNominal: 50, hNominal: 950,
     rpmMin: 600, rpmMax: 1500, rpmNominal: 1300,
     bladeAngles: [20, 25, 30, 35, 40, 45, 50],
-    reverseH0: 1300, reverseH1: 2.4, reverseH2: -0.34,
-    reverseQMin: 12, reverseQMax: 58,
+    // Реверс ВО-18/12АВР: напор ~82% от прямого, кривая круче (расход в реверсе
+    // МЕНЬШЕ прямого). Сверено с «АэроСеть»: при прямом ≈53.6 м³/с реверс ≈44.8 м³/с
+    // (H≈526 Па), т.е. Q_реверс ≈ 0.83·Q_прямой. Прежние коэффициенты
+    // (h0=1300, h2=−0.34) давали слишком пологую кривую → завышенный Q в реверсе.
+    reverseH0: 1720, reverseH1: 2, reverseH2: -0.62,
+    reverseQMin: 12, reverseQMax: 54,
     reverseEfficiencyFactor: 0.82,
   },
   {
