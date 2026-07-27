@@ -3049,8 +3049,9 @@ export default function CadPage() {
               const etaBase = fanEfficiency(curve, Q_one_nominal);
               const effFactor = b.fanReverse ? (curve.reverseEfficiencyFactor ?? 0.82) : 1;
               newFanEfficiency = Math.max(0.05, etaBase * effFactor);
-              // Мощность: H * Q_total / η  (H уже суммарный с параллелью)
-              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Math.abs(rb.Q), newFanEfficiency);
+              // Мощность установки: Hfan суммарный (N·H(Q/N)) → мощность = H(Q/N)·Q_total/η
+              // = (Hfan/N)·Q_total/η. Делим на N, т.к. Hfan уже умножен на N.
+              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan) / N, Math.abs(rb.Q), newFanEfficiency);
               newPower = newFanShaftPower;
             }
           } else {

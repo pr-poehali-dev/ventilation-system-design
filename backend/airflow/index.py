@@ -270,45 +270,49 @@ def fan_H(e, Q):
     # Опрокинутый поток: вентилятор не создаёт напора
     if Q < 0:
         return 0.0
+    # N вентиляторов в параллели: каждый пропускает Q/N и развивает H(Q/N),
+    # а суммарный напор установки, действующий на сеть = N·H(Q/N) (как «АэроСеть»:
+    # 1 вент → 53.6/755, 2 вент → 89.1/2082 — поле «Напор» показывает сумму).
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
     if mode == "curve":
         q_one = abs(Q) / N
-        if q_one <= 0:
-            # При Q=0 возвращаем h0 (статический напор), а не 0 —
-            # иначе бисекция рабочей точки не найдёт корень.
+
+        def _h_one():
+            if q_one <= 0:
+                # При Q=0 возвращаем h0 (статический напор), а не 0 —
+                # иначе бисекция рабочей точки не найдёт корень.
+                if e.get("fanReverse") and e.get("reverseH0") is not None:
+                    return max(0.0, float(e.get("reverseH0", 0)))
+                return max(0.0, float(e.get("h0", 0)))
+            # При реверсе — используем отдельную характеристику если передана
             if e.get("fanReverse") and e.get("reverseH0") is not None:
-                return max(0.0, float(e.get("reverseH0", 0)))
-            return max(0.0, float(e.get("h0", 0)))
-        # При реверсе — используем отдельную характеристику если передана
-        if e.get("fanReverse") and e.get("reverseH0") is not None:
-            q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-            rh0 = float(e.get("reverseH0", 0))
-            rh1 = float(e.get("reverseH1", 0))
-            rh2 = float(e.get("reverseH2", 0))
-            if q_one > q_max_rev:
-                # За пределом паспорта напор резко уходит ВНИЗ (вентилятор тормозит
-                # избыточный поток), а НЕ обнуляется. Жёсткий 0 создавал ложное
-                # равновесие: при реверсе поток улетал за характеристику и
-                # естественная тяга разгоняла его (баг Q=145 м³/с).
-                h_at_max = rh0 + rh1 * q_max_rev + rh2 * q_max_rev * q_max_rev
-                slope = min(rh1 + 2.0 * rh2 * q_max_rev, -abs(rh2) * q_max_rev * 4.0 - 50.0)
-                return h_at_max + slope * (q_one - q_max_rev)
-            return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
-        # Прямая характеристика
-        q_max_fan = float(e.get("qMax", 1e9))
-        h0 = float(e.get("h0", 0))
-        h1 = float(e.get("h1", 0))
-        h2 = float(e.get("h2", 0))
-        if q_one > q_max_fan:
-            # За паспортом напор резко уходит ВНИЗ (торможение потока), а не в 0 —
-            # предотвращает разгон расхода за характеристику.
-            h_at_max = h0 + h1 * q_max_fan + h2 * q_max_fan * q_max_fan
-            slope = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
-            return h_at_max + slope * (q_one - q_max_fan)
-        return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
-    # Constant-режим: применяем qMax для защиты от Q→∞ (как в Вентиляция-2):
-    # при Q > qMax напор резко падает (вентилятор выходит из рабочей зоны).
+                q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+                rh0 = float(e.get("reverseH0", 0))
+                rh1 = float(e.get("reverseH1", 0))
+                rh2 = float(e.get("reverseH2", 0))
+                if q_one > q_max_rev:
+                    # За пределом паспорта напор резко уходит ВНИЗ (торможение),
+                    # а НЕ обнуляется (иначе поток улетает — баг Q=145 м³/с).
+                    h_at_max = rh0 + rh1 * q_max_rev + rh2 * q_max_rev * q_max_rev
+                    slope = min(rh1 + 2.0 * rh2 * q_max_rev, -abs(rh2) * q_max_rev * 4.0 - 50.0)
+                    return h_at_max + slope * (q_one - q_max_rev)
+                return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
+            # Прямая характеристика
+            q_max_fan = float(e.get("qMax", 1e9))
+            h0 = float(e.get("h0", 0))
+            h1 = float(e.get("h1", 0))
+            h2 = float(e.get("h2", 0))
+            if q_one > q_max_fan:
+                # За паспортом напор резко уходит ВНИЗ (торможение потока), не в 0.
+                h_at_max = h0 + h1 * q_max_fan + h2 * q_max_fan * q_max_fan
+                slope = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
+                return h_at_max + slope * (q_one - q_max_fan)
+            return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
+
+        return _h_one() * N
+    # Constant-режим: напор задан числом (уже суммарный) — N не умножаем.
+    # Применяем qMax для защиты от Q→∞ (как в Вентиляция-2).
     fp = float(e.get("fanPressure", 0))
     q_max = float(e.get("qMax", 0))
     if q_max > 0:
@@ -346,7 +350,8 @@ def fan_H_display(e, Q):
     h1 = float(e.get("h1", 0))
     h2 = float(e.get("h2", 0))
     qc = min(q_one, q_max)
-    return max(0.0, h0 + h1 * qc + h2 * qc * qc)
+    # ×N — суммарный напор N вентиляторов в параллели (как показывает «АэроСеть»).
+    return max(0.0, h0 + h1 * qc + h2 * qc * qc) * N
 
 
 def fan_dH(e, Q):
@@ -373,7 +378,8 @@ def fan_dH(e, Q):
                 dh_one = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
             else:
                 dh_one = h1 + 2.0 * h2 * q_one
-        return abs(dh_one) / N
+        # d(N·H(Q/N))/dQ = H'(Q/N) = dh_one (множители N сокращаются).
+        return abs(dh_one)
     return 0.0
 
 
@@ -1170,6 +1176,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                     is_vmp = e.get("fanType", "ГВУ") == "ВМП"
                     fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
                     q_fan = Q[gi] * fan_dir
+                    # fan_H = N·H(Q/N) — суммарный напор N вентиляторов в параллели.
                     if is_vmp:
                         Hv = fan_H(e, abs(Q[gi]))   # ВМП: H всегда > 0
                     else:
@@ -1794,11 +1801,12 @@ def _mkr_fan_H(e, Q):
     N    = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
     if mode == "curve":
+        # N вентиляторов в параллели: суммарный напор установки = N·H(Q/N) (как «АэроСеть»).
         q_one = abs(Q) / N
         if q_one <= 0:
             if e.get("fanReverse") and e.get("reverseH0") is not None:
-                return max(0.0, float(e.get("reverseH0", 0)))
-            return max(0.0, float(e.get("h0", 0)))
+                return max(0.0, float(e.get("reverseH0", 0))) * N
+            return max(0.0, float(e.get("h0", 0))) * N
         if e.get("fanReverse") and e.get("reverseH0") is not None:
             q_max = float(e.get("reverseQMax", e.get("qMax", 1e9)))
             rh0 = float(e.get("reverseH0", 0))
@@ -1810,7 +1818,7 @@ def _mkr_fan_H(e, Q):
                 # с включённой тягой поток улетал за характеристику (баг Q=145 м³/с).
                 h_at_max = rh0 + rh1 * q_max + rh2 * q_max * q_max
                 slope = min(rh1 + 2.0 * rh2 * q_max, -abs(rh2) * q_max * 4.0 - 50.0)
-                return h_at_max + slope * (q_one - q_max)
+                return (h_at_max + slope * (q_one - q_max)) * N
             h = rh0 + rh1 * q_one + rh2 * q_one * q_one
         else:
             q_max_fan = float(e.get("qMax", 1e9))
@@ -1821,9 +1829,9 @@ def _mkr_fan_H(e, Q):
                 # За паспортом напор резко уходит ВНИЗ (торможение потока), не в 0.
                 h_at_max = h0v + h1v * q_max_fan + h2v * q_max_fan * q_max_fan
                 slope = min(h1v + 2.0 * h2v * q_max_fan, -abs(h2v) * q_max_fan * 4.0 - 50.0)
-                return h_at_max + slope * (q_one - q_max_fan)
+                return (h_at_max + slope * (q_one - q_max_fan)) * N
             h = h0v + h1v * q_one + h2v * q_one * q_one
-        return max(0.0, h)
+        return max(0.0, h) * N
     # Constant с qMax — резкий спад при выходе за паспорт (как Вентиляция-2)
     fp = max(0.0, float(e.get("fanPressure", 0)))
     q_max = float(e.get("qMax", 0))
@@ -1857,7 +1865,8 @@ def _mkr_fan_dH(e, Q):
             dh = abs(min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0))
         else:
             dh = abs(h1 + 2.0 * h2 * q_one)
-    return dh / N
+    # d(N·H(Q/N))/dQ = H'(Q/N) = dh (множители N сокращаются).
+    return dh
 
 
 def _bfs_tree(edges):
