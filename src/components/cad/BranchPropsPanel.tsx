@@ -1069,11 +1069,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         value={branch.fanCurveId}
                         onChange={(e) => {
                           const f = getFanById(e.target.value);
+                          // Площадь окна ΔS автоматически = площадь рабочего колеса π·D²/4
+                          const dS = f && f.diameter > 0
+                            ? Math.round((Math.PI * f.diameter * f.diameter / 4) * 100) / 100
+                            : 0;
                           onUpdate({
                             fanCurveId: e.target.value,
                             fanName: f?.name ?? "",
                             fanRpm: f ? (f.rpmNominal ?? 0) : 0,
                             fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
+                            fanWindowArea: dS,
                           });
                         }}
                         className="w-full text-[11px] px-1"
@@ -1151,23 +1156,16 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </select>
             </InlineLabel>
 
-            {(branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (
-              <InlineLabel label="R перемычки, мюрг">
-                <EditInput
-                  type="number" step="0.001" min="0"
-                  value={branch.fanCrossingR ?? 0}
-                  onChange={(v) => onUpdate({ fanCrossingR: Math.max(0, parseFloat(v) || 0) })}
-                />
-              </InlineLabel>
-            )}
-
-            <InlineLabel label="Пл. окна ΔS, м²">
-              <EditInput
-                type="number" step="0.01" min="0"
-                value={branch.fanWindowArea ?? 0}
-                onChange={(v) => onUpdate({ fanWindowArea: Math.max(0, parseFloat(v) || 0) })}
-              />
-            </InlineLabel>
+            {(branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (() => {
+              const cv = getFanById(branch.fanCurveId);
+              const autoDS = cv && cv.diameter > 0 ? Math.PI * cv.diameter * cv.diameter / 4 : 0;
+              const dS = (branch.fanWindowArea ?? 0) > 0.001 ? branch.fanWindowArea! : autoDS;
+              return (
+                <InlineLabel label="Пл. окна ΔS, м²">
+                  <ComputedInput value={numFmt(dS, 2)} />
+                </InlineLabel>
+              );
+            })()}
 
             <SectionHeader title="Вычисленные параметры" />
 
@@ -1225,14 +1223,17 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             <InlineLabel label="КПД, %">
               <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
             </InlineLabel>
-            {(branch.fanWindowArea ?? 0) > 0 && (
-              <InlineLabel label="R окна, кМюрг">
-                <ComputedInput value={numFmt(
-                  1.2 / (2 * 0.8 * 0.8 * Math.pow(branch.fanWindowArea!, 2)),
-                  4
-                )} />
-              </InlineLabel>
-            )}
+            {(branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (() => {
+              const cv = getFanById(branch.fanCurveId);
+              const autoDS = cv && cv.diameter > 0 ? Math.PI * cv.diameter * cv.diameter / 4 : 0;
+              const dS = (branch.fanWindowArea ?? 0) > 0.001 ? branch.fanWindowArea! : autoDS;
+              if (dS <= 0.001) return null;
+              return (
+                <InlineLabel label="R окна, кМюрг">
+                  <ComputedInput value={numFmt(1.2 / (2 * 0.8 * 0.8 * dS * dS), 4)} />
+                </InlineLabel>
+              );
+            })()}
             {(() => {
               const curve = getFanById(branch.fanCurveId);
               return curve ? (

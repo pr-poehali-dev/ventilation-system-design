@@ -2664,7 +2664,11 @@ export default function CadPage() {
       // ВАЖНО: раньше площадь окна вообще НЕ уходила в решатель (backend), поэтому окно
       // не создавало сопротивления → завышенный расход. Сверено с «АэроСеть»: ΔS=1.8 →
       // R≈0.29 кМюрг → Q≈53.6 м³/с (как в АэроСети).
-      const winA = b.fanWindowArea ?? 0;
+      // ΔS по умолчанию = площадь рабочего колеса вентилятора (π·D²/4), если не задана.
+      const fanCurveForWin = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
+      const autoWinA = fanCurveForWin && fanCurveForWin.diameter > 0
+        ? Math.PI * fanCurveForWin.diameter * fanCurveForWin.diameter / 4 : 0;
+      const winA = (b.fanWindowArea ?? 0) > 0.001 ? (b.fanWindowArea ?? 0) : autoWinA;
       const fanWindowR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && winA > 0.001)
         ? 1.2 / (2 * 0.8 * 0.8 * winA * winA) : 0;
 
