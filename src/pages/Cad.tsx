@@ -2880,7 +2880,10 @@ export default function CadPage() {
         const geomAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
         // Знак угла относительно направления потока: восходящее проветривание
         // (воздух идёт вверх) устойчиво — тепловая тяга помогает потоку.
-        const flowSignA = (s.flows.get(target.id) ?? target.flow ?? 0) >= 0 ? 1 : -1;
+        // Направление берём по ШТАТНОМУ (дожаровому) расходу, а не по текущему
+        // итерационному: иначе уже опрокинутый поток «подтверждал» бы сам себя.
+        const dirFlow = originalFlows.get(target.id) ?? target.flow ?? 0;
+        const flowSignA = dirFlow >= 0 ? 1 : -1;
         const flowRelAngle = geomAngle * flowSignA;
         s.thermalDep = calcThermalDepressionUnified({
           fireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
@@ -2890,7 +2893,7 @@ export default function CadPage() {
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
         const hotNodeTemps = computeHotNodeTemps(
-          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: s.fireTemp, flow: s.flows.get(target.id) ?? target.flow ?? 0, length: target.length, area: target.area, perimeter: target.perimeter }],
+          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: s.fireTemp, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, length: target.length, area: target.area, perimeter: target.perimeter }],
           branchesForHot, ambientTemp,
         );
         scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
@@ -4418,7 +4421,7 @@ export default function CadPage() {
                   // выработки меняются слабо (как в Аэросети). Сосредоточенный
                   // h_fire на одной ветви (старый способ) нефизично опрокидывал
                   // соседей.
-                  const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; length?: number; area?: number; perimeter?: number }[] = [];
+                  const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; length?: number; area?: number; perimeter?: number }[] = [];
                   const branchesWithHt = branchesIter.map(b => {
                     if (!b.hasFire) return b;
                     // Расход для T_пр — ШТАТНЫЙ (до пожара), как в Аэросети.
@@ -4428,7 +4431,7 @@ export default function CadPage() {
                           ? Math.min(1200, Number(b.fireTemperature))
                           : AMBIENT_TEMP + 500)
                       : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);
-                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_pr, flow: currentFlows.get(b.id) ?? b.flow ?? 0, length: b.length, area: b.area, perimeter: b.perimeter });
+                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_pr, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, length: b.length, area: b.area, perimeter: b.perimeter });
                     // fireThermalDepression больше НЕ прикладываем как источник.
                     return { ...b, fireThermalDepression: 0 };
                   });

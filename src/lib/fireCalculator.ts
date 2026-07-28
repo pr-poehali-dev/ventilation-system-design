@@ -739,7 +739,7 @@ export function calcThermalDepressionUnified(
 // Газ остывает о стенки выработки: T_out = T_ст + (T_in − T_ст)·exp(−α·P·L/(ρ·cp·Q)).
 // Возвращаем ТОЛЬКО заметно перегретые узлы (> ambient+2°C).
 export function computeHotNodeTemps(
-  fireBranches: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; length?: number; area?: number; perimeter?: number }[],
+  fireBranches: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; length?: number; area?: number; perimeter?: number }[],
   allBranches: { id: string; fromId: string; toId: string; flow?: number; length?: number; area?: number; perimeter?: number }[],
   ambientTemp_C: number,
 ): Record<string, number> {
@@ -765,7 +765,12 @@ export function computeHotNodeTemps(
     }
   };
   for (const fb of fireBranches) {
-    const outNode = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
+    // Выходной (нагреваемый) узел очага — по ШТАТНОМУ направлению струи
+    // (originalFlow), если оно задано. Иначе по текущему расходу. Это не даёт
+    // уже опрокинутому на итерации потоку разворачивать «горячую сторону» очага
+    // и самоусиливать ложное опрокидывание восходящей выработки.
+    const dirFlow = fb.originalFlow ?? fb.flow ?? 0;
+    const outNode = dirFlow >= 0 ? fb.toId : fb.fromId;
     setHot(outNode, Math.min(1200, fb.fireTemp));
   }
 
@@ -934,7 +939,13 @@ export function calcFireMode(
     //   flowSign = +1  → поток from→to;  −1 → поток to→from.
     //   flowRelAngle > 0 → воздух поднимается по ходу потока (восходящее);
     //   flowRelAngle < 0 → воздух опускается по ходу потока (нисходящее).
-    const flowSignA = (fb.flow ?? 0) >= 0 ? 1 : -1;
+    // ВАЖНО: направление берём по ШТАТНОМУ (дожаровому) расходу originalFlow, а
+    // НЕ по fb.flow. После итераций пожара fb.flow может быть уже опрокинутым —
+    // если судить по нему, восходящая струя ошибочно считается нисходящей, и
+    // депрессия получает неверный (отрицательный) знак, что «подтверждает»
+    // ложное опрокидывание. Штатное направление — истинная ориентация струи.
+    const dirFlow = (fb.originalFlow ?? fb.flow ?? 0);
+    const flowSignA = dirFlow >= 0 ? 1 : -1;
     const flowRelAngle = geomAngle * flowSignA;
 
     // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание).
