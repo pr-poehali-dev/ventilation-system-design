@@ -441,6 +441,18 @@ export interface FireBranchResult {
   // Знак потока на момент расчёта: +1 = from→to, -1 = to→from
   // Сохраняем чтобы избежать race condition со state React (branch.flow может быть устаревшим)
   flowSign: 1 | -1;
+  // Метод расчёта тепловой депрессии для этой ветви.
+  thermalDepMethod?: ThermalDepMethod;
+  // Промежуточные величины НОРМАТИВНОЙ методики (формулы 4.5–4.13) —
+  // для ручной проверки расчёта. Заполняются только при method="normative".
+  normative?: {
+    l: number;   // длина зоны горения, м (4.8)
+    A: number;   // коэффициент A (4.9)
+    a: number;   // коэффициент a (4.10)
+    Tm: number;  // макс. температура в очаге, К (4.11)
+    Tk: number;  // температура струи на устье, К (4.12)
+    dz: number;  // разность высотных отметок, м (4.6)
+  };
 }
 
 export interface FireCalculationResult {
@@ -838,15 +850,15 @@ export function calcFireMode(
     const signedAngle = Math.abs(fb.angle ?? 0) * (dz !== 0 ? Math.sign(dz) : (Math.sign(fb.angle ?? 0) || 1));
 
     // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание).
-    // Метод (Аэросеть / нормативная методика 4.5–4.13) выбирается пользователем.
-    const thermalDep = calcThermalDepressionUnified({
-      fireTemp_C: fireTemp,
-      ambientTemp_C,
-      length_m: fb.length,
-      angle_deg: signedAngle,
-      airFlow_m3s: airQ,
-      sectionArea_m2: fb.area,
-    });
+    // Метод (Методика / нормативная методика 4.5–4.13) выбирается пользователем.
+    const depMethod = getThermalDepMethod();
+    const useNormative = depMethod === "normative" && airQ > 0 && (fb.area ?? 0) > 0;
+    const normDetail = useNormative
+      ? calcThermalDepressionNormative({ airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: signedAngle })
+      : null;
+    const thermalDep = normDetail
+      ? normDetail.h_t
+      : calcThermalDepression(fireTemp, ambientTemp_C, fb.length, signedAngle);
 
     // Концентрации
     const comb = getCombustible(fb.fireCombustible ?? "coal");
@@ -935,6 +947,15 @@ export function calcFireMode(
       smokeArrivalTime: 0,
       airSpeed: Math.max(smokeSpeed, 0.3),
       flowSign: fbFlow >= 0 ? 1 : -1,
+      thermalDepMethod: depMethod,
+      normative: normDetail ? {
+        l:  Math.round(normDetail.l  * 10) / 10,
+        A:  Math.round(normDetail.A  * 1000) / 1000,
+        a:  Math.round(normDetail.a  * 1000) / 1000,
+        Tm: Math.round(normDetail.Tm),
+        Tk: Math.round(normDetail.Tk),
+        dz: Math.round(normDetail.dz * 10) / 10,
+      } : undefined,
     });
     // В множество опрокинутых (синяя подсветка + счётчик) добавляем ТОЛЬКО
     // ветви с РЕАЛЬНЫМ опрокидыванием потока. Риск (willReverse) отражается

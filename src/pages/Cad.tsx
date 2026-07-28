@@ -6682,6 +6682,17 @@ export default function CadPage() {
                       </div>
                       <Row label="Температура продуктов, °C:" value={safeFixed(fr.airTempOut, 1)} bold />
                       <Row label="Тепловая депрессия h_t, Па:" value={safeFixed(fr.thermalDepression, 1)} bold={Math.abs(fr.thermalDepression) > 10} />
+                      {fr.normative && (
+                        <>
+                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>Норматив (формулы 4.5–4.13)</div>
+                          <Row label="Длина зоны горения l, м:" value={safeFixed(fr.normative.l, 1)} />
+                          <Row label="Δz = l·sinβ, м:" value={safeFixed(fr.normative.dz, 1)} />
+                          <Row label="Коэффициент A:" value={safeFixed(fr.normative.A, 3)} />
+                          <Row label="Коэффициент a:" value={safeFixed(fr.normative.a, 3)} />
+                          <Row label="Tм в очаге, K:" value={`${fr.normative.Tm} (${safeFixed(fr.normative.Tm - 273, 0)} °C)`} />
+                          <Row label="Tк на устье, K:" value={`${fr.normative.Tk} (${safeFixed(fr.normative.Tk - 273, 0)} °C)`} />
+                        </>
+                      )}
                       {(fr.flowDelta ?? 0) !== 0 && (
                         <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${safeFixed(fr.flowDelta, 2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
                       )}
