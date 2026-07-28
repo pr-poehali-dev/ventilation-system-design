@@ -847,25 +847,40 @@ export function calcFireMode(
     const fromNode = nodes.find(n => n.id === fb.fromId);
     const toNode   = nodes.find(n => n.id === fb.toId);
     const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
-    const signedAngle = Math.abs(fb.angle ?? 0) * (dz !== 0 ? Math.sign(dz) : (Math.sign(fb.angle ?? 0) || 1));
+    const geomAngle = Math.abs(fb.angle ?? 0) * (dz !== 0 ? Math.sign(dz) : (Math.sign(fb.angle ?? 0) || 1));
+
+    // Знак угла ОТНОСИТЕЛЬНО НАПРАВЛЕНИЯ ПОТОКА (а не только геометрии).
+    // Физика: тёплые продукты горения всегда стремятся ВВЕРХ. Если воздух
+    // движется по выработке ВВЕРХ (восходящее проветривание), тепловая тяга
+    // СОВПАДАЕТ с потоком и ПОМОГАЕТ ему — опрокидывание невозможно. Опрокинуть
+    // струю тепловая депрессия может ТОЛЬКО в НИСХОДЯЩЕЙ выработке (воздух идёт
+    // вниз, а горячий газ тянет вверх — против потока).
+    //   flowSign = +1  → поток from→to;  −1 → поток to→from.
+    //   flowRelAngle > 0 → воздух поднимается по ходу потока (восходящее);
+    //   flowRelAngle < 0 → воздух опускается по ходу потока (нисходящее).
+    const flowSignA = (fb.flow ?? 0) >= 0 ? 1 : -1;
+    const flowRelAngle = geomAngle * flowSignA;
 
     // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание).
     // Метод (Методика / нормативная методика 4.5–4.13) выбирается пользователем.
     const depMethod = getThermalDepMethod();
     const useNormative = depMethod === "normative" && airQ > 0 && (fb.area ?? 0) > 0;
     const normDetail = useNormative
-      ? calcThermalDepressionNormative({ airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: signedAngle })
+      ? calcThermalDepressionNormative({ airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: flowRelAngle })
       : null;
     const thermalDep = normDetail
       ? normDetail.h_t
-      : calcThermalDepression(fireTemp, ambientTemp_C, fb.length, signedAngle);
+      : calcThermalDepression(fireTemp, ambientTemp_C, fb.length, flowRelAngle);
 
     // Концентрации
     const comb = getCombustible(fb.fireCombustible ?? "coal");
     const { coConc, co2Conc, smokeDensity, visibility } = calcGasConcentrations(Q_MW, airQ, comb);
 
-    // Опрокидывание: нисходящая ветвь (signedAngle < 0), тепловая депрессия > аэродинамической
-    const isDescending = signedAngle < -1;
+    // Опрокидывание возможно ТОЛЬКО в нисходящей (по потоку) выработке
+    // (flowRelAngle < 0) и когда тепловая депрессия превышает аэродинамическую.
+    // Восходящее проветривание (flowRelAngle > 0) — тепловая тяга помогает
+    // потоку, опрокидывание физически невозможно.
+    const isDescending = flowRelAngle < -1;
     const willReverse = isDescending && Math.abs(thermalDep) > Math.abs(fb.dP ?? 0) * 0.5;
 
     // Фактическое изменение расхода: разница между расходом после расчёта пожара и до пожара

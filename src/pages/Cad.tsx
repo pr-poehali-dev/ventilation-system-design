@@ -2877,10 +2877,14 @@ export default function CadPage() {
         const fromN = nodes.find(n => n.id === target.fromId);
         const toN   = nodes.find(n => n.id === target.toId);
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
-        const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
+        const geomAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
+        // Знак угла относительно направления потока: восходящее проветривание
+        // (воздух идёт вверх) устойчиво — тепловая тяга помогает потоку.
+        const flowSignA = (s.flows.get(target.id) ?? target.flow ?? 0) >= 0 ? 1 : -1;
+        const flowRelAngle = geomAngle * flowSignA;
         s.thermalDep = calcThermalDepressionUnified({
           fireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
-          length_m: target.length, angle_deg: signedAngle,
+          length_m: target.length, angle_deg: flowRelAngle,
           airFlow_m3s: airQ0, sectionArea_m2: target.area,
         });
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
