@@ -1293,8 +1293,17 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                     # fan_H = N·H(Q/N) — суммарный напор N вентиляторов в параллели.
                     if is_vmp:
                         Hv = fan_H(e, abs(Q[gi]))   # ВМП: H всегда > 0
+                    elif q_fan >= 0:
+                        Hv = fan_H(e, abs(Q[gi]))
                     else:
-                        Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0  # ГВУ/ВВУ: 0 при опрокидывании
+                        # Поток опрокинут (Q против нагнетания ГВУ/ВВУ). Раньше
+                        # напор жёстко обнулялся → при паспорте с h0<0 (кривая по
+                        # 3 точкам в узкой рабочей зоне) вентилятор «умирал» и вся
+                        # сеть схлопывалась. Теперь удерживаем напор левой ветви
+                        # H(qMin) — вентилятор продолжает толкать воздух и
+                        # возвращает поток в своё направление (как в «АэроСеть»).
+                        q_min_e = float(e.get("qMin", 0) or 0)
+                        Hv = fan_H(e, q_min_e) if q_min_e > 0 else 0.0
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 
