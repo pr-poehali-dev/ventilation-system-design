@@ -212,10 +212,10 @@ def handler(event: dict, context) -> dict:
                 # сходится за единицы итераций вместо тысяч.
                 if method == "mkr":
                     r = solve_mkr(nodes_sc, br_sc, options, normal_flows, surface_temp,
-                                  initial_flows=normal_flows or None)
+                                  initial_flows=normal_flows or None, geo_gradient=geo_gradient)
                 else:
                     r = solve(nodes_sc, br_sc, options, normal_flows, surface_temp,
-                              initial_flows=normal_flows or None)
+                              initial_flows=normal_flows or None, geo_gradient=geo_gradient)
                 out.append({
                     "id": tgt,
                     "converged": bool(r.get("converged", False)),
@@ -237,10 +237,10 @@ def handler(event: dict, context) -> dict:
         warm = (normal_flows or None) if is_fire else None
         if method == "mkr":
             result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp,
-                               initial_flows=warm)
+                               initial_flows=warm, geo_gradient=geo_gradient)
         else:
             result = solve(nodes_in, branches_in, options, normal_flows, surface_temp,
-                           initial_flows=warm)
+                           initial_flows=warm, geo_gradient=geo_gradient)
         # Добавляем лог о тяге в начало
         result["log"] = nat_draft_log + result.get("log", [])
     except BaseException as ex:
@@ -429,18 +429,25 @@ def natural_draft_h(from_z, to_z, from_temp, to_temp, atm_temp=None):
     rho_atm  = 353.0 / (273.0 + max(-60.0, min(100.0, t_atm)))
     t_mean   = (from_temp + to_temp) / 2.0
     rho_mean = 353.0 / (273.0 + max(-60.0, min(100.0, t_mean)))
-    # H_assist(from→to) = g·(z_from − z_to)·(ρ_ветви − ρ_атм).
-    # ЗНАК (исправлено): для ГОРЯЧЕЙ ВОСХОДЯЩЕЙ ветви пожара (from снизу, to
-    # сверху: z_from−z_to<0; ρ_ветви<ρ_атм: разность<0 → произведение>0) тяга
-    # ПОЛОЖИТЕЛЬНА в направлении from→to и ПОМОГАЕТ восходящему потоку — как
-    # эффект дымовой трубы (горячий лёгкий столб сам вытягивается вверх).
-    # Прежний знак (ρ_атм−ρ_ветви) давал −45 Па: тяга очага ДУШИЛА вентилятор
-    # (расход схлопывался 12→1.4). Для симметричных стволов равной высоты вклады
-    # ветвей контура по-прежнему взаимно сокращаются (телескопируют в 0).
-    return g * (from_z - to_z) * (rho_mean - rho_atm)
+    # H_nat(from→to) = g·(z_from − z_to)·(ρ_опорн − ρ_ветви).
+    #
+    # ОПОРНАЯ плотность ρ_опорн = ρ(atm_temp). ЧЕМ она задаётся — КЛЮЧЕВОЙ момент:
+    #   • ствол/выработка, связанная с ПОВЕРХНОСТЬЮ → опора = наружная атмосфера
+    #     (surface_temp). Тяжёлый холодный наружный столб гонит воздух ВНИЗ в
+    #     шахту (эталон АэроСети: 7.1 м³/с вниз). Этот знак ВЕРЕН для стволов.
+    #   • ВНУТРЕННЯЯ ветвь глубоко в руднике (напр. ветвь очага пожара) → опора =
+    #     ШТАТНАЯ температура окружающего рудничного воздуха (T узлов ДО пожара),
+    #     а НЕ поверхность. Горячий лёгкий столб очага относительно соседнего
+    #     рудничного воздуха даёт эффект дымовой трубы — тяга ПОМОГАЕТ восходящему
+    #     потоку. Если ошибочно брать опору = поверхность (40°C и т.п.), на ветви
+    #     очага возникал огромный ложный напор −45 Па ПРОТИВ потока и расход
+    #     схлопывался (12→1.4). Опорная T передаётся вызывающим кодом.
+    #
+    # Изотермия (ρ_ветви = ρ_опорн) → H_nat = 0.
+    return g * (from_z - to_z) * (rho_atm - rho_mean)
 
 
-def build_graph(nodes_in, branches_in, surface_temp=20.0):
+def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
     """Строит список рёбер, заменяя атмосферные узлы на GND."""
     atm = set()
     for n in nodes_in:
@@ -455,6 +462,9 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
     # Карта высотных отметок и температур узлов
     node_z    = {}
     node_temp = {}
+    # z поверхности — самый высокий узел (для расчёта глубины/опорной T рудника)
+    _zv = [float(n.get("z", 0) or 0) for n in nodes_in]
+    z_surface_ref = max(_zv) if _zv else 0.0
     for n in nodes_in:
         nid = n["id"]
         node_z[nid]    = float(n.get("z", 0.0) or 0.0)
@@ -483,6 +493,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0):
         tz  = node_z.get(orig_to,   float(b.get("toZ",   0.0) or 0.0))
         ft  = node_temp.get(orig_from, surface_temp)
         tt  = node_temp.get(orig_to,   surface_temp)
+
         h_nat = natural_draft_h(fz, tz, ft, tt, atm_temp=surface_temp)
 
         # Тепловая депрессия пожара (Па): добавляется к естественной тяге.
@@ -725,7 +736,7 @@ def check_kirchhoff(edges, Q_map, diag, tol=0.5, dead_end_ids=None):
 
 
 def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
-          initial_flows=None):
+          initial_flows=None, geo_gradient=0.0):
     """
     Метод Кросса (Андрияшев, «Расчёт вентиляционных сетей шахт», классический алгоритм).
 
@@ -749,7 +760,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
     log  = []
     diag = []
 
-    edges, atm = build_graph(nodes_in, branches_in, surface_temp)
+    edges, atm = build_graph(nodes_in, branches_in, surface_temp, geo_gradient)
 
     # ── Диагностика топологии ────────────────────────────────────────────
     atm_count  = sum(1 for n in nodes_in if n.get("isAtm") or n.get("atmosphereLink"))
@@ -2279,7 +2290,7 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
 
 
 def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
-              initial_flows=None):
+              initial_flows=None, geo_gradient=0.0):
     """
     МКР — Метод контурных расходов.
     Адаптивное демпфирование, двойной критерий: max|ΔH| < eps1 ИЛИ max|δQ| < eps2.
@@ -2301,7 +2312,7 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         _timings[stage] = _timings.get(stage, 0.0) + (now - _t_start) * 1000.0
         _t_start = now
 
-    edges, atm = build_graph(nodes_in, branches_in, surface_temp)
+    edges, atm = build_graph(nodes_in, branches_in, surface_temp, geo_gradient)
     _mark("Построение графа")
 
     # Диагностика топологии
