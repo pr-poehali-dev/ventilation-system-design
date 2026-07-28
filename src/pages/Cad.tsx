@@ -27,7 +27,7 @@ import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
+import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
@@ -2686,7 +2686,7 @@ export default function CadPage() {
         ? Math.PI * fanCurveForWin.diameter * fanCurveForWin.diameter / 4 : 0;
       const winA = (b.fanWindowArea ?? 0) > 0.001 ? (b.fanWindowArea ?? 0) : autoWinA;
       const fanWindowR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && winA > 0.001)
-        ? 1.2 / (2 * 0.8 * 0.8 * winA * winA) : 0;
+        ? fanWindowRkMurg(winA) : 0;
 
       return {
         id: b.id,

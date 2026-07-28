@@ -410,6 +410,21 @@ export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, t
   return 1.2 / (2 * G_ACCEL * WINDOW_MU * WINDOW_MU * Sok * Sok);
 }
 
+// Коэффициент расхода окна ВЕНТИЛЯТОРНОЙ УСТАНОВКИ (ГВУ), установленной «внутри
+// перемычки». Подобран по АэроСеть/Вентиляция 2.0:
+//   ΔS=2,54 м² → R≈0,1369 кМюрг.
+export const FAN_WINDOW_MU = 0.8242;
+
+// Сопротивление вентиляционного окна ГВУ в кМюрг (кгс·с²/м⁸ — те же единицы, что
+// solidBulkheadRkMurg/windowBulkheadRkMurg). Формула диафрагмы БЕЗ деления на g:
+//   R_кМюрг = ρ/(2·μ²·ΔS²)
+//   Проверка: ΔS=2,54 → R≈0,1369 кМюрг (совпадает с АэроСетью).
+export function fanWindowRkMurg(windowArea: number): number {
+  const dS = windowArea;
+  if (dS <= 0.001) return 0;
+  return 1.2 / (2 * FAN_WINDOW_MU * FAN_WINDOW_MU * dS * dS);
+}
+
 // R перемычки в Мюрг → суммируется с R выработки последовательно
 // При hasBulkhead=true: R_итог = R_выработка + R_перемычка
 export function bulkheadR(item: BulkheadCatalogItem): number {

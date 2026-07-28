@@ -9,7 +9,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConf
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
-import { solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
+import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -1230,7 +1230,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               if (dS <= 0.001) return null;
               return (
                 <InlineLabel label="R окна, кМюрг">
-                  <ComputedInput value={numFmt(1.2 / (2 * G_ACCEL * 0.8 * 0.8 * dS * dS), 4)} />
+                  <ComputedInput value={numFmt(fanWindowRkMurg(dS), 4)} />
                 </InlineLabel>
               );
             })()}
