@@ -6638,8 +6638,8 @@ export default function CadPage() {
                         <div className="text-[10px] text-gray-600 mb-0.5">Метод тепловой депрессии:</div>
                         <div className="flex gap-1">
                           {([
-                            { id: "aerosети" as ThermalDepMethod, label: "Аэросеть" },
-                            { id: "normative" as ThermalDepMethod, label: "Методика (4.5)" },
+                            { id: "aerosети" as ThermalDepMethod, label: "Методика" },
+                            { id: "normative" as ThermalDepMethod, label: "Норматив (4.5)" },
                           ]).map(opt => (
                             <button
                               key={opt.id}
