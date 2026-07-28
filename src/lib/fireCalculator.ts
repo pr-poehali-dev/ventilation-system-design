@@ -523,6 +523,120 @@ export function calcThermalDepression(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// НОРМАТИВНАЯ методика оценки тепловой депрессии пожара «расчётным способом»
+// (по максимальной расчётной температуре в очаге). Формулы 4.5–4.13:
+//
+//   h_т = k₁·Δz·(0.766 + A·ln(Tм/Tк))            (4.5)   k₁ = 12 Н/м³
+//   Δz  = l·sinβ                                  (4.6)
+//   l   = t·(0.28 + 0.07·Q/S)                     (4.8)   t≤150 мин
+//   A   = 100·a / (1.21 + 1.51·S/Q)               (4.9)
+//   a   = √S / l                                  (4.10)
+//   Tм  = 1273 − 985·e^(−S/A)                     (4.11)  К
+//   Tк  = 288 + (Tм−288)·e^(−x̄/A)                 (4.12)  К,  x̄ = x/l  (4.13)
+//
+// где Q — расход до пожара, м³/с; S — площадь сечения выработки, м²;
+//     β — угол наклона, град; x — расстояние от очага до устья, м;
+//     t — время с момента возникновения пожара, мин (по умолчанию 150).
+//
+// Возвращает депрессию в Па со знаком угла (нисходящая → отрицательная).
+export interface NormativeDepressionInput {
+  airFlow_m3s: number;     // Q — расход воздуха до пожара
+  sectionArea_m2: number;  // S — площадь сечения выработки
+  angle_deg: number;       // β — средний угол наклона (со знаком)
+  distanceToMouth_m?: number; // x — расстояние от очага до устья по ходу струи
+  fireTime_min?: number;   // t — время с момента пожара (по умолчанию 150)
+}
+
+export interface NormativeDepressionResult {
+  h_t: number;   // тепловая депрессия, Па (со знаком угла)
+  l: number;     // длина зоны горения, м
+  A: number;     // коэффициент A, доли ед.
+  a: number;     // коэффициент a, доли ед.
+  Tm: number;    // максимальная температура в очаге, К
+  Tk: number;    // температура струи на устье, К
+  dz: number;    // разность высотных отметок зоны горения, м
+}
+
+export const NORMATIVE_K1 = 12.0; // Н/м³ — коэффициент физ. свойств воздуха
+
+export function calcThermalDepressionNormative(
+  inp: NormativeDepressionInput,
+): NormativeDepressionResult {
+  const Q = Math.max(0.001, Math.abs(Number(inp.airFlow_m3s) || 0));
+  const S = Math.max(0.001, Number(inp.sectionArea_m2) || 0);
+  const beta = Number(inp.angle_deg) || 0;
+  const t = Math.min(150, Math.max(0, inp.fireTime_min ?? 150)); // (4.8): t≤150 мин
+  const empty: NormativeDepressionResult = { h_t: 0, l: 0, A: 0, a: 0, Tm: 288, Tk: 288, dz: 0 };
+
+  // (4.8) длина зоны горения
+  const l = t * (0.28 + 0.07 * (Q / S));
+  if (!(l > 0.001)) return empty;
+
+  // (4.10) a = √S / l ; (4.9) A
+  const a = Math.sqrt(S) / l;
+  const A = (100 * a) / (1.21 + 1.51 * (S / Q));
+  if (!(A > 1e-6) || !Number.isFinite(A)) return empty;
+
+  // (4.11) Tм, (4.12) Tк
+  const Tm = 1273 - 985 * Math.exp(-S / A);
+  const x = inp.distanceToMouth_m ?? l;   // если устье не задано — берём длину зоны
+  const xBar = x / l;                      // (4.13) относительное расстояние
+  const Tk = 288 + (Tm - 288) * Math.exp(-xBar / A);
+  if (!(Tk > 1) || !(Tm > 1)) return empty;
+
+  // (4.6) Δz = l·sinβ  (знак β задаёт направление тяги)
+  const dz = l * Math.sin((beta * Math.PI) / 180);
+
+  // (4.5) h_т = k₁·Δz·(0.766 + A·ln(Tм/Tк))
+  const h_t = NORMATIVE_K1 * dz * (0.766 + A * Math.log(Tm / Tk));
+  return { h_t: Number.isFinite(h_t) ? h_t : 0, l, A, a, Tm, Tk, dz };
+}
+
+// ─── Выбор метода расчёта тепловой депрессии пожара ───────────────────────────
+// "aerosети"  — строгая физика теплового столба g·Δz·(ρ₀−ρ_гор) (как в Аэросети);
+// "normative" — нормативная методика (формулы 4.5–4.13).
+export type ThermalDepMethod = "aerosети" | "normative";
+const THERMAL_DEP_METHOD_KEY = "fireThermalDepMethod";
+
+export function getThermalDepMethod(): ThermalDepMethod {
+  try {
+    const v = localStorage.getItem(THERMAL_DEP_METHOD_KEY);
+    return v === "normative" ? "normative" : "aerosети";
+  } catch { return "aerosети"; }
+}
+
+export function setThermalDepMethod(m: ThermalDepMethod): void {
+  try { localStorage.setItem(THERMAL_DEP_METHOD_KEY, m); } catch { /* noop */ }
+}
+
+// Единая точка расчёта депрессии по выбранному методу. Для нормативного метода
+// нужны S и Q; при их отсутствии откатываемся к физике теплового столба.
+export function calcThermalDepressionUnified(
+  args: {
+    fireTemp_C: number;
+    ambientTemp_C: number;
+    length_m: number;
+    angle_deg: number;
+    airFlow_m3s?: number;
+    sectionArea_m2?: number;
+    distanceToMouth_m?: number;
+    fireTime_min?: number;
+  },
+  method: ThermalDepMethod = getThermalDepMethod(),
+): number {
+  if (method === "normative" && (args.airFlow_m3s ?? 0) > 0 && (args.sectionArea_m2 ?? 0) > 0) {
+    return calcThermalDepressionNormative({
+      airFlow_m3s: args.airFlow_m3s!,
+      sectionArea_m2: args.sectionArea_m2!,
+      angle_deg: args.angle_deg,
+      distanceToMouth_m: args.distanceToMouth_m,
+      fireTime_min: args.fireTime_min,
+    }).h_t;
+  }
+  return calcThermalDepression(args.fireTemp_C, args.ambientTemp_C, args.length_m, args.angle_deg);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Температуры узлов вдоль пути горячих газов пожара.
 //
 // Правильная модель тепловой тяги (как в Аэросети): вместо того чтобы прикладывать
@@ -723,8 +837,16 @@ export function calcFireMode(
     const dz = (toNode?.z ?? 0) - (fromNode?.z ?? 0);
     const signedAngle = Math.abs(fb.angle ?? 0) * (dz !== 0 ? Math.sign(dz) : (Math.sign(fb.angle ?? 0) || 1));
 
-    // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание)
-    const thermalDep = calcThermalDepression(fireTemp, ambientTemp_C, fb.length, signedAngle);
+    // Тепловая депрессия (знаковый угол: нисходящая → отрицательная депрессия → опрокидывание).
+    // Метод (Аэросеть / нормативная методика 4.5–4.13) выбирается пользователем.
+    const thermalDep = calcThermalDepressionUnified({
+      fireTemp_C: fireTemp,
+      ambientTemp_C,
+      length_m: fb.length,
+      angle_deg: signedAngle,
+      airFlow_m3s: airQ,
+      sectionArea_m2: fb.area,
+    });
 
     // Концентрации
     const comb = getCombustible(fb.fireCombustible ?? "coal");

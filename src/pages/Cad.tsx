@@ -34,7 +34,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, 
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireMode, calcFireTemp, calcThermalDepression, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireMode, calcFireTemp, calcThermalDepressionUnified, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -1094,6 +1094,13 @@ export default function CadPage() {
   // Порог видимости задымления (м): дым распространяется, пока видимость в дыму
   // ниже порога; дальше — чистый воздух. Настраивается под нормативы.
   const [smokeVisThreshold, setSmokeVisThreshold] = useState(50);
+  // Метод расчёта тепловой депрессии пожара: "aerosети" (физика теплового
+  // столба) или "normative" (нормативная методика, формулы 4.5–4.13).
+  const [thermalDepMethod, setThermalDepMethodState] = useState<ThermalDepMethod>(getThermalDepMethod());
+  const changeThermalDepMethod = (m: ThermalDepMethod) => {
+    setThermalDepMethod(m);
+    setThermalDepMethodState(m);
+  };
   // Анимация воспроизведения шкалы
   const [smokeAnimating, setSmokeAnimating] = useState(false);
   const smokeAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2871,7 +2878,11 @@ export default function CadPage() {
         const toN   = nodes.find(n => n.id === target.toId);
         const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
         const signedAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
-        s.thermalDep = calcThermalDepression(s.fireTemp, ambientTemp, target.length, signedAngle);
+        s.thermalDep = calcThermalDepressionUnified({
+          fireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
+          length_m: target.length, angle_deg: signedAngle,
+          airFlow_m3s: airQ0, sectionArea_m2: target.area,
+        });
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
         const hotNodeTemps = computeHotNodeTemps(
@@ -6623,6 +6634,27 @@ export default function CadPage() {
                   {fr && (
                     <>
                       <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Результаты расчёта пожара</div>
+                      <div className="px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <div className="text-[10px] text-gray-600 mb-0.5">Метод тепловой депрессии:</div>
+                        <div className="flex gap-1">
+                          {([
+                            { id: "aerosети" as ThermalDepMethod, label: "Аэросеть" },
+                            { id: "normative" as ThermalDepMethod, label: "Методика (4.5)" },
+                          ]).map(opt => (
+                            <button
+                              key={opt.id}
+                              onClick={() => changeThermalDepMethod(opt.id)}
+                              className="text-[10px] px-1.5 py-0.5 rounded flex-1"
+                              style={{
+                                background: thermalDepMethod === opt.id ? "#991b1b" : "#f3f4f6",
+                                color: thermalDepMethod === opt.id ? "#fff" : "#374151",
+                                border: `1px solid ${thermalDepMethod === opt.id ? "#991b1b" : "#d1d5db"}`,
+                              }}
+                            >{opt.label}</button>
+                          ))}
+                        </div>
+                        <div className="text-[9px] text-gray-400 mt-0.5">Применится при следующем «Расчёте пожара»</div>
+                      </div>
                       <Row label="Температура продуктов, °C:" value={safeFixed(fr.airTempOut, 1)} bold />
                       <Row label="Тепловая депрессия h_t, Па:" value={safeFixed(fr.thermalDepression, 1)} bold={Math.abs(fr.thermalDepression) > 10} />
                       {(fr.flowDelta ?? 0) !== 0 && (
