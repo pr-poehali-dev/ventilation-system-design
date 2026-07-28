@@ -1126,8 +1126,11 @@ export default function CadPage() {
   const [surfaceTemp, setSurfaceTemp] = useState(20);
   // Учитывать естественную тягу (галочка как в Аэросети)
   const [useNaturalDraft, setUseNaturalDraft] = useState(true);
-  // Геотермический градиент °C / 100 м глубины (по умолчанию 0.5 — согласовано с АэроСетью)
-  const [geoGradient, setGeoGradient] = useState(0.5);
+  // Геотермический градиент °C / 100 м глубины. По умолчанию 0 (ИЗОТЕРМИЯ) — как в
+  // АэроСети: температуры узлов НЕ достраиваются автоматически, естественная тяга
+  // возникает только от РЕАЛЬНО заданных разностей температур (замеры, пожар).
+  // Ненулевой градиент пользователь задаёт явно, если нужен геотермический столб.
+  const [geoGradient, setGeoGradient] = useState(0);
   const [showSolverParams, setShowSolverParams] = useState(false);
   // Диалог «Устойчивость при пожаре» (Акт устойчивости)
   const [showFireStability, setShowFireStability] = useState(false);
