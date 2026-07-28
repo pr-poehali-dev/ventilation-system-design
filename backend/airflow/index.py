@@ -556,6 +556,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
             "reverseH1":   b.get("reverseH1"),
             "reverseH2":   b.get("reverseH2"),
             "reverseQMax": b.get("reverseQMax"),
+            "reverseQMin": b.get("reverseQMin"),
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
             "fanStopped":  bool(b.get("fanStopped", False)),
             "fanType":     b.get("fanType", "ГВУ"),     # ГВУ / ВВУ / ВМП
@@ -1187,6 +1188,29 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
         log.append(f"⚠ Начальный |ΔQ|_max={max_init_bal:.3f} в узле {worst_node}")
     else:
         log.append(f"✓ Начальный баланс Кирхгофа: |ΔQ|_max={max_init_bal:.4f}")
+
+    # ══ ШАГ 5а: Ориентация стартового расхода в ветвях с ГВУ/ВВУ ═════════
+    # Прямой ГВУ развивает напор только при потоке в направлении a→b
+    # (в формуле невязки Hv=0 при «опрокидывании» Q<0). Если после раскладки
+    # по дереву поток в ветви вентилятора оказался направлен ПРОТИВ его
+    # нагнетания, вся сеть «схлопывается»: вентилятор не создаёт напор →
+    # циркуляции нет. Разворачиваем стартовый поток ВСЕЙ раскладки так, чтобы
+    # в ветви главного вентилятора Q совпадал с направлением нагнетания
+    # (a→b для прямого, b→a для реверса). Знак меняем у всех ветвей разом —
+    # это сохраняет баланс Кирхгофа (Σ в узлах остаётся 0).
+    if main_fan is not None and not main_fan.get("fanStopped"):
+        gi_fan = None
+        for gi, e in enumerate(edges):
+            if e is main_fan:
+                gi_fan = gi
+                break
+        if gi_fan is not None:
+            want_dir = -1.0 if main_fan.get("fanReverse") else 1.0  # знак Q[gi_fan]
+            qf = Q[gi_fan]
+            if abs(qf) > 1e-9 and (qf * want_dir) < 0:
+                for gi in range(len(Q)):
+                    Q[gi] = -Q[gi]
+                log.append("Развернул стартовый поток под направление нагнетания ГВУ")
 
     # ══ ШАГ 5б: Тёплый старт (warm start) ═══════════════════════════════
     # Если переданы initial_flows (штатное решение сети), берём их как
