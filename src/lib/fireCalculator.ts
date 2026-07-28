@@ -771,7 +771,19 @@ export function computeHotNodeTemps(
     // и самоусиливать ложное опрокидывание восходящей выработки.
     const dirFlow = fb.originalFlow ?? fb.flow ?? 0;
     const outNode = dirFlow >= 0 ? fb.toId : fb.fromId;
-    setHot(outNode, Math.min(1200, fb.fireTemp));
+    // ВАЖНО: в узел кладём НЕ полную температуру очага, а ОСТЫВШУЮ на участке
+    // выработки от точки очага до выходного узла (сток тепла в стенки). Без
+    // остывания на короткую ветвь очага садится вся разность T_очага−T_атм и
+    // естественная тяга (natural_draft_h) на ней получается чрезмерной —
+    // расход в ветви душится в разы сильнее, чем в АэроСети (где горячий столб
+    // распределён/остывает по пути дыма). С остыванием тяга умереннее и расход
+    // близок к АэроСети.
+    const halfLen = (fb.length ?? 0) * 0.5;                 // очаг в среднем в середине ветви
+    const per = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
+    const massFlow = Math.max(0.5, 1.25 * Math.abs(dirFlow));
+    const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * per * halfLen) / (massFlow * CP_AIR * 1000)));
+    const tOutSeed = ambientTemp_C + (Math.min(1200, fb.fireTemp) - ambientTemp_C) * coolExp;
+    setHot(outNode, tOutSeed);
   }
 
   let guard = 0;
