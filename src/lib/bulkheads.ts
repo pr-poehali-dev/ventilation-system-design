@@ -351,6 +351,7 @@ export function sailBulkheadRkMurg(A: number, area?: number): number {
 const WINDOW_MU = 0.59;          // по умолчанию (металл и пр.)
 const WINDOW_MU_CONCRETE = 0.75; // бетонная дверь с окном
 const WINDOW_MU_BRICK = 0.66;    // кирпичная дверь с окном
+const WINDOW_MU_WOOD = 0.8148;   // деревянная дверь с окном
 // Ускорение свободного падения — переводной множитель между «нашими» единицами
 // сопротивления (Н·с²/м⁸, ΔP = R·Q² в Па) и рудничными кМюрг АэроСети
 // (кгс·с²/м⁸, ΔP = R·Q²·g). R_нашего = R_АэроСети · g.
@@ -366,6 +367,12 @@ function isConcreteWindow(typeId?: string): boolean {
 // подхода, как у бетонной, но μ=0,66.
 function isBrickWindow(typeId?: string): boolean {
   return !!typeId && /_brick$/.test(typeId);
+}
+
+// Тип окна ДЕРЕВЯННЫЙ? (id заканчивается на "_wood"): диафрагма с учётом скорости
+// подхода, как у бетонной, но μ=0,8148.
+function isWoodWindow(typeId?: string): boolean {
+  return !!typeId && /_wood$/.test(typeId);
 }
 
 // Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ в кМюрг (кгс·с²/м⁸ — те же
@@ -384,11 +391,17 @@ function isBrickWindow(typeId?: string): boolean {
 // Кирпичная дверь (μ=0,66): та же диафрагма с учётом подхода, что и бетонная:
 //   R_кМюрг = ρ/(2·g·μ²)·(1/Sок² − 1/Sвыр²)
 //   Проверка: Sок=2, Sвыр=15,5 → R≈0,035 кМюрг (совпадает с АэроСетью).
+//
+// Деревянная дверь (μ=0,8148): та же диафрагма с учётом подхода:
+//   R_кМюрг = ρ/(2·g·μ²)·(1/Sок² − 1/Sвыр²)
+//   Проверка: Sок=0,1, Sвыр=0,2 → R≈6,911 кМюрг (совпадает с АэроСетью).
 export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, typeId?: string): number {
   const Sok = windowArea;
   if (Sok <= 0.001) return 0;
-  if (isConcreteWindow(typeId) || isBrickWindow(typeId)) {
-    const mu = isBrickWindow(typeId) ? WINDOW_MU_BRICK : WINDOW_MU_CONCRETE;
+  if (isConcreteWindow(typeId) || isBrickWindow(typeId) || isWoodWindow(typeId)) {
+    const mu = isBrickWindow(typeId) ? WINDOW_MU_BRICK
+             : isWoodWindow(typeId)  ? WINDOW_MU_WOOD
+             : WINDOW_MU_CONCRETE;
     const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
     const approach = S > 0 ? 1 / (S * S) : 0;
     const r = 1.2 / (2 * G_ACCEL * mu * mu) * (1 / (Sok * Sok) - approach);
