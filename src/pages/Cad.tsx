@@ -2938,7 +2938,16 @@ export default function CadPage() {
     for (const s of states) {
       const orig = originalFlows.get(s.target.id) ?? 0;
       const now  = s.flows.get(s.target.id) ?? orig;
-      const reversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
+      // Восходящее (по штатному потоку) проветривание устойчиво: пожар не может
+      // его опрокинуть (как в Аэросети). Численный переворот знака на обеднённой
+      // ветви — артефакт, гасим его для восходящих выработок.
+      const fromN = nodes.find(n => n.id === s.target.fromId);
+      const toN   = nodes.find(n => n.id === s.target.toId);
+      const dz2 = (toN?.z ?? 0) - (fromN?.z ?? 0);
+      const geomAngle2 = Math.abs(s.target.angle ?? 0) * Math.sign(dz2 || 1);
+      const flowRelAngle2 = geomAngle2 * (orig >= 0 ? 1 : -1);
+      const rawReversed = (Math.sign(orig || 1) !== Math.sign(now || 1)) && Math.abs(now) > 0.05;
+      const reversed = flowRelAngle2 > 1 ? false : rawReversed;
       facts.set(s.target.id, {
         reversed,
         fireFlow: Math.abs(now),

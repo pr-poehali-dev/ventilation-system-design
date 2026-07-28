@@ -1050,9 +1050,16 @@ export function calcFireMode(
     // Если originalFlow не задан — fallback на статическую оценку willReverse.
     const origFlow = fb.originalFlow;
     const flowNow  = fb.flow ?? 0;
-    const actuallyReversed = origFlow !== undefined
+    // ВОСХОДЯЩЕЕ проветривание (flowRelAngle > +1) физически устойчиво: тёплые
+    // продукты горения поднимаются ПО ходу потока и усиливают тягу — опрокинуть
+    // такую струю пожар не может (как в Аэросети). Если решатель на сильно
+    // обеднённой воздухом ветви численно «перевернул» знак — это артефакт, а не
+    // реальное тепловое опрокидывание, поэтому для восходящих ветвей его гасим.
+    const isAscending = flowRelAngle > 1;
+    const rawReversed = origFlow !== undefined
       ? (Math.sign(origFlow || 1) !== Math.sign(flowNow || 1)) && Math.abs(flowNow) > 0.05
       : willReverse;
+    const actuallyReversed = isAscending ? false : rawReversed;
 
     // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
     const fbFlow = fb.flow ?? 0;
