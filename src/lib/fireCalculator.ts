@@ -756,6 +756,17 @@ export function computeHotNodeTemps(
   }
   const fireIds = new Set(fireBranches.map(f => f.id));
 
+  // Опорный расход горячего плюма — по ШТАТНОМУ (дожаровому) расходу очага, а не
+  // по текущему (который при пожаре может схлопнуться до ~1 м³/с). Остывание
+  // считаем по массовому расходу НЕ НИЖЕ этого опорного: иначе на схлопнувшейся
+  // ветви coolExp резко падает, горячий столб «не доезжает» до ствола, тяга не
+  // помогает — расход душится ещё сильнее (порочный круг). В АэроСети тепло
+  // переносится плюмом при реальном (нормальном) расходе, и T доходит до ствола.
+  const fireRefFlow = Math.max(
+    0.5,
+    ...fireBranches.map(f => Math.abs(f.originalFlow ?? f.flow ?? 0)),
+  );
+
   // Очередь: [nodeId, T_на_входе_узла]. Старт — выходной узел ветви очага.
   const queue: [string, number][] = [];
   const setHot = (nid: string, t: number) => {
@@ -780,7 +791,7 @@ export function computeHotNodeTemps(
     // близок к АэроСети.
     const halfLen = (fb.length ?? 0) * 0.5;                 // очаг в среднем в середине ветви
     const per = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
-    const massFlow = Math.max(0.5, 1.25 * Math.abs(dirFlow));
+    const massFlow = Math.max(0.5, 1.25 * Math.max(Math.abs(dirFlow), fireRefFlow));
     const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * per * halfLen) / (massFlow * CP_AIR * 1000)));
     const tOutSeed = ambientTemp_C + (Math.min(1200, fb.fireTemp) - ambientTemp_C) * coolExp;
     setHot(outNode, tOutSeed);
@@ -798,7 +809,10 @@ export function computeHotNodeTemps(
       const bLen = b.length ?? 0;
       const bArea = b.area ?? 1;
       const bPer = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, bArea));
-      const bMassFlow = Math.max(0.5, 1.25 * flow);
+      // Массовый расход остывания — не ниже опорного расхода очага: горячий плюм
+      // переносится по пути дыма при расходе очага, а не по локальному (который
+      // на схлопнувшейся ветви близок к нулю и даёт нефизично быстрое остывание).
+      const bMassFlow = Math.max(0.5, 1.25 * Math.max(flow, fireRefFlow));
       const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
       const tOut = ambientTemp_C + (tIn - ambientTemp_C) * coolExp;
       setHot(outNode, tOut);
