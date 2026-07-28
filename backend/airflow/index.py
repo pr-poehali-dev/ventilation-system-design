@@ -128,7 +128,15 @@ def handler(event: dict, context) -> dict:
             n2 = dict(n)
             if n2.get("isAtm") or n2.get("atmosphereLink"):
                 n2["airTemp"] = surface_temp
-            elif not n2.get("userTemp"):
+            elif n2.get("userTemp") or n2.get("hotNode"):
+                # ВАЖНО: узлы пути дыма пожара (userTemp=true или hotNode=true)
+                # НЕ перетираем геотермическим градиентом — их температура задана
+                # моделью распространения тепла (T_очага → остывание по пути). Иначе
+                # горячий узел сопряжения (напр. 138°C) сбрасывался на ~20°C, тяга
+                # горячего столба исчезала и расход душился (12→1.4) ИМЕННО при
+                # включённой ест.тяге. Оставляем присланную airTemp как есть.
+                pass
+            else:
                 # узел под землёй — температура по глубине (при grad=0 → surface_temp)
                 depth = max(0.0, z_surface - float(n2.get("z", 0) or 0))
                 n2["airTemp"] = surface_temp + geo_gradient * depth / 100.0

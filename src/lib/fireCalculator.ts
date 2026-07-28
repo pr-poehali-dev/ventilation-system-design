@@ -784,7 +784,11 @@ export function computeHotNodeTemps(
   const queue: [string, number, number][] = [];
   const setHot = (nid: string, wl: number, tHot: number) => {
     const t = wlToT(wl, tHot);
-    if (t > ambientTemp_C + 2 && (hot[nid] === undefined || t > hot[nid])) {
+    // Порог отсечки понижен до +0.5°C: в АэроСети тёплый столб доходит до
+    // дальнего сопряжения со стволом (36.9°C) — при отсечке +2°C наш столб
+    // «обрубался» раньше и до ствола доходила атмосфера (20°C). Оставляем чуть
+    // перегретые узлы, чтобы горячий/тёплый столб добивал до ствола.
+    if (t > ambientTemp_C + 0.5 && (hot[nid] === undefined || t > hot[nid])) {
       hot[nid] = Math.round(t * 100) / 100;
       queue.push([nid, wl, tHot]);
     }

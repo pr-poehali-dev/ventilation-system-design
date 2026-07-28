@@ -2738,6 +2738,9 @@ export default function CadPage() {
           z: n.z ?? 0,
           airTemp: n.atmosphereLink ? surfaceTempVal : (isHot ? hotT : (n.airTemp ?? surfaceTempVal)),
           userTemp: isHot ? true : (!n.atmosphereLink && (n.airTemp ?? 20) !== 20),
+          // hotNode — признак узла пути дыма пожара. Бэкенд НЕ перетирает его
+          // температуру геотермическим градиентом при включённой ест.тяге.
+          hotNode: isHot,
         };
       }),
       surfaceTemp: surfaceTempVal,
