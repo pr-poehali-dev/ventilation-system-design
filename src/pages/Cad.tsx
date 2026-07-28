@@ -1131,6 +1131,10 @@ export default function CadPage() {
   // возникает только от РЕАЛЬНО заданных разностей температур (замеры, пожар).
   // Ненулевой градиент пользователь задаёт явно, если нужен геотермический столб.
   const [geoGradient, setGeoGradient] = useState(0);
+  // Средняя температура рудничного воздуха t_ср, °C (термодинамический способ
+  // Комарова, норматив 7.11/9.2). ГОСТ 15°C по умолчанию. Разность surfaceTemp − t_ср
+  // задаёт естественную тягу.
+  const [mineAirTemp, setMineAirTemp] = useState(15);
   const [showSolverParams, setShowSolverParams] = useState(false);
   // Диалог «Устойчивость при пожаре» (Акт устойчивости)
   const [showFireStability, setShowFireStability] = useState(false);
@@ -1994,6 +1998,7 @@ export default function CadPage() {
     surfaceTemp,
     useNaturalDraft,
     geoGradient,
+    mineAirTemp,
     infoConfig,
     unitsConfig,
     branchWidth,
@@ -2386,6 +2391,7 @@ export default function CadPage() {
     if (data.surfaceTemp !== undefined) setSurfaceTemp(data.surfaceTemp as number);
     if (data.useNaturalDraft !== undefined) setUseNaturalDraft(data.useNaturalDraft as boolean);
     if (data.geoGradient !== undefined) setGeoGradient(data.geoGradient as number);
+    if (data.mineAirTemp !== undefined) setMineAirTemp(data.mineAirTemp as number);
     if (data.infoConfig) setInfoConfig(data.infoConfig as InfoDisplayConfig);
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
@@ -2749,6 +2755,7 @@ export default function CadPage() {
       surfaceTemp: surfaceTempVal,
       useNaturalDraft,
       geoGradient,
+      mineAirTemp,
       branches: buildBranchPayload(branchesWithFire, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
       // Тёплый старт: текущие расходы ветвей — стартовое приближение решателя.
@@ -2795,6 +2802,7 @@ export default function CadPage() {
       surfaceTemp: surfaceTempVal,
       useNaturalDraft,
       geoGradient,
+      mineAirTemp,
       branches: buildBranchPayload(baseBranches, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
       // Тёплый старт для каждого сценария: расходы базовой сети как приближение.
@@ -3032,6 +3040,7 @@ export default function CadPage() {
           surfaceTemp,
           useNaturalDraft,
           geoGradient,
+          mineAirTemp,
           branches: buildBranchPayload(branches, surfaceTemp),
           options: {
             tolerance: solverTolerance,
@@ -5405,9 +5414,15 @@ export default function CadPage() {
                     </div>
                     {useNaturalDraft && (
                       <>
-                        <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности (°C)</label>
+                        <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности t_н (°C)</label>
                         <input type="number" value={surfaceTemp} step="1" min="-60" max="50"
                           onChange={e => setSurfaceTemp(Number(e.target.value))}
+                          className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
+                        <label className="text-[10px] text-gray-500 block mb-1">
+                          Средняя температура рудничного воздуха t_ср (°C)
+                        </label>
+                        <input type="number" value={mineAirTemp} step="1" min="-20" max="60"
+                          onChange={e => setMineAirTemp(Number(e.target.value))}
                           className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
                         <label className="text-[10px] text-gray-500 block mb-1">
                           Геотерм. градиент (°C / 100 м глубины)
@@ -5416,8 +5431,8 @@ export default function CadPage() {
                           onChange={e => setGeoGradient(Number(e.target.value))}
                           className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
                         <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
-                          Температура каждого узла рассчитывается автоматически<br/>
-                          по глубине: T = T_пов + градиент × глубина / 100
+                          Термодинамический способ (Комаров, 7.11):<br/>
+                          h_e = γ·H·(t_н − t_ср)/(273 + t_ср). t_ср по ГОСТ 15°C.
                         </div>
                       </>
                     )}
