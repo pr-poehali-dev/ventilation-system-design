@@ -350,6 +350,7 @@ export function sailBulkheadRkMurg(A: number, area?: number): number {
 //                         (эталон: окно 5,5 м², сечение 19,3 м² → 0,00326 кМюрг).
 const WINDOW_MU = 0.59;          // по умолчанию (металл и пр.)
 const WINDOW_MU_CONCRETE = 0.75; // бетонная дверь с окном
+const WINDOW_MU_BRICK = 0.66;    // кирпичная дверь с окном
 // Ускорение свободного падения — переводной множитель между «нашими» единицами
 // сопротивления (Н·с²/м⁸, ΔP = R·Q² в Па) и рудничными кМюрг АэроСети
 // (кгс·с²/м⁸, ΔP = R·Q²·g). R_нашего = R_АэроСети · g.
@@ -359,6 +360,12 @@ export const G_ACCEL = 9.80665;
 // диафрагму с учётом скорости подхода в выработке.
 function isConcreteWindow(typeId?: string): boolean {
   return !!typeId && /_conc$/.test(typeId);
+}
+
+// Тип окна КИРПИЧНЫЙ? (id заканчивается на "_brick"): диафрагма с учётом скорости
+// подхода, как у бетонной, но μ=0,66.
+function isBrickWindow(typeId?: string): boolean {
+  return !!typeId && /_brick$/.test(typeId);
 }
 
 // Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ в кМюрг (кгс·с²/м⁸ — те же
@@ -373,13 +380,18 @@ function isConcreteWindow(typeId?: string): boolean {
 // вычитается динамический напор набегающего потока (1/Sвыр²):
 //   R_кМюрг = ρ/(2·g·μ²)·(1/Sок² − 1/Sвыр²)
 //   Проверка: Sок=5,5, Sвыр=19,3 → R≈0,00326 кМюрг (совпадает с АэроСетью).
+//
+// Кирпичная дверь (μ=0,66): та же диафрагма с учётом подхода, что и бетонная:
+//   R_кМюрг = ρ/(2·g·μ²)·(1/Sок² − 1/Sвыр²)
+//   Проверка: Sок=2, Sвыр=15,5 → R≈0,035 кМюрг (совпадает с АэроСетью).
 export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, typeId?: string): number {
   const Sok = windowArea;
   if (Sok <= 0.001) return 0;
-  if (isConcreteWindow(typeId)) {
+  if (isConcreteWindow(typeId) || isBrickWindow(typeId)) {
+    const mu = isBrickWindow(typeId) ? WINDOW_MU_BRICK : WINDOW_MU_CONCRETE;
     const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
     const approach = S > 0 ? 1 / (S * S) : 0;
-    const r = 1.2 / (2 * G_ACCEL * WINDOW_MU_CONCRETE * WINDOW_MU_CONCRETE) * (1 / (Sok * Sok) - approach);
+    const r = 1.2 / (2 * G_ACCEL * mu * mu) * (1 / (Sok * Sok) - approach);
     return r > 0 ? r : 0;
   }
   return 1.2 / (2 * G_ACCEL * WINDOW_MU * WINDOW_MU * Sok * Sok);
