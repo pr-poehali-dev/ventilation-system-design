@@ -453,6 +453,15 @@ export interface FireBranchResult {
     Tk: number;  // температура струи на устье, К (4.12)
     dz: number;  // разность высотных отметок, м (4.6)
   };
+  // Критическая депрессия наклонной выработки (Прил. 5, формула 5.3).
+  // Заполняется, только если у горящей ветви есть параллельная выработка.
+  critical?: {
+    h_kr: number;      // критическая депрессия, Па
+    r_p: number;       // сопротивление параллельной выработки, Н·с²/м⁸
+    Q_p: number;       // расход в параллельной выработке, м³/с
+    margin: number;    // запас устойчивости h_кр − |h_т|, Па (<0 → опрокидывание)
+    exceedsCritical: boolean; // |h_т| ≥ h_кр
+  };
 }
 
 export interface FireCalculationResult {
@@ -602,6 +611,73 @@ export function calcThermalDepressionNormative(
   // (4.5) h_т = k₁·Δz·(0.766 + A·ln(Tм/Tк))
   const h_t = NORMATIVE_K1 * dz * (0.766 + A * Math.log(Tm / Tk));
   return { h_t: Number.isFinite(h_t) ? h_t : 0, l, A, a, Tm, Tk, dz };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// КРИТИЧЕСКАЯ ДЕПРЕССИЯ наклонной выработки при нисходящем проветривании —
+// аналитический способ (Приложение 5, формула 5.3):
+//
+//   h_кр = 0.9 · r_п · (Q + Q_п)²                              (5.3)
+//
+// где r_п — аэродинамическое сопротивление ПАРАЛЛЕЛЬНОГО горящему участку
+//           наклонной выработки, Н·с²/м⁸;
+//     Q   — расход воздуха в рассматриваемой (аварийной) выработке, м³/с;
+//     Q_п — расход воздуха в параллельной выработке, м³/с.
+//
+// Опрокидывание нисходящей струи наступает, когда тепловая депрессия пожара
+// достигает критической: |h_т| ≥ h_кр.
+//
+// Параллельная выработка определяется как ветвь, соединяющая ТУ ЖЕ пару узлов,
+// что и горящая (альтернативный путь между теми же узлами). Если параллельной
+// ветви в схеме нет — критическую депрессию по (5.3) вычислить нельзя.
+export interface CriticalDepInput {
+  fireBranchId: string;
+  fireFromId: string;
+  fireToId: string;
+  fireFlow_m3s: number;    // Q — расход в аварийной выработке
+  branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number }[];
+}
+
+export interface CriticalDepResult {
+  h_kr: number;            // критическая депрессия, Па (0 если параллельной ветви нет)
+  r_p: number;             // сопротивление параллельной выработки, Н·с²/м⁸
+  Q: number;               // расход в аварийной выработке, м³/с
+  Q_p: number;             // расход в параллельной выработке, м³/с
+  parallelBranchId?: string;
+  hasParallel: boolean;
+}
+
+export const CRITICAL_DEP_K = 0.9; // коэффициент в формуле (5.3)
+
+export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult {
+  const Q = Math.abs(Number(inp.fireFlow_m3s) || 0);
+  const empty: CriticalDepResult = { h_kr: 0, r_p: 0, Q, Q_p: 0, hasParallel: false };
+
+  // Ищем параллельную ветвь: соединяет ту же пару узлов (в любом порядке),
+  // но это не сама горящая ветвь. Берём с максимальным расходом (основной
+  // параллельный путь), если их несколько.
+  const a = inp.fireFromId, b = inp.fireToId;
+  const parallels = inp.branches.filter(br =>
+    br.id !== inp.fireBranchId &&
+    ((br.fromId === a && br.toId === b) || (br.fromId === b && br.toId === a)),
+  );
+  if (parallels.length === 0) return empty;
+
+  const par = parallels.reduce((best, br) =>
+    Math.abs(br.flow ?? 0) > Math.abs(best.flow ?? 0) ? br : best, parallels[0]);
+
+  const r_p = Math.max(0, Number(par.resistance) || 0);
+  const Q_p = Math.abs(Number(par.flow) || 0);
+  if (!(r_p > 0)) return { ...empty, hasParallel: true, parallelBranchId: par.id, Q_p };
+
+  // (5.3) h_кр = 0.9 · r_п · (Q + Q_п)²
+  const h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
+  return {
+    h_kr: Number.isFinite(h_kr) ? h_kr : 0,
+    r_p, Q, Q_p,
+    parallelBranchId: par.id,
+    hasParallel: true,
+  };
 }
 
 // ─── Выбор метода расчёта тепловой депрессии пожара ───────────────────────────
@@ -883,6 +959,28 @@ export function calcFireMode(
     const isDescending = flowRelAngle < -1;
     const willReverse = isDescending && Math.abs(thermalDep) > Math.abs(fb.dP ?? 0) * 0.5;
 
+    // Критическая депрессия наклонной выработки (Прил. 5, формула 5.3):
+    // h_кр = 0.9·r_п·(Q+Q_п)². Считаем только для НИСХОДЯЩИХ выработок (для
+    // восходящих опрокидывание невозможно) и при наличии параллельной ветви.
+    const critRaw = isDescending
+      ? calcCriticalDepression({
+          fireBranchId: fb.id,
+          fireFromId: fb.fromId,
+          fireToId: fb.toId,
+          fireFlow_m3s: airQ,
+          branches,
+        })
+      : null;
+    const critical = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
+      ? {
+          h_kr: Math.round(critRaw.h_kr * 10) / 10,
+          r_p: critRaw.r_p,
+          Q_p: Math.round(critRaw.Q_p * 100) / 100,
+          margin: Math.round((critRaw.h_kr - Math.abs(thermalDep)) * 10) / 10,
+          exceedsCritical: Math.abs(thermalDep) >= critRaw.h_kr,
+        }
+      : undefined;
+
     // Фактическое изменение расхода: разница между расходом после расчёта пожара и до пожара
     // originalFlow передаётся из итеративного расчёта в Cad.tsx
     const originalFlow = fb.originalFlow ?? fb.flow ?? 0;
@@ -971,6 +1069,7 @@ export function calcFireMode(
         Tk: Math.round(normDetail.Tk),
         dz: Math.round(normDetail.dz * 10) / 10,
       } : undefined,
+      critical,
     });
     // В множество опрокинутых (синяя подсветка + счётчик) добавляем ТОЛЬКО
     // ветви с РЕАЛЬНЫМ опрокидыванием потока. Риск (willReverse) отражается

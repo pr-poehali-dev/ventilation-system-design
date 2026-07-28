@@ -6697,6 +6697,24 @@ export default function CadPage() {
                           <Row label="Tк на устье, K:" value={`${fr.normative.Tk} (${safeFixed(fr.normative.Tk - 273, 0)} °C)`} />
                         </>
                       )}
+                      {fr.critical && (
+                        <>
+                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>Критическая депрессия (5.3)</div>
+                          <Row label="Крит. депрессия h_кр, Па:" value={safeFixed(fr.critical.h_kr, 1)} bold />
+                          <Row label="Сопр. параллельной r_п:" value={safeFixed(fr.critical.r_p, 4)} />
+                          <Row label="Расход паралл. Q_п, м³/с:" value={safeFixed(fr.critical.Q_p, 2)} />
+                          <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                            <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Запас устойчивости, Па:</span>
+                            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{
+                              background: fr.critical.exceedsCritical ? "#fef2f2" : "#f0fdf4",
+                              color: fr.critical.exceedsCritical ? "#dc2626" : "#16a34a",
+                              border: `1px solid ${fr.critical.exceedsCritical ? "#fca5a5" : "#86efac"}`,
+                            }}>
+                              {fr.critical.margin > 0 ? "+" : ""}{safeFixed(fr.critical.margin, 1)} ({fr.critical.exceedsCritical ? "|h_t| ≥ h_кр" : "|h_t| < h_кр"})
+                            </span>
+                          </div>
+                        </>
+                      )}
                       {(fr.flowDelta ?? 0) !== 0 && (
                         <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${safeFixed(fr.flowDelta, 2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
                       )}
