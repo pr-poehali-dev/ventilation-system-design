@@ -4579,6 +4579,31 @@ export default function CadPage() {
           </div>
         </RibbonGroup>
 
+        {/* ── Группа: Метод тепловой депрессии пожара ── */}
+        <RibbonGroup label="Тепловая депрессия">
+          <div className="flex flex-col justify-center gap-1" style={{ minWidth: 110 }}>
+            <div className="text-[10px] text-gray-600 leading-tight">Метод расчёта:</div>
+            {([
+              { id: "normative" as ThermalDepMethod, label: "Норматив (4.5)" },
+              { id: "aerosети" as ThermalDepMethod, label: "Методика" },
+            ]).map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => changeThermalDepMethod(opt.id)}
+                className="text-[11px] px-2 py-1 rounded text-left transition-colors"
+                style={{
+                  background: thermalDepMethod === opt.id ? "#991b1b" : "#f3f4f6",
+                  color: thermalDepMethod === opt.id ? "#fff" : "#374151",
+                  border: `1px solid ${thermalDepMethod === opt.id ? "#991b1b" : "#d1d5db"}`,
+                }}
+                title="Применится при следующем «Расчёте пожара»"
+              >
+                {thermalDepMethod === opt.id ? "● " : "○ "}{opt.label}
+              </button>
+            ))}
+          </div>
+        </RibbonGroup>
+
         {/* ── Группа: Взрыв ── */}
         <RibbonGroup label="Взрыв">
           <div className="flex items-stretch gap-1">

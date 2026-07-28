@@ -601,8 +601,8 @@ const THERMAL_DEP_METHOD_KEY = "fireThermalDepMethod";
 export function getThermalDepMethod(): ThermalDepMethod {
   try {
     const v = localStorage.getItem(THERMAL_DEP_METHOD_KEY);
-    return v === "normative" ? "normative" : "aerosети";
-  } catch { return "aerosети"; }
+    return v === "aerosети" ? "aerosети" : "normative";
+  } catch { return "normative"; }
 }
 
 export function setThermalDepMethod(m: ThermalDepMethod): void {
