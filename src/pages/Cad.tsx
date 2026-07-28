@@ -10,7 +10,7 @@ import {
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
-import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower, resolveAngleCurve } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
@@ -2604,17 +2604,21 @@ export default function CadPage() {
     const curve_map = new Map(branchesList.map(b => {
       const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
       const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
+      const hasAngleCurves = !!curve?.angleCurves && curve.angleCurves.length > 0;
       let af = 1.0;
-      if (curve?.bladeAngles && curve.bladeAngles.length >= 2) {
+      if (!hasAngleCurves && curve?.bladeAngles && curve.bladeAngles.length >= 2) {
         const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
         const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
         af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
       }
-      return [b.id, { curve, k, af }];
+      // Для вентиляторов с кривыми по углам — берём коэффициенты выбранного угла
+      // (af=1, характеристика уже соответствует углу).
+      const rc = curve && hasAngleCurves ? resolveAngleCurve(curve, b.fanBladeAngle) : undefined;
+      return [b.id, { curve, k, af, rc }];
     }));
 
     return branchesList.map(b => {
-      const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
+      const { curve, k, af, rc } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1, rc: undefined };
       const fromNode = nodesMap.get(b.fromId);
       const toNode   = nodesMap.get(b.toId);
       const tFrom = fromNode ? (fromNode.atmosphereLink ? surfaceTempVal : (fromNode.airTemp ?? surfaceTempVal)) : surfaceTempVal;
@@ -2705,7 +2709,21 @@ export default function CadPage() {
         fanStopped:  b.fanStopped ?? false,
         fanParallel: Math.max(1, b.fanParallel ?? 1),
         fireThermalDepression: b.fireThermalDepression ?? 0,
-        ...(curve ? {
+        ...(curve ? (rc ? {
+          // Кривая по выбранному углу лопаток (af=1)
+          h0: rc.h0 * k * k,
+          h1: rc.h1 * k,
+          h2: rc.h2,
+          qMax: rc.qMax * k,
+          qMin: rc.qMin * k,
+          ...(rc.rH0 !== undefined ? {
+            reverseH0:  rc.rH0 * k * k,
+            reverseH1:  rc.rH1! * k,
+            reverseH2:  rc.rH2!,
+            reverseQMax: (rc.rQMax ?? rc.qMax) * k,
+            reverseEfficiencyFactor: curve.reverseEfficiencyFactor,
+          } : {}),
+        } : {
           h0: curve.h0 * af * k * k,
           h1: curve.h1 * k,
           h2: curve.h2,
@@ -2718,7 +2736,7 @@ export default function CadPage() {
             reverseQMax: (curve.reverseQMax ?? curve.qMax) * k,
             reverseEfficiencyFactor: curve.reverseEfficiencyFactor,
           } : {}),
-        } : {}),
+        }) : {}),
       };
     });
   };
@@ -3088,7 +3106,15 @@ export default function CadPage() {
               const k = (b.fanRpm > 0 && curve.rpmNominal > 0) ? b.fanRpm / curve.rpmNominal : 1;
               // Q через один вентилятор, в координатах номинальных оборотов
               const Q_one_nominal = Math.abs(rb.Q) / N / k;
-              const etaBase = fanEfficiency(curve, Q_one_nominal);
+              const hasAngleCurves = !!curve.angleCurves && curve.angleCurves.length > 0;
+              let etaBase: number;
+              if (hasAngleCurves) {
+                const rc = resolveAngleCurve(curve, b.fanBladeAngle);
+                const eta = rc.e0 + rc.e1 * Q_one_nominal + rc.e2 * Q_one_nominal * Q_one_nominal;
+                etaBase = Math.min(0.85, Math.max(0.05, eta));
+              } else {
+                etaBase = fanEfficiency(curve, Q_one_nominal);
+              }
               const effFactor = b.fanReverse ? (curve.reverseEfficiencyFactor ?? 0.82) : 1;
               newFanEfficiency = Math.max(0.05, etaBase * effFactor);
               // Мощность установки: Hfan суммарный (N·H(Q/N)) → мощность = H(Q/N)·Q_total/η
