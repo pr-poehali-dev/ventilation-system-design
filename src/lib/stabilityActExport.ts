@@ -43,6 +43,8 @@ const TABLE_HEADERS = [
   "Расход при пожаре, м³/сек",
   "Расчётная мощность пожара, МВт",
   "Расчётная температура пожара, °C",
+  "Тепловая депрессия h_т, Па",
+  "Критическая депрессия h_кр, Па",
   "Степень устойчивости",
   "Пожарная нагрузка",
 ];
@@ -115,17 +117,17 @@ function buildTitleSheet(meta: ActMeta): XLSX.WorkSheet {
     [`Дата: ${meta.date}`],
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = Array.from({ length: 15 }, () => ({ wch: 10 }));
+  ws["!cols"] = Array.from({ length: 17 }, () => ({ wch: 10 }));
   // Объединения заголовков АКТ (строки 9-14 в 1-based → индексы 8-13)
   ws["!merges"] = [
-    { s: { r: 8, c: 0 }, e: { r: 8, c: 14 } },
-    { s: { r: 9, c: 0 }, e: { r: 9, c: 14 } },
-    { s: { r: 10, c: 0 }, e: { r: 10, c: 14 } },
-    { s: { r: 11, c: 0 }, e: { r: 11, c: 14 } },
-    { s: { r: 12, c: 0 }, e: { r: 12, c: 14 } },
-    { s: { r: 13, c: 0 }, e: { r: 13, c: 14 } },
-    { s: { r: 15, c: 0 }, e: { r: 15, c: 14 } },
-    { s: { r: 16, c: 0 }, e: { r: 16, c: 14 } },
+    { s: { r: 8, c: 0 }, e: { r: 8, c: 16 } },
+    { s: { r: 9, c: 0 }, e: { r: 9, c: 16 } },
+    { s: { r: 10, c: 0 }, e: { r: 10, c: 16 } },
+    { s: { r: 11, c: 0 }, e: { r: 11, c: 16 } },
+    { s: { r: 12, c: 0 }, e: { r: 12, c: 16 } },
+    { s: { r: 13, c: 0 }, e: { r: 13, c: 16 } },
+    { s: { r: 15, c: 0 }, e: { r: 15, c: 16 } },
+    { s: { r: 16, c: 0 }, e: { r: 16, c: 16 } },
   ];
   // Стили заголовка АКТ
   [8, 9, 10, 11, 12, 13].forEach(r => {
@@ -158,13 +160,15 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
       r.flow,           // расход при пожаре
       r.firePower_MW,
       r.fireTemp_C,
+      r.thermalDep_Pa,
+      r.hKr_Pa != null ? r.hKr_Pa : "—",
       r.stability,
       r.fireLoadDesc,
     ]);
   });
 
   if (rows.length === 0) {
-    aoa.push(["", "", "", "Нет ветвей, удовлетворяющих условиям отбора", "", "", "", "", "", "", "", "", "", "", ""]);
+    aoa.push(["", "", "", "Нет ветвей, удовлетворяющих условиям отбора", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -173,10 +177,10 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
   ws["!cols"] = [
     { wch: 6 }, { wch: 9 }, { wch: 9 }, { wch: 26 }, { wch: 10 }, { wch: 9 },
     { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-    { wch: 13 }, { wch: 14 }, { wch: 40 },
+    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 40 },
   ];
   // Объединение вводной строки
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 14 } }];
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 16 } }];
   // Высоты
   ws["!rows"] = [{ hpx: 30 }, { hpx: 8 }, { hpx: 46 }];
 

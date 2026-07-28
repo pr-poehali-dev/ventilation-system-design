@@ -18,7 +18,7 @@ import type { TopoBranch, TopoNode } from "./topology";
 import { calcBranchAngle } from "./topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire,
-  calcFireTemp, calcThermalDepression,
+  calcFireTemp, calcThermalDepression, calcCriticalDepression,
 } from "./fireCalculator";
 
 // Факт пожара по ветви из реального итеративного расчёта сети (как в
@@ -56,6 +56,8 @@ export interface StabilityRow {
   fireTemp_C: number;        // расчётная температура пожара, °C
   thermalDep_Pa: number;     // тепловая депрессия пожара, Па
   branchDep_Pa: number;      // располагаемая депрессия ветви, Па
+  hKr_Pa: number | null;     // критическая депрессия h_кр (5.3), Па (null — нет параллельной выработки)
+  exceedsCritical: boolean;  // |h_т| ≥ h_кр (опрокидывание по нормативу)
   stable: boolean;           // устойчиво?
   stability: string;         // "Устойчиво" / "Неустойчиво"
   fireLoadDesc: string;      // описание пожарной нагрузки
@@ -232,6 +234,18 @@ export function calcFireStability(
     const willReverse = (signedAngleFlow < -1) && (thermalDep > branchDep * 0.5);
     const stable = fact ? !fact.reversed : !willReverse;
 
+    // Критическая депрессия наклонной выработки (Прил. 5, формула 5.3):
+    // h_кр = 0.9·r_п·(Q+Q_п)². Считаем только для нисходящих выработок и
+    // при наличии параллельной ветви (иначе — null).
+    const crit = descending
+      ? calcCriticalDepression({
+          fireBranchId: b.id, fireFromId: b.fromId, fireToId: b.toId,
+          fireFlow_m3s: airFlow, branches,
+        })
+      : null;
+    const hKr_Pa = (crit && crit.hasParallel && crit.h_kr > 0) ? +crit.h_kr.toFixed(1) : null;
+    const exceedsCritical = hKr_Pa != null && thermalDep >= hKr_Pa;
+
     const row: StabilityRow = {
       branchId: b.id,
       index: 0, // проставим ниже
@@ -250,6 +264,8 @@ export function calcFireStability(
       fireTemp_C: +fireTemp.toFixed(1),
       thermalDep_Pa: +thermalDep.toFixed(1),
       branchDep_Pa: +branchDep.toFixed(1),
+      hKr_Pa,
+      exceedsCritical,
       stable,
       stability: stable ? "Устойчиво" : "Неустойчиво",
       fireLoadDesc: describeFireLoad(b),
