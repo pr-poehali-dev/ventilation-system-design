@@ -373,8 +373,6 @@ export function solveNetwork(
   const edges: Edge[] = brCalc.map(b => {
     const fn  = nodesIn.find(n => n.id === b.fromId);
     const tn  = nodesIn.find(n => n.id === b.toId);
-    const T   = (fn && tn) ? (fn.airTemp + tn.airTemp) / 2 : 20;
-    const rho = airRho(T) / 1.2;   // поправочный коэффициент плотности
     return {
       id:            b.id,
       a:             toGnd(b.fromId),
@@ -424,7 +422,9 @@ export function solveNetwork(
       fanCurve:      b.fanMode === "curve" ? (getFanById(b.fanCurveId) ?? undefined) : undefined,
       fanRpm:        b.fanRpm,
       fanBladeAngle: b.fanBladeAngle,
-      fanRhoFactor:  rho,
+      // Паспортная характеристика вентилятора берётся как есть (как в АэроСеть/
+      // Вентиляция 2.0) — без температурной поправки плотности на напор.
+      fanRhoFactor:  1,
       fanReverse:    b.fanReverse ?? false,
       fanStopped:    b.fanStopped ?? false,
       fanParallel:   Math.max(1, b.fanParallel ?? 1),
