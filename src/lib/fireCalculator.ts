@@ -767,40 +767,48 @@ export function computeHotNodeTemps(
     ...fireBranches.map(f => Math.abs(f.originalFlow ?? f.flow ?? 0)),
   );
 
-  // Очередь: [nodeId, T_на_входе_узла]. Старт — выходной узел ветви очага.
-  const queue: [string, number][] = [];
-  const setHot = (nid: string, t: number) => {
+  // ── Остывание по СУММАРНОМУ (кумулятивному) контакту со стенками ──────────
+  // Ключевой момент: остывание считаем НЕ поветвенно с «полом» coolExp≥0.3, а
+  // по НАКОПЛЕННОМУ интегралу теплопотерь wl = Σ(α·P·L/(ρ·cp·Q)) от очага до
+  // узла. T(узла) = T_атм + (T_очага − T_атм)·exp(−wl). Так суммарное остывание
+  // зависит ТОЛЬКО от полной длины пути дыма и не зависит от того, на сколько
+  // коротких ветвей он разбит. Прежний поветвенный «пол» 0.3 на длинном пути
+  // перемножался (0.3⁴≈0.008) и «съедал» тепло за 3-4 узла — до ствола доходил
+  // холодный воздух (20°C вместо ~138°C в АэроСети), из-за чего при включённой
+  // естественной тяге баланс тяги ломался и расход душился (12→1.4). Теперь
+  // горячий столб доходит до ствола, и расход близок к АэроСети.
+  const wlToT = (wl: number, tHot: number) =>
+    ambientTemp_C + (Math.min(1200, tHot) - ambientTemp_C) * Math.exp(-wl);
+
+  // Очередь: [nodeId, wl_накопленное, T_очага_источника].
+  const queue: [string, number, number][] = [];
+  const setHot = (nid: string, wl: number, tHot: number) => {
+    const t = wlToT(wl, tHot);
     if (t > ambientTemp_C + 2 && (hot[nid] === undefined || t > hot[nid])) {
       hot[nid] = Math.round(t * 100) / 100;
-      queue.push([nid, t]);
+      queue.push([nid, wl, tHot]);
     }
   };
+  const wallLoss = (per: number, len: number, massFlow: number) =>
+    (WALL_HEAT_ALPHA * per * len) / (Math.max(0.5, massFlow) * CP_AIR * 1000);
+
   for (const fb of fireBranches) {
     // Выходной (нагреваемый) узел очага — по ШТАТНОМУ направлению струи
-    // (originalFlow), если оно задано. Иначе по текущему расходу. Это не даёт
-    // уже опрокинутому на итерации потоку разворачивать «горячую сторону» очага
-    // и самоусиливать ложное опрокидывание восходящей выработки.
+    // (originalFlow): не даёт уже опрокинутому на итерации потоку разворачивать
+    // «горячую сторону» очага и самоусиливать ложное опрокидывание.
     const dirFlow = fb.originalFlow ?? fb.flow ?? 0;
     const outNode = dirFlow >= 0 ? fb.toId : fb.fromId;
-    // ВАЖНО: в узел кладём НЕ полную температуру очага, а ОСТЫВШУЮ на участке
-    // выработки от точки очага до выходного узла (сток тепла в стенки). Без
-    // остывания на короткую ветвь очага садится вся разность T_очага−T_атм и
-    // естественная тяга (natural_draft_h) на ней получается чрезмерной —
-    // расход в ветви душится в разы сильнее, чем в АэроСети (где горячий столб
-    // распределён/остывает по пути дыма). С остыванием тяга умереннее и расход
-    // близок к АэроСети.
     const halfLen = (fb.length ?? 0) * 0.5;                 // очаг в среднем в середине ветви
     const per = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
-    const massFlow = Math.max(0.5, 1.25 * Math.max(Math.abs(dirFlow), fireRefFlow));
-    const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * per * halfLen) / (massFlow * CP_AIR * 1000)));
-    const tOutSeed = ambientTemp_C + (Math.min(1200, fb.fireTemp) - ambientTemp_C) * coolExp;
-    setHot(outNode, tOutSeed);
+    const massFlow = 1.25 * Math.max(Math.abs(dirFlow), fireRefFlow);
+    setHot(outNode, wallLoss(per, halfLen, massFlow), fb.fireTemp);
   }
 
   let guard = 0;
   while (queue.length > 0 && guard++ < 5000) {
-    const [nodeId, tIn] = queue.shift()!;
-    if ((hot[nodeId] ?? -1e9) > tIn + 1e-6) continue; // устаревшая запись
+    const [nodeId, wlIn, tHot] = queue.shift()!;
+    // Устаревшая запись: узел уже помечен более горячим (меньшим wl).
+    if ((hot[nodeId] ?? -1e9) > wlToT(wlIn, tHot) + 1e-6) continue;
     const down = branchesByInNode.get(nodeId) ?? [];
     for (const b of down) {
       if (fireIds.has(b.id)) continue; // очаг сам не остывает от себя
@@ -809,13 +817,13 @@ export function computeHotNodeTemps(
       const bLen = b.length ?? 0;
       const bArea = b.area ?? 1;
       const bPer = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, bArea));
-      // Массовый расход остывания — не ниже опорного расхода очага: горячий плюм
-      // переносится по пути дыма при расходе очага, а не по локальному (который
-      // на схлопнувшейся ветви близок к нулю и даёт нефизично быстрое остывание).
-      const bMassFlow = Math.max(0.5, 1.25 * Math.max(flow, fireRefFlow));
-      const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
-      const tOut = ambientTemp_C + (tIn - ambientTemp_C) * coolExp;
-      setHot(outNode, tOut);
+      // Массовый расход — не ниже опорного расхода очага (плюм переносится при
+      // расходе очага, а не по схлопнувшемуся локальному).
+      const bMassFlow = 1.25 * Math.max(flow, fireRefFlow);
+      // Накапливаем теплопотери по пути (без «пола» — суммарное остывание
+      // физично зависит от полной длины пути).
+      const wlOut = wlIn + wallLoss(bPer, bLen, bMassFlow);
+      setHot(outNode, wlOut, tHot);
     }
   }
   return hot;
