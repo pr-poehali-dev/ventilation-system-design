@@ -26,7 +26,7 @@
 
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
-import { getFanById, fanEfficiency, fanShaftPower, resolveAngleCurve, type FanCurve } from "./fanCurves";
+import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg } from "./bulkheads";
 
 const GND_ID   = "@gnd";
@@ -57,7 +57,6 @@ interface Edge {
   reverseH1?:         number;
   reverseH2?:         number;
   reverseQMax?:       number;
-  reverseQMin?:       number;
   reverseEffFactor?:  number;     // множитель КПД в реверсе
 }
 
@@ -124,55 +123,31 @@ function fanH(e: Edge, Q: number): number {
     const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
     const Qn = Math.abs(Q) / N / Math.max(0.001, k);
 
-    // Характеристика для выбранного угла лопаток (с интерполяцией между углами
-    // если у вентилятора заданы angleCurves). Иначе — базовая кривая.
-    const rc = resolveAngleCurve(c, e.fanBladeAngle);
-    const hasAngle = !!c.angleCurves && c.angleCurves.length > 0;
-
-    // При реверсе — используем реверсную P–Q характеристику если она есть
-    const rH0 = hasAngle ? rc.rH0 : e.reverseH0;
-    const rH1 = hasAngle ? rc.rH1 : e.reverseH1;
-    const rH2 = hasAngle ? rc.rH2 : e.reverseH2;
-    const rQMax = hasAngle ? rc.rQMax : e.reverseQMax;
-    if (e.fanReverse && rH0 !== undefined && rH1 !== undefined && rH2 !== undefined) {
-      const qMax = (rQMax ?? rc.qMax) * k;
+    // При реверсе — используем реверсную P–Q характеристику если она есть в каталоге
+    if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+      const qMax = (e.reverseQMax ?? c.qMax) * k;
       // За пределом Qmax напор экстраполируется РЕЗКО ВНИЗ (вентилятор тормозит
       // поток), а НЕ обнуляется. Жёсткий 0 создавал ложное равновесие при большом
       // расходе (Q улетал за характеристику и естественная тяга гнала поток).
-      // Левая полка реверса (Q < rQMin) — держим H(rQMin), не даём уйти в минус.
-      const rQMin = hasAngle ? rc.rQMin : e.reverseQMin;
-      if (rQMin !== undefined && Qn < rQMin) {
-        const Hmin = rH0 + rH1 * rQMin + rH2 * rQMin * rQMin;
-        return Math.max(0, Hmin) * k * k * e.fanRhoFactor;
-      }
       if (Qn > qMax) {
-        const dH = (rH1 + 2 * rH2 * qMax);          // наклон в Qmax
-        const Hq = rH0 + rH1 * qMax + rH2 * qMax * qMax;
-        const slope = Math.min(dH, -Math.abs(rH2) * qMax * 4 - 50); // круче вниз
+        const dH = (e.reverseH1 + 2 * e.reverseH2 * qMax);          // наклон в Qmax
+        const Hq = e.reverseH0 + e.reverseH1 * qMax + e.reverseH2 * qMax * qMax;
+        const slope = Math.min(dH, -Math.abs(e.reverseH2) * qMax * 4 - 50); // круче вниз
         return (Hq + slope * (Qn - qMax)) * k * k * e.fanRhoFactor;
       }
-      return Math.max(0, rH0 + rH1 * Qn + rH2 * Qn * Qn) * k * k * e.fanRhoFactor;
+      return Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
     }
 
-    // Прямая характеристика: при заданных angleCurves множитель угла НЕ нужен
-    // (кривая уже соответствует углу), иначе — старый грубый angleFactor().
-    const af = hasAngle ? 1 : angleFactor(c, e.fanBladeAngle);
-    const h0F = rc.h0 * (hasAngle ? 1 : af);
-    const qMaxF = rc.qMax * (hasAngle ? 1 : af);
-    // Левее рабочей зоны (Q < qMin) парабола по 3 паспортным точкам уходит в
-    // отрицательный напор (h0 < 0) — это физически неверно и «схлопывает» сеть.
-    // Держим напор на уровне H(qMin) (левая/помпажная ветвь), как в «АэроСеть».
-    if (hasAngle && Qn < rc.qMin) {
-      const Hmin = h0F + rc.h1 * rc.qMin + rc.h2 * rc.qMin * rc.qMin;
-      return Math.max(0, Hmin) * k * k * e.fanRhoFactor;
-    }
+    // Прямая характеристика (или реверс без отдельной кривой)
+    const af = angleFactor(c, e.fanBladeAngle);
+    const qMaxF = c.qMax * af;
     if (Qn > qMaxF) {
-      const dH = (rc.h1 + 2 * rc.h2 * qMaxF);
-      const Hq = h0F + rc.h1 * qMaxF + rc.h2 * qMaxF * qMaxF;
-      const slope = Math.min(dH, -Math.abs(rc.h2) * qMaxF * 4 - 50);
+      const dH = (c.h1 + 2 * c.h2 * qMaxF);
+      const Hq = c.h0 * af + c.h1 * qMaxF + c.h2 * qMaxF * qMaxF;
+      const slope = Math.min(dH, -Math.abs(c.h2) * qMaxF * 4 - 50);
       return (Hq + slope * (Qn - qMaxF)) * k * k * e.fanRhoFactor;
     }
-    return Math.max(0, h0F + rc.h1 * Qn + rc.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
   return 0;
@@ -185,28 +160,23 @@ function fanDH(e: Edge, Q: number): number {
   const c  = e.fanCurve;
   const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
   const Qn = Math.abs(Q) / N / Math.max(0.001, k);
-  const rc = resolveAngleCurve(c, e.fanBladeAngle);
-  const hasAngle = !!c.angleCurves && c.angleCurves.length > 0;
   // При реверсе с отдельной кривой — используем её коэффициенты
-  const rH1 = hasAngle ? rc.rH1 : e.reverseH1;
-  const rH2 = hasAngle ? rc.rH2 : e.reverseH2;
-  const rQMax = hasAngle ? rc.rQMax : e.reverseQMax;
-  if (e.fanReverse && (hasAngle ? rc.rH0 : e.reverseH0) !== undefined && rH1 !== undefined && rH2 !== undefined) {
-    const qMax = (rQMax ?? rc.qMax) * k;
+  if (e.fanReverse && e.reverseH0 !== undefined && e.reverseH1 !== undefined && e.reverseH2 !== undefined) {
+    const qMax = (e.reverseQMax ?? c.qMax) * k;
     if (Qn > qMax) {
-      const slope = Math.min(rH1 + 2 * rH2 * qMax, -Math.abs(rH2) * qMax * 4 - 50);
+      const slope = Math.min(e.reverseH1 + 2 * e.reverseH2 * qMax, -Math.abs(e.reverseH2) * qMax * 4 - 50);
       return Math.abs(slope * k * e.fanRhoFactor) / N;
     }
-    return Math.abs((rH1 + 2 * rH2 * Qn) * k * e.fanRhoFactor) / N;
+    return Math.abs((e.reverseH1 + 2 * e.reverseH2 * Qn) * k * e.fanRhoFactor) / N;
   }
   // dH/dQ_total = dH/dQ_one * (1/N) — цепное правило
-  const af = hasAngle ? 1 : angleFactor(c, e.fanBladeAngle);
-  const qMaxF = rc.qMax * af;
+  const af = angleFactor(c, e.fanBladeAngle);
+  const qMaxF = c.qMax * af;
   if (Qn > qMaxF) {
-    const slope = Math.min(rc.h1 + 2 * rc.h2 * qMaxF, -Math.abs(rc.h2) * qMaxF * 4 - 50);
+    const slope = Math.min(c.h1 + 2 * c.h2 * qMaxF, -Math.abs(c.h2) * qMaxF * 4 - 50);
     return Math.abs(slope * k * e.fanRhoFactor) / N;
   }
-  return Math.abs((rc.h1 + 2 * rc.h2 * Qn) * k * e.fanRhoFactor) / N;
+  return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor) / N;
 }
 
 /**
@@ -231,13 +201,10 @@ function estimateQ0(edges: Edge[], Rtotal: number): number {
   if (fan.fanMode === "curve" && fan.fanCurve) {
     const c = fan.fanCurve;
     const k = (fan.fanRpm && c.rpmNominal > 0) ? fan.fanRpm / c.rpmNominal : 1;
-    const rc = resolveAngleCurve(c, fan.fanBladeAngle);
-    const hasAngle = !!c.angleCurves && c.angleCurves.length > 0;
     // При реверсе с отдельной кривой — используем её диапазон расходов
-    const revQMax = hasAngle ? rc.rQMax : fan.reverseQMax;
-    const qMaxSrc = (fan.fanReverse && revQMax !== undefined) ? revQMax : rc.qMax;
+    const qMaxSrc = (fan.fanReverse && fan.reverseQMax !== undefined) ? fan.reverseQMax : c.qMax;
     const qHi = qMaxSrc * k;
-    if (Rtotal <= 0) return (rc.qMin + qMaxSrc) / 2 * k;
+    if (Rtotal <= 0) return (c.qMin + qMaxSrc) / 2 * k;
 
     // Бисекция: |H_вент(q)| = R·q² — всегда работаем с положительными величинами
     let lo = 0, hi = qHi;
@@ -950,18 +917,7 @@ export function solveNetwork(
       fanPressure   = fan_dir * Habs;             // знаковый напор для отображения
       if (b.fanMode === "curve" && e.fanCurve) {
         const Qfan = Math.abs(e.Q);
-        const c = e.fanCurve;
-        const hasAngle = !!c.angleCurves && c.angleCurves.length > 0;
-        let etaBase: number;
-        if (hasAngle) {
-          const rc = resolveAngleCurve(c, e.fanBladeAngle);
-          const kEff = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
-          const qEff = Qfan / Math.max(0.001, kEff);   // КПД по приведённому расходу
-          const eta = rc.e0 + rc.e1 * qEff + rc.e2 * qEff * qEff;
-          etaBase = Math.min(0.85, Math.max(0.05, eta));
-        } else {
-          etaBase = fanEfficiency(c, Qfan);
-        }
+        const etaBase = fanEfficiency(e.fanCurve, Qfan);
         if (b.fanReverse) {
           const effFactor = e.reverseEffFactor ?? 0.82;
           fanEff = Math.max(0.05, etaBase * effFactor);
@@ -1048,11 +1004,8 @@ export function solveNetwork(
     if (!e?.fanCurve) continue;
     const k    = (e.fanRpm && e.fanCurve.rpmNominal > 0) ? e.fanRpm / e.fanCurve.rpmNominal : 1;
     const Q    = Math.abs(e.Q);
-    const rc   = resolveAngleCurve(e.fanCurve, e.fanBladeAngle);
-    const hasAngle = !!e.fanCurve.angleCurves && e.fanCurve.angleCurves.length > 0;
-    const qMin = rc.qMin * k;
-    const revQMax = hasAngle ? rc.rQMax : e.reverseQMax;
-    const qMax = (e.fanReverse && revQMax) ? revQMax * k : rc.qMax * k;
+    const qMin = e.fanCurve.qMin * k;
+    const qMax = (e.fanReverse && e.reverseQMax) ? e.reverseQMax * k : e.fanCurve.qMax * k;
     if (Q < qMin * 0.9)
       diag.push({ level: "warning", category: "fan", message: `${e.id}: помпаж Q=${Q.toFixed(1)} < Qmin=${qMin.toFixed(1)}`, objectId: e.id });
     else if (Q > qMax * 0.97)

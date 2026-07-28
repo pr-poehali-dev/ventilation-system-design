@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
-import { FAN_CATALOG, getFanById, resolveAngleCurve } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
@@ -909,14 +909,15 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 if (!curve) return null;
                 // Закон подобия: Q ~ n/n0, H ~ (n/n0)²
                 const k = rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
-
-                const hasAngleCurves = !!curve.angleCurves && curve.angleCurves.length > 0;
+                // Масштабированные пределы оси X
+                const qMin = curve.qMin * k;
+                const qMax = curve.qMax * k;
 
                 const anglesToDraw = curve.bladeAngles.length > 0
                   ? curve.bladeAngles
                   : [bladeAngle];
 
-                // Угловой коэф. лопаток (для старой модели без angleCurves)
+                // Угловой коэф. лопаток (линейная интерполяция по диапазону углов)
                 const angleFactor = (a: number) => {
                   if (curve.bladeAngles.length < 2) return 1;
                   const aMin = curve.bladeAngles[0];
@@ -924,34 +925,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   return 0.55 + 0.9 * (a - aMin) / Math.max(1, aMax - aMin);
                 };
 
-                // Коэффициенты и диапазон Q кривой для угла a (в НОМИНАЛЬНЫХ об/мин).
-                const coeffsFor = (a: number) => {
-                  if (hasAngleCurves) {
-                    const rc = resolveAngleCurve(curve, a);
-                    return { h0: rc.h0, h1: rc.h1, h2: rc.h2, qMin: rc.qMin, qMax: rc.qMax };
-                  }
-                  const af = angleFactor(a);
-                  return { h0: curve.h0 * af, h1: curve.h1, h2: curve.h2, qMin: curve.qMin, qMax: curve.qMax };
-                };
-
-                // Пределы оси X: объединение диапазонов всех рисуемых углов (× k)
-                let qMinN = Infinity, qMaxN = -Infinity;
-                anglesToDraw.forEach(a => {
-                  const c = coeffsFor(a);
-                  if (c.qMin < qMinN) qMinN = c.qMin;
-                  if (c.qMax > qMaxN) qMaxN = c.qMax;
-                });
-                if (!isFinite(qMinN)) { qMinN = curve.qMin; qMaxN = curve.qMax; }
-                const qMin = qMinN * k;
-                const qMax = qMaxN * k;
-
                 // Шкала H: максимум по всем углам при номинальных оборотах * k²
                 let hMax = 0;
                 anglesToDraw.forEach(a => {
-                  const c = coeffsFor(a);
+                  const af = angleFactor(a);
                   for (let i = 0; i <= 20; i++) {
-                    const qn = c.qMin + (c.qMax - c.qMin) * i / 20;
-                    const h = Math.max(0, c.h0 + c.h1 * qn + c.h2 * qn * qn) * k * k;
+                    const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 20;
+                    const h = Math.max(0, curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
                     if (h > hMax) hMax = h;
                   }
                 });
@@ -962,13 +942,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 const ty = (h: number) => padT + gH - Math.max(0, Math.min(1, h / hMax)) * gH;
 
                 const paths = anglesToDraw.map((a, ai) => {
-                  const c = coeffsFor(a);
+                  const af = angleFactor(a);
                   const pts: string[] = [];
                   for (let i = 0; i <= 30; i++) {
                     // qn — номинальный расход, q — масштабированный (= qn * k)
-                    const qn = c.qMin + (c.qMax - c.qMin) * i / 30;
+                    const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
                     const q = qn * k;
-                    const h = Math.max(0, c.h0 + c.h1 * qn + c.h2 * qn * qn) * k * k;
+                    const h = Math.max(0, curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
                     pts.push(`${tx(q).toFixed(1)},${ty(h).toFixed(1)}`);
                   }
                   const isSelected = a === bladeAngle;
@@ -1027,20 +1007,15 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     {/* Прямые кривые (прозрачнее при реверсе) */}
                     <g opacity={branch.fanReverse ? 0.35 : 1}>{paths}</g>
 
-                    {/* Реверсная P–Q кривая (для выбранного угла лопаток) */}
-                    {(() => {
-                      const rev = hasAngleCurves
-                        ? (() => { const rc = resolveAngleCurve(curve, bladeAngle);
-                            return { h0: rc.rH0, h1: rc.rH1, h2: rc.rH2, qMin: rc.rQMin ?? rc.qMin, qMax: rc.rQMax ?? rc.qMax }; })()
-                        : { h0: curve.reverseH0, h1: curve.reverseH1, h2: curve.reverseH2, qMin: curve.reverseQMin ?? curve.qMin, qMax: curve.reverseQMax ?? curve.qMax };
-                      if (rev.h0 === undefined || rev.h1 === undefined || rev.h2 === undefined) return null;
-                      const revQMaxScaled = (rev.qMax) * k;
+                    {/* Реверсная P–Q кривая */}
+                    {curve.reverseH0 !== undefined && curve.reverseH1 !== undefined && curve.reverseH2 !== undefined && (() => {
+                      const revQMax = (curve.reverseQMax ?? curve.qMax) * k;
                       const revPts: string[] = [];
                       for (let i = 0; i <= 30; i++) {
-                        const qn = rev.qMin + (rev.qMax - rev.qMin) * i / 30;
+                        const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
                         const q  = qn * k;
-                        const hr = Math.max(0, rev.h0 + rev.h1 * qn + rev.h2 * qn * qn) * k * k;
-                        if (q > revQMaxScaled) break;
+                        const hr = Math.max(0, curve.reverseH0! + curve.reverseH1! * qn + curve.reverseH2! * qn * qn) * k * k;
+                        if (q > revQMax) break;
                         revPts.push(`${tx(q).toFixed(1)},${ty(hr).toFixed(1)}`);
                       }
                       return (
@@ -1048,7 +1023,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                           <polyline points={revPts.join(" ")} fill="none"
                             stroke="#dc2626" strokeWidth={branch.fanReverse ? 2 : 1.2}
                             strokeDasharray={branch.fanReverse ? undefined : "5,3"} />
-                          <text x={padL + gW * 0.6} y={ty((rev.h0 + rev.h1 * rev.qMin) * k * k) - 3}
+                          <text x={padL + gW * 0.6} y={ty(curve.reverseH0! * k * k) - 3}
                             fontSize={7.5} fill="#dc2626">
                             {branch.fanReverse ? "⟵ Реверс" : "Реверс (инфо)"}
                           </text>
@@ -1218,21 +1193,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               if (!curve) return null;
               const Q = Math.abs(branch.flow);
               const k = (branch.fanRpm > 0 && curve.rpmNominal > 0) ? branch.fanRpm / curve.rpmNominal : 1;
-              const hasAngleCurves = !!curve.angleCurves && curve.angleCurves.length > 0;
-              let qMaxScaled: number;
-              if (hasAngleCurves) {
-                const rc = resolveAngleCurve(curve, branch.fanBladeAngle);
-                const qm = (branch.fanReverse && rc.rQMax !== undefined) ? rc.rQMax : rc.qMax;
-                qMaxScaled = qm * k;
-              } else {
-                let af = 1.0;
-                if (curve.bladeAngles.length >= 2) {
-                  const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
-                  const a = Math.min(hi, Math.max(lo, branch.fanBladeAngle ?? (lo + hi) / 2));
-                  af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-                }
-                qMaxScaled = curve.qMax * af * k;
+              let af = 1.0;
+              if (curve.bladeAngles.length >= 2) {
+                const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
+                const a = Math.min(hi, Math.max(lo, branch.fanBladeAngle ?? (lo + hi) / 2));
+                af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
               }
+              const qMaxScaled = curve.qMax * af * k;
               if (Q <= qMaxScaled * 1.02) return null;
               return (
                 <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"

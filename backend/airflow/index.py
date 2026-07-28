@@ -301,19 +301,18 @@ def fan_H(e, Q):
         q_one = abs(Q) / N
 
         def _h_one():
+            if q_one <= 0:
+                # При Q=0 возвращаем h0 (статический напор), а не 0 —
+                # иначе бисекция рабочей точки не найдёт корень.
+                if e.get("fanReverse") and e.get("reverseH0") is not None:
+                    return max(0.0, float(e.get("reverseH0", 0)))
+                return max(0.0, float(e.get("h0", 0)))
             # При реверсе — используем отдельную характеристику если передана
             if e.get("fanReverse") and e.get("reverseH0") is not None:
                 q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-                q_min_rev = float(e.get("reverseQMin", 0) or 0)
                 rh0 = float(e.get("reverseH0", 0))
                 rh1 = float(e.get("reverseH1", 0))
                 rh2 = float(e.get("reverseH2", 0))
-                # Левее рабочей зоны (Q < qMin) характеристика по 3 точкам уходит
-                # в минус — держим напор на уровне H(qMin) (левая/помпажная ветвь).
-                if q_min_rev > 0 and q_one < q_min_rev:
-                    return max(0.0, rh0 + rh1 * q_min_rev + rh2 * q_min_rev * q_min_rev)
-                if q_one <= 0:
-                    return max(0.0, rh0 + rh1 * q_min_rev + rh2 * q_min_rev * q_min_rev)
                 if q_one > q_max_rev:
                     # За пределом паспорта напор резко уходит ВНИЗ (торможение),
                     # а НЕ обнуляется (иначе поток улетает — баг Q=145 м³/с).
@@ -323,19 +322,9 @@ def fan_H(e, Q):
                 return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
             # Прямая характеристика
             q_max_fan = float(e.get("qMax", 1e9))
-            q_min_fan = float(e.get("qMin", 0) or 0)
             h0 = float(e.get("h0", 0))
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
-            # Левее рабочей зоны (Q < qMin) парабола по 3 паспортным точкам уходит
-            # в отрицательный напор (h0 < 0) — это физически неверно и «схлопывает»
-            # сеть в прямом режиме. Держим напор на уровне H(qMin), как «АэроСеть».
-            if q_min_fan > 0 and q_one < q_min_fan:
-                return max(0.0, h0 + h1 * q_min_fan + h2 * q_min_fan * q_min_fan)
-            if q_one <= 0:
-                # При Q=0 возвращаем H(qMin) (статический напор левой ветви), а не
-                # max(0,h0): при h0<0 это давало 0 и бисекция не находила корень.
-                return max(0.0, h0 + h1 * q_min_fan + h2 * q_min_fan * q_min_fan)
             if q_one > q_max_fan:
                 # За паспортом напор резко уходит ВНИЗ (торможение потока), но НЕ
                 # в минус: прямой вентилятор не создаёт отрицательного напора в своём
@@ -378,16 +367,13 @@ def fan_H_display(e, Q):
         rh1 = float(e.get("reverseH1", 0))
         rh2 = float(e.get("reverseH2", 0))
         q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-        q_min_rev = float(e.get("reverseQMin", 0) or 0)
-        # Клипуем Q в паспортный диапазон [qMin, qMax] (левая полка + обрыв).
-        qc = min(max(q_one, q_min_rev), q_max_rev)
+        qc = min(q_one, q_max_rev)
         return max(0.0, rh0 + rh1 * qc + rh2 * qc * qc)
     q_max = float(e.get("qMax", 1e9))
-    q_min = float(e.get("qMin", 0) or 0)
     h0 = float(e.get("h0", 0))
     h1 = float(e.get("h1", 0))
     h2 = float(e.get("h2", 0))
-    qc = min(max(q_one, q_min), q_max)
+    qc = min(q_one, q_max)
     # ×N — суммарный напор N вентиляторов в параллели (как показывает «АэроСеть»).
     return max(0.0, h0 + h1 * qc + h2 * qc * qc) * N
 
@@ -404,10 +390,7 @@ def fan_dH(e, Q):
             rh1 = float(e.get("reverseH1", 0))
             rh2 = float(e.get("reverseH2", 0))
             q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-            q_min_rev = float(e.get("reverseQMin", 0) or 0)
-            if q_min_rev > 0 and q_one < q_min_rev:
-                dh_one = 0.0  # левая полка — напор постоянный
-            elif q_one > q_max_rev:
+            if q_one > q_max_rev:
                 dh_one = min(rh1 + 2.0 * rh2 * q_max_rev, -abs(rh2) * q_max_rev * 4.0 - 50.0)
             else:
                 dh_one = rh1 + 2.0 * rh2 * q_one
@@ -415,10 +398,7 @@ def fan_dH(e, Q):
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
             q_max_fan = float(e.get("qMax", 1e9))
-            q_min_fan = float(e.get("qMin", 0) or 0)
-            if q_min_fan > 0 and q_one < q_min_fan:
-                dh_one = 0.0  # левая полка — напор постоянный
-            elif q_one > q_max_fan:
+            if q_one > q_max_fan:
                 dh_one = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
             else:
                 dh_one = h1 + 2.0 * h2 * q_one
@@ -556,7 +536,6 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
             "reverseH1":   b.get("reverseH1"),
             "reverseH2":   b.get("reverseH2"),
             "reverseQMax": b.get("reverseQMax"),
-            "reverseQMin": b.get("reverseQMin"),
             "reverseEfficiencyFactor": b.get("reverseEfficiencyFactor"),
             "fanStopped":  bool(b.get("fanStopped", False)),
             "fanType":     b.get("fanType", "ГВУ"),     # ГВУ / ВВУ / ВМП
@@ -1189,29 +1168,6 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
     else:
         log.append(f"✓ Начальный баланс Кирхгофа: |ΔQ|_max={max_init_bal:.4f}")
 
-    # ══ ШАГ 5а: Ориентация стартового расхода в ветвях с ГВУ/ВВУ ═════════
-    # Прямой ГВУ развивает напор только при потоке в направлении a→b
-    # (в формуле невязки Hv=0 при «опрокидывании» Q<0). Если после раскладки
-    # по дереву поток в ветви вентилятора оказался направлен ПРОТИВ его
-    # нагнетания, вся сеть «схлопывается»: вентилятор не создаёт напор →
-    # циркуляции нет. Разворачиваем стартовый поток ВСЕЙ раскладки так, чтобы
-    # в ветви главного вентилятора Q совпадал с направлением нагнетания
-    # (a→b для прямого, b→a для реверса). Знак меняем у всех ветвей разом —
-    # это сохраняет баланс Кирхгофа (Σ в узлах остаётся 0).
-    if main_fan is not None and not main_fan.get("fanStopped"):
-        gi_fan = None
-        for gi, e in enumerate(edges):
-            if e is main_fan:
-                gi_fan = gi
-                break
-        if gi_fan is not None:
-            want_dir = -1.0 if main_fan.get("fanReverse") else 1.0  # знак Q[gi_fan]
-            qf = Q[gi_fan]
-            if abs(qf) > 1e-9 and (qf * want_dir) < 0:
-                for gi in range(len(Q)):
-                    Q[gi] = -Q[gi]
-                log.append("Развернул стартовый поток под направление нагнетания ГВУ")
-
     # ══ ШАГ 5б: Тёплый старт (warm start) ═══════════════════════════════
     # Если переданы initial_flows (штатное решение сети), берём их как
     # стартовое приближение вместо оценки q0/BFS. При локальном возмущении
@@ -1293,17 +1249,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                     # fan_H = N·H(Q/N) — суммарный напор N вентиляторов в параллели.
                     if is_vmp:
                         Hv = fan_H(e, abs(Q[gi]))   # ВМП: H всегда > 0
-                    elif q_fan >= 0:
-                        Hv = fan_H(e, abs(Q[gi]))
                     else:
-                        # Поток опрокинут (Q против нагнетания ГВУ/ВВУ). Раньше
-                        # напор жёстко обнулялся → при паспорте с h0<0 (кривая по
-                        # 3 точкам в узкой рабочей зоне) вентилятор «умирал» и вся
-                        # сеть схлопывалась. Теперь удерживаем напор левой ветви
-                        # H(qMin) — вентилятор продолжает толкать воздух и
-                        # возвращает поток в своё направление (как в «АэроСеть»).
-                        q_min_e = float(e.get("qMin", 0) or 0)
-                        Hv = fan_H(e, q_min_e) if q_min_e > 0 else 0.0
+                        Hv = fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0  # ГВУ/ВВУ: 0 при опрокидывании
                     sum_H   -= fan_dir * Hv * sign
                     sum_2RQ += fan_dH(e, abs(Q[gi]))
 

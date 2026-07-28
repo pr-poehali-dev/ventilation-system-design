@@ -8,20 +8,6 @@
 // Коэффициенты подобраны под типовые паспортные характеристики.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Характеристика вентилятора для одного угла лопаток (построена по 3 точкам).
-export interface FanAngleCurve {
-  angle: number;           // угол лопаток, °
-  // Прямой режим: H(Q) = h0 + h1·Q + h2·Q²
-  h0: number; h1: number; h2: number;
-  // КПД: η(Q) = e0 + e1·Q + e2·Q²
-  e0: number; e1: number; e2: number;
-  qMin: number; qMax: number;
-  qNominal: number; hNominal: number;
-  // Реверсный режим (опционально): H(Q) = rH0 + rH1·Q + rH2·Q²
-  rH0?: number; rH1?: number; rH2?: number;
-  rQMin?: number; rQMax?: number;
-}
-
 export interface FanCurve {
   id: string;
   name: string;
@@ -47,11 +33,6 @@ export interface FanCurve {
   rpmNominal: number;
   // Углы лопаток (доступные значения °)
   bladeAngles: number[];
-  // Характеристики по КАЖДОМУ углу лопаток (как в «АэроСеть»/«Вентиляция 2.0»).
-  // Если задано — решатель берёт кривую для выбранного угла (с интерполяцией
-  // между соседними углами) вместо грубого множителя angleFactor().
-  // Каждая кривая построена по 3 паспортным точкам H(Q) при rpmNominal.
-  angleCurves?: FanAngleCurve[];
   // Реверсная P–Q характеристика (опционально).
   // У осевых вентиляторов (ВОД) в реверсе напор ~55–65% от прямого.
   // У центробежных (ВЦ) реверс через клапаны — кривая совпадает с прямой.
@@ -133,40 +114,22 @@ export const FAN_CATALOG: FanCurve[] = [
   {
     id: "VOD-18",
     name: "ВО-18/12АВР", type: "axial", diameter: 1.8,
-    // Характеристики заданы ПО КАЖДОМУ углу лопаток (см. angleCurves ниже) —
-    // как в «АэроСеть»/«Вентиляция 2.0». Каждая кривая построена по 3 паспортным
-    // точкам H(Q) при 1500 об/мин (прямой ход + реверс + КПД).
-    // Поля h0..h2/e0..e2 ниже — запасная кривя (угол 45°), используется только
-    // если по каким-то причинам угол вне заданного набора.
-    h0: -3802.7049, h1: 265.6552, h2: -2.1474,
-    e0: -1.89951, e1: 0.07325, e2: -0.00049,
-    qMin: 61.05, qMax: 100.37, qNominal: 80.71, hNominal: 3650,
-    rpmMin: 600, rpmMax: 1500, rpmNominal: 1500,
-    bladeAngles: [30, 35, 40, 45, 50],
-    reverseH0: 1150.4979, reverseH1: 57.7775, reverseH2: -0.7210,
-    reverseQMin: 42.42, reverseQMax: 92.59,
+    // Характеристика H(Q)=h0+h1·Q+h2·Q² для среднего угла лопаток 35°, 1300 об/мин.
+    // Сверено с паспортной характеристикой ВО-18/12АВР (как в «АэроСеть»):
+    // H(0)≈2100 Па, рабочая зона ~40–60 м³/с, H(53)≈840 Па. Прежние коэффициенты
+    // (h0=1800, h1=8, h2=−0.18) давали слишком пологую кривую → завышенный Q.
+    h0: 2100, h1: 3.95, h2: -0.52,
+    e0: 0.30, e1: 0.018, e2: -0.00025,
+    qMin: 15, qMax: 65, qNominal: 50, hNominal: 950,
+    rpmMin: 600, rpmMax: 1500, rpmNominal: 1300,
+    bladeAngles: [20, 25, 30, 35, 40, 45, 50],
+    // Реверс ВО-18/12АВР: H(0)≈1720 Па (~82% от прямого), рабочая зона до ~63 м³/с.
+    // Сверено с «АэроСеть»: в реверсе напор ≈526 Па при Q≈44.8 м³/с. Прежняя кривая
+    // (reverseQMax=54, h2=−0.62) обрывалась у рабочей точки и давала напор ≈20 Па —
+    // расширена (нуль на ~63 м³/с), теперь напор в рабочей зоне ≈500–560 Па.
+    reverseH0: 1720, reverseH1: 2, reverseH2: -0.4651,
+    reverseQMin: 12, reverseQMax: 63,
     reverseEfficiencyFactor: 0.82,
-    angleCurves: [
-      { angle: 30, h0: -2709.0012, h1: 482.4339, h2: -9.7411,
-        e0: -1.29895, e1: 0.12696, e2: -0.00206,
-        qMin: 23.22, qMax: 38.81, qNominal: 31.01, hNominal: 2884 },
-      { angle: 35, h0: -1965.7996, h1: 308.3072, h2: -4.2054,
-        e0: -0.84137, e1: 0.07070, e2: -0.00080,
-        qMin: 35.05, qMax: 61.11, qNominal: 48.08, hNominal: 3136,
-        rH0: 673.9586, rH1: 136.5823, rH2: -2.6329, rQMin: 28.5, rQMax: 55.01 },
-      { angle: 40, h0: -3774.8157, h1: 310.7259, h2: -3.0771,
-        e0: -1.80768, e1: 0.08553, e2: -0.00070,
-        qMin: 48.74, qMax: 81.17, qNominal: 64.95, hNominal: 3426,
-        rH0: 492.5873, rH1: 97.5678, rH2: -1.3478, rQMin: 38.36, rQMax: 74 },
-      { angle: 45, h0: -3802.7049, h1: 265.6552, h2: -2.1474,
-        e0: -1.89951, e1: 0.07325, e2: -0.00049,
-        qMin: 61.05, qMax: 100.37, qNominal: 80.71, hNominal: 3650,
-        rH0: 1150.4979, rH1: 57.7775, rH2: -0.7210, rQMin: 42.42, rQMax: 92.59 },
-      { angle: 50, h0: -3284.7762, h1: 218.8272, h2: -1.4990,
-        e0: -1.57752, e1: 0.05500, e2: -0.00031,
-        qMin: 71.51, qMax: 120.06, qNominal: 95.79, hNominal: 3922,
-        rH0: 948.8797, rH1: 51.5939, rH2: -0.5157, rQMin: 47.11, rQMax: 109.44 },
-    ],
   },
   {
     id: "VOD-21",
@@ -514,23 +477,6 @@ export function fanH(curve: FanCurve, Q: number): number {
   return Math.max(0, H);
 }
 
-// Возвращает FanCurve с коэффициентами для конкретного угла лопаток
-// (подставляет resolveAngleCurve). Нужен для графиков/превью, где код
-// обращается к curve.h0/qMin/reverseH0 напрямую. Если angleCurves нет —
-// возвращает исходную кривую без изменений.
-export function curveForAngle(curve: FanCurve, angle?: number): FanCurve {
-  if (!curve.angleCurves || curve.angleCurves.length === 0) return curve;
-  const rc = resolveAngleCurve(curve, angle);
-  return {
-    ...curve,
-    h0: rc.h0, h1: rc.h1, h2: rc.h2,
-    e0: rc.e0, e1: rc.e1, e2: rc.e2,
-    qMin: rc.qMin, qMax: rc.qMax,
-    reverseH0: rc.rH0, reverseH1: rc.rH1, reverseH2: rc.rH2,
-    reverseQMin: rc.rQMin, reverseQMax: rc.rQMax,
-  };
-}
-
 // |dH/dQ| — модуль производной (нужен solver-у для устойчивости знаменателя в Кроссе)
 // h2 обычно отрицательная (кривая H убывает с Q), поэтому без |...| знак может быть любым.
 export function fanDH(curve: FanCurve, Q: number): number {
@@ -542,67 +488,6 @@ export function fanEfficiency(curve: FanCurve, Q: number): number {
   const q = Math.abs(Q);
   const e = curve.e0 + curve.e1 * q + curve.e2 * q * q;
   return Math.min(0.85, Math.max(0.05, e));
-}
-
-// Эффективные коэффициенты характеристики для выбранного угла лопаток.
-// Если у вентилятора заданы angleCurves — берём кривую нужного угла с линейной
-// интерполяцией коэффициентов между двумя соседними углами. Иначе возвращаем
-// базовую кривую вентилятора (совместимость со старой моделью).
-export interface ResolvedCurve {
-  h0: number; h1: number; h2: number;
-  e0: number; e1: number; e2: number;
-  qMin: number; qMax: number;
-  rH0?: number; rH1?: number; rH2?: number;
-  rQMin?: number; rQMax?: number;
-  hasReverse: boolean;
-}
-
-export function resolveAngleCurve(curve: FanCurve, angle?: number): ResolvedCurve {
-  const acs = curve.angleCurves;
-  const base: ResolvedCurve = {
-    h0: curve.h0, h1: curve.h1, h2: curve.h2,
-    e0: curve.e0, e1: curve.e1, e2: curve.e2,
-    qMin: curve.qMin, qMax: curve.qMax,
-    rH0: curve.reverseH0, rH1: curve.reverseH1, rH2: curve.reverseH2,
-    rQMin: curve.reverseQMin, rQMax: curve.reverseQMax,
-    hasReverse: curve.reverseH0 !== undefined,
-  };
-  if (!acs || acs.length === 0 || angle === undefined) return base;
-
-  const sorted = [...acs].sort((a, b) => a.angle - b.angle);
-  const toResolved = (c: FanAngleCurve): ResolvedCurve => ({
-    h0: c.h0, h1: c.h1, h2: c.h2, e0: c.e0, e1: c.e1, e2: c.e2,
-    qMin: c.qMin, qMax: c.qMax,
-    rH0: c.rH0, rH1: c.rH1, rH2: c.rH2, rQMin: c.rQMin, rQMax: c.rQMax,
-    hasReverse: c.rH0 !== undefined,
-  });
-
-  if (angle <= sorted[0].angle) return toResolved(sorted[0]);
-  if (angle >= sorted[sorted.length - 1].angle) return toResolved(sorted[sorted.length - 1]);
-
-  // Точное совпадение
-  const exact = sorted.find(c => c.angle === angle);
-  if (exact) return toResolved(exact);
-
-  // Интерполяция между соседними углами
-  let lo = sorted[0], hi = sorted[sorted.length - 1];
-  for (let i = 0; i < sorted.length - 1; i++) {
-    if (sorted[i].angle <= angle && angle <= sorted[i + 1].angle) {
-      lo = sorted[i]; hi = sorted[i + 1]; break;
-    }
-  }
-  const t = (angle - lo.angle) / (hi.angle - lo.angle);
-  const lerp = (a: number, b: number) => a + (b - a) * t;
-  const lerpOpt = (a?: number, b?: number) =>
-    (a !== undefined && b !== undefined) ? a + (b - a) * t : undefined;
-  return {
-    h0: lerp(lo.h0, hi.h0), h1: lerp(lo.h1, hi.h1), h2: lerp(lo.h2, hi.h2),
-    e0: lerp(lo.e0, hi.e0), e1: lerp(lo.e1, hi.e1), e2: lerp(lo.e2, hi.e2),
-    qMin: lerp(lo.qMin, hi.qMin), qMax: lerp(lo.qMax, hi.qMax),
-    rH0: lerpOpt(lo.rH0, hi.rH0), rH1: lerpOpt(lo.rH1, hi.rH1), rH2: lerpOpt(lo.rH2, hi.rH2),
-    rQMin: lerpOpt(lo.rQMin, hi.rQMin), rQMax: lerpOpt(lo.rQMax, hi.rQMax),
-    hasReverse: lo.rH0 !== undefined && hi.rH0 !== undefined,
-  };
 }
 
 // Мощность на валу (Вт): N = ΔP·Q / η
