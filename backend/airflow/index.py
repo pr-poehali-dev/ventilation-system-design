@@ -301,18 +301,19 @@ def fan_H(e, Q):
         q_one = abs(Q) / N
 
         def _h_one():
-            if q_one <= 0:
-                # При Q=0 возвращаем h0 (статический напор), а не 0 —
-                # иначе бисекция рабочей точки не найдёт корень.
-                if e.get("fanReverse") and e.get("reverseH0") is not None:
-                    return max(0.0, float(e.get("reverseH0", 0)))
-                return max(0.0, float(e.get("h0", 0)))
             # При реверсе — используем отдельную характеристику если передана
             if e.get("fanReverse") and e.get("reverseH0") is not None:
                 q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
+                q_min_rev = float(e.get("reverseQMin", 0) or 0)
                 rh0 = float(e.get("reverseH0", 0))
                 rh1 = float(e.get("reverseH1", 0))
                 rh2 = float(e.get("reverseH2", 0))
+                # Левее рабочей зоны (Q < qMin) характеристика по 3 точкам уходит
+                # в минус — держим напор на уровне H(qMin) (левая/помпажная ветвь).
+                if q_min_rev > 0 and q_one < q_min_rev:
+                    return max(0.0, rh0 + rh1 * q_min_rev + rh2 * q_min_rev * q_min_rev)
+                if q_one <= 0:
+                    return max(0.0, rh0 + rh1 * q_min_rev + rh2 * q_min_rev * q_min_rev)
                 if q_one > q_max_rev:
                     # За пределом паспорта напор резко уходит ВНИЗ (торможение),
                     # а НЕ обнуляется (иначе поток улетает — баг Q=145 м³/с).
@@ -322,9 +323,19 @@ def fan_H(e, Q):
                 return max(0.0, rh0 + rh1 * q_one + rh2 * q_one * q_one)
             # Прямая характеристика
             q_max_fan = float(e.get("qMax", 1e9))
+            q_min_fan = float(e.get("qMin", 0) or 0)
             h0 = float(e.get("h0", 0))
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
+            # Левее рабочей зоны (Q < qMin) парабола по 3 паспортным точкам уходит
+            # в отрицательный напор (h0 < 0) — это физически неверно и «схлопывает»
+            # сеть в прямом режиме. Держим напор на уровне H(qMin), как «АэроСеть».
+            if q_min_fan > 0 and q_one < q_min_fan:
+                return max(0.0, h0 + h1 * q_min_fan + h2 * q_min_fan * q_min_fan)
+            if q_one <= 0:
+                # При Q=0 возвращаем H(qMin) (статический напор левой ветви), а не
+                # max(0,h0): при h0<0 это давало 0 и бисекция не находила корень.
+                return max(0.0, h0 + h1 * q_min_fan + h2 * q_min_fan * q_min_fan)
             if q_one > q_max_fan:
                 # За паспортом напор резко уходит ВНИЗ (торможение потока), но НЕ
                 # в минус: прямой вентилятор не создаёт отрицательного напора в своём
@@ -367,13 +378,16 @@ def fan_H_display(e, Q):
         rh1 = float(e.get("reverseH1", 0))
         rh2 = float(e.get("reverseH2", 0))
         q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-        qc = min(q_one, q_max_rev)
+        q_min_rev = float(e.get("reverseQMin", 0) or 0)
+        # Клипуем Q в паспортный диапазон [qMin, qMax] (левая полка + обрыв).
+        qc = min(max(q_one, q_min_rev), q_max_rev)
         return max(0.0, rh0 + rh1 * qc + rh2 * qc * qc)
     q_max = float(e.get("qMax", 1e9))
+    q_min = float(e.get("qMin", 0) or 0)
     h0 = float(e.get("h0", 0))
     h1 = float(e.get("h1", 0))
     h2 = float(e.get("h2", 0))
-    qc = min(q_one, q_max)
+    qc = min(max(q_one, q_min), q_max)
     # ×N — суммарный напор N вентиляторов в параллели (как показывает «АэроСеть»).
     return max(0.0, h0 + h1 * qc + h2 * qc * qc) * N
 
@@ -390,7 +404,10 @@ def fan_dH(e, Q):
             rh1 = float(e.get("reverseH1", 0))
             rh2 = float(e.get("reverseH2", 0))
             q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
-            if q_one > q_max_rev:
+            q_min_rev = float(e.get("reverseQMin", 0) or 0)
+            if q_min_rev > 0 and q_one < q_min_rev:
+                dh_one = 0.0  # левая полка — напор постоянный
+            elif q_one > q_max_rev:
                 dh_one = min(rh1 + 2.0 * rh2 * q_max_rev, -abs(rh2) * q_max_rev * 4.0 - 50.0)
             else:
                 dh_one = rh1 + 2.0 * rh2 * q_one
@@ -398,7 +415,10 @@ def fan_dH(e, Q):
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
             q_max_fan = float(e.get("qMax", 1e9))
-            if q_one > q_max_fan:
+            q_min_fan = float(e.get("qMin", 0) or 0)
+            if q_min_fan > 0 and q_one < q_min_fan:
+                dh_one = 0.0  # левая полка — напор постоянный
+            elif q_one > q_max_fan:
                 dh_one = min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0)
             else:
                 dh_one = h1 + 2.0 * h2 * q_one

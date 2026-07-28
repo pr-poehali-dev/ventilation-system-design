@@ -2721,6 +2721,7 @@ export default function CadPage() {
             reverseH1:  rc.rH1! * k,
             reverseH2:  rc.rH2!,
             reverseQMax: (rc.rQMax ?? rc.qMax) * k,
+            reverseQMin: (rc.rQMin ?? 0) * k,
             reverseEfficiencyFactor: curve.reverseEfficiencyFactor,
           } : {}),
         } : {
@@ -2734,6 +2735,7 @@ export default function CadPage() {
             reverseH1:  curve.reverseH1! * k,
             reverseH2:  curve.reverseH2!,
             reverseQMax: (curve.reverseQMax ?? curve.qMax) * k,
+            reverseQMin: (curve.reverseQMin ?? 0) * k,
             reverseEfficiencyFactor: curve.reverseEfficiencyFactor,
           } : {}),
         }) : {}),

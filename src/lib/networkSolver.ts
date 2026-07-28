@@ -57,6 +57,7 @@ interface Edge {
   reverseH1?:         number;
   reverseH2?:         number;
   reverseQMax?:       number;
+  reverseQMin?:       number;
   reverseEffFactor?:  number;     // множитель КПД в реверсе
 }
 
@@ -138,6 +139,12 @@ function fanH(e: Edge, Q: number): number {
       // За пределом Qmax напор экстраполируется РЕЗКО ВНИЗ (вентилятор тормозит
       // поток), а НЕ обнуляется. Жёсткий 0 создавал ложное равновесие при большом
       // расходе (Q улетал за характеристику и естественная тяга гнала поток).
+      // Левая полка реверса (Q < rQMin) — держим H(rQMin), не даём уйти в минус.
+      const rQMin = hasAngle ? rc.rQMin : e.reverseQMin;
+      if (rQMin !== undefined && Qn < rQMin) {
+        const Hmin = rH0 + rH1 * rQMin + rH2 * rQMin * rQMin;
+        return Math.max(0, Hmin) * k * k * e.fanRhoFactor;
+      }
       if (Qn > qMax) {
         const dH = (rH1 + 2 * rH2 * qMax);          // наклон в Qmax
         const Hq = rH0 + rH1 * qMax + rH2 * qMax * qMax;
@@ -150,14 +157,22 @@ function fanH(e: Edge, Q: number): number {
     // Прямая характеристика: при заданных angleCurves множитель угла НЕ нужен
     // (кривая уже соответствует углу), иначе — старый грубый angleFactor().
     const af = hasAngle ? 1 : angleFactor(c, e.fanBladeAngle);
+    const h0F = rc.h0 * (hasAngle ? 1 : af);
     const qMaxF = rc.qMax * (hasAngle ? 1 : af);
+    // Левее рабочей зоны (Q < qMin) парабола по 3 паспортным точкам уходит в
+    // отрицательный напор (h0 < 0) — это физически неверно и «схлопывает» сеть.
+    // Держим напор на уровне H(qMin) (левая/помпажная ветвь), как в «АэроСеть».
+    if (hasAngle && Qn < rc.qMin) {
+      const Hmin = h0F + rc.h1 * rc.qMin + rc.h2 * rc.qMin * rc.qMin;
+      return Math.max(0, Hmin) * k * k * e.fanRhoFactor;
+    }
     if (Qn > qMaxF) {
       const dH = (rc.h1 + 2 * rc.h2 * qMaxF);
-      const Hq = rc.h0 * (hasAngle ? 1 : af) + rc.h1 * qMaxF + rc.h2 * qMaxF * qMaxF;
+      const Hq = h0F + rc.h1 * qMaxF + rc.h2 * qMaxF * qMaxF;
       const slope = Math.min(dH, -Math.abs(rc.h2) * qMaxF * 4 - 50);
       return (Hq + slope * (Qn - qMaxF)) * k * k * e.fanRhoFactor;
     }
-    return Math.max(0, rc.h0 * (hasAngle ? 1 : af) + rc.h1 * Qn + rc.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    return Math.max(0, h0F + rc.h1 * Qn + rc.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
   }
 
   return 0;
