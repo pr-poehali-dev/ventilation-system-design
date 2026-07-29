@@ -12,6 +12,7 @@ import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
 import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
+import HQFireDiagram from "@/components/cad/HQFireDiagram";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
@@ -6751,6 +6752,41 @@ export default function CadPage() {
                       {(fr.flowDelta ?? 0) !== 0 && (
                         <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${safeFixed(fr.flowDelta, 2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
                       )}
+                      {/* h–Q диаграмма уклонного поля (Прил. 2, рис. 2.1,б) */}
+                      {(() => {
+                        const Ry = b.resistance ?? 0;
+                        const Qa = Math.abs(b.originalFlow ?? b.flow ?? 0);
+                        const Qb = fr.actuallyReversed ? -Math.abs(b.flow ?? 0) : Math.abs(b.flow ?? 0);
+                        if (Ry <= 0 || (Qa < 0.01 && Math.abs(Qb) < 0.01)) return null;
+                        return (
+                          <div className="px-1 py-1 mt-1">
+                            <div className="text-[10px] font-semibold mb-1" style={{ color: "#991b1b" }}>
+                              Режим проветривания уклонного поля (h–Q, рис. 2.1,б)
+                            </div>
+                            <HQFireDiagram
+                              Ry={Ry}
+                              Qa={Qa}
+                              Qb={Qb}
+                              hT={Math.abs(fr.thermalDepression)}
+                              hKr={fr.critical?.h_kr}
+                              reversed={fr.actuallyReversed}
+                            />
+                            <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
+                              <span style={{ color: "#0369a1", fontWeight: 700 }}>A</span> — режим до пожара (Q={safeFixed(Qa, 1)} м³/с) ·{" "}
+                              <span style={{ color: "#dc2626", fontWeight: 700 }}>B</span> — при пожаре (Q={safeFixed(Math.abs(Qb), 1)} м³/с) ·{" "}
+                              <span style={{ color: "#7c3aed", fontWeight: 700 }}>C</span> — критическая (Q=0){fr.actuallyReversed ? " · " : ""}
+                              {fr.actuallyReversed && <><span style={{ color: "#450a0a", fontWeight: 700 }}>D</span> — опрокидывание струи</>}
+                            </div>
+                            <div className="mt-0.5 text-[9px]" style={{ color: fr.actuallyReversed ? "#dc2626" : (fr.critical?.exceedsCritical ? "#c2410c" : "#16a34a") }}>
+                              {fr.actuallyReversed
+                                ? "Режим D: струя опрокинута, рециркуляция продуктов горения в контуре «уклон + верхняя сбойка»."
+                                : fr.critical?.exceedsCritical
+                                  ? "Режим C: |h_т| ≥ h_кр — воздух в уклонное поле практически не поступает (неустойчиво)."
+                                  : "Режим B: нормальное направление струи сохраняется (устойчиво)."}
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <Row label="Концентрация CO, %:" value={safeFixed(fr.coConc, 3)} bold={fr.coConc > 0.02} />
                       <Row label="Концентрация CO₂, %:" value={safeFixed(fr.co2Conc, 2)} bold={fr.co2Conc > 1} />
                       <Row label="Опт. плотность дыма, м⁻¹:" value={safeFixed(fr.smokeDensity, 2)} />
