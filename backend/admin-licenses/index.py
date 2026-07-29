@@ -33,6 +33,28 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
+def _decode_priv_key(s: str) -> bytes:
+    """Устойчивое декодирование приватного ключа из секрета.
+
+    Терпимо к пробелам/переносам строк, поддерживает и url-safe, и обычный
+    base64-алфавит, а также hex. Возвращает сырые байты ключа.
+    """
+    import re as _re
+    # Убираем всё, что не относится к base64/hex (пробелы, переводы строк, кавычки)
+    cleaned = _re.sub(r"\s+", "", s).strip().strip('"').strip("'")
+    # Приводим url-safe символы к стандартным
+    std = cleaned.replace("-", "+").replace("_", "/").rstrip("=")
+    pad = "=" * (-len(std) % 4)
+    try:
+        return base64.b64decode(std + pad)
+    except Exception:
+        # Возможно, ключ задан в hex
+        try:
+            return bytes.fromhex(cleaned)
+        except Exception:
+            raise ValueError("bad_private_key_format")
+
+
 def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
     """Формирует подписанный аварийный оффлайн-ключ.
 
@@ -42,11 +64,10 @@ def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
     публичным ключом локально, без интернета.
     """
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
-    if not priv_b64:
+    priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "")
+    if not priv_b64.strip():
         raise RuntimeError("offline_key_private_not_set")
-    priv_b64 = priv_b64.rstrip("=")
-    raw = base64.urlsafe_b64decode(priv_b64 + "=" * (-len(priv_b64) % 4))
+    raw = _decode_priv_key(priv_b64)
     # Секрет может содержать как 32-байтовое «семя» (raw seed), так и полный
     # приватный ключ. Ed25519PrivateKey.from_private_bytes ждёт ровно 32 байта.
     if len(raw) > 32:
@@ -481,8 +502,14 @@ def handler(event: dict, context) -> dict:
             except RuntimeError:
                 return resp(500, {"error": "offline_key_private_not_set"})
             except Exception as e:
-                print(f"[admin] offline key sign failed: {e}")
-                return resp(500, {"error": "offline_key_sign_failed", "detail": str(e)[:200]})
+                import traceback
+                print(f"[admin] offline key sign failed: {e}\n{traceback.format_exc()}")
+                _sec = os.environ.get("OFFLINE_KEY_PRIVATE", "")
+                return resp(500, {
+                    "error": "offline_key_sign_failed",
+                    "detail": str(e)[:200],
+                    "secret_len": len(_sec.strip()),
+                })
             # Журналируем факт выдачи (не критично)
             try:
                 cur.execute("""
