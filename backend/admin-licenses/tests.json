@@ -23,6 +23,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Offline key requires auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "create_offline_key", "org": "Test", "password": "wrong"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

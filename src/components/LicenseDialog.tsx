@@ -15,8 +15,12 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   const [err, setErr]         = useState<string | null>(null);
   const [done, setDone]       = useState(false);
 
+  // Аварийный оффлайн-ключ начинается с "PVSO." — его НЕ форматируем
+  // (регистр и символы -._ значимы для подписи).
+  const isEmergencyInput = key.trim().startsWith("PVSO.");
+
   const handleActivate = async () => {
-    const k = key.trim().toUpperCase();
+    const k = isEmergencyInput ? key.trim() : key.trim().toUpperCase();
     if (!k) return;
     setLoading(true);
     setErr(null);
@@ -32,6 +36,11 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   };
 
   const handleKey = (v: string) => {
+    // Аварийный оффлайн-ключ: сохраняем как есть, без форматирования.
+    if (v.trim().startsWith("PVSO.") || v.trim().startsWith("PVSO")) {
+      setKey(v.trim());
+      return;
+    }
     const raw = v.toUpperCase().replace(/[^A-Z0-9]/g, "");
     const parts: string[] = [];
     if (raw.startsWith("PVS")) {
@@ -44,11 +53,15 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
     setKey(parts.join("-"));
   };
 
+  // Кнопка активна: обычный ключ ≥19 симв. ИЛИ аварийный оффлайн-ключ.
+  const canActivate = isEmergencyInput ? key.trim().length > 40 : key.length >= 19;
+
   const isLicensed       = license.status === "licensed";
   const isExpired        = license.status === "offline_expired";
   const daysLeft         = license.info?.daysLeft;
   const isOffline        = license.info?.offline;
-  const warnDaysLeft     = isOffline && typeof daysLeft === "number" && daysLeft <= 3;
+  const isEmergency      = license.info?.emergency;   // аварийный оффлайн-ключ
+  const warnDaysLeft     = (isOffline || isEmergency) && typeof daysLeft === "number" && daysLeft <= 3;
 
   const mi = license.machineInfo;
   // Короткий идентификатор рабочего места (для поддержки) — первые символы отпечатка железа.
@@ -83,7 +96,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
             <div>
               <div className="text-white font-bold text-[14px]">ПВ-Система — Лицензия</div>
               <div className="text-blue-200 text-[11px]">
-                {isLicensed ? (isOffline ? "Оффлайн-режим" : "Полная версия активна")
+                {isLicensed ? (isEmergency ? "Аварийный режим (оффлайн)" : isOffline ? "Оффлайн-режим" : "Полная версия активна")
                   : isExpired ? "Требуется интернет"
                   : "Демо-режим"}
               </div>
@@ -130,20 +143,25 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
 
           {/* Активная лицензия */}
           {isLicensed && license.info && (
-            <div className="mb-4 p-3 rounded-lg border border-green-200 bg-green-50">
-              <div className="flex items-center gap-2 text-green-800 font-semibold text-[13px]">
-                <Icon name="CheckCircle2" size={16} className="text-green-600" />
-                {isOffline ? "Лицензия (оффлайн-режим)" : "Лицензия активирована"}
+            <div className={`mb-4 p-3 rounded-lg border ${isEmergency ? "border-amber-300 bg-amber-50" : "border-green-200 bg-green-50"}`}>
+              <div className={`flex items-center gap-2 font-semibold text-[13px] ${isEmergency ? "text-amber-800" : "text-green-800"}`}>
+                <Icon name={isEmergency ? "LifeBuoy" : "CheckCircle2"} size={16} className={isEmergency ? "text-amber-600" : "text-green-600"} />
+                {isEmergency ? "Аварийный режим (без интернета)" : isOffline ? "Лицензия (оффлайн-режим)" : "Лицензия активирована"}
               </div>
               <div className="mt-2 space-y-1">
-                <div className="text-[12px] text-green-700">Организация: <b>{license.info.owner}</b></div>
-                <div className="text-[11px] text-green-600 font-mono">{license.info.key}</div>
+                <div className={`text-[12px] ${isEmergency ? "text-amber-700" : "text-green-700"}`}>Организация: <b>{license.info.owner}</b></div>
+                {!isEmergency && <div className="text-[11px] text-green-600 font-mono">{license.info.key}</div>}
                 {license.info.seats && (
                   <div className="text-[11px] text-green-600">
                     Рабочих мест: {license.info.seats.used} / {license.info.seats.max}
                   </div>
                 )}
-                {isOffline && typeof daysLeft === "number" && (
+                {isEmergency && typeof daysLeft === "number" && (
+                  <div className="text-[11px] text-amber-700">
+                    Аварийный ключ действует ещё {daysLeft} {daysLeft === 1 ? "день" : daysLeft % 10 >= 2 && daysLeft % 10 <= 4 && (daysLeft < 10 || daysLeft > 20) ? "дня" : "дней"}
+                  </div>
+                )}
+                {isOffline && !isEmergency && typeof daysLeft === "number" && (
                   <div className="text-[11px] text-amber-600">
                     Оффлайн-режим: осталось {daysLeft} {daysLeft === 1 ? "день" : daysLeft < 5 ? "дня" : "дней"}
                   </div>
@@ -189,12 +207,17 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 value={key}
                 onChange={e => { handleKey(e.target.value); setErr(null); }}
                 placeholder="PVS-XXXX-XXXX-XXXX-XXXX"
-                maxLength={23}
-                className="w-full border rounded-lg px-3 py-2.5 text-[13px] font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-300"
+                maxLength={isEmergencyInput ? 400 : 23}
+                className={`w-full border rounded-lg px-3 py-2.5 text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-300 ${isEmergencyInput ? "tracking-normal break-all" : "tracking-wider"}`}
                 style={{ borderColor: err ? "#dc2626" : "#d1d5db" }}
                 onKeyDown={e => e.key === "Enter" && handleActivate()}
                 autoFocus
               />
+              {isEmergencyInput && (
+                <div className="mt-1.5 text-[11px] text-amber-700 flex items-center gap-1">
+                  <Icon name="LifeBuoy" size={12} />Аварийный оффлайн-ключ — работает без интернета
+                </div>
+              )}
               {err && (
                 <div className="mt-1.5 text-[12px] text-red-600 flex items-center gap-1">
                   <Icon name="AlertCircle" size={13} />{err}
@@ -203,19 +226,20 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
 
               <button
                 onClick={handleActivate}
-                disabled={loading || key.length < 19}
+                disabled={loading || !canActivate}
                 className="mt-3 w-full py-2.5 rounded-lg text-[13px] font-semibold text-white transition-opacity disabled:opacity-40"
                 style={{ background: "#1a3a6b" }}>
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <Icon name="Loader2" size={14} className="animate-spin" />Проверка ключа...
                   </span>
-                ) : "Активировать лицензию"}
+                ) : isEmergencyInput ? "Включить аварийный режим" : "Активировать лицензию"}
               </button>
 
               {workplaceRow}
               <div className="mt-1 text-[10px] text-gray-400">
-                Ключ привяжется к этому рабочему месту (по конфигурации ПК).
+                Обычный ключ привяжется к рабочему месту. Аварийный ключ (PVSO…)
+                работает без интернета до истечения срока.
               </div>
             </>
           )}

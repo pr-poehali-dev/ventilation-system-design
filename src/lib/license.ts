@@ -1,5 +1,6 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
+import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey } from "@/lib/offlineKey";
 const LICENSE_URL = API_URLS.license;
 
 // ── Версия расчётного ядра (server.exe) ───────────────────────────────────────
@@ -89,6 +90,7 @@ export interface LicenseInfo {
   offline?: boolean;       // true — ответ из оффлайн-кэша
   daysLeft?: number;       // дней до истечения оффлайн-кэша (только при offline=true)
   offlineExpired?: boolean; // кэш просрочен (>14 дней без интернета)
+  emergency?: boolean;     // true — активирован аварийный оффлайн-ключ (без интернета)
 }
 
 export interface MachineInfo {
@@ -226,7 +228,29 @@ export function clearLicenseCache() {
   try {
     storage.remove(STORAGE_KEY);
     storage.remove(HW_FP_KEY);
+    clearOfflineKey();
   } catch { /* ignore */ }
+}
+
+// ── Аварийный оффлайн-ключ ────────────────────────────────────────────────────
+// Проверяет сохранённый аварийный ключ (локально, без интернета). Возвращает
+// действующую лицензию, если ключ валиден и не истёк. Используется как резерв,
+// когда сервер лицензий недоступен (нет связи на руднике/ВГСЧ).
+export function checkOfflineEmergency(): LicenseInfo | null {
+  const loaded = loadOfflineKey();
+  if (!loaded) return null;
+  const { key, info } = loaded;
+  if (!info.valid) {
+    if (info.expired) return { licensed: false, emergency: true, offlineExpired: true, daysLeft: 0 };
+    return null;
+  }
+  return {
+    licensed: true,
+    emergency: true,
+    key,
+    owner: info.org,
+    daysLeft: info.daysLeft,
+  };
 }
 
 export function clearFingerprintCache() {
@@ -278,6 +302,31 @@ export async function activateLicense(
   key: string,
   machineInfo?: MachineInfo,
 ): Promise<LicenseInfo> {
+  // Аварийный оффлайн-ключ: распознаём по префиксу и проверяем ЛОКАЛЬНО,
+  // без обращения к серверу (работает без интернета — рудник/ВГСЧ).
+  if (isOfflineKey(key)) {
+    const v = verifyOfflineKey(key);
+    if (!v.valid) {
+      const msgs: Record<string, string> = {
+        bad_format:    "Неверный формат аварийного ключа",
+        bad_signature: "Аварийный ключ повреждён или поддельный",
+        expired:       "Срок аварийного ключа истёк",
+        no_expiry:     "В аварийном ключе не указан срок",
+      };
+      throw new Error(msgs[v.reason ?? ""] ?? "Аварийный ключ недействителен");
+    }
+    saveOfflineKey(key.trim());
+    const info: LicenseInfo = {
+      licensed: true,
+      emergency: true,
+      key: key.trim(),
+      owner: v.org,
+      daysLeft: v.daysLeft,
+    };
+    saveCache(info);
+    return info;
+  }
+
   const coreVersion = await getCoreVersion();
   const res = await fetch(LICENSE_URL, {
     method: "POST",

@@ -112,7 +112,14 @@ export default function Admin() {
   const [editSaving, setEditSaving]     = useState(false);
 
   // Вкладки
-  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server">("licenses");
+  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server" | "emergency">("licenses");
+
+  // Аварийный оффлайн-ключ
+  const [emgOrg, setEmgOrg]             = useState("");
+  const [emgExpires, setEmgExpires]     = useState("");
+  const [emgKey, setEmgKey]             = useState("");
+  const [emgErr, setEmgErr]             = useState("");
+  const [emgLoading, setEmgLoading]     = useState(false);
 
   // Расчётный сервер (основной / аварийный резерв)
   const [srvActive, setSrvActive]       = useState<"primary" | "backup">("primary");
@@ -204,6 +211,26 @@ export default function Admin() {
       setSrvCfgErr(e instanceof Error ? e.message : "Ошибка сохранения");
     } finally {
       setSrvCfgSaving(false);
+    }
+  };
+
+  const generateEmergencyKey = async () => {
+    if (!emgOrg.trim()) { setEmgErr("Укажите организацию"); return; }
+    setEmgLoading(true);
+    setEmgErr("");
+    setEmgKey("");
+    try {
+      const data = await adminApi(password, {
+        action: "create_offline_key",
+        org: emgOrg.trim(),
+        days: 365,
+        expires_at: emgExpires || undefined,
+      });
+      setEmgKey(data.key);
+    } catch (e: unknown) {
+      setEmgErr(e instanceof Error ? e.message : "Ошибка генерации");
+    } finally {
+      setEmgLoading(false);
     }
   };
 
@@ -450,6 +477,10 @@ export default function Admin() {
               className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "server" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
               <Icon name="Server" size={12} className="inline mr-1" />Сервер расчёта
             </button>
+            <button onClick={() => setActiveTab("emergency")}
+              className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "emergency" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
+              <Icon name="LifeBuoy" size={12} className="inline mr-1" />Аварийный ключ
+            </button>
           </div>
           {activeTab === "licenses" && <>
             <button onClick={() => loadLicenses(password)}
@@ -648,6 +679,62 @@ export default function Admin() {
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Вкладка: Аварийный оффлайн-ключ ── */}
+        {activeTab === "emergency" && (
+          <div className="max-w-xl mx-auto">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon name="LifeBuoy" size={16} className="text-amber-500" />
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Аварийный оффлайн-ключ</span>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-4">
+                Для расчётов без интернета (рудник / ВГСЧ). Ключ подписан криптографически
+                и проверяется программой локально, без связи с сервером. Работает на любом ПК
+                организации до истечения срока. Выдавайте заранее как аварийный запас.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Организация</div>
+                  <input value={emgOrg} onChange={e => { setEmgOrg(e.target.value); setEmgErr(""); }}
+                    placeholder="ВГСЧ / рудник — название"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Действует до</div>
+                  <input type="date" value={emgExpires} onChange={e => setEmgExpires(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+                  <div className="text-[10px] text-gray-400 mt-1">
+                    Если не указано — 1 год со дня выдачи. Для продления просто выпустите новый ключ с новой датой.
+                  </div>
+                </div>
+
+                {emgErr && <div className="text-[12px] text-red-500">{emgErr}</div>}
+
+                <button onClick={generateEmergencyKey} disabled={emgLoading || !emgOrg.trim()}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#d97706" }}>
+                  {emgLoading ? <><Icon name="Loader" size={14} className="animate-spin" />Генерация...</> : <><Icon name="Key" size={14} />Сгенерировать аварийный ключ</>}
+                </button>
+
+                {emgKey && (
+                  <div className="p-3 rounded-lg border border-amber-200 bg-amber-50">
+                    <div className="text-[11px] font-semibold text-amber-800 mb-1">Аварийный ключ (передайте организации):</div>
+                    <textarea readOnly value={emgKey} rows={4}
+                      className="w-full px-2 py-1.5 border border-amber-300 rounded text-[10px] font-mono break-all resize-none bg-white"
+                      onFocus={e => e.currentTarget.select()} />
+                    <button onClick={() => navigator.clipboard?.writeText(emgKey)}
+                      className="mt-2 flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold text-amber-800 border border-amber-300 hover:bg-amber-100">
+                      <Icon name="Copy" size={12} />Скопировать
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

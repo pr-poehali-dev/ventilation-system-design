@@ -5,6 +5,7 @@ import {
   checkLicense,
   activateLicense,
   clearLicenseCache,
+  checkOfflineEmergency,
   sendHeartbeat,
   storageReady,
   type LicenseInfo,
@@ -49,10 +50,25 @@ export function useLicense(): UseLicenseReturn {
         setStatus("licensed");
       }
 
+      // 1a. Аварийный оффлайн-ключ (локальная проверка, без интернета) —
+      // если обычной лицензии в кэше нет, но есть действующий аварийный ключ.
+      const emergency = checkOfflineEmergency();
+      if (!cached?.licensed && emergency?.licensed) {
+        setInfo(emergency);
+        setStatus("licensed");
+      }
+
       // 2. Проверяем на сервере (обновляем сведения о ПК)
       try {
         const fresh = await checkLicense(mi.fingerprint, mi);
         if (cancelled) return;
+        // Онлайн-лицензия в приоритете. Но если сервер её не подтвердил,
+        // а аварийный ключ действует — остаёмся в аварийном режиме.
+        if (!fresh.licensed && emergency?.licensed) {
+          setInfo(emergency);
+          setStatus("licensed");
+          return;
+        }
         setInfo(fresh);
         if (fresh.offlineExpired) {
           // Оффлайн-кэш просрочен — требуется подключение к интернету
@@ -62,8 +78,11 @@ export function useLicense(): UseLicenseReturn {
         }
       } catch {
         if (cancelled) return;
-        // Нет сети — используем кэш или демо
+        // Нет сети — приоритет: обычный кэш → аварийный ключ → демо
         if (cached?.licensed) {
+          setStatus("licensed");
+        } else if (emergency?.licensed) {
+          setInfo(emergency);
           setStatus("licensed");
         } else {
           setStatus("demo");

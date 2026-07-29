@@ -16,6 +16,7 @@ POST /  body: {action, password, ...params}
   list_events      — журнал событий {license_id?, event_type?, limit?}
   get_compute_config — текущий расчётный сервер {active, backup_url, autofailover}
   set_compute_config — переключить сервер {active: 'primary'|'backup', backup_url, autofailover}
+  create_offline_key — аварийный оффлайн-ключ {org, days?, seats?, expires_at?}
 """
 import json
 import os
@@ -23,8 +24,38 @@ import random
 import string
 import hashlib
 import re
-from datetime import datetime, timezone
+import base64
+from datetime import datetime, timezone, timedelta
 import psycopg2
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
+    """Формирует подписанный аварийный оффлайн-ключ.
+
+    Формат: PVSO.<payload_b64url>.<sig_b64url>
+    payload — JSON {org, exp (ISO), seats, iat}. Подпись Ed25519 приватным
+    ключом (секрет OFFLINE_KEY_PRIVATE). Приложение проверяет подпись
+    публичным ключом локально, без интернета.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
+    if not priv_b64:
+        raise RuntimeError("offline_key_private_not_set")
+    raw = base64.urlsafe_b64decode(priv_b64 + "=" * (-len(priv_b64) % 4))
+    sk = Ed25519PrivateKey.from_private_bytes(raw)
+    payload = {
+        "org": org,
+        "exp": expires_iso,
+        "seats": int(seats),
+        "iat": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    payload_bytes = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+    sig = sk.sign(payload_bytes)
+    return f"PVSO.{_b64url(payload_bytes)}.{_b64url(sig)}"
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -424,6 +455,36 @@ def handler(event: dict, context) -> dict:
             return resp(200, {"ok": True, "active": active,
                               "backup_url": backup_url,
                               "autofailover": autofailover == "1"})
+
+        # ── create_offline_key — аварийный оффлайн-ключ (подпись Ed25519) ────────
+        if action == "create_offline_key":
+            org = (body.get("org") or "").strip()
+            if not org:
+                return resp(400, {"error": "org_required"})
+            days = int(body.get("days") or 365)
+            if days < 1 or days > 3650:
+                return resp(400, {"error": "invalid_days"})
+            seats = int(body.get("seats") or 999)
+            # Дата истечения: либо явная (для продления), либо now + days
+            exp_in = (body.get("expires_at") or "").strip()
+            if exp_in:
+                expires_iso = exp_in if "T" in exp_in else exp_in + "T23:59:59Z"
+            else:
+                expires_iso = (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            try:
+                key = make_offline_key(org, expires_iso, seats)
+            except RuntimeError:
+                return resp(500, {"error": "offline_key_private_not_set"})
+            # Журналируем факт выдачи (не критично)
+            try:
+                cur.execute("""
+                    INSERT INTO license_events (event_type, detail)
+                    VALUES ('offline_key_issued', %s)
+                """, (f"org={org}; exp={expires_iso}; seats={seats}",))
+                conn.commit()
+            except Exception as e:
+                print(f"[admin] offline key log failed: {e}")
+            return resp(200, {"key": key, "org": org, "expires_at": expires_iso, "seats": seats})
 
         return resp(400, {"error": "unknown_action"})
 
