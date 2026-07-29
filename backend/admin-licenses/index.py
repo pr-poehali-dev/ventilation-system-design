@@ -1,6 +1,7 @@
 """
 Административный API для управления лицензиями ПВ-Системы.
 Защищён паролем через заголовок X-Admin-Password.
+Rev: offline-key-2
 
 POST /  body: {action, password, ...params}
   list_licenses    — список всех лицензий с занятыми местами
