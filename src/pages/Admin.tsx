@@ -112,7 +112,16 @@ export default function Admin() {
   const [editSaving, setEditSaving]     = useState(false);
 
   // Вкладки
-  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update">("licenses");
+  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server">("licenses");
+
+  // Расчётный сервер (основной / аварийный резерв)
+  const [srvActive, setSrvActive]       = useState<"primary" | "backup">("primary");
+  const [srvBackupUrl, setSrvBackupUrl] = useState("");
+  const [srvAutofail, setSrvAutofail]   = useState(true);
+  const [srvCfgLoading, setSrvCfgLoading] = useState(false);
+  const [srvCfgSaving, setSrvCfgSaving] = useState(false);
+  const [srvCfgOk, setSrvCfgOk]         = useState(false);
+  const [srvCfgErr, setSrvCfgErr]       = useState("");
 
   // Мониторинг
   const [monitoring, setMonitoring]     = useState<MonitoringData | null>(null);
@@ -158,6 +167,45 @@ export default function Admin() {
   useEffect(() => {
     if (activeTab === "monitoring" && authed) loadMonitoring(password);
   }, [activeTab, authed, password, loadMonitoring]);
+
+  const loadServerCfg = useCallback(async (pwd: string) => {
+    setSrvCfgLoading(true);
+    setSrvCfgErr("");
+    try {
+      const data = await adminApi(pwd, { action: "get_compute_config" });
+      setSrvActive(data.active === "backup" ? "backup" : "primary");
+      setSrvBackupUrl(data.backup_url || "");
+      setSrvAutofail(data.autofailover !== false);
+    } catch (e: unknown) {
+      setSrvCfgErr(e instanceof Error ? e.message : "Ошибка загрузки");
+    } finally {
+      setSrvCfgLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "server" && authed) loadServerCfg(password);
+  }, [activeTab, authed, password, loadServerCfg]);
+
+  const saveServerCfg = async () => {
+    setSrvCfgSaving(true);
+    setSrvCfgErr("");
+    setSrvCfgOk(false);
+    try {
+      await adminApi(password, {
+        action: "set_compute_config",
+        active: srvActive,
+        backup_url: srvBackupUrl.trim(),
+        autofailover: srvAutofail,
+      });
+      setSrvCfgOk(true);
+      setTimeout(() => setSrvCfgOk(false), 2000);
+    } catch (e: unknown) {
+      setSrvCfgErr(e instanceof Error ? e.message : "Ошибка сохранения");
+    } finally {
+      setSrvCfgSaving(false);
+    }
+  };
 
   useEffect(() => {
     localStorage.removeItem("pvs_admin_pwd");
@@ -398,6 +446,10 @@ export default function Admin() {
               className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "update" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
               <Icon name="Upload" size={12} className="inline mr-1" />Обновление
             </button>
+            <button onClick={() => setActiveTab("server")}
+              className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "server" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
+              <Icon name="Server" size={12} className="inline mr-1" />Сервер расчёта
+            </button>
           </div>
           {activeTab === "licenses" && <>
             <button onClick={() => loadLicenses(password)}
@@ -521,6 +573,81 @@ export default function Admin() {
                   {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Публикация...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Вкладка: Сервер расчёта ── */}
+        {activeTab === "server" && (
+          <div className="max-w-xl mx-auto">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon name="Server" size={16} className="text-blue-500" />
+                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Расчётный сервер</span>
+              </div>
+              <p className="text-[11px] text-gray-400 mb-4">
+                На случай, когда на основном сервере закончилось вычислительное время —
+                переключите расчёты на аварийный резервный сервер. Все рабочие места
+                подхватят изменение автоматически.
+              </p>
+
+              {srvCfgLoading ? (
+                <span className="text-[12px] text-gray-400">Загрузка...</span>
+              ) : (
+                <div className="space-y-4">
+                  {/* Выбор активного сервера */}
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-2">Активный сервер</div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setSrvActive("primary")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border transition-colors ${srvActive === "primary" ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}>
+                        <Icon name="CheckCircle2" size={14} />Основной
+                      </button>
+                      <button onClick={() => setSrvActive("backup")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border transition-colors ${srvActive === "backup" ? "bg-amber-500 text-white border-amber-500" : "bg-white text-gray-600 border-gray-300 hover:border-amber-400"}`}>
+                        <Icon name="LifeBuoy" size={14} />Аварийный резерв
+                      </button>
+                    </div>
+                    {srvActive === "backup" && !srvBackupUrl.trim() && (
+                      <div className="text-[11px] text-red-500 mt-1">Укажите адрес резервного сервера ниже</div>
+                    )}
+                  </div>
+
+                  {/* Адрес резервного сервера */}
+                  <div>
+                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Адрес аварийного сервера (URL)</div>
+                    <input value={srvBackupUrl} onChange={e => setSrvBackupUrl(e.target.value)}
+                      placeholder="https://functions.poehali.dev/..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-blue-400" />
+                    <div className="text-[10px] text-gray-400 mt-1">
+                      Резервная функция расчёта на втором аккаунте/сервере.
+                    </div>
+                  </div>
+
+                  {/* Автопереключение */}
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" checked={srvAutofail}
+                      onChange={e => setSrvAutofail(e.target.checked)}
+                      className="mt-0.5" />
+                    <span className="text-[12px] text-gray-700">
+                      Автоматически переходить на резерв
+                      <span className="block text-[10px] text-gray-400">
+                        Если основной сервер ответит ошибкой лимита или будет недоступен,
+                        программа сама повторит расчёт на резервном сервере.
+                      </span>
+                    </span>
+                  </label>
+
+                  {srvCfgErr && <div className="text-[12px] text-red-500">{srvCfgErr}</div>}
+                  {srvCfgOk && <div className="text-[12px] text-green-600 flex items-center gap-1"><Icon name="Check" size={14} />Сохранено</div>}
+
+                  <button onClick={saveServerCfg} disabled={srvCfgSaving || (srvActive === "backup" && !srvBackupUrl.trim())}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
+                    style={{ background: "#1a3a6b" }}>
+                    {srvCfgSaving ? <><Icon name="Loader" size={14} className="animate-spin" />Сохранение...</> : <><Icon name="Save" size={14} />Сохранить</>}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

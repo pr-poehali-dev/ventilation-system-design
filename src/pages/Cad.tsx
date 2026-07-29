@@ -44,6 +44,7 @@ import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHa
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
 import { API_URLS } from "@/lib/api-urls";
+import { postCompute, refreshComputeConfig, isOnBackup } from "@/lib/computeServer";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
   type CompareBranchDiff, type CompareNodeDiff,
@@ -91,7 +92,8 @@ const safeFixed = (v: unknown, digits = 1): string => {
 async function postAirflow(body: unknown): Promise<Response> {
   const json = JSON.stringify(body);
   const canGzip = typeof (globalThis as { CompressionStream?: unknown }).CompressionStream !== "undefined";
-  // Порог 512 КБ: мелкие запросы быстрее отправить без сжатия
+  // Готовим финальное тело запроса (со сжатием для крупных схем > 512 КБ).
+  let payload = json;
   if (canGzip && json.length > 512_000) {
     try {
       const stream = new Response(json).body!.pipeThrough(
@@ -105,21 +107,21 @@ async function postAirflow(body: unknown): Promise<Response> {
       for (let i = 0; i < bytes.length; i += CHUNK) {
         bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
       }
-      const b64 = btoa(bin);
-      return fetch(AIRFLOW_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ __gzip__: b64 }),
-      });
+      payload = JSON.stringify({ __gzip__: btoa(bin) });
     } catch {
-      // fallback ниже
+      payload = json;
     }
   }
-  return fetch(AIRFLOW_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: json,
-  });
+  // Отправка на активный расчётный сервер с аварийным failover на резерв
+  // (переключается администратором либо автоматически при исчерпании лимита).
+  const { response } = await postCompute((url) =>
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    }),
+  );
+  return response;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1726,6 +1728,9 @@ export default function CadPage() {
   // Актуальная версия десктопа (для вкладки Файл → Установить)
   const [desktopLatestVer, setDesktopLatestVer] = useState<string>("");
 
+  // При старте узнаём активный расчётный сервер (основной/резерв) из админ-настроек
+  useEffect(() => { refreshComputeConfig(); }, []);
+
   // При открытии вкладки «Установить» подтягиваем актуальную версию десктопа
   useEffect(() => {
     if (fileSectionState !== "install" || desktopLatestVer) return;
@@ -3069,6 +3074,11 @@ export default function CadPage() {
       // Пишем лог из бэкенда
       if (data.log?.length) {
         (data.log as string[]).forEach(line => addLog("info", line));
+      }
+
+      // Отметка, что расчёт выполнен на аварийном резервном сервере
+      if (isOnBackup()) {
+        addLog("warn", "Расчёт выполнен на аварийном резервном сервере");
       }
 
       // Применяем результат

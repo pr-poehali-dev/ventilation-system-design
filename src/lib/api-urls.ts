@@ -31,6 +31,7 @@ export const API_URLS = {
   svgToPdf:           url("svg-to-pdf",          "/svg-to-pdf"),
   license:            url("license",             "/license"),
   adminLicenses:      url("admin-licenses",      "/admin-licenses"),
+  computeConfig:      url("compute-config",      "/compute-config"),
 } as const;
 
 export { isDesktop };

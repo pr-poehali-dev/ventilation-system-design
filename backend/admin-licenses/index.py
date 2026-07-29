@@ -14,6 +14,8 @@ POST /  body: {action, password, ...params}
   monitoring_overview — сводка мониторинга: онлайн-сессии, нарушения,
                         истекающие лицензии, версии, использование модулей
   list_events      — журнал событий {license_id?, event_type?, limit?}
+  get_compute_config — текущий расчётный сервер {active, backup_url, autofailover}
+  set_compute_config — переключить сервер {active: 'primary'|'backup', backup_url, autofailover}
 """
 import json
 import os
@@ -387,6 +389,41 @@ def handler(event: dict, context) -> dict:
                 "created_at": str(r[8]), "owner": r[9],
             } for r in cur.fetchall()]
             return resp(200, {"events": events})
+
+        # ── get_compute_config — текущая конфигурация расчётного сервера ──────────
+        if action == "get_compute_config":
+            cur.execute(
+                "SELECT key, value FROM app_settings WHERE key IN "
+                "('compute_active','compute_backup_url','compute_autofailover')"
+            )
+            cfg = {r[0]: r[1] for r in cur.fetchall()}
+            return resp(200, {
+                "active": cfg.get("compute_active", "primary"),
+                "backup_url": cfg.get("compute_backup_url", ""),
+                "autofailover": cfg.get("compute_autofailover", "1") == "1",
+            })
+
+        # ── set_compute_config — переключение основной/резервный сервер ───────────
+        if action == "set_compute_config":
+            active = (body.get("active") or "primary").strip()
+            if active not in ("primary", "backup"):
+                return resp(400, {"error": "invalid_active"})
+            backup_url = (body.get("backup_url") or "").strip()
+            autofailover = "1" if body.get("autofailover", True) else "0"
+            for k, v in (
+                ("compute_active", active),
+                ("compute_backup_url", backup_url),
+                ("compute_autofailover", autofailover),
+            ):
+                cur.execute("""
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                """, (k, v))
+            conn.commit()
+            return resp(200, {"ok": True, "active": active,
+                              "backup_url": backup_url,
+                              "autofailover": autofailover == "1"})
 
         return resp(400, {"error": "unknown_action"})
 
