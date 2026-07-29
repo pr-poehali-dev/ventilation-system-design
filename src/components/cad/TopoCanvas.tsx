@@ -4864,8 +4864,23 @@ export default function TopoCanvas(props: Props) {
                     window.addEventListener("mouseup", onUp);
                   }
                 }}>
-                {/* hitbox — для valve_reduce сдвинут к линии трубы */}
-                <rect x={vcpx - vSZ / 2 - 4} y={vcpy - vSZ / 2 - 4} width={vSZ + 8} height={vSZ + 8} fill="transparent" stroke="none" />
+                {/* hitbox — для valve_reduce сдвинут к линии трубы;
+                    для струй — вытянут ВДОЛЬ ветви (клик по хвосту/острию) */}
+                {VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts ? (() => {
+                  const jAng = Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI;
+                  const jbw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
+                  const wj = Math.max(1.0, jbw * _branchObjSF);
+                  const sc2 = sym.scale ?? 1;
+                  const hLen = Math.max(28, (wj * 3.2 + wj * 2.2) * sc2);
+                  const hThick = Math.max(16, wj * 1.2 * sc2);
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${jAng})`}>
+                      <rect x={-hLen / 2} y={-hThick / 2} width={hLen} height={hThick} fill="transparent" stroke="none" />
+                    </g>
+                  );
+                })() : (
+                  <rect x={vcpx - vSZ / 2 - 4} y={vcpy - vSZ / 2 - 4} width={vSZ + 8} height={vSZ + 8} fill="transparent" stroke="none" />
+                )}
                 {/* Подложка цвета ветви ПОД символом УО: в canvas-режиме символы
                     рисуются в оверлее поверх холста и белым перекрывают окраску
                     ветви. Кладём сегмент цвета ветви вдоль неё, чтобы окраска не
@@ -5012,6 +5027,36 @@ export default function TopoCanvas(props: Props) {
                       <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="none" />
                       <polygon points={`${q(-HS,-HT)} ${q(HS,-HT)} ${q(HS,HT)} ${q(-HS,HT)}`} fill="white" stroke="#1d4ed8" strokeWidth={lw} />
                       <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`} fill="#1d4ed8" />
+                    </g>
+                  );
+                })() : VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts ? (() => {
+                  // Вентиляционная струя (canvas-режим) — стрелка ВДОЛЬ ветви,
+                  // размеры 1:1 с расчётной стрелкой потока (привязка к ширине ветви).
+                  const jDx = tsx2 - fsx, jDy = tsy2 - fsy;
+                  const jLen = Math.hypot(jDx, jDy);
+                  const ux = jLen > 0 ? jDx / jLen : 1, uy = jLen > 0 ? jDy / jLen : 0;
+                  const isFreshJet = sym.typeId === "fresh_inlet" || sym.typeId === "leak_inlet";
+                  const isLeakJet  = sym.typeId === "leak_inlet"  || sym.typeId === "leak_outlet";
+                  const jetColor = isFreshJet ? "#dc2626" : "#2563eb";
+                  let dir = isFreshJet ? 1 : -1;
+                  if (sym.airDirection === "reverse") dir = -dir;
+                  const jAngle = Math.atan2(uy * dir, ux * dir) * 180 / Math.PI;
+                  const jbw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
+                  const w = Math.max(1.0, jbw * _branchObjSF);
+                  const scaleJ = sym.scale ?? 1;
+                  const tipHs = w * 2.2 * scaleJ, tipWs = w * 0.5 * scaleJ;
+                  const tailLenS = w * 3.0 * scaleJ, tailWs = Math.max(0.5, w * 0.15) * scaleJ;
+                  const pts = `0,-${tipWs} ${tipHs},0 0,${tipWs}`;
+                  const shift = (tailLenS - tipHs) / 2;
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${jAngle}) translate(${shift},0)`} pointerEvents="none">
+                      <line x1={-tailLenS} y1={0} x2={0} y2={0}
+                        stroke="white" strokeWidth={tailWs + 1.5} strokeLinecap="round" />
+                      <polygon points={pts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                      <line x1={-tailLenS} y1={0} x2={0} y2={0}
+                        stroke={jetColor} strokeWidth={tailWs} strokeLinecap="round"
+                        strokeDasharray={isLeakJet ? `${tailWs * 3} ${tailWs * 2}` : undefined} />
+                      <polygon points={pts} fill={jetColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                     </g>
                   );
                 })() : lt ? (
