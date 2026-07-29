@@ -6752,16 +6752,22 @@ export default function CadPage() {
                       {(fr.flowDelta ?? 0) !== 0 && (
                         <Row label="Изм. расхода ΔQ, м³/с:" value={`${fr.flowDelta! > 0 ? "+" : ""}${safeFixed(fr.flowDelta, 2)}`} bold={Math.abs(fr.flowDelta!) > 1} />
                       )}
-                      {/* h–Q диаграмма уклонного поля (Прил. 2, рис. 2.1,б) */}
+                      {/* h–Q диаграмма уклонного поля (Прил. 2): нисходящее — рис. 2.1,б, восходящее — рис. 2.2 */}
                       {(() => {
                         const Ry = b.resistance ?? 0;
                         const Qa = Math.abs(b.originalFlow ?? b.flow ?? 0);
                         const Qb = fr.actuallyReversed ? -Math.abs(b.flow ?? 0) : Math.abs(b.flow ?? 0);
                         if (Ry <= 0 || (Qa < 0.01 && Math.abs(Qb) < 0.01)) return null;
+                        // Восходящая струя: воздух движется ВВЕРХ по высоте узлов (с учётом знака расхода)
+                        const fromN = nodes.find(n => n.id === b.fromId);
+                        const toN = nodes.find(n => n.id === b.toId);
+                        const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
+                        const flowSign = (b.originalFlow ?? b.flow ?? 0) >= 0 ? 1 : -1;
+                        const ascending = dz * flowSign > 0.01;
                         return (
                           <div className="px-1 py-1 mt-1">
                             <div className="text-[10px] font-semibold mb-1" style={{ color: "#991b1b" }}>
-                              Режим проветривания уклонного поля (h–Q, рис. 2.1,б)
+                              Режим проветривания уклонного поля (h–Q, {ascending ? "восходящее, рис. 2.2" : "нисходящее, рис. 2.1,б"})
                             </div>
                             <HQFireDiagram
                               Ry={Ry}
@@ -6770,20 +6776,37 @@ export default function CadPage() {
                               hT={Math.abs(fr.thermalDepression)}
                               hKr={fr.critical?.h_kr}
                               reversed={fr.actuallyReversed}
+                              ascending={ascending}
                             />
-                            <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
-                              <span style={{ color: "#0369a1", fontWeight: 700 }}>A</span> — режим до пожара (Q={safeFixed(Qa, 1)} м³/с) ·{" "}
-                              <span style={{ color: "#dc2626", fontWeight: 700 }}>B</span> — при пожаре (Q={safeFixed(Math.abs(Qb), 1)} м³/с) ·{" "}
-                              <span style={{ color: "#7c3aed", fontWeight: 700 }}>C</span> — критическая (Q=0){fr.actuallyReversed ? " · " : ""}
-                              {fr.actuallyReversed && <><span style={{ color: "#450a0a", fontWeight: 700 }}>D</span> — опрокидывание струи</>}
-                            </div>
-                            <div className="mt-0.5 text-[9px]" style={{ color: fr.actuallyReversed ? "#dc2626" : (fr.critical?.exceedsCritical ? "#c2410c" : "#16a34a") }}>
-                              {fr.actuallyReversed
-                                ? "Режим D: струя опрокинута, рециркуляция продуктов горения в контуре «уклон + верхняя сбойка»."
-                                : fr.critical?.exceedsCritical
-                                  ? "Режим C: |h_т| ≥ h_кр — воздух в уклонное поле практически не поступает (неустойчиво)."
-                                  : "Режим B: нормальное направление струи сохраняется (устойчиво)."}
-                            </div>
+                            {ascending ? (
+                              <>
+                                <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
+                                  <span style={{ color: "#0369a1", fontWeight: 700 }}>A</span> — режим до пожара (Q={safeFixed(Qa, 1)} м³/с) ·{" "}
+                                  <span style={{ color: "#dc2626", fontWeight: 700 }}>E</span> — при пожаре (Q={safeFixed(Math.abs(Qb), 1)} м³/с, расход растёт) ·{" "}
+                                  <span style={{ color: "#7c3aed", fontWeight: 700 }}>F</span> — критическая: h_т=R·Q₀² (депрессия ВГП=0) ·{" "}
+                                  <span style={{ color: "#450a0a", fontWeight: 700 }}>K</span> — ВГП как сопротивление
+                                </div>
+                                <div className="mt-0.5 text-[9px]" style={{ color: "#16a34a" }}>
+                                  Восходящее проветривание: тепловая депрессия сонаправлена с депрессией ВГП, расход воздуха увеличивается — струя устойчива (2.3).
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
+                                  <span style={{ color: "#0369a1", fontWeight: 700 }}>A</span> — режим до пожара (Q={safeFixed(Qa, 1)} м³/с) ·{" "}
+                                  <span style={{ color: "#dc2626", fontWeight: 700 }}>B</span> — при пожаре (Q={safeFixed(Math.abs(Qb), 1)} м³/с) ·{" "}
+                                  <span style={{ color: "#7c3aed", fontWeight: 700 }}>C</span> — критическая (Q=0){fr.actuallyReversed ? " · " : ""}
+                                  {fr.actuallyReversed && <><span style={{ color: "#450a0a", fontWeight: 700 }}>D</span> — опрокидывание струи</>}
+                                </div>
+                                <div className="mt-0.5 text-[9px]" style={{ color: fr.actuallyReversed ? "#dc2626" : (fr.critical?.exceedsCritical ? "#c2410c" : "#16a34a") }}>
+                                  {fr.actuallyReversed
+                                    ? "Режим D: струя опрокинута, рециркуляция продуктов горения в контуре «уклон + верхняя сбойка»."
+                                    : fr.critical?.exceedsCritical
+                                      ? "Режим C: |h_т| ≥ h_кр — воздух в уклонное поле практически не поступает (неустойчиво)."
+                                      : "Режим B: нормальное направление струи сохраняется (устойчиво)."}
+                                </div>
+                              </>
+                            )}
                           </div>
                         );
                       })()}
