@@ -40,19 +40,30 @@ def _decode_priv_key(s: str) -> bytes:
     base64-алфавит, а также hex. Возвращает сырые байты ключа.
     """
     import re as _re
-    # Убираем всё, что не относится к base64/hex (пробелы, переводы строк, кавычки)
-    cleaned = _re.sub(r"\s+", "", s).strip().strip('"').strip("'")
-    # Приводим url-safe символы к стандартным
-    std = cleaned.replace("-", "+").replace("_", "/").rstrip("=")
+    # Приводим url-safe символы к стандартным, затем оставляем ТОЛЬКО символы
+    # base64-алфавита (выкидываем пробелы, кавычки, переводы строк, любой мусор).
+    conv = s.replace("-", "+").replace("_", "/")
+    b64chars = _re.sub(r"[^A-Za-z0-9+/]", "", conv)
+    std = b64chars.rstrip("=")
     pad = "=" * (-len(std) % 4)
+    # Диагностика без раскрытия значения: длина и «маска» (первые/последние 3 симв.)
+    masked = f"{s[:3]}…{s[-3:]}" if len(s) > 6 else "***"
+    print(f"[admin] priv key: raw_len={len(s)} b64_len={len(b64chars)} mask={masked}")
     try:
-        return base64.b64decode(std + pad)
+        raw = base64.b64decode(std + pad)
+        if len(raw) >= 32:
+            return raw
     except Exception:
-        # Возможно, ключ задан в hex
-        try:
-            return bytes.fromhex(cleaned)
-        except Exception:
-            raise ValueError("bad_private_key_format")
+        pass
+    # Возможно, ключ задан в hex
+    try:
+        hexs = _re.sub(r"[^0-9a-fA-F]", "", s)
+        raw = bytes.fromhex(hexs)
+        if len(raw) >= 32:
+            return raw
+    except Exception:
+        pass
+    raise ValueError(f"bad_private_key_format len={len(b64chars)}")
 
 
 def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
