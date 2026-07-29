@@ -45,7 +45,12 @@ def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
     priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
     if not priv_b64:
         raise RuntimeError("offline_key_private_not_set")
+    priv_b64 = priv_b64.rstrip("=")
     raw = base64.urlsafe_b64decode(priv_b64 + "=" * (-len(priv_b64) % 4))
+    # Секрет может содержать как 32-байтовое «семя» (raw seed), так и полный
+    # приватный ключ. Ed25519PrivateKey.from_private_bytes ждёт ровно 32 байта.
+    if len(raw) > 32:
+        raw = raw[:32]
     sk = Ed25519PrivateKey.from_private_bytes(raw)
     payload = {
         "org": org,
@@ -475,6 +480,9 @@ def handler(event: dict, context) -> dict:
                 key = make_offline_key(org, expires_iso, seats)
             except RuntimeError:
                 return resp(500, {"error": "offline_key_private_not_set"})
+            except Exception as e:
+                print(f"[admin] offline key sign failed: {e}")
+                return resp(500, {"error": "offline_key_sign_failed", "detail": str(e)[:200]})
             # Журналируем факт выдачи (не критично)
             try:
                 cur.execute("""
