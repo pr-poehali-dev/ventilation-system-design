@@ -465,6 +465,10 @@ export interface FireBranchResult {
     p_u: number;
     // Класс устойчивости по p_у: >1 — устойчивая, 0.3..1 — неустойчивая, <0.3 — весьма неустойчивая
     stability: "stable" | "unstable" | "very-unstable";
+    // Какая формула Приложения 5 применена: 5.3 / 5.4 / 5.5 / field (уклонное поле)
+    formula: CriticalDepFormula;
+    // Число учтённых параллельных выработок (для 5.5)
+    parallelCount: number;
   };
 }
 
@@ -619,67 +623,141 @@ export function calcThermalDepressionNormative(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // КРИТИЧЕСКАЯ ДЕПРЕССИЯ наклонной выработки при нисходящем проветривании —
-// аналитический способ (Приложение 5, формула 5.3):
+// аналитический способ (Приложение 5). Реализованы все случаи раздела 5.2:
 //
-//   h_кр = 0.9 · r_п · (Q + Q_п)²                              (5.3)
+//   (5.3) h_кр = 0.9·r_п·(Q+Q_п)²                         — сбойки малого сопр.;
+//   (5.4) h_кр = 0.85·(Q+Q_п)²·[ r_п + R₁/(1+√((R₁+r₁)/r_п′))²
+//                                     + R₂/(1+√((R₂+r₂)/r_п″))² ] — сбойки с перемычками;
+//   (5.5) r_п = r₁/(√(r₁/r₂)+1)²                          — несколько параллелей;
+//   • если сопротивление перемычек в сбойках ≥ 300× сопр. участков — сбойками
+//     пренебрегаем и применяем (5.3);
+//   • уклонное поле с одной воздухоподающей выработкой (параллели нет) —
+//     h_кр ориентировочно принимается равной депрессии всего поля (|ΔP|).
 //
-// где r_п — аэродинамическое сопротивление ПАРАЛЛЕЛЬНОГО горящему участку
-//           наклонной выработки, Н·с²/м⁸;
-//     Q   — расход воздуха в рассматриваемой (аварийной) выработке, м³/с;
-//     Q_п — расход воздуха в параллельной выработке, м³/с.
+// где r_п — сопротивление параллельного горящему участка, Н·с²/м⁸;
+//     Q, Q_п — расход в аварийной и параллельной выработке, м³/с;
+//     R₁,R₂ — сопротивление сбоек выше/ниже аварийного участка;
+//     r₁,r₂ — сопротивление примыкающих сверху/снизу участков аварийной ветви;
+//     r_п′,r_п″ — участки параллельной ветви выше/ниже.
 //
-// Опрокидывание нисходящей струи наступает, когда тепловая депрессия пожара
-// достигает критической: |h_т| ≥ h_кр.
-//
-// Параллельная выработка определяется как ветвь, соединяющая ТУ ЖЕ пару узлов,
-// что и горящая (альтернативный путь между теми же узлами). Если параллельной
-// ветви в схеме нет — критическую депрессию по (5.3) вычислить нельзя.
+// Опрокидывание нисходящей струи наступает при |h_т| ≥ h_кр.
+export type CriticalDepFormula = "5.3" | "5.4" | "5.5" | "field";
+
 export interface CriticalDepInput {
   fireBranchId: string;
   fireFromId: string;
   fireToId: string;
   fireFlow_m3s: number;    // Q — расход в аварийной выработке
-  branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number }[];
+  fireDP_pa?: number;      // ΔP аварийной ветви (для случая «уклонное поле»)
+  branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number; dP?: number }[];
 }
 
 export interface CriticalDepResult {
   h_kr: number;            // критическая депрессия, Па (0 если параллельной ветви нет)
-  r_p: number;             // сопротивление параллельной выработки, Н·с²/м⁸
+  r_p: number;             // сопротивление параллельной выработки (приведённое), Н·с²/м⁸
   Q: number;               // расход в аварийной выработке, м³/с
   Q_p: number;             // расход в параллельной выработке, м³/с
   parallelBranchId?: string;
+  parallelCount: number;   // сколько параллельных выработок учтено (для 5.5)
+  formula: CriticalDepFormula; // какая формула применена
   hasParallel: boolean;
 }
 
-export const CRITICAL_DEP_K = 0.9; // коэффициент в формуле (5.3)
+export const CRITICAL_DEP_K = 0.9;  // коэффициент в формуле (5.3)
+export const CRITICAL_DEP_K54 = 0.85; // коэффициент в формуле (5.4)
+export const BULKHEAD_NEGLECT_RATIO = 300; // порог: сбойками пренебрегаем, если R ≥ 300·r
 
 export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult {
   const Q = Math.abs(Number(inp.fireFlow_m3s) || 0);
-  const empty: CriticalDepResult = { h_kr: 0, r_p: 0, Q, Q_p: 0, hasParallel: false };
+  const empty: CriticalDepResult = {
+    h_kr: 0, r_p: 0, Q, Q_p: 0, parallelCount: 0, formula: "5.3", hasParallel: false,
+  };
 
-  // Ищем параллельную ветвь: соединяет ту же пару узлов (в любом порядке),
-  // но это не сама горящая ветвь. Берём с максимальным расходом (основной
-  // параллельный путь), если их несколько.
+  // Параллельные выработки — ветви между ТОЙ ЖЕ парой узлов (кроме горящей).
   const a = inp.fireFromId, b = inp.fireToId;
   const parallels = inp.branches.filter(br =>
     br.id !== inp.fireBranchId &&
-    ((br.fromId === a && br.toId === b) || (br.fromId === b && br.toId === a)),
+    ((br.fromId === a && br.toId === b) || (br.fromId === b && br.toId === a)) &&
+    (Number(br.resistance) || 0) > 0,
   );
-  if (parallels.length === 0) return empty;
 
-  const par = parallels.reduce((best, br) =>
+  // ── Случай «уклонное поле с одной воздухоподающей выработкой» ──────────────
+  // Параллельной ветви нет → критическая депрессия ориентировочно принимается
+  // равной депрессии всего уклонного поля (ΔP аварийной ветви).
+  if (parallels.length === 0) {
+    const hField = Math.abs(Number(inp.fireDP_pa) || 0);
+    if (hField > 0) {
+      return { ...empty, h_kr: hField, formula: "field", hasParallel: true, parallelCount: 0 };
+    }
+    return empty;
+  }
+
+  // ── (5.5) Приведённое сопротивление нескольких параллельных выработок ──────
+  // Параллельное аэродинамическое соединение: 1/√r_п = Σ 1/√rᵢ.
+  // Для двух ветвей это тождественно формуле r_п = r₁/(√(r₁/r₂)+1)².
+  const sumInvSqrt = parallels.reduce((s, br) => s + 1 / Math.sqrt(Number(br.resistance) || 1e-9), 0);
+  const r_p = sumInvSqrt > 0 ? 1 / (sumInvSqrt * sumInvSqrt) : 0;
+  // Q_п — суммарный расход по всем параллельным путям.
+  const Q_p = parallels.reduce((s, br) => s + Math.abs(Number(br.flow) || 0), 0);
+  const mainPar = parallels.reduce((best, br) =>
     Math.abs(br.flow ?? 0) > Math.abs(best.flow ?? 0) ? br : best, parallels[0]);
 
-  const r_p = Math.max(0, Number(par.resistance) || 0);
-  const Q_p = Math.abs(Number(par.flow) || 0);
-  if (!(r_p > 0)) return { ...empty, hasParallel: true, parallelBranchId: par.id, Q_p };
+  if (!(r_p > 0)) {
+    return { ...empty, hasParallel: true, parallelBranchId: mainPar.id, Q_p, parallelCount: parallels.length };
+  }
 
-  // (5.3) h_кр = 0.9 · r_п · (Q + Q_п)²
-  const h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
+  // ── (5.4) Учёт сбоек с перемычками ────────────────────────────────────────
+  // Сбойки — ветви, соединяющие узел аварийной пары (a или b) с «чужим» узлом
+  // (промежуточные перемычки между наклонными выработками). Ищем их и участки,
+  // примыкающие к аварийному сверху/снизу.
+  const nodePair = new Set([a, b]);
+  const crossings = inp.branches.filter(br =>
+    br.id !== inp.fireBranchId && !parallels.includes(br) &&
+    ((nodePair.has(br.fromId) && !nodePair.has(br.toId)) ||
+     (nodePair.has(br.toId) && !nodePair.has(br.fromId))) &&
+    (Number(br.resistance) || 0) > 0,
+  );
+
+  let formula: CriticalDepFormula = parallels.length > 1 ? "5.5" : "5.3";
+  let h_kr: number;
+
+  if (crossings.length >= 1) {
+    // Порог ×300: если ВСЕ сбойки имеют сопротивление ≥ 300× сопр. участков —
+    // влиянием сбоек пренебрегаем и применяем (5.3)/(5.5).
+    const rSelfBranch = Math.max(1e-9, Number(inp.branches.find(x => x.id === inp.fireBranchId)?.resistance) || r_p);
+    const rBase = Math.max(1e-9, Math.min(r_p, rSelfBranch));
+    const allHighResistance = crossings.every(br =>
+      (Number(br.resistance) || 0) >= BULKHEAD_NEGLECT_RATIO * rBase);
+
+    if (allHighResistance) {
+      h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
+    } else {
+      // (5.4): суммируем вклад до двух сбоек (выше R₁ и ниже R₂ аварийного участка).
+      // r₁,r₂ — примыкающие участки аварийной ветви; r_п′,r_п″ — параллельной.
+      // В общем графе точную геометрию «выше/ниже» восстановить нельзя, поэтому
+      // берём фактические сопротивления смежных ветвей как оценку.
+      const rAdj = crossings.slice(0, 2).map(br => Number(br.resistance) || 0);
+      const rSelf = Math.max(1e-9, Number(inp.branches.find(x => x.id === inp.fireBranchId)?.resistance) || r_p);
+      const rParSelf = Math.max(1e-9, Number(mainPar.resistance) || r_p);
+      let bracket = r_p;
+      for (const R of rAdj) {
+        const denom = Math.pow(1 + Math.sqrt((R + rSelf) / rParSelf), 2);
+        bracket += R / denom;
+      }
+      h_kr = CRITICAL_DEP_K54 * Math.pow(Q + Q_p, 2) * bracket;
+      formula = "5.4";
+    }
+  } else {
+    // (5.3)/(5.5): сбоек нет — базовая формула с приведённым r_п.
+    h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
+  }
+
   return {
     h_kr: Number.isFinite(h_kr) ? h_kr : 0,
     r_p, Q, Q_p,
-    parallelBranchId: par.id,
+    parallelBranchId: mainPar.id,
+    parallelCount: parallels.length,
+    formula,
     hasParallel: true,
   };
 }
@@ -1021,6 +1099,7 @@ export function calcFireMode(
           fireFromId: fb.fromId,
           fireToId: fb.toId,
           fireFlow_m3s: airQ,
+          fireDP_pa: fb.dP,
           branches,
         })
       : null;
@@ -1039,6 +1118,8 @@ export function calcFireMode(
             exceedsCritical: absHt >= critRaw.h_kr,
             p_u: Math.round(p_u * 100) / 100,
             stability,
+            formula: critRaw.formula,
+            parallelCount: critRaw.parallelCount,
           };
         })()
       : undefined;

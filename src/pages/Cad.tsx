@@ -6733,10 +6733,24 @@ export default function CadPage() {
                       )}
                       {fr.critical && (
                         <>
-                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>Критическая депрессия (5.3)</div>
+                          {(() => {
+                            const fm = fr.critical.formula;
+                            const title = fm === "field" ? "Критическая депрессия (уклонное поле)" : `Критическая депрессия (${fm})`;
+                            const note = fm === "5.3" ? "h_кр = 0.9·r_п·(Q+Q_п)²"
+                              : fm === "5.4" ? "с учётом сбоек с перемычками: h_кр = 0.85·(Q+Q_п)²·[…]"
+                              : fm === "5.5" ? `приведение ${fr.critical!.parallelCount} параллельных выработок (r_п по 5.5)`
+                              : "≈ депрессии всего уклонного поля (одна воздухоподающая выработка)";
+                            return (
+                              <>
+                                <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>{title}</div>
+                                <div className="px-1 py-0.5 text-[9px]" style={{ color: "#6b7280", borderBottom: "1px solid #ebebeb" }}>{note}</div>
+                              </>
+                            );
+                          })()}
                           <Row label="Крит. депрессия h_кр, Па:" value={safeFixed(fr.critical.h_kr, 1)} bold />
-                          <Row label="Сопр. параллельной r_п:" value={safeFixed(fr.critical.r_p, 4)} />
-                          <Row label="Расход паралл. Q_п, м³/с:" value={safeFixed(fr.critical.Q_p, 2)} />
+                          {fr.critical.formula !== "field" && <Row label="Сопр. параллельной r_п:" value={safeFixed(fr.critical.r_p, 4)} />}
+                          {fr.critical.formula !== "field" && <Row label="Расход паралл. Q_п, м³/с:" value={safeFixed(fr.critical.Q_p, 2)} />}
+                          {fr.critical.parallelCount > 1 && <Row label="Параллельных выработок:" value={String(fr.critical.parallelCount)} />}
                           <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                             <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Запас устойчивости, Па:</span>
                             <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{
