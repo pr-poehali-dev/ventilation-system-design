@@ -3952,22 +3952,33 @@ export default function TopoCanvas(props: Props) {
                   if (sym.airDirection === "reverse") dir = -dir;
                   const ax = ux * dir, ay = uy * dir;
                   const jAngle = Math.atan2(ay, ax) * 180 / Math.PI;
-                  // Размеры — как у расчётной стрелки потока (пропорционально SZ).
-                  const tipH = Math.max(4, SZ * 0.34);
-                  const tipW = Math.max(3, SZ * 0.22);
-                  const tailLen = Math.max(6, SZ * 0.55);
-                  const tailW = Math.max(1.2, SZ * 0.09);
-                  // Центр символа (px,py) — середина стрелки: хвост слева, остриё справа.
+                  // Размеры — 1:1 как у расчётной стрелки потока: привязка к
+                  // ширине ветви w (наконечник ≤ полширины → не выходит за ветвь).
+                  const jbw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
+                  const w = (thinLines ? 1 : jbw) * _objSF;
+                  const tipH    = w * 2.2;
+                  const tipW    = w * 0.5;
+                  const tailLen = w * 3.0;
+                  const tailW   = Math.max(0.5, w * 0.15);
+                  const scale = sym.scale ?? 1;
+                  const tipHs = tipH * scale, tipWs = tipW * scale, tailLenS = tailLen * scale, tailWs = tailW * scale;
+                  const pts = `0,-${tipWs} ${tipHs},0 0,${tipWs}`;
+                  // Стрелку центрируем по (px,py): весь чертёж занимает [-tailLenS..tipHs]
+                  // по X, середину этого отрезка совмещаем с центром символа.
+                  const shift = (tailLenS - tipHs) / 2;
                   return (
-                    <g transform={`translate(${px},${py}) rotate(${jAngle})`} pointerEvents="none">
-                      {/* Белая подложка хвоста для контраста на любом фоне */}
-                      <line x1={-tailLen} y1={0} x2={tailLen - tipH} y2={0}
-                        stroke="white" strokeWidth={tailW + 2} strokeLinecap="round" />
-                      <line x1={-tailLen} y1={0} x2={tailLen - tipH} y2={0}
-                        stroke={jetColor} strokeWidth={tailW} strokeLinecap="round"
-                        strokeDasharray={isLeakJet ? `${tailW * 3} ${tailW * 2}` : undefined} />
-                      <polygon points={`${tailLen - tipH},${-tipW} ${tailLen},0 ${tailLen - tipH},${tipW}`}
-                        fill={jetColor} stroke="white" strokeWidth={Math.max(0.5, SZ * 0.02)} />
+                    <g transform={`translate(${px},${py}) rotate(${jAngle}) translate(${shift},0)`} pointerEvents="none">
+                      {/* Белая обводка хвостика */}
+                      <line x1={-tailLenS} y1={0} x2={0} y2={0}
+                        stroke="white" strokeWidth={tailWs + 1.5} strokeLinecap="round" />
+                      {/* Белая обводка наконечника */}
+                      <polygon points={pts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                      {/* Хвостик (пунктир — для утечек) */}
+                      <line x1={-tailLenS} y1={0} x2={0} y2={0}
+                        stroke={jetColor} strokeWidth={tailWs} strokeLinecap="round"
+                        strokeDasharray={isLeakJet ? `${tailWs * 3} ${tailWs * 2}` : undefined} />
+                      {/* Наконечник */}
+                      <polygon points={pts} fill={jetColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                     </g>
                   );
                 }
@@ -4098,6 +4109,23 @@ export default function TopoCanvas(props: Props) {
               {/* Hitbox поверх всего символа — гарантированно ловит события мыши.
                   Минимум HIT_MIN px, отступ 10px со всех сторон. */}
               {(() => {
+                // Для вентиляционных струй hitbox вытянут ВДОЛЬ ветви и повёрнут,
+                // чтобы клик по хвосту/острию стрелки открывал свойства.
+                if (VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const jAng = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                  const jbw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
+                  const wj = (thinLines ? 1 : jbw) * _objSF;
+                  const sc2 = sym.scale ?? 1;
+                  const hLen = Math.max(HIT_MIN, (wj * 3.2 + wj * 2.2) * sc2);
+                  const hThick = Math.max(HIT_MIN * 0.6, wj * 1.2 * sc2);
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${jAng})`}>
+                      <rect x={-hLen / 2} y={-hThick / 2} width={hLen} height={hThick}
+                        fill="transparent" stroke="none" />
+                    </g>
+                  );
+                }
                 const hW = Math.max(SZ + 20, HIT_MIN);
                 const hH = Math.max(SZ + 20, HIT_MIN);
                 return <rect x={px - hW / 2} y={py - hH / 2} width={hW} height={hH}
