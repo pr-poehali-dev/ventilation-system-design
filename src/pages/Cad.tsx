@@ -2691,7 +2691,7 @@ export default function CadPage() {
         ? Math.PI * fanCurveForWin.diameter * fanCurveForWin.diameter / 4 : 0;
       const winA = (b.fanWindowArea ?? 0) > 0.001 ? (b.fanWindowArea ?? 0) : autoWinA;
       const fanWindowR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && winA > 0.001)
-        ? fanWindowRkMurg(winA) : 0;
+        ? fanWindowRkMurg(winA, b.area ?? 0) : 0;
 
       return {
         id: b.id,

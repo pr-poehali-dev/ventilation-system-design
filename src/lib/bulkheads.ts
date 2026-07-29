@@ -411,18 +411,24 @@ export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, t
 }
 
 // Коэффициент расхода окна ВЕНТИЛЯТОРНОЙ УСТАНОВКИ (ГВУ), установленной «внутри
-// перемычки». Подобран по ПО «Вентиляция 2.0»:
-//   ВО-18 (D=1,8 м, ΔS=2,54 м²) → R≈0,5387 кМюрг (μ=0,4155, т.е. ξ=1/μ²≈5,79).
-export const FAN_WINDOW_MU = 0.4155;
+// перемычки». Откалиброван по эталону «Аэросеть»: ГВУ ВЦД-47, ΔS=17,35 м²,
+// сечение ствола S=38,5 м², 350 об/мин → рабочая точка Q=515 м³/с, H=1727 Па
+// (R окна ≈0,00464 кМюрг). Формула — диафрагма с учётом скорости подхода.
+export const FAN_WINDOW_MU = 0.5851;
 
 // Сопротивление вентиляционного окна ГВУ в кМюрг (кгс·с²/м⁸ — те же единицы, что
-// solidBulkheadRkMurg/windowBulkheadRkMurg). Формула диафрагмы БЕЗ деления на g:
-//   R_кМюрг = ρ/(2·μ²·ΔS²)
-//   Проверка: ΔS=2,54 → R≈0,5387 кМюрг (совпадает с «Вентиляция 2.0»).
-export function fanWindowRkMurg(windowArea: number): number {
+// solidBulkheadRkMurg/windowBulkheadRkMurg). Формула диафрагмы с учётом скорости
+// подхода (как у окон перемычек windowBulkheadRkMurg):
+//   R_кМюрг = ρ/(2·μ²)·(1/ΔS² − 1/S²)
+//   где ΔS — площадь окна, S — сечение выработки (ствола).
+//   Проверка: ΔS=17,35, S=38,5 → R≈0,00464 кМюрг (Q=515 в сети Аэросеть ✓).
+export function fanWindowRkMurg(windowArea: number, sectionArea?: number): number {
   const dS = windowArea;
   if (dS <= 0.001) return 0;
-  return 1.2 / (2 * FAN_WINDOW_MU * FAN_WINDOW_MU * dS * dS);
+  const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
+  const approach = S > 0 ? 1 / (S * S) : 0;
+  const r = 1.2 / (2 * FAN_WINDOW_MU * FAN_WINDOW_MU) * (1 / (dS * dS) - approach);
+  return r > 0 ? r : 0;
 }
 
 // R перемычки в Мюрг → суммируется с R выработки последовательно

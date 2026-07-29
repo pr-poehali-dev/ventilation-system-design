@@ -1230,7 +1230,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               if (dS <= 0.001) return null;
               return (
                 <InlineLabel label="R окна, кМюрг">
-                  <ComputedInput value={numFmt(fanWindowRkMurg(dS), 4)} />
+                  <ComputedInput value={numFmt(fanWindowRkMurg(dS, branch.area ?? 0), 4)} />
                 </InlineLabel>
               );
             })()}
