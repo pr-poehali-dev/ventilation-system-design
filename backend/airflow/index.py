@@ -151,8 +151,22 @@ def handler(event: dict, context) -> dict:
             nodes_in_patched.append(n2)
         nodes_in = nodes_in_patched
     else:
-        # Галочка снята — обнуляем тягу: все узлы получают одинаковую температуру
-        nodes_in = [dict(n, airTemp=surface_temp) for n in nodes_in]
+        # Галочка снята — обнуляем ФОНОВУЮ естественную тягу сети: обычные узлы
+        # получают температуру поверхности (перепад плотностей = 0).
+        # НО тепловая депрессия ПОЖАРА — отдельный аварийный фактор и действует
+        # ВСЕГДА, независимо от галочки (как в АэроСети). Поэтому горячие узлы пути
+        # дыма пожара (hotNode=true или userTemp=true) сохраняют свою температуру —
+        # иначе при снятой галочке пожар не менял бы расход воздуха вообще.
+        nodes_in_patched = []
+        for n in nodes_in:
+            n2 = dict(n)
+            if n2.get("hotNode") or n2.get("userTemp"):
+                # узел пути дыма пожара — оставляем присланную (нагретую) airTemp
+                pass
+            else:
+                n2["airTemp"] = surface_temp
+            nodes_in_patched.append(n2)
+        nodes_in = nodes_in_patched
 
     # Формируем информационный лог о тяге для передачи на фронтенд
     nat_draft_log = []
