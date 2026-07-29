@@ -2,7 +2,7 @@
 // Содержит ту же логику что в TopoCanvas, но без интерактивности.
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { type TopoBranch } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 
@@ -85,6 +85,33 @@ export default function SchemaSymbolsOverlay({
 
         const isMeasureStation = isMeasureStationSym2;
         const isBulkhead = isBulkheadSym;
+
+        const renderVentJet = () => {
+          if (!VENT_JET_SYMBOL_IDS.has(sym.typeId) || !hasBranchPts) return null;
+          const jLen = Math.hypot(tsx2 - fsx, tsy2 - fsy);
+          const ux = jLen > 0 ? (tsx2 - fsx) / jLen : 1, uy = jLen > 0 ? (tsy2 - fsy) / jLen : 0;
+          const isFreshJet = sym.typeId === "fresh_inlet" || sym.typeId === "leak_inlet";
+          const isLeakJet  = sym.typeId === "leak_inlet"  || sym.typeId === "leak_outlet";
+          const jetColor = isFreshJet ? "#dc2626" : "#2563eb";
+          let dir = isFreshJet ? 1 : -1;
+          if (sym.airDirection === "reverse") dir = -dir;
+          const jAngle = Math.atan2(uy * dir, ux * dir) * 180 / Math.PI;
+          const tipH = Math.max(4, SZ * 0.34);
+          const tipW = Math.max(3, SZ * 0.22);
+          const tailLen = Math.max(6, SZ * 0.55);
+          const tailW = Math.max(1.2, SZ * 0.09);
+          return (
+            <g transform={`translate(${px},${py}) rotate(${jAngle})`}>
+              <line x1={-tailLen} y1={0} x2={tailLen - tipH} y2={0}
+                stroke="white" strokeWidth={tailW + 2} strokeLinecap="round" />
+              <line x1={-tailLen} y1={0} x2={tailLen - tipH} y2={0}
+                stroke={jetColor} strokeWidth={tailW} strokeLinecap="round"
+                strokeDasharray={isLeakJet ? `${tailW * 3} ${tailW * 2}` : undefined} />
+              <polygon points={`${tailLen - tipH},${-tipW} ${tailLen},0 ${tailLen - tipH},${tipW}`}
+                fill={jetColor} stroke="white" strokeWidth={Math.max(0.5, SZ * 0.02)} />
+            </g>
+          );
+        };
 
         const renderMeasureStation = () => {
           if (!isMeasureStation || !hasBranchPts) return null;
@@ -331,7 +358,8 @@ export default function SchemaSymbolsOverlay({
         return (
           <g key={sym.id}>
             {/* Символ */}
-            {isMeasureStation && hasBranchPts ? renderMeasureStation() :
+            {VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts ? renderVentJet() :
+             isMeasureStation && hasBranchPts ? renderMeasureStation() :
              isBulkhead && hasBranchPts ? renderBulkhead() : (
               lt ? <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"

@@ -474,3 +474,10 @@ export const BULKHEAD_SYMBOL_IDS = new Set([
   "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
   "bulkhead_barrier", "fire_door", "barrier", "fire_door_pp",
 ]);
+
+/** ID символов вентиляционных струй — рисуются стрелкой ВДОЛЬ ветви
+ *  (как расчётные стрелки воздухораспределения): красная — свежая,
+ *  синяя — исходящая, пунктир — утечка. Разворот через airDirection. */
+export const VENT_JET_SYMBOL_IDS = new Set([
+  "fresh_inlet", "exhaust_outlet", "leak_inlet", "leak_outlet",
+]);

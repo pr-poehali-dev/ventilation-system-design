@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 
@@ -93,7 +93,45 @@ export async function drawSymbolsToCanvas(
     const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
 
     // ── Рисуем символ ─────────────────────────────────────────────────
-    if (isMeasureStation && hasBranchPts) {
+    if (VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
+      // Вентиляционная струя — стрелка ВДОЛЬ ветви (как расчётная).
+      const jLen = Math.hypot(tsx2 - fsx, tsy2 - fsy);
+      const ux = jLen > 0 ? (tsx2 - fsx) / jLen : 1, uy = jLen > 0 ? (tsy2 - fsy) / jLen : 0;
+      const isFreshJet = sym.typeId === "fresh_inlet" || sym.typeId === "leak_inlet";
+      const isLeakJet  = sym.typeId === "leak_inlet"  || sym.typeId === "leak_outlet";
+      const jetColor = isFreshJet ? "#dc2626" : "#2563eb";
+      let dir = isFreshJet ? 1 : -1;
+      if (sym.airDirection === "reverse") dir = -dir;
+      const jAngle = Math.atan2(uy * dir, ux * dir);
+      const tipH = Math.max(4, SZ * 0.34);
+      const tipW = Math.max(3, SZ * 0.22);
+      const tailLen = Math.max(6, SZ * 0.55);
+      const tailW = Math.max(1.2, SZ * 0.09);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(jAngle);
+      // Белая подложка хвоста
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = tailW + 2;
+      ctx.lineCap = "round";
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(tailLen - tipH, 0); ctx.stroke();
+      // Цветной хвост (пунктир — для утечек)
+      ctx.strokeStyle = jetColor;
+      ctx.lineWidth = tailW;
+      ctx.setLineDash(isLeakJet ? [tailW * 3, tailW * 2] : []);
+      ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(tailLen - tipH, 0); ctx.stroke();
+      ctx.setLineDash([]);
+      // Наконечник
+      ctx.fillStyle = jetColor;
+      ctx.beginPath();
+      ctx.moveTo(tailLen - tipH, -tipW);
+      ctx.lineTo(tailLen, 0);
+      ctx.lineTo(tailLen - tipH, tipW);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    } else if (isMeasureStation && hasBranchPts) {
       // Замерная станция: две красные полосы вдоль ветви, вписанные в её ширину
       // После rotate(brAngle): ось X — вдоль ветви, ось Y — поперёк
       const halfH = SZ * 0.85 / 2;        // полувысота (поперёк ветви, по Y)

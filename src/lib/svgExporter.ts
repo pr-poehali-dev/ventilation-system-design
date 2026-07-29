@@ -9,7 +9,7 @@ import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
 
 export interface SvgExportOptions {
@@ -695,7 +695,25 @@ export function generateSvg(opts: SvgExportOptions): string {
       const brAngle = hasBranchPts ? Math.atan2(tsy2 - fsy, tsx2 - fsx) : 0;
       const angDeg = brAngle * 180 / Math.PI;
 
-      if (isMeasureStation && hasBranchPts) {
+      if (VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
+        // Вентиляционная струя — стрелка ВДОЛЬ ветви (как расчётная).
+        const isFreshJet = sym.typeId === "fresh_inlet" || sym.typeId === "leak_inlet";
+        const isLeakJet  = sym.typeId === "leak_inlet"  || sym.typeId === "leak_outlet";
+        const jetColor = isFreshJet ? "#dc2626" : "#2563eb";
+        let dir = isFreshJet ? 1 : -1;
+        if (sym.airDirection === "reverse") dir = -dir;
+        const jAngDeg = (dir < 0 ? brAngle + Math.PI : brAngle) * 180 / Math.PI;
+        const tipH = Math.max(4, SZ * 0.34);
+        const tipW = Math.max(3, SZ * 0.22);
+        const tailLen = Math.max(6, SZ * 0.55);
+        const tailW = Math.max(1.2, SZ * 0.09);
+        const dash = isLeakJet ? ` stroke-dasharray="${n(tailW * 3)} ${n(tailW * 2)}"` : "";
+        parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(jAngDeg)})">`);
+        parts.push(`<line x1="${n(-tailLen)}" y1="0" x2="${n(tailLen - tipH)}" y2="0" stroke="white" stroke-width="${n(tailW + 2)}" stroke-linecap="round"/>`);
+        parts.push(`<line x1="${n(-tailLen)}" y1="0" x2="${n(tailLen - tipH)}" y2="0" stroke="${jetColor}" stroke-width="${n(tailW)}" stroke-linecap="round"${dash}/>`);
+        parts.push(`<polygon points="${n(tailLen - tipH)},${n(-tipW)} ${n(tailLen)},0 ${n(tailLen - tipH)},${n(tipW)}" fill="${jetColor}" stroke="white" stroke-width="${n(Math.max(0.5, SZ * 0.02))}"/>`);
+        parts.push(`</g>`);
+      } else if (isMeasureStation && hasBranchPts) {
         // Замерная станция — две красные линии поперёк ветви
         const ph = Math.max(3, SZ * 0.85);
         const lw = Math.max(1.5, ph * 0.12);

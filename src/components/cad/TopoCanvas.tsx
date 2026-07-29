@@ -5,7 +5,7 @@ import {
   PAPER_SIZES_MM, OVERVIEW_HORIZON_ID,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -3933,6 +3933,41 @@ export default function TopoCanvas(props: Props) {
                         fill="white" stroke="#1d4ed8" strokeWidth={lw} />
                       <polygon points={`${q(-HS*0.65,-HT*0.55)} ${q(HS*0.65,-HT*0.55)} ${q(0,HT*0.6)}`}
                         fill="#1d4ed8" />
+                    </g>
+                  );
+                }
+                // ── Вентиляционные струи: стрелка ВДОЛЬ ветви (как расчётная) ──
+                // Красная — свежая (входящая), синяя — исходящая. Пунктир — утечка.
+                // Разворот пользователем через sym.airDirection.
+                if (VENT_JET_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
+                  const jDx = tsx2 - fsx, jDy = tsy2 - fsy;
+                  const jLen = Math.hypot(jDx, jDy);
+                  const ux = jLen > 0 ? jDx / jLen : 1, uy = jLen > 0 ? jDy / jLen : 0;
+                  const isFreshJet = sym.typeId === "fresh_inlet" || sym.typeId === "leak_inlet";
+                  const isLeakJet  = sym.typeId === "leak_inlet"  || sym.typeId === "leak_outlet";
+                  const jetColor = isFreshJet ? "#dc2626" : "#2563eb";
+                  // Базовое направление: свежая — по ветви, исходящая — против.
+                  // Плюс пользовательский разворот airDirection.
+                  let dir = isFreshJet ? 1 : -1;
+                  if (sym.airDirection === "reverse") dir = -dir;
+                  const ax = ux * dir, ay = uy * dir;
+                  const jAngle = Math.atan2(ay, ax) * 180 / Math.PI;
+                  // Размеры — как у расчётной стрелки потока (пропорционально SZ).
+                  const tipH = Math.max(4, SZ * 0.34);
+                  const tipW = Math.max(3, SZ * 0.22);
+                  const tailLen = Math.max(6, SZ * 0.55);
+                  const tailW = Math.max(1.2, SZ * 0.09);
+                  // Центр символа (px,py) — середина стрелки: хвост слева, остриё справа.
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${jAngle})`} pointerEvents="none">
+                      {/* Белая подложка хвоста для контраста на любом фоне */}
+                      <line x1={-tailLen} y1={0} x2={tailLen - tipH} y2={0}
+                        stroke="white" strokeWidth={tailW + 2} strokeLinecap="round" />
+                      <line x1={-tailLen} y1={0} x2={tailLen - tipH} y2={0}
+                        stroke={jetColor} strokeWidth={tailW} strokeLinecap="round"
+                        strokeDasharray={isLeakJet ? `${tailW * 3} ${tailW * 2}` : undefined} />
+                      <polygon points={`${tailLen - tipH},${-tipW} ${tailLen},0 ${tailLen - tipH},${tipW}`}
+                        fill={jetColor} stroke="white" strokeWidth={Math.max(0.5, SZ * 0.02)} />
                     </g>
                   );
                 }

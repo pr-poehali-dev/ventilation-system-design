@@ -31,7 +31,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -7709,6 +7709,20 @@ export default function CadPage() {
                         <span className="text-gray-700">Показывать стрелку направления</span>
                       </label>
                     </>
+                  )}
+
+                  {/* Направление (вентиляционная струя) */}
+                  {VENT_JET_SYMBOL_IDS.has(sym.typeId) && (
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <span className="text-gray-500 w-20 flex-shrink-0">Направление</span>
+                      <select value={sym.airDirection ?? "forward"}
+                        onChange={(e) => updSym({ airDirection: e.target.value as "forward" | "reverse" })}
+                        className="flex-1 text-[11px] px-1"
+                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                        <option value="forward">По ветви (→)</option>
+                        <option value="reverse">Развернуть (←)</option>
+                      </select>
+                    </div>
                   )}
 
 
