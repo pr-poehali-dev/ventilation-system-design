@@ -115,7 +115,21 @@ function fanH(e: Edge, Q: number): number {
   const N = Math.max(1, e.fanParallel ?? 1);
 
   if (e.fanMode === "constant") {
-    return Math.max(0, e.fanH0 * e.fanRhoFactor);
+    const H0 = Math.max(0, e.fanH0 * e.fanRhoFactor);
+    // Ограничение по модели: постоянный напор действует только до qMax вентилятора
+    // (с учётом оборотов и числа параллельных). Выше qMax напор резко падает —
+    // это не даёт фиксированному H раскачать сеть до нефизичного расхода.
+    if (e.fanCurve) {
+      const k    = (e.fanRpm && e.fanCurve.rpmNominal > 0) ? e.fanRpm / e.fanCurve.rpmNominal : 1;
+      const qMax = e.fanCurve.qMax * Math.max(0.001, k) * N;
+      const Qabs = Math.abs(Q);
+      if (Qabs > qMax) {
+        // Крутой спад за пределом характеристики (Па на м³/с).
+        const slope = (H0 / Math.max(1, qMax)) * 5 + 50;
+        return Math.max(0, H0 - slope * (Qabs - qMax));
+      }
+    }
+    return H0;
   }
 
   if (e.fanMode === "curve" && e.fanCurve) {
@@ -155,8 +169,19 @@ function fanH(e: Edge, Q: number): number {
 
 /** |dH/dQ| для уточнения знаменателя δQ. */
 function fanDH(e: Edge, Q: number): number {
-  if (!e.hasFan || e.fanMode !== "curve" || !e.fanCurve) return 0;
+  if (!e.hasFan) return 0;
   const N  = Math.max(1, e.fanParallel ?? 1);
+  // Постоянный напор с ограничением по модели: в зоне среза (Q>qMax) даём
+  // ненулевую производную, чтобы решатель устойчиво находил рабочую точку.
+  if (e.fanMode === "constant") {
+    if (!e.fanCurve) return 0;
+    const H0   = Math.max(0, e.fanH0 * e.fanRhoFactor);
+    const kc   = (e.fanRpm && e.fanCurve.rpmNominal > 0) ? e.fanRpm / e.fanCurve.rpmNominal : 1;
+    const qMax = e.fanCurve.qMax * Math.max(0.001, kc) * N;
+    if (Math.abs(Q) > qMax) return (H0 / Math.max(1, qMax)) * 5 + 50;
+    return 0;
+  }
+  if (e.fanMode !== "curve" || !e.fanCurve) return 0;
   const c  = e.fanCurve;
   const k  = (e.fanRpm && c.rpmNominal > 0) ? e.fanRpm / c.rpmNominal : 1;
   const Qn = Math.abs(Q) / N / Math.max(0.001, k);
@@ -419,7 +444,11 @@ export function solveNetwork(
       fanMode:       b.fanMode,
       // FIX: fanH0 хранить в Па (не умножать на rho здесь — fanH() применяет rhoFactor)
       fanH0:         b.fanPressure,
-      fanCurve:      b.fanMode === "curve" ? (getFanById(b.fanCurveId) ?? undefined) : undefined,
+      // Модель подгружаем ВСЕГДА, если она выбрана — даже в режиме "constant".
+      // В постоянном напоре кривая не задаёт напор, но её qMax ограничивает расход
+      // (иначе фиксированный H "продавливает" сеть до нефизичного Q, напр. 192 м³/с
+      // у ВМП СВМ-5 вместо реальных ~5 м³/с при H=568 Па).
+      fanCurve:      getFanById(b.fanCurveId) ?? undefined,
       fanRpm:        b.fanRpm,
       fanBladeAngle: b.fanBladeAngle,
       // Паспортная характеристика вентилятора берётся как есть (как в АэроСеть/

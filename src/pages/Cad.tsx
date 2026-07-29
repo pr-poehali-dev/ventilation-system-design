@@ -10,7 +10,7 @@ import {
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
-import { FAN_CATALOG, getFanById, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import HQFireDiagram from "@/components/cad/HQFireDiagram";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
@@ -1767,7 +1767,11 @@ export default function CadPage() {
       return branches.map(b => {
         const fan = result.fans.find(f => f.branchId === b.id);
         if (!fan) return b;
-        return { ...b, hasFan: true, fanMode: "constant" as const, fanName: fan.name, fanPressure: fan.pressure };
+        // Привязываем модель из каталога по имени, чтобы её qMax ограничивал расход
+        // в режиме постоянного напора (иначе H "продавливает" сеть до нефизичного Q).
+        const matched = findFanByName(fan.name);
+        return { ...b, hasFan: true, fanMode: "constant" as const, fanName: fan.name,
+                 fanPressure: fan.pressure, fanCurveId: matched?.id ?? b.fanCurveId ?? "" };
       });
     };
 

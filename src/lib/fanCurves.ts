@@ -545,3 +545,21 @@ export function findOperatingPoint(curve: FanCurve, R: number): { Q: number; H: 
 export function getFanById(id: string): FanCurve | undefined {
   return FAN_CATALOG.find((f) => f.id === id);
 }
+
+// Поиск модели в каталоге по названию (нечёткое сопоставление).
+// Нужен при импорте из CSV/Ventsim, где вентилятор приходит только по имени —
+// чтобы привязать fanCurveId и учитывать qMax модели в режиме "постоянный напор".
+export function findFanByName(name?: string | null): FanCurve | undefined {
+  if (!name) return undefined;
+  const norm = (s: string) => s.toLowerCase().replace(/[\s\-_./]/g, "");
+  const q = norm(name);
+  // 1) точное совпадение нормализованного имени
+  let hit = FAN_CATALOG.find((f) => norm(f.name) === q);
+  if (hit) return hit;
+  // 2) имя каталога содержится в запросе или наоборот
+  hit = FAN_CATALOG.find((f) => {
+    const fn = norm(f.name);
+    return q.includes(fn) || fn.includes(q);
+  });
+  return hit;
+}
