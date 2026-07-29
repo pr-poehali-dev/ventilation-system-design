@@ -53,8 +53,11 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
     setKey(parts.join("-"));
   };
 
-  // Кнопка активна: обычный ключ ≥19 симв. ИЛИ аварийный оффлайн-ключ.
-  const canActivate = isEmergencyInput ? key.trim().length > 40 : key.length >= 19;
+  // Кнопка активна: обычный ключ ≥19 симв. ИЛИ аварийный оффлайн-ключ
+  // (формат PVSO.<payload>.<sig> — три части, разделённые точками).
+  const canActivate = isEmergencyInput
+    ? key.trim().split(".").length >= 3 && key.trim().length > 20
+    : key.length >= 19;
 
   const isLicensed       = license.status === "licensed";
   const isExpired        = license.status === "offline_expired";
@@ -206,8 +209,8 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 type="text"
                 value={key}
                 onChange={e => { handleKey(e.target.value); setErr(null); }}
-                placeholder="PVS-XXXX-XXXX-XXXX-XXXX"
-                maxLength={isEmergencyInput ? 400 : 23}
+                placeholder="PVS-XXXX-XXXX-XXXX-XXXX  или  PVSO…"
+                maxLength={400}
                 className={`w-full border rounded-lg px-3 py-2.5 text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-300 ${isEmergencyInput ? "tracking-normal break-all" : "tracking-wider"}`}
                 style={{ borderColor: err ? "#dc2626" : "#d1d5db" }}
                 onKeyDown={e => e.key === "Enter" && handleActivate()}
