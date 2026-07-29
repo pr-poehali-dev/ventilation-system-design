@@ -6747,6 +6747,25 @@ export default function CadPage() {
                               {fr.critical.margin > 0 ? "+" : ""}{safeFixed(fr.critical.margin, 1)} ({fr.critical.exceedsCritical ? "|h_t| ≥ h_кр" : "|h_t| < h_кр"})
                             </span>
                           </div>
+                          {/* Показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1) */}
+                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>Устойчивость проветривания (3.1)</div>
+                          <Row label="Показатель p_у = h_кр/h_т:" value={safeFixed(fr.critical.p_u, 2)} bold />
+                          <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                            <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Класс выработки:</span>
+                            {(() => {
+                              const st = fr.critical.stability;
+                              const cfg = st === "stable"
+                                ? { bg: "#f0fdf4", fg: "#15803d", bd: "#86efac", txt: "✓ Устойчивая (p_у > 1)" }
+                                : st === "very-unstable"
+                                  ? { bg: "#450a0a", fg: "#fecaca", bd: "#7f1d1d", txt: "⚠ Весьма неустойчивая (p_у < 0.3)" }
+                                  : { bg: "#fffbeb", fg: "#b45309", bd: "#fcd34d", txt: "△ Неустойчивая (p_у < 1)" };
+                              return (
+                                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ background: cfg.bg, color: cfg.fg, border: `1px solid ${cfg.bd}` }}>
+                                  {cfg.txt}
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </>
                       )}
                       {(fr.flowDelta ?? 0) !== 0 && (
@@ -6775,6 +6794,7 @@ export default function CadPage() {
                               Qb={Qb}
                               hT={Math.abs(fr.thermalDepression)}
                               hKr={fr.critical?.h_kr}
+                              pU={fr.critical?.p_u}
                               reversed={fr.actuallyReversed}
                               ascending={ascending}
                             />

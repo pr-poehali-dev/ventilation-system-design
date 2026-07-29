@@ -461,6 +461,10 @@ export interface FireBranchResult {
     Q_p: number;       // расход в параллельной выработке, м³/с
     margin: number;    // запас устойчивости h_кр − |h_т|, Па (<0 → опрокидывание)
     exceedsCritical: boolean; // |h_т| ≥ h_кр
+    // Показатель устойчивости проветривания (Прил. 3, формула 3.1): p_у = h_кр / h_т
+    p_u: number;
+    // Класс устойчивости по p_у: >1 — устойчивая, 0.3..1 — неустойчивая, <0.3 — весьма неустойчивая
+    stability: "stable" | "unstable" | "very-unstable";
   };
 }
 
@@ -1021,13 +1025,22 @@ export function calcFireMode(
         })
       : null;
     const critical = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
-      ? {
-          h_kr: Math.round(critRaw.h_kr * 10) / 10,
-          r_p: critRaw.r_p,
-          Q_p: Math.round(critRaw.Q_p * 100) / 100,
-          margin: Math.round((critRaw.h_kr - Math.abs(thermalDep)) * 10) / 10,
-          exceedsCritical: Math.abs(thermalDep) >= critRaw.h_kr,
-        }
+      ? (() => {
+          // Показатель устойчивости (Прил. 3, ф. 3.1): p_у = h_кр / h_т.
+          const absHt = Math.abs(thermalDep);
+          const p_u = absHt > 0.01 ? critRaw.h_kr / absHt : 999;
+          const stability: "stable" | "unstable" | "very-unstable" =
+            p_u > 1 ? "stable" : p_u < 0.3 ? "very-unstable" : "unstable";
+          return {
+            h_kr: Math.round(critRaw.h_kr * 10) / 10,
+            r_p: critRaw.r_p,
+            Q_p: Math.round(critRaw.Q_p * 100) / 100,
+            margin: Math.round((critRaw.h_kr - absHt) * 10) / 10,
+            exceedsCritical: absHt >= critRaw.h_kr,
+            p_u: Math.round(p_u * 100) / 100,
+            stability,
+          };
+        })()
       : undefined;
 
     // Фактическое изменение расхода: разница между расходом после расчёта пожара и до пожара

@@ -25,6 +25,7 @@ interface Props {
   Qb: number;            // расход ПРИ пожаре (точка B/E), м³/с (может быть < 0 при опрокидывании)
   hT: number;            // тепловая депрессия пожара, Па (> 0)
   hKr?: number;          // критическая депрессия h_кр, Па (если есть параллель)
+  pU?: number;           // показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1)
   reversed?: boolean;    // струя опрокинута (режим D)
   ascending?: boolean;   // восходящее проветривание (рис. 2.2) — иначе нисходящее (2.1,б)
   width?: number;
@@ -32,7 +33,7 @@ interface Props {
 }
 
 export default function HQFireDiagram({
-  Ry, Qa, Qb, hT, hKr, reversed = false, ascending = false, width = 300, height = 210,
+  Ry, Qa, Qb, hT, hKr, pU, reversed = false, ascending = false, width = 300, height = 210,
 }: Props) {
   const padL = 42, padR = 12, padT = 14, padB = 30;
   const W = width - padL - padR;
@@ -191,6 +192,19 @@ export default function HQFireDiagram({
             </g>
           )}
         </>
+      )}
+
+      {/* Показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1) */}
+      {pU !== undefined && (
+        <g>
+          <rect x={padL + 4} y={padT + 2} width="86" height="14" rx="2"
+            fill={pU > 1 ? "#f0fdf4" : pU < 0.3 ? "#450a0a" : "#fffbeb"}
+            stroke={pU > 1 ? "#86efac" : pU < 0.3 ? "#7f1d1d" : "#fcd34d"} strokeWidth="0.8" />
+          <text x={padL + 8} y={padT + 12} fontSize="9" fontFamily="Segoe UI" fontWeight="700"
+            fill={pU > 1 ? "#15803d" : pU < 0.3 ? "#fecaca" : "#b45309"}>
+            p_у = {pU.toFixed(2)} {pU > 1 ? "✓" : pU < 0.3 ? "⚠⚠" : "△"}
+          </text>
+        </g>
       )}
     </svg>
   );
