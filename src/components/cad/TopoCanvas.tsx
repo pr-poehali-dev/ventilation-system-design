@@ -1125,12 +1125,12 @@ export default function TopoCanvas(props: Props) {
 
   // Толерантность попадания в ветвь:
   // - берём реальную толщину линии в пикселях (baseW * _objSF)
-  // - добавляем фиксированный бонус 6px чтобы ловить даже субпиксельные ветви
-  // - итоговый минимум 12px — независимо от масштаба
+  // - добавляем фиксированный бонус 8px чтобы ловить даже субпиксельные ветви
+  // - итоговый минимум 18px — независимо от масштаба (легче попадать без зума)
   const hitBranchR = (sx: number, sy: number, pnm: typeof projNodesMap, br: typeof branches, extraTol = 0) => {
     const baseW = branchWidth ?? 2.5;
     const lineW = Math.max(1, baseW * _objSF);   // реальная толщина линии в px
-    const tol = Math.max(12, lineW / 2 + 6) + extraTol;
+    const tol = Math.max(18, lineW / 2 + 8) + extraTol;
     return hitBranchCanvas(sx, sy, pnm, br, tol);
   };
 
