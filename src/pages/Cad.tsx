@@ -1256,6 +1256,9 @@ export default function CadPage() {
   const [draggingLeaderPosId, setDraggingLeaderPosId] = useState<string | null>(null);
   // Режим рисования выноски: клик на схему = установить конец выноски
   const [leaderDrawMode, setLeaderDrawMode] = useState<string | null>(null); // posId или null
+  // Флаг: рисуем ДОПОЛНИТЕЛЬНУЮ (дублирующую) выноску, а не основную.
+  // Основная фиксирует координаты маркера, доп. — нет.
+  const [leaderExtraMode, setLeaderExtraMode] = useState(false);
   // Snap к ветви в режиме рисования выноски
   const [leaderSnapBranch, setLeaderSnapBranch] = useState<{ branchId: string; t: number; sx: number; sy: number } | null>(null);
   // Курсор мыши в экранных координатах для предпросмотра выноски
@@ -3368,6 +3371,7 @@ export default function CadPage() {
         // Выход из режима рисования выноски
         if (leaderDrawMode) {
           setLeaderDrawMode(null);
+          setLeaderExtraMode(false);
           setLeaderCursorScreen(null);
           setLeaderSnapBranch(null);
           return;
@@ -8695,8 +8699,10 @@ export default function CadPage() {
                 branchBindMode={posBranchBindMode}
                 onToggleBranchBind={() => { if (selectedPositionId) setPosBranchBindMode((v) => !v); }}
                 leaderDrawMode={leaderDrawMode}
-                onStartLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }}
+                onStartLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderExtraMode(false); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }}
                 onRemoveLeader={(posId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null } : p))}
+                onStartExtraLeaderDraw={(posId) => { setLeaderDrawMode(posId); setLeaderExtraMode(true); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }}
+                onRemoveExtraLeader={(posId, leaderId) => setPositions(prev => prev.map(p => p.id === posId ? { ...p, extraLeaders: (p.extraLeaders ?? []).filter(el => el.id !== leaderId) } : p))}
               />
             )}
 
@@ -9297,27 +9303,36 @@ export default function CadPage() {
                 setSelectedTextBlockId(null);
                 return;
               }
+              const _extraId = () => Math.random().toString(36).slice(2, 10);
               if (leaderSnapBranch) {
                 // Привязываем выноску к ветви
                 const { branchId, t } = leaderSnapBranch;
-                const drawPos = positions.find(p => p.id === leaderDrawMode);
-                // Находим опорный узел ветви (верхний по z)
-                const br = branches.find(b => b.id === branchId);
-                const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
-                const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
-                const refN = fromN && toN
-                  ? (fromN.z >= toN.z ? fromN : toN)
-                  : (fromN ?? toN);
-                setPositions(prev => prev.map(p => {
-                  if (p.id !== leaderDrawMode) return p;
-                  const base = { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null };
-                  // Авто-координаты: если не размещена ИЛИ z=0 (не соответствует сети)
-                  if (refN && (!p.placed || p.z === 0)) {
-                    const OFFSET = 50;
-                    return { ...base, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
-                  }
-                  return { ...base, placed: true };
-                }));
+                if (leaderExtraMode) {
+                  // Дополнительная выноска — добавляем в extraLeaders, координаты маркера НЕ трогаем
+                  setPositions(prev => prev.map(p =>
+                    p.id === leaderDrawMode
+                      ? { ...p, extraLeaders: [...(p.extraLeaders ?? []), { id: _extraId(), branchId, t }] }
+                      : p
+                  ));
+                } else {
+                  // Находим опорный узел ветви (верхний по z)
+                  const br = branches.find(b => b.id === branchId);
+                  const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+                  const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+                  const refN = fromN && toN
+                    ? (fromN.z >= toN.z ? fromN : toN)
+                    : (fromN ?? toN);
+                  setPositions(prev => prev.map(p => {
+                    if (p.id !== leaderDrawMode) return p;
+                    const base = { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null };
+                    // Авто-координаты: если не размещена ИЛИ z=0 (не соответствует сети)
+                    if (refN && (!p.placed || p.z === 0)) {
+                      const OFFSET = 50;
+                      return { ...base, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
+                    }
+                    return { ...base, placed: true };
+                  }));
+                }
               } else {
                 // Свободная точка
                 const vs2 = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
@@ -9332,14 +9347,23 @@ export default function CadPage() {
                 }
                 const w = unprojectToPlane(sx2, sy2, vs2, { axis: "z", value: pz });
                 if (w) {
-                  setPositions(prev => prev.map(p =>
-                    p.id === leaderDrawMode
-                      ? { ...p, leaderEndX: w.x, leaderEndY: w.y, leaderBranchId: null, leaderT: null }
-                      : p
-                  ));
+                  if (leaderExtraMode) {
+                    setPositions(prev => prev.map(p =>
+                      p.id === leaderDrawMode
+                        ? { ...p, extraLeaders: [...(p.extraLeaders ?? []), { id: _extraId(), endX: w.x, endY: w.y }] }
+                        : p
+                    ));
+                  } else {
+                    setPositions(prev => prev.map(p =>
+                      p.id === leaderDrawMode
+                        ? { ...p, leaderEndX: w.x, leaderEndY: w.y, leaderBranchId: null, leaderT: null }
+                        : p
+                    ));
+                  }
                 }
               }
               setLeaderDrawMode(null);
+              setLeaderExtraMode(false);
               setLeaderCursorScreen(null);
               setLeaderSnapBranch(null);
             }}
@@ -10288,7 +10312,7 @@ export default function CadPage() {
                     // за курсором); иначе — притянут к концу выноски при фикс. масштабе.
                     const pm = isDrawing ? proj(pos.x, pos.y, pz) : markerScreenPos(pos);
                     const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
-                    const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
+                    const lw = Math.max(0.3, (pos.leaderThickness ?? 0.02) * PX_PER_MM);
 
                     // Вычисляем конец выноски
                     let endSx: number | null = null, endSy: number | null = null;
@@ -10382,6 +10406,39 @@ export default function CadPage() {
                             }}
                           />
                         )}
+
+                        {/* Дополнительные (дублирующие) выноски — от того же маркера pm.
+                            Не влияют на положение маркера (он привязан к основной). */}
+                        {(pos.extraLeaders ?? []).map((el) => {
+                          let eSx: number | null = null, eSy: number | null = null;
+                          let attached = false;
+                          if (el.branchId && el.t != null) {
+                            const ep = leaderBranchEnd(el.branchId, el.t);
+                            if (ep) { eSx = ep.sx; eSy = ep.sy; attached = true; }
+                          } else if (el.endX != null && el.endY != null) {
+                            const ep = proj(el.endX, el.endY, pz);
+                            eSx = ep.sx; eSy = ep.sy;
+                          }
+                          if (eSx == null || eSy == null) return null;
+                          const ddx = eSx - pm.sx, ddy = eSy - pm.sy;
+                          const ddist = Math.hypot(ddx, ddy);
+                          if (ddist < 2) return null;
+                          const uux = ddx / ddist, uuy = ddy / ddist;
+                          const ex1 = pm.sx + uux * (r + 2), ey1 = pm.sy + uuy * (r + 2);
+                          return (
+                            <g key={`extra-${pos.id}-${el.id}`}>
+                              <line x1={ex1} y1={ey1} x2={eSx} y2={eSy}
+                                stroke="#e11d48" strokeWidth={lw}
+                                strokeDasharray="6,3" strokeLinecap="round"
+                                opacity={0.95} style={{ pointerEvents: "none" }} />
+                              {attached && (
+                                <circle cx={eSx} cy={eSy} r={4}
+                                  fill="#e11d48" stroke="#fff" strokeWidth={1.5}
+                                  style={{ pointerEvents: "none" }} />
+                              )}
+                            </g>
+                          );
+                        })}
                       </g>
                     );
                   })}
@@ -10608,7 +10665,9 @@ export default function CadPage() {
                 letterSpacing: 0.2, boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
               }}>
                 {leaderDrawMode
-                  ? "✛ Кликните на схеме для размещения конца выноски  [Esc — отмена]"
+                  ? (leaderExtraMode
+                      ? "✛ Кликните на ветви для дополнительной выноски  [Esc — отмена]"
+                      : "✛ Кликните на схеме для размещения конца выноски  [Esc — отмена]")
                   : "✛ Отпустите для фиксации выноски"}
               </div>
             )}

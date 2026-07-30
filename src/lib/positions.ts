@@ -3,6 +3,15 @@
 export type PositionType = "normal" | "reverse";
 export type AccidentType = "Пожар" | "Взрыв" | "Внезапный выброс" | "Загазирование" | "Нет";
 
+// Дополнительная (дублирующая) выноска позиции: привязка к ветви ИЛИ свободная точка.
+export interface PositionLeader {
+  id: string;
+  branchId?: string | null;   // привязка к ветви
+  t?: number | null;          // положение вдоль ветви (0..1)
+  endX?: number | null;       // свободная точка X (мир)
+  endY?: number | null;       // свободная точка Y (мир)
+}
+
 export interface Position {
   id: string;
   number: number;          // номер позиции (отображается на маркере)
@@ -33,6 +42,9 @@ export interface Position {
   // Привязка конца выноски к ветви (как УО): branchId + t (0..1 вдоль ветви)
   leaderBranchId: string | null;
   leaderT: number | null;
+  // Дополнительные (дублирующие) выноски. НЕ влияют на положение маркера —
+  // маркер всегда привязан к ОСНОВНОЙ выноске (leaderBranchId/leaderEndX выше).
+  extraLeaders?: PositionLeader[];
   // ─── Видимость (управляется из панели информации) ────────
   visible?: boolean;         // видимость маркера на схеме (true по умолчанию)
   branchesVisible?: boolean; // видимость привязанных ветвей (true по умолчанию)
@@ -53,7 +65,7 @@ export function makePosition(partial?: Partial<Position>): Position {
     borderColor: "#c53030",
     diameter: 13,
     font: "GOST type A",
-    leaderThickness: 0.2,
+    leaderThickness: 0.02,
     attachedFile: "",
     attachedFileData: "",
     attachedFileMime: "",

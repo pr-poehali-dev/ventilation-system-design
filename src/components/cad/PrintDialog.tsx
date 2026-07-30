@@ -677,30 +677,48 @@ export default function PrintDialog({
       return { sx: end.sx + (base.sx - end.sx) * clampRatio, sy: end.sy + (base.sy - end.sy) * clampRatio };
     };
 
-    // Выноски (под маркерами)
+    // Выноски (основная + дополнительные, под маркерами)
     for (const pos of positions) {
       if (pos.visible === false || pos.x == null) continue;
-      const end = leaderEnd(pos);
-      if (!end) continue;
       const pm = markerPos(pos);
       const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
-      const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
-      const dx = end.sx - pm.sx, dy = end.sy - pm.sy;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 2) continue;
-      const ux = dx / dist, uy = dy / dist;
-      const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
-      ctx.save();
-      ctx.strokeStyle = "#e11d48"; ctx.lineWidth = lw;
-      ctx.setLineDash([6, 3]); ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(end.sx, end.sy); ctx.stroke();
-      ctx.setLineDash([]);
-      if (pos.leaderBranchId && pos.leaderT != null) {
-        ctx.beginPath(); ctx.arc(end.sx, end.sy, 4, 0, Math.PI * 2);
-        ctx.fillStyle = "#e11d48"; ctx.fill();
-        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke();
+      const lw = Math.max(0.3, (pos.leaderThickness ?? 0.02) * PX_PER_MM);
+      // Собираем концы: основная выноска + дополнительные
+      const ends: { sx: number; sy: number; attached: boolean }[] = [];
+      const mainEnd = leaderEnd(pos);
+      if (mainEnd) ends.push({ ...mainEnd, attached: !!(pos.leaderBranchId && pos.leaderT != null) });
+      for (const el of pos.extraLeaders ?? []) {
+        if (el.branchId && el.t != null) {
+          const br = branches.find(b => b.id === el.branchId);
+          const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+          const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+          if (fromN && toN) {
+            const fP = nodeProj(fromN), tP = nodeProj(toN);
+            ends.push({ sx: fP.sx + (tP.sx - fP.sx) * el.t, sy: fP.sy + (tP.sy - fP.sy) * el.t, attached: true });
+          }
+        } else if (el.endX != null && el.endY != null) {
+          const e = project3D({ x: el.endX * _xySF, y: el.endY * _xySF, z: (pos.z ?? 0) * zScale }, sv);
+          ends.push({ sx: e.sx, sy: e.sy, attached: false });
+        }
       }
-      ctx.restore();
+      for (const end of ends) {
+        const dx = end.sx - pm.sx, dy = end.sy - pm.sy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 2) continue;
+        const ux = dx / dist, uy = dy / dist;
+        const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
+        ctx.save();
+        ctx.strokeStyle = "#e11d48"; ctx.lineWidth = lw;
+        ctx.setLineDash([6, 3]); ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(end.sx, end.sy); ctx.stroke();
+        ctx.setLineDash([]);
+        if (end.attached) {
+          ctx.beginPath(); ctx.arc(end.sx, end.sy, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#e11d48"; ctx.fill();
+          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        ctx.restore();
+      }
     }
 
     // Маркеры

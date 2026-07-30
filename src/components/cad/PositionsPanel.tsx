@@ -25,6 +25,10 @@ interface Props {
   onStartLeaderDraw?: (posId: string) => void;
   /** Удалить выноску позиции */
   onRemoveLeader?: (posId: string) => void;
+  /** Запустить режим рисования ДОПОЛНИТЕЛЬНОЙ выноски */
+  onStartExtraLeaderDraw?: (posId: string) => void;
+  /** Удалить дополнительную выноску по её id */
+  onRemoveExtraLeader?: (posId: string, leaderId: string) => void;
 }
 
 export default function PositionsPanel({
@@ -43,6 +47,8 @@ export default function PositionsPanel({
   leaderDrawMode,
   onStartLeaderDraw,
   onRemoveLeader,
+  onStartExtraLeaderDraw,
+  onRemoveExtraLeader,
 }: Props) {
   const [editingNumberId, setEditingNumberId] = useState<string | null>(null);
   const [editingNumberVal, setEditingNumberVal] = useState("");
@@ -347,8 +353,8 @@ export default function PositionsPanel({
 
           <Row label="Толщина выносок:">
             <div className="flex items-center gap-1">
-              <input type="number" min={0.1} max={5} step={0.1} value={selected.leaderThickness}
-                onChange={(e) => upd({ leaderThickness: parseFloat(e.target.value) || 0.2 })}
+              <input type="number" min={0.02} max={5} step={0.01} value={selected.leaderThickness}
+                onChange={(e) => upd({ leaderThickness: parseFloat(e.target.value) || 0.02 })}
                 style={{ ...inputStyle, width: 50 }} />
               <span style={{ fontSize: 11, color: "#666" }}>мм</span>
             </div>
@@ -448,6 +454,39 @@ export default function PositionsPanel({
                 <Icon name="PlusCircle" size={12} />
                 Добавить выноску
               </button>
+            )}
+
+            {/* Дополнительные (дублирующие) выноски — доступны только при наличии основной */}
+            {(selected.leaderBranchId != null || selected.leaderEndX != null) && leaderDrawMode !== selected.id && (
+              <div style={{ marginTop: 6 }}>
+                {(selected.extraLeaders ?? []).map((el, i) => (
+                  <div key={el.id} className="flex items-center gap-2" style={{ marginBottom: 2 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: "#64748b" }}>
+                        Доп. выноска {i + 1}
+                      </div>
+                      <div style={{ fontSize: 11, color: el.branchId ? "#1d4ed8" : "#555", fontWeight: el.branchId ? 600 : 400 }}>
+                        {el.branchId
+                          ? (() => { const b = branches.find(br => br.id === el.branchId); return b ? `${b.id}. ${b.type || "Ветвь"}` : el.branchId; })()
+                          : `X=${Math.round(el.endX ?? 0)} Y=${Math.round(el.endY ?? 0)} м`}
+                      </div>
+                    </div>
+                    <button
+                      title="Удалить дополнительную выноску"
+                      onClick={() => onRemoveExtraLeader?.(selected.id, el.id)}
+                      style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#dc2626", border: "1px solid #fca5a5", background: "#fff5f5" }}>
+                      <Icon name="X" size={11} />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => onStartExtraLeaderDraw?.(selected.id)}
+                  className="flex items-center gap-1"
+                  style={{ ...btnStyle, width: "100%", justifyContent: "center", padding: "3px 8px", marginTop: 2, color: "#0f766e", border: "1px solid #5eead4", background: "#f0fdfa" }}>
+                  <Icon name="Plus" size={12} />
+                  Дублирующая выноска
+                </button>
+              </div>
             )}
           </div>
 

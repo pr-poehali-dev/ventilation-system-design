@@ -396,25 +396,46 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
 
         return (
           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
-            {/* Выноски */}
+            {/* Выноски (основная + дополнительные) */}
             {positions.map(pos => {
               if (pos.visible === false || pos.x == null) return null;
-              const end = posLeaderEnd(pos);
-              if (!end) return null;
               const pm = markerScreenPos(pos);
               const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
-              const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
-              const dx = end.sx - pm.sx, dy = end.sy - pm.sy;
-              const dist = Math.hypot(dx, dy);
-              if (dist < 2) return null;
-              const ux = dx / dist, uy = dy / dist;
-              const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
-              const attached = !!(pos.leaderBranchId && pos.leaderT != null);
+              const lw = Math.max(0.3, (pos.leaderThickness ?? 0.02) * PX_PER_MM);
+              // Собираем список концов: основная выноска + дополнительные
+              const ends: { sx: number; sy: number; attached: boolean; key: string }[] = [];
+              const mainEnd = posLeaderEnd(pos);
+              if (mainEnd) ends.push({ ...mainEnd, attached: !!(pos.leaderBranchId && pos.leaderT != null), key: "main" });
+              (pos.extraLeaders ?? []).forEach(el => {
+                let e: { sx: number; sy: number } | null = null;
+                let att = false;
+                if (el.branchId && el.t != null) {
+                  const br = branches.find(b => b.id === el.branchId);
+                  const fromN = br ? projNodesMap.get(br.fromId) : null;
+                  const toN   = br ? projNodesMap.get(br.toId)   : null;
+                  if (fromN && toN) { e = { sx: fromN.sx + (toN.sx - fromN.sx) * el.t, sy: fromN.sy + (toN.sy - fromN.sy) * el.t }; att = true; }
+                } else if (el.endX != null && el.endY != null) {
+                  e = project3D({ x: el.endX * _xySF, y: el.endY * _xySF, z: (pos.z ?? 0) * zScale }, proj);
+                }
+                if (e) ends.push({ ...e, attached: att, key: el.id });
+              });
+              if (ends.length === 0) return null;
               return (
                 <g key={`leader-${pos.id}`}>
-                  <line x1={x1} y1={y1} x2={end.sx} y2={end.sy}
-                    stroke="#e11d48" strokeWidth={lw} strokeDasharray="6,3" strokeLinecap="round" opacity={0.95} />
-                  {attached && <circle cx={end.sx} cy={end.sy} r={4} fill="#e11d48" stroke="#fff" strokeWidth={1.5} />}
+                  {ends.map(end => {
+                    const dx = end.sx - pm.sx, dy = end.sy - pm.sy;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 2) return null;
+                    const ux = dx / dist, uy = dy / dist;
+                    const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
+                    return (
+                      <g key={end.key}>
+                        <line x1={x1} y1={y1} x2={end.sx} y2={end.sy}
+                          stroke="#e11d48" strokeWidth={lw} strokeDasharray="6,3" strokeLinecap="round" opacity={0.95} />
+                        {end.attached && <circle cx={end.sx} cy={end.sy} r={4} fill="#e11d48" stroke="#fff" strokeWidth={1.5} />}
+                      </g>
+                    );
+                  })}
                 </g>
               );
             })}
