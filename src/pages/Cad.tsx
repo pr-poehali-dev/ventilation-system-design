@@ -2026,6 +2026,9 @@ export default function CadPage() {
     positions,
     textBlocks,
     scaleLimitsEnabled,
+    scalePositionMin,
+    scalePositionMax,
+    positionGostMm,
     bulkheadScale,
     fanScale,
     smokeVisThreshold,
@@ -2277,6 +2280,9 @@ export default function CadPage() {
     setZScale(1);
     setXyScale(1);
     setScaleLimitsEnabled(false);
+    setScalePositionMin(80);
+    setScalePositionMax(150);
+    setPositionGostMm(13);
     setBulkheadScale(150);
     setFanScale(450);
     setPosColorInner(false);
@@ -2421,6 +2427,9 @@ export default function CadPage() {
     if (data.zScale !== undefined) setZScale(data.zScale as number);
     if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
+    if (data.scalePositionMin !== undefined) setScalePositionMin(data.scalePositionMin as number);
+    if (data.scalePositionMax !== undefined) setScalePositionMax(data.scalePositionMax as number);
+    if (data.positionGostMm !== undefined) setPositionGostMm(data.positionGostMm as number);
     if (data.bulkheadScale !== undefined) setBulkheadScale(data.bulkheadScale as number);
     if (data.fanScale !== undefined) setFanScale(data.fanScale as number);
     if (data.smokeVisThreshold !== undefined) setSmokeVisThreshold(data.smokeVisThreshold as number);
@@ -2524,6 +2533,9 @@ export default function CadPage() {
     setZScale(1);
     setXyScale(1);
     setScaleLimitsEnabled(false);
+    setScalePositionMin(80);
+    setScalePositionMax(150);
+    setPositionGostMm(13);
     setBulkheadScale(150);
     setFanScale(450);
     setPosColorInner(false);
@@ -10213,6 +10225,37 @@ export default function CadPage() {
                 return { sx: fP.sx + (tP.sx - fP.sx) * t, sy: fP.sy + (tP.sy - fP.sy) * t };
               };
 
+              // Экранная позиция конца выноски позиции (привязка к ветви или свободная точка)
+              const posLeaderEnd = (pos: Position): { sx: number; sy: number } | null => {
+                if (pos.leaderBranchId && pos.leaderT != null) {
+                  return leaderBranchEnd(pos.leaderBranchId, pos.leaderT);
+                }
+                if (pos.leaderEndX != null && pos.leaderEndY != null) {
+                  return proj(pos.leaderEndX, pos.leaderEndY, pos.z ?? 0);
+                }
+                return null;
+              };
+
+              // Экранная позиция самого маркера (кружка).
+              // При фиксированном масштабе (scaleLimitsEnabled) размер маркера зажат,
+              // но точка привязки выноски — мировая и «уезжает» при зуме. Чтобы кружок
+              // не отдалялся, притягиваем его к концу выноски на ЗАЖАТОЕ экранное
+              // расстояние (как экранный offset у символов). Конец выноски при этом
+              // остаётся точно на ветви.
+              const markerScreenPos = (pos: Position): { sx: number; sy: number } => {
+                const base = proj(pos.x, pos.y, pos.z ?? 0);
+                if (!scaleLimitsEnabled || _rawPosSF <= 0) return base;
+                const end = posLeaderEnd(pos);
+                if (!end) return base;
+                const clampRatio = posSF / _rawPosSF;
+                if (clampRatio === 1) return base;
+                // Вектор от привязки к маркеру сжимаем в clampRatio раз
+                return {
+                  sx: end.sx + (base.sx - end.sx) * clampRatio,
+                  sy: end.sy + (base.sy - end.sy) * clampRatio,
+                };
+              };
+
               return (
                 <svg
                   style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "hidden", pointerEvents: "none", cursor: leaderDrawMode ? "crosshair" : "inherit", zIndex: 2 }}
@@ -10240,10 +10283,12 @@ export default function CadPage() {
                   {positions.map((pos) => {
                     if (pos.visible === false) return null;
                     const pz = pos.z ?? 0;
-                    const pm = proj(pos.x, pos.y, pz);
+                    const isDrawing = leaderDrawMode === pos.id;
+                    // В режиме рисования маркер остаётся на мировой точке (конец следует
+                    // за курсором); иначе — притянут к концу выноски при фикс. масштабе.
+                    const pm = isDrawing ? proj(pos.x, pos.y, pz) : markerScreenPos(pos);
                     const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
                     const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
-                    const isDrawing = leaderDrawMode === pos.id;
 
                     // Вычисляем конец выноски
                     let endSx: number | null = null, endSy: number | null = null;
@@ -10269,26 +10314,12 @@ export default function CadPage() {
 
                     if (endSx == null || endSy == null) return null;
 
-                    // Фиксированный масштаб выноски: когда «Пределы масштаба» ВКЛ,
-                    // маркер имеет фиксированный экранный размер (posSF зажат), а конец
-                    // выноски — мировая точка, проецируемая полным зумом. Из-за этого
-                    // при отдалении/приближении выноска «убегает» от маркера.
-                    //
-                    // ВАЖНО: если выноска ПРИВЯЗАНА к ветви (isBranchAttached) — её конец
-                    // ОБЯЗАН лежать точно на ветви, поэтому масштабировать (отрывать от
-                    // ветви) нельзя. Вместо этого маркер сам «плавает» вместе с точкой
-                    // привязки — он тоже мировая точка (pos.x, pos.y), проецируемая тем же
-                    // зумом, что и ветвь, поэтому выноска маркер↔ветвь корректна при любом
-                    // масштабе. Коэффициент зажатия применяем ТОЛЬКО к свободным выноскам
-                    // (не привязанным к ветви), чтобы их длина совпадала с размером маркера.
-                    // В режиме рисования (isDrawing) не трогаем — конец следует за курсором.
-                    if (!isDrawing && !isBranchAttached && scaleLimitsEnabled && _rawPosSF > 0) {
-                      const clampRatio = posSF / _rawPosSF;
-                      if (clampRatio !== 1) {
-                        endSx = pm.sx + (endSx - pm.sx) * clampRatio;
-                        endSy = pm.sy + (endSy - pm.sy) * clampRatio;
-                      }
-                    }
+                    // Фиксированный масштаб: конец выноски остаётся точно на ветви
+                    // (мировая точка), а САМ МАРКЕР (pm) уже притянут к нему функцией
+                    // markerScreenPos на зажатое экранное расстояние — поэтому выноска
+                    // маркер↔привязка не «уезжает» при зуме. Дополнительно корректировать
+                    // конец не нужно.
+                    void isBranchAttached;
 
                     const dx = endSx - pm.sx, dy = endSy - pm.sy;
                     const dist = Math.hypot(dx, dy);
@@ -10358,7 +10389,7 @@ export default function CadPage() {
                   {/* ── Маркеры позиций ── */}
                   {positions.map((pos) => {
                     if (pos.visible === false) return null;
-                    const { sx, sy } = proj(pos.x, pos.y, pos.z ?? 0);
+                    const { sx, sy } = markerScreenPos(pos);
                     const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
                     const isSelected = pos.id === selectedPositionId;
                     const isReverse = pos.positionType === "reverse";
