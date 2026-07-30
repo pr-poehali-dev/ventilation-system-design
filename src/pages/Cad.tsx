@@ -11253,6 +11253,9 @@ export default function CadPage() {
       positions={positions}
       showPositions={showPositions}
       scaleLimitsEnabled={scaleLimitsEnabled}
+      scalePositionMin={scalePositionMin}
+      scalePositionMax={scalePositionMax}
+      positionGostMm={positionGostMm}
       xyScale={xyScale}
       printDialogOpenExport={printDialogOpenExport}
       setPrintDialogOpenExport={setPrintDialogOpenExport}

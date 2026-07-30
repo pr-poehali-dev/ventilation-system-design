@@ -59,6 +59,9 @@ export interface CadToolDialogsProps {
   positions: Position[];
   showPositions: boolean;
   scaleLimitsEnabled: boolean;
+  scalePositionMin: number;
+  scalePositionMax: number;
+  positionGostMm: number;
   xyScale: number;
   printDialogOpenExport: boolean;
   setPrintDialogOpenExport: (v: boolean) => void;
@@ -164,6 +167,9 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           positions={p.positions}
           showPositions={p.showPositions}
           fixedObjectScale={p.scaleLimitsEnabled}
+          scalePositionMin={p.scalePositionMin}
+          scalePositionMax={p.scalePositionMax}
+          positionGostMm={p.positionGostMm}
           xyScale={p.xyScale}
           initialOpenExport={p.printDialogOpenExport}
           onExportDialogOpened={() => p.setPrintDialogOpenExport(false)}

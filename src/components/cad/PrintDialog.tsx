@@ -59,6 +59,9 @@ interface PrintDialogProps {
   positions?: Position[];
   showPositions?: boolean;
   fixedObjectScale?: boolean;
+  scalePositionMin?: number;
+  scalePositionMax?: number;
+  positionGostMm?: number;
   xyScale?: number;
   initialOpenExport?: boolean;
   onExportDialogOpened?: () => void;
@@ -119,6 +122,9 @@ export default function PrintDialog({
   positions = [],
   showPositions = true,
   fixedObjectScale = false,
+  scalePositionMin = 80,
+  scalePositionMax = 150,
+  positionGostMm = 13,
   xyScale,
   initialOpenExport = false,
   onExportDialogOpened,
@@ -631,23 +637,86 @@ export default function PrintDialog({
   ): void => {
     if (!showPositions || positions.length === 0) return;
     const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
+    // Та же логика, что в рабочей области/превью: при фиксированном масштабе размер
+    // не зависит от зума (база 1, зажим в posMin%..posMax%), учитывается ГОСТ-множитель.
+    const _rawPosSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.5)));
     const posSF = fixedObjectScale
-      ? 1
-      : Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.5)));
+      ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSF))
+      : _rawPosSF;
     const previewK = viewState.scale > 0 ? fitScale / viewState.scale : 1;
+    const _posGostMm = positionGostMm > 0 ? positionGostMm : 13;
+    const _gostFactor = _posGostMm / 13;
+    const PX_PER_MM = 3.78 * posSF * previewK;
+
+    const nodeProj = (n: { x: number; y: number; z: number }) =>
+      project3D({ x: n.x * _xySF, y: n.y * _xySF, z: n.z * zScale }, sv);
+
+    // Экранный конец выноски (привязка к ветви или свободная точка)
+    const leaderEnd = (pos: Position): { sx: number; sy: number } | null => {
+      if (pos.leaderBranchId && pos.leaderT != null) {
+        const br = branches.find(b => b.id === pos.leaderBranchId);
+        const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
+        const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+        if (!fromN || !toN) return null;
+        const fP = nodeProj(fromN), tP = nodeProj(toN);
+        return { sx: fP.sx + (tP.sx - fP.sx) * pos.leaderT, sy: fP.sy + (tP.sy - fP.sy) * pos.leaderT };
+      }
+      if (pos.leaderEndX != null && pos.leaderEndY != null) {
+        return project3D({ x: pos.leaderEndX * _xySF, y: pos.leaderEndY * _xySF, z: (pos.z ?? 0) * zScale }, sv);
+      }
+      return null;
+    };
+
+    const markerPos = (pos: Position): { sx: number; sy: number } => {
+      const base = project3D({ x: pos.x * _xySF, y: pos.y * _xySF, z: (pos.z ?? 0) * zScale }, sv);
+      if (!fixedObjectScale || _rawPosSF <= 0) return base;
+      const end = leaderEnd(pos);
+      if (!end) return base;
+      const clampRatio = posSF / _rawPosSF;
+      if (clampRatio === 1) return base;
+      return { sx: end.sx + (base.sx - end.sx) * clampRatio, sy: end.sy + (base.sy - end.sy) * clampRatio };
+    };
+
+    // Выноски (под маркерами)
     for (const pos of positions) {
       if (pos.visible === false || pos.x == null) continue;
-      const p = project3D({ x: pos.x * _xySF, y: pos.y * _xySF, z: (pos.z ?? 0) * zScale }, sv);
-      const r = (pos.diameter ?? 13) * 3.78 * posSF * previewK / 2;
+      const end = leaderEnd(pos);
+      if (!end) continue;
+      const pm = markerPos(pos);
+      const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
+      const lw = Math.max(0.5, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
+      const dx = end.sx - pm.sx, dy = end.sy - pm.sy;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 2) continue;
+      const ux = dx / dist, uy = dy / dist;
+      const x1 = pm.sx + ux * (r + 2), y1 = pm.sy + uy * (r + 2);
+      ctx.save();
+      ctx.strokeStyle = "#e11d48"; ctx.lineWidth = lw;
+      ctx.setLineDash([6, 3]); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(end.sx, end.sy); ctx.stroke();
+      ctx.setLineDash([]);
+      if (pos.leaderBranchId && pos.leaderT != null) {
+        ctx.beginPath(); ctx.arc(end.sx, end.sy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#e11d48"; ctx.fill();
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Маркеры
+    for (const pos of positions) {
+      if (pos.visible === false || pos.x == null) continue;
+      const p = markerPos(pos);
+      const r = (pos.diameter ?? 13) * _gostFactor * PX_PER_MM / 2;
       if (r <= 0) continue;
       const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
       ctx.save();
       ctx.translate(p.sx, p.sy);
       if (pos.positionType === "reverse") {
-        ctx.beginPath(); ctx.arc(0, 0, r + 7, 0, Math.PI * 2);
-        ctx.strokeStyle = "#e53e3e"; ctx.lineWidth = 2.5; ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
-        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3; ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, r + r * 0.14, 0, Math.PI * 2);
+        ctx.strokeStyle = "#e53e3e"; ctx.lineWidth = Math.max(1, r * 0.06); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, r + r * 0.08, 0, Math.PI * 2);
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(1, r * 0.07); ctx.stroke();
       }
       ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fillStyle = pos.color ?? "#ffffff"; ctx.fill();
@@ -659,7 +728,8 @@ export default function PrintDialog({
       ctx.fillText(String(pos.number), 0, 0);
       ctx.restore();
     }
-  }, [showPositions, positions, xyScale, fixedObjectScale, viewState.scale, zScale]);
+  }, [showPositions, positions, nodes, branches, xyScale, fixedObjectScale,
+      scalePositionMin, scalePositionMax, positionGostMm, viewState.scale, zScale]);
 
   // Вычисляет bbox рамки из projNodes — тот же алгоритм что в PrintPreviewCanvas/TopoCanvas
   const computeFrameRect = useCallback((
@@ -1587,6 +1657,9 @@ body{background:white;font-family:Arial,sans-serif}
                         positions={positions}
                         showPositions={showPositions}
                         fixedObjectScale={fixedObjectScale}
+                        scalePositionMin={scalePositionMin}
+                        scalePositionMax={scalePositionMax}
+                        positionGostMm={positionGostMm}
                         xyScale={xyScale}
                         superSample={viewZoom}
                         tileView={tileView}
