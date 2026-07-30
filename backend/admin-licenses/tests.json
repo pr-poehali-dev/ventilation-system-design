@@ -32,6 +32,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "List offline keys requires auth",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "list_offline_keys", "password": "wrong"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

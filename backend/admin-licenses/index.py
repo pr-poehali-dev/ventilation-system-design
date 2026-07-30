@@ -17,7 +17,11 @@ POST /  body: {action, password, ...params}
   list_events      — журнал событий {license_id?, event_type?, limit?}
   get_compute_config — текущий расчётный сервер {active, backup_url, autofailover}
   set_compute_config — переключить сервер {active: 'primary'|'backup', backup_url, autofailover}
-  create_offline_key — аварийный оффлайн-ключ {org, days?, seats?, expires_at?}
+  create_offline_key — аварийный оффлайн-ключ {org, days?, seats?, expires_at?, notes?}
+  list_offline_keys  — реестр выпущенных аварийных ключей
+  update_offline_key — изменить {offline_key_id, org, seats?, expires_at?, notes?}
+  toggle_offline_key — активировать/отозвать {offline_key_id, is_active}
+  delete_offline_key — удалить запись {offline_key_id}
 """
 import json
 import os
@@ -522,6 +526,20 @@ def handler(event: dict, context) -> dict:
                     "detail": str(e)[:200],
                     "secret_len": len(_sec.strip()),
                 })
+            notes = (body.get("notes") or "").strip()
+            new_id = None
+            # Сохраняем выпущенный ключ в реестр (для показа/редактирования в админке)
+            try:
+                cur.execute("""
+                    INSERT INTO offline_keys (org, key, seats, expires_at, notes)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (org, key, seats, expires_iso, notes or None))
+                new_id = cur.fetchone()[0]
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"[admin] offline key store failed: {e}")
             # Журналируем факт выдачи (не критично)
             try:
                 cur.execute("""
@@ -531,7 +549,71 @@ def handler(event: dict, context) -> dict:
                 conn.commit()
             except Exception as e:
                 print(f"[admin] offline key log failed: {e}")
-            return resp(200, {"key": key, "org": org, "expires_at": expires_iso, "seats": seats})
+            return resp(200, {"id": new_id, "key": key, "org": org, "expires_at": expires_iso, "seats": seats})
+
+        # ── list_offline_keys — реестр выпущенных аварийных ключей ────────────────
+        if action == "list_offline_keys":
+            cur.execute("""
+                SELECT id, org, key, seats, expires_at, is_active, notes, created_at,
+                       (expires_at IS NOT NULL AND expires_at < NOW()) AS expired
+                FROM offline_keys
+                ORDER BY created_at DESC
+            """)
+            keys = []
+            for r in cur.fetchall():
+                keys.append({
+                    "id": r[0], "org": r[1], "key": r[2], "seats": r[3],
+                    "expires_at": str(r[4]) if r[4] else None,
+                    "is_active": r[5], "notes": r[6],
+                    "created_at": str(r[7]),
+                    "expired": bool(r[8]),
+                })
+            return resp(200, {"keys": keys})
+
+        # ── update_offline_key — изменить организацию/срок/места/заметку ──────────
+        if action == "update_offline_key":
+            oid = int(body.get("offline_key_id", 0))
+            org = (body.get("org") or "").strip()
+            if not org:
+                return resp(400, {"error": "org_required"})
+            seats = int(body.get("seats") or 999)
+            exp_in = (body.get("expires_at") or "").strip()
+            if exp_in:
+                expires_iso = exp_in if "T" in exp_in else exp_in + "T23:59:59Z"
+            else:
+                expires_iso = None
+            notes = (body.get("notes") or "").strip()
+            cur.execute("""
+                UPDATE offline_keys
+                SET org = %s, seats = %s, expires_at = %s, notes = %s
+                WHERE id = %s RETURNING id
+            """, (org, seats, expires_iso, notes or None, oid))
+            if not cur.fetchone():
+                return resp(404, {"error": "not_found"})
+            conn.commit()
+            return resp(200, {"ok": True})
+
+        # ── toggle_offline_key — пометить активным/отозванным ─────────────────────
+        if action == "toggle_offline_key":
+            oid = int(body.get("offline_key_id", 0))
+            is_active = bool(body.get("is_active", True))
+            cur.execute(
+                "UPDATE offline_keys SET is_active = %s WHERE id = %s RETURNING id",
+                (is_active, oid)
+            )
+            if not cur.fetchone():
+                return resp(404, {"error": "not_found"})
+            conn.commit()
+            return resp(200, {"ok": True, "is_active": is_active})
+
+        # ── delete_offline_key — удалить запись из реестра ────────────────────────
+        if action == "delete_offline_key":
+            oid = int(body.get("offline_key_id", 0))
+            cur.execute("DELETE FROM offline_keys WHERE id = %s RETURNING id", (oid,))
+            if not cur.fetchone():
+                return resp(404, {"error": "not_found"})
+            conn.commit()
+            return resp(200, {"ok": True})
 
         return resp(400, {"error": "unknown_action"})
 
