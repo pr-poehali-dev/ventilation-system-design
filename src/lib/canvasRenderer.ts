@@ -1472,6 +1472,11 @@ export function hitBranchCanvas(
     return dx * dx + dy * dy;
   };
 
+  // Выбираем БЛИЖАЙШУЮ ветвь среди всех, попавших в порог, а не первую
+  // встреченную — иначе при двух рядом лежащих ветвях кликалась соседняя.
+  let bestId: string | null = null;
+  let bestDist2 = tol2;
+
   for (const b of branches) {
     const from = projNodesMap.get(b.fromId);
     const to   = projNodesMap.get(b.toId);
@@ -1480,10 +1485,11 @@ export function hitBranchCanvas(
     const lenSq = C * C + D * D;
     if (lenSq === 0) continue;
 
-    // 1. Попадание по основной линии ветви
-    if (distSqToSeg(from.sx, from.sy, to.sx, to.sy) < tol2) return b.id;
+    // 1. Расстояние до основной линии ветви
+    const d2 = distSqToSeg(from.sx, from.sy, to.sx, to.sy);
+    if (d2 < bestDist2) { bestDist2 = d2; bestId = b.id; }
 
-    // 2. Попадание по параллельной линии вентрубы
+    // 2. Расстояние до параллельной линии вентрубы (порог масштабируется вместе с tol)
     if (b.hasVentPipe) {
       const segLen = Math.sqrt(lenSq);
       const ux = C / segLen, uy = D / segLen;
@@ -1491,8 +1497,9 @@ export function hitBranchCanvas(
       const vpOff = 4 / 2 + 3;
       const vx1 = from.sx + nx * vpOff, vy1 = from.sy + ny * vpOff;
       const vx2 = to.sx   + nx * vpOff, vy2 = to.sy   + ny * vpOff;
-      if (distSqToSeg(vx1, vy1, vx2, vy2) < 7 * 7) return b.id;
+      const dv2 = distSqToSeg(vx1, vy1, vx2, vy2);
+      if (dv2 < bestDist2) { bestDist2 = dv2; bestId = b.id; }
     }
   }
-  return null;
+  return bestId;
 }
