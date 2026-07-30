@@ -1038,7 +1038,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     if (lodNodes && (b.hasWaterPipe || b.hasAirPipe)) {
       const nx = -uy, ny = ux;
       const pipeOffset = w * 0.38;
-      const pipeLW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
+      // Толщина труб = толщине «хвостика» стрелки направления воздуха (w*0.15),
+      // чтобы масштабировалась вместе с шириной ветви.
+      const pipeLW = thinLines ? 1.0 : Math.max(0.5, w * 0.15);
       ctx.lineCap = "round";
       ctx.globalAlpha = 1;
       ctx.setLineDash([]);

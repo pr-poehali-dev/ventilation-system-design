@@ -3206,9 +3206,9 @@ export default function TopoCanvas(props: Props) {
                 const nx = -uy; // нормаль
                 const ny = ux;
                 const offset = w * 0.38; // смещение от центра к краю (масштабируется с ветвью)
-                // Толщина линии масштабируется вместе с ветвью — как в canvasRenderer,
-                // иначе при зуме труба остаётся тонкой и «отстаёт» от растущей ветви
-                const pipeSW = thinLines ? 1.5 : Math.max(1.5 * objSF, 1.0);
+                // Толщина трубы = толщине «хвостика» стрелки направления воздуха (w*0.15),
+                // масштабируется вместе с шириной ветви.
+                const pipeSW = thinLines ? 1.0 : Math.max(0.5, w * 0.15);
                 const pipeLine = (sign: number, color: string, key: string) => (
                   <line key={key}
                     x1={from.sx + nx * offset * sign} y1={from.sy + ny * offset * sign}
