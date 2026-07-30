@@ -3365,7 +3365,7 @@ export default function TopoCanvas(props: Props) {
                     {/* Выноска если метка сдвинута */}
                     {hasMoved && (
                       <line x1={midX} y1={midY} x2={anchorX} y2={anchorY}
-                        stroke="#94a3b8" strokeWidth={0.8 * objSF} strokeDasharray="3 2"
+                        stroke="#94a3b8" strokeWidth={0.7} strokeDasharray="3 2"
                         pointerEvents="none" />
                     )}
                     {/* Весь блок: номер + данные — единый текст без обводки кружком */}
