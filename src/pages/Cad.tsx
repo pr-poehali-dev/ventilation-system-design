@@ -10187,7 +10187,10 @@ export default function CadPage() {
               // Режим «Пределы масштаба ВКЛ» (fixedObjectScale): размер зажат между posMin% и posMax%.
               // Режим ВЫКЛ: свободно масштабируется с зумом (мин. 0.25, макс. 8), как ветвь.
               const _xySFPos = Math.max(1, xyScale ?? 1);
-              const _rawPosSF = vs.scale / (_xySFPos * 0.4);
+              // При фиксированном масштабе (scaleLimitsEnabled) размер позиции ПЛА
+              // НЕ должен зависеть от зума — базовый коэффициент = 1 (как у узлов/ветвей),
+              // затем зажимается в диапазон posMin%..posMax%. Иначе — свободно масштабируется.
+              const _rawPosSF = scaleLimitsEnabled ? 1 : (vs.scale / (_xySFPos * 0.4));
               const posSF = scaleLimitsEnabled
                 ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSF))
                 : Math.min(8, Math.max(0.25, _rawPosSF));
