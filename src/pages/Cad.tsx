@@ -1989,6 +1989,8 @@ export default function CadPage() {
 
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
+  // Ссылка на актуальную функцию сохранения — для вызова из window (баннер обновления)
+  const handleSaveRef = useRef<(() => Promise<void> | void) | null>(null);
   // Текущие параметры вида для сохранения в файл
   const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number } | null>(null);
 
@@ -2090,6 +2092,20 @@ export default function CadPage() {
     };
   }, [isDirty]);
 
+  // Пробрасываем состояние «есть несохранённые изменения» и функцию сохранения
+  // в window — чтобы глобальный баннер обновления (AppUpdateBanner) мог перед
+  // перезагрузкой браузера предложить сохранить проект.
+  useEffect(() => {
+    type W = Window & {
+      __pvsIsDirty?: () => boolean;
+      __pvsSaveProject?: () => Promise<void> | void;
+    };
+    const w = window as W;
+    w.__pvsIsDirty = () => isDirty;
+    w.__pvsSaveProject = () => handleSaveRef.current?.();
+    return () => { w.__pvsIsDirty = undefined; w.__pvsSaveProject = undefined; };
+  }, [isDirty]);
+
   // Записать содержимое в уже открытый FileHandle (перезапись)
   const writeToHandle = async (handle: FileSystemFileHandle, data: object) => {
     const writable = await handle.createWritable();
@@ -2121,6 +2137,7 @@ export default function CadPage() {
     URL.revokeObjectURL(url);
     setIsDirty(false);
   };
+  handleSaveRef.current = handleSave;
 
   const handleSaveAs = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }

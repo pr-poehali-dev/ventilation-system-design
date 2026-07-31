@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { APP_VERSION } from "@/lib/appVersion";
-import { fetchRemoteVersion, isNewerVersion, downloadAndInstall } from "@/lib/updater";
+import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, reloadBrowserToUpdate } from "@/lib/updater";
 
 /**
  * Единый баннер обновления приложения — работает и в браузере, и в десктопе
@@ -17,6 +17,7 @@ export default function AppUpdateBanner() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [showSavePrompt, setShowSavePrompt] = useState(false);
 
   // Десктоп (C#) шлёт прогресс скачивания обновления сюда.
   useEffect(() => {
@@ -64,18 +65,48 @@ export default function AppUpdateBanner() {
 
   const isDesktop = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
 
+  // Есть ли в проекте несохранённые изменения (проброшено из Cad.tsx через window)
+  const hasUnsaved = (): boolean => {
+    try {
+      const fn = (window as Window & { __pvsIsDirty?: () => boolean }).__pvsIsDirty;
+      return typeof fn === "function" ? !!fn() : false;
+    } catch { return false; }
+  };
+
   const handleUpdate = () => {
     if (busy) return;
+    // Десктоп: C# сам скачает и перезапустит приложение (проект остаётся в файле).
+    if (isDesktop) {
+      setBusy(true);
+      setProgress(0);
+      downloadAndInstall();
+      return;
+    }
+    // Браузер: нужно перезагрузить страницу на свежую версию. Если есть
+    // несохранённые изменения — сначала предложим сохранить проект.
+    if (hasUnsaved()) {
+      setShowSavePrompt(true);
+      return;
+    }
+    void reloadBrowserToUpdate();
+  };
+
+  // Сохранить проект и затем перезагрузиться на новую версию
+  const handleSaveAndReload = async () => {
     setBusy(true);
-    if (isDesktop) setProgress(0);   // покажем полосу загрузки
-    downloadAndInstall();
-    // В браузере скачивание идёт фоном — снимаем «загрузку» через пару секунд.
-    // В десктопе состояние держим: C# сам закроет приложение и перезапустит его
-    // после установки, полоса прогресса дойдёт до 100%.
-    if (!isDesktop) window.setTimeout(() => setBusy(false), 3000);
+    try {
+      const save = (window as Window & { __pvsSaveProject?: () => Promise<void> | void }).__pvsSaveProject;
+      if (typeof save === "function") await save();
+    } catch {
+      // если сохранение не удалось — не перезагружаем, снимаем занятость
+      setBusy(false);
+      return;
+    }
+    await reloadBrowserToUpdate();
   };
 
   return (
+   <>
     <div
       className="fixed top-0 left-0 right-0 z-[100000] flex items-center gap-3 px-4 h-11"
       style={{
@@ -114,7 +145,8 @@ export default function AppUpdateBanner() {
           <><Icon name="Loader2" size={13} className="animate-spin" />
             {progress !== null && progress < 100 ? `${progress}%` : "Обновление…"}</>
         ) : (
-          <><Icon name="Download" size={13} />Обновить</>
+          <><Icon name={isDesktop ? "Download" : "RefreshCw"} size={13} />
+            {isDesktop ? "Обновить" : "Обновить страницу"}</>
         )}
       </button>
       {!busy && (
@@ -136,5 +168,54 @@ export default function AppUpdateBanner() {
         </>
       )}
     </div>
+
+    {/* Браузер: предупреждение о несохранённом проекте перед перезагрузкой */}
+    {showSavePrompt && (
+      <div
+        className="fixed inset-0 z-[100001] flex items-center justify-center"
+        style={{ background: "rgba(15,23,42,0.55)", fontFamily: "Segoe UI, Arial, sans-serif" }}>
+        <div className="bg-white rounded-xl shadow-2xl w-[440px] max-w-[92vw] overflow-hidden">
+          <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-100">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: "#fef3c7" }}>
+              <Icon name="TriangleAlert" size={18} style={{ color: "#b45309" }} />
+            </div>
+            <div className="font-semibold text-[15px]" style={{ color: "#1a3a6b" }}>
+              Сохраните проект перед обновлением
+            </div>
+          </div>
+          <div className="px-5 py-4 text-[13px] text-gray-600 leading-relaxed">
+            В проекте есть несохранённые изменения. При обновлении страница
+            перезагрузится, и несохранённые данные будут потеряны.
+            <br /><br />
+            Рекомендуем сначала сохранить проект.
+          </div>
+          <div className="px-5 py-3 bg-gray-50 flex items-center justify-end gap-2">
+            <button
+              onClick={() => setShowSavePrompt(false)}
+              disabled={busy}
+              className="h-9 px-4 rounded-md text-[13px] font-medium text-gray-600 hover:bg-gray-200 disabled:opacity-50">
+              Отмена
+            </button>
+            <button
+              onClick={() => { setShowSavePrompt(false); void reloadBrowserToUpdate(); }}
+              disabled={busy}
+              className="h-9 px-4 rounded-md text-[13px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+              Обновить без сохранения
+            </button>
+            <button
+              onClick={handleSaveAndReload}
+              disabled={busy}
+              className="h-9 px-4 rounded-md text-[13px] font-semibold text-white flex items-center gap-1.5 disabled:opacity-60"
+              style={{ background: "#2563eb" }}>
+              {busy
+                ? <><Icon name="Loader2" size={14} className="animate-spin" />Сохранение…</>
+                : <><Icon name="Save" size={14} />Сохранить и обновить</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+   </>
   );
 }

@@ -75,3 +75,26 @@ export function downloadAndInstall(): void {
   a.click();
   document.body.removeChild(a);
 }
+
+/**
+ * Перезагружает браузерную вкладку на свежую версию веб-сборки, максимально
+ * обходя кеш: чистит Cache Storage (если PWA когда-то кешировал) и добавляет
+ * cache-busting параметр к URL. Для десктопа не применяется.
+ */
+export async function reloadBrowserToUpdate(): Promise<void> {
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {
+    // игнорируем — не критично
+  }
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("_v", Date.now().toString());
+    window.location.replace(url.toString());
+  } catch {
+    window.location.reload();
+  }
+}
