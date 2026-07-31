@@ -1255,6 +1255,8 @@ export default function CadPage() {
   // Drag конца выноски позиции
   const leaderDragRef = useRef<{ posId: string } | null>(null);
   const [draggingLeaderPosId, setDraggingLeaderPosId] = useState<string | null>(null);
+  // Якорь выноски, над которым сейчас курсор (для подсветки). Ключ: posId (основная) или `${posId}:${extraId}`
+  const [hoveredLeaderAnchor, setHoveredLeaderAnchor] = useState<string | null>(null);
   // Режим рисования выноски: клик на схему = установить конец выноски
   const [leaderDrawMode, setLeaderDrawMode] = useState<string | null>(null); // posId или null
   // Флаг: рисуем ДОПОЛНИТЕЛЬНУЮ (дублирующую) выноску, а не основную.
@@ -10370,12 +10372,21 @@ export default function CadPage() {
                           opacity={isDrawing ? 0.6 : 0.95}
                           style={{ pointerEvents: "none" }}
                         />
-                        {/* Точка привязки к ветви — масштабируется как маркер (posSF) */}
-                        {isBranchAttached && !isDrawing && (
-                          <circle cx={endSx} cy={endSy} r={Math.max(2, 4 * posSF)}
-                            fill="#e11d48" stroke="#fff" strokeWidth={Math.max(0.75, 1.5 * posSF)}
-                            style={{ pointerEvents: "none" }} />
-                        )}
+                        {/* Точка привязки к ветви — фиксированный размер в px, прозрачная,
+                            подсвечивается только при наведении/выборе позиции */}
+                        {isBranchAttached && !isDrawing && (() => {
+                          const active = hoveredLeaderAnchor === pos.id || pos.id === selectedPositionId;
+                          return (
+                            <circle cx={endSx} cy={endSy} r={5}
+                              fill={active ? "#e11d48" : "transparent"}
+                              stroke={active ? "#fff" : "none"}
+                              strokeWidth={active ? 1.5 : 0}
+                              style={{ pointerEvents: "all", cursor: "pointer" }}
+                              onMouseEnter={() => setHoveredLeaderAnchor(pos.id)}
+                              onMouseLeave={() => setHoveredLeaderAnchor((h) => h === pos.id ? null : h)}
+                              onMouseDown={(e) => { e.stopPropagation(); setSelectedPositionId(pos.id); }} />
+                          );
+                        })()}
                         {/* Ручка для перемещения (только когда не привязана к ветви) */}
                         {!isBranchAttached && !isDrawing && (
                           <circle
@@ -10439,11 +10450,20 @@ export default function CadPage() {
                                 stroke="#e11d48" strokeWidth={lw}
                                 strokeDasharray="6,3" strokeLinecap="round"
                                 opacity={0.95} style={{ pointerEvents: "none" }} />
-                              {attached && (
-                                <circle cx={eSx} cy={eSy} r={Math.max(2, 4 * posSF)}
-                                  fill="#e11d48" stroke="#fff" strokeWidth={Math.max(0.75, 1.5 * posSF)}
-                                  style={{ pointerEvents: "none" }} />
-                              )}
+                              {attached && (() => {
+                                const key = `${pos.id}:${el.id}`;
+                                const active = hoveredLeaderAnchor === key || pos.id === selectedPositionId;
+                                return (
+                                  <circle cx={eSx} cy={eSy} r={5}
+                                    fill={active ? "#e11d48" : "transparent"}
+                                    stroke={active ? "#fff" : "none"}
+                                    strokeWidth={active ? 1.5 : 0}
+                                    style={{ pointerEvents: "all", cursor: "pointer" }}
+                                    onMouseEnter={() => setHoveredLeaderAnchor(key)}
+                                    onMouseLeave={() => setHoveredLeaderAnchor((h) => h === key ? null : h)}
+                                    onMouseDown={(e) => { e.stopPropagation(); setSelectedPositionId(pos.id); }} />
+                                );
+                              })()}
                             </g>
                           );
                         })}
