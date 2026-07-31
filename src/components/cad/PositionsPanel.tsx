@@ -127,18 +127,12 @@ export default function PositionsPanel({
             Нет позиций. Нажмите «Добавить».
           </div>
         )}
-        {positions.map((pos, idx) => (
+        {[...positions].sort((a, b) => a.number - b.number).map((pos) => (
           <div
             key={pos.id}
             onClick={() => onSelect(pos.id === selectedPositionId ? null : pos.id)}
             className="flex items-center gap-2 px-2 py-1 cursor-pointer"
             style={{ background: pos.id === selectedPositionId ? "#e8f0fe" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
-            {/* Порядковый номер строки (1,2,3…) — только для навигации по списку */}
-            <span
-              className="flex-shrink-0 text-right"
-              style={{ width: 18, color: "#9ca3af", fontSize: 10, fontVariantNumeric: "tabular-nums" }}>
-              {idx + 1}
-            </span>
             <div
               className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
               style={{ width: 22, height: 22, background: pos.color, border: `2px solid ${pos.borderColor}`, color: "#fff", fontSize: 10 }}>
