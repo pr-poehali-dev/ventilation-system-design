@@ -432,7 +432,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
                       <g key={end.key}>
                         <line x1={x1} y1={y1} x2={end.sx} y2={end.sy}
                           stroke="#e11d48" strokeWidth={lw} strokeDasharray="6,3" strokeLinecap="round" opacity={0.95} />
-                        {end.attached && <circle cx={end.sx} cy={end.sy} r={4} fill="#e11d48" stroke="#fff" strokeWidth={1.5} />}
+                        {/* Якорь выноски прозрачный — как в рабочей области (виден только при наведении) */}
                       </g>
                     );
                   })}

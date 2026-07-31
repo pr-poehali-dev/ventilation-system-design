@@ -708,11 +708,7 @@ export default function PrintDialog({
         ctx.setLineDash([6, 3]); ctx.lineCap = "round";
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(end.sx, end.sy); ctx.stroke();
         ctx.setLineDash([]);
-        if (end.attached) {
-          ctx.beginPath(); ctx.arc(end.sx, end.sy, Math.max(2, 4 * posSF), 0, Math.PI * 2);
-          ctx.fillStyle = "#e11d48"; ctx.fill();
-          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(0.75, 1.5 * posSF); ctx.stroke();
-        }
+        // Якорь выноски прозрачный — как в рабочей области (виден только при наведении)
         ctx.restore();
       }
     }
