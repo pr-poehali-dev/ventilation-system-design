@@ -6846,12 +6846,10 @@ export default function CadPage() {
                         const Qa = Math.abs(b.originalFlow ?? b.flow ?? 0);
                         const Qb = fr.actuallyReversed ? -Math.abs(b.flow ?? 0) : Math.abs(b.flow ?? 0);
                         if (Ry <= 0 || (Qa < 0.01 && Math.abs(Qb) < 0.01)) return null;
-                        // Восходящая струя: воздух движется ВВЕРХ по высоте узлов (с учётом знака расхода)
-                        const fromN = nodes.find(n => n.id === b.fromId);
-                        const toN = nodes.find(n => n.id === b.toId);
-                        const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
-                        const flowSign = (b.originalFlow ?? b.flow ?? 0) >= 0 ? 1 : -1;
-                        const ascending = dz * flowSign > 0.01;
+                        // Восходящее/нисходящее берём ИЗ ЯДРА (fr.ascending) — единый
+                        // источник истины с расчётом опрокидывания, чтобы диаграмма и
+                        // расчёт всегда показывали одно направление.
+                        const ascending = fr.ascending;
                         return (
                           <div className="px-1 py-1 mt-1">
                             <div className="text-[10px] font-semibold mb-1" style={{ color: "#991b1b" }}>

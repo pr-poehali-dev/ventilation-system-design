@@ -427,6 +427,11 @@ export interface FireBranchResult {
   // Реальное опрокидывание: знак flow изменился после итеративного расчёта
   // (в отличие от willReverse — это факт, а не оценка)
   actuallyReversed: boolean;
+  // Восходящее проветривание (воздух движется ВВЕРХ по ходу потока): тепловая
+  // тяга совпадает с потоком, опрокидывание невозможно (рис. 2.2). Вычисляется
+  // в ядре по знаковому углу относительно потока — единый источник истины для
+  // h–Q диаграммы, чтобы UI не пересчитывал направление своим способом.
+  ascending: boolean;
   coConc: number;
   co2Conc: number;
   smokeDensity: number;
@@ -1271,6 +1276,7 @@ export function calcFireMode(
       thermalDepression: Math.round(thermalDep * 10) / 10,
       willReverse,
       actuallyReversed,
+      ascending: isAscending,
       coConc: Math.round(coConc * 1000) / 1000,
       co2Conc: Math.round(co2Conc * 100) / 100,
       smokeDensity: Math.round(smokeDensity * 100) / 100,
@@ -1501,6 +1507,7 @@ export function calcFireMode(
           thermalDepression: 0,
           willReverse:       false,
           actuallyReversed:  bActuallyReversed,
+          ascending:         false,
           coConc:            Math.round(coOut    * 1000) / 1000,
           co2Conc:           Math.round(co2Out   * 100)  / 100,
           smokeDensity:      Math.round(smokeOut * 100)  / 100,
