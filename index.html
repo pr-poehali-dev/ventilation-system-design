@@ -161,6 +161,122 @@
 
     <meta name="pp-name" value="ventilation-system-design">
       <script src="https://cdn.poehali.dev/intertnal/js/inspector-min.js"></script>
+
+    <!-- ─── Независимый фоновый детектор новой версии ───────────────────────
+         Работает ВНЕ React: даже если основное приложение зависло или вкладка
+         открыта очень долго, этот скрипт продолжает опрашивать сервер версий
+         и, обнаружив свежую сборку, показывает баннер «Обновить страницу».
+         Логика: запоминаем версию, которую сервер отдавал при ЗАГРУЗКЕ этой
+         вкладки (bootVersion). Если сервер начал отдавать другую — значит
+         вышла новая сборка, а эта вкладка старая → предлагаем обновиться.
+         Это не зависит от версии, зашитой в JS-бандл, поэтому надёжно. -->
+    <script>
+    (function () {
+      var VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
+      var POLL_MS = 5 * 60 * 1000;   // как часто опрашивать сервер
+      var bootVersion = null;        // версия сервера на момент загрузки вкладки
+      var shown = false;             // баннер уже показан
+      var isDesktop = !!window.__IS_DESKTOP__ || window.location.protocol === "file:";
+      if (isDesktop) return;         // десктоп обновляется своим механизмом
+
+      function fetchVersion() {
+        return fetch(VERSION_URL, { cache: "no-store" })
+          .then(function (r) { return r.text(); })
+          .then(function (t) {
+            if (!t || t.charAt(0) !== "{") return null;
+            var d = JSON.parse(t);
+            return d && d.version ? String(d.version) : null;
+          })
+          .catch(function () { return null; });
+      }
+
+      function reloadFresh() {
+        try {
+          if (window.caches && caches.keys) {
+            caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+          }
+        } catch (e) { /* noop */ }
+        try {
+          var u = new URL(window.location.href);
+          u.searchParams.set("_v", Date.now().toString());
+          window.location.replace(u.toString());
+        } catch (e) { window.location.reload(); }
+      }
+
+      function hasUnsaved() {
+        try { return typeof window.__pvsIsDirty === "function" ? !!window.__pvsIsDirty() : false; }
+        catch (e) { return false; }
+      }
+
+      function doUpdate(btn) {
+        if (hasUnsaved()) {
+          var ok = window.confirm(
+            "В проекте есть несохранённые изменения.\n\n" +
+            "Нажмите «ОК», чтобы сохранить проект и обновить страницу,\n" +
+            "или «Отмена», чтобы вернуться и сохранить вручную."
+          );
+          if (!ok) return;
+          try {
+            var res = typeof window.__pvsSaveProject === "function" ? window.__pvsSaveProject() : null;
+            if (btn) { btn.textContent = "Сохранение…"; btn.disabled = true; }
+            if (res && typeof res.then === "function") { res.then(reloadFresh, reloadFresh); return; }
+          } catch (e) { /* при ошибке всё равно даём обновиться */ }
+        }
+        reloadFresh();
+      }
+
+      function showBanner(newVer) {
+        if (shown) return;
+        // Если React-баннер уже висит — не дублируем.
+        if (document.querySelector('[data-pvs-react-update-banner]')) return;
+        shown = true;
+        var bar = document.createElement("div");
+        bar.setAttribute("data-pvs-html-update-banner", "1");
+        bar.style.cssText =
+          "position:fixed;top:0;left:0;right:0;z-index:2147483000;height:44px;" +
+          "display:flex;align-items:center;gap:12px;padding:0 16px;color:#fff;" +
+          "font-family:'Segoe UI',Arial,sans-serif;font-size:13px;" +
+          "background:linear-gradient(90deg,#2563eb,#1d4ed8);box-shadow:0 2px 8px rgba(0,0,0,0.25)";
+        var txt = document.createElement("div");
+        txt.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        txt.innerHTML = "<b>Доступно обновление v" + newVer + "</b>" +
+          "<span style='opacity:.85;margin-left:8px;font-size:12px'>Обновите страницу, чтобы применить</span>";
+        var upd = document.createElement("button");
+        upd.textContent = "Обновить страницу";
+        upd.style.cssText =
+          "height:28px;padding:0 16px;border:0;border-radius:6px;font-size:12px;font-weight:600;" +
+          "background:#fff;color:#1d4ed8;cursor:pointer;flex-shrink:0";
+        upd.onclick = function () { doUpdate(upd); };
+        var later = document.createElement("button");
+        later.textContent = "Позже";
+        later.style.cssText =
+          "height:28px;padding:0 12px;border:1px solid rgba(255,255,255,.5);border-radius:6px;" +
+          "font-size:12px;font-weight:500;background:transparent;color:#fff;cursor:pointer;flex-shrink:0";
+        later.onclick = function () { bar.remove(); shown = false;
+          // Напомним снова через 15 минут, если версия так и не обновлена.
+          setTimeout(function () { if (bootVersion) showBanner(newVer); }, 15 * 60 * 1000); };
+        bar.appendChild(txt); bar.appendChild(upd); bar.appendChild(later);
+        document.body.appendChild(bar);
+      }
+
+      function poll() {
+        fetchVersion().then(function (v) {
+          if (!v) return;
+          if (bootVersion === null) { bootVersion = v; return; }  // первая фиксация
+          // Сервер начал отдавать другую версию, чем при загрузке вкладки.
+          if (v !== bootVersion) showBanner(v);
+        });
+      }
+
+      // Стартовая фиксация версии — как только доступен fetch.
+      fetchVersion().then(function (v) { if (v) bootVersion = v; });
+      // Периодический опрос + опрос при возврате на вкладку.
+      setInterval(poll, POLL_MS);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") poll();
+      });
+    })();
+    </script>
   </head>
 
 <body>

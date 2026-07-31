@@ -77,6 +77,14 @@ export default function AppUpdateBanner() {
     return () => window.clearTimeout(t);
   }, [version, dismissed, showSavePrompt, showReminder]);
 
+  // Когда React-баннер активен — убираем HTML-детекторный баннер из index.html,
+  // чтобы не было двух полос обновления одновременно.
+  useEffect(() => {
+    if (version && !dismissed) {
+      document.querySelector('[data-pvs-html-update-banner]')?.remove();
+    }
+  }, [version, dismissed]);
+
   // Окно-напоминание может показываться, даже когда баннер скрыт (dismissed).
   if ((!version || dismissed) && !showReminder) return null;
 
@@ -126,6 +134,7 @@ export default function AppUpdateBanner() {
    <>
     {!dismissed && version && (
     <div
+      data-pvs-react-update-banner="1"
       className="fixed top-0 left-0 right-0 z-[100000] flex items-center gap-3 px-4 h-11"
       style={{
         background: "linear-gradient(90deg,#2563eb,#1d4ed8)",
