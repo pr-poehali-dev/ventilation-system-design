@@ -9223,25 +9223,10 @@ export default function CadPage() {
                 const dragPos = positions.find(p => p.id === leaderDragRef.current!.posId);
                 const pz = (dragPos?.z ?? 0) * (zScale ?? 1);
                 const xy = xyScale ?? 1;
-                // Компенсируем «фиксированный масштаб» выноски: на экране конец выноски
-                // отрисован в зажатом масштабе (clampRatio), поэтому курсор нужно
-                // вернуть в реальные мировые координаты вокруг центра маркера.
-                let dsx = sx, dsy = sy;
-                if (scaleLimitsEnabled && dragPos) {
-                  const _xySFPosD = Math.max(1, xy);
-                  const _rawPosSFD = vs.scale / (_xySFPosD * 0.4);
-                  const posSFD = Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSFD));
-                  const clampRatio = _rawPosSFD > 0 ? posSFD / _rawPosSFD : 1;
-                  if (clampRatio !== 0 && clampRatio !== 1) {
-                    const pm = project3D(
-                      { x: dragPos.x * xy, y: dragPos.y * xy, z: (dragPos.z ?? 0) * (zScale ?? 1) },
-                      { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation }
-                    );
-                    dsx = pm.sx + (sx - pm.sx) / clampRatio;
-                    dsy = pm.sy + (sy - pm.sy) / clampRatio;
-                  }
-                }
-                const w = unprojectToPlane(dsx, dsy, vs, { axis: "z", value: pz });
+                // Маркер и выноска теперь живут в мировых координатах (масштабируются
+                // как ветвь), поэтому конец выноски следует прямо за курсором без
+                // компенсации зажатого масштаба.
+                const w = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
                 if (!w) return;
                 setPositions(prev => prev.map(p =>
                   p.id === leaderDragRef.current!.posId
@@ -10264,23 +10249,14 @@ export default function CadPage() {
               };
 
               // Экранная позиция самого маркера (кружка).
-              // При фиксированном масштабе (scaleLimitsEnabled) размер маркера зажат,
-              // но точка привязки выноски — мировая и «уезжает» при зуме. Чтобы кружок
-              // не отдалялся, притягиваем его к концу выноски на ЗАЖАТОЕ экранное
-              // расстояние (как экранный offset у символов). Конец выноски при этом
-              // остаётся точно на ветви.
+              // Маркер, выноска и точка-якорь ведут себя КАК ВЕТВИ: их геометрия
+              // (положение кружка, конец выноски на ветви) живёт в МИРОВЫХ координатах
+              // и масштабируется вместе со схемой при зуме — в т.ч. в режиме
+              // фиксированного масштаба. Зажимается (posSF) только РАЗМЕР элементов
+              // (радиус кружка, толщина выноски), а не их положение. Поэтому кружок
+              // всегда проецируется из своей мировой точки, без экранного притягивания.
               const markerScreenPos = (pos: Position): { sx: number; sy: number } => {
-                const base = proj(pos.x, pos.y, pos.z ?? 0);
-                if (!scaleLimitsEnabled || _rawPosSF <= 0) return base;
-                const end = posLeaderEnd(pos);
-                if (!end) return base;
-                const clampRatio = posSF / _rawPosSF;
-                if (clampRatio === 1) return base;
-                // Вектор от привязки к маркеру сжимаем в clampRatio раз
-                return {
-                  sx: end.sx + (base.sx - end.sx) * clampRatio,
-                  sy: end.sy + (base.sy - end.sy) * clampRatio,
-                };
+                return proj(pos.x, pos.y, pos.z ?? 0);
               };
 
               return (
@@ -10365,10 +10341,10 @@ export default function CadPage() {
                           opacity={isDrawing ? 0.6 : 0.95}
                           style={{ pointerEvents: "none" }}
                         />
-                        {/* Точка привязки к ветви */}
+                        {/* Точка привязки к ветви — масштабируется как маркер (posSF) */}
                         {isBranchAttached && !isDrawing && (
-                          <circle cx={endSx} cy={endSy} r={4}
-                            fill="#e11d48" stroke="#fff" strokeWidth={1.5}
+                          <circle cx={endSx} cy={endSy} r={Math.max(2, 4 * posSF)}
+                            fill="#e11d48" stroke="#fff" strokeWidth={Math.max(0.75, 1.5 * posSF)}
                             style={{ pointerEvents: "none" }} />
                         )}
                         {/* Ручка для перемещения (только когда не привязана к ветви) */}
@@ -10435,8 +10411,8 @@ export default function CadPage() {
                                 strokeDasharray="6,3" strokeLinecap="round"
                                 opacity={0.95} style={{ pointerEvents: "none" }} />
                               {attached && (
-                                <circle cx={eSx} cy={eSy} r={4}
-                                  fill="#e11d48" stroke="#fff" strokeWidth={1.5}
+                                <circle cx={eSx} cy={eSy} r={Math.max(2, 4 * posSF)}
+                                  fill="#e11d48" stroke="#fff" strokeWidth={Math.max(0.75, 1.5 * posSF)}
                                   style={{ pointerEvents: "none" }} />
                               )}
                             </g>

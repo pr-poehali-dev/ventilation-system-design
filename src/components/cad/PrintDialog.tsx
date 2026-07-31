@@ -639,7 +639,7 @@ export default function PrintDialog({
     const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
     // Та же логика, что в рабочей области/превью: при фиксированном масштабе размер
     // не зависит от зума (база 1, зажим в posMin%..posMax%), учитывается ГОСТ-множитель.
-    const _rawPosSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.5)));
+    const _rawPosSF = fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.4)));
     const posSF = fixedObjectScale
       ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _rawPosSF))
       : _rawPosSF;
@@ -667,14 +667,10 @@ export default function PrintDialog({
       return null;
     };
 
+    // Маркер живёт в мировых координатах (масштабируется как ветвь), без
+    // экранного притягивания к концу выноски — совпадает с рабочей областью.
     const markerPos = (pos: Position): { sx: number; sy: number } => {
-      const base = project3D({ x: pos.x * _xySF, y: pos.y * _xySF, z: (pos.z ?? 0) * zScale }, sv);
-      if (!fixedObjectScale || _rawPosSF <= 0) return base;
-      const end = leaderEnd(pos);
-      if (!end) return base;
-      const clampRatio = posSF / _rawPosSF;
-      if (clampRatio === 1) return base;
-      return { sx: end.sx + (base.sx - end.sx) * clampRatio, sy: end.sy + (base.sy - end.sy) * clampRatio };
+      return project3D({ x: pos.x * _xySF, y: pos.y * _xySF, z: (pos.z ?? 0) * zScale }, sv);
     };
 
     // Выноски (основная + дополнительные, под маркерами)
@@ -713,9 +709,9 @@ export default function PrintDialog({
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(end.sx, end.sy); ctx.stroke();
         ctx.setLineDash([]);
         if (end.attached) {
-          ctx.beginPath(); ctx.arc(end.sx, end.sy, 4, 0, Math.PI * 2);
+          ctx.beginPath(); ctx.arc(end.sx, end.sy, Math.max(2, 4 * posSF), 0, Math.PI * 2);
           ctx.fillStyle = "#e11d48"; ctx.fill();
-          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.stroke();
+          ctx.strokeStyle = "#ffffff"; ctx.lineWidth = Math.max(0.75, 1.5 * posSF); ctx.stroke();
         }
         ctx.restore();
       }
