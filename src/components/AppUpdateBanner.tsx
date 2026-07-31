@@ -11,6 +11,10 @@ import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, reloadBrowserTo
  * Кнопка «Обновить» использует общую логику updater.ts: качает установщик по
  * ?file=exe (браузер) или отдаёт команду C#-оболочке (десктоп).
  */
+// Через сколько минут повторно напомнить об обновлении, если пользователь
+// закрыл баннер, но продолжает работать на устаревшей версии (только браузер).
+const REMIND_AFTER_MIN = 15;
+
 export default function AppUpdateBanner() {
   const [version, setVersion] = useState("");
   const [notes, setNotes] = useState("");
@@ -18,6 +22,7 @@ export default function AppUpdateBanner() {
   const [progress, setProgress] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
+  const [showReminder, setShowReminder] = useState(false);
 
   // Десктоп (C#) шлёт прогресс скачивания обновления сюда.
   useEffect(() => {
@@ -61,7 +66,19 @@ export default function AppUpdateBanner() {
     };
   }, []);
 
-  if (!version || dismissed) return null;
+  // Мягкое авто-напоминание (только браузер): если обновление доступно, но
+  // баннер закрыт, а окно сохранения не открыто — через REMIND_AFTER_MIN минут
+  // ненавязчиво покажем окно-напоминание об устаревшей версии.
+  useEffect(() => {
+    const desktop = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
+    if (desktop || !version) return;
+    if (!dismissed || showSavePrompt || showReminder) return;
+    const t = window.setTimeout(() => setShowReminder(true), REMIND_AFTER_MIN * 60 * 1000);
+    return () => window.clearTimeout(t);
+  }, [version, dismissed, showSavePrompt, showReminder]);
+
+  // Окно-напоминание может показываться, даже когда баннер скрыт (dismissed).
+  if ((!version || dismissed) && !showReminder) return null;
 
   const isDesktop = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
 
@@ -107,6 +124,7 @@ export default function AppUpdateBanner() {
 
   return (
    <>
+    {!dismissed && version && (
     <div
       className="fixed top-0 left-0 right-0 z-[100000] flex items-center gap-3 px-4 h-11"
       style={{
@@ -168,6 +186,7 @@ export default function AppUpdateBanner() {
         </>
       )}
     </div>
+    )}
 
     {/* Браузер: предупреждение о несохранённом проекте перед перезагрузкой */}
     {showSavePrompt && (
@@ -213,6 +232,42 @@ export default function AppUpdateBanner() {
                 : <><Icon name="Save" size={14} />Сохранить и обновить</>}
             </button>
           </div>
+        </div>
+      </div>
+    )}
+
+    {/* Браузер: мягкое авто-напоминание об устаревшей версии */}
+    {showReminder && !showSavePrompt && (
+      <div
+        className="fixed bottom-4 right-4 z-[100001] w-[360px] max-w-[92vw] bg-white rounded-xl overflow-hidden"
+        style={{ fontFamily: "Segoe UI, Arial, sans-serif", boxShadow: "0 10px 30px rgba(0,0,0,0.25)", border: "1px solid #e5e7eb" }}>
+        <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: "linear-gradient(90deg,#2563eb,#1d4ed8)", color: "#fff" }}>
+          <Icon name="Sparkles" size={16} className="flex-shrink-0" />
+          <div className="flex-1 font-semibold text-[13px]">Установлена устаревшая версия</div>
+          <button
+            onClick={() => setShowReminder(false)}
+            title="Напомнить позже"
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 flex-shrink-0">
+            <Icon name="X" size={14} />
+          </button>
+        </div>
+        <div className="px-4 py-3 text-[12.5px] text-gray-600 leading-relaxed">
+          Вы работаете в версии <b>{APP_VERSION}</b>, доступна <b>{version}</b>.
+          Обновите страницу, чтобы получить последние исправления.
+          Несохранённый проект перед этим можно сохранить.
+        </div>
+        <div className="px-4 py-3 bg-gray-50 flex items-center justify-end gap-2">
+          <button
+            onClick={() => setShowReminder(false)}
+            className="h-8 px-3 rounded-md text-[12.5px] font-medium text-gray-600 hover:bg-gray-200">
+            Напомнить позже
+          </button>
+          <button
+            onClick={() => { setShowReminder(false); handleUpdate(); }}
+            className="h-8 px-4 rounded-md text-[12.5px] font-semibold text-white flex items-center gap-1.5"
+            style={{ background: "#2563eb" }}>
+            <Icon name="RefreshCw" size={13} />Обновить сейчас
+          </button>
         </div>
       </div>
     )}
