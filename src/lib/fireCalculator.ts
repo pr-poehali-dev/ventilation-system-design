@@ -633,6 +633,9 @@ export function calcThermalDepressionNormative(
 //   (5.3) h_кр = 0.9·r_п·(Q+Q_п)²                         — сбойки малого сопр.;
 //   (5.4) h_кр = 0.85·(Q+Q_п)²·[ r_п + R₁/(1+√((R₁+r₁)/r_п′))²
 //                                     + R₂/(1+√((R₂+r₂)/r_п″))² ] — сбойки с перемычками;
+//     R₁ (выше очага) и R₂ (ниже) различаются по высотным отметкам z узла
+//     подключения сбойки относительно очага; в каждой группе берётся сбойка
+//     минимального сопротивления (сильнее шунтирует тепловую тягу);
 //   (5.5) r_п = r₁/(√(r₁/r₂)+1)²                          — несколько параллелей;
 //   • если сопротивление перемычек в сбойках ≥ 300× сопр. участков — сбойками
 //     пренебрегаем и применяем (5.3);
@@ -655,6 +658,12 @@ export interface CriticalDepInput {
   fireFlow_m3s: number;    // Q — расход в аварийной выработке
   fireDP_pa?: number;      // ΔP аварийной ветви (для случая «уклонное поле»)
   branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number; dP?: number }[];
+  // Высотные отметки узлов (z, м) — нужны формуле (5.4), чтобы различать сбойки
+  // ВЫШЕ и НИЖЕ очага (R₁ vs R₂). Если не переданы — геометрия не восстанавливается
+  // и берутся две сбойки минимального сопротивления как раньше.
+  nodeElevations?: Map<string, number>;
+  // Высотная отметка очага (z, м) — граница «выше/ниже» вдоль аварийной ветви.
+  fireElevation?: number;
 }
 
 export interface CriticalDepResult {
@@ -797,18 +806,58 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
     if (allHighResistance) {
       h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
     } else {
-      // (5.4): суммируем вклад до двух сбоек (выше R₁ и ниже R₂ аварийного участка).
-      // r₁,r₂ — примыкающие участки аварийной ветви; r_п′,r_п″ — параллельной.
-      // В общем графе точную геометрию «выше/ниже» восстановить нельзя, поэтому
-      // берём фактические сопротивления смежных ветвей как оценку.
-      const rAdj = crossings.slice(0, 2).map(br => Number(br.resistance) || 0);
+      // (5.4): h_кр = 0.85·(Q+Q_п)²·[ r_п + R₁/(1+√((R₁+r₁)/r_п′))²
+      //                                    + R₂/(1+√((R₂+r₂)/r_п″))² ]
+      // R₁ — сбойка ВЫШЕ очага, R₂ — сбойка НИЖЕ очага. Геометрию «выше/ниже»
+      // восстанавливаем по высотным отметкам узла подключения сбойки относительно
+      // очага (fireElevation). r₁,r₂ — примыкающие участки аварийной ветви сверху/
+      // снизу; r_п′,r_п″ — параллельного пути сверху/снизу. Точку подключения на
+      // аварийной/параллельной ветви в общем графе восстановить нельзя, поэтому
+      // сопротивление ветви делим пополам между верхним и нижним участком.
       const rSelf = Math.max(1e-9, Number(inp.branches.find(x => x.id === inp.fireBranchId)?.resistance) || r_p);
       const rParSelf = Math.max(1e-9, Number(mainPar.resistance) || r_p);
-      let bracket = r_p;
-      for (const R of rAdj) {
-        const denom = Math.pow(1 + Math.sqrt((R + rSelf) / rParSelf), 2);
-        bracket += R / denom;
+
+      // Высота узла подключения сбойки (тот узел пары a/b, к которому она примыкает).
+      const zFire = inp.fireElevation;
+      const elev = inp.nodeElevations;
+      const crossingZ = (br: { fromId: string; toId: string }): number | undefined => {
+        if (!elev) return undefined;
+        const attachNode = nodePair.has(br.fromId) ? br.fromId : br.toId;
+        return elev.get(attachNode);
+      };
+
+      // Выбор сбойки минимального сопротивления в группе (перемычка малого
+      // сопротивления сильнее «шунтирует» тягу → сильнее влияет на h_кр).
+      const minByR = (arr: typeof crossings) =>
+        arr.reduce((best, br) =>
+          (Number(br.resistance) || Infinity) < (Number(best.resistance) || Infinity) ? br : best, arr[0]);
+
+      let R1 = 0, R2 = 0; // верхняя / нижняя сбойка
+      if (zFire !== undefined && elev) {
+        const upper = crossings.filter(br => { const z = crossingZ(br); return z !== undefined && z > zFire; });
+        const lower = crossings.filter(br => { const z = crossingZ(br); return z !== undefined && z < zFire; });
+        if (upper.length) R1 = Number(minByR(upper).resistance) || 0;
+        if (lower.length) R2 = Number(minByR(lower).resistance) || 0;
+        // Сбойки на уровне очага (z ≈ zFire) или без отметок — добираем в пустые слоты.
+        const rest = crossings.filter(br => { const z = crossingZ(br); return z === undefined || z === zFire; });
+        for (const br of rest) {
+          const R = Number(br.resistance) || 0;
+          if (R1 === 0) R1 = R; else if (R2 === 0) R2 = R;
+        }
+      } else {
+        // Нет высотных отметок — две сбойки минимального сопротивления (как раньше).
+        const sorted = [...crossings].sort((x, y) => (Number(x.resistance) || 0) - (Number(y.resistance) || 0));
+        R1 = Number(sorted[0]?.resistance) || 0;
+        R2 = Number(sorted[1]?.resistance) || 0;
       }
+
+      // r₁,r₂ — половины сопротивления аварийной ветви (верх/низ от очага);
+      // r_п′,r_п″ — половины сопротивления параллельного пути.
+      const r1 = rSelf / 2, r2 = rSelf / 2;
+      const rP1 = rParSelf / 2, rP2 = rParSelf / 2;
+      let bracket = r_p;
+      if (R1 > 0) bracket += R1 / Math.pow(1 + Math.sqrt((R1 + r1) / rP1), 2);
+      if (R2 > 0) bracket += R2 / Math.pow(1 + Math.sqrt((R2 + r2) / rP2), 2);
       h_kr = CRITICAL_DEP_K54 * Math.pow(Q + Q_p, 2) * bracket;
       formula = "5.4";
     }
@@ -1078,6 +1127,10 @@ export function calcFireMode(
     return nodeContribs.get(nid)!;
   };
 
+  // Высотные отметки узлов (z) — для формулы (5.4): различаем сбойки выше/ниже очага.
+  const nodeElevations = new Map<string, number>();
+  for (const nd of nodes) nodeElevations.set(nd.id, nd.z ?? 0);
+
   for (const fb of fireBranches) {
     // Расход воздуха для расчёта ТЕМПЕРАТУРЫ/МОЩНОСТИ/концентраций очага берём
     // по ШТАТНОМУ режиму (до пожара), как в Аэросети. Тепловая депрессия при
@@ -1157,6 +1210,8 @@ export function calcFireMode(
     // Критическая депрессия наклонной выработки (Прил. 5, формулы 5.3–5.5):
     // h_кр = 0.9·r_п·(Q+Q_п)². Считаем только для НИСХОДЯЩИХ выработок (для
     // восходящих опрокидывание невозможно) и при наличии параллельного пути.
+    // Высота очага вдоль ветви (интерполяция по fireT между узлами from→to).
+    const fireZ = (fromNode?.z ?? 0) + ((toNode?.z ?? 0) - (fromNode?.z ?? 0)) * (fb.fireT ?? 0.5);
     const critRaw = isDescending
       ? calcCriticalDepression({
           fireBranchId: fb.id,
@@ -1165,6 +1220,8 @@ export function calcFireMode(
           fireFlow_m3s: airQ,
           fireDP_pa: fb.dP,
           branches,
+          nodeElevations,
+          fireElevation: fireZ,
         })
       : null;
 
