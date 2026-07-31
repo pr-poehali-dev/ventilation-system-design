@@ -94,8 +94,16 @@ def handler(event: dict, context) -> dict:
     screen_info    = (body.get("screen_info") or "")[:50]
     app_version    = (body.get("app_version") or "")[:32]
     core_version   = (body.get("core_version") or "")[:32]
+    is_desktop     = bool(body.get("is_desktop"))
     modules        = (body.get("modules") or "")[:200]
     ip             = client_ip(event)
+
+    # Ядро есть только у десктопного клиента. У браузера ядра нет вовсе —
+    # чтобы в мониторинге не «зависало» старое значение от прежних заходов
+    # через десктоп, у браузера принудительно записываем «—» (нет ядра).
+    # У десктопа при временном отсутствии версии сохраняем прежнюю (COALESCE ниже).
+    if not is_desktop and not core_version:
+        core_version = "—"
 
     if not fingerprint:
         return resp(400, {"error": "fingerprint_required"})

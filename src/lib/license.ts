@@ -272,6 +272,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
       screen_info: machineInfo?.screen,
       app_version: APP_VERSION,
       core_version: coreVersion || undefined,
+      is_desktop: IS_DESKTOP,
     }),
   });
   const data = await res.json();
@@ -341,6 +342,7 @@ export async function activateLicense(
       screen_info: machineInfo?.screen,
       app_version: APP_VERSION,
       core_version: coreVersion || undefined,
+      is_desktop: IS_DESKTOP,
     }),
   });
   const data = await res.json();

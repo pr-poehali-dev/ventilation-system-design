@@ -1,9 +1,34 @@
 import Icon from "@/components/ui/icon";
 import type { MonitoringData } from "@/pages/Admin";
+import { APP_VERSION } from "@/lib/appVersion";
 
 interface Props {
   data: MonitoringData | null;
   loading: boolean;
+}
+
+// Тип клиента по имени компьютера: десктоп-приложение помечает hostname
+// строкой "(десктоп)", всё остальное — веб-браузер.
+function isDesktopClient(hostname: string | null): boolean {
+  return !!hostname && hostname.includes("(десктоп)");
+}
+
+// Сравнение версий вида "2.74.206" → -1 / 0 / 1
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(x => parseInt(x, 10) || 0);
+  const pb = b.split(".").map(x => parseInt(x, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+// Версия клиента устарела, если она валидна и ниже актуальной сборки
+function isOutdatedVersion(v: string | null): boolean {
+  if (!v || !/^\d+\.\d+/.test(v)) return false;
+  return compareVersions(v, APP_VERSION) < 0;
 }
 
 function fmtDateTime(s: string | null) {
@@ -82,6 +107,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                 <tr className="text-gray-400 text-left border-b border-gray-100">
                   <th className="pb-2 pr-3 font-medium">Организация</th>
                   <th className="pb-2 pr-3 font-medium">Компьютер</th>
+                  <th className="pb-2 pr-3 font-medium">Клиент</th>
                   <th className="pb-2 pr-3 font-medium">Платформа</th>
                   <th className="pb-2 pr-3 font-medium">Версия</th>
                   <th className="pb-2 pr-3 font-medium">Ядро</th>
@@ -90,7 +116,10 @@ export default function MonitoringTab({ data, loading }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {data.sessions.list.map(s => (
+                {data.sessions.list.map(s => {
+                  const desktop = isDesktopClient(s.hostname);
+                  const outdated = isOutdatedVersion(s.app_version);
+                  return (
                   <tr key={s.seat_id} className="border-b border-gray-50">
                     <td className="py-2 pr-3">
                       <span className="inline-flex items-center gap-1.5">
@@ -99,13 +128,38 @@ export default function MonitoringTab({ data, loading }: Props) {
                       </span>
                     </td>
                     <td className="py-2 pr-3 text-gray-600">{s.hostname || "—"}</td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                        style={desktop
+                          ? { background: "#eef2ff", color: "#4338ca" }
+                          : { background: "#f1f5f9", color: "#475569" }}>
+                        <Icon name={desktop ? "Monitor" : "Globe"} size={11} />
+                        {desktop ? "Десктоп" : "Браузер"}
+                      </span>
+                    </td>
                     <td className="py-2 pr-3 text-gray-500">{s.platform || "—"}</td>
-                    <td className="py-2 pr-3 text-gray-500">{s.app_version || "—"}</td>
-                    <td className="py-2 pr-3 text-purple-600 font-mono">{s.core_version || "—"}</td>
+                    <td className="py-2 pr-3">
+                      {outdated ? (
+                        <span
+                          className="inline-flex items-center gap-1 font-mono font-medium"
+                          style={{ color: "#b45309" }}
+                          title={`Устаревшая версия — актуальная ${APP_VERSION}. Клиенту нужно обновиться (десктоп) или сбросить кеш браузера (Ctrl+Shift+R).`}>
+                          <Icon name="TriangleAlert" size={11} />
+                          {s.app_version}
+                        </span>
+                      ) : (
+                        <span className="text-gray-500 font-mono">{s.app_version || "—"}</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 font-mono" style={{ color: desktop ? "#7c3aed" : "#94a3b8" }}>
+                      {s.core_version || "—"}
+                    </td>
                     <td className="py-2 pr-3 text-gray-500 font-mono">{s.ip || "—"}</td>
                     <td className="py-2 pr-3 text-gray-500">{fmtDateTime(s.last_seen_at)}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
