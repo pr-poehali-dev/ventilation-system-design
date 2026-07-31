@@ -113,6 +113,8 @@ interface Props {
   focusNonce?: number;
   focusNodeId?: string | null;
   focusBranchId?: string | null;
+  /** Центрировать камеру на произвольной мировой точке (позиция ПЛА и т.п.) */
+  focusPos?: { x: number; y: number; z: number } | null;
   /** Восстановить конкретный вид (при открытии файла с сохранённым view) */
   restoreView?: { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number } | null;
   /** Колбэк: view успешно восстановлен из файла — родитель должен обнулить restoreView */
@@ -263,7 +265,7 @@ export default function TopoCanvas(props: Props) {
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false,
     scaleOverride, onScaleChange, fitToScreenNonce,
-    focusNonce, focusNodeId, focusBranchId,
+    focusNonce, focusNodeId, focusBranchId, focusPos,
     editingHorizonImageId, onHorizonImageBoundsChange,
     editingPrintLayerId, onPrintLayerBoundsChange, onPrintLayerChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
@@ -651,7 +653,10 @@ export default function TopoCanvas(props: Props) {
     };
 
     let targetX = 0, targetY = 0, found = false;
-    if (focusNodeId) {
+    if (focusPos) {
+      const p = project3D({ x: focusPos.x * (xyScale ?? 1), y: focusPos.y * (xyScale ?? 1), z: focusPos.z * (zScale ?? 1) }, tmpProj);
+      targetX = p.sx; targetY = p.sy; found = true;
+    } else if (focusNodeId) {
       const n = nodes.find(nn => nn.id === focusNodeId);
       if (n) {
         const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, tmpProj);

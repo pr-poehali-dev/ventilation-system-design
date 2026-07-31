@@ -1214,6 +1214,7 @@ export default function CadPage() {
   const [focusNonce, setFocusNonce] = useState<number>(0);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [focusBranchId, setFocusBranchId] = useState<string | null>(null);
+  const [focusPos, setFocusPos] = useState<{ x: number; y: number; z: number } | null>(null);
   // Флаг: файл был загружен — не сбрасываем вид начальным пресетом
   const initialFileLoadedRef = useRef(false);
   // При первом рендере — дефолтный вид только если файл не открывался
@@ -3238,6 +3239,7 @@ export default function CadPage() {
         setSelectedBranchIds(new Set(ids));
         setSelectedNodeId(null);
         setSelectedBranchId(ids[0]);
+        setFocusPos(null);
         setFocusBranchId(ids[0]);
         setFocusNonce(Date.now());
       }
@@ -5844,6 +5846,7 @@ export default function CadPage() {
                       return (
                         <button key={`${h.kind}-${h.id}`}
                           onClick={() => {
+                            setFocusPos(null);
                             if (h.kind === "node") {
                               setSelectedNodeId(h.id);
                               setSelectedBranchId(null);
@@ -5925,6 +5928,7 @@ export default function CadPage() {
               const focusNode = (id: string) => {
                 setSelectedNodeId(id);
                 setSelectedBranchId(null);
+                setFocusPos(null);
                 setFocusNodeId(id);
                 setFocusNonce(Date.now());
               };
@@ -5943,6 +5947,7 @@ export default function CadPage() {
                 setSelectedBranchId(id);
                 setSelectedBranchIds(new Set([id]));
                 setSelectedNodeId(null);
+                setFocusPos(null);
                 setFocusBranchId(id);
                 setFocusNonce(Date.now());
               };
@@ -6448,6 +6453,7 @@ export default function CadPage() {
                               setSelectedBranchIds(new Set(isolatedBranches.map(b => b.id)));
                               setSelectedNodeId(null);
                               setSelectedBranchId(isolatedBranches[0].id);
+                              setFocusPos(null);
                               setFocusBranchId(isolatedBranches[0].id);
                               setFocusNonce(Date.now());
                             }}
@@ -8708,6 +8714,11 @@ export default function CadPage() {
                 nodes={nodes}
                 selectedPositionId={selectedPositionId}
                 onSelect={(id) => { setSelectedPositionId(id); if (!id) { setPosBranchBindMode(false); setLeaderDrawMode(null); } }}
+                onFocus={(pos) => {
+                  setFocusPos({ x: pos.x, y: pos.y, z: pos.z ?? 0 });
+                  setFocusNodeId(null); setFocusBranchId(null);
+                  setFocusNonce(Date.now());
+                }}
                 onAdd={(pos) => setPositions((prev) => [...prev, pos])}
                 onUpdate={(id, patch) => setPositions((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p))}
                 onDelete={(id) => { setPositions((prev) => prev.filter((p) => p.id !== id)); setPosBranchBindMode(false); setLeaderDrawMode(null); }}
@@ -8800,7 +8811,7 @@ export default function CadPage() {
                                 setCompareSelectedId(diff.id === compareSelectedId ? null : diff.id);
                                 // Центрируем камеру на ветви если она есть в текущей схеме
                                 const br = branches.find(b => b.id === diff.id);
-                                if (br) { setFocusBranchId(diff.id); setFocusNonce(n => n + 1); setSelectedBranchId(diff.id); }
+                                if (br) { setFocusPos(null); setFocusBranchId(diff.id); setFocusNonce(n => n + 1); setSelectedBranchId(diff.id); }
                               }}>
                               {/* Строка ветви */}
                               <div className="flex items-center gap-1.5 px-2 py-1.5">
@@ -9446,6 +9457,7 @@ export default function CadPage() {
               focusNonce={focusNonce}
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}
+              focusPos={focusPos}
               onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
               onRegisterCanvasEl={(el) => {
                 liveCanvasRef.current = el;

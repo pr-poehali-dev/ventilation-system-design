@@ -12,6 +12,8 @@ interface Props {
   nodes: TopoNode[];
   selectedPositionId: string | null;
   onSelect: (id: string | null) => void;
+  /** Центрировать схему на позиции (двойной клик по строке списка) */
+  onFocus?: (pos: Position) => void;
   onAdd: (pos: Position) => void;
   onUpdate: (id: string, patch: Partial<Position>) => void;
   onDelete: (id: string) => void;
@@ -37,6 +39,7 @@ export default function PositionsPanel({
   nodes,
   selectedPositionId,
   onSelect,
+  onFocus,
   onAdd,
   onUpdate,
   onDelete,
@@ -152,6 +155,8 @@ export default function PositionsPanel({
           <div
             key={pos.id}
             onClick={() => onSelect(pos.id === selectedPositionId ? null : pos.id)}
+            onDoubleClick={() => { onSelect(pos.id); onFocus?.(pos); }}
+            title="Двойной клик — показать позицию на схеме"
             className="flex items-center gap-2 px-2 py-1 cursor-pointer"
             style={{ background: pos.id === selectedPositionId ? "#e8f0fe" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
             <div
