@@ -9325,8 +9325,11 @@ export default function CadPage() {
                   setPositions(prev => prev.map(p => {
                     if (p.id !== leaderDrawMode) return p;
                     const base = { ...p, leaderBranchId: branchId, leaderT: t, leaderEndX: null, leaderEndY: null };
-                    // Авто-координаты: если не размещена ИЛИ z=0 (не соответствует сети)
-                    if (refN && (!p.placed || p.z === 0)) {
+                    // Авто-координаты: если не размещена, z=0 (не соответствует сети)
+                    // ИЛИ выноска привязывается к другой ветви (в т.ч. после удаления
+                    // прежней выноски — тогда leaderBranchId был очищен). Это позволяет
+                    // переставить позицию к новой ветви при повторной привязке.
+                    if (refN && (!p.placed || p.z === 0 || p.leaderBranchId !== branchId)) {
                       const OFFSET = 50;
                       return { ...base, x: refN.x + OFFSET, y: refN.y + OFFSET, z: refN.z, placed: true };
                     }
