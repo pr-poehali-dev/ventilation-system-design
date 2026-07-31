@@ -8,6 +8,7 @@ import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
+import { type TextBlock } from "@/pages/cad/cadTypes";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 import { jsPDF } from "jspdf";
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
@@ -48,7 +49,9 @@ interface PrintDialogProps {
   branchBorder?: number;
   thinLines?: boolean;
   colorByHorizon?: boolean;
+  showFlowArrows?: boolean;
   flowDisplay?: FlowDisplayMode;
+  textBlocks?: TextBlock[];
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
   zScale?: number;
@@ -112,7 +115,8 @@ export default function PrintDialog({
   schemaSymbols = [],
   branchWidth = 2, branchBorder = 0.4,
   thinLines = false, colorByHorizon = false,
-  flowDisplay = "off", infoConfig = null,
+  showFlowArrows = false,
+  flowDisplay = "off", textBlocks = [], infoConfig = null,
   unitsConfig = DEFAULT_UNITS_CONFIG,
   zScale = 1,
   getSvgRaw,
@@ -741,6 +745,45 @@ export default function PrintDialog({
   }, [showPositions, positions, nodes, branches, xyScale, fixedObjectScale,
       scalePositionMin, scalePositionMax, positionGostMm, viewState.scale, zScale]);
 
+  // Текстовые блоки — та же логика проекции/масштаба, что в рабочей области (Cad.tsx).
+  const drawTextBlocksToCanvas = useCallback((
+    ctx: CanvasRenderingContext2D,
+    sv: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number; zScale: number },
+    fitScale: number,
+  ): void => {
+    if (textBlocks.length === 0) return;
+    const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
+    const previewK = viewState.scale > 0 ? fitScale / viewState.scale : 1;
+    const pxPerMm = 3.78 * Math.min(8, Math.max(0.25, viewState.scale / (_xySF * 0.5))) * previewK;
+    for (const tb of textBlocks) {
+      const { sx, sy } = project3D({ x: tb.x * _xySF, y: tb.y * _xySF, z: 0 }, sv);
+      const fsPx = tb.fontSize * pxPerMm;
+      if (fsPx < 0.5) continue;
+      const lines = tb.text.split("\n");
+      const lineH = fsPx * 1.35;
+      const maxLen = Math.max(...lines.map(l => l.length), 4);
+      const estW = Math.max(60 * previewK, maxLen * fsPx * 0.58 + 16 * previewK);
+      const estH = lines.length * lineH + 12 * previewK;
+      ctx.save();
+      ctx.translate(sx, sy);
+      if (tb.background !== "none") {
+        ctx.fillStyle = tb.background;
+        ctx.fillRect(-estW / 2, -estH / 2, estW, estH);
+      }
+      if (tb.borderColor !== "none") {
+        ctx.strokeStyle = tb.borderColor; ctx.lineWidth = 1 * previewK;
+        ctx.strokeRect(-estW / 2, -estH / 2, estW, estH);
+      }
+      ctx.fillStyle = tb.color;
+      ctx.font = `${tb.italic ? "italic " : ""}${tb.bold ? "bold " : ""}${fsPx}px sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      lines.forEach((line, li) => {
+        ctx.fillText(line, 0, (-estH / 2 + 8 * previewK) + li * lineH + fsPx * 0.8);
+      });
+      ctx.restore();
+    }
+  }, [textBlocks, xyScale, viewState.scale]);
+
   // Вычисляет bbox рамки из projNodes — тот же алгоритм что в PrintPreviewCanvas/TopoCanvas
   const computeFrameRect = useCallback((
     pl: NonNullable<Horizon["printLayer"]>,
@@ -914,7 +957,7 @@ export default function PrintDialog({
         selectedNodeId: null, selectedNodeIds: new Set(),
         hoverBranchId: null, branchWidth, branchBorder,
         thinLines, colorByHorizon,
-        showFlowArrows: false, flowDisplay,
+        showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
         printMode: true, fixedObjectScale, xyScale,
         colorMode, posInnerColors, posOuterColors,
@@ -926,6 +969,8 @@ export default function PrintDialog({
 
       // Позиции ПЛА — поверх схемы, но ПОД рамкой печати (как в предпросмотре).
       drawPositionsToCanvas(ctx, sv, scaledSc);
+      // Текстовые блоки — поверх схемы.
+      drawTextBlocksToCanvas(ctx, sv, scaledSc);
 
       // Шаг 5: рамка поверх — координаты из новых projNodes (тем же алгоритмом).
       // Передаём проекцию/масштаб/z, чтобы ручная рамка (pl.bounds) совпадала
@@ -967,7 +1012,7 @@ export default function PrintDialog({
         selectedNodeId: null, selectedNodeIds: new Set(),
         hoverBranchId: null, branchWidth, branchBorder,
         thinLines, colorByHorizon,
-        showFlowArrows: false, flowDisplay,
+        showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
         printMode: true, fixedObjectScale, xyScale,
         colorMode, posInnerColors, posOuterColors,
@@ -987,6 +1032,7 @@ export default function PrintDialog({
       ctx.rect(marginLeftPx, marginTopPx, workW, workH);
       ctx.clip();
       drawPositionsToCanvas(ctx, sv, scaledSc);
+      drawTextBlocksToCanvas(ctx, sv, scaledSc);
       ctx.restore();
     }
 
@@ -1118,6 +1164,7 @@ body{background:white;font-family:Arial,sans-serif}
           fixedObjectScale, xyScale,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
+          showFlowArrows, textBlocks,
         });
 
         // SVG → data URL → <img> → canvas → PNG
@@ -1173,6 +1220,7 @@ body{background:white;font-family:Arial,sans-serif}
         fixedObjectScale, xyScale,
         pollutedBranchIds,
         schemaSymbols: schemaSymbols ?? [],
+        showFlowArrows, textBlocks,
       });
       downloadSvg(svgStr, projectName);
       setShowExportDialog(false);
@@ -1201,6 +1249,7 @@ body{background:white;font-family:Arial,sans-serif}
           fixedObjectScale, xyScale,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
+          showFlowArrows, textBlocks,
         });
 
         const isLandscape = paper.w > paper.h;
@@ -1658,7 +1707,9 @@ body{background:white;font-family:Arial,sans-serif}
                         branchBorder={branchBorder}
                         thinLines={thinLines}
                         colorByHorizon={colorByHorizon}
+                        showFlowArrows={showFlowArrows}
                         flowDisplay={flowDisplay}
+                        textBlocks={textBlocks}
                         infoConfig={infoConfig}
                         unitsConfig={unitsConfig}
                         colorMode={colorMode}

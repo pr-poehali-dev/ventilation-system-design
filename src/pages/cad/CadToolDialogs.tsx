@@ -24,6 +24,7 @@ import { type Position } from "@/lib/positions";
 import { type SolveResult } from "@/lib/networkSolver";
 type PrintProps = React.ComponentProps<typeof PrintDialog>;
 type SchemaSymbol = NonNullable<PrintProps["schemaSymbols"]>[number];
+type TextBlockT = NonNullable<PrintProps["textBlocks"]>[number];
 type SavedView = { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
 
 export interface CadToolDialogsProps {
@@ -49,7 +50,9 @@ export interface CadToolDialogsProps {
   branchBorder: number;
   thinLines: boolean;
   colorByHorizon: boolean;
+  showFlowArrows: boolean;
   flowDisplay: PrintProps["flowDisplay"];
+  textBlocks: TextBlockT[];
   infoConfig: InfoDisplayConfig;
   zScale: number;
   getSvgRef: React.MutableRefObject<(() => string) | null>;
@@ -148,7 +151,9 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           branchBorder={p.branchBorder}
           thinLines={p.thinLines}
           colorByHorizon={p.colorByHorizon}
+          showFlowArrows={p.showFlowArrows}
           flowDisplay={p.flowDisplay}
+          textBlocks={p.textBlocks}
           infoConfig={p.infoConfig}
           unitsConfig={p.unitsConfig}
           zScale={p.zScale}

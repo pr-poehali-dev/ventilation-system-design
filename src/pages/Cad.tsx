@@ -11330,7 +11330,9 @@ export default function CadPage() {
       branchBorder={branchBorder}
       thinLines={thinLines}
       colorByHorizon={colorByHorizon}
+      showFlowArrows={showFlowArrows}
       flowDisplay={flowDisplay}
+      textBlocks={textBlocks}
       infoConfig={infoConfig}
       zScale={zScale}
       getSvgRef={getSvgRef}

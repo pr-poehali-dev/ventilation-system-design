@@ -11,6 +11,7 @@ import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
+import { type TextBlock } from "@/pages/cad/cadTypes";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -33,6 +34,12 @@ export interface SvgExportOptions {
 
   // Условные обозначения на схеме
   schemaSymbols?: SchemaSymbol[];
+
+  // Стрелки направления потока (как в рабочей области — переключаются F9)
+  showFlowArrows?: boolean;
+
+  // Текстовые блоки на схеме
+  textBlocks?: TextBlock[];
 
   // Цвета позиций ПЛА: branchId → color
   posInnerColors?: Map<string, string>;
@@ -119,6 +126,8 @@ export function generateSvg(opts: SvgExportOptions): string {
     posInnerColors, posOuterColors, positions = [],
     fixedObjectScale = true,
     schemaSymbols = [],
+    showFlowArrows = false,
+    textBlocks = [],
     paperWidthMm,
     xyScale,
   } = opts;
@@ -295,7 +304,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
     const w = thinLines ? 1 : bw * objSF;
     const dash = b.isLeakage ? `stroke-dasharray="6 4"` : "";
-    const opacity = b.isDead ? 0.5 : 1;
+    const opacity = b.isDead ? 0.35 : 1;
 
     parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke="${esc(color)}" stroke-width="${n(w)}" opacity="${opacity}" ${dash}/>`);
   }
@@ -377,7 +386,7 @@ export function generateSvg(opts: SvgExportOptions): string {
   })();
 
   parts.push(`<g id="flow-arrows">`);
-  for (const b of visibleBranches) {
+  for (const b of showFlowArrows ? visibleBranches : []) {
     const Q = Math.abs(b.flow ?? 0);
     if (Q < 0.1 || b.isDead) continue;
     const fromPt = projMap.get(b.fromId);
@@ -529,7 +538,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const R = (pos.diameter ?? 13) * pxPerMm / 2;
       const fontSize = pos.number >= 100 ? R * 0.55 : pos.number >= 10 ? R * 0.7 : R * 0.85;
 
-      const fillColor = pos.color || "#f97316";
+      const fillColor = pos.color || "#ffffff";
       const borderColor = pos.borderColor || "#1f2937";
       const textColor = "#000000";
       const leaderThickness = Math.max(0.3, (pos.leaderThickness ?? 0.2) * pxPerMm);
@@ -948,6 +957,34 @@ export function generateSvg(opts: SvgExportOptions): string {
       }
       parts.push(`<circle r="${n(r)}" fill="${fill}" stroke="${border}" stroke-width="${n(sw)}"/>`);
       parts.push(`<text text-anchor="middle" dominant-baseline="central" font-size="${n(fontSize)}" font-weight="bold" font-family="Arial,sans-serif" fill="#000000">${pos.number}</text>`);
+      parts.push(`</g>`);
+    }
+    parts.push(`</g>`);
+  }
+
+  // ── Текстовые блоки ───────────────────────────────────────────────────────
+  if (textBlocks.length > 0) {
+    parts.push(`<g id="text-blocks">`);
+    for (const tb of textBlocks) {
+      const p = project3D({ x: tb.x * _xySFExport, y: tb.y * _xySFExport, z: 0 }, proj);
+      const fsPx = tb.fontSize * pxPerMm;
+      if (fsPx < 0.3) continue;
+      const lines = tb.text.split("\n");
+      const lineH = fsPx * 1.35;
+      const maxLen = Math.max(...lines.map(l => l.length), 4);
+      const estW = Math.max(60, maxLen * fsPx * 0.58 + 16);
+      const estH = lines.length * lineH + 12;
+      parts.push(`<g transform="translate(${n(p.sx)},${n(p.sy)})">`);
+      if (tb.background !== "none") {
+        parts.push(`<rect x="${n(-estW/2)}" y="${n(-estH/2)}" width="${n(estW)}" height="${n(estH)}" fill="${esc(tb.background)}" rx="3"/>`);
+      }
+      if (tb.borderColor !== "none") {
+        parts.push(`<rect x="${n(-estW/2)}" y="${n(-estH/2)}" width="${n(estW)}" height="${n(estH)}" fill="none" stroke="${esc(tb.borderColor)}" stroke-width="1" rx="3"/>`);
+      }
+      lines.forEach((line, li) => {
+        const ty = (-estH/2 + 8) + li * lineH + fsPx * 0.8;
+        parts.push(`<text x="0" y="${n(ty)}" text-anchor="middle" font-size="${n(fsPx, 1)}" font-weight="${tb.bold ? "bold" : "normal"}" font-style="${tb.italic ? "italic" : "normal"}" font-family="sans-serif" fill="${esc(tb.color)}">${esc(line)}</text>`);
+      });
       parts.push(`</g>`);
     }
     parts.push(`</g>`);
