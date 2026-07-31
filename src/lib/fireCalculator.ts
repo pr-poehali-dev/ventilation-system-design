@@ -680,6 +680,11 @@ export interface CriticalDepResult {
 export const CRITICAL_DEP_K = 0.9;  // коэффициент в формуле (5.3)
 export const CRITICAL_DEP_K54 = 0.85; // коэффициент в формуле (5.4)
 export const BULKHEAD_NEGLECT_RATIO = 300; // порог: сбойками пренебрегаем, если R ≥ 300·r
+// Граница «плоской» выработки, град. При |угол| < FLAT_ANGLE_DEG высотный столб
+// Δz = L·sinβ ничтожен, тепловая тяга по длине ≈ 0 — опрокидывание невозможно
+// в обе стороны. Единый порог для восходящее/нисходящее/плоское, чтобы пологие
+// выработки не выпадали из логики (раньше зона −1°…+1° была «слепой»).
+export const FLAT_ANGLE_DEG = 0.5;
 export const PARALLEL_PATH_MAX_DEPTH = 8; // макс. число ветвей в параллельном пути (обход графа)
 export const PARALLEL_PATH_MAX_COUNT = 12; // макс. число параллельных путей (защита от комбинаторного взрыва)
 
@@ -1201,11 +1206,13 @@ export function calcFireMode(
     const comb = getCombustible(fb.fireCombustible ?? "coal");
     const { coConc, co2Conc, smokeDensity, visibility } = calcGasConcentrations(Q_MW, airQ, comb);
 
-    // Опрокидывание возможно ТОЛЬКО в нисходящей (по потоку) выработке
-    // (flowRelAngle < 0) и когда тепловая депрессия превышает аэродинамическую.
-    // Восходящее проветривание (flowRelAngle > 0) — тепловая тяга помогает
-    // потоку, опрокидывание физически невозможно.
-    const isDescending = flowRelAngle < -1;
+    // Классификация по знаковому углу относительно потока с единым порогом
+    // «плоской» выработки FLAT_ANGLE_DEG (нет слепой зоны между −1° и +1°):
+    //   нисходящая (< −FLAT) — воздух вниз, горячий газ вверх → возможно опрокидывание;
+    //   восходящая (> +FLAT) — тяга помогает потоку → опрокидывание невозможно;
+    //   плоская (|β| ≤ FLAT)  — Δz ≈ 0, тепловой тяги по длине нет → устойчива.
+    const isDescending = flowRelAngle < -FLAT_ANGLE_DEG;
+    const isFlat = Math.abs(flowRelAngle) <= FLAT_ANGLE_DEG;
 
     // Критическая депрессия наклонной выработки (Прил. 5, формулы 5.3–5.5):
     // h_кр = 0.9·r_п·(Q+Q_п)². Считаем только для НИСХОДЯЩИХ выработок (для
@@ -1314,16 +1321,18 @@ export function calcFireMode(
     // Если originalFlow не задан — fallback на статическую оценку willReverse.
     const origFlow = fb.originalFlow;
     const flowNow  = fb.flow ?? 0;
-    // ВОСХОДЯЩЕЕ проветривание (flowRelAngle > +1) физически устойчиво: тёплые
+    // ВОСХОДЯЩЕЕ проветривание (flowRelAngle > +FLAT) физически устойчиво: тёплые
     // продукты горения поднимаются ПО ходу потока и усиливают тягу — опрокинуть
-    // такую струю пожар не может (как в Аэросети). Если решатель на сильно
-    // обеднённой воздухом ветви численно «перевернул» знак — это артефакт, а не
-    // реальное тепловое опрокидывание, поэтому для восходящих ветвей его гасим.
-    const isAscending = flowRelAngle > 1;
+    // такую струю пожар не может (как в Аэросети). ПЛОСКАЯ выработка (|β| ≤ FLAT)
+    // тоже устойчива: высотного столба нет, тепловой тяги по длине нет. Если
+    // решатель на сильно обеднённой воздухом ветви численно «перевернул» знак —
+    // это артефакт, а не реальное тепловое опрокидывание, поэтому для восходящих
+    // и плоских ветвей его гасим. Опрокидывание оставляем только нисходящим.
+    const isAscending = flowRelAngle > FLAT_ANGLE_DEG;
     const rawReversed = origFlow !== undefined
       ? (Math.sign(origFlow || 1) !== Math.sign(flowNow || 1)) && Math.abs(flowNow) > 0.05
       : willReverse;
-    const actuallyReversed = isAscending ? false : rawReversed;
+    const actuallyReversed = (isAscending || isFlat) ? false : rawReversed;
 
     // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
     const fbFlow = fb.flow ?? 0;
@@ -1333,7 +1342,9 @@ export function calcFireMode(
       thermalDepression: Math.round(thermalDep * 10) / 10,
       willReverse,
       actuallyReversed,
-      ascending: isAscending,
+      // Для h–Q диаграммы плоская выработка (без опрокидывания) показывается как
+      // устойчивая — в одном ряду с восходящей (рис. 2.2), а не как нисходящая.
+      ascending: isAscending || isFlat,
       coConc: Math.round(coConc * 1000) / 1000,
       co2Conc: Math.round(co2Conc * 100) / 100,
       smokeDensity: Math.round(smokeDensity * 100) / 100,
