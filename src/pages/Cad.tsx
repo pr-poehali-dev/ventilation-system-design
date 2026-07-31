@@ -2596,7 +2596,7 @@ export default function CadPage() {
   // (автопереключение правого таба при выборе объекта убрано — пользователь выбирает вкладку вручную)
 
   // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
-  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(390);
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(420);
   const leftDragRef = useRef<{ startX: number; startW: number } | null>(null);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -5723,7 +5723,7 @@ export default function CadPage() {
           </div>
 
           {/* Свойства */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-auto">
 
             {/* ═══ ВКЛАДКА: ПОИСК ═════════════════════════════════════ */}
             {activeSide === "search" && (() => {
@@ -8189,7 +8189,7 @@ export default function CadPage() {
                               title="Видимость на схеме" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
                             <input type="color" value={h.color}
                               onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
-                              className="w-6 h-6 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
+                              className="w-5 h-5 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
                               title="Цвет горизонта" />
                             <input type="text" value={h.name}
                               onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
@@ -8197,11 +8197,11 @@ export default function CadPage() {
                               placeholder="Название" />
                             {!isOverview && <input type="number" value={h.z}
                               onChange={(e) => updateHorizon(h.id, { z: Number(e.target.value) })}
-                              className="cad-input w-16 text-right"
+                              className="cad-input w-12 text-right flex-shrink-0"
                               title="Высотная отметка, м" />}
                             {!isOverview && <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>}
                             {isOverview && <span className="text-[10px] text-purple-500 flex-shrink-0 px-1" title="Общий вид — авто-bounds по всей схеме">авто</span>}
-                            <span className="text-[10px] text-gray-400 w-7 text-center" title="Ветвей на горизонте">
+                            <span className="text-[10px] text-gray-400 w-5 text-center flex-shrink-0" title="Ветвей на горизонте">
                               {usedCount}
                             </span>
                             {!isOverview && (
