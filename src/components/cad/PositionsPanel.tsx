@@ -118,19 +118,27 @@ export default function PositionsPanel({
         </div>
       )}
 
-      {/* Список позиций */}
-      <div className="overflow-y-auto" style={{ flex: "0 0 auto", maxHeight: 160, borderBottom: "1px solid #d0d0d0" }}>
+      {/* Список позиций — высоту можно менять, потянув за нижний край */}
+      <div
+        className="overflow-y-auto"
+        style={{ flex: "0 0 auto", height: 160, minHeight: 60, maxHeight: 600, resize: "vertical", borderBottom: "1px solid #d0d0d0" }}>
         {positions.length === 0 && (
           <div className="text-center py-4" style={{ color: "#999", fontSize: 11 }}>
             Нет позиций. Нажмите «Добавить».
           </div>
         )}
-        {positions.map((pos) => (
+        {positions.map((pos, idx) => (
           <div
             key={pos.id}
             onClick={() => onSelect(pos.id === selectedPositionId ? null : pos.id)}
             className="flex items-center gap-2 px-2 py-1 cursor-pointer"
             style={{ background: pos.id === selectedPositionId ? "#e8f0fe" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
+            {/* Порядковый номер строки (1,2,3…) — только для навигации по списку */}
+            <span
+              className="flex-shrink-0 text-right"
+              style={{ width: 18, color: "#9ca3af", fontSize: 10, fontVariantNumeric: "tabular-nums" }}>
+              {idx + 1}
+            </span>
             <div
               className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
               style={{ width: 22, height: 22, background: pos.color, border: `2px solid ${pos.borderColor}`, color: "#fff", fontSize: 10 }}>
@@ -145,7 +153,7 @@ export default function PositionsPanel({
                   style={{ width: 18, background: "transparent", border: "none", color: "#fff", fontSize: 10, textAlign: "center", outline: "none", padding: 0 }}
                 />
               ) : (
-                <span onDoubleClick={(e) => { e.stopPropagation(); startEditNumber(pos); }} title="Двойной клик — изменить номер">
+                <span onDoubleClick={(e) => { e.stopPropagation(); startEditNumber(pos); }} title="Двойной клик — изменить номер позиции ПЛА">
                   {pos.number}
                 </span>
               )}
