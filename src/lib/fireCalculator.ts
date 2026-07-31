@@ -666,6 +666,64 @@ export interface CriticalDepResult {
 export const CRITICAL_DEP_K = 0.9;  // коэффициент в формуле (5.3)
 export const CRITICAL_DEP_K54 = 0.85; // коэффициент в формуле (5.4)
 export const BULKHEAD_NEGLECT_RATIO = 300; // порог: сбойками пренебрегаем, если R ≥ 300·r
+export const PARALLEL_PATH_MAX_DEPTH = 8; // макс. число ветвей в параллельном пути (обход графа)
+export const PARALLEL_PATH_MAX_COUNT = 12; // макс. число параллельных путей (защита от комбинаторного взрыва)
+
+// Параллельный путь в обход горящей ветви: цепочка ветвей a → … → b.
+interface ParallelPath {
+  branchIds: string[];   // ветви пути по порядку
+  resistance: number;    // суммарное сопротивление пути (последовательное соединение)
+  flow: number;          // расход по пути (по «бутылочному горлышку» — минимальный |flow|)
+  mainBranchId: string;  // ветвь пути с наибольшим |flow| (для отображения)
+}
+
+// Поиск путей a → b, НЕ использующих горящую ветвь. Обычная параллельная
+// выработка уклонного поля идёт через цепочку промежуточных узлов, а не одной
+// ветвью между теми же узлами, поэтому наивный фильтр по узловой паре её не
+// находит. Здесь — ограниченный по глубине DFS по неориентированному графу.
+function findParallelPaths(
+  a: string, b: string, fireBranchId: string,
+  branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number }[],
+): ParallelPath[] {
+  // adj: узел → список смежных ветвей
+  const adj = new Map<string, { id: string; other: string; resistance: number; flow: number }[]>();
+  for (const br of branches) {
+    if (br.id === fireBranchId) continue;
+    const R = Number(br.resistance) || 0;
+    if (!(R > 0)) continue;
+    const F = Math.abs(Number(br.flow) || 0);
+    if (!adj.has(br.fromId)) adj.set(br.fromId, []);
+    if (!adj.has(br.toId)) adj.set(br.toId, []);
+    adj.get(br.fromId)!.push({ id: br.id, other: br.toId, resistance: R, flow: F });
+    adj.get(br.toId)!.push({ id: br.id, other: br.fromId, resistance: R, flow: F });
+  }
+
+  const paths: ParallelPath[] = [];
+  const visitedNodes = new Set<string>([a]);
+
+  const dfs = (node: string, ids: string[], res: number, minFlow: number, mainId: string, mainFlow: number) => {
+    if (paths.length >= PARALLEL_PATH_MAX_COUNT) return;
+    if (ids.length > PARALLEL_PATH_MAX_DEPTH) return;
+    for (const e of adj.get(node) ?? []) {
+      if (ids.includes(e.id)) continue;           // ветвь уже в пути
+      if (e.other !== b && visitedNodes.has(e.other)) continue; // не заходим в посещённые узлы
+      const nIds = [...ids, e.id];
+      const nRes = res + e.resistance;
+      const nMinFlow = Math.min(minFlow, e.flow);
+      const [nMainId, nMainFlow] = e.flow > mainFlow ? [e.id, e.flow] : [mainId, mainFlow];
+      if (e.other === b) {
+        paths.push({ branchIds: nIds, resistance: nRes, flow: nMinFlow === Infinity ? 0 : nMinFlow, mainBranchId: nMainId });
+        if (paths.length >= PARALLEL_PATH_MAX_COUNT) return;
+        continue;
+      }
+      visitedNodes.add(e.other);
+      dfs(e.other, nIds, nRes, nMinFlow, nMainId, nMainFlow);
+      visitedNodes.delete(e.other);
+    }
+  };
+  dfs(a, [], 0, Infinity, "", 0);
+  return paths;
+}
 
 export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult {
   const Q = Math.abs(Number(inp.fireFlow_m3s) || 0);
@@ -673,18 +731,17 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
     h_kr: 0, r_p: 0, Q, Q_p: 0, parallelCount: 0, formula: "5.3", hasParallel: false,
   };
 
-  // Параллельные выработки — ветви между ТОЙ ЖЕ парой узлов (кроме горящей).
   const a = inp.fireFromId, b = inp.fireToId;
-  const parallels = inp.branches.filter(br =>
-    br.id !== inp.fireBranchId &&
-    ((br.fromId === a && br.toId === b) || (br.fromId === b && br.toId === a)) &&
-    (Number(br.resistance) || 0) > 0,
-  );
+
+  // Параллельные ПУТИ в обход горящей ветви (цепочки узлов, а не только прямые
+  // ветви между той же парой узлов). Каждый путь — последовательное соединение
+  // ветвей с суммарным сопротивлением; сами пути между собой параллельны.
+  const paths = findParallelPaths(a, b, inp.fireBranchId, inp.branches);
 
   // ── Случай «уклонное поле с одной воздухоподающей выработкой» ──────────────
-  // Параллельной ветви нет → критическая депрессия ориентировочно принимается
+  // Параллельного пути нет → критическая депрессия ориентировочно принимается
   // равной депрессии всего уклонного поля (ΔP аварийной ветви).
-  if (parallels.length === 0) {
+  if (paths.length === 0) {
     const hField = Math.abs(Number(inp.fireDP_pa) || 0);
     if (hField > 0) {
       return { ...empty, h_kr: hField, formula: "field", hasParallel: true, parallelCount: 0 };
@@ -692,33 +749,36 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
     return empty;
   }
 
-  // ── (5.5) Приведённое сопротивление нескольких параллельных выработок ──────
+  // ── (5.5) Приведённое сопротивление нескольких параллельных путей ──────────
   // Параллельное аэродинамическое соединение: 1/√r_п = Σ 1/√rᵢ.
-  // Для двух ветвей это тождественно формуле r_п = r₁/(√(r₁/r₂)+1)².
-  const sumInvSqrt = parallels.reduce((s, br) => s + 1 / Math.sqrt(Number(br.resistance) || 1e-9), 0);
+  // Для двух путей это тождественно формуле r_п = r₁/(√(r₁/r₂)+1)².
+  const sumInvSqrt = paths.reduce((s, p) => s + 1 / Math.sqrt(p.resistance || 1e-9), 0);
   const r_p = sumInvSqrt > 0 ? 1 / (sumInvSqrt * sumInvSqrt) : 0;
-  // Q_п — суммарный расход по всем параллельным путям.
-  const Q_p = parallels.reduce((s, br) => s + Math.abs(Number(br.flow) || 0), 0);
-  const mainPar = parallels.reduce((best, br) =>
-    Math.abs(br.flow ?? 0) > Math.abs(best.flow ?? 0) ? br : best, parallels[0]);
+  // Q_п — расход по параллели: сумма расходов путей, идущих в ту же сторону
+  // (по «бутылочному горлышку» каждого пути).
+  const Q_p = paths.reduce((s, p) => s + p.flow, 0);
+  const mainPath = paths.reduce((best, p) => (p.flow > best.flow ? p : best), paths[0]);
+  const mainPar = { id: mainPath.mainBranchId, resistance: mainPath.resistance };
 
   if (!(r_p > 0)) {
-    return { ...empty, hasParallel: true, parallelBranchId: mainPar.id, Q_p, parallelCount: parallels.length };
+    return { ...empty, hasParallel: true, parallelBranchId: mainPar.id, Q_p, parallelCount: paths.length };
   }
 
   // ── (5.4) Учёт сбоек с перемычками ────────────────────────────────────────
   // Сбойки — ветви, соединяющие узел аварийной пары (a или b) с «чужим» узлом
-  // (промежуточные перемычки между наклонными выработками). Ищем их и участки,
-  // примыкающие к аварийному сверху/снизу.
+  // (промежуточные перемычки между наклонными выработками) и НЕ входящие в
+  // найденные параллельные пути (чтобы не учесть их сопротивление дважды).
+  const pathBranchIds = new Set<string>();
+  for (const p of paths) for (const id of p.branchIds) pathBranchIds.add(id);
   const nodePair = new Set([a, b]);
   const crossings = inp.branches.filter(br =>
-    br.id !== inp.fireBranchId && !parallels.includes(br) &&
+    br.id !== inp.fireBranchId && !pathBranchIds.has(br.id) &&
     ((nodePair.has(br.fromId) && !nodePair.has(br.toId)) ||
      (nodePair.has(br.toId) && !nodePair.has(br.fromId))) &&
     (Number(br.resistance) || 0) > 0,
   );
 
-  let formula: CriticalDepFormula = parallels.length > 1 ? "5.5" : "5.3";
+  let formula: CriticalDepFormula = paths.length > 1 ? "5.5" : "5.3";
   let h_kr: number;
 
   if (crossings.length >= 1) {
@@ -756,7 +816,7 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
     h_kr: Number.isFinite(h_kr) ? h_kr : 0,
     r_p, Q, Q_p,
     parallelBranchId: mainPar.id,
-    parallelCount: parallels.length,
+    parallelCount: paths.length,
     formula,
     hasParallel: true,
   };
@@ -1088,11 +1148,10 @@ export function calcFireMode(
     // Восходящее проветривание (flowRelAngle > 0) — тепловая тяга помогает
     // потоку, опрокидывание физически невозможно.
     const isDescending = flowRelAngle < -1;
-    const willReverse = isDescending && Math.abs(thermalDep) > Math.abs(fb.dP ?? 0) * 0.5;
 
-    // Критическая депрессия наклонной выработки (Прил. 5, формула 5.3):
+    // Критическая депрессия наклонной выработки (Прил. 5, формулы 5.3–5.5):
     // h_кр = 0.9·r_п·(Q+Q_п)². Считаем только для НИСХОДЯЩИХ выработок (для
-    // восходящих опрокидывание невозможно) и при наличии параллельной ветви.
+    // восходящих опрокидывание невозможно) и при наличии параллельного пути.
     const critRaw = isDescending
       ? calcCriticalDepression({
           fireBranchId: fb.id,
@@ -1103,6 +1162,17 @@ export function calcFireMode(
           branches,
         })
       : null;
+
+    // Единый физический критерий опрокидывания нисходящей струи:
+    // струя опрокидывается, когда тепловая депрессия достигает критической h_кр
+    // (Прил. 5). Если h_кр рассчитать нельзя (нет параллельного пути и не задан
+    // ΔP поля) — сравниваем с депрессией самого участка |ΔP|. Прежний порог
+    // 0.5·|ΔP| был эвристическим и занижал границу вдвое.
+    const reversalThreshold = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
+      ? critRaw.h_kr
+      : Math.abs(fb.dP ?? 0);
+    const willReverse = isDescending && reversalThreshold > 0
+      && Math.abs(thermalDep) >= reversalThreshold;
     const critical = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
       ? (() => {
           // Показатель устойчивости (Прил. 3, ф. 3.1): p_у = h_кр / h_т.
