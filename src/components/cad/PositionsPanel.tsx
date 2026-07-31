@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   type Position, makePosition, POSITION_COLORS,
   VENT_MODES, ACCIDENT_TYPES, FONT_OPTIONS,
@@ -52,6 +52,27 @@ export default function PositionsPanel({
 }: Props) {
   const [editingNumberId, setEditingNumberId] = useState<string | null>(null);
   const [editingNumberVal, setEditingNumberVal] = useState("");
+
+  // Высота списка позиций — регулируется перетаскиванием видимой ручки
+  const [listHeight, setListHeight] = useState<number>(160);
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startY: e.clientY, startH: listHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const next = dragRef.current.startH + (ev.clientY - dragRef.current.startY);
+      setListHeight(Math.max(60, Math.min(600, next)));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const selected = positions.find((p) => p.id === selectedPositionId) ?? null;
 
@@ -118,10 +139,10 @@ export default function PositionsPanel({
         </div>
       )}
 
-      {/* Список позиций — высоту можно менять, потянув за нижний край */}
+      {/* Список позиций — высоту можно менять ручкой ниже */}
       <div
         className="overflow-y-auto"
-        style={{ flex: "0 0 auto", height: 160, minHeight: 60, maxHeight: 600, resize: "vertical", borderBottom: "1px solid #d0d0d0" }}>
+        style={{ flex: "0 0 auto", height: listHeight }}>
         {positions.length === 0 && (
           <div className="text-center py-4" style={{ color: "#999", fontSize: 11 }}>
             Нет позиций. Нажмите «Добавить».
@@ -135,7 +156,7 @@ export default function PositionsPanel({
             style={{ background: pos.id === selectedPositionId ? "#e8f0fe" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
             <div
               className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
-              style={{ width: 22, height: 22, background: pos.color, border: `2px solid ${pos.borderColor}`, color: "#fff", fontSize: 10 }}>
+              style={{ width: 22, height: 22, background: pos.color, border: `2px solid ${pos.borderColor}`, color: "#000", fontSize: 10 }}>
               {editingNumberId === pos.id ? (
                 <input
                   autoFocus
@@ -144,7 +165,7 @@ export default function PositionsPanel({
                   onBlur={() => commitNumber(pos.id)}
                   onKeyDown={(e) => { if (e.key === "Enter") commitNumber(pos.id); if (e.key === "Escape") setEditingNumberId(null); }}
                   onClick={(e) => e.stopPropagation()}
-                  style={{ width: 18, background: "transparent", border: "none", color: "#fff", fontSize: 10, textAlign: "center", outline: "none", padding: 0 }}
+                  style={{ width: 18, background: "transparent", border: "none", color: "#000", fontSize: 10, textAlign: "center", outline: "none", padding: 0 }}
                 />
               ) : (
                 <span onDoubleClick={(e) => { e.stopPropagation(); startEditNumber(pos); }} title="Двойной клик — изменить номер позиции ПЛА">
@@ -160,6 +181,21 @@ export default function PositionsPanel({
             )}
           </div>
         ))}
+      </div>
+
+      {/* Видимая ручка изменения высоты списка */}
+      <div
+        onMouseDown={startResize}
+        title="Потяните, чтобы изменить высоту списка"
+        className="flex items-center justify-center select-none"
+        style={{
+          height: 12,
+          cursor: "ns-resize",
+          background: "#eef2f7",
+          borderTop: "1px solid #d0d0d0",
+          borderBottom: "1px solid #d0d0d0",
+        }}>
+        <div style={{ width: 34, height: 3, borderRadius: 2, background: "#9aa7b8" }} />
       </div>
 
       {/* Редактирование выбранной */}
