@@ -388,22 +388,44 @@ def handler(event: dict, context) -> dict:
                 "expires_at": str(r[3]), "days_left": int(r[4]) if r[4] is not None else None,
             } for r in cur.fetchall()]
 
-            # 5. Версии приложения у клиентов
+            # 5. Версии приложения у клиентов + организации (ПВС), которые их используют
             cur.execute("""
-                SELECT COALESCE(app_version, '—') AS v, COUNT(*)
-                FROM license_seats
-                GROUP BY app_version ORDER BY COUNT(*) DESC
+                SELECT v, cnt, json_agg(json_build_object('owner', owner, 'count', owner_cnt)
+                                        ORDER BY owner_cnt DESC, owner) AS orgs
+                FROM (
+                    SELECT COALESCE(s.app_version, '—') AS v,
+                           COALESCE(l.owner_name, '—') AS owner,
+                           COUNT(*) AS owner_cnt,
+                           SUM(COUNT(*)) OVER (PARTITION BY COALESCE(s.app_version, '—')) AS cnt
+                    FROM license_seats s
+                    LEFT JOIN licenses l ON l.id = s.license_id
+                    GROUP BY COALESCE(s.app_version, '—'), COALESCE(l.owner_name, '—')
+                ) t
+                GROUP BY v, cnt ORDER BY cnt DESC
             """)
-            versions = [{"version": r[0], "count": int(r[1])} for r in cur.fetchall()]
+            versions = [{"version": r[0], "count": int(r[1]),
+                         "orgs": [{"owner": o["owner"], "count": int(o["count"])} for o in (r[2] or [])]}
+                        for r in cur.fetchall()]
 
-            # 5a2. Версии расчётного ядра (server.exe) — только там, где известны
+            # 5a2. Версии расчётного ядра (server.exe) — только там, где известны, + организации
             cur.execute("""
-                SELECT COALESCE(core_version, '—') AS v, COUNT(*)
-                FROM license_seats
-                WHERE core_version IS NOT NULL AND core_version <> ''
-                GROUP BY core_version ORDER BY COUNT(*) DESC
+                SELECT v, cnt, json_agg(json_build_object('owner', owner, 'count', owner_cnt)
+                                        ORDER BY owner_cnt DESC, owner) AS orgs
+                FROM (
+                    SELECT s.core_version AS v,
+                           COALESCE(l.owner_name, '—') AS owner,
+                           COUNT(*) AS owner_cnt,
+                           SUM(COUNT(*)) OVER (PARTITION BY s.core_version) AS cnt
+                    FROM license_seats s
+                    LEFT JOIN licenses l ON l.id = s.license_id
+                    WHERE s.core_version IS NOT NULL AND s.core_version <> ''
+                    GROUP BY s.core_version, COALESCE(l.owner_name, '—')
+                ) t
+                GROUP BY v, cnt ORDER BY cnt DESC
             """)
-            core_versions = [{"version": r[0], "count": int(r[1])} for r in cur.fetchall()]
+            core_versions = [{"version": r[0], "count": int(r[1]),
+                              "orgs": [{"owner": o["owner"], "count": int(o["count"])} for o in (r[2] or [])]}
+                             for r in cur.fetchall()]
 
             # 5b. Использование модулей (за 7 дней по журналу module_use)
             cur.execute("""

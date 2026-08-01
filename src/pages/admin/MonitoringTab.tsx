@@ -223,11 +223,23 @@ export default function MonitoringTab({ data, loading }: Props) {
           {data.versions.length === 0 ? (
             <div className="text-[12px] text-gray-400">Нет данных.</div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
               {data.versions.map(row => (
-                <div key={row.version} className="flex items-center justify-between text-[12px]">
-                  <span className="text-gray-700 font-mono">{row.version}</span>
-                  <span className="text-gray-500">{row.count} <span className="text-gray-300">мест</span></span>
+                <div key={row.version}>
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-gray-700 font-mono">{row.version}</span>
+                    <span className="text-gray-500">{row.count} <span className="text-gray-300">мест</span></span>
+                  </div>
+                  {row.orgs && row.orgs.length > 0 && (
+                    <div className="mt-0.5 pl-2 border-l-2 border-blue-100 space-y-0.5">
+                      {row.orgs.map(o => (
+                        <div key={o.owner} className="flex items-center justify-between text-[11px] text-gray-400">
+                          <span className="truncate mr-2">{o.owner}</span>
+                          <span className="shrink-0">{o.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -239,11 +251,23 @@ export default function MonitoringTab({ data, loading }: Props) {
           {!data.core_versions || data.core_versions.length === 0 ? (
             <div className="text-[12px] text-gray-400">Нет данных о версии ядра.</div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
               {data.core_versions.map(row => (
-                <div key={row.version} className="flex items-center justify-between text-[12px]">
-                  <span className="text-purple-700 font-mono">{row.version}</span>
-                  <span className="text-gray-500">{row.count} <span className="text-gray-300">мест</span></span>
+                <div key={row.version}>
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-purple-700 font-mono">{row.version}</span>
+                    <span className="text-gray-500">{row.count} <span className="text-gray-300">мест</span></span>
+                  </div>
+                  {row.orgs && row.orgs.length > 0 && (
+                    <div className="mt-0.5 pl-2 border-l-2 border-purple-100 space-y-0.5">
+                      {row.orgs.map(o => (
+                        <div key={o.owner} className="flex items-center justify-between text-[11px] text-gray-400">
+                          <span className="truncate mr-2">{o.owner}</span>
+                          <span className="shrink-0">{o.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

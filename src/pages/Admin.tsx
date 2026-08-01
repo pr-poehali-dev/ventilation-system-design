@@ -58,8 +58,8 @@ export interface MonitoringData {
     multi_ip: { owner: string; key: string; ip_count: number }[];
   };
   expiring: { id: number; owner: string; key: string; expires_at: string; days_left: number | null }[];
-  versions: { version: string; count: number }[];
-  core_versions?: { version: string; count: number }[];
+  versions: { version: string; count: number; orgs?: { owner: string; count: number }[] }[];
+  core_versions?: { version: string; count: number; orgs?: { owner: string; count: number }[] }[];
   modules_usage: { modules: string; count: number }[];
   logins_24h: number;
 }
