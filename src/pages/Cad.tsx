@@ -35,7 +35,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireMode, calcFireTemp, calcThermalDepressionUnified, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireMode, calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -2948,11 +2948,18 @@ export default function CadPage() {
           fireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
           length_m: target.length, angle_deg: flowRelAngle,
           airFlow_m3s: airQ0, sectionArea_m2: target.area,
-        });
+        }, thermalDepMethod);
+        // Температура источника плюма по выбранному методу («Норматив 4.5» → Tм
+        // из геометрии, «Методика» → реальная T_пр) — чтобы факты устойчивости
+        // совпадали с аварийным расчётом.
+        const T_src = fireSourceTempForMethod({
+          physicalFireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
+          angle_deg: flowRelAngle, airFlow_m3s: airQ0, sectionArea_m2: target.area,
+        }, thermalDepMethod);
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
         const hotNodeTemps = computeHotNodeTemps(
-          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: s.fireTemp, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, length: target.length, area: target.area, perimeter: target.perimeter }],
+          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, length: target.length, area: target.area, perimeter: target.perimeter }],
           branchesForHot, ambientTemp,
         );
         scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
@@ -4507,7 +4514,23 @@ export default function CadPage() {
                           ? Math.min(1200, Number(b.fireTemperature))
                           : AMBIENT_TEMP + 500)
                       : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);
-                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_pr, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, length: b.length, area: b.area, perimeter: b.perimeter });
+                    // Температура источника горячего плюма зависит от метода:
+                    // "Норматив 4.5" → Tм из геометрии (форм. 4.11), "Методика" →
+                    // реальная T_пр. Ручную температуру ("temp") не трогаем.
+                    let T_src = T_pr;
+                    if (b.fireMode !== "temp") {
+                      const fromN = nodes.find(n => n.id === b.fromId);
+                      const toN   = nodes.find(n => n.id === b.toId);
+                      const dzGeom = (toN?.z ?? 0) - (fromN?.z ?? 0);
+                      const geomAngle = Math.abs(b.angle ?? 0) * Math.sign(dzGeom || 1);
+                      const dirFlow = originalFlows.get(b.id) ?? b.flow ?? 0;
+                      const flowRelAngle = geomAngle * (dirFlow >= 0 ? 1 : -1);
+                      T_src = fireSourceTempForMethod({
+                        physicalFireTemp_C: T_pr, ambientTemp_C: AMBIENT_TEMP,
+                        angle_deg: flowRelAngle, airFlow_m3s: airQ, sectionArea_m2: b.area,
+                      }, thermalDepMethod);
+                    }
+                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, length: b.length, area: b.area, perimeter: b.perimeter });
                     // fireThermalDepression больше НЕ прикладываем как источник.
                     return { ...b, fireThermalDepression: 0 };
                   });

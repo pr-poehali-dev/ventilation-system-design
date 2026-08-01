@@ -925,6 +925,41 @@ export function calcThermalDepressionUnified(
   return calcThermalDepression(args.fireTemp_C, args.ambientTemp_C, args.length_m, args.angle_deg);
 }
 
+// Температура ИСТОЧНИКА горячего плюма (°C) для карты горячих узлов —
+// зависит от выбранного метода тепловой депрессии:
+//   • "aeroseti" ("Методика") — реальная температура продуктов горения
+//     (по мощности пожара и расходу), т.е. переданное physicalFireTemp_C;
+//   • "normative" ("Норматив 4.5") — нормативная максимальная температура
+//     в очаге Tм (формула 4.11, K → °C), рассчитанная из геометрии выработки
+//     (S, Q, β, t). При недостатке геометрии откатываемся к физической.
+// Именно эта величина подаётся в computeHotNodeTemps как fireTemp очага, поэтому
+// выбор метода теперь РЕАЛЬНО меняет тягу и расход, а не только цифры в панели.
+export function fireSourceTempForMethod(
+  args: {
+    physicalFireTemp_C: number;
+    ambientTemp_C: number;
+    angle_deg: number;
+    airFlow_m3s?: number;
+    sectionArea_m2?: number;
+    distanceToMouth_m?: number;
+    fireTime_min?: number;
+  },
+  method: ThermalDepMethod = getThermalDepMethod(),
+): number {
+  if (method === "normative" && (args.airFlow_m3s ?? 0) > 0 && (args.sectionArea_m2 ?? 0) > 0) {
+    const nr = calcThermalDepressionNormative({
+      airFlow_m3s: args.airFlow_m3s!,
+      sectionArea_m2: args.sectionArea_m2!,
+      angle_deg: args.angle_deg,
+      distanceToMouth_m: args.distanceToMouth_m,
+      fireTime_min: args.fireTime_min,
+    });
+    const tmC = nr.Tm - 273;
+    if (Number.isFinite(tmC) && tmC > args.ambientTemp_C) return tmC;
+  }
+  return args.physicalFireTemp_C;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Температуры узлов вдоль пути горячих газов пожара.
 //
