@@ -11,34 +11,23 @@ import os
 import re
 import base64
 import io
-import urllib.request
 
-# Кириллический шрифт DejaVu Sans.
-# 1) сначала пробуем файл рядом с функцией (если он попал в деплой),
-# 2) иначе — кэш в /tmp,
-# 3) иначе — качаем с CDN один раз при холодном старте и кэшируем в /tmp.
+# Кириллический шрифт DejaVu Sans (свободная лицензия) поставляется
+# В СОСТАВЕ функции — TTF-файлы лежат рядом в каталоге ./fonts.
+# Внешние источники не используются (весь код в российском контуре).
 _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
-_FONT_URLS = {
-    "DejaVuSans.ttf": "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",
-    "DejaVuSans-Bold.ttf": "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf",
-}
 _FONTS_REGISTERED = False
 
 
 def _resolve_font(fname: str) -> str:
-    """Возвращает путь к TTF: bundle -> /tmp-кэш -> скачивание с CDN."""
+    """Возвращает путь к встроенному TTF-файлу шрифта."""
     bundled = os.path.join(_FONT_DIR, fname)
     if os.path.exists(bundled) and os.path.getsize(bundled) > 10000:
         return bundled
-    cached = os.path.join("/tmp", fname)
-    if os.path.exists(cached) and os.path.getsize(cached) > 10000:
-        return cached
-    req = urllib.request.Request(_FONT_URLS[fname], headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        data = r.read()
-    with open(cached, "wb") as f:
-        f.write(data)
-    return cached
+    raise FileNotFoundError(
+        f"Шрифт {fname} не найден в {_FONT_DIR}. "
+        f"TTF-файлы DejaVu Sans должны поставляться в составе функции."
+    )
 
 
 def _register_cyrillic_fonts():
