@@ -5198,10 +5198,6 @@ export default function CadPage() {
                     </div>
                   )}
                 </div>
-                <div className="text-[8px] text-center text-gray-500 px-1 pb-0.5 pt-0.5 leading-tight"
-                  style={{ borderTop: "1px solid #d4d4d4" }}>
-                  Усл. обозначения
-                </div>
               </div>
 
               {/* ── Выпадающая панель ── */}
