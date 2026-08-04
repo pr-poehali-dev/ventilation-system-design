@@ -5143,8 +5143,8 @@ export default function CadPage() {
                     style={{
                       display: "grid",
                       gridAutoFlow: "column",
-                      gridTemplateRows: "repeat(4, 20px)",
-                      gridAutoColumns: "20px",
+                      gridTemplateRows: "repeat(5, 15px)",
+                      gridAutoColumns: "15px",
                       gap: 1,
                       alignContent: "center",
                       overflowX: "auto",
@@ -5168,16 +5168,16 @@ export default function CadPage() {
                             if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
                           }}
                           style={{
-                            width: 20, height: 20,
+                            width: 15, height: 15,
                             display: "flex", alignItems: "center", justifyContent: "center",
-                            borderRadius: 3,
+                            borderRadius: 2,
                             border: isActive ? "1.5px solid #2563eb" : "1px solid transparent",
                             background: isActive ? "#dbeafe" : "transparent",
                             cursor: "pointer", padding: 0,
                             transition: "border-color .1s, background .1s",
                             outline: "none",
                           }}>
-                          <svg width={17} height={14} viewBox="0 0 48 40">
+                          <svg width={13} height={11} viewBox="0 0 48 40">
                             <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                           </svg>
                         </button>
