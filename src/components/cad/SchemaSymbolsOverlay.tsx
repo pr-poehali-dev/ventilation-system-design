@@ -140,9 +140,10 @@ export default function SchemaSymbolsOverlay({
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
           // После rotate(brAngle): ось X — вдоль ветви, ось Y — поперёк
-          const halfH = Math.max(2.5, SZ * 0.85 / 2);   // поперёк ветви (полуширина)
-          const totalLen = halfH * 2.6;                  // длина вдоль ветви
-          const sw = Math.max(0.4, halfH * 0.18);
+          // Ширина символа = точно ширина ветви на экране
+          const eeBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
+          const halfH = Math.max(1.2, (eeBw * viewScale / 2) * sc);  // поперёк ветви
+          const totalLen = halfH * 5.2;                  // длиннее вдоль ветви
           // 4 полосы вдоль ветви: жёлтая, чёрная, жёлтая, чёрная.
           // Чёрные чуть длиннее жёлтых (как в Аэросети).
           const yW = totalLen / 4.4;      // жёлтая
@@ -162,7 +163,7 @@ export default function SchemaSymbolsOverlay({
                 cursor += p.w;
                 return (
                   <rect key={i} x={x} y={-halfH} width={p.w} height={halfH * 2}
-                    fill={p.fill} stroke="#111" strokeWidth={sw} />
+                    fill={p.fill} stroke="none" />
                 );
               })}
             </g>

@@ -3741,9 +3741,10 @@ export default function TopoCanvas(props: Props) {
                 if (sym.typeId === "emergency_exit" && sym.branchId && hasBranchPts) {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
                   const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
-                  const halfH = Math.max(2.5, SZ * 0.85 / 2);
-                  const totalLen = halfH * 2.6;
-                  const sw = Math.max(0.4, halfH * 0.18);
+                  // Ширина символа = точно ширина ветви на экране
+                  const eeBwS = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
+                  const halfH = Math.max(1.2, (Math.max(eeBwS * _branchObjSF, 1.0) / 2) * sc);
+                  const totalLen = halfH * 5.2;   // длиннее вдоль ветви
                   const yW = totalLen / 4.4;   // жёлтая
                   const bW = totalLen / 3.7;   // чёрная (чуть больше)
                   const seq: { w: number; fill: string }[] = [
@@ -3761,7 +3762,7 @@ export default function TopoCanvas(props: Props) {
                         cursor += p.w;
                         return (
                           <rect key={i} x={x} y={-halfH} width={p.w} height={halfH * 2}
-                            fill={p.fill} stroke="#111" strokeWidth={sw} />
+                            fill={p.fill} stroke="none" />
                         );
                       })}
                     </g>
@@ -4973,10 +4974,9 @@ export default function TopoCanvas(props: Props) {
                   const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
                   const eeBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
                   const realBwEe = Math.max(eeBw * _branchObjSF, 1.0);
-                  const SZee = Math.max(6, (realBwEe * (bulkheadScale / 100) / 0.85) * (sym.scale ?? 1));
-                  const halfH = Math.max(2.5, SZee * 0.85 / 2);
-                  const totalLen = halfH * 2.6;
-                  const swEe = Math.max(0.4, halfH * 0.18);
+                  // Ширина символа = точно ширина ветви на экране
+                  const halfH = Math.max(1.2, (realBwEe / 2) * (sym.scale ?? 1));
+                  const totalLen = halfH * 5.2;   // длиннее вдоль ветви
                   const yW = totalLen / 4.4;
                   const bW = totalLen / 3.7;
                   const seq: { w: number; fill: string }[] = [
@@ -4994,7 +4994,7 @@ export default function TopoCanvas(props: Props) {
                         cursor += p.w;
                         return (
                           <rect key={i} x={x} y={-halfH} width={p.w} height={halfH * 2}
-                            fill={p.fill} stroke="#111" strokeWidth={swEe} />
+                            fill={p.fill} stroke="none" />
                         );
                       })}
                     </g>
