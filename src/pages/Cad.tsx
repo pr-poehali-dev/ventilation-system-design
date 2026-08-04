@@ -5108,7 +5108,7 @@ export default function CadPage() {
                     onClick={() => {
                       const rect = uoBtnRef.current?.getBoundingClientRect();
                       if (rect) {
-                        const panelW = 560;
+                        const panelW = 340;
                         const left = Math.min(rect.left, window.innerWidth - panelW - 8);
                         setUOPanelPos({ left: Math.max(4, left), top: rect.bottom + 2 });
                       }
@@ -5171,7 +5171,7 @@ export default function CadPage() {
                       border: "1px solid #b8c8d8",
                       boxShadow: "0 8px 32px rgba(0,0,0,0.20)",
                       borderRadius: 6,
-                      width: 560,
+                      width: 340,
                       maxHeight: "72vh",
                       overflowY: "auto",
                     }}
@@ -5207,15 +5207,15 @@ export default function CadPage() {
                         className="text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center text-[14px] leading-none rounded hover:bg-gray-200">×</button>
                     </div>
 
-                    {/* Контент — группы */}
-                    <div className="p-2 flex flex-col gap-2">
+                    {/* Контент — группы (плотная компактная сетка, как в Аэросети) */}
+                    <div className="flex flex-col">
                       {symGroups.map(({ label, items }) => (
                         <div key={label}>
-                          <div className="text-[8.5px] font-semibold uppercase tracking-wide px-1 py-0.5 mb-1"
-                            style={{ borderBottom: "1px solid #eaeaea", color: "#9ca3af" }}>
+                          <div className="text-[8.5px] font-semibold uppercase tracking-wide px-2 py-[3px]"
+                            style={{ background: "#f0f3f8", borderTop: "1px solid #e2e8f2", borderBottom: "1px solid #e2e8f2", color: "#64748b" }}>
                             {label}
                           </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 3, paddingLeft: 2 }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 1, padding: "3px 4px" }}>
                             {items.map(lt => {
                               const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
                               return (
@@ -5228,19 +5228,19 @@ export default function CadPage() {
                                   }}
                                   onMouseLeave={e => {
                                     setUoTooltip(null);
-                                    if (!isActive) (e.currentTarget as HTMLElement).style.background = "#f8faff";
+                                    if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
                                   }}
                                   style={{
-                                    width: 32, height: 32,
+                                    width: 26, height: 26,
                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                    borderRadius: 4,
-                                    border: isActive ? "2px solid #2563eb" : "1px solid #d8e0ec",
-                                    background: isActive ? "#dbeafe" : "#f8faff",
+                                    borderRadius: 3,
+                                    border: isActive ? "1.5px solid #2563eb" : "1px solid transparent",
+                                    background: isActive ? "#dbeafe" : "transparent",
                                     cursor: "pointer", padding: 0, flexShrink: 0,
-                                    transition: "border-color .12s, background .12s",
+                                    transition: "border-color .1s, background .1s",
                                     outline: "none",
                                   }}>
-                                  <svg width={24} height={20} viewBox="0 0 48 40">
+                                  <svg width={22} height={18} viewBox="0 0 48 40">
                                     <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                                   </svg>
                                 </button>
