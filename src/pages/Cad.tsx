@@ -5099,7 +5099,7 @@ export default function CadPage() {
           const hasActive = tool === "symbol" && !!activeLt;
 
           return (
-            <div className="relative h-full" style={{ flex: "1 1 auto", minWidth: 0, borderRight: "1px solid #d0d0d0" }}>
+            <div className="relative flex-shrink-0 h-full" style={{ borderRight: "1px solid #d0d0d0" }}>
               {/* ── Кнопка-триггер + встроенная превью-сетка (как «Объекты на выработках» в Аэросети) ── */}
               <div className="flex flex-col h-full">
                 <div className="flex-1 flex items-stretch gap-1 px-1.5 pt-1 min-h-0">
@@ -5143,14 +5143,13 @@ export default function CadPage() {
                     style={{
                       display: "grid",
                       gridAutoFlow: "column",
-                      gridTemplateRows: "repeat(4, 20px)",
-                      gridAutoColumns: "20px",
+                      gridTemplateRows: "repeat(3, 18px)",
+                      gridAutoColumns: "18px",
                       gap: 1,
                       alignContent: "center",
                       overflowX: "auto",
                       overflowY: "hidden",
-                      flex: "1 1 auto",
-                      minWidth: 0,
+                      maxWidth: 330,
                     }}
                     onMouseLeave={() => setUoTooltip(null)}>
                     {LEGEND_TYPES.map(lt => {
@@ -5168,7 +5167,7 @@ export default function CadPage() {
                             if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
                           }}
                           style={{
-                            width: 20, height: 20,
+                            width: 18, height: 18,
                             display: "flex", alignItems: "center", justifyContent: "center",
                             borderRadius: 3,
                             border: isActive ? "1.5px solid #2563eb" : "1px solid transparent",
@@ -5177,7 +5176,7 @@ export default function CadPage() {
                             transition: "border-color .1s, background .1s",
                             outline: "none",
                           }}>
-                          <svg width={17} height={14} viewBox="0 0 48 40">
+                          <svg width={15} height={13} viewBox="0 0 48 40">
                             <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
                           </svg>
                         </button>
@@ -5198,6 +5197,10 @@ export default function CadPage() {
                       </button>
                     </div>
                   )}
+                </div>
+                <div className="text-[8px] text-center text-gray-500 px-1 pb-0.5 pt-0.5 leading-tight"
+                  style={{ borderTop: "1px solid #d4d4d4" }}>
+                  Усл. обозначения
                 </div>
               </div>
 
