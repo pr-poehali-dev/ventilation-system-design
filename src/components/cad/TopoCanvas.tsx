@@ -3599,7 +3599,7 @@ export default function TopoCanvas(props: Props) {
             const fireBwSvg = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
-          } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
+          } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
             const bkBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             // Размер перемычки = реальная ширина ветви на экране × bulkheadScale%.
             // _objSF — тот же коэффициент толщины ветви, что и при отрисовке ветвей,
@@ -3737,6 +3737,36 @@ export default function TopoCanvas(props: Props) {
               {/* SVG-символ (pointerEvents=none — события только через hitbox) */}
               <g style={{ pointerEvents: "none" }}>
               {(() => {
+                // ── Запасной выход: по направлению и ширине ветви ──
+                if (sym.typeId === "emergency_exit" && sym.branchId && hasBranchPts) {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                  const halfH = Math.max(2.5, SZ * 0.85 / 2);
+                  const totalLen = halfH * 2.6;
+                  const sw = Math.max(0.4, halfH * 0.18);
+                  const yW = totalLen / 4.4;   // жёлтая
+                  const bW = totalLen / 3.7;   // чёрная (чуть больше)
+                  const seq: { w: number; fill: string }[] = [
+                    { w: yW, fill: "#ffd600" },
+                    { w: bW, fill: "#111" },
+                    { w: yW, fill: "#ffd600" },
+                    { w: bW, fill: "#111" },
+                  ];
+                  const sumW = seq.reduce((s, p) => s + p.w, 0);
+                  let cursor = -sumW / 2;
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
+                      {seq.map((p, i) => {
+                        const x = cursor;
+                        cursor += p.w;
+                        return (
+                          <rect key={i} x={x} y={-halfH} width={p.w} height={halfH * 2}
+                            fill={p.fill} stroke="#111" strokeWidth={sw} />
+                        );
+                      })}
+                    </g>
+                  );
+                }
                 const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
                 if (isBulkhead && sym.branchId && hasBranchPts) {
                   // ── Перемычка на ветви: рисуем напрямую примитивами ──
@@ -4762,7 +4792,7 @@ export default function TopoCanvas(props: Props) {
               const fireBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               const autoSZ = Math.max(8, fireBw * view.scale * 4);
               SZ = Math.max(8, autoSZ * sc);
-            } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station") && sym.branchId && hasBranchPts) {
+            } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
               const msBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               // Реальная толщина ветви в пикселях на экране (тот же objSF, что и
               // при отрисовке ветвей в canvasRenderer). Благодаря этому перемычка
@@ -4937,6 +4967,39 @@ export default function TopoCanvas(props: Props) {
                   );
                 })()}
                 {isSel && <circle cx={vcpx} cy={vcpy} r={vSZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
+                {/* Запасной выход: по направлению и ширине ветви */}
+                {sym.typeId === "emergency_exit" && hasBranchPts ? (() => {
+                  const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+                  const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+                  const eeBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
+                  const realBwEe = Math.max(eeBw * _branchObjSF, 1.0);
+                  const SZee = Math.max(6, (realBwEe * (bulkheadScale / 100) / 0.85) * (sym.scale ?? 1));
+                  const halfH = Math.max(2.5, SZee * 0.85 / 2);
+                  const totalLen = halfH * 2.6;
+                  const swEe = Math.max(0.4, halfH * 0.18);
+                  const yW = totalLen / 4.4;
+                  const bW = totalLen / 3.7;
+                  const seq: { w: number; fill: string }[] = [
+                    { w: yW, fill: "#ffd600" },
+                    { w: bW, fill: "#111" },
+                    { w: yW, fill: "#ffd600" },
+                    { w: bW, fill: "#111" },
+                  ];
+                  const sumW = seq.reduce((s, p) => s + p.w, 0);
+                  let cursor = -sumW / 2;
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+                      {seq.map((p, i) => {
+                        const x = cursor;
+                        cursor += p.w;
+                        return (
+                          <rect key={i} x={x} y={-halfH} width={p.w} height={halfH * 2}
+                            fill={p.fill} stroke="#111" strokeWidth={swEe} />
+                        );
+                      })}
+                    </g>
+                  );
+                })() : null}
                 {/* Перемычки: рисуем геометрически с поворотом по углу ветви */}
                 {isBulkheadOv && hasBranchPts ? (() => {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
@@ -5064,7 +5127,7 @@ export default function TopoCanvas(props: Props) {
                       <polygon points={pts} fill={jetColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                     </g>
                   );
-                })() : lt ? (
+                })() : (lt && !(sym.typeId === "emergency_exit" && hasBranchPts)) ? (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible" pointerEvents="none"
                     opacity={isFanStoppedOv ? 0.35 : 1}

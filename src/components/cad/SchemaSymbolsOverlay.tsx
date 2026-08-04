@@ -71,8 +71,9 @@ export default function SchemaSymbolsOverlay({
         }
         const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
         const isMeasureStationSym2 = sym.typeId === "measure_station";
+        const isEmergencyExitSym = sym.typeId === "emergency_exit";
         let SZ: number;
-        if ((isBulkheadSym || isMeasureStationSym2) && hasBranchPts) {
+        if ((isBulkheadSym || isMeasureStationSym2 || isEmergencyExitSym) && hasBranchPts) {
           const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
           SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
         } else {
@@ -128,6 +129,42 @@ export default function SchemaSymbolsOverlay({
                 stroke="#dc2626" strokeWidth={stripeW} strokeLinecap="square" />
               <line x1={-halfLen} y1={gap}  x2={halfLen} y2={gap}
                 stroke="#dc2626" strokeWidth={stripeW} strokeLinecap="square" />
+            </g>
+          );
+        };
+
+        // Запасной выход — ориентируется по направлению ветви и масштабируется
+        // по её ширине (как перемычка). Полосы: жёлтая/чёрная, чёрные чуть выше.
+        const renderEmergencyExit = () => {
+          if (!isEmergencyExitSym || !hasBranchPts) return null;
+          const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
+          const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
+          // После rotate(brAngle): ось X — вдоль ветви, ось Y — поперёк
+          const halfH = Math.max(2.5, SZ * 0.85 / 2);   // поперёк ветви (полуширина)
+          const totalLen = halfH * 2.6;                  // длина вдоль ветви
+          const sw = Math.max(0.4, halfH * 0.18);
+          // 4 полосы вдоль ветви: жёлтая, чёрная, жёлтая, чёрная.
+          // Чёрные чуть длиннее жёлтых (как в Аэросети).
+          const yW = totalLen / 4.4;      // жёлтая
+          const bW = totalLen / 3.7;      // чёрная (больше)
+          const seq: { w: number; fill: string }[] = [
+            { w: yW, fill: "#ffd600" },
+            { w: bW, fill: "#111" },
+            { w: yW, fill: "#ffd600" },
+            { w: bW, fill: "#111" },
+          ];
+          const sumW = seq.reduce((s, p) => s + p.w, 0);
+          let cursor = -sumW / 2;
+          return (
+            <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
+              {seq.map((p, i) => {
+                const x = cursor;
+                cursor += p.w;
+                return (
+                  <rect key={i} x={x} y={-halfH} width={p.w} height={halfH * 2}
+                    fill={p.fill} stroke="#111" strokeWidth={sw} />
+                );
+              })}
             </g>
           );
         };
@@ -360,6 +397,7 @@ export default function SchemaSymbolsOverlay({
             {/* Символ */}
             {VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts ? renderVentJet() :
              isMeasureStation && hasBranchPts ? renderMeasureStation() :
+             isEmergencyExitSym && hasBranchPts ? renderEmergencyExit() :
              isBulkhead && hasBranchPts ? renderBulkhead() : (
               lt ? <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                 overflow="visible"
