@@ -5100,9 +5100,9 @@ export default function CadPage() {
 
           return (
             <div className="relative flex-shrink-0 h-full" style={{ borderRight: "1px solid #d0d0d0" }}>
-              {/* ── Кнопка-триггер ── */}
+              {/* ── Кнопка-триггер + встроенная превью-сетка (как «Объекты на выработках» в Аэросети) ── */}
               <div className="flex flex-col h-full">
-                <div className="flex-1 flex items-center gap-1 px-1.5 pt-1">
+                <div className="flex-1 flex items-stretch gap-1 px-1.5 pt-1 min-h-0">
                   <button
                     ref={uoBtnRef}
                     onClick={() => {
@@ -5114,9 +5114,9 @@ export default function CadPage() {
                       }
                       setShowUOPanel(v => !v);
                     }}
-                    title="Условные обозначения — выбрать символ для размещения на схеме"
+                    title="Условные обозначения — открыть полный список"
                     style={{
-                      width: 50, height: 50,
+                      width: 44, height: 50, alignSelf: "center",
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
                       borderRadius: 4,
                       border: showUOPanel ? "1.5px solid #2563eb" : hasActive ? "1.5px solid #3b82f6" : "1px solid #c8c8c8",
@@ -5124,11 +5124,11 @@ export default function CadPage() {
                       cursor: "pointer", padding: 0, flexShrink: 0,
                     }}>
                     {hasActive ? (
-                      <svg width={32} height={26} viewBox="0 0 48 40">
+                      <svg width={30} height={24} viewBox="0 0 48 40">
                         <g dangerouslySetInnerHTML={{ __html: activeLt!.svgContent }} />
                       </svg>
                     ) : (
-                      <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5" strokeLinecap="round">
+                      <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5" strokeLinecap="round">
                         <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
                         <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
                       </svg>
@@ -5138,9 +5138,55 @@ export default function CadPage() {
                     </svg>
                   </button>
 
+                  {/* ── Встроенная превью-сетка УО прямо в ленте ── */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridAutoFlow: "column",
+                      gridTemplateRows: "repeat(3, 18px)",
+                      gridAutoColumns: "18px",
+                      gap: 1,
+                      alignContent: "center",
+                      overflowX: "auto",
+                      overflowY: "hidden",
+                      maxWidth: 330,
+                    }}
+                    onMouseLeave={() => setUoTooltip(null)}>
+                    {LEGEND_TYPES.map(lt => {
+                      const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
+                      return (
+                        <button key={lt.id}
+                          onClick={() => handlePickSymbol(lt.id)}
+                          onMouseEnter={e => {
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            setUoTooltip({ name: lt.name, x: r.left, y: r.top });
+                            if (!isActive) (e.currentTarget as HTMLElement).style.background = "#e8f0fe";
+                          }}
+                          onMouseLeave={e => {
+                            setUoTooltip(null);
+                            if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
+                          }}
+                          style={{
+                            width: 18, height: 18,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            borderRadius: 3,
+                            border: isActive ? "1.5px solid #2563eb" : "1px solid transparent",
+                            background: isActive ? "#dbeafe" : "transparent",
+                            cursor: "pointer", padding: 0,
+                            transition: "border-color .1s, background .1s",
+                            outline: "none",
+                          }}>
+                          <svg width={15} height={13} viewBox="0 0 48 40">
+                            <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
+                          </svg>
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   {/* Подсказка активного символа */}
                   {hasActive && (
-                    <div className="flex flex-col justify-center" style={{ maxWidth: 90 }}>
+                    <div className="flex flex-col justify-center flex-shrink-0" style={{ maxWidth: 80 }}>
                       <div className="text-[8px] text-blue-700 font-semibold leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                         {activeLt!.name}
                       </div>
