@@ -460,7 +460,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     id,
     fromId,
     toId,
-    type: "Ствол ЮВС",
+    type: "",
     // Геометрия — по умолчанию прямоугольник 7×5.5 м (≈ 38.5 м²)
     shape: "rect",
     diameter: 7,
