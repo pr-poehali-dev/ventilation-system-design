@@ -75,7 +75,7 @@ export const LEGEND_TYPES: LegendType[] = [
   },
   {
     id: "emergency_exit", name: "Запасной выход", group: "Общие",
-    svgContent: `<rect x="4" y="6" width="18" height="28" fill="#ffd600" stroke="#222" stroke-width="1"/><rect x="26" y="6" width="18" height="28" fill="#111" stroke="#222" stroke-width="1"/><rect x="4" y="16" width="18" height="8" fill="#111"/><rect x="26" y="16" width="18" height="8" fill="#ffd600"/>`,
+    svgContent: `<rect x="15" y="6" width="18" height="28" fill="#ffd600" stroke="#222" stroke-width="1"/><rect x="15" y="15" width="18" height="10" fill="#111"/>`,
   },
   {
     id: "copra_tower", name: "Копёр башенный", group: "Общие",
