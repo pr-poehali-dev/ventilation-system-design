@@ -964,7 +964,7 @@ export default function PrintDialog({
       });
 
       if (schemaSymbols.length > 0) {
-        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
+        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig, 7, infoConfig ?? undefined);
       }
 
       // Позиции ПЛА — поверх схемы, но ПОД рамкой печати (как в предпросмотре).
@@ -1023,7 +1023,7 @@ export default function PrintDialog({
         ctx.beginPath();
         ctx.rect(marginLeftPx, marginTopPx, workW, workH);
         ctx.clip();
-        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig);
+        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig, 7, infoConfig ?? undefined);
         ctx.restore();
       }
       // Позиции ПЛА — поверх схемы (как в предпросмотре), в пределах рабочей области.

@@ -5,6 +5,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 
 // Кэш SVG-иконок, преобразованных в Image (по svgContent)
@@ -38,11 +39,19 @@ export async function drawSymbolsToCanvas(
   viewScale: number,
   unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG,
   defaultBranchWidth: number = 7,
+  infoConfig?: InfoDisplayConfig,
 ): Promise<void> {
   for (const sym of symbols) {
     const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
     const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
     if (!lt && !isBulkheadSym) continue;
+    // Настройки видимости объектов водопровода (панель информации) —
+    // применяем и при печати, чтобы схема на бумаге совпадала с экраном.
+    if (infoConfig) {
+      if (sym.typeId === "valve_water" && !infoConfig.waterGateValve) continue;
+      if (sym.typeId === "pump" && !infoConfig.waterPumpStation) continue;
+      if (sym.typeId === "valve_reduce" && !infoConfig.waterReducer) continue;
+    }
 
     let basePx = 0, basePy = 0;
     let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
