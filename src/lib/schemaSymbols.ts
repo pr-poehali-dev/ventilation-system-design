@@ -440,6 +440,9 @@ export const OPEN_DOOR_IDS = new Set([
 export const HIDDEN_LEGEND_IDS = new Set([
   // «Перемычка с проёмом» = «Дверь с регулируемым окном» (win_*)
   "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
+  // Группа «Вентиляторы» — декоративные значки без расчётных параметров.
+  // Рабочий вентилятор ставится через УО "fan" (группа «Вентиляция»).
+  "fan_local", "fan_axial", "fan_recirculate", "fan_stationary",
 ]);
 
 export const WINDOW_BULKHEAD_IDS = new Set([
