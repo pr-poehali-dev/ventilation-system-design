@@ -31,7 +31,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -306,12 +306,7 @@ export default function CadPage() {
     }
   }, [activeSide]);
 
-  // Если активна вкладка "fan", но у ветви нет вентилятора — сбросить на "topology"
-  useEffect(() => {
-    if (activeSide === "fan" && selectedBranch && !selectedBranch.hasFan) {
-      setActiveSide("topology");
-    }
-  }, [selectedBranchId, selectedBranch?.hasFan]);
+
 
   // Синхронизация расчётной мощности пожара из свойств горючего материала →
   // fireHeatRelease. Мощность считается из физических свойств материала (кабель,
@@ -1480,6 +1475,17 @@ export default function CadPage() {
   const [uoTooltip, setUoTooltip] = useState<{ name: string; x: number; y: number } | null>(null);
   // ID ветви, для которой открыли панель через клик на fan-символ
   const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
+
+  // Если активна вкладка "fan", но у ветви нет вентилятора — сбросить на "topology".
+  // Исключение: вкладку открыли кликом по УО вентилятора на этой же ветви —
+  // тогда оставляем параметры вентилятора открытыми.
+  useEffect(() => {
+    if (fanSymbolBranchId && selectedBranch && fanSymbolBranchId === selectedBranch.id) return;
+    if (activeSide === "fan" && selectedBranch && !selectedBranch.hasFan) {
+      setActiveSide("topology");
+    }
+  }, [selectedBranchId, selectedBranch?.hasFan, fanSymbolBranchId]);
+
   // Диалог ввода числа людей при размещении отделения
   const [squadDialog, setSquadDialog] = useState<{ typeId: string; x: number; y: number; branchId: string | null } | null>(null);
   const [squadCount, setSquadCount] = useState<string>("5");
@@ -9703,7 +9709,7 @@ export default function CadPage() {
                 setSelectedSymbolId(symId);
                 // Одиночный клик по вентилятору — сразу открываем вкладку настроек
                 // вентилятора в левой панели (а не свойства ветви).
-                if (sym?.typeId === "fan" && sym.branchId) {
+                if (sym && FAN_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(sym.branchId);

@@ -447,6 +447,12 @@ export const REDUCER_SYMBOL_IDS = new Set([
   "valve_reduce",
 ]);
 
+// ID всех символов вентиляторов — одиночный клик по любому из них
+// открывает в левой панели вкладку настроек вентилятора.
+export const FAN_SYMBOL_IDS = new Set([
+  "fan", "fan_local", "fan_axial", "fan_recirculate", "fan_stationary",
+]);
+
 // ID символов очага пожара (аварийный режим)
 export const FIRE_SYMBOL_IDS = new Set([
   "fire_source",
