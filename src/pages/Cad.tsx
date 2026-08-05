@@ -31,7 +31,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -1834,7 +1834,8 @@ export default function CadPage() {
       if (isOpen)     return `open_${mat}`;
       if (isWindow)   return `win_${mat}`;
       if (isLattice)  return `lat_${mat}`;
-      if (isProem)    return `proem_${mat}`;
+      // «Проём» — то же УО, что и регулируемое окно (proem_* скрыт как дубль)
+      if (isProem)    return `win_${mat}`;
       if (isDoor)     return `door_${mat}`;
       return `bk_${mat}`;
     };
@@ -5095,6 +5096,7 @@ export default function CadPage() {
           const symGroups: { label: string; items: typeof LEGEND_TYPES }[] = [];
           const seen = new Map<string, typeof LEGEND_TYPES[0][]>();
           LEGEND_TYPES.forEach(lt => {
+            if (HIDDEN_LEGEND_IDS.has(lt.id)) return;
             const key = lt.subgroup ?? lt.group;
             if (!seen.has(key)) seen.set(key, []);
             seen.get(key)!.push(lt);
@@ -5158,7 +5160,7 @@ export default function CadPage() {
                       maxWidth: 330,
                     }}
                     onMouseLeave={() => setUoTooltip(null)}>
-                    {LEGEND_TYPES.map(lt => {
+                    {LEGEND_TYPES.filter(lt => !HIDDEN_LEGEND_IDS.has(lt.id)).map(lt => {
                       const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
                       return (
                         <button key={lt.id}

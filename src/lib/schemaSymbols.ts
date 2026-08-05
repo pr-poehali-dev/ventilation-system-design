@@ -434,6 +434,14 @@ export const OPEN_DOOR_IDS = new Set([
 ]);
 
 // ID перемычек с окном/проёмом/открытой дверью (требуется поле S вентокна)
+/** УО, скрытые из палитры выбора: полные дубли других обозначений
+ *  (одинаковая графика и расчёт). Типы НЕ удалены — символы, уже
+ *  расставленные в сохранённых проектах, продолжают отображаться. */
+export const HIDDEN_LEGEND_IDS = new Set([
+  // «Перемычка с проёмом» = «Дверь с регулируемым окном» (win_*)
+  "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
+]);
+
 export const WINDOW_BULKHEAD_IDS = new Set([
   "regulator_open", "regulator_window", "regulator_lattice", "bulkhead_window",
   "open_base", "open_conc", "open_wood", "open_brick", "open_metal",
