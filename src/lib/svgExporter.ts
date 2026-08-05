@@ -48,6 +48,11 @@ export interface SvgExportOptions {
   // Позиции ПЛА для маркеров (кружки с номерами)
   positions?: Position[];
 
+  // Параметры размера позиций ПЛА — как в рабочей области/предпросмотре
+  positionGostMm?: number;
+  scalePositionMin?: number;
+  scalePositionMax?: number;
+
   // Размер холста (логические px) — для вычисления viewBox
   canvasW: number;
   canvasH: number;
@@ -124,6 +129,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG, canvasW, canvasH, title = "Схема",
     colorMode = "none",
     posInnerColors, posOuterColors, positions = [],
+    positionGostMm = 13, scalePositionMin = 25, scalePositionMax = 800,
     fixedObjectScale = true,
     schemaSymbols = [],
     showFlowArrows = false,
@@ -522,53 +528,9 @@ export function generateSvg(opts: SvgExportOptions): string {
 
   parts.push(`</g>`); // /nodes
 
-  // ── Маркеры позиций ПЛА ───────────────────────────────────────────────────
-  if (positions && positions.length > 0) {
-    parts.push(`<g id="positions">`);
-    for (const pos of positions) {
-      if (pos.visible === false) continue;
-      if (!pos.placed) continue;
-
-      const pp = project3D({ x: pos.x * _xySFExport, y: pos.y * _xySFExport, z: pos.z * zScale }, proj);
-      const cx = pp.sx, cy = pp.sy;
-
-      // Радиус позиции ПЛА — физический размер в мм → пиксели SVG.
-      // pxPerMm вычислен из реального формата бумаги (canvasW / paperWidthMm),
-      // поэтому 13мм всегда = 13мм на распечатанном листе, независимо от proj.scale.
-      const R = (pos.diameter ?? 13) * pxPerMm / 2;
-      const fontSize = pos.number >= 100 ? R * 0.55 : pos.number >= 10 ? R * 0.7 : R * 0.85;
-
-      const fillColor = pos.color || "#ffffff";
-      const borderColor = pos.borderColor || "#1f2937";
-      const textColor = "#000000";
-      const leaderThickness = Math.max(0.3, (pos.leaderThickness ?? 0.2) * pxPerMm);
-      const leaderColor = "#e11d48"; // выноска — красная (единый стиль с редактором)
-
-      // Выноска: если задана leaderBranchId или leaderEndX
-      if (pos.leaderBranchId && pos.leaderT != null) {
-        // Конец выноски на ветви
-        const lb = branches.find(b => b.id === pos.leaderBranchId);
-        if (lb) {
-          const lbFrom = projMap.get(lb.fromId);
-          const lbTo   = projMap.get(lb.toId);
-          if (lbFrom && lbTo) {
-            const lx = lbFrom.sx + (lbTo.sx - lbFrom.sx) * pos.leaderT;
-            const ly = lbFrom.sy + (lbTo.sy - lbFrom.sy) * pos.leaderT;
-            parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lx)}" y2="${n(ly)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
-          }
-        }
-      } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
-        const lp = project3D({ x: pos.leaderEndX * _xySFExport, y: pos.leaderEndY * _xySFExport, z: pos.z * zScale }, proj);
-        parts.push(`<line x1="${n(cx)}" y1="${n(cy)}" x2="${n(lp.sx)}" y2="${n(lp.sy)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${n(R*0.4)} ${n(R*0.25)}" opacity="0.9"/>`);
-      }
-
-      // Кружок маркера
-      parts.push(`<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(R)}" fill="${esc(fillColor)}" stroke="${esc(borderColor)}" stroke-width="${n(Math.max(0.5, R * 0.12))}"/>`);
-      // Номер позиции
-      parts.push(`<text x="${n(cx)}" y="${n(cy)}" text-anchor="middle" dominant-baseline="central" font-family="Arial,sans-serif" font-size="${n(fontSize, 1)}" font-weight="700" fill="${textColor}">${pos.number}</text>`);
-    }
-    parts.push(`</g>`); // /positions
-  }
+  // Позиции ПЛА рисуются ниже, ПОСЛЕ символов УО (единственный блок отрисовки).
+  // Раньше здесь был второй, дублирующий блок — он рисовал те же кружки без учёта
+  // режима масштабирования объектов, из-за чего в экспорте позиции двоились.
 
   // ── Индикаторы ветвей (Q, V, сечение, название, номер) ───────────────────
   // ВАЖНО: рисуем и при отсутствии infoConfig (как в canvasRenderer/предпросмотре),
@@ -672,6 +634,13 @@ export function generateSvg(opts: SvgExportOptions): string {
       const isBulkhead = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStation;
       const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
       if (!lt && !isBulkhead && !isMeasureStation) continue;
+      // Настройки видимости объектов водопровода (панель информации) —
+      // те же правила, что и в рабочей области, чтобы экспорт совпадал с экраном.
+      if (infoConfig) {
+        if (sym.typeId === "valve_water" && !infoConfig.waterGateValve) continue;
+        if (sym.typeId === "pump" && !infoConfig.waterPumpStation) continue;
+        if (sym.typeId === "valve_reduce" && !infoConfig.waterReducer) continue;
+      }
 
       // Вычисляем позицию символа
       let px = 0, py = 0;
@@ -938,8 +907,13 @@ export function generateSvg(opts: SvgExportOptions): string {
   if (visiblePositions.length > 0) {
     // posSF: в режиме 1 (fixedObjectScale) — pxPerMm фиксированный,
     // в режиме 2 — масштабируется как objSF (тот же коэффициент).
-    const posSVGSF = fixedObjectScale ? 1 : objSF;
-    const PX_PER_MM = pxPerMm * posSVGSF;
+    // Тот же расчёт, что в рабочей области/предпросмотре: при фиксированном
+    // масштабе размер зажимается в диапазоне posMin..posMax, плюс ГОСТ-множитель.
+    const posSVGSF = fixedObjectScale
+      ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, 1))
+      : objSF;
+    const gostFactor = (positionGostMm > 0 ? positionGostMm : 13) / 13;
+    const PX_PER_MM = pxPerMm * posSVGSF * gostFactor;
     parts.push(`<g id="positions">`);
     for (const pos of visiblePositions) {
       const p = project3D({ x: pos.x * _xySFExport, y: pos.y * _xySFExport, z: (pos.z ?? 0) * zScale }, proj);
@@ -949,11 +923,40 @@ export function generateSvg(opts: SvgExportOptions): string {
       const border = esc(pos.borderColor ?? "#000000");
       const sw = Math.max(0.5, r * 0.12);
       const fontSize = pos.number >= 100 ? r * 0.55 : pos.number >= 10 ? r * 0.7 : r * 0.85;
+      // Выноска позиции — линия от кружка к точке на ветви или к свободной точке.
+      const leaderThickness = Math.max(0.3, (pos.leaderThickness ?? 0.2) * PX_PER_MM);
+      const leaderColor = "#e11d48";
+      const dash = `${n(r * 0.4)} ${n(r * 0.25)}`;
+      const leaderEnds: Array<{ sx: number; sy: number }> = [];
+      if (pos.leaderBranchId && pos.leaderT != null) {
+        const lb = branches.find(b => b.id === pos.leaderBranchId);
+        const lbFrom = lb ? projMap.get(lb.fromId) : null;
+        const lbTo   = lb ? projMap.get(lb.toId)   : null;
+        if (lbFrom && lbTo) {
+          leaderEnds.push({
+            sx: lbFrom.sx + (lbTo.sx - lbFrom.sx) * pos.leaderT,
+            sy: lbFrom.sy + (lbTo.sy - lbFrom.sy) * pos.leaderT,
+          });
+        }
+      } else if (pos.leaderEndX != null && pos.leaderEndY != null) {
+        const lp = project3D({ x: pos.leaderEndX * _xySFExport, y: pos.leaderEndY * _xySFExport, z: (pos.z ?? 0) * zScale }, proj);
+        leaderEnds.push({ sx: lp.sx, sy: lp.sy });
+      }
+      for (const end of leaderEnds) {
+        const ldx = end.sx - p.sx, ldy = end.sy - p.sy;
+        const ldist = Math.hypot(ldx, ldy);
+        if (ldist < 2) continue;
+        // Линия начинается от края кружка (как в рабочей области), а не из центра.
+        const x1 = p.sx + (ldx / ldist) * (r + 2);
+        const y1 = p.sy + (ldy / ldist) * (r + 2);
+        parts.push(`<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(end.sx)}" y2="${n(end.sy)}" stroke="${leaderColor}" stroke-width="${n(leaderThickness, 2)}" stroke-dasharray="${dash}" stroke-linecap="round" opacity="0.9"/>`);
+      }
+
       const cx = n(p.sx), cy = n(p.sy);
       parts.push(`<g transform="translate(${cx},${cy})">`);
       if (isReverse) {
-        parts.push(`<circle r="${n(r + 7)}" fill="none" stroke="#e53e3e" stroke-width="2.5"/>`);
-        parts.push(`<circle r="${n(r + 4)}" fill="none" stroke="#ffffff" stroke-width="3"/>`);
+        parts.push(`<circle r="${n(r + r * 0.14)}" fill="none" stroke="#e53e3e" stroke-width="${n(Math.max(1, r * 0.06))}"/>`);
+        parts.push(`<circle r="${n(r + r * 0.08)}" fill="none" stroke="#ffffff" stroke-width="${n(Math.max(1, r * 0.07))}"/>`);
       }
       parts.push(`<circle r="${n(r)}" fill="${fill}" stroke="${border}" stroke-width="${n(sw)}"/>`);
       parts.push(`<text text-anchor="middle" dominant-baseline="central" font-size="${n(fontSize)}" font-weight="bold" font-family="Arial,sans-serif" fill="#000000">${pos.number}</text>`);
