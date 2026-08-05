@@ -3551,6 +3551,8 @@ export default function TopoCanvas(props: Props) {
           if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
           // Видимость запорного вентиля по всей схеме — переключатель в панели информации
           if (sym.typeId === "valve_water" && infoConfig && !infoConfig.waterGateValve) return null;
+          // Видимость насоса (УО «Насос» = «Насосная станция» в панели информации)
+          if (sym.typeId === "pump" && infoConfig && !infoConfig.waterPumpStation) return null;
 
           // Ветвь символа (один раз, O(1)) — переиспользуем ниже.
           const symBrSvg = sym.branchId ? branchById.get(sym.branchId) : null;
@@ -4744,6 +4746,8 @@ export default function TopoCanvas(props: Props) {
             if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
             // Видимость запорного вентиля по всей схеме — переключатель в панели информации
             if (sym.typeId === "valve_water" && infoConfig && !infoConfig.waterGateValve) return null;
+            // Видимость насоса (УО «Насос» = «Насосная станция» в панели информации)
+            if (sym.typeId === "pump" && infoConfig && !infoConfig.waterPumpStation) return null;
             // Ветвь символа (один раз) — переиспользуем ниже вместо branches.find.
             const symBr = sym.branchId ? branchById.get(sym.branchId) : null;
 
