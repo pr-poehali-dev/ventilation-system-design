@@ -8,10 +8,12 @@
 //     учитываем знак расхода b.flow и знак угла b.angle.
 //   • Для каждой ветви считаем мощность пожара (сумма всех источников),
 //     температуру пожара и тепловую депрессию.
-//   • Критерий устойчивости (как в АэроСети): для НИСХОДЯЩЕЙ струи тепловая
-//     депрессия пожара направлена против движения воздуха. Если она превышает
-//     располагаемую депрессию ветви — струя опрокидывается → «Неустойчиво».
-//     Восходящие струи считаются устойчивыми (тяга усиливает поток).
+//   • Критерий для НИСХОДЯЩЕЙ струи (Прил. 5): опрокидывание наступает, когда
+//     тепловая депрессия достигает критической h_кр (ф. 5.3–5.5).
+//   • Критерий для ВОСХОДЯЩЕЙ струи (Прил. 7): условие стабильности h_т < R·Q₀²
+//     (ф. 7.1); при его нарушении считается сопротивление перемычки R_доп (7.6).
+//   • Степень устойчивости — показатель p_у = h_кр/h_т (Прил. 3, ф. 3.1):
+//     p_у > 1 — устойчиво, 0.3…1 — неустойчиво, < 0.3 — весьма неустойчиво.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { TopoBranch, TopoNode } from "./topology";
@@ -58,6 +60,13 @@ export interface StabilityRow {
   branchDep_Pa: number;      // располагаемая депрессия ветви, Па
   hKr_Pa: number | null;     // критическая депрессия h_кр (5.3), Па (null — нет параллельной выработки)
   exceedsCritical: boolean;  // |h_т| ≥ h_кр (опрокидывание по нормативу)
+  p_u: number | null;        // показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1)
+  stabilityClass: StabilityClass; // класс по p_у (Прил. 3)
+  // ── Приложение 7: восходящие выработки ──────────────────────────────
+  Q0_m3s: number | null;     // критический расход Q₀ (ф. 7.3), м³/с
+  R_calc: number | null;     // расчётное сопротивление R_р = h_т/Q₀² (ф. 7.5)
+  R_fact: number | null;     // фактическое сопротивление ветви R
+  R_dop: number | null;      // требуемое сопротивление перемычки R_доп (ф. 7.6)
   stable: boolean;           // устойчиво?
   stability: string;         // "Устойчиво" / "Неустойчиво"
   fireLoadDesc: string;      // описание пожарной нагрузки
@@ -71,10 +80,28 @@ export interface StabilityResult {
   lengthFilter: number;      // применённый фильтр длины, м
   ambientTemp: number;       // °C
   totalUnstable: number;     // сколько неустойчивых ветвей
+  totalVeryUnstable: number; // из них «весьма неустойчивых» (p_у < 0.3)
 }
 
 // Порог «вертикальная» выработка: угол ≥ этого значения считается вертикальным
 const VERTICAL_ANGLE_DEG = 80;
+
+// Класс устойчивости по показателю p_у (Прил. 3):
+//   p_у > 1 — устойчивая; 0.3 ≤ p_у ≤ 1 — неустойчивая; p_у < 0.3 — весьма неустойчивая.
+export type StabilityClass = "stable" | "unstable" | "very-unstable";
+
+export const P_U_VERY_UNSTABLE = 0.3;
+
+export function classifyByPu(p_u: number): StabilityClass {
+  if (p_u > 1) return "stable";
+  return p_u < P_U_VERY_UNSTABLE ? "very-unstable" : "unstable";
+}
+
+export const STABILITY_CLASS_LABEL: Record<StabilityClass, string> = {
+  "stable": "Устойчиво",
+  "unstable": "Неустойчиво",
+  "very-unstable": "Весьма неустойчиво",
+};
 
 // ─── Суммарная мощность пожара ветви (все источники) ────────────────────────
 export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
@@ -256,7 +283,49 @@ export function calcFireStability(
     const reversalThreshold = hKr_Pa != null ? hKr_Pa : branchDep;
     const willReverse = (signedAngleFlow < -FLAT_ANGLE_DEG)
       && reversalThreshold > 0 && thermalDep >= reversalThreshold;
-    const stable = fact ? !fact.reversed : !willReverse;
+
+    // ── Приложение 7: пожар в выработке с ВОСХОДЯЩИМ движением воздуха ──
+    // Под действием тепловой депрессии может опрокинуться струя в параллельной
+    // выработке. Условие стабильного проветривания (7.1): h_т < R·Q₀².
+    //   Q₀  — критический расход, ориентировочно (7.3): Q₀ = Q₁ + 0.03·h₁;
+    //   R_р — расчётное сопротивление (7.5): R_р = h_т / Q₀²;
+    //   R_доп — сопротивление перемычки ниже очага (7.6): R_доп > R_р − R.
+    let Q0_m3s: number | null = null;
+    let R_calc: number | null = null;
+    let R_dop: number | null = null;
+    let ascendingUnstable = false;
+    const R_fact = (b.resistance ?? 0) > 0 ? +(b.resistance ?? 0).toFixed(6) : null;
+
+    if (!descending && absAngle > FLAT_ANGLE_DEG && thermalDep > 0) {
+      // (7.3) Q₀ = Q₁ + 0.03·h₁ — расход и депрессия в нормальном режиме.
+      const Q0 = dojarFlow + 0.03 * branchDep;
+      if (Q0 > 0) {
+        Q0_m3s = +Q0.toFixed(3);
+        // (7.5) расчётное сопротивление, при котором исключается опрокидывание
+        R_calc = +(thermalDep / (Q0 * Q0)).toFixed(6);
+        // (7.1) устойчиво, пока h_т < R·Q₀²
+        if (R_fact != null) {
+          ascendingUnstable = thermalDep >= R_fact * Q0 * Q0;
+          // (7.6) требуемое сопротивление перемычки — только если факт < расчётного
+          if (R_calc > R_fact) R_dop = +(R_calc - R_fact).toFixed(6);
+        }
+      }
+    }
+
+    const stable = fact ? !fact.reversed : !(willReverse || ascendingUnstable);
+
+    // ── Показатель устойчивости p_у (Прил. 3, ф. 3.1): p_у = h_кр / h_т ──
+    // Для восходящих выработок роль критической депрессии играет R·Q₀² (7.1).
+    const puBase = descending ? hKr_Pa : (R_fact != null && Q0_m3s != null ? R_fact * Q0_m3s * Q0_m3s : null);
+    const p_u = (puBase != null && puBase > 0 && thermalDep > 0.01)
+      ? +(puBase / thermalDep).toFixed(2)
+      : null;
+    // Класс согласуем с вердиктом: вердикт может опираться на ФАКТ пожара
+    // (реальный расчёт сети), поэтому он главнее показателя. Показатель p_у
+    // уточняет степень неустойчивости («весьма неустойчиво» при p_у < 0.3).
+    const stabilityClass: StabilityClass = stable
+      ? "stable"
+      : (p_u != null && p_u < P_U_VERY_UNSTABLE ? "very-unstable" : "unstable");
 
     const row: StabilityRow = {
       branchId: b.id,
@@ -278,8 +347,14 @@ export function calcFireStability(
       branchDep_Pa: +branchDep.toFixed(1),
       hKr_Pa,
       exceedsCritical,
+      p_u,
+      stabilityClass,
+      Q0_m3s,
+      R_calc,
+      R_fact,
+      R_dop,
       stable,
-      stability: stable ? "Устойчиво" : "Неустойчиво",
+      stability: STABILITY_CLASS_LABEL[stabilityClass],
       fireLoadDesc: describeFireLoad(b),
       category,
     };
@@ -293,6 +368,7 @@ export function calcFireStability(
   });
 
   const totalUnstable = rows.filter(r => !r.stable).length;
+  const totalVeryUnstable = rows.filter(r => r.stabilityClass === "very-unstable").length;
 
-  return { rows, byCategory, angleFilter, lengthFilter, ambientTemp, totalUnstable };
+  return { rows, byCategory, angleFilter, lengthFilter, ambientTemp, totalUnstable, totalVeryUnstable };
 }

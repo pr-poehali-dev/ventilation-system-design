@@ -45,6 +45,7 @@ const TABLE_HEADERS = [
   "Расчётная температура пожара, °C",
   "Тепловая депрессия h_т, Па",
   "Критическая депрессия h_кр, Па",
+  "Показатель устойчивости p_у",
   "Степень устойчивости",
   "Пожарная нагрузка",
 ];
@@ -117,17 +118,17 @@ function buildTitleSheet(meta: ActMeta): XLSX.WorkSheet {
     [`Дата: ${meta.date}`],
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = Array.from({ length: 17 }, () => ({ wch: 10 }));
+  ws["!cols"] = Array.from({ length: TABLE_HEADERS.length }, () => ({ wch: 10 }));
   // Объединения заголовков АКТ (строки 9-14 в 1-based → индексы 8-13)
   ws["!merges"] = [
-    { s: { r: 8, c: 0 }, e: { r: 8, c: 16 } },
-    { s: { r: 9, c: 0 }, e: { r: 9, c: 16 } },
-    { s: { r: 10, c: 0 }, e: { r: 10, c: 16 } },
-    { s: { r: 11, c: 0 }, e: { r: 11, c: 16 } },
-    { s: { r: 12, c: 0 }, e: { r: 12, c: 16 } },
-    { s: { r: 13, c: 0 }, e: { r: 13, c: 16 } },
-    { s: { r: 15, c: 0 }, e: { r: 15, c: 16 } },
-    { s: { r: 16, c: 0 }, e: { r: 16, c: 16 } },
+    { s: { r: 8, c: 0 }, e: { r: 8, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 9, c: 0 }, e: { r: 9, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 10, c: 0 }, e: { r: 10, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 11, c: 0 }, e: { r: 11, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 12, c: 0 }, e: { r: 12, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 13, c: 0 }, e: { r: 13, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 15, c: 0 }, e: { r: 15, c: TABLE_HEADERS.length - 1 } },
+    { s: { r: 16, c: 0 }, e: { r: 16, c: TABLE_HEADERS.length - 1 } },
   ];
   // Стили заголовка АКТ
   [8, 9, 10, 11, 12, 13].forEach(r => {
@@ -162,13 +163,14 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
       r.fireTemp_C,
       r.thermalDep_Pa,
       r.hKr_Pa != null ? r.hKr_Pa : "—",
+      r.p_u != null ? r.p_u : "—",
       r.stability,
       r.fireLoadDesc,
     ]);
   });
 
   if (rows.length === 0) {
-    aoa.push(["", "", "", "Нет ветвей, удовлетворяющих условиям отбора", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+    aoa.push(TABLE_HEADERS.map((_, i) => (i === 3 ? "Нет ветвей, удовлетворяющих условиям отбора" : "")));
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -177,10 +179,10 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
   ws["!cols"] = [
     { wch: 6 }, { wch: 9 }, { wch: 9 }, { wch: 26 }, { wch: 10 }, { wch: 9 },
     { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 40 },
+    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 18 }, { wch: 40 },
   ];
   // Объединение вводной строки
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 16 } }];
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: TABLE_HEADERS.length - 1 } }];
   // Высоты
   ws["!rows"] = [{ hpx: 30 }, { hpx: 8 }, { hpx: 46 }];
 
@@ -222,12 +224,12 @@ function buildMeasuresSheet(result: StabilityResult): XLSX.WorkSheet {
     aoa.push([]);
     aoa.push(["№", "№ ветви", "Наименование выработки", "Мероприятие"]);
     unstable.forEach((r, i) => {
-      aoa.push([
-        i + 1,
-        r.branchNumber,
-        r.name,
-        "Установка автоматических пожарных дверей / реверсирование ВГП / секционирование вентиляции для предотвращения опрокидывания струи",
-      ]);
+      // Для восходящих выработок норматив (Прил. 7, ф. 7.6) даёт конкретное
+      // мероприятие: перемычка ниже очага с сопротивлением не менее R_доп.
+      const measure = r.R_dop != null
+        ? `Установить в 10–15 м ниже очага пожара перемычку с аэродинамическим сопротивлением не менее ${r.R_dop} Н·с²/м⁸ (расчётное R_р = ${r.R_calc}, фактическое R = ${r.R_fact} Н·с²/м⁸)`
+        : "Установка автоматических пожарных дверей / реверсирование ВГП / секционирование вентиляции для предотвращения опрокидывания струи";
+      aoa.push([i + 1, r.branchNumber, r.name, measure]);
     });
   }
 
@@ -272,6 +274,10 @@ function buildConclusionsSheet(result: StabilityResult): XLSX.WorkSheet {
   if (unstable > 0) {
     aoa.push([`3. Выявлено ${unstable} выработок с риском самопроизвольного опрокидывания`]);
     aoa.push([`   вентиляционной струи. Для них разработаны мероприятия (см. лист «Мероприятия»).`]);
+    if (result.totalVeryUnstable > 0) {
+      aoa.push([`   Из них ${result.totalVeryUnstable} отнесены к весьма неустойчивым по направлению`]);
+      aoa.push([`   вентиляционных струй (показатель устойчивости p_у < 0,3).`]);
+    }
   } else {
     aoa.push([`3. Выработок с риском опрокидывания вентиляционной струи не выявлено.`]);
     aoa.push([`   Принятые проектные решения обеспечивают устойчивость проветривания при пожаре.`]);
