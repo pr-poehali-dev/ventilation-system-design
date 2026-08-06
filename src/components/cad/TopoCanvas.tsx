@@ -2693,7 +2693,12 @@ export default function TopoCanvas(props: Props) {
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}
-        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? ((editingPrintLayerId || editingHorizonImageId) ? 1 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
+        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined,
+          // ВАЖНО: без top/left абсолютный SVG встаёт на своё «место в потоке» —
+          // то есть НИЖЕ холста (canvas занимает всю высоту). Слой уезжал за
+          // пределы окна, и ручки подложки были недоступны в canvas-режиме.
+          top: useCanvas ? 0 : undefined, left: useCanvas ? 0 : undefined,
+          zIndex: useCanvas ? ((editingPrintLayerId || editingHorizonImageId) ? 3 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
