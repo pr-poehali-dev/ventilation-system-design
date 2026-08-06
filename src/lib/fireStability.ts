@@ -18,7 +18,7 @@ import type { TopoBranch, TopoNode } from "./topology";
 import { calcBranchAngle } from "./topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire,
-  calcFireTemp, calcThermalDepression, calcCriticalDepression,
+  calcFireTemp, calcThermalDepression, calcCriticalDepression, FLAT_ANGLE_DEG,
 } from "./fireCalculator";
 
 // Факт пожара по ветви из реального итеративного расчёта сети (как в
@@ -161,6 +161,9 @@ export function calcFireStability(
   const ambientTemp  = opts.ambientTemp  ?? 20;
 
   const nodeById = new Map(nodes.map(n => [n.id, n]));
+  // Высотные отметки узлов — нужны формуле 5.4, чтобы отличить сбойки
+  // выше очага (R₁) от сбоек ниже очага (R₂).
+  const nodeElevations = new Map(nodes.map(n => [n.id, n.z ?? 0]));
 
   // Позиция ПЛА по ветви (первая привязанная)
   const posByBranch = new Map<string, string>();
@@ -223,28 +226,37 @@ export function calcFireStability(
       : Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
     const branchDep  = Math.abs(b.dP ?? 0);
 
+    // ── Критическая депрессия (Прил. 5, формулы 5.3–5.5) ────────────────
+    // Передаём ΔP ветви и высотные отметки узлов — без них не работали
+    // формула 5.4 (сбойки с перемычками) и случай «уклонное поле с одной
+    // воздухоподающей выработкой», из-за чего h_кр часто не рассчитывалась.
+    // Высота очага — интерполяция по fireT между узлами from→to.
+    const fireZ = (from?.z ?? 0) + ((to?.z ?? 0) - (from?.z ?? 0)) * (b.fireT ?? 0.5);
+    const crit = descending
+      ? calcCriticalDepression({
+          fireBranchId: b.id, fireFromId: b.fromId, fireToId: b.toId,
+          fireFlow_m3s: airFlow, fireDP_pa: b.dP, branches,
+          nodeElevations, fireElevation: fireZ,
+        })
+      : null;
+    const hKr_Pa = (crit && crit.hasParallel && crit.h_kr > 0) ? +crit.h_kr.toFixed(1) : null;
+    const exceedsCritical = hKr_Pa != null && thermalDep >= hKr_Pa;
+
     // ── Определение устойчивости ────────────────────────────────────────
     // Приоритет — ФАКТ опрокидывания из реального итеративного расчёта сети
     // (reversalFacts). Если факт передан — используем его: ветвь устойчива,
     // если поток НЕ развернулся, даже при большой тепловой депрессии
     // (соседние ветви компенсируют). Это совпадает с аварийным режимом.
     //
-    // Если факта нет (расчёт не запускался) — локальная оценка риска
-    // (идентична calcFireMode): нисходящая ветвь И |h_t| > 0.5·|dP|.
-    const willReverse = (signedAngleFlow < -1) && (thermalDep > branchDep * 0.5);
+    // Без факта — тот же нормативный критерий, что и в calcFireMode:
+    // нисходящая струя опрокидывается, когда тепловая депрессия достигает
+    // критической h_кр (Прил. 5). Если h_кр рассчитать нельзя — сравниваем
+    // с депрессией самого участка |ΔP|. Прежний порог 0.5·|ΔP| был
+    // эвристическим и занижал границу вдвое (акт расходился с «Авариями»).
+    const reversalThreshold = hKr_Pa != null ? hKr_Pa : branchDep;
+    const willReverse = (signedAngleFlow < -FLAT_ANGLE_DEG)
+      && reversalThreshold > 0 && thermalDep >= reversalThreshold;
     const stable = fact ? !fact.reversed : !willReverse;
-
-    // Критическая депрессия наклонной выработки (Прил. 5, формула 5.3):
-    // h_кр = 0.9·r_п·(Q+Q_п)². Считаем только для нисходящих выработок и
-    // при наличии параллельной ветви (иначе — null).
-    const crit = descending
-      ? calcCriticalDepression({
-          fireBranchId: b.id, fireFromId: b.fromId, fireToId: b.toId,
-          fireFlow_m3s: airFlow, branches,
-        })
-      : null;
-    const hKr_Pa = (crit && crit.hasParallel && crit.h_kr > 0) ? +crit.h_kr.toFixed(1) : null;
-    const exceedsCritical = hKr_Pa != null && thermalDep >= hKr_Pa;
 
     const row: StabilityRow = {
       branchId: b.id,
