@@ -9098,6 +9098,23 @@ export default function CadPage() {
                 total++;
               }
               const order: SectionKind[] = ["round", "square", "rect", "arch", "trap", "custom"];
+              // Выделить на схеме все видимые ветви выбранной формы.
+              const selectKind = (k: SectionKind) => {
+                const ids: string[] = [];
+                for (const b of branches) {
+                  if (b.isVentPipeBranch) continue;
+                  if (b.horizonId) {
+                    const hz = horizons.find(x => x.id === b.horizonId);
+                    if (hz && !hz.visible) continue;
+                  }
+                  if (sectionKind(b) === k) ids.push(b.id);
+                }
+                if (ids.length === 0) return;
+                setSelectedNodeId(null);
+                setSelectedNodeIds(new Set());
+                setSelectedBranchIds(new Set(ids));
+                setSelectedBranchId(ids[0]);
+              };
               return (
                 <div className="flex flex-col h-full">
                   <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid #e5e7eb" }}>
@@ -9120,7 +9137,10 @@ export default function CadPage() {
                       const n = counts.get(k) ?? 0;
                       const pct = total > 0 ? (n / total) * 100 : 0;
                       return (
-                        <div key={k} className="flex items-center gap-2 py-1"
+                        <div key={k}
+                          onClick={() => selectKind(k)}
+                          title={n === 0 ? "Нет таких ветвей" : `Выделить на схеме (${n} шт.)`}
+                          className={n === 0 ? "flex items-center gap-2 py-1 px-1" : "flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover:bg-blue-50"}
                           style={{ opacity: n === 0 ? 0.35 : 1 }}>
                           <div style={{
                             width: 18, height: 12, borderRadius: 2, flexShrink: 0,
@@ -9138,6 +9158,7 @@ export default function CadPage() {
                       Всего ветвей: {total}
                     </div>
                     <div className="mt-2 text-[10px] text-gray-400 leading-snug">
+                      Клик по строке — выделить все ветви этой формы на схеме.
                       Квадратным считается прямоугольное сечение с равными сторонами.
                     </div>
                   </div>
