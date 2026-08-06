@@ -5768,11 +5768,11 @@ export default function CadPage() {
                   else { setActiveSide("general"); }
                 }}>
                 <option value="props">Свойства</option>
-                <option value="flowQ">Расход воздуха</option>
-                <option value="velocityV">Скорость воздуха</option>
                 <option value="positions">Позиции</option>
                 <option value="search">Поиск</option>
                 <option value="horizons">Горизонты</option>
+                <option value="flowQ">Расход воздуха</option>
+                <option value="velocityV">Скорость воздуха</option>
                 <option value="check">Проверка</option>
               </select>
             </div>
