@@ -126,6 +126,17 @@ select.cad-input {
   cursor: pointer;
 }
 
+/* Поля ввода в панели свойств ветви: подсветка активного поля, чтобы было
+   видно, где стоит курсор, и чем поле отличается от расчётного значения. */
+.cad-edit-input:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  background: #ffffff !important;
+}
+.cad-edit-input:hover:not(:focus):not([readonly]) {
+  border-color: #475569 !important;
+}
+
 /* Canvas grid */
 .vent-canvas {
   background-color: hsl(220, 20%, 8%);

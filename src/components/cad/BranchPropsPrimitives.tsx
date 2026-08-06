@@ -19,10 +19,54 @@ export function numFmt(v: number, d = 2): string {
   return v.toFixed(d);
 }
 
+// ─── Цветовые акценты смысловых групп ────────────────────────────────────────
+// В длинной панели свойств все заголовки выглядели одинаково серыми, и нужный
+// блок приходилось искать чтением. Каждой группе даём свой цвет: слева цветная
+// полоса, заголовок в тон. Цвет = смысл, а не украшение.
+type SectionTone = { bar: string; bg: string; text: string };
+
+const TONE_GEOMETRY: SectionTone = { bar: "#2563eb", bg: "#eff6ff", text: "#1e40af" }; // синий
+const TONE_AERO:     SectionTone = { bar: "#0891b2", bg: "#ecfeff", text: "#155e75" }; // бирюзовый
+const TONE_RESULT:   SectionTone = { bar: "#16a34a", bg: "#f0fdf4", text: "#166534" }; // зелёный
+const TONE_DANGER:   SectionTone = { bar: "#dc2626", bg: "#fef2f2", text: "#991b1b" }; // красный
+const TONE_WATER:    SectionTone = { bar: "#0284c7", bg: "#f0f9ff", text: "#075985" }; // голубой
+const TONE_EQUIP:    SectionTone = { bar: "#ea580c", bg: "#fff7ed", text: "#9a3412" }; // оранжевый
+const TONE_INFO:     SectionTone = { bar: "#6b7280", bg: "#f9fafb", text: "#374151" }; // серый
+
+const SECTION_TONES: Record<string, SectionTone> = {
+  "Геометрия":                    TONE_GEOMETRY,
+  "Геометрия трубы":              TONE_GEOMETRY,
+  "Аэродинамика":                 TONE_AERO,
+  "Аэродинамическое сопротивление": TONE_AERO,
+  "Режим проветривания":          TONE_AERO,
+  "Физика":                       TONE_AERO,
+  "Вычисленные параметры":        TONE_RESULT,
+  "Характеристики":               TONE_RESULT,
+  "Пожарная нагрузка":            TONE_DANGER,
+  "Противопожарная защита":       TONE_DANGER,
+  "Параметры дегазации":          TONE_DANGER,
+  "Водопровод ППЗ":               TONE_WATER,
+  "Гидравлическое сопротивление": TONE_WATER,
+  "Воздухопровод (сжатый воздух)": TONE_WATER,
+  "Вентилятор":                   TONE_EQUIP,
+  "Параметры конвейера":          TONE_EQUIP,
+  "Перемычка в выработке":        TONE_EQUIP,
+  "Признаки ветви":               TONE_INFO,
+  "Классификация":                TONE_INFO,
+  "Количество людей":             TONE_INFO,
+};
+
 export function SectionHeader({ title }: { title: string }) {
+  const tone = SECTION_TONES[title] ?? TONE_INFO;
   return (
-    <div className="flex items-center px-1 py-0.5 text-[11px] font-semibold select-none"
-      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+    <div className="flex items-center px-1 py-1 text-[11px] font-semibold select-none"
+      style={{
+        background: tone.bg,
+        borderBottom: SB,
+        borderTop: SB,
+        borderLeft: `3px solid ${tone.bar}`,
+        color: tone.text,
+      }}>
       {title}
     </div>
   );
@@ -80,14 +124,17 @@ export function EditInput({
       value={value}
       readOnly={readOnly}
       onChange={(e) => onChange?.(e.target.value)}
-      className="w-full text-[11px] text-right px-1"
+      className="w-full text-[11px] text-right px-1 cad-edit-input"
       style={{
-        background: readOnly ? "#f5f5f5" : "white",
-        border: "1px solid #c8c8c8",
+        // Редактируемое поле — белое с чёткой рамкой, чтобы визуально отличалось
+        // от расчётных значений, которые править нельзя.
+        background: readOnly ? "#f1f5f9" : "#ffffff",
+        border: readOnly ? "1px solid #d8dee6" : "1px solid #94a3b8",
+        borderRadius: 2,
         height: 18,
         outline: "none",
         fontFamily: "inherit",
-        color: "#1a1a1a",
+        color: readOnly ? "#475569" : "#0f172a",
       }}
     />
   );
@@ -96,14 +143,19 @@ export function EditInput({
 export function ComputedInput({ value, color, className }: { value: string; color?: string; className?: string }) {
   return (
     <div
-      className={`w-full text-[11px] text-right px-1 font-bold${className ? ` ${className}` : ""}`}
+      className={`w-full text-[11px] text-right px-1 font-semibold tabular-nums${className ? ` ${className}` : ""}`}
+      title="Расчётное значение — изменить нельзя"
       style={{
-        background: CB,
-        border: CBB,
+        // Результат расчёта: без рамки поля ввода, приглушённый фон, моноширинные
+        // цифры — сразу видно, что это вывод, а не поле для правки.
+        background: "#eef2f7",
+        border: "1px solid #dde3ec",
+        borderRadius: 2,
         height: 18,
-        lineHeight: "18px",
-        color: color ?? "#1a1a1a",
+        lineHeight: "16px",
+        color: color ?? "#0f172a",
         userSelect: "text",
+        cursor: "default",
       }}>
       {value}
     </div>
@@ -116,22 +168,30 @@ export function SelectField({
   onChange,
 }: {
   value: string;
-  options: string[];
+  // Опции задаются либо простым списком строк, либо парами {value,label} —
+  // когда отображаемое название не совпадает с сохраняемым значением.
+  options: (string | { value: string; label: string })[];
   onChange: (v: string) => void;
 }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full text-[11px] px-1"
+      className="w-full text-[11px] px-1 cad-edit-input"
       style={{
-        background: "white",
-        border: "1px solid #c8c8c8",
+        background: "#ffffff",
+        border: "1px solid #94a3b8",
+        borderRadius: 2,
         height: 18,
         outline: "none",
         fontFamily: "inherit",
+        color: "#0f172a",
       }}>
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      {options.map((o) => {
+        const val = typeof o === "string" ? o : o.value;
+        const lbl = typeof o === "string" ? o : o.label;
+        return <option key={val} value={val}>{lbl}</option>;
+      })}
     </select>
   );
 }

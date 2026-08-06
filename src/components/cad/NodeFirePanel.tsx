@@ -1,6 +1,7 @@
 import { type TopoNode } from "@/lib/topology";
 import { type WaterNodeResult } from "@/lib/waterHydraulics";
 import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, getConsumerById, type ConsumerGroup } from "@/lib/waterConsumers";
+import { SectionHeader } from "@/components/cad/BranchPropsPrimitives";
 
 interface NodeFirePanelProps {
   node: TopoNode;
@@ -8,20 +9,6 @@ interface NodeFirePanelProps {
   waterResult?: WaterNodeResult;
   allNodes?: TopoNode[];
   allNodeResults?: Map<string, WaterNodeResult>;
-}
-
-const SH = "#e8eef8";
-const SB = "1px solid #c8d4e8";
-const CB = "#d4d4d4";
-const CBB = "1px solid #b0b0b0";
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center px-1 py-0.5 text-[11px] font-semibold select-none"
-      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
-      {title}
-    </div>
-  );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -46,8 +33,8 @@ function EditInput({
     <div className="flex items-center w-full">
       <input type={type} step={step} value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 text-[11px] text-right px-1"
-        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none", fontFamily: "inherit", minWidth: 0 }}
+        className="flex-1 text-[11px] text-right px-1 cad-edit-input"
+        style={{ background: "#ffffff", border: "1px solid #94a3b8", borderRadius: 2, height: 18, outline: "none", fontFamily: "inherit", minWidth: 0, color: "#0f172a" }}
       />
       {suffix && <span className="text-[10px] text-gray-500 px-1 flex-shrink-0">{suffix}</span>}
     </div>
@@ -56,9 +43,10 @@ function EditInput({
 
 function ComputedInput({ value, empty }: { value: string; empty?: boolean }) {
   return (
-    <div className="w-full text-[11px] text-right px-1 font-bold"
-      style={{ background: CB, border: CBB, height: 18, lineHeight: "18px",
-        color: empty ? "#999" : "#1a1a1a", userSelect: "text" }}>
+    <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
+      title="Расчётное значение — изменить нельзя"
+      style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+        color: empty ? "#94a3b8" : "#0f172a", userSelect: "text", cursor: "default" }}>
       {value}
     </div>
   );
@@ -359,7 +347,7 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
           {/* Таблица открытых потребителей */}
           {openConsumers.length > 0 && (<>
             <div className="flex items-center px-1 py-0.5 text-[10px] font-semibold select-none"
-              style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+              style={{ background: "#f0f9ff", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8", borderLeft: "3px solid #0284c7", color: "#075985" }}>
               Открытые краны ({openConsumers.length})
             </div>
             {/* Шапка таблицы */}

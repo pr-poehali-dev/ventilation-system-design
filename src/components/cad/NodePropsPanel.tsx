@@ -1,23 +1,5 @@
 import { type TopoNode } from "@/lib/topology";
-
-interface NodePropsPanelProps {
-  node: TopoNode;
-  onUpdate: (patch: Partial<TopoNode>) => void;
-}
-
-const SH = "#e8eef8";
-const SB = "1px solid #c8d4e8";
-const CB = "#d4d4d4";
-const CBB = "1px solid #b0b0b0";
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center px-1 py-0.5 text-[11px] font-semibold select-none"
-      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
-      {title}
-    </div>
-  );
-}
+import { SectionHeader, EditInput, ComputedInput, CheckField } from "@/components/cad/BranchPropsPrimitives";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -31,37 +13,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function EditInput({
-  value, onChange, type = "text", step,
-}: {
-  value: string | number; onChange: (v: string) => void;
-  type?: string; step?: string;
-}) {
-  return (
-    <input type={type} step={step} value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full text-[11px] text-right px-1"
-      style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none", fontFamily: "inherit" }}
-    />
-  );
-}
-
-function ComputedInput({ value }: { value: string }) {
-  return (
-    <div className="w-full text-[11px] text-right px-1 font-bold"
-      style={{ background: CB, border: CBB, height: 18, lineHeight: "18px", color: "#1a1a1a", userSelect: "text" }}>
-      {value}
-    </div>
-  );
-}
-
-function CheckField({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="flex items-center px-1" style={{ height: 18 }}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        style={{ width: 12, height: 12, cursor: "pointer" }} />
-    </div>
-  );
+interface NodePropsPanelProps {
+  node: TopoNode;
+  onUpdate: (patch: Partial<TopoNode>) => void;
 }
 
 export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) {

@@ -10,6 +10,10 @@ import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
+import {
+  SB, SectionHeader, ParamRow, EditInput, ComputedInput, SelectField, CheckField, InlineLabel,
+  PLAST_OPTIONS,
+} from "@/components/cad/BranchPropsPrimitives";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -58,172 +62,11 @@ interface BranchPropsPanelProps {
   onRemoveGate?: () => void;
 }
 
-const SH = "#e8eef8";
-const SB = "1px solid #c8d4e8";
-const CB = "#d4d4d4";
-const CBB = "1px solid #b0b0b0";
-
-const BRANCH_TYPES = [
-  "Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.",
-  "Уклон", "Очистной", "Сбойка", "Камера", "Конвейер", "Вент. канал",
-];
-
-const PLAST_OPTIONS = ["— не задан —", "Пласт 1", "Пласт 2", "Пласт 3", "Пласт 4"];
-const PLA_OPTIONS = ["— нет —", "ПЛА-1", "ПЛА-2", "ПЛА-3"];
-const POLE_OPTIONS = ["— нет —", "Северное", "Южное", "Западное"];
 
 const INNER_TABS = [
   "Топология", "Вентилятор", "Трубы: вода", "Конвейер", "Пож.нагрузка", "Перемычка",
 ] as const;
 type InnerTab = typeof INNER_TABS[number];
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div className="flex items-center px-1 py-0.5 text-[11px] font-semibold select-none"
-      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
-      {title}
-    </div>
-  );
-}
-
-function ParamRow({
-  id,
-  label,
-  visible,
-  onToggle,
-  children,
-}: {
-  id: string;
-  label: string;
-  visible: boolean;
-  onToggle: (id: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center" style={{ minHeight: 20, borderBottom: "1px solid #ebebeb" }}>
-      <div className="flex items-center justify-center flex-shrink-0" style={{ width: 18 }}>
-        <input
-          type="checkbox"
-          checked={visible}
-          onChange={() => onToggle(id)}
-          style={{ width: 11, height: 11, cursor: "pointer" }}
-        />
-      </div>
-      <div className="flex-shrink-0 text-[11px] text-gray-700 px-1 leading-tight"
-        style={{ width: 148, whiteSpace: "normal", lineHeight: "1.2" }}>
-        {label}
-      </div>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
-}
-
-function EditInput({
-  value,
-  onChange,
-  type = "text",
-  step,
-  readOnly,
-}: {
-  value: string | number;
-  onChange?: (v: string) => void;
-  type?: string;
-  step?: string;
-  readOnly?: boolean;
-}) {
-  return (
-    <input
-      type={type}
-      step={step}
-      value={value}
-      readOnly={readOnly}
-      onChange={(e) => onChange?.(e.target.value)}
-      className="w-full text-[11px] text-right px-1"
-      style={{
-        background: readOnly ? "#f5f5f5" : "white",
-        border: "1px solid #c8c8c8",
-        height: 18,
-        outline: "none",
-        fontFamily: "inherit",
-        color: "#1a1a1a",
-      }}
-    />
-  );
-}
-
-function ComputedInput({ value }: { value: string }) {
-  return (
-    <div
-      className="w-full text-[11px] text-right px-1 font-bold"
-      style={{
-        background: CB,
-        border: CBB,
-        height: 18,
-        lineHeight: "18px",
-        color: "#1a1a1a",
-        userSelect: "text",
-      }}>
-      {value}
-    </div>
-  );
-}
-
-function SelectField({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: string[] | { value: string; label: string }[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full text-[11px] px-1"
-      style={{
-        background: "white",
-        border: "1px solid #c8c8c8",
-        height: 18,
-        outline: "none",
-        fontFamily: "inherit",
-      }}>
-      {options.map((o) => typeof o === "string"
-        ? <option key={o} value={o}>{o}</option>
-        : <option key={o.value} value={o.value}>{o.label}</option>
-      )}
-    </select>
-  );
-}
-
-function CheckField({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center px-1" style={{ height: 18 }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        style={{ width: 12, height: 12, cursor: "pointer" }}
-      />
-    </div>
-  );
-}
-
-function InlineLabel({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-1 px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-      <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
-}
 
 function numFmt(v: number, d = 2): string {
   if (isNaN(v) || v === undefined) return "—";
@@ -1678,7 +1521,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 return (
                   <>
                     <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+                      style={{ background: "#f0f9ff", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
                       <span>Запорный вентиль</span>
                       {onRemoveGate && (
                         <button
@@ -1737,7 +1580,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 return (
                   <>
                     <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                      style={{ background: SH, borderBottom: SB, borderTop: SB, color: "#1a3a6b" }}>
+                      style={{ background: "#f0f9ff", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
                       <span>Редукционный клапан</span>
                       {onRemoveReducer && (
                         <button
