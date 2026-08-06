@@ -4,6 +4,7 @@ import {
   type Horizon, type PaperFormat,
   PAPER_SIZES_MM, OVERVIEW_HORIZON_ID,
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
+  sectionKind, SECTION_KIND_COLORS,
 } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
@@ -230,7 +231,7 @@ interface Props {
   /** Режим выбора узла для горноспасателей */
   rescuePickMode?: string | null;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
-  colorMode?: "none" | "flowQ" | "velocityV";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section";
   /** Минимальное значение шкалы расхода, м³/с */
   flowColorMin?: number;
   /** Максимальное значение шкалы расхода, м³/с */
@@ -373,6 +374,7 @@ export default function TopoCanvas(props: Props) {
     const Q = Math.abs(b.flow);
     if (colorMode === "flowQ") return flowQColorFn(Q, flowColorMin, flowColorMax, flowColorHue);
     if (colorMode === "velocityV") return flowQColorFn(b.velocity, velColorMin, velColorMax, velColorHue);
+    if (colorMode === "section") return SECTION_KIND_COLORS[sectionKind(b)];
     if (colorMode === "none") return null;
     if (Q > 0) return velocityColorFn(b.velocity);
     return null;
@@ -3046,6 +3048,7 @@ export default function TopoCanvas(props: Props) {
             : (colorByHorizon && horizonColor) ? horizonColor
             : colorMode === "flowQ" ? gradColor(Math.abs(Q), flowColorMin, flowColorMax, flowColorHue)
             : colorMode === "velocityV" ? gradColor(V, velColorMin, velColorMax, velColorHue)
+            : colorMode === "section" ? SECTION_KIND_COLORS[sectionKind(b)]
             : colorMode === "none" ? "#ffffff"
             : Q > 0 ? velocityColor(V)
             : "#ffffff";

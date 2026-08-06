@@ -3,7 +3,7 @@
  * Работает с теми же данными что и canvasRenderer, но генерирует чистый SVG.
  * Масштабируется бесконечно — идеально для плоттера.
  */
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "./topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, sectionKind, SECTION_KIND_COLORS } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
@@ -30,7 +30,7 @@ export interface SvgExportOptions {
   colorByHorizon?: boolean;
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
-  colorMode?: "none" | "flowQ" | "velocityV";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section";
   flowColorMin?: number;
   flowColorMax?: number;
   flowColorHue?: "red" | "blue" | "green";
@@ -106,6 +106,10 @@ function getBranchColor(b: TopoBranch, opts: SvgExportOptions): string {
 
   if (colorMode === "flowQ") {
     return grad(Math.abs(b.flow ?? 0), opts.flowColorMin ?? 0, opts.flowColorMax ?? 75, opts.flowColorHue ?? "red");
+  }
+
+  if (colorMode === "section") {
+    return SECTION_KIND_COLORS[sectionKind(b)];
   }
 
   if (colorMode === "velocityV") {

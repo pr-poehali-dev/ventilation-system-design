@@ -457,6 +457,41 @@ export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
   };
 }
 
+// ─── Заливка схемы по форме сечения ──────────────────────────────────────────
+// Квадратное — это прямоугольное с равными сторонами, отдельного значения shape
+// у него нет, поэтому вычисляем его на лету.
+export type SectionKind = "round" | "square" | "rect" | "arch" | "trap" | "custom";
+
+export const SECTION_KIND_COLORS: Record<SectionKind, string> = {
+  round:  "#2563eb",   // синий
+  square: "#0891b2",   // бирюзовый
+  rect:   "#16a34a",   // зелёный
+  arch:   "#ea580c",   // оранжевый
+  trap:   "#9333ea",   // фиолетовый
+  custom: "#6b7280",   // серый — задано вручную
+};
+
+export const SECTION_KIND_LABELS: Record<SectionKind, string> = {
+  round:  "Круглое",
+  square: "Квадратное",
+  rect:   "Прямоугольное",
+  arch:   "Арочное",
+  trap:   "Трапециевидное",
+  custom: "Задано вручную",
+};
+
+/** Форма сечения ветви для легенды/заливки (квадрат отделён от прямоугольника). */
+export function sectionKind(b: Pick<TopoBranch, "shape" | "rectWidth" | "rectHeight">): SectionKind {
+  if (b.shape === "rect") {
+    const a = b.rectWidth ?? 0, h = b.rectHeight ?? 0;
+    // Считаем квадратом при расхождении сторон < 1 см — иначе округления
+    // из импорта (4.00 и 3.999) дали бы разные цвета у одинаковых выработок.
+    if (a > 0 && Math.abs(a - h) < 0.01) return "square";
+    return "rect";
+  }
+  return b.shape as SectionKind;
+}
+
 export function makeBranch(id: string, fromId: string, toId: string, partial?: Partial<TopoBranch>): TopoBranch {
   return {
     id,

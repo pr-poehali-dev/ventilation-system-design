@@ -2,7 +2,7 @@
 // canvasRenderer.ts — Canvas 2D рендерер для больших схем (>CANVAS_THRESHOLD ветвей)
 // Математика проекции полностью переиспользуется из topology.ts
 // ─────────────────────────────────────────────────────────────────────────────
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength } from "./topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength, sectionKind, SECTION_KIND_COLORS } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
@@ -121,7 +121,7 @@ export interface CanvasRenderOptions {
   /** Карта branchId → зона поражения взрывом {hazardLevel} */
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   /** Режим цвета: none = по скорости, flowQ = по расходу */
-  colorMode?: "none" | "flowQ" | "velocityV";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section";
   /** Нижний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
   flowColorMin?: number;
   /** Верхний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
@@ -606,6 +606,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : colorMode === "flowQ" ? flowQColor(Q, flowColorMin, flowColorMax, flowColorHue)
       // Заливка по скорости воздуха — та же шкала «белый → цвет», но по V.
       : colorMode === "velocityV" ? flowQColor(V, velColorMin, velColorMax, velColorHue)
+      // Заливка по форме сечения — фиксированный цвет на каждую форму.
+      : colorMode === "section" ? SECTION_KIND_COLORS[sectionKind(b)]
       : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
       : defaultBranchColor;

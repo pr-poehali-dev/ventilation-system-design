@@ -72,7 +72,7 @@ interface CanvasLayerProps {
   xyScale?: number;
   transparentBg?: boolean;
   compareBranchColors?: Map<string, string>;
-  colorMode?: "none" | "flowQ" | "velocityV";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section";
   flowColorMin?: number;
   flowColorMax?: number;
   flowColorHue?: "red" | "blue" | "green";

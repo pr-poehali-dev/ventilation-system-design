@@ -7,6 +7,7 @@ import {
   type TopoNode, type TopoBranch, type Horizon,
   DEMO_NODES, DEMO_BRANCHES, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane, calcBranchLength,
+  type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
@@ -1171,7 +1172,7 @@ export default function CadPage() {
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
   // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха, horizon = по цвету горизонта
-  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "velocityV" | "horizon">("none");
+  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "velocityV" | "section" | "horizon">("none");
   // Настройки шкалы расхода (мин/макс, цвет)
   const [flowColorMin, setFlowColorMin] = useState(0);
   const [flowColorMax, setFlowColorMax] = useState(75);
@@ -2463,7 +2464,7 @@ export default function CadPage() {
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
     if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); }
     // colorMode сохраняется явно — восстанавливаем точное значение
-    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "horizon");
+    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "section" | "horizon");
     else if (data.colorByHorizon) setColorMode("horizon");
     else setColorMode("none");
     if (data.posColorInner !== undefined) setPosColorInner(data.posColorInner as boolean);
@@ -5772,13 +5773,14 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "velocityV" ? "velocityV" : activeSide === "check" ? "check" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "velocityV" ? "velocityV" : activeSide === "section" ? "section" : activeSide === "check" ? "check" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
                   else if (e.target.value === "search") setActiveSide("search");
                   else if (e.target.value === "positions") setActiveSide("positions");
                   else if (e.target.value === "flowQ") { setActiveSide("flowQ"); setColorMode("flowQ"); }
                   else if (e.target.value === "velocityV") { setActiveSide("velocityV"); setColorMode("velocityV"); }
+                  else if (e.target.value === "section") { setActiveSide("section"); setColorMode("section"); }
                   else if (e.target.value === "check") setActiveSide("check");
                   else { setActiveSide("general"); }
                 }}>
@@ -5788,6 +5790,7 @@ export default function CadPage() {
                 <option value="horizons">Горизонты</option>
                 <option value="flowQ">Расход воздуха</option>
                 <option value="velocityV">Скорость воздуха</option>
+                <option value="section">Форма сечения</option>
                 {/* Разделитель: «Проверка» — отдельный по смыслу раздел (аудит схемы),
                     поэтому визуально отделяем его от разделов отображения. */}
                 <option disabled style={{ color: "#d1d5db" }}>──────────</option>
@@ -9078,6 +9081,70 @@ export default function CadPage() {
             )}
 
             {/* ═══ ВКЛАДКА: РАСХОД ВОЗДУХА ════════════════════════════ */}
+            {/* ═══ ВКЛАДКА: ФОРМА СЕЧЕНИЯ ═════════════════════════════ */}
+            {activeSide === "section" && (() => {
+              // Считаем ветви каждой формы по ВИДИМЫМ горизонтам — легенда должна
+              // отражать то, что реально видно на схеме.
+              const counts = new Map<SectionKind, number>();
+              let total = 0;
+              for (const b of branches) {
+                if (b.isVentPipeBranch) continue;
+                if (b.horizonId) {
+                  const hz = horizons.find(x => x.id === b.horizonId);
+                  if (hz && !hz.visible) continue;
+                }
+                const k = sectionKind(b);
+                counts.set(k, (counts.get(k) ?? 0) + 1);
+                total++;
+              }
+              const order: SectionKind[] = ["round", "square", "rect", "arch", "trap", "custom"];
+              return (
+                <div className="flex flex-col h-full">
+                  <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid #e5e7eb" }}>
+                    <button
+                      onClick={() => setColorMode(colorMode === "section" ? "none" : "section")}
+                      className="h-6 px-3 rounded text-[11px] font-semibold"
+                      style={{
+                        background: colorMode === "section" ? "#dc2626" : "#f3f4f6",
+                        color: colorMode === "section" ? "white" : "#374151",
+                        border: "1px solid " + (colorMode === "section" ? "#b91c1c" : "#d1d5db"),
+                      }}>
+                      {colorMode === "section" ? "Заливка ВКЛ" : "Заливка ВЫКЛ"}
+                    </button>
+                    <span className="text-[10px] text-gray-400">Расчёт не требуется</span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto px-3 py-3">
+                    <div className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wide">Легенда</div>
+                    {order.map(k => {
+                      const n = counts.get(k) ?? 0;
+                      const pct = total > 0 ? (n / total) * 100 : 0;
+                      return (
+                        <div key={k} className="flex items-center gap-2 py-1"
+                          style={{ opacity: n === 0 ? 0.35 : 1 }}>
+                          <div style={{
+                            width: 18, height: 12, borderRadius: 2, flexShrink: 0,
+                            background: SECTION_KIND_COLORS[k],
+                            border: "1px solid rgba(0,0,0,0.15)",
+                          }} />
+                          <span className="text-[11px] text-gray-700 flex-1">{SECTION_KIND_LABELS[k]}</span>
+                          <span className="text-[10px] text-gray-500 tabular-nums">
+                            {n} · {pct.toFixed(0)}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div className="mt-3 pt-2 text-[10px] text-gray-400" style={{ borderTop: "1px solid #e5e7eb" }}>
+                      Всего ветвей: {total}
+                    </div>
+                    <div className="mt-2 text-[10px] text-gray-400 leading-snug">
+                      Квадратным считается прямоугольное сечение с равными сторонами.
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {(activeSide === "flowQ" || activeSide === "velocityV") && (() => {
               // Одна панель обслуживает обе заливки: по расходу (Q, м³/с) и по
               // скорости (V, м/с). Отличаются только величина, единицы и свои
@@ -9278,13 +9345,14 @@ export default function CadPage() {
             {/* ── Режим цветовой заливки ── */}
             <select
               value={colorMode}
-              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "velocityV" | "horizon")}
+              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "velocityV" | "section" | "horizon")}
               className="h-6 text-[11px] px-1 rounded"
               style={{ border: "1px solid #d0d0d0", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
               title="Режим цветовой заливки ветвей">
               <option value="none">— Заливка выкл</option>
               <option value="flowQ">Расход воздуха</option>
               <option value="velocityV">Скорость воздуха</option>
+              <option value="section">Форма сечения</option>
               <option value="horizon">Цвет горизонта</option>
             </select>
 
@@ -9646,7 +9714,7 @@ export default function CadPage() {
               viewPreset={viewPreset}
               onViewChange={setViewInfo}
               flowDisplay={flowDisplay}
-              colorMode={colorMode}
+              colorMode={colorMode === "horizon" ? "none" : colorMode}
               flowColorMin={flowColorMin}
               flowColorMax={flowColorMax}
               flowColorHue={flowColorHue}
@@ -11552,7 +11620,7 @@ export default function CadPage() {
       infoConfig={infoConfig}
       zScale={zScale}
       getSvgRef={getSvgRef}
-      colorMode={colorMode}
+      colorMode={colorMode === "horizon" ? "none" : colorMode}
       posColorInner={posColorInner}
       posColorOuter={posColorOuter}
       positions={positions}
