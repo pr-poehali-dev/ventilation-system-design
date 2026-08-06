@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <!-- Запрет кеширования HTML: браузер всегда берёт свежую страницу,
+         которая ссылается на актуальные JS-бандлы (иначе после обновления
+         грузился старый код и, например, неверно считалась депрессиограмма). -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+    <meta http-equiv="Pragma" content="no-cache"/>
+    <meta http-equiv="Expires" content="0"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" id="viewport-meta"/>
+    <script>
+      // На мобильном устройстве сразу применяем десктопный viewport,
+      // чтобы приложение загружалось как полная ПК-версия с первого кадра.
+      (function() {
+        try {
+          var w = window.innerWidth || document.documentElement.clientWidth;
+          var stubRequested = new URLSearchParams(window.location.search).get('stub') === '1'
+            || localStorage.getItem('force-desktop') === '0';
+          if (w < 768 && !stubRequested) {
+            var vp = document.getElementById('viewport-meta');
+            if (vp) {
+              var cssW = window.screen.width || w;
+              var scale = (cssW / 1280).toFixed(3);
+              vp.setAttribute('content', 'width=1280, initial-scale=' + scale + ', minimum-scale=0.1, maximum-scale=10, user-scalable=yes');
+            }
+          }
+        } catch (e) { /* noop */ }
+      })();
+    </script>
+    <title>ПВ-Система</title>
+
+    <style>
+      html, body, #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      /* ─── Сплеш-экран при запуске ─── */
+      #app-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(160deg, #ffffff 0%, #eaf4fc 60%, #d2e8f7 100%);
+        font-family: 'IBM Plex Sans', 'Segoe UI', Tahoma, sans-serif;
+        transition: opacity 0.5s ease, visibility 0.5s ease;
+      }
+      #app-splash.hide {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #app-splash .splash-logo {
+        display: block;
+        width: 160px;
+        max-width: 60vw;
+        height: auto;
+        -o-object-fit: contain;
+           object-fit: contain;
+        margin: 0 auto;
+        animation: splashPulse 2.2s ease-in-out infinite;
+        filter: drop-shadow(0 6px 20px rgba(14, 99, 176, 0.18));
+      }
+      #app-splash .splash-title {
+        margin-top: 24px;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #0E3A6E;
+      }
+      #app-splash .splash-subtitle {
+        margin-top: 8px;
+        font-size: 14px;
+        color: #4a6a8a;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+      }
+      #app-splash .splash-progress {
+        margin-top: 36px;
+        width: 240px;
+        height: 3px;
+        background: rgba(14, 99, 176, 0.15);
+        border-radius: 2px;
+        overflow: hidden;
+        position: relative;
+      }
+      #app-splash .splash-progress::after {
+        content: '';
+        position: absolute;
+        left: -40%;
+        top: 0;
+        width: 40%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, #1FA0E8, #0E63B0, transparent);
+        animation: splashBar 1.4s ease-in-out infinite;
+      }
+      #app-splash .splash-version {
+        margin-top: 18px;
+        font-size: 12px;
+        color: #5a7a9a;
+        letter-spacing: 0.4px;
+      }
+      #app-splash .splash-footer {
+        position: absolute;
+        bottom: 18px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 11px;
+        color: #6b8aa8;
+        letter-spacing: 0.3px;
+      }
+      @keyframes splashPulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.05); }
+      }
+      @keyframes splashBar {
+        0%   { left: -40%; }
+        100% { left: 100%; }
+      }
+    </style>
+    <!-- Блокируем Ctrl+колесо на уровне браузера — масштабирует только схема внутри приложения -->
+    <script>
+      (function() {
+        document.addEventListener('wheel', function(e) {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+          }
+        }, { passive: false, capture: true });
+        // Блокируем жест pinch-zoom (touch) на тачпадах
+        document.addEventListener('touchmove', function(e) {
+          if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+          }
+        }, { passive: false, capture: true });
+      })();
+    </script>
+    <meta name="description" content="ПВ-Система. Проектирование вентиляции и водоснабжения рудников">
+    <meta name="author" content="poehali.dev"/>
+    <link rel="icon" type="image/png" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png">
+    <link rel="icon" type="image/png" href="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png">
+    <meta property="og:title" content="ПВ-Система">
+    <meta property="og:description" content="ПВ-Система. Проектирование вентиляции и водоснабжения рудников">
+    <meta property="og:image:width" content="4800">
+    <meta property="og:image:height" content="2520">
+    <meta property="og:image:alt" content="Поехали! — сервис разработки сайтов с помощью ИИ">
+    <meta property="og:image" content="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/files/og-image-1779647296693.jpg">
+    <meta name="twitter:image" content="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/files/og-image-1779647296693.jpg">
+    <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS COMMENT! -->
+
+    <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS COMMENT! -->
+    <script src="https://cdn.poehali.dev/intertnal/js/pp-min-2.js"></script>
+    <script src="https://cdn.poehali.dev/intertnal/js/route-min.js"></script>
+    <script src="https://cdn.poehali.dev/intertnal/js/telemetry-min.js"></script>
+    <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS COMMENT! -->
+
+    <meta name="pp-name" value="ventilation-system-design">
+      <script src="https://cdn.poehali.dev/intertnal/js/inspector-min.js"></script>
+
+    <!-- ─── Независимый фоновый детектор новой версии ───────────────────────
+         Работает ВНЕ React: даже если основное приложение зависло или вкладка
+         открыта очень долго, этот скрипт продолжает опрашивать сервер версий
+         и, обнаружив свежую сборку, показывает баннер «Обновить страницу».
+         Логика: запоминаем версию, которую сервер отдавал при ЗАГРУЗКЕ этой
+         вкладки (bootVersion). Если сервер начал отдавать другую — значит
+         вышла новая сборка, а эта вкладка старая → предлагаем обновиться.
+         Это не зависит от версии, зашитой в JS-бандл, поэтому надёжно. -->
+    <script>
+    (function () {
+      var VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
+      var POLL_MS = 5 * 60 * 1000;   // как часто опрашивать сервер
+      var bootVersion = null;        // версия сервера на момент загрузки вкладки
+      var shown = false;             // баннер уже показан
+      var isDesktop = !!window.__IS_DESKTOP__ || window.location.protocol === "file:";
+      if (isDesktop) return;         // десктоп обновляется своим механизмом
+
+      function fetchVersion() {
+        return fetch(VERSION_URL, { cache: "no-store" })
+          .then(function (r) { return r.text(); })
+          .then(function (t) {
+            if (!t || t.charAt(0) !== "{") return null;
+            var d = JSON.parse(t);
+            return d && d.version ? String(d.version) : null;
+          })
+          .catch(function () { return null; });
+      }
+
+      function reloadFresh() {
+        try {
+          if (window.caches && caches.keys) {
+            caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+          }
+        } catch (e) { /* noop */ }
+        try {
+          var u = new URL(window.location.href);
+          u.searchParams.set("_v", Date.now().toString());
+          window.location.replace(u.toString());
+        } catch (e) { window.location.reload(); }
+      }
+
+      function hasUnsaved() {
+        try { return typeof window.__pvsIsDirty === "function" ? !!window.__pvsIsDirty() : false; }
+        catch (e) { return false; }
+      }
+
+      function doUpdate(btn) {
+        if (hasUnsaved()) {
+          var ok = window.confirm(
+            "В проекте есть несохранённые изменения.\n\n" +
+            "Нажмите «ОК», чтобы сохранить проект и обновить страницу,\n" +
+            "или «Отмена», чтобы вернуться и сохранить вручную."
+          );
+          if (!ok) return;
+          try {
+            var res = typeof window.__pvsSaveProject === "function" ? window.__pvsSaveProject() : null;
+            if (btn) { btn.textContent = "Сохранение…"; btn.disabled = true; }
+            if (res && typeof res.then === "function") { res.then(reloadFresh, reloadFresh); return; }
+          } catch (e) { /* при ошибке всё равно даём обновиться */ }
+        }
+        reloadFresh();
+      }
+
+      function showBanner(newVer) {
+        if (shown) return;
+        // Если React-баннер уже висит — не дублируем.
+        if (document.querySelector('[data-pvs-react-update-banner]')) return;
+        shown = true;
+        var bar = document.createElement("div");
+        bar.setAttribute("data-pvs-html-update-banner", "1");
+        bar.style.cssText =
+          "position:fixed;top:0;left:0;right:0;z-index:2147483000;height:44px;" +
+          "display:flex;align-items:center;gap:12px;padding:0 16px;color:#fff;" +
+          "font-family:'Segoe UI',Arial,sans-serif;font-size:13px;" +
+          "background:linear-gradient(90deg,#2563eb,#1d4ed8);box-shadow:0 2px 8px rgba(0,0,0,0.25)";
+        var txt = document.createElement("div");
+        txt.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        txt.innerHTML = "<b>Доступно обновление v" + newVer + "</b>" +
+          "<span style='opacity:.85;margin-left:8px;font-size:12px'>Обновите страницу, чтобы применить</span>";
+        var upd = document.createElement("button");
+        upd.textContent = "Обновить страницу";
+        upd.style.cssText =
+          "height:28px;padding:0 16px;border:0;border-radius:6px;font-size:12px;font-weight:600;" +
+          "background:#fff;color:#1d4ed8;cursor:pointer;flex-shrink:0";
+        upd.onclick = function () { doUpdate(upd); };
+        var later = document.createElement("button");
+        later.textContent = "Позже";
+        later.style.cssText =
+          "height:28px;padding:0 12px;border:1px solid rgba(255,255,255,.5);border-radius:6px;" +
+          "font-size:12px;font-weight:500;background:transparent;color:#fff;cursor:pointer;flex-shrink:0";
+        later.onclick = function () { bar.remove(); shown = false;
+          // Напомним снова через 15 минут, если версия так и не обновлена.
+          setTimeout(function () { if (bootVersion) showBanner(newVer); }, 15 * 60 * 1000); };
+        bar.appendChild(txt); bar.appendChild(upd); bar.appendChild(later);
+        document.body.appendChild(bar);
+      }
+
+      function poll() {
+        fetchVersion().then(function (v) {
+          if (!v) return;
+          if (bootVersion === null) { bootVersion = v; return; }  // первая фиксация
+          // Сервер начал отдавать другую версию, чем при загрузке вкладки.
+          if (v !== bootVersion) showBanner(v);
+        });
+      }
+
+      // Стартовая фиксация версии — как только доступен fetch.
+      fetchVersion().then(function (v) { if (v) bootVersion = v; });
+      // Периодический опрос + опрос при возврате на вкладку.
+      setInterval(poll, POLL_MS);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") poll();
+      });
+    })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-BR0qQ6-x.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DkgcNagh.css">
+  </head>
+
+<body>
+<div id="app-splash">
+  <img class="splash-logo"
+       src="https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png"
+       alt="ПВ-Система"/>
+  <div class="splash-subtitle">Проектирование вентиляции и водоснабжения</div>
+  <div class="splash-progress"></div>
+
+  <div class="splash-footer">© 2026 ПВ-Система. Все права защищены.</div>
+</div>
+<div id="root"></div>
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function (m, e, t, r, i, k, a) {
+        m[i] = m[i] || function () {
+            (m[i].a = m[i].a || []).push(arguments)
+        };
+        m[i].l = 1 * new Date();
+        for (var j = 0; j < document.scripts.length; j++) {
+            if (document.scripts[j].src === r) {
+                return;
+            }
+        }
+        k = e.createElement(t), a = e.getElementsByTagName(t)[0], k.async = 1, k.src = r, a.parentNode.insertBefore(k, a)
+    })
+    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+    ym(101026698, "init", {
+        trustedDomains: ["poehali.dev"],
+        clickmap: true,
+        trackLinks: true,
+        accurateTrackBounce: true,
+        webvisor: true,
+        trackHash: true
+    });
+</script>
+<noscript>
+    <div><img src="https://mc.yandex.ru/watch/101026698" style="position:absolute; left:-9999px;" alt=""/></div>
+</noscript>
+<!-- /Yandex.Metrika counter -->
+</body>
+</html>

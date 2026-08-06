@@ -14,7 +14,7 @@
  *
  * Конфигурацию клиент читает публичной функцией compute-config при старте.
  */
-import { API_URLS } from "./api-urls";
+import { API_URLS, isDesktop } from "./api-urls";
 
 export interface ComputeConfig {
   active: "primary" | "backup";
@@ -48,6 +48,11 @@ loadCached();
 
 /** Подтягивает актуальную конфигурацию сервера с backend (вызывается при старте). */
 export async function refreshComputeConfig(): Promise<void> {
+  // В десктопе расчёт всегда идёт на локальное ядро (server.exe) — облачная
+  // конфигурация резерва не применяется. Иначе на объекте без связи (рудник,
+  // ВГСЧ) запрос конфигурации впустую ждал бы сеть, а админ мог бы случайно
+  // увести локальный расчёт в облако.
+  if (isDesktop) return;
   if (!CONFIG_URL) return;
   try {
     const res = await fetch(CONFIG_URL, { method: "GET" });
@@ -66,6 +71,8 @@ export async function refreshComputeConfig(): Promise<void> {
 
 /** URL сервера, который нужно использовать прямо сейчас. */
 export function activeComputeUrl(): string {
+  // Десктоп — жёстко локальное ядро, без вариантов.
+  if (isDesktop) return PRIMARY_URL;
   const useBackup = cfg.active === "backup" || (primaryDown && cfg.autofailover);
   if (useBackup && cfg.backupUrl) return cfg.backupUrl;
   return PRIMARY_URL;
@@ -73,11 +80,13 @@ export function activeComputeUrl(): string {
 
 /** Есть ли настроенный резервный сервер. */
 export function hasBackup(): boolean {
+  if (isDesktop) return false;
   return !!cfg.backupUrl;
 }
 
 /** Сейчас расчёт идёт на резервном сервере? */
 export function isOnBackup(): boolean {
+  if (isDesktop) return false;
   return activeComputeUrl() === cfg.backupUrl && !!cfg.backupUrl;
 }
 
@@ -101,6 +110,15 @@ export async function postCompute(
   makeRequest: (url: string) => Promise<Response>,
 ): Promise<{ response: Response; url: string; usedBackup: boolean }> {
   const firstUrl = activeComputeUrl();
+
+  // ДЕСКТОП: считаем только на локальном ядре. Никакого ухода в облако —
+  // ошибка локального ядра должна показываться как ошибка, а не молча
+  // отправлять данные шахты наружу (и падать там, где нет интернета).
+  if (isDesktop) {
+    const r = await makeRequest(firstUrl);
+    return { response: r, url: firstUrl, usedBackup: false };
+  }
+
   let response: Response;
   try {
     response = await makeRequest(firstUrl);
