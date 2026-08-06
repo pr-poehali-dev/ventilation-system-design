@@ -5627,6 +5627,8 @@ export default function CadPage() {
               icon="TrendingDown"
               label="Депрессио-"
               sublabel="грамма"
+              /* Перенос слова оставлен: подпись в две строки держит высоту
+                 кнопки одинаковой с соседними «Устойчивость / при пожаре». */
               title="Построить депрессиограмму главного маршрута"
               disabled={!solveResult}
               onClick={() => setShowDepressogram(true)}

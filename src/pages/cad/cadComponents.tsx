@@ -127,7 +127,10 @@ export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick
     <button disabled={disabled} onClick={onClick} title={title ?? `${label}${sublabel ? " " + sublabel : ""}`}
       className="flex flex-col items-center justify-center gap-0.5 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       style={{
-        width: 52, height: 60,
+        // Ширина растёт под длинную подпись («Устойчивость», «Типы выработок»):
+        // при жёстких 52px текст вылезал за границы и налезал на соседнюю кнопку.
+        minWidth: 52, height: 60,
+        paddingLeft: 4, paddingRight: 4,
         border: active ? "1.5px solid #3b82f6" : "1px solid transparent",
         background: active ? "#dbeafe" : "transparent",
         color: active ? "#1d4ed8" : "#374151",
@@ -140,8 +143,8 @@ export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick
         ? <img src={iconImg} alt={label} style={{ width: 22, height: 22, objectFit: "contain" }} />
         : <Icon name={icon} size={20} fallback="Square" style={{ color: active ? "#2563eb" : "#4b5563" }} />}
       <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500 }}>
-        <div>{label}</div>
-        {sublabel && <div style={{ color: active ? "#1d4ed8" : "#6b7280" }}>{sublabel}</div>}
+        <div style={{ whiteSpace: "nowrap" }}>{label}</div>
+        {sublabel && <div style={{ color: active ? "#1d4ed8" : "#6b7280", whiteSpace: "nowrap" }}>{sublabel}</div>}
       </div>
     </button>
   );
