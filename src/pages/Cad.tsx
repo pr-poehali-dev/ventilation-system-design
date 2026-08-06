@@ -1156,11 +1156,15 @@ export default function CadPage() {
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
   // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха, horizon = по цвету горизонта
-  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "horizon">("none");
+  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "velocityV" | "horizon">("none");
   // Настройки шкалы расхода (мин/макс, цвет)
   const [flowColorMin, setFlowColorMin] = useState(0);
   const [flowColorMax, setFlowColorMax] = useState(75);
   const [flowColorHue, setFlowColorHue] = useState<"red" | "blue" | "green">("red");
+  // Шкала заливки по скорости воздуха (м/с). 15 м/с — типовой предел для выработок.
+  const [velColorMin, setVelColorMin] = useState(0);
+  const [velColorMax, setVelColorMax] = useState(15);
+  const [velColorHue, setVelColorHue] = useState<"red" | "blue" | "green">("blue");
 
   // Активная рабочая плоскость для построения в 3D
   // null = автоматически по ракурсу; иначе фиксированная пользователем
@@ -2444,7 +2448,7 @@ export default function CadPage() {
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
     if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); }
     // colorMode сохраняется явно — восстанавливаем точное значение
-    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "horizon");
+    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "horizon");
     else if (data.colorByHorizon) setColorMode("horizon");
     else setColorMode("none");
     if (data.posColorInner !== undefined) setPosColorInner(data.posColorInner as boolean);
@@ -5753,17 +5757,19 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "check" ? "check" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "velocityV" ? "velocityV" : activeSide === "check" ? "check" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
                   else if (e.target.value === "search") setActiveSide("search");
                   else if (e.target.value === "positions") setActiveSide("positions");
                   else if (e.target.value === "flowQ") { setActiveSide("flowQ"); setColorMode("flowQ"); }
+                  else if (e.target.value === "velocityV") { setActiveSide("velocityV"); setColorMode("velocityV"); }
                   else if (e.target.value === "check") setActiveSide("check");
                   else { setActiveSide("general"); }
                 }}>
                 <option value="props">Свойства</option>
                 <option value="flowQ">Расход воздуха</option>
+                <option value="velocityV">Скорость воздуха</option>
                 <option value="positions">Позиции</option>
                 <option value="search">Поиск</option>
                 <option value="horizons">Горизонты</option>
@@ -9034,18 +9040,30 @@ export default function CadPage() {
             )}
 
             {/* ═══ ВКЛАДКА: РАСХОД ВОЗДУХА ════════════════════════════ */}
-            {activeSide === "flowQ" && (() => {
+            {(activeSide === "flowQ" || activeSide === "velocityV") && (() => {
+              // Одна панель обслуживает обе заливки: по расходу (Q, м³/с) и по
+              // скорости (V, м/с). Отличаются только величина, единицы и свои
+              // настройки шкалы — логика отрисовки общая.
+              const isVel = activeSide === "velocityV";
+              const mode: "flowQ" | "velocityV" = isVel ? "velocityV" : "flowQ";
+              const unit = isVel ? "м/с" : "м³/с";
+              const scaleMin = isVel ? velColorMin : flowColorMin;
+              const scaleMax = isVel ? velColorMax : flowColorMax;
+              const scaleHue = isVel ? velColorHue : flowColorHue;
+              const setScaleMin = isVel ? setVelColorMin : setFlowColorMin;
+              const setScaleMax = isVel ? setVelColorMax : setFlowColorMax;
+              const setScaleHue = isVel ? setVelColorHue : setFlowColorHue;
               const BAR_H = 320;
               const hueStops: Record<string, [string, string]> = {
                 red:   ["#ffffff", "#dc2626"],
                 blue:  ["#ffffff", "#2563eb"],
                 green: ["#ffffff", "#16a34a"],
               };
-              const [stopLo, stopHi] = hueStops[flowColorHue];
+              const [stopLo, stopHi] = hueStops[scaleHue];
               const tickCount = 6;
               const ticks = Array.from({ length: tickCount }, (_, i) => {
                 const frac = i / (tickCount - 1);
-                const val = flowColorMin + frac * (flowColorMax - flowColorMin);
+                const val = scaleMin + frac * (scaleMax - scaleMin);
                 return { val, frac };
               });
               return (
@@ -9053,14 +9071,14 @@ export default function CadPage() {
                   {/* Переключатель вкл/выкл */}
                   <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid #e5e7eb" }}>
                     <button
-                      onClick={() => setColorMode(colorMode === "flowQ" ? "none" : "flowQ")}
+                      onClick={() => setColorMode(colorMode === mode ? "none" : mode)}
                       className="h-6 px-3 rounded text-[11px] font-semibold"
                       style={{
-                        background: colorMode === "flowQ" ? "#dc2626" : "#f3f4f6",
-                        color: colorMode === "flowQ" ? "white" : "#374151",
-                        border: "1px solid " + (colorMode === "flowQ" ? "#b91c1c" : "#d1d5db"),
+                        background: colorMode === mode ? "#dc2626" : "#f3f4f6",
+                        color: colorMode === mode ? "white" : "#374151",
+                        border: "1px solid " + (colorMode === mode ? "#b91c1c" : "#d1d5db"),
                       }}>
-                      {colorMode === "flowQ" ? "Заливка ВКЛ" : "Заливка ВЫКЛ"}
+                      {colorMode === mode ? "Заливка ВКЛ" : "Заливка ВЫКЛ"}
                     </button>
                     <span className="text-[10px] text-gray-400">После расчёта F9</span>
                   </div>
@@ -9084,7 +9102,7 @@ export default function CadPage() {
                           }}>
                             <div style={{ width: 5, height: 1, background: "#9ca3af" }} />
                             <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap" }}>
-                              {val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)} м³/с
+                              {val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)} {unit}
                             </span>
                           </div>
                         ))}
@@ -9097,16 +9115,16 @@ export default function CadPage() {
                     <div className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wide">Настройки шкалы</div>
 
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Мин, м³/с</span>
-                      <input type="number" min="0" step="5" value={flowColorMin}
-                        onChange={e => setFlowColorMin(Number(e.target.value))}
+                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Мин, {unit}</span>
+                      <input type="number" min="0" step={isVel ? 1 : 5} value={scaleMin}
+                        onChange={e => setScaleMin(Number(e.target.value))}
                         className="flex-1 text-[11px] text-right px-1"
                         style={{ border: "1px solid #d1d5db", borderRadius: 3, height: 22, outline: "none" }} />
                     </div>
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Макс, м³/с</span>
-                      <input type="number" min="1" step="5" value={flowColorMax}
-                        onChange={e => setFlowColorMax(Number(e.target.value))}
+                      <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Макс, {unit}</span>
+                      <input type="number" min="1" step={isVel ? 1 : 5} value={scaleMax}
+                        onChange={e => setScaleMax(Number(e.target.value))}
                         className="flex-1 text-[11px] text-right px-1"
                         style={{ border: "1px solid #d1d5db", borderRadius: 3, height: 22, outline: "none" }} />
                     </div>
@@ -9115,11 +9133,11 @@ export default function CadPage() {
                       <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Цвет</span>
                       <div className="flex gap-1">
                         {(["red", "blue", "green"] as const).map(h => (
-                          <button key={h} onClick={() => setFlowColorHue(h)}
+                          <button key={h} onClick={() => setScaleHue(h)}
                             title={h === "red" ? "Красный" : h === "blue" ? "Синий" : "Зелёный"}
                             style={{
                               width: 22, height: 22, borderRadius: 4,
-                              border: flowColorHue === h ? "2px solid #111" : "1px solid #d1d5db",
+                              border: scaleHue === h ? "2px solid #111" : "1px solid #d1d5db",
                               background: h === "red" ? "#dc2626" : h === "blue" ? "#2563eb" : "#16a34a",
                               cursor: "pointer",
                             }} />
@@ -9169,12 +9187,13 @@ export default function CadPage() {
             {/* ── Режим цветовой заливки ── */}
             <select
               value={colorMode}
-              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "horizon")}
+              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "velocityV" | "horizon")}
               className="h-6 text-[11px] px-1 rounded"
               style={{ border: "1px solid #d0d0d0", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
               title="Режим цветовой заливки ветвей">
               <option value="none">— Заливка выкл</option>
               <option value="flowQ">Расход воздуха</option>
+              <option value="velocityV">Скорость воздуха</option>
               <option value="horizon">Цвет горизонта</option>
             </select>
 
@@ -9540,6 +9559,9 @@ export default function CadPage() {
               flowColorMin={flowColorMin}
               flowColorMax={flowColorMax}
               flowColorHue={flowColorHue}
+              velColorMin={velColorMin}
+              velColorMax={velColorMax}
+              velColorHue={velColorHue}
               workPlane={workPlane}
               horizons={horizons}
               highlightHorizonId={hoveredHorizonId}

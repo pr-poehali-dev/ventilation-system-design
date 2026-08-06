@@ -30,7 +30,13 @@ export interface SvgExportOptions {
   colorByHorizon?: boolean;
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
-  colorMode?: "none" | "flowQ";
+  colorMode?: "none" | "flowQ" | "velocityV";
+  flowColorMin?: number;
+  flowColorMax?: number;
+  flowColorHue?: "red" | "blue" | "green";
+  velColorMin?: number;
+  velColorMax?: number;
+  velColorHue?: "red" | "blue" | "green";
 
   // Условные обозначения на схеме
   schemaSymbols?: SchemaSymbol[];
@@ -80,6 +86,16 @@ export interface SvgExportOptions {
 // ── Цвет ветви ────────────────────────────────────────────────────────────────
 function getBranchColor(b: TopoBranch, opts: SvgExportOptions): string {
   const { colorByHorizon, horizonMap, colorMode } = opts;
+  // Градиент «белый → насыщенный цвет» — тот же, что на схеме в рабочей области,
+  // чтобы распечатка совпадала с тем, что видит пользователь на экране.
+  const grad = (val: number, min: number, max: number, hue: string): string => {
+    const t = Math.min(1, Math.max(0, (val - min) / Math.max(0.001, max - min)));
+    const targets: Record<string, [number, number, number]> = {
+      red: [220, 38, 38], blue: [37, 99, 235], green: [22, 163, 74],
+    };
+    const [tr, tg, tb] = targets[hue] ?? targets.red;
+    return `rgb(${Math.round(255 + (tr - 255) * t)},${Math.round(255 + (tg - 255) * t)},${Math.round(255 + (tb - 255) * t)})`;
+  };
 
   if (b.isDead) return "#9ca3af";
 
@@ -89,14 +105,11 @@ function getBranchColor(b: TopoBranch, opts: SvgExportOptions): string {
   }
 
   if (colorMode === "flowQ") {
-    const Q = Math.abs(b.flow ?? 0);
-    if (Q <= 0) return "#9ca3af";
-    const MAX_Q = 50;
-    const t = Math.min(1, Q / MAX_Q);
-    const r = Math.round(59 + (239 - 59) * t);
-    const g = Math.round(130 + (68 - 130) * t);
-    const bv = Math.round(246 + (68 - 246) * t);
-    return `rgb(${r},${g},${bv})`;
+    return grad(Math.abs(b.flow ?? 0), opts.flowColorMin ?? 0, opts.flowColorMax ?? 75, opts.flowColorHue ?? "red");
+  }
+
+  if (colorMode === "velocityV") {
+    return grad(b.velocity ?? 0, opts.velColorMin ?? 0, opts.velColorMax ?? 15, opts.velColorHue ?? "blue");
   }
 
   return velocityColor(b.velocity ?? 0);

@@ -72,10 +72,13 @@ interface CanvasLayerProps {
   xyScale?: number;
   transparentBg?: boolean;
   compareBranchColors?: Map<string, string>;
-  colorMode?: "none" | "flowQ";
+  colorMode?: "none" | "flowQ" | "velocityV";
   flowColorMin?: number;
   flowColorMax?: number;
   flowColorHue?: "red" | "blue" | "green";
+  velColorMin?: number;
+  velColorMax?: number;
+  velColorHue?: "red" | "blue" | "green";
   posInnerColors?: Map<string, string>;
   posOuterColors?: Map<string, string>;
   rescuePathNodeIds?: Set<string>;
@@ -221,6 +224,9 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         flowColorMin: p.flowColorMin,
         flowColorMax: p.flowColorMax,
         flowColorHue: p.flowColorHue,
+        velColorMin: p.velColorMin,
+        velColorMax: p.velColorMax,
+        velColorHue: p.velColorHue,
         posInnerColors: p.posInnerColors,
         posOuterColors: p.posOuterColors,
         rescuePathNodeIds: p.rescuePathNodeIds,
@@ -274,6 +280,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.transparentBg,
     props.compareBranchColors,
     props.colorMode, props.flowColorMin, props.flowColorMax, props.flowColorHue,
+    props.velColorMin, props.velColorMax, props.velColorHue,
     props.posInnerColors,
     props.rescuePathNodeIds, props.rescueNodeLetters,
     props.rescuePathBranchIds, props.rescuePathBranchDirs,

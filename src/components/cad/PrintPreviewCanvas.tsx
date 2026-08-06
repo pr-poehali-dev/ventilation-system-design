@@ -45,7 +45,7 @@ interface Props {
   textBlocks?: TextBlock[];
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
-  colorMode?: "none" | "flowQ";
+  colorMode?: "none" | "flowQ" | "velocityV";
   posInnerColors?: Map<string, string>;
   posOuterColors?: Map<string, string>;
   positions?: Position[];

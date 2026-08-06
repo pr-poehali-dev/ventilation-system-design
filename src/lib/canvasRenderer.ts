@@ -121,13 +121,19 @@ export interface CanvasRenderOptions {
   /** Карта branchId → зона поражения взрывом {hazardLevel} */
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   /** Режим цвета: none = по скорости, flowQ = по расходу */
-  colorMode?: "none" | "flowQ";
+  colorMode?: "none" | "flowQ" | "velocityV";
   /** Нижний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
   flowColorMin?: number;
   /** Верхний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
   flowColorMax?: number;
   /** Палитра заливки по расходу: белый → выбранный цвет */
   flowColorHue?: "red" | "blue" | "green";
+  /** Нижний предел шкалы заливки по скорости, м/с (для colorMode="velocityV") */
+  velColorMin?: number;
+  /** Верхний предел шкалы заливки по скорости, м/с (для colorMode="velocityV") */
+  velColorMax?: number;
+  /** Палитра заливки по скорости: белый → выбранный цвет */
+  velColorHue?: "red" | "blue" | "green";
   /** Карта branchId → цвет позиции внутри (ПЛА) */
   posInnerColors?: Map<string, string>;
   /** Карта branchId → цвет позиции снаружи (ПЛА) */
@@ -408,6 +414,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, waterBranchResults, branchFireColors, branchExplosionColors,
     colorMode = "none", flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
+    velColorMin = 0, velColorMax = 15, velColorHue = "blue",
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
@@ -597,6 +604,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : posInnerCol ? posInnerCol
       : (colorByHorizon && horizonColor) ? horizonColor
       : colorMode === "flowQ" ? flowQColor(Q, flowColorMin, flowColorMax, flowColorHue)
+      // Заливка по скорости воздуха — та же шкала «белый → цвет», но по V.
+      : colorMode === "velocityV" ? flowQColor(V, velColorMin, velColorMax, velColorHue)
       : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
       : defaultBranchColor;

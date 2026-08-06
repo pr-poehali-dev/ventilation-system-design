@@ -230,13 +230,19 @@ interface Props {
   /** Режим выбора узла для горноспасателей */
   rescuePickMode?: string | null;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
-  colorMode?: "none" | "flowQ";
+  colorMode?: "none" | "flowQ" | "velocityV";
   /** Минимальное значение шкалы расхода, м³/с */
   flowColorMin?: number;
   /** Максимальное значение шкалы расхода, м³/с */
   flowColorMax?: number;
   /** Цветовая гамма шкалы расхода */
   flowColorHue?: "red" | "blue" | "green";
+  /** Минимальное значение шкалы скорости, м/с */
+  velColorMin?: number;
+  /** Максимальное значение шкалы скорости, м/с */
+  velColorMax?: number;
+  /** Цветовая гамма шкалы скорости */
+  velColorHue?: "red" | "blue" | "green";
   /** Карта branchId → цвет для сравнения схем (added/removed/changed) */
   compareBranchColors?: Map<string, string>;
 }
@@ -306,6 +312,9 @@ export default function TopoCanvas(props: Props) {
     flowColorMin = 0,
     flowColorMax = 75,
     flowColorHue = "red",
+    velColorMin = 0,
+    velColorMax = 15,
+    velColorHue = "blue",
     compareBranchColors,
   } = props;
 
@@ -363,10 +372,11 @@ export default function TopoCanvas(props: Props) {
     if (colorByHorizon && horizonColor) return horizonColor;
     const Q = Math.abs(b.flow);
     if (colorMode === "flowQ") return flowQColorFn(Q, flowColorMin, flowColorMax, flowColorHue);
+    if (colorMode === "velocityV") return flowQColorFn(b.velocity, velColorMin, velColorMax, velColorHue);
     if (colorMode === "none") return null;
     if (Q > 0) return velocityColorFn(b.velocity);
     return null;
-  }, [posInnerColors, horizonMap, colorByHorizon, colorMode, flowColorMin, flowColorMax, flowColorHue]);
+  }, [posInnerColors, horizonMap, colorByHorizon, colorMode, flowColorMin, flowColorMax, flowColorHue, velColorMin, velColorMax, velColorHue]);
 
   // Видимые ветви: если горизонт привязан и скрыт — фильтруем
   const visibleBranches = useMemo(() => branches.filter((b) => {
@@ -2656,6 +2666,9 @@ export default function TopoCanvas(props: Props) {
           flowColorMin={flowColorMin}
           flowColorMax={flowColorMax}
           flowColorHue={flowColorHue}
+          velColorMin={velColorMin}
+          velColorMax={velColorMax}
+          velColorHue={velColorHue}
           posInnerColors={posInnerColors}
           posOuterColors={posOuterColors}
           rescuePathNodeIds={rescuePathNodeIds}
@@ -2985,15 +2998,15 @@ export default function TopoCanvas(props: Props) {
           const overV = V > b.vMax;
           // ─── ЦВЕТ ВЕТВИ ──────────────────────────────────────────
           // Градиент по расходу воздуха: белый (мин) → насыщенный цвет (макс)
-          const flowQColor = (q: number): string => {
-            const t = Math.min(1, Math.max(0, (q - flowColorMin) / Math.max(0.001, flowColorMax - flowColorMin)));
+          const gradColor = (val: number, min: number, max: number, hue: string): string => {
+            const t = Math.min(1, Math.max(0, (val - min) / Math.max(0.001, max - min)));
             // Целевые RGB для максимума шкалы
             const targets: Record<string, [number, number, number]> = {
               red:   [220, 38, 38],   // #dc2626
               blue:  [37, 99, 235],   // #2563eb
               green: [22, 163, 74],   // #16a34a
             };
-            const [tr, tg, tb] = targets[flowColorHue] ?? targets.red;
+            const [tr, tg, tb] = targets[hue] ?? targets.red;
             const r = Math.round(255 + (tr - 255) * t);
             const g = Math.round(255 + (tg - 255) * t);
             const b = Math.round(255 + (tb - 255) * t);
@@ -3031,7 +3044,8 @@ export default function TopoCanvas(props: Props) {
             // обычный цвет (горизонт/скорость/контур), а не заливаются белым.
             : posInnerColEarly ? posInnerColEarly
             : (colorByHorizon && horizonColor) ? horizonColor
-            : colorMode === "flowQ" ? flowQColor(Math.abs(Q))
+            : colorMode === "flowQ" ? gradColor(Math.abs(Q), flowColorMin, flowColorMax, flowColorHue)
+            : colorMode === "velocityV" ? gradColor(V, velColorMin, velColorMax, velColorHue)
             : colorMode === "none" ? "#ffffff"
             : Q > 0 ? velocityColor(V)
             : "#ffffff";

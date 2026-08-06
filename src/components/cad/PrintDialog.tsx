@@ -56,7 +56,7 @@ interface PrintDialogProps {
   unitsConfig?: UnitsConfig;
   zScale?: number;
   getSvgRaw?: () => string;
-  colorMode?: "none" | "flowQ";
+  colorMode?: "none" | "flowQ" | "velocityV";
   posInnerColors?: Map<string, string>;
   posOuterColors?: Map<string, string>;
   positions?: Position[];
