@@ -708,6 +708,7 @@ interface ParallelPath {
   resistance: number;    // суммарное сопротивление пути (последовательное соединение)
   flow: number;          // расход по пути (по «бутылочному горлышку» — минимальный |flow|)
   mainBranchId: string;  // ветвь пути с наибольшим |flow| (для отображения)
+  mainFlow: number;      // расход этой основной ветви, м³/с (Q_п по нормативу)
 }
 
 // Поиск путей a → b, НЕ использующих горящую ветвь. Обычная параллельная
@@ -745,7 +746,11 @@ function findParallelPaths(
       const nMinFlow = Math.min(minFlow, e.flow);
       const [nMainId, nMainFlow] = e.flow > mainFlow ? [e.id, e.flow] : [mainId, mainFlow];
       if (e.other === b) {
-        paths.push({ branchIds: nIds, resistance: nRes, flow: nMinFlow === Infinity ? 0 : nMinFlow, mainBranchId: nMainId });
+        paths.push({
+          branchIds: nIds, resistance: nRes,
+          flow: nMinFlow === Infinity ? 0 : nMinFlow,
+          mainBranchId: nMainId, mainFlow: nMainFlow,
+        });
         if (paths.length >= PARALLEL_PATH_MAX_COUNT) return;
         continue;
       }
@@ -756,6 +761,50 @@ function findParallelPaths(
   };
   dfs(a, [], 0, Infinity, "", 0);
   return paths;
+}
+
+// Максимальная длина пути (число ветвей), который ещё можно считать «соседней
+// параллельной выработкой» уклонного поля. Второй ходок обычно разбит сбойками
+// на 1–3 участка; более длинные цепочки — это транзит через другие части шахты.
+export const PARALLEL_WORKING_MAX_LEN = 3;
+// Во сколько раз сопротивление параллели может превышать минимальное найденное,
+// чтобы её ещё учитывать. Пути с существенно бо́льшим сопротивлением почти не
+// шунтируют тепловую тягу, но при параллельном сложении сильно занижают r_п.
+export const PARALLEL_RESISTANCE_SPREAD = 3;
+
+/**
+ * Отбирает из всех найденных обходов те, которые физически являются
+ * параллельными выработками уклонного поля (Прил. 5), отсекая транзитные пути
+ * через остальную сеть.
+ */
+function selectParallelWorkings(
+  paths: ParallelPath[],
+  inp: CriticalDepInput,
+): ParallelPath[] {
+  if (paths.length <= 1) return paths;
+
+  // 1) Только короткие пути — соседний ходок, а не транзит через полшахты.
+  const short = paths.filter(p => p.branchIds.length <= PARALLEL_WORKING_MAX_LEN);
+  const base = short.length > 0 ? short : [paths.reduce((b, p) => (p.resistance < b.resistance ? p : b), paths[0])];
+
+  // 2) Пути с воздухом: параллельная выработка уклонного поля проветривается.
+  //    Пути без движения воздуха (закрытые перемычками) тягу не шунтируют.
+  const withFlow = base.filter(p => p.flow > 0.01);
+  const flowBase = withFlow.length > 0 ? withFlow : base;
+
+  // 3) Отсекаем пути с непропорционально большим сопротивлением: они почти не
+  //    участвуют в шунтировании, но занижают приведённое r_п.
+  const rMin = flowBase.reduce((m, p) => Math.min(m, p.resistance || Infinity), Infinity);
+  const near = Number.isFinite(rMin)
+    ? flowBase.filter(p => p.resistance <= rMin * PARALLEL_RESISTANCE_SPREAD)
+    : flowBase;
+
+  // 4) Исключаем пути, проходящие через саму аварийную пару узлов повторно
+  //    (сбойки учитываются отдельно в формуле 5.4).
+  const fireIds = new Set([inp.fireBranchId]);
+  const clean = near.filter(p => !p.branchIds.some(id => fireIds.has(id)));
+
+  return clean.length > 0 ? clean : near;
 }
 
 export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult {
@@ -769,7 +818,17 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   // Параллельные ПУТИ в обход горящей ветви (цепочки узлов, а не только прямые
   // ветви между той же парой узлов). Каждый путь — последовательное соединение
   // ветвей с суммарным сопротивлением; сами пути между собой параллельны.
-  const paths = findParallelPaths(a, b, inp.fireBranchId, inp.branches);
+  const allPaths = findParallelPaths(a, b, inp.fireBranchId, inp.branches);
+
+  // ── Отбор ДЕЙСТВИТЕЛЬНО параллельных выработок ────────────────────────────
+  // Приложение 5 под «параллельной выработкой» понимает СОСЕДНЮЮ выработку
+  // уклонного поля (второй ходок), идущую рядом с горящей и связанную с ней
+  // сбойками, — а НЕ любой обход через всю шахту.
+  // Обход графа находит десятки транзитных путей; при их параллельном сложении
+  // (1/√r_п = Σ1/√rᵢ) суммарное сопротивление падает в десятки раз, и h_кр
+  // вырождается в доли паскаля (наблюдалось h_кр = 0,1 Па при h_т = 187 Па).
+  // Поэтому оставляем только физически сопоставимые с аварийной выработкой пути.
+  const paths = selectParallelWorkings(allPaths, inp);
 
   // ── Случай «уклонное поле с одной воздухоподающей выработкой» ──────────────
   // Параллельного пути нет → критическая депрессия ориентировочно принимается
@@ -787,9 +846,11 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   // Для двух путей это тождественно формуле r_п = r₁/(√(r₁/r₂)+1)².
   const sumInvSqrt = paths.reduce((s, p) => s + 1 / Math.sqrt(p.resistance || 1e-9), 0);
   const r_p = sumInvSqrt > 0 ? 1 / (sumInvSqrt * sumInvSqrt) : 0;
-  // Q_п — расход по параллели: сумма расходов путей, идущих в ту же сторону
-  // (по «бутылочному горлышку» каждого пути).
-  const Q_p = paths.reduce((s, p) => s + p.flow, 0);
+  // Q_п — расход воздуха в параллельной выработке (норматив, ф. 5.3).
+  // Берём расход ОСНОВНОЙ ветви каждого пути (наиболее полноводной), а не
+  // минимум по цепочке: «бутылочное горлышко» на длинном обходе — случайная
+  // маловоздушная выработка, из-за неё Q_п занижался почти до нуля.
+  const Q_p = paths.reduce((s, p) => s + (p.mainFlow > 0 ? p.mainFlow : p.flow), 0);
   const mainPath = paths.reduce((best, p) => (p.flow > best.flow ? p : best), paths[0]);
   const mainPar = { id: mainPath.mainBranchId, resistance: mainPath.resistance };
 
@@ -888,6 +949,24 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   // Формулы (5.3)–(5.5) дают h_кр в тех же единицах, что и r·Q², т.е. в Па —
   // напрямую сопоставимо с тепловой депрессией пожара (см. блок «ЕДИНИЦЫ
   // ДЕПРЕССИИ» вверху файла). Дополнительный перевод не требуется.
+
+  // Защита от вырожденного результата: критическая депрессия не может быть
+  // меньше депрессии самой аварийной выработки — при нулевом расходе воздуха
+  // в ней уже не остаётся напора, удерживающего струю. Если из-за особенностей
+  // топологии r_п получился неправдоподобно малым, берём депрессию участка
+  // (случай «уклонное поле» по Прил. 5). Без этого в акт попадали значения
+  // вида h_кр = 0,1 Па при h_т = 187 Па.
+  const hSelf = Math.abs(Number(inp.fireDP_pa) || 0);
+  if (hSelf > 0 && h_kr < hSelf) {
+    return {
+      h_kr: hSelf, r_p, Q, Q_p,
+      parallelBranchId: mainPar.id,
+      parallelCount: paths.length,
+      formula: "field",
+      hasParallel: true,
+    };
+  }
+
   return {
     h_kr: Number.isFinite(h_kr) ? h_kr : 0,
     r_p, Q, Q_p,
