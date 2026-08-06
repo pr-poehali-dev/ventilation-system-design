@@ -9053,6 +9053,37 @@ export default function CadPage() {
               const setScaleMin = isVel ? setVelColorMin : setFlowColorMin;
               const setScaleMax = isVel ? setVelColorMax : setFlowColorMax;
               const setScaleHue = isVel ? setVelColorHue : setFlowColorHue;
+              // Фактический диапазон величины по видимым ветвям (после расчёта).
+              // Скрытые горизонты и вентиляционные трубы не учитываем — иначе
+              // шкала растянулась бы по объектам, которых на схеме не видно.
+              const autoRange = (): { lo: number; hi: number; n: number } => {
+                let lo = Infinity, hi = -Infinity, n = 0;
+                for (const b of branches) {
+                  if (b.isVentPipeBranch) continue;
+                  if (b.horizonId) {
+                    const h = horizons.find(x => x.id === b.horizonId);
+                    if (h && !h.visible) continue;
+                  }
+                  const v = isVel ? (b.velocity ?? 0) : Math.abs(b.flow ?? 0);
+                  if (!isFinite(v) || v <= 0) continue;
+                  if (v < lo) lo = v;
+                  if (v > hi) hi = v;
+                  n++;
+                }
+                return n > 0 ? { lo, hi, n } : { lo: 0, hi: 0, n: 0 };
+              };
+              const applyAuto = () => {
+                const { lo, hi, n } = autoRange();
+                if (n === 0) return;
+                // Округляем «наружу» до круглого шага, чтобы подписи были читаемыми.
+                const step = isVel ? 1 : 5;
+                const rLo = Math.max(0, Math.floor(lo / step) * step);
+                let rHi = Math.ceil(hi / step) * step;
+                if (rHi <= rLo) rHi = rLo + step;
+                setScaleMin(rLo);
+                setScaleMax(rHi);
+              };
+              const rangeInfo = autoRange();
               const BAR_H = 320;
               const hueStops: Record<string, [string, string]> = {
                 red:   ["#ffffff", "#dc2626"],
@@ -9112,7 +9143,29 @@ export default function CadPage() {
 
                   {/* Настройки шкалы */}
                   <div className="px-3 py-3" style={{ borderTop: "1px solid #e5e7eb" }}>
-                    <div className="text-[10px] font-semibold text-gray-500 mb-2 uppercase tracking-wide">Настройки шкалы</div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Настройки шкалы</span>
+                      <button
+                        onClick={applyAuto}
+                        disabled={rangeInfo.n === 0}
+                        title={rangeInfo.n === 0
+                          ? "Нет данных — выполните расчёт (F9)"
+                          : `Подставить фактический диапазон: ${rangeInfo.lo.toFixed(isVel ? 1 : 1)}…${rangeInfo.hi.toFixed(1)} ${unit}`}
+                        className="h-5 px-2 rounded text-[10px] font-semibold"
+                        style={{
+                          background: rangeInfo.n === 0 ? "#f3f4f6" : "#eff6ff",
+                          color: rangeInfo.n === 0 ? "#9ca3af" : "#1d4ed8",
+                          border: "1px solid " + (rangeInfo.n === 0 ? "#e5e7eb" : "#bfdbfe"),
+                          cursor: rangeInfo.n === 0 ? "not-allowed" : "pointer",
+                        }}>
+                        Авто
+                      </button>
+                    </div>
+                    {rangeInfo.n > 0 && (
+                      <div className="text-[10px] text-gray-400 mb-2">
+                        Факт: {rangeInfo.lo.toFixed(1)}…{rangeInfo.hi.toFixed(1)} {unit}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Мин, {unit}</span>
