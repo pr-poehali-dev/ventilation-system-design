@@ -12,7 +12,7 @@ import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressu
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import {
   SB, SectionHeader, ParamRow, EditInput, ComputedInput, SelectField, CheckField, InlineLabel,
-  PLAST_OPTIONS,
+  PLAST_OPTIONS, PLA_OPTIONS, POLE_OPTIONS,
 } from "@/components/cad/BranchPropsPrimitives";
 
 interface BranchPropsPanelProps {
