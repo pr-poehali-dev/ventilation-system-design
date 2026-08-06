@@ -362,7 +362,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             )}
 
             {branch.resistanceMode === "manual" && (
-              <InlineLabel label="Сопротивление R, Н·с²/м⁸">
+              <InlineLabel label={`Сопротивление R, ${uRes.symbol}`}>
                 <EditInput
                   type="number" step="0.001"
                   value={branch.manualR}
