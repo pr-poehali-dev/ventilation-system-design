@@ -5596,13 +5596,26 @@ export default function CadPage() {
             </div>
 
             {/* Результат */}
+            {/* Статус расчёта — главный результат работы программы, поэтому
+                делаем его цветным блоком, а не мелкой серой строкой. */}
             {solveResult && (
-              <div className="flex flex-col justify-center px-2 text-[9.5px] border-l border-gray-300 ml-1" style={{ minWidth: 80 }}>
-                <div className={`font-semibold ${solveResult.ok ? "text-green-700" : "text-red-600"}`}>
-                  {solveResult.ok ? "✔ Сошлось" : "✘ Не сошлось"}
+              <div className="flex flex-col justify-center px-2 py-1 ml-1 rounded text-[9.5px]"
+                style={{
+                  minWidth: 92,
+                  background: solveResult.ok ? "#f0fdf4" : "#fef2f2",
+                  border: `1px solid ${solveResult.ok ? "#86efac" : "#fca5a5"}`,
+                  borderLeft: `3px solid ${solveResult.ok ? "#16a34a" : "#dc2626"}`,
+                }}
+                title={solveResult.ok
+                  ? `Расчёт сошёлся за ${solveResult.iterations} итераций`
+                  : "Расчёт не сошёлся — проверьте схему на разрывы и некорректные сопротивления"}>
+                <div className="flex items-center gap-1 font-bold text-[10.5px]"
+                  style={{ color: solveResult.ok ? "#15803d" : "#b91c1c" }}>
+                  <Icon name={solveResult.ok ? "CircleCheck" : "CircleAlert"} size={12} />
+                  {solveResult.ok ? "Сошлось" : "Не сошлось"}
                 </div>
-                <div className="text-gray-500">Ит: {solveResult.iterations}</div>
-                <div className="text-gray-500">|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
+                <div style={{ color: "#64748b" }}>Ит: {solveResult.iterations}</div>
+                <div style={{ color: "#64748b" }}>|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
               </div>
             )}
         </RibbonGroup>
@@ -9511,7 +9524,13 @@ export default function CadPage() {
 
           {/* Холст топологии */}
           <div className="flex-1 relative"
-            style={{ cursor: leaderDrawMode || tool === "textblock" ? "crosshair" : undefined }}
+            style={{
+              cursor: leaderDrawMode || tool === "textblock" ? "crosshair" : undefined,
+              // Мягкая внутренняя тень по краям: схема визуально «лежит» в окне,
+              // а не сливается с панелями. На печать не влияет — это только рамка
+              // контейнера, сам холст остаётся белым.
+              boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.08), inset 0 1px 6px rgba(15,23,42,0.06)",
+            }}
             onMouseMove={(e) => {
               const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const rect = e.currentTarget.getBoundingClientRect();
@@ -11512,8 +11531,12 @@ export default function CadPage() {
           <span className="text-gray-400">|</span>
           {solveResult ? (
             <>
-              <span style={{ color: solveResult.ok ? "#16a34a" : "#dc2626" }}>
-                ● Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
+              <span className="px-1.5 py-0.5 rounded font-semibold" style={{
+                background: solveResult.ok ? "#dcfce7" : "#fee2e2",
+                color: solveResult.ok ? "#15803d" : "#b91c1c",
+                border: `1px solid ${solveResult.ok ? "#86efac" : "#fca5a5"}`,
+              }}>
+                {solveResult.ok ? "✔" : "✘"} Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
               </span>
               {/* Статус реверса по нормативу ПБ */}
               {branches.some(b => b.fanReverse) && (() => {
@@ -11534,7 +11557,11 @@ export default function CadPage() {
               })()}
             </>
           ) : (
-            <span style={{ color: "#9ca3af" }}>● Расчёт не выполнялся</span>
+            <span className="px-1.5 py-0.5 rounded" style={{
+              background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d",
+            }} title="Нажмите F9, чтобы выполнить расчёт сети">
+              ● Расчёт не выполнялся — F9
+            </span>
           )}
 
           <span className="text-gray-400">|</span>
