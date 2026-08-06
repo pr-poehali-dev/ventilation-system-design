@@ -21,6 +21,7 @@ import { calcBranchAngle } from "./topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire,
   calcFireTemp, calcThermalDepression, calcCriticalDepression, FLAT_ANGLE_DEG,
+  branchDepToPa, KGF_M2_TO_PA,
 } from "./fireCalculator";
 
 // Факт пожара по ветви из реального итеративного расчёта сети (как в
@@ -251,7 +252,9 @@ export function calcFireStability(
     const thermalDep = fact
       ? fact.thermalDep
       : Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
-    const branchDep  = Math.abs(b.dP ?? 0);
+    // Депрессия ветви приходит из расчёта сети в кгс/м² (сопротивление хранится
+    // в кМюрг) — переводим в Па, т.к. тепловая депрессия считается в СИ.
+    const branchDep  = Math.abs(branchDepToPa(b.dP));
 
     // ── Критическая депрессия (Прил. 5, формулы 5.3–5.5) ────────────────
     // Передаём ΔP ветви и высотные отметки узлов — без них не работали
@@ -290,6 +293,9 @@ export function calcFireStability(
     //   Q₀  — критический расход, ориентировочно (7.3): Q₀ = Q₁ + 0.03·h₁;
     //   R_р — расчётное сопротивление (7.5): R_р = h_т / Q₀²;
     //   R_доп — сопротивление перемычки ниже очага (7.6): R_доп > R_р − R.
+    // ЕДИНИЦЫ: сопротивление ветви хранится в кМюрг (кгс·с²/м⁸), поэтому R·Q²
+    // даёт кгс/м². Тепловая депрессия — в Па. Все сравнения и расчёт R_доп
+    // ведём в Па, а сопротивления показываем в кМюрг (как в остальном интерфейсе).
     let Q0_m3s: number | null = null;
     let R_calc: number | null = null;
     let R_dop: number | null = null;
@@ -297,15 +303,18 @@ export function calcFireStability(
     const R_fact = (b.resistance ?? 0) > 0 ? +(b.resistance ?? 0).toFixed(6) : null;
 
     if (!descending && absAngle > FLAT_ANGLE_DEG && thermalDep > 0) {
-      // (7.3) Q₀ = Q₁ + 0.03·h₁ — расход и депрессия в нормальном режиме.
-      const Q0 = dojarFlow + 0.03 * branchDep;
+      // (7.3) Q₀ = Q₁ + 0.03·h₁. Норматив даёт h₁ в кгс/м² (рудничные единицы),
+      // поэтому в этой формуле используем депрессию в исходных единицах.
+      const h1_kgf = branchDep / KGF_M2_TO_PA;
+      const Q0 = dojarFlow + 0.03 * h1_kgf;
       if (Q0 > 0) {
         Q0_m3s = +Q0.toFixed(3);
-        // (7.5) расчётное сопротивление, при котором исключается опрокидывание
-        R_calc = +(thermalDep / (Q0 * Q0)).toFixed(6);
-        // (7.1) устойчиво, пока h_т < R·Q₀²
+        // (7.5) R_р = h_т/Q₀². Считаем в Па, результат переводим в кМюрг.
+        R_calc = +((thermalDep / (Q0 * Q0)) / KGF_M2_TO_PA).toFixed(6);
+        // (7.1) устойчиво, пока h_т < R·Q₀² (обе части — в Па)
         if (R_fact != null) {
-          ascendingUnstable = thermalDep >= R_fact * Q0 * Q0;
+          const holdingPa = branchDepToPa(R_fact * Q0 * Q0);
+          ascendingUnstable = thermalDep >= holdingPa;
           // (7.6) требуемое сопротивление перемычки — только если факт < расчётного
           if (R_calc > R_fact) R_dop = +(R_calc - R_fact).toFixed(6);
         }
@@ -316,7 +325,9 @@ export function calcFireStability(
 
     // ── Показатель устойчивости p_у (Прил. 3, ф. 3.1): p_у = h_кр / h_т ──
     // Для восходящих выработок роль критической депрессии играет R·Q₀² (7.1).
-    const puBase = descending ? hKr_Pa : (R_fact != null && Q0_m3s != null ? R_fact * Q0_m3s * Q0_m3s : null);
+    const puBase = descending
+      ? hKr_Pa
+      : (R_fact != null && Q0_m3s != null ? branchDepToPa(R_fact * Q0_m3s * Q0_m3s) : null);
     const p_u = (puBase != null && puBase > 0 && thermalDep > 0.01)
       ? +(puBase / thermalDep).toFixed(2)
       : null;

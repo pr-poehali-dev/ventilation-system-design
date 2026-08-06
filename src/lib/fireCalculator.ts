@@ -18,6 +18,28 @@ const CP_AIR = 1.005;          // кДж/(кг·К)
 const RHO_AIR_0 = 1.2;        // кг/м³ при 20°C
 const G = 9.81;                // м/с²
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ПЕРЕВОД ДЕПРЕССИИ ВЕТВИ В ПАСКАЛИ.
+// Сопротивление ветви (b.resistance) хранится в рудничных единицах — кМюрг
+// (кгс·с²/м⁸), как в АэроСети: коэффициент крепи α задаётся в кгс·с²/м⁴
+// (типовое 9·10⁻⁴), а формула depression() = R·Q² даёт результат в кгс/м²
+// (мм вод. ст.), а НЕ в паскалях.
+// При этом тепловая депрессия пожара считается строго в СИ (g·Δz·Δρ, Па).
+// Поэтому перед сравнением «депрессия ветви ↔ тепловая депрессия» и в формулах
+// критической депрессии (Прил. 5) депрессию ветви нужно перевести: 1 кгс/м² =
+// 9.81 Па. Без этого h_кр занижалась ~в 10 раз и схема выглядела намного менее
+// устойчивой, чем в действительности.
+// ВАЖНО: множитель применяется ТОЛЬКО в пожарных расчётах. Решатель
+// воздухораспределения (networkSolver) откалиброван по эталонам АэроСети в
+// текущих единицах — там ничего не меняем, расходы воздуха остаются прежними.
+export const KGF_M2_TO_PA = 9.80665;
+
+/** Депрессия ветви (ΔP из расчёта сети, кгс/м²) → Па. */
+export function branchDepToPa(dp_kgf: number | undefined | null): number {
+  const v = Number(dp_kgf) || 0;
+  return v * KGF_M2_TO_PA;
+}
+
 // Коэффициент теплоотдачи продуктов горения в стенки выработки, Вт/(м²·К).
 // По мере движения по выработке горячий воздух остывает, отдавая тепло породе,
 // и его температура экспоненциально приближается к температуре стенок (≈ ambient):
@@ -761,7 +783,8 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   // Параллельного пути нет → критическая депрессия ориентировочно принимается
   // равной депрессии всего уклонного поля (ΔP аварийной ветви).
   if (paths.length === 0) {
-    const hField = Math.abs(Number(inp.fireDP_pa) || 0);
+    // ΔP приходит из расчёта сети в кгс/м² — переводим в Па (см. KGF_M2_TO_PA).
+    const hField = Math.abs(branchDepToPa(inp.fireDP_pa));
     if (hField > 0) {
       return { ...empty, h_kr: hField, formula: "field", hasParallel: true, parallelCount: 0 };
     }
@@ -871,8 +894,14 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
     h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
   }
 
+  // Формулы (5.3)–(5.5) дают h_кр в тех же единицах, что и r·Q², т.е. в кгс/м²
+  // (сопротивление хранится в кМюрг). Переводим в Па, чтобы сравнение с тепловой
+  // депрессией пожара (она считается в СИ) было корректным. Случай "field"
+  // возвращается выше уже переведённым.
+  const h_kr_pa = branchDepToPa(h_kr);
+
   return {
-    h_kr: Number.isFinite(h_kr) ? h_kr : 0,
+    h_kr: Number.isFinite(h_kr_pa) ? h_kr_pa : 0,
     r_p, Q, Q_p,
     parallelBranchId: mainPar.id,
     parallelCount: paths.length,
@@ -1272,9 +1301,11 @@ export function calcFireMode(
     // (Прил. 5). Если h_кр рассчитать нельзя (нет параллельного пути и не задан
     // ΔP поля) — сравниваем с депрессией самого участка |ΔP|. Прежний порог
     // 0.5·|ΔP| был эвристическим и занижал границу вдвое.
+    // ΔP ветви переводим из кгс/м² в Па (см. KGF_M2_TO_PA) — тепловая депрессия
+    // считается в СИ, иначе сравниваются величины разной размерности.
     const reversalThreshold = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
       ? critRaw.h_kr
-      : Math.abs(fb.dP ?? 0);
+      : Math.abs(branchDepToPa(fb.dP));
     const willReverse = isDescending && reversalThreshold > 0
       && Math.abs(thermalDep) >= reversalThreshold;
     const critical = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
