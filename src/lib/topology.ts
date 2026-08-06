@@ -298,6 +298,8 @@ export interface HorizonImage {
   bounds: { x1: number; y1: number; x2: number; y2: number };
   /** Прозрачность 0..1 (по умолчанию 0.6). */
   opacity: number;
+  /** Поворот подложки в градусах по часовой стрелке вокруг центра (0 по умолч.). */
+  rotation?: number;
   /** Видимость подложки (отдельно от видимости ветвей горизонта). */
   visible: boolean;
 }

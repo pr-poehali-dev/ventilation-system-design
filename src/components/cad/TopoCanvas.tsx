@@ -2743,8 +2743,13 @@ export default function TopoCanvas(props: Props) {
           const minSy = Math.min(p1.sy, p2.sy, p3.sy, p4.sy);
           const maxSy = Math.max(p1.sy, p2.sy, p3.sy, p4.sy);
           const isEditing = h.id === editingHorizonImageId;
+          // Поворот подложки вокруг её центра (в экранных координатах).
+          const rot = Number(h.image.rotation) || 0;
+          const rotCx = (minSx + maxSx) / 2;
+          const rotCy = (minSy + maxSy) / 2;
           return (
-            <g key={`hi-${h.id}`}>
+            <g key={`hi-${h.id}`}
+               transform={rot ? `rotate(${rot} ${rotCx} ${rotCy})` : undefined}>
               <image
                 href={h.image.dataUrl}
                 x={minSx} y={minSy}
@@ -2800,8 +2805,14 @@ export default function TopoCanvas(props: Props) {
             { key: "bl", x: b.x1, y: b.y1, cur: "nesw-resize" },
             { key: "br", x: b.x2, y: b.y1, cur: "nwse-resize" },
           ];
+          // Ручки должны поворачиваться вместе с подложкой, иначе при повороте
+          // они «разъезжаются» с картинкой и тянуть за угол невозможно.
+          const rotH = Number(h.image.rotation) || 0;
+          const cPts = corners.map((c) => project3D({ x: c.x * xy, y: c.y * xy, z: h.z }, proj));
+          const hCx = cPts.reduce((s, p) => s + p.sx, 0) / cPts.length;
+          const hCy = cPts.reduce((s, p) => s + p.sy, 0) / cPts.length;
           return (
-            <g>
+            <g transform={rotH ? `rotate(${rotH} ${hCx} ${hCy})` : undefined}>
               {corners.map((c) => {
                 const p = project3D({ x: c.x * xy, y: c.y * xy, z: h.z }, proj);
                 return (

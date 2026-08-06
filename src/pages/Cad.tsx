@@ -8368,6 +8368,41 @@ export default function CadPage() {
                                     className="flex-1" />
                                   <span className="text-[10px] w-8 text-right">{Math.round(h.image.opacity * 100)}%</span>
                                 </LabeledRow>
+                                <LabeledRow label="Поворот:" labelWidth={88}>
+                                  <input type="range" min={-180} max={180} step={0.5}
+                                    value={h.image.rotation ?? 0}
+                                    onChange={(e) => updateHorizon(h.id, { image: h.image ? { ...h.image, rotation: Number(e.target.value) } : undefined })}
+                                    className="flex-1" />
+                                  <input type="number" min={-180} max={180} step={0.5}
+                                    value={h.image.rotation ?? 0}
+                                    onChange={(e) => {
+                                      const v = Math.max(-180, Math.min(180, Number(e.target.value) || 0));
+                                      updateHorizon(h.id, { image: h.image ? { ...h.image, rotation: v } : undefined });
+                                    }}
+                                    className="w-12 text-[10px] border rounded px-1 py-0.5 text-right" />
+                                  <span className="text-[10px]">°</span>
+                                </LabeledRow>
+                                <div className="flex gap-1 mb-1">
+                                  {[-90, -1, 1, 90].map((d) => (
+                                    <button key={d}
+                                      title={Math.abs(d) === 90 ? `Повернуть на ${d}°` : `Подстроить на ${d}°`}
+                                      onClick={() => {
+                                        if (!h.image) return;
+                                        let v = (h.image.rotation ?? 0) + d;
+                                        while (v > 180) v -= 360;
+                                        while (v < -180) v += 360;
+                                        updateHorizon(h.id, { image: { ...h.image, rotation: +v.toFixed(1) } });
+                                      }}
+                                      className="flex-1 px-1 py-1 text-[11px] border rounded bg-white hover:bg-gray-50">
+                                      {d > 0 ? `+${d}°` : `${d}°`}
+                                    </button>
+                                  ))}
+                                  <button title="Сбросить поворот"
+                                    onClick={() => updateHorizon(h.id, { image: h.image ? { ...h.image, rotation: 0 } : undefined })}
+                                    className="px-2 py-1 text-[11px] border rounded bg-white hover:bg-gray-50">
+                                    Сброс
+                                  </button>
+                                </div>
                                 <div className="flex gap-1">
                                   <button onClick={() => setEditingHorizonImageId(editingHorizonImageId === h.id ? null : h.id)}
                                     className="flex-1 px-2 py-1 text-[11px] border rounded"
