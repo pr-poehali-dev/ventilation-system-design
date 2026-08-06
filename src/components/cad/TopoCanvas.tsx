@@ -2729,8 +2729,12 @@ export default function TopoCanvas(props: Props) {
 
         {/* ── ПОДЛОЖКИ ГОРИЗОНТОВ (PNG/JPG) ─────────────────────────────── */}
         {/* Рисуются ПОД ветвями. Видимость подложки = h.image.visible && h.visible */}
-        {!useCanvas && (horizons ?? []).map((h) => {
+        {/* В canvas-режиме сама картинка рисуется на холсте, но на время
+            редактирования этот же слой нужен для рамки и перетаскивания —
+            поэтому группу рендерим и там (без дублирующего <image>). */}
+        {(!useCanvas || editingHorizonImageId) && (horizons ?? []).map((h) => {
           if (!h.visible || !h.image || !h.image.visible) return null;
+          if (useCanvas && h.id !== editingHorizonImageId) return null;
           const b = h.image.bounds;
           const xy = xyScale ?? 1;
           // Для проекции углы лежат на плоскости z = h.z, с учётом xyScale
@@ -2750,14 +2754,18 @@ export default function TopoCanvas(props: Props) {
           return (
             <g key={`hi-${h.id}`}
                transform={rot ? `rotate(${rot} ${rotCx} ${rotCy})` : undefined}>
-              <image
-                href={h.image.dataUrl}
-                x={minSx} y={minSy}
-                width={Math.max(0, maxSx - minSx)}
-                height={Math.max(0, maxSy - minSy)}
-                opacity={h.image.opacity}
-                preserveAspectRatio="none"
-                style={{ pointerEvents: "none" }} />
+              {/* В canvas-режиме картинку уже нарисовал холст — второй раз
+                  не рисуем, иначе подложка удвоится по плотности. */}
+              {!useCanvas && (
+                <image
+                  href={h.image.dataUrl}
+                  x={minSx} y={minSy}
+                  width={Math.max(0, maxSx - minSx)}
+                  height={Math.max(0, maxSy - minSy)}
+                  opacity={h.image.opacity}
+                  preserveAspectRatio="none"
+                  style={{ pointerEvents: "none" }} />
+              )}
               {/* Обводка — всегда, тело — кликабельно только в режиме редактирования */}
               <rect x={minSx} y={minSy}
                 width={Math.max(0, maxSx - minSx)}
