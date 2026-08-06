@@ -19,6 +19,7 @@ export interface InfoDisplayConfig {
   branchResistance: boolean;
   branchResistanceSum: boolean;
   branchVelocity: boolean;
+  branchVMax: boolean;
   branchExtraFan: boolean;
   branchFlowCalc: boolean;
   branchFlow: boolean;
@@ -76,6 +77,7 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   branchResistance: false,
   branchResistanceSum: false,
   branchVelocity: false,
+  branchVMax: false,
   branchExtraFan: false,
   branchFlowCalc: false,
   branchFlow: true,

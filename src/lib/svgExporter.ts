@@ -572,6 +572,8 @@ export function generateSvg(opts: SvgExportOptions): string {
         if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
         if (ic.branchSection && b.area > 0) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
         if (ic.branchResistance && b.resistance > 0) dataLines.push(`R=${uRes.fromBase(b.resistance * 1000 / 9.81).toFixed(uRes.decimals)}${uRes.symbol}`);
+        if (ic.branchAlpha) dataLines.push(`α=${(b.alphaCoef ?? 0).toFixed(0)}·10⁻⁴`);
+        if (ic.branchVMax) dataLines.push(`Vmax=${uVel.fromBase(b.vMax ?? 0).toFixed(uVel.decimals)}${uVel.symbol}`);
         if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? " ⚠" : ""}`);
         if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
         if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP ?? 0).toFixed(uPres.decimals)}${uPres.symbol}`);

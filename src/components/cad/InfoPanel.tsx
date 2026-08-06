@@ -185,6 +185,7 @@ export default function InfoPanel({
             <CheckRow label="Аэродинам. сопротивление (R), km" checked={config.branchResistance} onChange={set("branchResistance")} />
             <CheckRow label="Суммарное сопротивление (Rсум), km" checked={config.branchResistanceSum} onChange={set("branchResistanceSum")} />
             <CheckRow label="Скорость воздуха (V), м/с" checked={config.branchVelocity} onChange={set("branchVelocity")} />
+            <CheckRow label="Макс. допустимая скорость (Vmax), м/с" checked={config.branchVMax} onChange={set("branchVMax")} />
             <CheckRow label="Дополнительная депрессия (ДопН), даПа" checked={config.branchExtraFan} onChange={set("branchExtraFan")} />
             <CheckRow label="Расход расчётный (Qрасч), м³/с" checked={config.branchFlowCalc} onChange={set("branchFlowCalc")} />
             <CheckRow label="Расход (Q), м³/с" checked={config.branchFlow} onChange={set("branchFlow")} />

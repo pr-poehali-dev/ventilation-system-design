@@ -8689,22 +8689,19 @@ export default function CadPage() {
                   ])}
 
                   {indSection("Вентиляция", [
-                    indRow("branchVelocity", "Макс. допустимая скорость воздуха"),
+                    // ВАЖНО: ключи должны совпадать с теми, что читают рендереры
+                    // (TopoCanvas / canvasRenderer / svgExporter). Раньше здесь были
+                    // выдуманные ключи branchVelocityModel / branchDepressionModel —
+                    // галочка ставилась, но подпись на схеме не появлялась.
+                    indRow("branchVMax", "Макс. допустимая скорость воздуха"),
                     indRow("branchAlpha", "Коэффициент шероховатости (α)"),
-                    indRow("branchLocalXi", "Мин. допустимая скорость воздуха"),
                     indRow("branchResistance", "Аэродинамическое сопротивление"),
                     indRow("branchAngle", "Уклон"),
-                    indRow("branchFlow", "Фактический расход воздуха"),
-                    indRow("branchDepression", "Фактический перепад давления"),
                     indRow("branchLength", "Длина"),
-                    indRow("branchHeight", "Объём"),
                     indRow("branchSection", "Поперечное сечение"),
                     indRow("branchFlowCalc", "Расход воздуха"),
-                    indRow("branchVelocityModel", "Скорость воздуха"),
-                    indRow("branchDepressionModel", "Перепад давления"),
-                    indRow("branchExtraFan", "Энергозатраты на единицу длины"),
-                    indRow("branchResistanceSum", "Финзатраты на единицу длины"),
-                    indRow("branchNatDragC", "Гарантированный расход воздуха"),
+                    indRow("branchVelocity", "Скорость воздуха"),
+                    indRow("branchDepression", "Перепад давления"),
                   ])}
 
                   {indSection("Авария", [
