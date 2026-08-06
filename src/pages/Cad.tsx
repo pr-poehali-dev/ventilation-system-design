@@ -474,9 +474,24 @@ export default function CadPage() {
   const activeHorizon = horizons.find((h) => h.id === activeHorizonId) ?? null;
   const updateHorizon = (id: string, patch: Partial<Horizon>) =>
     setHorizons((p) => p.map((h) => h.id === id ? { ...h, ...patch } : h));
+  // Палитра для новых горизонтов: контрастные, хорошо различимые на белом фоне
+  // цвета. Берём первый ещё не занятый — так соседние горизонты не сливаются;
+  // когда палитра исчерпана, выбираем случайный.
+  const HORIZON_PALETTE = [
+    "#dc2626", "#2563eb", "#16a34a", "#9333ea", "#ea580c",
+    "#0891b2", "#c026d3", "#65a30d", "#e11d48", "#4f46e5",
+    "#0d9488", "#b45309",
+  ];
   const addHorizon = () => {
     const id = `H_${Date.now()}`;
-    setHorizons((p) => [...p, { id, name: `Горизонт ${p.length + 1}`, z: 0, color: "#64748b", visible: true }]);
+    setHorizons((p) => {
+      const used = new Set(p.map((h) => (h.color ?? "").toLowerCase()));
+      const free = HORIZON_PALETTE.filter((c) => !used.has(c.toLowerCase()));
+      const color = free.length > 0
+        ? free[Math.floor(Math.random() * free.length)]
+        : HORIZON_PALETTE[Math.floor(Math.random() * HORIZON_PALETTE.length)];
+      return [...p, { id, name: `Горизонт ${p.length + 1}`, z: 0, color, visible: true }];
+    });
   };
   const removeHorizon = (id: string) => {
     if (id === OVERVIEW_HORIZON_ID) return; // "Общий вид" нельзя удалить
@@ -8337,15 +8352,27 @@ export default function CadPage() {
                           {/* ── Кнопка раскрытия настроек ── */}
                           <button
                             onClick={() => toggleHorizonExpand(h.id)}
-                            className="w-full flex items-center gap-1 px-2 py-0.5 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50"
-                            style={{ borderTop: "1px solid #e5e7eb" }}>
-                            <Icon name={expandedHorizons.has(h.id) ? "ChevronUp" : "ChevronDown"} size={10} className="flex-shrink-0" />
+                            className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium hover:bg-blue-50"
+                            style={{
+                              borderTop: "1px solid #e5e7eb",
+                              color: expandedHorizons.has(h.id) ? "#1d4ed8" : "#374151",
+                              background: expandedHorizons.has(h.id) ? "#eff6ff" : "transparent",
+                            }}>
+                            <Icon name={expandedHorizons.has(h.id) ? "ChevronUp" : "Settings2"} size={12} className="flex-shrink-0" />
                             <span>{expandedHorizons.has(h.id) ? "Скрыть настройки" : "Настройки (план, печать)"}</span>
-                            {h.image && !expandedHorizons.has(h.id) && (
-                              <span className="ml-auto text-blue-400" title="Загружен план">●</span>
-                            )}
-                            {h.printLayer?.visible && !expandedHorizons.has(h.id) && (
-                              <span className="ml-1 text-purple-400" title="Слой печати активен">●</span>
+                            {!expandedHorizons.has(h.id) && (h.image || h.printLayer?.visible) && (
+                              <span className="ml-auto flex items-center gap-1">
+                                {h.image && (
+                                  <span className="px-1 rounded text-[9px] font-semibold"
+                                    style={{ background: "#dbeafe", color: "#1d4ed8" }}
+                                    title="Загружен план горизонта">ПЛАН</span>
+                                )}
+                                {h.printLayer?.visible && (
+                                  <span className="px-1 rounded text-[9px] font-semibold"
+                                    style={{ background: "#ede9fe", color: "#7c3aed" }}
+                                    title="Слой печати активен">ПЕЧАТЬ</span>
+                                )}
+                              </span>
                             )}
                           </button>
                           {/* ── Настройки горизонта (подложка + слой печати) ── */}
@@ -8488,8 +8515,12 @@ export default function CadPage() {
                                 <div className="mt-1 border border-dashed rounded" style={{ borderColor: hasPl && pl.visible ? "#7c3aed" : "#d1d5db" }}>
                                   {/* Заголовок-переключатель */}
                                   <button
-                                    className="w-full flex items-center justify-between gap-1 px-2 py-1 text-[11px] rounded"
-                                    style={{ background: hasPl && pl.visible ? "#f5f3ff" : "transparent", color: hasPl && pl.visible ? "#7c3aed" : "#6b7280" }}
+                                    className="w-full flex items-center justify-between gap-1 px-2 py-1.5 text-[11px] font-medium rounded hover:brightness-95"
+                                    style={{
+                                      background: hasPl && pl.visible ? "#7c3aed" : "#f3f4f6",
+                                      color: hasPl && pl.visible ? "#ffffff" : "#374151",
+                                    }}
+                                    title={hasPl && pl.visible ? "Выключить слой печати" : "Включить слой печати — рамка и штамп на схеме"}
                                     onClick={() => {
                                       if (!hasPl) {
                                         updatePl({ visible: true });
@@ -8498,10 +8529,14 @@ export default function CadPage() {
                                       }
                                     }}>
                                     <span className="flex items-center gap-1">
-                                      <Icon name="Printer" size={10} className="flex-shrink-0" />
+                                      <Icon name="Printer" size={12} className="flex-shrink-0" />
                                       Слой печати
                                     </span>
-                                    <span style={{ fontSize: 9, opacity: 0.7 }}>
+                                    <span className="px-1.5 rounded" style={{
+                                      fontSize: 9, fontWeight: 700,
+                                      background: hasPl && pl.visible ? "rgba(255,255,255,0.25)" : "#e5e7eb",
+                                      color: hasPl && pl.visible ? "#ffffff" : "#6b7280",
+                                    }}>
                                       {hasPl && pl.visible ? "ВКЛ" : "ВЫКЛ"}
                                     </span>
                                   </button>
