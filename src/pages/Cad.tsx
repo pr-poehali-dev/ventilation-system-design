@@ -5773,6 +5773,9 @@ export default function CadPage() {
                 <option value="horizons">Горизонты</option>
                 <option value="flowQ">Расход воздуха</option>
                 <option value="velocityV">Скорость воздуха</option>
+                {/* Разделитель: «Проверка» — отдельный по смыслу раздел (аудит схемы),
+                    поэтому визуально отделяем его от разделов отображения. */}
+                <option disabled style={{ color: "#d1d5db" }}>──────────</option>
                 <option value="check">Проверка</option>
               </select>
             </div>
