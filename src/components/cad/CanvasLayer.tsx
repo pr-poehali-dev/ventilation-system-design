@@ -4,6 +4,7 @@ import {
 } from "@/lib/topology";
 import {
   renderCanvas,
+  setHorizonImageLoadCallback,
   type FlowDisplayMode, type ProjNode,
   CANVAS_THRESHOLD,
 } from "@/lib/canvasRenderer";
@@ -278,6 +279,15 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.rescuePathBranchIds, props.rescuePathBranchDirs,
     props.width, props.height,
   ]);
+
+  // Подложки-планы горизонтов декодируются браузером асинхронно: на первом
+  // проходе картинка ещё не готова и не рисуется. Перерисовываем холст, когда
+  // изображение догрузилось, иначе план появлялся бы только после случайного
+  // перерендера (зум/клик).
+  useEffect(() => {
+    setHorizonImageLoadCallback(() => draw());
+    return () => setHorizonImageLoadCallback(null);
+  }, [draw]);
 
   // Регистрируем функцию экспорта для печати
   useEffect(() => {

@@ -38,6 +38,33 @@ function getFireCraneImg(open: boolean): { img: HTMLImageElement; loaded: boolea
 
 
 
+// ─── Кэш подложек-планов горизонтов (dataURL → HTMLImageElement) ────────────
+// Изображение декодируется браузером асинхронно, поэтому держим кэш по dataUrl
+// и перерисовываем холст после загрузки (onImageLoad).
+const horizonImgCache = new Map<string, { img: HTMLImageElement; loaded: boolean }>();
+let _onHorizonImgLoad: (() => void) | null = null;
+
+/** Колбэк перерисовки: вызывается, когда подложка догрузилась. */
+export function setHorizonImageLoadCallback(cb: (() => void) | null) {
+  _onHorizonImgLoad = cb;
+}
+
+function getHorizonImg(dataUrl: string): { img: HTMLImageElement; loaded: boolean } {
+  let rec = horizonImgCache.get(dataUrl);
+  if (!rec) {
+    const img = new Image();
+    rec = { img, loaded: false };
+    horizonImgCache.set(dataUrl, rec);
+    img.onload = () => {
+      const r = horizonImgCache.get(dataUrl);
+      if (r) r.loaded = true;
+      _onHorizonImgLoad?.();
+    };
+    img.src = dataUrl;
+  }
+  return rec;
+}
+
 export interface ProjNode {
   node: TopoNode;
   sx: number;
@@ -458,6 +485,38 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     drawGrid3D(ctx, proj);
   } else {
     drawGrid2D(ctx, width, height, sc, view.offsetX, view.offsetY);
+  }
+
+  // ─── ПОДЛОЖКИ ГОРИЗОНТОВ (планы PNG/JPG) ──────────────────────────────────
+  // Рисуются ПОД ветвями, как и в SVG-режиме. Видимость = h.visible &&
+  // h.image.visible. Учитывается поворот подложки вокруг её центра.
+  for (const h of (_horizons ?? [])) {
+    if (!h.visible || !h.image || !h.image.visible) continue;
+    const { img, loaded } = getHorizonImg(h.image.dataUrl);
+    if (!loaded) continue;
+    const b = h.image.bounds;
+    const xy = _xyScaleCR;
+    const c1 = project3D({ x: b.x1 * xy, y: b.y1 * xy, z: h.z }, proj);
+    const c2 = project3D({ x: b.x2 * xy, y: b.y1 * xy, z: h.z }, proj);
+    const c3 = project3D({ x: b.x2 * xy, y: b.y2 * xy, z: h.z }, proj);
+    const c4 = project3D({ x: b.x1 * xy, y: b.y2 * xy, z: h.z }, proj);
+    const minSx = Math.min(c1.sx, c2.sx, c3.sx, c4.sx);
+    const maxSx = Math.max(c1.sx, c2.sx, c3.sx, c4.sx);
+    const minSy = Math.min(c1.sy, c2.sy, c3.sy, c4.sy);
+    const maxSy = Math.max(c1.sy, c2.sy, c3.sy, c4.sy);
+    const dw = maxSx - minSx, dh = maxSy - minSy;
+    if (!(dw > 0 && dh > 0)) continue;
+    const rot = Number(h.image.rotation) || 0;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, h.image.opacity ?? 0.6));
+    if (rot) {
+      const rcx = (minSx + maxSx) / 2, rcy = (minSy + maxSy) / 2;
+      ctx.translate(rcx, rcy);
+      ctx.rotate((rot * Math.PI) / 180);
+      ctx.translate(-rcx, -rcy);
+    }
+    ctx.drawImage(img, minSx, minSy, dw, dh);
+    ctx.restore();
   }
 
   // ─── Порядок горизонтов (слои как в Фотошопе): индекс в списке = z-order ───

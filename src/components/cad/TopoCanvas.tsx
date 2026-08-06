@@ -2693,7 +2693,7 @@ export default function TopoCanvas(props: Props) {
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}
-        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? (editingPrintLayerId ? 1 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
+        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined, zIndex: useCanvas ? ((editingPrintLayerId || editingHorizonImageId) ? 1 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
@@ -2794,7 +2794,10 @@ export default function TopoCanvas(props: Props) {
         })}
 
         {/* ── РУЧКИ ДЛЯ РАСТЯГИВАНИЯ ПОДЛОЖКИ (только для активного горизонта) ── */}
-        {!useCanvas && editingHorizonImageId && (() => {
+        {/* Ручки «Растянуть» нужны и в canvas-режиме: сама подложка там рисуется
+            на холсте, а маркеры остаются SVG-овыми (SVG-слой на время
+            редактирования становится видимым и кликабельным). */}
+        {editingHorizonImageId && (() => {
           const h = (horizons ?? []).find((hh) => hh.id === editingHorizonImageId);
           if (!h || !h.image || !h.image.visible || !h.visible) return null;
           const b = h.image.bounds;
