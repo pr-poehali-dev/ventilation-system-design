@@ -146,16 +146,22 @@ function getHwComponents(): string[] {
 // /etc/machine-id) и имя компьютера. В браузере эндпоинта нет — вернём пусто.
 async function getDesktopMachine(): Promise<{ machineId: string; hostname: string }> {
   if (!IS_DESKTOP) return { machineId: "", hostname: "" };
-  try {
-    const res = await fetch("/api/machine", { cache: "no-store" });
-    const data = await res.json();
-    return {
-      machineId: data?.machineId ? String(data.machineId) : "",
-      hostname: data?.hostname ? String(data.hostname) : "",
-    };
-  } catch {
-    return { machineId: "", hostname: "" };
+  // Локальное ядро (server.exe) может ещё догружаться после старта окна.
+  // Один неудачный запрос раньше означал machineId = "" → отпечаток считался
+  // по браузерным характеристикам и НЕ совпадал с уже занятым местом: программа
+  // требовала активацию заново. Поэтому повторяем попытки ~3 секунды.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const res = await fetch("/api/machine", { cache: "no-store" });
+      const data = await res.json();
+      const machineId = data?.machineId ? String(data.machineId) : "";
+      if (machineId) {
+        return { machineId, hostname: data?.hostname ? String(data.hostname) : "" };
+      }
+    } catch { /* ядро ещё не поднялось — пробуем снова */ }
+    await new Promise((r) => setTimeout(r, 500));
   }
+  return { machineId: "", hostname: "" };
 }
 
 // ── Генерация MachineInfo ─────────────────────────────────────────────────────
@@ -178,8 +184,14 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   const { machineId, hostname: pcName } = await getDesktopMachine();
 
   // Основа отпечатка: в десктопе — настоящий machine-id ОС; иначе — браузерное железо.
+  // В десктопе отпечаток строим ТОЛЬКО из machine-id ОС. Раньше к нему
+  // подмешивались браузерные характеристики (разрешение экрана, число ядер,
+  // объём памяти, таймзона) — из-за этого подключение второго монитора, смена
+  // разрешения, поездка в другой часовой пояс или апгрейд ОЗУ меняли отпечаток.
+  // Программа считала это новым компьютером, занимала ещё одно рабочее место и
+  // в итоге отказывала в активации: «места кончились».
   const hwComponents = machineId
-    ? [`mid:${machineId}`, ...getHwComponents()]
+    ? [`mid:${machineId}`]
     : getHwComponents();
   const hwFingerprint = await sha256hex(hwComponents.join("||"));
 
@@ -200,9 +212,15 @@ export async function getMachineInfo(): Promise<MachineInfo> {
 
   const info: MachineInfo = { fingerprint, hwFingerprint, hostname, platform, screen: scr };
 
-  try {
-    storage.set(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
-  } catch { /* ignore */ }
+  // В десктопе НЕ кэшируем отпечаток, посчитанный без machine-id (ядро не
+  // ответило): иначе временный сбой запомнился бы на 30 дней и всё это время
+  // программа считала бы ПК другим компьютером.
+  const trustworthy = !IS_DESKTOP || !!machineId;
+  if (trustworthy) {
+    try {
+      storage.set(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
+    } catch { /* ignore */ }
+  }
 
   return info;
 }

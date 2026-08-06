@@ -43,7 +43,17 @@ _MACHINE_ID = None
 
 
 def _win_machine_id():
-    """Windows: MachineGuid из реестра + серийник тома системного диска."""
+    """Windows: MachineGuid из реестра — единственный стабильный якорь.
+
+    ВАЖНО: раньше сюда добавлялся UUID материнской платы через WMIC. Это и было
+    причиной «съедания» лишних рабочих мест: wmic отсутствует в Windows 11 24H2
+    и новее (компонент удалён), а при загруженной системе не укладывался в
+    таймаут. Когда wmic отрабатывал — ID был «guid||uuid||имя», когда нет —
+    «guid||имя». Один и тот же ПК давал РАЗНЫЕ отпечатки, сервер не находил
+    существующее место и создавал новое, пока лимит не исчерпывался и
+    активация не падала с ошибкой «места кончились».
+    Поэтому берём только MachineGuid — он стабилен и не требует внешних утилит.
+    """
     parts = []
     try:
         import winreg
@@ -57,20 +67,6 @@ def _win_machine_id():
         winreg.CloseKey(key)
         if guid:
             parts.append(str(guid).strip())
-    except Exception:
-        pass
-    try:
-        # UUID материнской платы через WMIC (если доступен)
-        import subprocess
-        out = subprocess.check_output(
-            ["wmic", "csproduct", "get", "UUID"],
-            stderr=subprocess.DEVNULL, timeout=5,
-        ).decode(errors="ignore")
-        for line in out.splitlines():
-            s = line.strip()
-            if s and s.upper() != "UUID" and s.upper() != "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF":
-                parts.append(s)
-                break
     except Exception:
         pass
     return parts
@@ -113,7 +109,14 @@ def get_machine_id():
     try:
         import platform
         parts = _win_machine_id() if sys.platform.startswith("win") else _unix_machine_id()
-        parts.append(platform.node())  # имя компьютера как доп. компонент
+        # Имя компьютера в отпечаток НЕ добавляем: его меняет системный
+        # администратор (ввод в домен, переименование), и место «терялось» —
+        # программа требовала активацию заново и занимала ещё одно место.
+        # Имя компьютера по-прежнему передаётся отдельно, для отображения.
+        if not parts:
+            # Аппаратный ID недоступен — как запасной якорь используем имя ПК,
+            # иначе отпечаток стал бы пустым и одинаковым у всех машин.
+            parts = [f"node:{platform.node()}"]
         raw = "||".join([p for p in parts if p])
         _MACHINE_ID = raw
     except Exception:
@@ -400,7 +403,10 @@ def api_license():
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        # 30 с вместо 10: в корпоративных сетях с прокси и SSL-инспекцией первый
+        # запрос к облаку нередко идёт дольше 10 секунд, и активация срывалась
+        # по таймауту, хотя ключ верный и интернет есть.
+        with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode())
             return cors_response(data)
     except urllib.error.HTTPError as e:
