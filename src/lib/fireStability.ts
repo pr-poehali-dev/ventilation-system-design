@@ -267,7 +267,6 @@ export function calcFireStability(
         })
       : null;
     const hKr_Pa = (crit && crit.hasParallel && crit.h_kr > 0) ? +crit.h_kr.toFixed(1) : null;
-    const exceedsCritical = hKr_Pa != null && thermalDep >= hKr_Pa;
 
     // ── Определение устойчивости ────────────────────────────────────────
     // Приоритет — ФАКТ опрокидывания из реального итеративного расчёта сети
@@ -316,9 +315,17 @@ export function calcFireStability(
 
     // ── Показатель устойчивости p_у (Прил. 3, ф. 3.1): p_у = h_кр / h_т ──
     // Для восходящих выработок роль критической депрессии играет R·Q₀² (7.1).
-    const puBase = descending
-      ? hKr_Pa
-      : (R_fact != null && Q0_m3s != null ? R_fact * Q0_m3s * Q0_m3s : null);
+    // Для ВОСХОДЯЩИХ выработок критической депрессией служит удерживающая
+    // депрессия R·Q₀² из условия (7.1) — её и показываем в колонке h_кр,
+    // иначе весь раздел восходящего проветривания состоял из прочерков.
+    const holdingDep_Pa = (!descending && R_fact != null && Q0_m3s != null)
+      ? +(R_fact * Q0_m3s * Q0_m3s).toFixed(1)
+      : null;
+    const critDep_Pa = descending ? hKr_Pa : holdingDep_Pa;
+    // Превышение критической депрессии — общий признак для обоих направлений.
+    const exceedsCritical = critDep_Pa != null && thermalDep >= critDep_Pa;
+
+    const puBase = critDep_Pa;
     const p_uRaw = (puBase != null && puBase > 0 && thermalDep > 0.01)
       ? +(puBase / thermalDep).toFixed(2)
       : null;
@@ -356,7 +363,7 @@ export function calcFireStability(
       fireTemp_C: +fireTemp.toFixed(1),
       thermalDep_Pa: +thermalDep.toFixed(1),
       branchDep_Pa: +branchDep.toFixed(1),
-      hKr_Pa,
+      hKr_Pa: critDep_Pa,
       exceedsCritical,
       p_u,
       stabilityClass,

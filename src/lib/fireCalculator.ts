@@ -807,6 +807,58 @@ function selectParallelWorkings(
   return clean.length > 0 ? clean : near;
 }
 
+/**
+ * Депрессия ВСЕГО уклонного поля, к которому принадлежит аварийная выработка
+ * (Прил. 5: «в уклонных полях с одной воздухоподающей выработкой критическая
+ * депрессия последней может быть ориентировочно принята равной депрессии всего
+ * уклонного поля»).
+ *
+ * Схема обычно разбита узлами на короткие участки, поэтому идём от очага в обе
+ * стороны по ТРАНЗИТНЫМ узлам (степень 2 — простое продолжение выработки, без
+ * ответвлений) и суммируем депрессию участков. Так получается депрессия целого
+ * наклонного съезда, а не одного 15-метрового куска.
+ */
+function inclineFieldDepression(inp: CriticalDepInput): number {
+  const byId = new Map(inp.branches.map(br => [br.id, br]));
+  const fire = byId.get(inp.fireBranchId);
+  const selfDp = Math.abs(Number(inp.fireDP_pa ?? fire?.dP) || 0);
+
+  // Смежность: узел → инцидентные ветви
+  const adj = new Map<string, string[]>();
+  for (const br of inp.branches) {
+    if (!adj.has(br.fromId)) adj.set(br.fromId, []);
+    if (!adj.has(br.toId)) adj.set(br.toId, []);
+    adj.get(br.fromId)!.push(br.id);
+    adj.get(br.toId)!.push(br.id);
+  }
+
+  const visited = new Set<string>([inp.fireBranchId]);
+  let total = selfDp;
+
+  // Идём по цепочке от узла, пока узел транзитный (ровно 2 ветви).
+  const walk = (startNode: string, cameFrom: string) => {
+    let node = startNode;
+    let prev = cameFrom;
+    for (let step = 0; step < 200; step++) {
+      const inc = adj.get(node) ?? [];
+      if (inc.length !== 2) return;            // развилка/тупик — конец поля
+      const nextId = inc.find(id => id !== prev);
+      if (!nextId || visited.has(nextId)) return;
+      const nb = byId.get(nextId);
+      if (!nb) return;
+      visited.add(nextId);
+      total += Math.abs(Number(nb.dP) || 0);
+      node = nb.fromId === node ? nb.toId : nb.fromId;
+      prev = nextId;
+    }
+  };
+
+  walk(inp.fireFromId, inp.fireBranchId);
+  walk(inp.fireToId, inp.fireBranchId);
+
+  return total;
+}
+
 export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult {
   const Q = Math.abs(Number(inp.fireFlow_m3s) || 0);
   const empty: CriticalDepResult = {
@@ -834,7 +886,13 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   // Параллельного пути нет → критическая депрессия ориентировочно принимается
   // равной депрессии всего уклонного поля (ΔP аварийной ветви).
   if (paths.length === 0) {
-    const hField = Math.abs(Number(inp.fireDP_pa) || 0);
+    // ВАЖНО: норматив говорит о депрессии ВСЕГО уклонного поля, а не одного
+    // участка. Аварийная выработка в схеме часто разбита узлами на короткие
+    // ветви (15–30 м), депрессия которых — доли паскаля. Раньше в акт попадала
+    // депрессия одного такого участка (h_кр = 0,1 Па при h_т = 187 Па).
+    // Поэтому суммируем депрессию по всей последовательной цепочке выработок
+    // уклонного поля, к которой принадлежит очаг.
+    const hField = inclineFieldDepression(inp);
     if (hField > 0) {
       return { ...empty, h_kr: hField, formula: "field", hasParallel: true, parallelCount: 0 };
     }
@@ -956,7 +1014,7 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   // топологии r_п получился неправдоподобно малым, берём депрессию участка
   // (случай «уклонное поле» по Прил. 5). Без этого в акт попадали значения
   // вида h_кр = 0,1 Па при h_т = 187 Па.
-  const hSelf = Math.abs(Number(inp.fireDP_pa) || 0);
+  const hSelf = inclineFieldDepression(inp);
   if (hSelf > 0 && h_kr < hSelf) {
     return {
       h_kr: hSelf, r_p, Q, Q_p,
