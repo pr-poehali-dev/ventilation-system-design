@@ -463,16 +463,18 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fromId,
     toId,
     type: "",
-    // Геометрия — по умолчанию прямоугольник 7×5.5 м (≈ 38.5 м²)
-    shape: "rect",
+    // Геометрия — по умолчанию арочное сечение 4×3 м со стрелой свода 1 м
+    // (типовая выработка). S = a·b + сегмент = 12 + 2.796 ≈ 14.80 м²,
+    // P = a + 2b + дуга = 4 + 6 + 4.637 ≈ 14.64 м, Dh = 4S/P ≈ 4.043 м.
+    shape: "arch",
     diameter: 7,
-    rectWidth: 7,
-    rectHeight: 5.5,
+    rectWidth: 4,
+    rectHeight: 3,
     trapTopWidth: 5,
-    archHeight: 3.5,   // a/2 = 7/2 — полукруг по умолчанию
-    area: 38.5,
-    perimeter: 25,
-    dh: (4 * 38.5) / 25,
+    archHeight: 1,
+    area: 14.8,
+    perimeter: 14.64,
+    dh: (4 * 14.8) / 14.64,
     length: 0,
     angle: 0,
     manualAngle: false,
