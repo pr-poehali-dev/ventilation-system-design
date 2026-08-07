@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
-import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
+import { SURFACE_TYPES, PIPE_ALPHA_TYPES, KMURG_TO_SI } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
@@ -130,9 +130,10 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   // Единица отображения аэродинамического сопротивления (по умолчанию кМюрг)
   const uRes = getUnit(unitsConfig, "resistance");
-  // branch.resistance хранится в кМюрг (= Па·с²/м⁶). BaseUnit = Мюрг = кМюрг/1000.
-  // Перевод: кМюрг → Мюрг (* 1000) → fromBase → выбранная единица
-  const rToDisplay = (rKmurg: number) => uRes.fromBase(rKmurg * 1000);
+  // branch.resistance хранится в СИ (Н·с²/м⁸) — в этих единицах работает решатель.
+  // Для показа переводим обратно в рудничные: кМюрг = Н·с²/м⁸ / 9,81, далее
+  // кМюрг → Мюрг (×1000) → fromBase → выбранная пользователем единица.
+  const rToDisplay = (rSI: number) => uRes.fromBase((rSI / KMURG_TO_SI) * 1000);
 
 
   return (
@@ -376,34 +377,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             )}
 
             {branch.resistanceMode === "manual" && (
-              <>
-                <InlineLabel label="Сопротивление R">
-                  <EditInput
-                    type="number" step="0.001"
-                    value={branch.manualR}
-                    onChange={(v) => onUpdate({ manualR: parseFloat(v) || 0 })}
-                  />
-                </InlineLabel>
-                {/* Единица ручного ввода. кМюрг = кгс·с²/м⁸ (как в АэроСети):
-                    введённое значение умножается на 9,81 при переводе в систему
-                    расчёта. Без явного выбора (старые проекты) — трактовка «си». */}
-                <InlineLabel label="Единица R">
-                  <select
-                    className="w-full px-1 border border-gray-300 bg-white"
-                    style={{ fontSize: 11, height: 20 }}
-                    value={branch.manualRUnit ?? "si"}
-                    onChange={e => onUpdate({ manualRUnit: e.target.value as "si" | "kmurg" })}
-                  >
-                    <option value="si">Н·с²/м⁸ (система расчёта)</option>
-                    <option value="kmurg">кМюрг, кгс·с²/м⁸</option>
-                  </select>
-                </InlineLabel>
-                {branch.manualRUnit === "kmurg" && (
-                  <div className="px-1 py-0.5 text-[10px]" style={{ color: "#6b7280" }}>
-                    В расчёте: {(branch.manualR * 9.81).toFixed(5)} Н·с²/м⁸ (={branch.manualR} × 9,81)
-                  </div>
-                )}
-              </>
+              <InlineLabel label="Сопротивление R, кМюрг">
+                <EditInput
+                  type="number" step="0.001"
+                  value={branch.manualR}
+                  onChange={(v) => onUpdate({ manualR: parseFloat(v) || 0 })}
+                />
+              </InlineLabel>
             )}
 
             {branch.resistanceMode === "pipe" && (

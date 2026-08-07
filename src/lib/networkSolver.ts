@@ -28,6 +28,7 @@ import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg } from "./bulkheads";
+import { KMURG_TO_SI } from "./aerodynamics";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -402,11 +403,13 @@ export function solveNetwork(
       id:            b.id,
       a:             toGnd(b.fromId),
       b:             toGnd(b.toId),
-      R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => {
+      // ЕДИНИЦЫ: b.resistance уже в СИ (Н·с²/м⁸) — перевод сделан в
+      // calcResistance. Все формулы перемычек ниже дают R в кМюрг, поэтому их
+      // сумма домножается на KMURG_TO_SI (см. множитель после блока).
+      R:             Math.max(MIN_R, b.resistance + KMURG_TO_SI * ((b.hasBulkhead ? (() => {
         const mode = b.bulkheadResMode ?? "project";
-        // Единицы: 1 кМюрг = 1 Па·с²/м⁴ = 1 Н·с²/м⁸ (в системе расчёта коэффициент = 1)
-        // b.resistance хранится в кМюрг/Н·с²/м⁸ (от calcResistance)
-        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг = Н·с²/м⁸
+        // Все ветки ниже возвращают сопротивление в кМюрг (кгс·с²/м⁸).
+        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0;
           const dp = b.bulkheadSurveyDP ?? 0;
@@ -437,7 +440,7 @@ export function solveNetwork(
       // расхода окна (откалиброван по эталону Аэросеть: ВЦД-47, ΔS=17,35, S=38,5,
       // 350 об/мин → Q=515). Учитывает сечение выработки. Только «Внутри перемычки».
       + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (b.fanWindowArea ?? 0) > 0
-          ? fanWindowRkMurg(b.fanWindowArea!, b.area ?? 0) : 0)),
+          ? fanWindowRkMurg(b.fanWindowArea!, b.area ?? 0) : 0))),
       Q:             0,
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",

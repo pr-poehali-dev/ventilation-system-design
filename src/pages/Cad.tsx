@@ -136,7 +136,7 @@ async function postAirflow(body: unknown): Promise<Response> {
 // ─────────────────────────────────────────────────────────────────────────────
 const BULK_EDIT_BRANCH_KEYS = new Set<string>([
   // Аэродинамика
-  "resistanceMode", "manualRUnit", "manualR", "alphaCoef", "roughness",
+  "resistanceMode", "manualR", "alphaCoef", "roughness",
   "surfaceId", "surface", "localXi", "vMax",
   // Признаки ветви
   "isLeakage", "capital", "designed",
@@ -847,7 +847,7 @@ export default function CadPage() {
       setBranches((prev) => prev.map((b) => {
         if (!idSet.has(b.id)) return b;
         const manualOverride: Partial<TopoBranch> = editManualR > 0
-          ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen), manualRUnit: "si" as const }
+          ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen) }
           : {};
         return {
           ...b,
@@ -945,7 +945,7 @@ export default function CadPage() {
       const bid = nextBranchId(workBranches);
       // В ручном режиме — доля общего R по длине; иначе оставляем режим "pipe" из vpPatch.
       const manualOverride: Partial<TopoBranch> = manualPipeR > 0
-        ? { resistanceMode: "manual", manualR: manualPipeR * ((c.b.length ?? 0) / chainTotalLen), manualRUnit: "si" as const }
+        ? { resistanceMode: "manual", manualR: manualPipeR * ((c.b.length ?? 0) / chainTotalLen) }
         : {};
       const nb = makeBranch(bid, fromDup, toDup, {
         horizonId: c.b.horizonId,
@@ -8806,7 +8806,7 @@ export default function CadPage() {
                     <PropGroup title="Вычисленные параметры">
                       {(() => {
                         const uR = getUnit(unitsConfig, "resistance");
-                        const rDisp = uR.fromBase(selectedBranch.resistance / 9.81e-3);
+                        const rDisp = uR.fromBase((selectedBranch.resistance / 9.81) * 1000); // СИ → кМюрг → Мюрг(base)
                         return <FieldRow label={`Сопротив-ие, ${uR.symbol}:`} value={rDisp.toFixed(uR.decimals)} computed />;
                       })()}
                       <FieldRow label="Расход:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} computed />
