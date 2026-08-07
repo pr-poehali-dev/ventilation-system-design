@@ -381,7 +381,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                     onChange={e => onUpdate({ manualRUnit: e.target.value as "si" | "kmurg" })}
                   >
                     <option value="si">Н·с²/м⁸ (система расчёта)</option>
-                    <option value="kmurg">кМюрг, кгс·с²/м⁸ (АэроСеть)</option>
+                    <option value="kmurg">кМюрг, кгс·с²/м⁸</option>
                   </select>
                 </InlineLabel>
                 {branch.manualRUnit === "kmurg" && (
