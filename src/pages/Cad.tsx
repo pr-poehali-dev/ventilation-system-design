@@ -3145,6 +3145,10 @@ export default function CadPage() {
     setVcSolving(true);
     startSolveProgress();
     setVcError(null);
+    // Штатный расчёт сети = НЕаварийный режим. Чистим «пожарные» температуры и
+    // концентрации в узлах, оставшиеся от прошлого расчёта пожара, — иначе в
+    // свойствах узлов после обычного расчёта висят 596°C и CO от аварии.
+    resetNodeFireState();
     const methodName = calcMode === "cross" ? "Кросс" : "МКР";
     addLog("info", `Запуск расчёта: метод ${methodName}, узлов ${nodes.length}, ветвей ${branches.length}`);
     const zeroR = branches.filter(b => b.resistance <= 0);
