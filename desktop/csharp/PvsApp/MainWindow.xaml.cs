@@ -89,7 +89,28 @@ public partial class MainWindow : Window
         bool ready = await WaitForServerAsync();
         if (!ready)
         {
-            MessageBox.Show("Не удалось запустить расчётный модуль.\nПопробуйте перезапустить приложение.",
+            // Диагностика вместо тупика: раньше пользователь видел только
+            // «перезапустите приложение» и не знал, что делать. Пишем причину
+            // в лог и показываем её — чаще всего сервер падает сразу после
+            // старта (порт 5173 занят или антивирус заблокировал server.exe).
+            string reason = _serverProcess == null
+                ? "процесс ядра не был запущен"
+                : (_serverProcess.HasExited
+                    ? $"ядро завершилось с кодом {_serverProcess.ExitCode}"
+                    : "ядро запущено, но не ответило за 40 секунд");
+
+            string log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PVS", "server-error.log");
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+                await File.WriteAllTextAsync(log, $"{DateTime.Now}\nПричина: {reason}\nURL: {ServerUrl}/api/status\n");
+            }
+            catch { }
+
+            MessageBox.Show($"Не удалось запустить расчётный модуль.\n\nПричина: {reason}.\n\n" +
+                            $"Проверьте, что порт {Port} не занят другой программой,\n" +
+                            "и что антивирус не блокирует server.exe.\n\n" +
+                            $"Подробности: {log}",
                             "ПВ-Система", MessageBoxButton.OK, MessageBoxImage.Error);
             Application.Current.Shutdown();
             return;
@@ -126,21 +147,48 @@ public partial class MainWindow : Window
             using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
             var bytes = await httpLarge.GetByteArrayAsync($"{VersionCheckUrl}?file=server");
 
+            // Проверка целостности: сервер должен быть валидным Windows-EXE
+            // (сигнатура "MZ") и разумного размера. Если CDN вернул страницу
+            // ошибки или обрезал закачку, старый рабочий server.exe не трогаем.
+            if (bytes.Length < 1_000_000 || bytes[0] != 0x4D || bytes[1] != 0x5A)
+                return;
+
             string tmpPath = serverExe + ".new";
             await File.WriteAllBytesAsync(tmpPath, bytes);
 
-            string batPath = Path.GetTempFileName() + ".bat";
-            File.WriteAllText(batPath, $"""
-                @echo off
-                timeout /t 1 /nobreak >nul
-                move /Y "{tmpPath}" "{serverExe}"
-                echo {remoteVer}> "{versionFile}"
-                del "%~f0"
-                """, Encoding.GetEncoding(1251));
-            Process.Start(new ProcessStartInfo("cmd", $"/c \"{batPath}\"")
-                { CreateNoWindow = true, UseShellExecute = false })?.WaitForExit(5000);
+            // ИСПРАВЛЕНИЕ. Раньше подмена server.exe выполнялась .bat-скриптом,
+            // который сам ждал 1 секунду, а C# ждал его максимум 5 с и сразу шёл
+            // запускать сервер. Возникала гонка: StartServerProcess стартовал в
+            // момент, когда move ещё не завершился, — файл был занят или
+            // полуперезаписан, сервер не поднимался, и пользователь видел
+            // «Не удалось запустить расчётный модуль».
+            // На старте приложения сервер ещё НЕ запущен, значит файл никем не
+            // занят — .bat не нужен вовсе. Переименовываем напрямую и синхронно.
+            if (File.Exists(serverExe))
+            {
+                string bakPath = serverExe + ".old";
+                try { if (File.Exists(bakPath)) File.Delete(bakPath); } catch { }
+                File.Move(serverExe, bakPath, overwrite: true);
+                try { File.Delete(bakPath); } catch { /* удалится при следующем старте */ }
+            }
+            File.Move(tmpPath, serverExe, overwrite: true);
+            await File.WriteAllTextAsync(versionFile, remoteVer);
         }
-        catch { /* тихо игнорируем — работаем со старой версией */ }
+        catch
+        {
+            // Обновление не удалось — откатываемся на рабочую версию, чтобы
+            // приложение всё равно запустилось. Недокачанный .new удаляем.
+            try
+            {
+                string serverExe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
+                string tmpPath   = serverExe + ".new";
+                if (File.Exists(tmpPath)) File.Delete(tmpPath);
+                string bakPath = serverExe + ".old";
+                if (!File.Exists(serverExe) && File.Exists(bakPath))
+                    File.Move(bakPath, serverExe, overwrite: true);
+            }
+            catch { }
+        }
     }
 
     private void StartServerProcess()
@@ -165,11 +213,17 @@ public partial class MainWindow : Window
         _serverProcess.Start();
     }
 
-    private async Task<bool> WaitForServerAsync(int timeoutMs = 20_000)
+    // 40 с вместо 20: PyInstaller-onefile при первом запуске (и особенно после
+    // обновления) распаковывает ядро во временную папку, а антивирус сканирует
+    // свежий exe — на слабой машине 20 с не хватало, и приложение сдавалось на
+    // рабочем ядре.
+    private async Task<bool> WaitForServerAsync(int timeoutMs = 40_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (DateTime.UtcNow < deadline)
         {
+            // Ядро упало — ждать дальше бессмысленно, выходим сразу с причиной.
+            if (_serverProcess != null && _serverProcess.HasExited) return false;
             try
             {
                 var resp = await Http.GetAsync($"{ServerUrl}/api/status");
