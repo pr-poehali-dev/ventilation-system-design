@@ -2948,12 +2948,17 @@ export default function CadPage() {
       target: typeof loaded[number];
       flows: Map<string, number>;
       firePower: number; fireTemp: number; thermalDep: number;
+      // Опрокидывание подтверждено на предыдущем раунде: знак расхода очага
+      // устойчиво сменился. Нужно, чтобы горячий плюм пошёл по НОВОМУ
+      // направлению и разогнал реверсивную струю, а не душил её.
+      reversedConfirmed: boolean;
       done: boolean;
     };
     const states: ScState[] = loaded.map(target => ({
       target,
       flows: new Map(originalFlows),
       firePower: 0, fireTemp: ambientTemp, thermalDep: 0,
+      reversedConfirmed: false,
       done: false,
     }));
 
@@ -3002,7 +3007,7 @@ export default function CadPage() {
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
         const hotNodeTemps = computeHotNodeTemps(
-          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, length: target.length, area: target.area, perimeter: target.perimeter }],
+          [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, reversedConfirmed: s.reversedConfirmed, length: target.length, area: target.area, perimeter: target.perimeter }],
           branchesForHot, ambientTemp,
         );
         scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
@@ -3021,9 +3026,18 @@ export default function CadPage() {
         if (!newFlows || newFlows.size === 0) { s.done = true; continue; }
         const qPrevTgt = s.flows.get(s.target.id) ?? 0;
         const qNewTgt  = newFlows.get(s.target.id) ?? 0;
-        const unstable = Math.sign(qPrevTgt || 1) !== Math.sign(qNewTgt || 1)
-          || Math.abs(qNewTgt) < Math.abs(qPrevTgt) * 0.5;
-        const relax = (iter === 0 || !unstable) ? 1.0 : 0.5;
+        const signFlipped = Math.sign(qPrevTgt || 1) !== Math.sign(qNewTgt || 1);
+        const unstable = signFlipped || Math.abs(qNewTgt) < Math.abs(qPrevTgt) * 0.5;
+        // Фиксируем опрокидывание относительно ШТАТНОГО направления: со второго
+        // раунда плюм пойдёт по новому направлению и разгонит реверсивную струю.
+        const qOrigTgt = originalFlows.get(s.target.id) ?? 0;
+        if (Math.sign(qOrigTgt || 1) !== Math.sign(qNewTgt || 1) && Math.abs(qNewTgt) > 0.05) {
+          s.reversedConfirmed = true;
+        }
+        // При смене знака НЕ релаксируем: усреднение «прежний + половина нового»
+        // держит расход у нуля (8 м³/с вместо 57) и мешает струе развернуться.
+        // Гасим только обеднение потока без разворота.
+        const relax = (iter === 0 || !unstable || signFlipped) ? 1.0 : 0.5;
 
         let maxDQ = 0;
         const nextFlows = new Map<string, number>();
@@ -4505,6 +4519,10 @@ export default function CadPage() {
 
                 // Текущие расходы (начинаем с результатов штатного расчёта)
                 let currentFlows = new Map<string, number>(originalFlows);
+                // Очаги с ПОДТВЕРЖДЁННЫМ опрокидыванием: со следующего раунда
+                // горячий плюм идёт по новому направлению и разгоняет
+                // реверсивную струю (иначе тяга душит её до единиц м³/с).
+                const reversedSeats = new Set<string>();
 
                 addLog("info", "🔥 Итеративный расчёт аварийного режима (учёт тепловой депрессии)...");
 
@@ -4547,7 +4565,7 @@ export default function CadPage() {
                   // выработки меняются слабо (как в Аэросети). Сосредоточенный
                   // h_fire на одной ветви (старый способ) нефизично опрокидывал
                   // соседей.
-                  const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; length?: number; area?: number; perimeter?: number }[] = [];
+                  const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
                   const branchesWithHt = branchesIter.map(b => {
                     if (!b.hasFire) return b;
                     // Расход для T_пр — ШТАТНЫЙ (до пожара), как в Аэросети.
@@ -4573,7 +4591,7 @@ export default function CadPage() {
                         angle_deg: flowRelAngle, airFlow_m3s: airQ, sectionArea_m2: b.area,
                       }, thermalDepMethod);
                     }
-                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, length: b.length, area: b.area, perimeter: b.perimeter });
+                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, reversedConfirmed: reversedSeats.has(b.id), length: b.length, area: b.area, perimeter: b.perimeter });
                     // fireThermalDepression больше НЕ прикладываем как источник.
                     return { ...b, fireThermalDepression: 0 };
                   });
@@ -4596,10 +4614,23 @@ export default function CadPage() {
                   const fireBr = branchesWithHt.find(b => b.hasFire);
                   const qPrevF = fireBr ? (currentFlows.get(fireBr.id) ?? 0) : 0;
                   const qNewF  = fireBr ? (newFlows.get(fireBr.id) ?? 0) : 0;
+                  const signFlippedF = fireBr != null
+                    && Math.sign(qPrevF || 1) !== Math.sign(qNewF || 1);
                   const unstable = fireBr != null && (
-                    Math.sign(qPrevF || 1) !== Math.sign(qNewF || 1)
-                    || Math.abs(qNewF) < Math.abs(qPrevF) * 0.5);
-                  const relax = (iter === 0 || !unstable) ? 1.0 : 0.5;
+                    signFlippedF || Math.abs(qNewF) < Math.abs(qPrevF) * 0.5);
+                  // Фиксируем опрокидывание всех очагов относительно ШТАТНОГО
+                  // направления — со следующего раунда плюм пойдёт «по новому».
+                  for (const seat of fireSeats) {
+                    const qOrig = originalFlows.get(seat.id) ?? 0;
+                    const qNew  = newFlows.get(seat.id) ?? 0;
+                    if (Math.sign(qOrig || 1) !== Math.sign(qNew || 1) && Math.abs(qNew) > 0.05) {
+                      reversedSeats.add(seat.id);
+                    }
+                  }
+                  // При РАЗВОРОТЕ струи релаксация вредна: усреднение с прежним
+                  // (противоположным) расходом держит поток у нуля — 8 м³/с
+                  // вместо 57. Демпфируем только обеднение потока без разворота.
+                  const relax = (iter === 0 || !unstable || signFlippedF) ? 1.0 : 0.5;
 
                   let maxDQ = 0;
                   const nextFlows = new Map<string, number>();

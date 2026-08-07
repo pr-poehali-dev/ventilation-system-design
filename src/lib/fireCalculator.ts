@@ -714,6 +714,37 @@ export const BULKHEAD_NEGLECT_RATIO = 300; // порог: сбойками пр�
 // в обе стороны. Единый порог для восходящее/нисходящее/плоское, чтобы пологие
 // выработки не выпадали из логики (раньше зона −1°…+1° была «слепой»).
 export const FLAT_ANGLE_DEG = 0.5;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ПРИЛОЖЕНИЕ 6 — критическая депрессия выработки в РЕВЕРСИВНОМ режиме.
+//   (6.1) H₀ʳ = H₀ⁿ · Qʳ² / Qⁿ²
+//   (6.2) при отсутствии данных о замерах: H₀ʳ ≤ 0,3 · H₀ⁿ
+// где H₀ⁿ — критическая депрессия в НОРМАЛЬНОМ режиме проветривания, Па;
+//     Qⁿ, Qʳ — расходы воздуха в выработке в нормальном и реверсивном режимах.
+// Если замеры при плановом реверсировании не выполнялись, подставляются расходы
+// ближайшей выработки с общим узлом связи; при полном отсутствии данных
+// применяется приближённая оценка (6.2).
+export const REVERSE_CRIT_DEP_RATIO = 0.3; // коэффициент формулы (6.2)
+
+export function criticalDepressionReverse(
+  critDepNormal_Pa: number,
+  flowNormal_m3s?: number,
+  flowReverse_m3s?: number,
+): { h_kr: number; formula: "6.1" | "6.2" } {
+  const Hn = Math.abs(Number(critDepNormal_Pa) || 0);
+  if (!(Hn > 0)) return { h_kr: 0, formula: "6.2" };
+  const Qn = Math.abs(Number(flowNormal_m3s) || 0);
+  const Qr = Math.abs(Number(flowReverse_m3s) || 0);
+  // (6.1) — есть оба расхода (замеры при плановом реверсировании).
+  if (Qn > 0.001 && Qr > 0.001) {
+    const h = (Hn * Qr * Qr) / (Qn * Qn);
+    // Норматив ограничивает оценку сверху: (6.2) H₀ʳ ≤ 0,3·H₀ⁿ.
+    return { h_kr: h, formula: "6.1" };
+  }
+  // (6.2) — данных о расходах нет.
+  return { h_kr: REVERSE_CRIT_DEP_RATIO * Hn, formula: "6.2" };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ПРИЛОЖЕНИЕ 7 — критический расход Q₀ для выработок с ВОСХОДЯЩИМ движением
 // воздуха. Норматив даёт три способа:
@@ -1259,7 +1290,10 @@ export function fireSourceTempForMethod(
 // Газ остывает о стенки выработки: T_out = T_ст + (T_in − T_ст)·exp(−α·P·L/(ρ·cp·Q)).
 // Возвращаем ТОЛЬКО заметно перегретые узлы (> ambient+2°C).
 export function computeHotNodeTemps(
-  fireBranches: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; length?: number; area?: number; perimeter?: number }[],
+  // reversedConfirmed — опрокидывание УЖЕ подтверждено на предыдущей итерации.
+  // Тогда горячий плюм должен идти по НОВОМУ (опрокинутому) направлению, а не по
+  // штатному: после разворота дым физически уходит в другую сторону.
+  fireBranches: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[],
   allBranches: { id: string; fromId: string; toId: string; flow?: number; length?: number; area?: number; perimeter?: number }[],
   ambientTemp_C: number,
 ): Record<string, number> {
@@ -1320,7 +1354,13 @@ export function computeHotNodeTemps(
     // Выходной (нагреваемый) узел очага — по ШТАТНОМУ направлению струи
     // (originalFlow): не даёт уже опрокинутому на итерации потоку разворачивать
     // «горячую сторону» очага и самоусиливать ложное опрокидывание.
-    const dirFlow = fb.originalFlow ?? fb.flow ?? 0;
+    // После ПОДТВЕРЖДЁННОГО опрокидывания дым идёт по новому направлению (fb.flow):
+    // иначе плюм продолжает греть штатный выходной узел, тепловая тяга упирается
+    // навстречу уже развернувшемуся потоку и душит его до единиц м³/с вместо
+    // того, чтобы разогнать реверсивную струю (АэроСеть: 57 м³/с, у нас было 8).
+    const dirFlow = fb.reversedConfirmed
+      ? (fb.flow ?? fb.originalFlow ?? 0)
+      : (fb.originalFlow ?? fb.flow ?? 0);
     const outNode = dirFlow >= 0 ? fb.toId : fb.fromId;
     const halfLen = (fb.length ?? 0) * 0.5;                 // очаг в среднем в середине ветви
     const per = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
