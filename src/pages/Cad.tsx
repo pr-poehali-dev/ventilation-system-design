@@ -1546,6 +1546,21 @@ export default function CadPage() {
     return newSymbols;
   };
 
+  // Сброс «пожарного» состояния УЗЛОВ: расчётные температуры воздуха и стенок
+  // возвращаются к фоновой (температура поверхности), концентрации CO/CO₂ — к
+  // нулю. БАГ: раньше при «Сбросить пожар» / «Убрать очаги» чистились только
+  // ветви, а в узлах оставались 596°C от прошлого расчёта — они попадали в
+  // расчёт естественной тяги и искажали воздухораспределение.
+  const resetNodeFireState = () => {
+    setNodes(prev => prev.map(n => ({
+      ...n,
+      computedCO: 0,
+      computedCO2: 0,
+      computedAirTemp:  surfaceTemp,
+      computedWallTemp: surfaceTemp,
+    })));
+  };
+
   // Активировать инструмент размещения символа
   const handlePickSymbol = (typeId: string) => {
     // Ограничение: на схеме может быть только ОДИН очаг пожара и ОДНО место взрыва.
@@ -1563,6 +1578,7 @@ export default function CadPage() {
         });
         setFireResult(null);
         setFireCalcDone(false);
+        resetNodeFireState();
       }
     } else if (typeId === "explosion_source") {
       const existing = schemaSymbols.filter(s => EXPLOSION_SYMBOL_IDS.has(s.typeId));
@@ -4484,6 +4500,7 @@ export default function CadPage() {
                 });
                 setFireResult(null);
                 setFireCalcDone(false);
+                resetNodeFireState();
               }}
             />
           </div>
@@ -4754,7 +4771,7 @@ export default function CadPage() {
               label="Сбросить"
               sublabel="пожар"
               disabled={!fireCalcDone}
-              onClick={() => { setFireResult(null); setFireCalcDone(false); setBranches(prev => prev.map(b => ({ ...b, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 }))); }}
+              onClick={() => { setFireResult(null); setFireCalcDone(false); setBranches(prev => prev.map(b => ({ ...b, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0 }))); resetNodeFireState(); }}
             />
           </div>
         </RibbonGroup>
@@ -6708,7 +6725,7 @@ export default function CadPage() {
                       <button onClick={() => {
                         removeSymbol(fireSymId.id);
                         updateBranch(b.id, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
-                        setFireResult(null); setFireCalcDone(false);
+                        setFireResult(null); setFireCalcDone(false); resetNodeFireState();
                       }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
                         Убрать
                       </button>
