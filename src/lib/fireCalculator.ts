@@ -1259,19 +1259,18 @@ export function fireSourceTempForMethod(
   },
   method: ThermalDepMethod = getThermalDepMethod(),
 ): number {
-  if (method === "normative" && (args.airFlow_m3s ?? 0) > 0 && (args.sectionArea_m2 ?? 0) > 0) {
-    const nr = calcThermalDepressionNormative({
-      airFlow_m3s: args.airFlow_m3s!,
-      sectionArea_m2: args.sectionArea_m2!,
-      angle_deg: args.angle_deg,
-      distanceToMouth_m: args.distanceToMouth_m ?? (getNormativeMouthDistance() || undefined),
-      fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
-      actualFireTemp_C: args.physicalFireTemp_C,
-      ambientTemp_C: args.ambientTemp_C,
-    });
-    const tmC = nr.Tm - 273;
-    if (Number.isFinite(tmC) && tmC > args.ambientTemp_C) return tmC;
-  }
+  // ВАЖНО (исправление). Раньше при методе «Норматив 4.5» сюда возвращалась Tм —
+  // МАКСИМАЛЬНАЯ температура в ЯДРЕ ПЛАМЕНИ (формула 4.11, до 663.8°C). Это
+  // локальная температура зоны горения, а НЕ температура струи, которая уносит
+  // тепло по сети. Подстановка Tм в карту узлов давала 596°C в сопряжении
+  // вместо 137.9°C в АэроСети, завышала тепловую тягу и опрокидывала смежную
+  // выработку, ведущую на поверхность.
+  //
+  // Тепло по сети переносит СРЕДНЕРАСХОДНАЯ температура продуктов горения
+  // T_пр = N/(ρ·cp·Q) — именно она стоит в панели («t прод. 140.8°C») и именно
+  // она совпадает с АэроСетью (137.9°C). Tм остаётся внутри формулы 4.5, где
+  // она и должна быть — при расчёте самой депрессии h_t через отношение Tм/Tк.
+  void method;
   return args.physicalFireTemp_C;
 }
 
