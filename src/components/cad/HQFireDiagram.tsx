@@ -35,7 +35,10 @@ interface Props {
 export default function HQFireDiagram({
   Ry, Qa, Qb, hT, hKr, pU, reversed = false, ascending = false, width = 300, height = 210,
 }: Props) {
-  const padL = 42, padR = 12, padT = 14, padB = 30;
+  // Верхняя полоса (padT) отведена ПОД ЗАГОЛОВОК: показатель устойчивости p_у,
+  // подпись оси h и пометка о масштабе. Раньше они рисовались поверх поля
+  // графика и накладывались на кривые, подпись h_т и точку B — текст сливался.
+  const padL = 46, padR = 12, padT = 26, padB = 32;
   const W = width - padL - padR;
   const H = height - padT - padB;
 
@@ -153,11 +156,12 @@ export default function HQFireDiagram({
       <line x1={padL} y1={padT + H} x2={padL + W} y2={padT + H} stroke="#666" strokeWidth="1" />
 
       {/* Метки осей */}
-      <text x={padL + W} y={padT + H + 18} textAnchor="end" fontSize="10" fontFamily="Segoe UI" fill="#444">Q, м³/с</text>
-      <text x={x0 + 4} y={padT + 8} fontSize="10" fontFamily="Segoe UI" fill="#444">h, Па</text>
+      <text x={padL + W} y={padT + H + 26} textAnchor="end" fontSize="9" fontFamily="Segoe UI" fill="#444">Q, м³/с</text>
+      {/* Подпись оси h — В ПОЛОСЕ ЗАГОЛОВКА, над полем графика (не поверх кривых) */}
+      <text x={padL - 4} y={padT - 6} textAnchor="end" fontSize="9" fontFamily="Segoe UI" fill="#444">h, Па</text>
       {sqrtScale && (
-        <text x={padL + W} y={padT + 8} textAnchor="end" fontSize="7.5" fontFamily="Segoe UI" fill="#9ca3af">
-          шкала h — нелинейная (√), для наглядности
+        <text x={padL + W / 2} y={padT - 6} textAnchor="middle" fontSize="7.5" fontFamily="Segoe UI" fill="#9ca3af">
+          шкала h — нелинейная (√)
         </text>
       )}
       {qTicks.map((q, i) => (
@@ -169,21 +173,27 @@ export default function HQFireDiagram({
 
       {/* Кривая 1: характеристика уклонного поля h = R·Q² */}
       <path d={netPath} fill="none" stroke="#0369a1" strokeWidth="1.6" />
-      <text x={sx(qMaxPos * 0.88)} y={sy(R * (qMaxPos * 0.88) ** 2) - 4} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#0369a1">1: R·Q²</text>
+      {/* Подпись кривой 1 — на середине правой ветви, чтобы не наехать на точку A */}
+      <text x={sx(qMaxPos * 0.55)} y={sy(R * (qMaxPos * 0.55) ** 2) + 10} textAnchor="middle" fontSize="8" fontFamily="Segoe UI" fill="#0369a1">1: R·Q²</text>
 
       {/* Кривая 3: активизированная характеристика ШВС h_т + R·Q² */}
       <path d={activPath} fill="none" stroke="#dc2626" strokeWidth="1.4" strokeDasharray="4 2" />
-      <text x={sx(qMaxPos * 0.62)} y={sy(hT + R * (qMaxPos * 0.62) ** 2) - 4} fontSize="8" fontFamily="Segoe UI" fill="#dc2626">3: h_т+R·Q²</text>
+      {/* Подпись кривой 3 — у правого края, НАД её линией. Кривые 2 и 3 при
+          большой h_т идут почти вплотную, поэтому подпись 2 уводим влево (к оси h),
+          а 3 оставляем справа: так они не перекрываются. */}
+      <text x={padL + W - 2} y={sy(hT + R * qMaxPos * qMaxPos) - 5} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#dc2626">3: h_т+R·Q²</text>
 
       {/* Кривая 2: линия тепловой депрессии h_т */}
       <line x1={padL} x2={padL + W} y1={sy(hT)} y2={sy(hT)} stroke="#c2410c" strokeWidth="1" strokeDasharray="6 3" />
-      <text x={padL + W - 2} y={sy(hT) - 3} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#c2410c">2: h_т = {hT.toFixed(0)} Па</text>
+      <text x={x0 + 4} y={sy(hT) + 10} fontSize="8" fontFamily="Segoe UI" fill="#c2410c">2: h_т = {hT.toFixed(0)} Па</text>
 
       {/* Граница критической депрессии h_кр (нисходящий, при наличии параллели) */}
       {!ascending && hKr !== undefined && hKr > 0 && (
         <>
           <line x1={padL} x2={padL + W} y1={sy(hKr)} y2={sy(hKr)} stroke="#7c3aed" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.7" />
-          <text x={padL + W - 2} y={sy(hKr) + 9} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#7c3aed">
+          {/* Подпись h_кр — слева от оси h, в зоне Q<0: справа на этом же уровне
+              лежит точка A (h_кр ≈ R·Qa²), подписи бы столкнулись. */}
+          <text x={x0 - 5} y={sy(hKr) - 4} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#7c3aed">
             h_кр = {hKr.toFixed(0)} Па
           </text>
         </>
@@ -220,8 +230,10 @@ export default function HQFireDiagram({
         </>
       ) : (
         <>
-          {/* Точка B — при пожаре (расход упал) */}
-          <g>
+          {/* Точка B — при пожаре (расход упал).
+              При опрокидывании (reversed) B и D совпадают по координатам —
+              рисуем только D, иначе маркеры и подписи накладываются друг на друга. */}
+          <g style={{ display: reversed ? "none" : undefined }}>
             {vline(B.x, B.y, "#dc2626")}
             <circle cx={B.x} cy={B.y} r="4" fill="#dc2626" stroke="white" strokeWidth="1.2" />
             <text x={B.x + 6} y={B.y - 4} fontSize="10" fontWeight="700" fontFamily="Segoe UI" fill="#dc2626">B</text>
@@ -245,10 +257,11 @@ export default function HQFireDiagram({
       {/* Показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1) */}
       {pU !== undefined && (
         <g>
-          <rect x={padL + 4} y={padT + 2} width="86" height="14" rx="2"
+          {/* Показатель устойчивости — в полосе заголовка слева, вне поля графика */}
+          <rect x={2} y={4} width="92" height="15" rx="2"
             fill={pU > 1 ? "#f0fdf4" : pU < 0.3 ? "#450a0a" : "#fffbeb"}
             stroke={pU > 1 ? "#86efac" : pU < 0.3 ? "#7f1d1d" : "#fcd34d"} strokeWidth="0.8" />
-          <text x={padL + 8} y={padT + 12} fontSize="9" fontFamily="Segoe UI" fontWeight="700"
+          <text x={7} y={15} fontSize="9" fontFamily="Segoe UI" fontWeight="700"
             fill={pU > 1 ? "#15803d" : pU < 0.3 ? "#fecaca" : "#b45309"}>
             p_у = {pU.toFixed(2)} {pU > 1 ? "✓" : pU < 0.3 ? "⚠⚠" : "△"}
           </text>

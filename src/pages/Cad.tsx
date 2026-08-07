@@ -14,6 +14,8 @@ import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
 import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import HQFireDiagram from "@/components/cad/HQFireDiagram";
+import HQFireDiagramDialog from "@/components/cad/HQFireDiagramDialog";
+import type { HQDiagramData } from "@/lib/hqDiagramExcel";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
@@ -1115,6 +1117,8 @@ export default function CadPage() {
     setThermalDepMethod(m);
     setThermalDepMethodState(m);
   };
+  // Данные для увеличенного просмотра h–Q диаграммы (null — окно закрыто)
+  const [hqDialogData, setHqDialogData] = useState<(HQDiagramData & { branchName?: string }) | null>(null);
   // Параметры нормативной методики: t — время с начала пожара (мин, ф. 4.8),
   // x — расстояние от очага до устья по ходу струи (м, ф. 4.13; 0 = авто).
   const [normFireTime, setNormFireTimeState] = useState<number>(getNormativeFireTime());
@@ -7004,19 +7008,51 @@ export default function CadPage() {
                         const ascending = fr.ascending;
                         return (
                           <div className="px-1 py-1 mt-1">
-                            <div className="text-[10px] font-semibold mb-1" style={{ color: "#991b1b" }}>
-                              Режим проветривания уклонного поля (h–Q, {ascending ? "восходящее, рис. 2.2" : "нисходящее, рис. 2.1,б"})
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="text-[10px] font-semibold" style={{ color: "#991b1b" }}>
+                                Режим проветривания уклонного поля (h–Q, {ascending ? "восходящее, рис. 2.2" : "нисходящее, рис. 2.1,б"})
+                              </div>
+                              <button
+                                onClick={() => setHqDialogData({
+                                  Ry, Qa, Qb,
+                                  hT: Math.abs(fr.thermalDepression),
+                                  hKr: fr.critical?.h_kr,
+                                  pU: fr.critical?.p_u,
+                                  reversed: fr.actuallyReversed,
+                                  ascending,
+                                  branchName: `Ветвь ${b.num ?? b.id}${b.name ? ` — ${b.name}` : ""}`,
+                                })}
+                                className="flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded border bg-white hover:bg-gray-50 shrink-0"
+                                style={{ borderColor: "#d1d5db", color: "#374151" }}
+                                title="Увеличить диаграмму и экспортировать в Excel"
+                              >
+                                <Icon name="Maximize2" size={10} /> Увеличить
+                              </button>
                             </div>
-                            <HQFireDiagram
-                              Ry={Ry}
-                              Qa={Qa}
-                              Qb={Qb}
-                              hT={Math.abs(fr.thermalDepression)}
-                              hKr={fr.critical?.h_kr}
-                              pU={fr.critical?.p_u}
-                              reversed={fr.actuallyReversed}
-                              ascending={ascending}
-                            />
+                            <div
+                              onClick={() => setHqDialogData({
+                                Ry, Qa, Qb,
+                                hT: Math.abs(fr.thermalDepression),
+                                hKr: fr.critical?.h_kr,
+                                pU: fr.critical?.p_u,
+                                reversed: fr.actuallyReversed,
+                                ascending,
+                                branchName: `Ветвь ${b.num ?? b.id}${b.name ? ` — ${b.name}` : ""}`,
+                              })}
+                              style={{ cursor: "zoom-in" }}
+                              title="Нажмите, чтобы открыть диаграмму в увеличенном виде"
+                            >
+                              <HQFireDiagram
+                                Ry={Ry}
+                                Qa={Qa}
+                                Qb={Qb}
+                                hT={Math.abs(fr.thermalDepression)}
+                                hKr={fr.critical?.h_kr}
+                                pU={fr.critical?.p_u}
+                                reversed={fr.actuallyReversed}
+                                ascending={ascending}
+                              />
+                            </div>
                             {ascending ? (
                               <>
                                 <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
@@ -11670,6 +11706,16 @@ export default function CadPage() {
       selectedNodeIds={selectedNodeIds}
       selectedBranchIds={selectedBranchIds}
     />
+
+    {/* Увеличенный просмотр h–Q диаграммы пожара + экспорт в Excel */}
+    {hqDialogData && (
+      <HQFireDiagramDialog
+        open
+        onClose={() => setHqDialogData(null)}
+        data={hqDialogData}
+        branchName={hqDialogData.branchName}
+      />
+    )}
 
     {showCsvExport && (
       <CsvExportDialog
