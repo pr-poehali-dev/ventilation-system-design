@@ -1300,15 +1300,7 @@ export function computeHotNodeTemps(
   const hot: Record<string, number> = {};
   if (fireBranches.length === 0) return hot;
 
-  // Ветви, для которых узел является ВХОДНЫМ (по знаку расхода) — дым идёт вниз.
-  const branchesByInNode = new Map<string, typeof allBranches>();
-  for (const b of allBranches) {
-    const inNode = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
-    const arr = branchesByInNode.get(inNode) ?? [];
-    arr.push(b);
-    branchesByInNode.set(inNode, arr);
-  }
-  const fireIds = new Set(fireBranches.map(f => f.id));
+
 
   // Опорный расход горячего плюма — по ШТАТНОМУ (дожаровому) расходу очага, а не
   // по текущему (который при пожаре может схлопнуться до ~1 м³/с). Остывание
@@ -1331,65 +1323,100 @@ export function computeHotNodeTemps(
   // холодный воздух (20°C вместо ~138°C в АэроСети), из-за чего при включённой
   // естественной тяге баланс тяги ломался и расход душился (12→1.4). Теперь
   // горячий столб доходит до ствола, и расход близок к АэроСети.
-  const wlToT = (wl: number, tHot: number) =>
-    ambientTemp_C + (Math.min(1200, tHot) - ambientTemp_C) * Math.exp(-wl);
-
-  // Очередь: [nodeId, wl_накопленное, T_очага_источника].
-  const queue: [string, number, number][] = [];
-  const setHot = (nid: string, wl: number, tHot: number) => {
-    const t = wlToT(wl, tHot);
-    // Порог отсечки понижен до +0.5°C: в АэроСети тёплый столб доходит до
-    // дальнего сопряжения со стволом (36.9°C) — при отсечке +2°C наш столб
-    // «обрубался» раньше и до ствола доходила атмосфера (20°C). Оставляем чуть
-    // перегретые узлы, чтобы горячий/тёплый столб добивал до ствола.
-    if (t > ambientTemp_C + 0.5 && (hot[nid] === undefined || t > hot[nid])) {
-      hot[nid] = Math.round(t * 100) / 100;
-      queue.push([nid, wl, tHot]);
-    }
-  };
   const wallLoss = (per: number, len: number, massFlow: number) =>
     (WALL_HEAT_ALPHA * per * len) / (Math.max(0.5, massFlow) * CP_AIR * 1000);
 
+  // ── БАЛАНС ТЕПЛА В УЗЛАХ (смешение струй) ─────────────────────────────────
+  // ГЛАВНОЕ ИСПРАВЛЕНИЕ. Раньше температура узла бралась как МАКСИМУМ по всем
+  // приходящим струям — подмешивание СВЕЖЕГО воздуха полностью игнорировалось.
+  // Поэтому в сопряжении со стволом стояло 573.92°C вместо 137.9°C в АэроСети:
+  // дым 49.9 м³/с при 663.8°C приходил в узел, куда по соседней выработке идёт
+  // 46.67 м³/с воздуха при 15°C, а смесь обязана дать ~350°C, а не 663.8.
+  // Завышенная T давала завышенную тепловую тягу → ложное опрокидывание
+  // смежной выработки, ведущей на поверхность.
+  //
+  // Правильно (как в АэроСети) — уравнение смешения по массовым расходам:
+  //     T_узла = Σ(m_i · T_i) / Σ(m_i)
+  // где сумма по ВСЕМ ветвям, ВХОДЯЩИМ в узел, а T_i — температура струи на
+  // выходе ветви после остывания о стенки. Сеть содержит контуры, поэтому
+  // решаем итерациями до сходимости.
+  //
+  // Ветви, ВХОДЯЩИЕ в узел (узел — выходной по знаку расхода).
+  const branchesByOutNode = new Map<string, typeof allBranches>();
+  for (const b of allBranches) {
+    const outNode = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+    const arr = branchesByOutNode.get(outNode) ?? [];
+    arr.push(b);
+    branchesByOutNode.set(outNode, arr);
+  }
+
+  // Температура на выходе КАЖДОГО очага (после остывания на половине ветви).
+  const fireOutlet = new Map<string, { node: string; t: number; m: number }>();
   for (const fb of fireBranches) {
     // Выходной (нагреваемый) узел очага — по ШТАТНОМУ направлению струи
     // (originalFlow): не даёт уже опрокинутому на итерации потоку разворачивать
     // «горячую сторону» очага и самоусиливать ложное опрокидывание.
-    // После ПОДТВЕРЖДЁННОГО опрокидывания дым идёт по новому направлению (fb.flow):
-    // иначе плюм продолжает греть штатный выходной узел, тепловая тяга упирается
-    // навстречу уже развернувшемуся потоку и душит его до единиц м³/с вместо
-    // того, чтобы разогнать реверсивную струю (АэроСеть: 57 м³/с, у нас было 8).
+    // После ПОДТВЕРЖДЁННОГО опрокидывания дым идёт по новому направлению.
     const dirFlow = fb.reversedConfirmed
       ? (fb.flow ?? fb.originalFlow ?? 0)
       : (fb.originalFlow ?? fb.flow ?? 0);
     const outNode = dirFlow >= 0 ? fb.toId : fb.fromId;
     const halfLen = (fb.length ?? 0) * 0.5;                 // очаг в среднем в середине ветви
     const per = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
-    const massFlow = 1.25 * Math.max(Math.abs(dirFlow), fireRefFlow);
-    setHot(outNode, wallLoss(per, halfLen, massFlow), fb.fireTemp);
+    const m = 1.25 * Math.max(Math.abs(dirFlow), fireRefFlow);
+    const tOut = ambientTemp_C
+      + (Math.min(1200, fb.fireTemp) - ambientTemp_C) * Math.exp(-wallLoss(per, halfLen, m));
+    fireOutlet.set(fb.id, { node: outNode, t: tOut, m });
   }
 
-  let guard = 0;
-  while (queue.length > 0 && guard++ < 5000) {
-    const [nodeId, wlIn, tHot] = queue.shift()!;
-    // Устаревшая запись: узел уже помечен более горячим (меньшим wl).
-    if ((hot[nodeId] ?? -1e9) > wlToT(wlIn, tHot) + 1e-6) continue;
-    const down = branchesByInNode.get(nodeId) ?? [];
-    for (const b of down) {
-      if (fireIds.has(b.id)) continue; // очаг сам не остывает от себя
-      const flow = Math.abs(b.flow ?? 0);
-      const outNode = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
-      const bLen = b.length ?? 0;
-      const bArea = b.area ?? 1;
-      const bPer = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, bArea));
-      // Массовый расход — не ниже опорного расхода очага (плюм переносится при
-      // расходе очага, а не по схлопнувшемуся локальному).
-      const bMassFlow = 1.25 * Math.max(flow, fireRefFlow);
-      // Накапливаем теплопотери по пути (без «пола» — суммарное остывание
-      // физично зависит от полной длины пути).
-      const wlOut = wlIn + wallLoss(bPer, bLen, bMassFlow);
-      setHot(outNode, wlOut, tHot);
-    }
+  // Текущая оценка температур узлов (старт — атмосфера/массив рудника).
+  const nodeT = new Map<string, number>();
+  const getT = (nid: string) => nodeT.get(nid) ?? ambientTemp_C;
+
+  for (let it = 0; it < 60; it++) {
+    let maxDelta = 0;
+    const next = new Map<string, number>();
+    branchesByOutNode.forEach((incoming, nodeId) => {
+      let sumMT = 0, sumM = 0;
+      for (const b of incoming) {
+        const fo = fireOutlet.get(b.id);
+        if (fo && fo.node === nodeId) {
+          // Ветвь-очаг: на выходе горячие продукты горения.
+          sumMT += fo.m * fo.t;
+          sumM  += fo.m;
+          continue;
+        }
+        // Обычная ветвь: на входе — температура входного узла, на выходе —
+        // после остывания о стенки на всей длине ветви.
+        const inNode = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
+        const tIn = getT(inNode);
+        const flow = Math.abs(b.flow ?? 0);
+        const bPer = (b.perimeter && b.perimeter > 0)
+          ? b.perimeter : 4 * Math.sqrt(Math.max(1, b.area ?? 1));
+        // Массовый расход — РЕАЛЬНЫЙ расход ветви. Прежний «пол» по расходу
+        // очага (fireRefFlow) искусственно ослаблял остывание на маломощных
+        // смежных ветвях и тащил перегрев по всей сети.
+        const m = 1.25 * Math.max(0.4, flow);
+        const tOut = ambientTemp_C
+          + (tIn - ambientTemp_C) * Math.exp(-wallLoss(bPer, b.length ?? 0, m));
+        sumMT += m * tOut;
+        sumM  += m;
+      }
+      if (sumM <= 0) return;
+      const tMix = Math.max(ambientTemp_C, Math.min(1200, sumMT / sumM));
+      next.set(nodeId, tMix);
+      maxDelta = Math.max(maxDelta, Math.abs(tMix - getT(nodeId)));
+    });
+    // Релаксация 0.7 — сеть с контурами иначе может «звенеть».
+    next.forEach((t, nid) => nodeT.set(nid, getT(nid) + 0.7 * (t - getT(nid))));
+    if (maxDelta < 0.05) break;
   }
+
+  // Возвращаем только заметно перегретые узлы (> ambient + 0.5°C), чтобы тёплый
+  // столб доходил до ствола, но атмосферные узлы не трогались.
+  nodeT.forEach((t, nid) => {
+    if (t > ambientTemp_C + 0.5) hot[nid] = Math.round(t * 100) / 100;
+  });
   return hot;
 }
 
