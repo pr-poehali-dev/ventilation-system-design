@@ -362,13 +362,34 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             )}
 
             {branch.resistanceMode === "manual" && (
-              <InlineLabel label={`Сопротивление R, ${uRes.symbol}`}>
-                <EditInput
-                  type="number" step="0.001"
-                  value={branch.manualR}
-                  onChange={(v) => onUpdate({ manualR: parseFloat(v) || 0 })}
-                />
-              </InlineLabel>
+              <>
+                <InlineLabel label="Сопротивление R">
+                  <EditInput
+                    type="number" step="0.001"
+                    value={branch.manualR}
+                    onChange={(v) => onUpdate({ manualR: parseFloat(v) || 0 })}
+                  />
+                </InlineLabel>
+                {/* Единица ручного ввода. кМюрг = кгс·с²/м⁸ (как в АэроСети):
+                    введённое значение умножается на 9,81 при переводе в систему
+                    расчёта. Без явного выбора (старые проекты) — трактовка «си». */}
+                <InlineLabel label="Единица R">
+                  <select
+                    className="w-full px-1 border border-gray-300 bg-white"
+                    style={{ fontSize: 11, height: 20 }}
+                    value={branch.manualRUnit ?? "si"}
+                    onChange={e => onUpdate({ manualRUnit: e.target.value as "si" | "kmurg" })}
+                  >
+                    <option value="si">Н·с²/м⁸ (система расчёта)</option>
+                    <option value="kmurg">кМюрг, кгс·с²/м⁸ (АэроСеть)</option>
+                  </select>
+                </InlineLabel>
+                {branch.manualRUnit === "kmurg" && (
+                  <div className="px-1 py-0.5 text-[10px]" style={{ color: "#6b7280" }}>
+                    В расчёте: {(branch.manualR * 9.81).toFixed(5)} Н·с²/м⁸ (={branch.manualR} × 9,81)
+                  </div>
+                )}
+              </>
             )}
 
             {branch.resistanceMode === "pipe" && (

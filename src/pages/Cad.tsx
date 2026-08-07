@@ -828,7 +828,7 @@ export default function CadPage() {
       setBranches((prev) => prev.map((b) => {
         if (!idSet.has(b.id)) return b;
         const manualOverride: Partial<TopoBranch> = editManualR > 0
-          ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen) }
+          ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen), manualRUnit: "si" as const }
           : {};
         return {
           ...b,
@@ -926,7 +926,7 @@ export default function CadPage() {
       const bid = nextBranchId(workBranches);
       // В ручном режиме — доля общего R по длине; иначе оставляем режим "pipe" из vpPatch.
       const manualOverride: Partial<TopoBranch> = manualPipeR > 0
-        ? { resistanceMode: "manual", manualR: manualPipeR * ((c.b.length ?? 0) / chainTotalLen) }
+        ? { resistanceMode: "manual", manualR: manualPipeR * ((c.b.length ?? 0) / chainTotalLen), manualRUnit: "si" as const }
         : {};
       const nb = makeBranch(bid, fromDup, toDup, {
         horizonId: c.b.horizonId,

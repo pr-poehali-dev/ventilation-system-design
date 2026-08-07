@@ -3,6 +3,10 @@
 // (узлы и ветви с физическими координатами X/Y/Z)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Перевод килограмм-силы в ньютоны: 1 кгс = 9,81 Н. Нужен для сопротивления,
+// заданного в кМюрг (кгс·с²/м⁸) — единице, принятой в АэроСети.
+export const G_KGF = 9.81;
+
 export interface TopoNode {
   id: string;
   // Общие свойства
@@ -76,7 +80,13 @@ export interface TopoBranch {
   surfaceId: string;        // ID типа поверхности из справочника
   surface: string;          // подпись (для отображения)
   roughness: number;        // мм — эквивалентная шероховатость
-  manualR: number;          // Н·с²/м⁸ — ручной ввод сопротивления
+  manualR: number;          // ручной ввод сопротивления в единицах manualRUnit
+  // Единица ручного ввода R:
+  //   "si"    — Н·с²/м⁸ (система расчёта, значение берётся как есть);
+  //   "kmurg" — кМюрг (кгс·с²/м⁸, как в АэроСети) → умножается на 9,81.
+  // Поле необязательное: у ветвей СТАРЫХ проектов его нет, и там сохраняется
+  // прежняя трактовка «как есть» (si) — пересчёт готовых схем не ломается.
+  manualRUnit?: "si" | "kmurg";
   pipeAlpha: number;        // α для трубопровода (round), ×10⁻⁴ Н·с²/м⁴ (формула 10.2)
   pipeDiameter: number;     // D — диаметр трубопровода, м (формула R = 6.48αL/D⁵)
   localXi: number;          // суммарный ξ местных сопротивлений
@@ -522,6 +532,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     surface: "Воздухоподающая выработка, без неровностей",
     roughness: 1,                               // мм
     manualR: 0,
+    manualRUnit: "si",                          // новые ветви — в системе расчёта
     pipeAlpha: 9,                               // ×10⁻⁴ Н·с²/м⁴ (гладкий металл)
     pipeDiameter: 0.5,                          // м — диаметр трубопровода
     localXi: 0,
@@ -986,12 +997,15 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
   }
 
   // 2) Сопротивление с учётом плотности воздуха
-  // manualR хранится в кМюрг (ввод пользователя). 1 кМюрг = 1 Н·с²/м⁸ в системе расчёта.
+  // Ручной ввод R приводим к системе расчёта (Н·с²/м⁸). Если пользователь
+  // указал единицу «кМюрг» (кгс·с²/м⁸, как в АэроСети) — переводим ×9,81:
+  // 1 кгс = 9,81 Н. Без указания единицы (старые проекты) — берём как есть.
+  const manualRSI = b.manualRUnit === "kmurg" ? b.manualR * G_KGF : b.manualR;
   const r = calcResistance({
     mode: b.resistanceMode,
     alpha: b.alphaCoef,
     roughness: b.roughness,
-    manualR: b.manualR,
+    manualR: manualRSI,
     localXi: b.localXi,
     S: area,
     P: perimeter,

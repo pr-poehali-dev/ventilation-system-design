@@ -434,12 +434,12 @@ function buildResult(
 
     const newBranchId = `B${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = newBranchId;
-    // Перевод R из единиц CSV в кМюрг (для manualR):
-    // "kmu" (кмю, АэроСеть): уже в кМюрг → берём как есть
-    // "si": в Н·с²/м⁸ → делим на 9.81 чтобы перевести в кМюрг
-    const importedR = rb.resistance > 0
-      ? rb.resistance * (resistanceUnit === "kmu" ? 1 : 1 / 9.81)
-      : 0;
+    // R из CSV сохраняем В ЕДИНИЦАХ ИСХОДНОГО ФАЙЛА, а сама единица пишется
+    // в manualRUnit — перевод в систему расчёта делает calcBranchAero (×9,81
+    // для кМюрг). Раньше значение молча делилось на 9,81 и подписывалось как
+    // СИ, из-за чего сопротивление импортированных ветвей занижалось.
+    const importedR = rb.resistance > 0 ? rb.resistance : 0;
+    const importedRUnit: "si" | "kmurg" = resistanceUnit === "kmu" ? "kmurg" : "si";
 
     // Определяем тип выработки из CSV
     const branchType = rb.name || rb.typeName || "Выработка";
@@ -463,7 +463,10 @@ function buildResult(
       //   R = 0, S не задана → alpha (R будет 0 пока не задана геометрия)
       resistanceMode: importedR > 0 ? "manual" : "alpha",
       manualR: importedR,
-      resistance: importedR,
+      manualRUnit: importedRUnit,
+      // resistance пересчитается в calcBranchAero с учётом единицы; здесь —
+      // сразу приводим к системе расчёта, чтобы схема была верна до пересчёта.
+      resistance: importedRUnit === "kmurg" ? importedR * 9.81 : importedR,
       alphaCoef: importedR > 0 ? 9 : defaultAlpha,
       manualSection: rb.area > 0, shape,
     }));
@@ -834,7 +837,10 @@ export function parseVent2Csv(
       manualSection: rb.area > 0,
       flow:         rb.flow,
       resistanceMode: rNsm8 > 0 ? "manual" : "surface",
-      manualR:      rNsm8 > 0 ? rNsm8 / 9.81 : 0,
+      // rNsm8 уже приведено к Н·с²/м⁸ выше — кладём как есть и помечаем единицу,
+      // иначе пересчёт аэродинамики занижал сопротивление в 9,81 раза.
+      manualR:      rNsm8 > 0 ? rNsm8 : 0,
+      manualRUnit:  "si" as const,
       resistance:   rNsm8,
       layer:        rb.layer,
     }));

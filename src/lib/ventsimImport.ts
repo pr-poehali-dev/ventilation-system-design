@@ -350,6 +350,7 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
       flow: rb.flow,
       resistanceMode: importedR > 0 ? "manual" : "alpha",
       manualR: importedR,
+      manualRUnit: "si" as const, // Ventsim отдаёт R уже в Н·с²/м⁸ — не переводить
       resistance: importedR,
       alphaCoef: 12,
       hasFan,
