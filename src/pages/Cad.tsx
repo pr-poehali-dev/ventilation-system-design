@@ -4747,32 +4747,6 @@ export default function CadPage() {
               </button>
             ))}
           </div>
-          {thermalDepMethod === "normative" && (
-            <div className="flex flex-col justify-center gap-1 pl-2 ml-1 border-l border-gray-200" style={{ minWidth: 128 }}>
-              <label className="text-[10px] text-gray-600 leading-tight" title="t — время с момента возникновения пожара (формула 4.8). При t свыше 2,5 ч норматив предписывает принимать 150 мин.">
-                Время пожара t, мин
-                <input
-                  type="number" min={1} max={NORMATIVE_TIME_MAX_MIN} step={5}
-                  value={normFireTime}
-                  onChange={e => changeNormFireTime(parseFloat(e.target.value))}
-                  className="w-full mt-0.5 px-1 py-0.5 text-[11px] border border-gray-300 rounded"
-                />
-              </label>
-              <label className="text-[10px] text-gray-600 leading-tight" title="x — расстояние от очага до устья выработки по ходу движения струи (формула 4.13). 0 — определять автоматически по положению очага на ветви.">
-                Очаг→устье x, м
-                <input
-                  type="number" min={0} step={10}
-                  value={normMouthDist}
-                  placeholder="0 — авто"
-                  onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
-                  className="w-full mt-0.5 px-1 py-0.5 text-[11px] border border-gray-300 rounded"
-                />
-              </label>
-              {normMouthDist === 0 && (
-                <div className="text-[9px] text-gray-500 leading-tight">x — авто по схеме</div>
-              )}
-            </div>
-          )}
         </RibbonGroup>
 
         {/* ── Группа: Взрыв ── */}
@@ -6925,23 +6899,26 @@ export default function CadPage() {
                           ))}
                         </div>
                         {thermalDepMethod === "normative" && (
-                          <div className="flex gap-1 mt-1">
-                            <label className="flex-1 text-[9px] text-gray-600 leading-tight" title="t — время с момента возникновения пожара (ф. 4.8), не более 150 мин">
-                              t пожара, мин
+                          <div className="mt-1">
+                            <label className="flex items-center justify-between gap-1 py-0.5" title="t — время с момента возникновения пожара (ф. 4.8), не более 150 мин">
+                              <span className="text-[10px] text-gray-600 truncate">Время пожара t, мин:</span>
                               <input
                                 type="number" min={1} max={NORMATIVE_TIME_MAX_MIN} step={5}
                                 value={normFireTime}
                                 onChange={e => changeNormFireTime(parseFloat(e.target.value))}
-                                className="w-full mt-0.5 px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                                className="px-1 py-0.5 text-[10px] text-right border border-gray-300 rounded"
+                                style={{ width: 56 }}
                               />
                             </label>
-                            <label className="flex-1 text-[9px] text-gray-600 leading-tight" title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
-                              x очаг→устье, м
+                            <label className="flex items-center justify-between gap-1 py-0.5" title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
+                              <span className="text-[10px] text-gray-600 truncate">Очаг→устье x, м:</span>
                               <input
                                 type="number" min={0} step={10}
                                 value={normMouthDist}
                                 onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
-                                className="w-full mt-0.5 px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                                className="px-1 py-0.5 text-[10px] text-right border border-gray-300 rounded"
+                                style={{ width: 56 }}
+                                title={normMouthDist === 0 ? "0 — авто по схеме" : undefined}
                               />
                             </label>
                           </div>
