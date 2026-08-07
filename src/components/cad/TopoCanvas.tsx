@@ -5619,6 +5619,17 @@ export default function TopoCanvas(props: Props) {
                       const oArrCol = pollutedBranchIds.has(ob.id) ? "#2563eb" : "#dc2626";
                       const oArrPts = `0,-${oTipW} ${oTipH},0 0,${oTipW}`;
                       const oShowThis = oShowArr && oLen >= (oTailLen + oTipH) * 2;
+                      // ── АНИМАЦИЯ ВОЗДУХОРАСПРЕДЕЛЕНИЯ на ветви-окклюдере ──
+                      // Occluder перерисовывает ветвь верхнего горизонта поверх
+                      // холста СПЛОШНОЙ линией, затирая бегущий пунктир, который
+                      // canvasRenderer нарисовал под оверлеем. Из-за этого при
+                      // включённых слоях анимация пропадала. Повторяем пунктир
+                      // здесь — с теми же параметрами, что в SVG-режиме.
+                      const oV = Math.abs(ob.velocity ?? 0);
+                      const oFlowVis = !thinLines && view.scale >= _xySF * 0.25
+                        && oQ > 0.1 && flowDisplay !== "off";
+                      const oDashes = oFlowVis && (flowDisplay === "flow" || flowDisplay === "both");
+                      const oDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, oV)));
                       return (
                         <g key={`ovoccl-${ob.id}`}>
                           {bw > 0 && (
@@ -5626,7 +5637,31 @@ export default function TopoCanvas(props: Props) {
                               stroke="#1f2937" strokeWidth={ow + bw * 2} strokeLinecap="round" opacity={0.85} />
                           )}
                           <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
-                            stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round" />
+                            stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round"
+                            opacity={oFlowVis ? 0.55 : 1} />
+                          {oDashes && (
+                            <line x1={oAx} y1={oAy} x2={oBx} y2={oBy}
+                              stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="butt"
+                              strokeDasharray="10 8" opacity="0.95">
+                              <animate attributeName="stroke-dashoffset"
+                                from="18" to="0" dur={`${oDur}s`} repeatCount="indefinite" />
+                            </line>
+                          )}
+                          {/* Шевроны ▶▶▶ — режим «Шевроны»/«Оба» тоже затирался occluder-ом */}
+                          {oFlowVis && (flowDisplay === "chevrons" || flowDisplay === "both") && oLen > 24 && (() => {
+                            const cnt = Math.max(1, Math.floor(oLen / 30));
+                            const cAng = Math.atan2(oDy, oDx) * 180 / Math.PI;
+                            return Array.from({ length: cnt }, (_, ci) => {
+                              const ct = (ci + 1) / (cnt + 1);
+                              return (
+                                <g key={`ovchv-${ob.id}-${ci}`}
+                                  transform={`translate(${(oAx + oDx * ct).toFixed(1)},${(oAy + oDy * ct).toFixed(1)}) rotate(${cAng.toFixed(1)})`}>
+                                  <polygon points="-4,-4 4,0 -4,4" fill={occColor(ob)}
+                                    stroke="white" strokeWidth="0.6" opacity="0.9" />
+                                </g>
+                              );
+                            });
+                          })()}
                           {oShowThis && (
                             <g transform={`translate(${(oAx + oDx * 0.5).toFixed(1)},${(oAy + oDy * 0.5).toFixed(1)}) rotate(${oAng.toFixed(1)})`}>
                               <line x1={-oTailLen} y1={0} x2={0} y2={0} stroke="white" strokeWidth={oTailW + 1.5} strokeLinecap="round" />
