@@ -5714,6 +5714,34 @@ export default function TopoCanvas(props: Props) {
               }
             }
           }
+          // ── ЗАДЫМЛЕНИЕ поверх оверлея (ИСПРАВЛЕНИЕ z-order) ───────────────
+          // canvasRenderer рисует дым последним проходом ПОВЕРХ всех слоёв, но
+          // этот SVG-оверлей лежит ВЫШЕ холста и перерисовывает ветви верхних
+          // горизонтов (occluder-ы `ovocc-*` для z-order символов). Из-за этого
+          // дым нижнего горизонта снова оказывался ПОД слоем горизонта.
+          // Повторяем проход дыма здесь, в самом конце оверлея.
+          if (branchFireColors && branchFireColors.size > 0) {
+            for (const { branch: b } of branchesSorted) {
+              const fireSeg = branchFireColors.get(b.id);
+              if (!fireSeg) continue;
+              const f = projNodesMap.get(b.fromId);
+              const tN = projNodesMap.get(b.toId);
+              if (!f || !tN) continue;
+              const revS = (b.flow ?? 0) < 0 || (!!b.hasFan && (b.fanReverse ?? false) && (b.flow ?? 0) >= 0);
+              const sxA = revS ? tN.sx : f.sx, syA = revS ? tN.sy : f.sy;
+              const sxB = revS ? f.sx : tN.sx, syB = revS ? f.sy : tN.sy;
+              const sbw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+              const sw = thinLines ? 1 : Math.max(sbw * _branchObjSF, 1.0);
+              const { color: fireCol, fromT, toT } = fireSeg;
+              out.push(
+                <line key={`ovsmoke-${b.id}`}
+                  x1={sxA + (sxB - sxA) * fromT} y1={syA + (syB - syA) * fromT}
+                  x2={sxA + (sxB - sxA) * toT}   y2={syA + (syB - syA) * toT}
+                  stroke={fireCol} strokeWidth={Math.max(sw * 0.7, 2)}
+                  strokeLinecap="round" opacity="0.95" pointerEvents="none" />
+              );
+            }
+          }
           return <>{out}</>;
           })()}
         </svg>
