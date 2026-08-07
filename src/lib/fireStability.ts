@@ -21,6 +21,7 @@ import { calcBranchAngle } from "./topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire,
   calcFireTemp, calcThermalDepression, calcCriticalDepression, FLAT_ANGLE_DEG,
+  calcCriticalFlow,
 } from "./fireCalculator";
 
 // Факт пожара по ветви из реального итеративного расчёта сети (как в
@@ -63,7 +64,11 @@ export interface StabilityRow {
   p_u: number | null;        // показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1)
   stabilityClass: StabilityClass; // класс по p_у (Прил. 3)
   // ── Приложение 7: восходящие выработки ──────────────────────────────
-  Q0_m3s: number | null;     // критический расход Q₀ (ф. 7.3), м³/с
+  Q0_m3s: number | null;     // принятый критический расход Q₀ (мин. из 7.3 и 7.4), м³/с
+  Q0_73: number | null;      // Q₀ по формуле (7.3) = Q₁ + 0,03·h₁
+  Q0_74: number | null;      // Q₀ по формуле (7.4) = Q·a
+  Q0_a: number | null;       // поправочный коэффициент a (таблица 7.1)
+  Q0_source: "7.3" | "7.4" | null; // какая формула дала принятое значение
   R_calc: number | null;     // расчётное сопротивление R_р = h_т/Q₀² (ф. 7.5)
   R_fact: number | null;     // фактическое сопротивление ветви R
   R_dop: number | null;      // требуемое сопротивление перемычки R_доп (ф. 7.6)
@@ -293,11 +298,25 @@ export function calcFireStability(
     let R_calc: number | null = null;
     let R_dop: number | null = null;
     let ascendingUnstable = false;
+    // Промежуточные величины Прил. 7 — для акта и панели (проверяемость расчёта)
+    let Q0_73: number | null = null;
+    let Q0_74: number | null = null;
+    let Q0_a: number | null = null;
+    let Q0_source: "7.3" | "7.4" | null = null;
     const R_fact = (b.resistance ?? 0) > 0 ? +(b.resistance ?? 0).toFixed(6) : null;
 
     if (!descending && absAngle > FLAT_ANGLE_DEG && thermalDep > 0) {
-      // (7.3) Q₀ = Q₁ + 0.03·h₁ — расход и депрессия в нормальном режиме.
-      const Q0 = dojarFlow + 0.03 * branchDep;
+      // Критический расход двумя ориентировочными способами норматива:
+      //   (7.3) Q₀ = Q₁ + 0,03·h₁  и  (7.4) Q₀ = Q·a (a — таблица 7.1).
+      // Принимается МЕНЬШЕЕ значение: Q₀ входит в условие (7.1) в квадрате,
+      // меньший Q₀ даёт меньшую удерживающую депрессию R·Q₀² → более строгую
+      // оценку устойчивости (в запас безопасности).
+      const cf = calcCriticalFlow(dojarFlow, branchDep, b.resistance ?? 0);
+      Q0_73 = cf.Q0_73;
+      Q0_74 = cf.Q0_74;
+      Q0_a = cf.a;
+      Q0_source = cf.source;
+      const Q0 = cf.Q0;
       if (Q0 > 0) {
         Q0_m3s = +Q0.toFixed(3);
         // (7.5) расчётное сопротивление, при котором исключается опрокидывание
@@ -367,7 +386,7 @@ export function calcFireStability(
       exceedsCritical,
       p_u,
       stabilityClass,
-      Q0_m3s,
+      Q0_m3s, Q0_73, Q0_74, Q0_a, Q0_source,
       R_calc,
       R_fact,
       R_dop,
