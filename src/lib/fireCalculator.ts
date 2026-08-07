@@ -588,6 +588,16 @@ export interface NormativeDepressionInput {
   angle_deg: number;       // β — средний угол наклона (со знаком)
   distanceToMouth_m?: number; // x — расстояние от очага до устья по ходу струи
   fireTime_min?: number;   // t — время с момента пожара (по умолчанию 150)
+  // Фактическая температура продуктов горения (°C), посчитанная по ВЫБРАННОЙ
+  // пожарной нагрузке (мощность очага / расход). Формула 4.11 даёт Tм только по
+  // геометрии (S, A) и НЕ знает, что горит: для кабеля и для склада ГСМ она
+  // выдаёт одинаковые 327 °C. Норматив 4.11 — это оценка «сверху» для развитого
+  // пожара на богатой горючей нагрузке. Если фактическая температура струи ниже
+  // нормативной Tм, физически очаг не может разогреть газ выше неё, поэтому Tм
+  // ограничивается фактом. Без этого слабый пожар (горящий кабель, 28 °C) давал
+  // тепловую депрессию 470 Па и ложно опрокидывал струю.
+  actualFireTemp_C?: number;
+  ambientTemp_C?: number;  // температура вентиляционной струи до пожара, °C
 }
 
 export interface NormativeDepressionResult {
@@ -620,8 +630,18 @@ export function calcThermalDepressionNormative(
   const A = (100 * a) / (1.21 + 1.51 * (S / Q));
   if (!(A > 1e-6) || !Number.isFinite(A)) return empty;
 
-  // (4.11) Tм, (4.12) Tк
-  const Tm = 1273 - 985 * Math.exp(-S / A);
+  // (4.11) Tм — нормативная максимальная температура в очаге (только геометрия).
+  const TmNorm = 1273 - 985 * Math.exp(-S / A);
+  // Ограничение по ФАКТИЧЕСКОЙ пожарной нагрузке: очаг не может нагреть струю
+  // выше температуры, которую даёт его тепловая мощность. Берём минимум из
+  // нормативной оценки и фактической температуры продуктов горения.
+  const Tamb = 273 + (Number.isFinite(inp.ambientTemp_C as number) ? (inp.ambientTemp_C as number) : 15);
+  const TmFact = Number.isFinite(inp.actualFireTemp_C as number)
+    ? 273 + (inp.actualFireTemp_C as number)
+    : undefined;
+  const Tm = TmFact !== undefined
+    ? Math.max(Tamb, Math.min(TmNorm, TmFact))
+    : TmNorm;
   const x = inp.distanceToMouth_m ?? l;   // если устье не задано — берём длину зоны
   const xBar = x / l;                      // (4.13) относительное расстояние
   const Tk = 288 + (Tm - 288) * Math.exp(-xBar / A);
@@ -1180,6 +1200,8 @@ export function calcThermalDepressionUnified(
       angle_deg: args.angle_deg,
       distanceToMouth_m: args.distanceToMouth_m ?? (getNormativeMouthDistance() || undefined),
       fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
+      actualFireTemp_C: args.fireTemp_C,
+      ambientTemp_C: args.ambientTemp_C,
     }).h_t;
   }
   return calcThermalDepression(args.fireTemp_C, args.ambientTemp_C, args.length_m, args.angle_deg);
@@ -1213,6 +1235,8 @@ export function fireSourceTempForMethod(
       angle_deg: args.angle_deg,
       distanceToMouth_m: args.distanceToMouth_m ?? (getNormativeMouthDistance() || undefined),
       fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
+      actualFireTemp_C: args.physicalFireTemp_C,
+      ambientTemp_C: args.ambientTemp_C,
     });
     const tmC = nr.Tm - 273;
     if (Number.isFinite(tmC) && tmC > args.ambientTemp_C) return tmC;
@@ -1502,6 +1526,9 @@ export function calcFireMode(
       ? calcThermalDepressionNormative({
           airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: flowRelAngle,
           distanceToMouth_m: mouthDist, fireTime_min: getNormativeFireTime(),
+          // Фактическая температура продуктов по выбранной пожарной нагрузке —
+          // ограничивает нормативную Tм (см. calcThermalDepressionNormative).
+          actualFireTemp_C: fireTemp, ambientTemp_C,
         })
       : null;
     const thermalDep = normDetail
