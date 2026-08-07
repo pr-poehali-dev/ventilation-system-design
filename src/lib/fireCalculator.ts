@@ -1051,6 +1051,40 @@ export function setThermalDepMethod(m: ThermalDepMethod): void {
   try { localStorage.setItem(THERMAL_DEP_METHOD_KEY, m); } catch { /* noop */ }
 }
 
+// ─── Параметры нормативной методики (4.5–4.13), задаются пользователем ───────
+//   t — время с момента возникновения пожара, мин (ф. 4.8; норматив: при t>2,5 ч
+//       принимать 150 мин, поэтому значение ограничивается сверху 150);
+//   x — расстояние от очага до устья выработки по ходу движения струи, м
+//       (ф. 4.13). 0/пусто — «авто»: подставляется длина зоны горения l (x̄=1).
+export const NORMATIVE_TIME_MAX_MIN = 150;
+const NORM_FIRE_TIME_KEY = "fireNormTimeMin";
+const NORM_MOUTH_DIST_KEY = "fireNormMouthDistM";
+
+export function getNormativeFireTime(): number {
+  try {
+    const v = parseFloat(localStorage.getItem(NORM_FIRE_TIME_KEY) ?? "");
+    if (Number.isFinite(v) && v > 0) return Math.min(NORMATIVE_TIME_MAX_MIN, v);
+  } catch { /* noop */ }
+  return NORMATIVE_TIME_MAX_MIN;
+}
+
+export function setNormativeFireTime(min: number): void {
+  try { localStorage.setItem(NORM_FIRE_TIME_KEY, String(min)); } catch { /* noop */ }
+}
+
+// 0 — «авто» (расстояние берётся из геометрии/длины зоны горения)
+export function getNormativeMouthDistance(): number {
+  try {
+    const v = parseFloat(localStorage.getItem(NORM_MOUTH_DIST_KEY) ?? "");
+    if (Number.isFinite(v) && v > 0) return v;
+  } catch { /* noop */ }
+  return 0;
+}
+
+export function setNormativeMouthDistance(m: number): void {
+  try { localStorage.setItem(NORM_MOUTH_DIST_KEY, String(m)); } catch { /* noop */ }
+}
+
 // Единая точка расчёта депрессии по выбранному методу. Для нормативного метода
 // нужны S и Q; при их отсутствии откатываемся к физике теплового столба.
 export function calcThermalDepressionUnified(
@@ -1071,8 +1105,8 @@ export function calcThermalDepressionUnified(
       airFlow_m3s: args.airFlow_m3s!,
       sectionArea_m2: args.sectionArea_m2!,
       angle_deg: args.angle_deg,
-      distanceToMouth_m: args.distanceToMouth_m,
-      fireTime_min: args.fireTime_min,
+      distanceToMouth_m: args.distanceToMouth_m ?? (getNormativeMouthDistance() || undefined),
+      fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
     }).h_t;
   }
   return calcThermalDepression(args.fireTemp_C, args.ambientTemp_C, args.length_m, args.angle_deg);
@@ -1104,8 +1138,8 @@ export function fireSourceTempForMethod(
       airFlow_m3s: args.airFlow_m3s!,
       sectionArea_m2: args.sectionArea_m2!,
       angle_deg: args.angle_deg,
-      distanceToMouth_m: args.distanceToMouth_m,
-      fireTime_min: args.fireTime_min,
+      distanceToMouth_m: args.distanceToMouth_m ?? (getNormativeMouthDistance() || undefined),
+      fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
     });
     const tmC = nr.Tm - 273;
     if (Number.isFinite(tmC) && tmC > args.ambientTemp_C) return tmC;
@@ -1383,8 +1417,19 @@ export function calcFireMode(
     // Метод (Методика / нормативная методика 4.5–4.13) выбирается пользователем.
     const depMethod = getThermalDepMethod();
     const useNormative = depMethod === "normative" && airQ > 0 && (fb.area ?? 0) > 0;
+    // x (ф. 4.13) — расстояние от очага до устья выработки ПО ХОДУ струи.
+    // Если пользователь не задал его вручную, берём из геометрии: доля ветви
+    // от очага (fireT) до выхода в направлении потока.
+    const fireTpos = fb.fireT ?? 0.5;
+    const outFrac = dirFlow >= 0 ? (1 - fireTpos) : fireTpos;
+    const autoMouthDist = (fb.length ?? 0) * outFrac;
+    const userMouthDist = getNormativeMouthDistance();
+    const mouthDist = userMouthDist > 0 ? userMouthDist : (autoMouthDist > 0.1 ? autoMouthDist : undefined);
     const normDetail = useNormative
-      ? calcThermalDepressionNormative({ airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: flowRelAngle })
+      ? calcThermalDepressionNormative({
+          airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: flowRelAngle,
+          distanceToMouth_m: mouthDist, fireTime_min: getNormativeFireTime(),
+        })
       : null;
     const thermalDep = normDetail
       ? normDetail.h_t

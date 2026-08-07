@@ -36,7 +36,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireMode, calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireMode, calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, getNormativeMouthDistance, setNormativeMouthDistance, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -1114,6 +1114,18 @@ export default function CadPage() {
   const changeThermalDepMethod = (m: ThermalDepMethod) => {
     setThermalDepMethod(m);
     setThermalDepMethodState(m);
+  };
+  // Параметры нормативной методики: t — время с начала пожара (мин, ф. 4.8),
+  // x — расстояние от очага до устья по ходу струи (м, ф. 4.13; 0 = авто).
+  const [normFireTime, setNormFireTimeState] = useState<number>(getNormativeFireTime());
+  const [normMouthDist, setNormMouthDistState] = useState<number>(getNormativeMouthDistance());
+  const changeNormFireTime = (v: number) => {
+    const t = Math.min(NORMATIVE_TIME_MAX_MIN, Math.max(1, v || 1));
+    setNormativeFireTime(t); setNormFireTimeState(t);
+  };
+  const changeNormMouthDist = (v: number) => {
+    const x = Math.max(0, v || 0);
+    setNormativeMouthDistance(x); setNormMouthDistState(x);
   };
   // Анимация воспроизведения шкалы
   const [smokeAnimating, setSmokeAnimating] = useState(false);
@@ -4735,6 +4747,32 @@ export default function CadPage() {
               </button>
             ))}
           </div>
+          {thermalDepMethod === "normative" && (
+            <div className="flex flex-col justify-center gap-1 pl-2 ml-1 border-l border-gray-200" style={{ minWidth: 128 }}>
+              <label className="text-[10px] text-gray-600 leading-tight" title="t — время с момента возникновения пожара (формула 4.8). При t свыше 2,5 ч норматив предписывает принимать 150 мин.">
+                Время пожара t, мин
+                <input
+                  type="number" min={1} max={NORMATIVE_TIME_MAX_MIN} step={5}
+                  value={normFireTime}
+                  onChange={e => changeNormFireTime(parseFloat(e.target.value))}
+                  className="w-full mt-0.5 px-1 py-0.5 text-[11px] border border-gray-300 rounded"
+                />
+              </label>
+              <label className="text-[10px] text-gray-600 leading-tight" title="x — расстояние от очага до устья выработки по ходу движения струи (формула 4.13). 0 — определять автоматически по положению очага на ветви.">
+                Очаг→устье x, м
+                <input
+                  type="number" min={0} step={10}
+                  value={normMouthDist}
+                  placeholder="0 — авто"
+                  onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
+                  className="w-full mt-0.5 px-1 py-0.5 text-[11px] border border-gray-300 rounded"
+                />
+              </label>
+              {normMouthDist === 0 && (
+                <div className="text-[9px] text-gray-500 leading-tight">x — авто по схеме</div>
+              )}
+            </div>
+          )}
         </RibbonGroup>
 
         {/* ── Группа: Взрыв ── */}
@@ -6886,6 +6924,28 @@ export default function CadPage() {
                             >{opt.label}</button>
                           ))}
                         </div>
+                        {thermalDepMethod === "normative" && (
+                          <div className="flex gap-1 mt-1">
+                            <label className="flex-1 text-[9px] text-gray-600 leading-tight" title="t — время с момента возникновения пожара (ф. 4.8), не более 150 мин">
+                              t пожара, мин
+                              <input
+                                type="number" min={1} max={NORMATIVE_TIME_MAX_MIN} step={5}
+                                value={normFireTime}
+                                onChange={e => changeNormFireTime(parseFloat(e.target.value))}
+                                className="w-full mt-0.5 px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                              />
+                            </label>
+                            <label className="flex-1 text-[9px] text-gray-600 leading-tight" title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
+                              x очаг→устье, м
+                              <input
+                                type="number" min={0} step={10}
+                                value={normMouthDist}
+                                onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
+                                className="w-full mt-0.5 px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                              />
+                            </label>
+                          </div>
+                        )}
                         <div className="text-[9px] text-gray-400 mt-0.5">Применится при следующем «Расчёте пожара»</div>
                       </div>
                       <Row label="Температура продуктов, °C:" value={safeFixed(fr.airTempOut, 1)} bold />
