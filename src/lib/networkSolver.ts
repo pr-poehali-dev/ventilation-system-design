@@ -28,7 +28,6 @@ import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg } from "./bulkheads";
-import { KMURG_TO_SI } from "./aerodynamics";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -403,13 +402,11 @@ export function solveNetwork(
       id:            b.id,
       a:             toGnd(b.fromId),
       b:             toGnd(b.toId),
-      // ЕДИНИЦЫ: b.resistance уже в СИ (Н·с²/м⁸) — перевод сделан в
-      // calcResistance. Все формулы перемычек ниже дают R в кМюрг, поэтому их
-      // сумма домножается на KMURG_TO_SI (см. множитель после блока).
-      R:             Math.max(MIN_R, b.resistance + KMURG_TO_SI * ((b.hasBulkhead ? (() => {
+      R:             Math.max(MIN_R, b.resistance + (b.hasBulkhead ? (() => {
         const mode = b.bulkheadResMode ?? "project";
-        // Все ветки ниже возвращают сопротивление в кМюрг (кгс·с²/м⁸).
-        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг
+        // Единицы: 1 кМюрг = 1 Па·с²/м⁴ = 1 Н·с²/м⁸ (в системе расчёта коэффициент = 1)
+        // b.resistance хранится в кМюрг/Н·с²/м⁸ (от calcResistance)
+        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг = Н·с²/м⁸
         if (mode === "survey") {
           const q = b.bulkheadSurveyQ ?? 0;
           const dp = b.bulkheadSurveyDP ?? 0;
@@ -436,11 +433,11 @@ export function solveNetwork(
         return (b.bulkheadR ?? 0);
       })() : 0)
       + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" ? (b.fanCrossingR ?? 0) / 1000 : 0) // Мюрг → кМюрг
-      // R вентиляционного окна ГВУ (кМюрг): ρ/(2·g·μ²)·(1/ΔS² − 1/S²), μ откалиброван
-      // по двум эталонам АэроСети — см. FAN_WINDOW_MU в bulkheads.ts.
-      // Учитывается только при установке «Внутри перемычки».
-      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (b.fanWindowArea ?? 0) > 0.001
-          ? fanWindowRkMurg(b.fanWindowArea!, b.area ?? 0) : 0))),
+      // R вентиляционного окна ГВУ: R = ρ/(2·μ²)·(1/ΔS² − 1/S²), μ=0.5851 — коэф.
+      // расхода окна (откалиброван по эталону Аэросеть: ВЦД-47, ΔS=17,35, S=38,5,
+      // 350 об/мин → Q=515). Учитывает сечение выработки. Только «Внутри перемычки».
+      + (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (b.fanWindowArea ?? 0) > 0
+          ? fanWindowRkMurg(b.fanWindowArea!, b.area ?? 0) : 0)),
       Q:             0,
       hasFan:        b.hasFan,
       fanType:       b.fanType ?? "ГВУ",

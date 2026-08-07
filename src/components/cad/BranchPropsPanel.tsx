@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
-import { SURFACE_TYPES, PIPE_ALPHA_TYPES, KMURG_TO_SI } from "@/lib/aerodynamics";
+import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
@@ -51,9 +51,6 @@ interface BranchPropsPanelProps {
   onUpdateBulkheadSym?: (patch: Record<string, unknown>) => void;
   /** Конфигурация единиц измерения */
   unitsConfig?: UnitsConfig;
-  /** Сколько ветвей выделено (S+S). >0 — включён режим пакетного редактирования:
-   *  общие поля (единица R, способ задания, признаки) применяются ко ВСЕМ. */
-  selectedCount?: number;
   /** Суммарное сопротивление перемычек/окон на ветви, кМюрг (для «Общего сопротивления») */
   bulkheadRKmu?: number;
   /** Все узлы — для отображения коротких имён начального/конечного */
@@ -84,7 +81,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate, selectedCount = 0 }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -130,25 +127,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   // Единица отображения аэродинамического сопротивления (по умолчанию кМюрг)
   const uRes = getUnit(unitsConfig, "resistance");
-  // branch.resistance хранится в СИ (Н·с²/м⁸) — в этих единицах работает решатель.
-  // Для показа переводим обратно в рудничные: кМюрг = Н·с²/м⁸ / 9,81, далее
-  // кМюрг → Мюрг (×1000) → fromBase → выбранная пользователем единица.
-  const rToDisplay = (rSI: number) => uRes.fromBase((rSI / KMURG_TO_SI) * 1000);
+  // branch.resistance хранится в кМюрг (= Па·с²/м⁶). BaseUnit = Мюрг = кМюрг/1000.
+  // Перевод: кМюрг → Мюрг (* 1000) → fromBase → выбранная единица
+  const rToDisplay = (rKmurg: number) => uRes.fromBase(rKmurg * 1000);
 
 
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
-
-      {/* Индикатор пакетного редактирования (выделение S+S) */}
-      {selectedCount > 1 && (
-        <div
-          className="px-2 py-1 text-[10px] leading-snug border-b"
-          style={{ background: "#eff6ff", borderColor: "#bfdbfe", color: "#1e40af" }}
-        >
-          <b>Выбрано ветвей: {selectedCount}.</b> Общие параметры (единица R, способ задания,
-          α, ξ, признаки, тип) применяются ко всем. Геометрия и имена — только к текущей.
-        </div>
-      )}
 
       <div className="flex-1 overflow-y-auto">
 
@@ -377,7 +362,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             )}
 
             {branch.resistanceMode === "manual" && (
-              <InlineLabel label="Сопротивление R, кМюрг">
+              <InlineLabel label={`Сопротивление R, ${uRes.symbol}`}>
                 <EditInput
                   type="number" step="0.001"
                   value={branch.manualR}

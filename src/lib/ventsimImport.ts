@@ -349,8 +349,7 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
       manualSection: area > 0,
       flow: rb.flow,
       resistanceMode: importedR > 0 ? "manual" : "alpha",
-      // Ventsim отдаёт R в Н·с²/м⁸; manualR хранится в кМюрг → делим на 9,81
-      manualR: importedR / 9.81,
+      manualR: importedR,
       resistance: importedR,
       alphaCoef: 12,
       hasFan,

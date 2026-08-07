@@ -12,7 +12,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
-import { KMURG_TO_SI } from "@/lib/aerodynamics";
 
 export interface RawFan {
   branchId: string;    // ID выработки из АэроСети
@@ -435,11 +434,11 @@ function buildResult(
 
     const newBranchId = `B${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = newBranchId;
-    // manualR хранится в кМюрг (перевод в СИ делает calcResistance ×9,81):
-    //   "kmu" (АэроСеть) — уже кМюрг, берём как есть;
-    //   "si" (Н·с²/м⁸)  — делим на 9,81.
+    // Перевод R из единиц CSV в кМюрг (для manualR):
+    // "kmu" (кмю, АэроСеть): уже в кМюрг → берём как есть
+    // "si": в Н·с²/м⁸ → делим на 9.81 чтобы перевести в кМюрг
     const importedR = rb.resistance > 0
-      ? rb.resistance * (resistanceUnit === "kmu" ? 1 : 1 / KMURG_TO_SI)
+      ? rb.resistance * (resistanceUnit === "kmu" ? 1 : 1 / 9.81)
       : 0;
 
     // Определяем тип выработки из CSV
@@ -464,8 +463,7 @@ function buildResult(
       //   R = 0, S не задана → alpha (R будет 0 пока не задана геометрия)
       resistanceMode: importedR > 0 ? "manual" : "alpha",
       manualR: importedR,
-      // resistance — в СИ (Н·с²/м⁸), как во всём решателе
-      resistance: importedR * KMURG_TO_SI,
+      resistance: importedR,
       alphaCoef: importedR > 0 ? 9 : defaultAlpha,
       manualSection: rb.area > 0, shape,
     }));
@@ -824,8 +822,7 @@ export function parseVent2Csv(
     const fn = nodeMap.get(rb.from);
     const tn = nodeMap.get(rb.to);
     if (!fn || !tn) { warnings.push(`Ветвь ${rb.id}: узлы не найдены`); continue; }
-    // кМюрг (кгс·с²/м⁸) → Н·с²/м⁸ = ×9,81 (было ×9,81e-3 — занижение в 1000 раз)
-    const rNsm8 = rUnit === "kmu" ? rb.resistance * KMURG_TO_SI : rb.resistance;
+    const rNsm8 = rUnit === "kmu" ? rb.resistance * 9.81e-3 : rb.resistance;
     const brId = `BV2_${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = brId;
     branches.push(makeBranch(brId, fn.id, tn.id, {
@@ -837,8 +834,7 @@ export function parseVent2Csv(
       manualSection: rb.area > 0,
       flow:         rb.flow,
       resistanceMode: rNsm8 > 0 ? "manual" : "surface",
-      // rNsm8 — в Н·с²/м⁸; manualR хранится в кМюрг → делим на 9,81
-      manualR:      rNsm8 > 0 ? rNsm8 / KMURG_TO_SI : 0,
+      manualR:      rNsm8 > 0 ? rNsm8 / 9.81 : 0,
       resistance:   rNsm8,
       layer:        rb.layer,
     }));
