@@ -2994,8 +2994,16 @@ export default function CadPage() {
       const scenarios: { id: string; thermalDepression: number; hotNodeTemps?: Record<string, number> }[] = [];
       for (const s of active) {
         const target = s.target;
-        const airQ0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
-        s.firePower = calcBranchFirePower(target, airQ0);
+        // Расходы: мощность очага — по ШТАТНОМУ (тепловыделение техники не
+        // должно разгоняться вентиляцией), температура — по ФАКТИЧЕСКОМУ, но не
+        // ниже половины штатного (та же логика, что в аварийном расчёте).
+        // Раньше и мощность, и T считались по текущему расходу без нижней
+        // границы — на схлопнувшейся ветви T взлетала и давала ложное
+        // опрокидывание, а на выросшей — расходилась с аварийным расчётом.
+        const qOrig0   = Math.abs(originalFlows.get(target.id) ?? target.flow ?? 0);
+        const qActual0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
+        const airQ0 = qOrig0 > 0 ? Math.max(qActual0, 0.5 * qOrig0) : qActual0;
+        s.firePower = calcBranchFirePower(target, qOrig0 > 0 ? qOrig0 : airQ0);
         s.fireTemp  = calcFireTemp(s.firePower, airQ0, ambientTemp);
         const fromN = nodes.find(n => n.id === target.fromId);
         const toN   = nodes.find(n => n.id === target.toId);
