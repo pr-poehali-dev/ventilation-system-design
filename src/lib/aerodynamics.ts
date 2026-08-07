@@ -196,9 +196,16 @@ export function velocity(Q: number, S: number): number {
   return Q / S;
 }
 
+// Перевод кгс/м² (мм вод. ст.) → Па. Сопротивление R хранится в кМюрг, т.е.
+// кгс·с²/м⁸, поэтому произведение R·Q² выходит в мм вод. ст., а не в паскалях.
+export const PA_PER_MM_H2O = 9.81;
+
 // Депрессия ΔP = R·Q² (Па). Знак сохраняется (R·|Q|·Q).
+// R задаётся в кМюрг (кгс·с²/м⁸), поэтому R·Q² даёт мм вод. ст. — домножаем
+// на 9,81, чтобы вернуть паскали. В этих же единицах работают тепловая
+// депрессия пожара, естественная тяга и напор вентилятора.
 export function depression(R: number, Q: number): number {
-  const dp = R * Math.abs(Q) * Q;
+  const dp = R * Math.abs(Q) * Q * PA_PER_MM_H2O;
   return isFinite(dp) ? dp : 0;
 }
 

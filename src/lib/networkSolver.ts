@@ -28,6 +28,7 @@ import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
 import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg } from "./bulkheads";
+import { PA_PER_MM_H2O } from "./aerodynamics";
 
 const GND_ID   = "@gnd";
 const EPS1     = 0.1;       // Па
@@ -967,7 +968,10 @@ export function solveNetwork(
       fanShaftPower: fanShaft,
     });
     // Пересчитываем dP с полным R ребра (включает R перемычки, вентилятора и т.д.)
-    const fullDp = e.R * Q * Math.abs(Q) - (b.hasFan ? fanH(e, Math.abs(Q)) * (b.fanReverse ? -1 : 1) : 0);
+    // R хранится в кМюрг (кгс·с²/м⁸) → R·Q² даёт мм вод. ст., переводим в Па
+    // множителем 9,81. Напор вентилятора уже в Па, его не пересчитываем.
+    const fullDp = e.R * Q * Math.abs(Q) * PA_PER_MM_H2O
+      - (b.hasFan ? fanH(e, Math.abs(Q)) * (b.fanReverse ? -1 : 1) : 0);
     return { ...brRecalc, dP: Math.round(fullDp * 10) / 10 };
   });
 
@@ -986,8 +990,9 @@ export function solveNetwork(
       const Habs    = fanH(e, e.Q);                   // |H| >= 0
       const fan_dir = e.fanReverse ? -1 : 1;
       const H       = fan_dir * Habs;                 // знаковый: > 0 нагнетание a→b
-      // ΔP = R·Q·|Q| − H (потеря давления от a к b с учётом вентилятора)
-      const dP = e.R * e.Q * Math.abs(e.Q) - H;
+      // ΔP = R·Q·|Q| − H (потеря давления от a к b с учётом вентилятора).
+      // R в кМюрг → мм вод. ст., переводим в Па (×9,81); напор H уже в Па.
+      const dP = e.R * e.Q * Math.abs(e.Q) * PA_PER_MM_H2O - H;
       const Pu = pressure.get(u)!;
       // u === e.a → P_b = P_a − dP
       // u === e.b → P_a = P_b + dP, т.е. P_a = Pu + dP → P_other = Pu + dP
