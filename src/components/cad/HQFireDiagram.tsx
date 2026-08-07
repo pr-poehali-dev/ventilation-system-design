@@ -122,6 +122,27 @@ export default function HQFireDiagram({
 
   return (
     <svg width={width} height={height} style={{ background: "#fafafa", border: "1px solid #d0d0d0" }}>
+      {/* ── Зона опрокидывания струи: Q < 0 (нисходящее проветривание) ────────
+          Слева от оси h расход отрицателен — воздух идёт в обратную сторону.
+          Подсвечиваем область, чтобы режим D читался сразу, без разбора знаков. */}
+      {!ascending && qMinNeg < 0 && (
+        <g>
+          <rect x={padL} y={padT} width={Math.max(0, x0 - padL)} height={H}
+            fill={reversed ? "#fee2e2" : "#f5f3ff"} opacity={reversed ? 0.85 : 0.55} />
+          {x0 - padL > 70 ? (
+            <text x={padL + 3} y={padT + H - 4} fontSize="7.5" fontFamily="Segoe UI"
+              fill={reversed ? "#b91c1c" : "#a78bfa"} fontWeight={reversed ? 700 : 400}>
+              Q &lt; 0 — опрокидывание
+            </text>
+          ) : (
+            <text x={padL + 2} y={padT + H - 4} fontSize="7.5" fontFamily="Segoe UI"
+              fill={reversed ? "#b91c1c" : "#a78bfa"} fontWeight={reversed ? 700 : 400}>
+              Q&lt;0
+            </text>
+          )}
+        </g>
+      )}
+
       {/* Сетка */}
       {hTicks.map((h, i) => (
         <line key={`hg${i}`} x1={padL} x2={padL + W} y1={sy(h)} y2={sy(h)} stroke="#ececec" strokeWidth="0.5" />
