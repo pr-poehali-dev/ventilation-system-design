@@ -467,9 +467,14 @@ def natural_draft_h(from_z, to_z, from_temp, to_temp, atm_temp=None):
     """
     g = 9.81
     t_atm = atm_temp if atm_temp is not None else (from_temp + to_temp) / 2.0
-    rho_atm  = 353.0 / (273.0 + max(-60.0, min(100.0, t_atm)))
+    # ВАЖНО: верхняя граница 1200°C, а НЕ 100°C. При пожаре температура струи
+    # достигает сотен градусов (плюм 434°C, очаг 547°C), и обрезка на 100°C
+    # занижала тепловую тягу почти втрое — опрокинутая струя не могла
+    # разогнаться (1,45 м³/с вместо 87 в АэроСети). 1200°C — тот же потолок,
+    # что и в calcFireTemp на фронтенде.
+    rho_atm  = 353.0 / (273.0 + max(-60.0, min(1200.0, t_atm)))
     t_mean   = (from_temp + to_temp) / 2.0
-    rho_mean = 353.0 / (273.0 + max(-60.0, min(100.0, t_mean)))
+    rho_mean = 353.0 / (273.0 + max(-60.0, min(1200.0, t_mean)))
     return g * (from_z - to_z) * (rho_mean - rho_atm)
 
 
