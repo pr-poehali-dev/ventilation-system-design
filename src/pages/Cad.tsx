@@ -128,6 +128,25 @@ async function postAirflow(body: unknown): Promise<Response> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ПАКЕТНОЕ РЕДАКТИРОВАНИЕ ВЕТВЕЙ (выделение S+S)
+// Поля, которые осмысленно менять СРАЗУ У ВСЕХ выделенных ветвей: единицы,
+// способы задания, признаки, справочные характеристики. Сюда НЕ входят
+// геометрия (длина, сечение, координаты), имена/номера и привязка оборудования
+// — они индивидуальны, групповая правка их бы затёрла.
+// ─────────────────────────────────────────────────────────────────────────────
+const BULK_EDIT_BRANCH_KEYS = new Set<string>([
+  // Аэродинамика
+  "resistanceMode", "manualRUnit", "manualR", "alphaCoef", "roughness",
+  "surfaceId", "surface", "localXi", "vMax",
+  // Признаки ветви
+  "isLeakage", "capital", "designed",
+  // Классификация
+  "type", "horizonId", "layer",
+  // Пожарная нагрузка
+  "fireLoadTech", "fireLoadConveyor", "fireLoadCable", "fireLoadWoodSupport",
+]);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
 // (АэроСеть / Вентиляция-CAD): ribbon-меню + вертикальные вкладки + свойства
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7416,7 +7435,31 @@ export default function CadPage() {
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}
-                onUpdate={(patch) => updateBranch(selectedBranch.id, patch)}
+                selectedCount={selectedBranchIds.size > 1 ? selectedBranchIds.size : 0}
+                onUpdate={(patch) => {
+                  // ПАКЕТНОЕ редактирование: если выделено несколько ветвей (S+S),
+                  // безопасные для группы поля применяем сразу ко всем. Остальные
+                  // (геометрия, имя, оборудование) — только к активной ветви, иначе
+                  // групповая правка затирала бы индивидуальные параметры.
+                  const bulkKeys = Object.keys(patch).filter(k => BULK_EDIT_BRANCH_KEYS.has(k));
+                  if (selectedBranchIds.size > 1 && bulkKeys.length > 0) {
+                    const bulkPatch: Partial<TopoBranch> = {};
+                    for (const k of bulkKeys) {
+                      (bulkPatch as Record<string, unknown>)[k] = (patch as Record<string, unknown>)[k];
+                    }
+                    const rest: Partial<TopoBranch> = { ...patch };
+                    for (const k of bulkKeys) delete (rest as Record<string, unknown>)[k];
+                    pushHistory();
+                    const ids = new Set(selectedBranchIds);
+                    setBranches(prev => prev.map(b =>
+                      ids.has(b.id)
+                        ? { ...b, ...bulkPatch, ...(b.id === selectedBranch.id ? rest : {}) }
+                        : b,
+                    ));
+                    return;
+                  }
+                  updateBranch(selectedBranch.id, patch);
+                }}
                 activeTab={activeSide}
                 defaultInnerTab={fanSymbolBranchId === selectedBranch.id ? "Вентилятор" : undefined}
                 onRemoveFan={selectedBranch.hasFan ? () => {

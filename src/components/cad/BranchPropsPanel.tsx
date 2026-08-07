@@ -51,6 +51,9 @@ interface BranchPropsPanelProps {
   onUpdateBulkheadSym?: (patch: Record<string, unknown>) => void;
   /** Конфигурация единиц измерения */
   unitsConfig?: UnitsConfig;
+  /** Сколько ветвей выделено (S+S). >0 — включён режим пакетного редактирования:
+   *  общие поля (единица R, способ задания, признаки) применяются ко ВСЕМ. */
+  selectedCount?: number;
   /** Суммарное сопротивление перемычек/окон на ветви, кМюрг (для «Общего сопротивления») */
   bulkheadRKmu?: number;
   /** Все узлы — для отображения коротких имён начального/конечного */
@@ -81,7 +84,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate, selectedCount = 0 }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -134,6 +137,17 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
+
+      {/* Индикатор пакетного редактирования (выделение S+S) */}
+      {selectedCount > 1 && (
+        <div
+          className="px-2 py-1 text-[10px] leading-snug border-b"
+          style={{ background: "#eff6ff", borderColor: "#bfdbfe", color: "#1e40af" }}
+        >
+          <b>Выбрано ветвей: {selectedCount}.</b> Общие параметры (единица R, способ задания,
+          α, ξ, признаки, тип) применяются ко всем. Геометрия и имена — только к текущей.
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
 
