@@ -60,8 +60,21 @@ export default function HQFireDiagram({
   const hActivMax = hT + R * qMaxPos * qMaxPos;
   const hMax = Math.max(hActivMax, hKr ?? 0, hT, R * absQa * absQa, R * absQb * absQb, 1) * 1.1;
 
+  // ── Масштаб оси h ──────────────────────────────────────────────────────────
+  // При пожаре тепловая депрессия h_т часто в десятки раз превышает депрессию
+  // самой выработки R·Q² (напр. 1154 Па против 18 Па). В линейном масштабе
+  // характеристика уклонного поля вырождается в линию, прижатую к оси Q, и все
+  // рабочие точки (A, B, C) сливаются — диаграмма нечитаема.
+  // Поэтому при большом разбросе переходим на корневой масштаб оси h: парабола
+  // h = R·Q² превращается в прямую √h = √R·|Q|, обе характеристики становятся
+  // различимыми, а подписи делений остаются в паскалях (реальные значения).
+  const hSpread = hT / Math.max(1e-9, R * qMaxPos * qMaxPos);
+  const sqrtScale = hSpread > 4;
+  const fh = (h: number) => (sqrtScale ? Math.sqrt(Math.max(0, h)) : h);
+  const fhMax = fh(hMax);
+
   const sx = (q: number) => padL + ((q - qMinNeg) / qSpan) * W;
-  const sy = (h: number) => padT + H - (h / hMax) * H;
+  const sy = (h: number) => padT + H - (fh(h) / fhMax) * H;
 
   // ── Кривые ─────────────────────────────────────────────────────────────────
   const N = 60;
@@ -97,7 +110,11 @@ export default function HQFireDiagram({
   const qTicks = ascending
     ? [0, qMaxPos * 0.5, qMaxPos]
     : [qMinNeg, 0, qMaxPos * 0.5, qMaxPos].filter((v, i, a) => a.indexOf(v) === i);
-  const hTicks = [0, hMax * 0.5, hMax];
+  // Деления оси h ставим равномерно ПО ЭКРАНУ (в применённом масштабе), поэтому
+  // при корневом масштабе их значения вычисляются обратным преобразованием.
+  const hTicks = sqrtScale
+    ? [0, 0.25, 0.5, 0.75, 1].map(f => (f * fhMax) ** 2)
+    : [0, hMax * 0.5, hMax];
 
   const vline = (x: number, y: number, color: string) => (
     <line x1={x} y1={y} x2={x} y2={padT + H} stroke={color} strokeWidth="0.6" strokeDasharray="3 2" opacity="0.5" />
@@ -117,6 +134,11 @@ export default function HQFireDiagram({
       {/* Метки осей */}
       <text x={padL + W} y={padT + H + 18} textAnchor="end" fontSize="10" fontFamily="Segoe UI" fill="#444">Q, м³/с</text>
       <text x={x0 + 4} y={padT + 8} fontSize="10" fontFamily="Segoe UI" fill="#444">h, Па</text>
+      {sqrtScale && (
+        <text x={padL + W} y={padT + 8} textAnchor="end" fontSize="7.5" fontFamily="Segoe UI" fill="#9ca3af">
+          шкала h — нелинейная (√), для наглядности
+        </text>
+      )}
       {qTicks.map((q, i) => (
         <text key={`qt${i}`} x={sx(q)} y={padT + H + 12} textAnchor="middle" fontSize="8" fontFamily="Segoe UI" fill="#888">{q.toFixed(0)}</text>
       ))}
@@ -126,7 +148,7 @@ export default function HQFireDiagram({
 
       {/* Кривая 1: характеристика уклонного поля h = R·Q² */}
       <path d={netPath} fill="none" stroke="#0369a1" strokeWidth="1.6" />
-      <text x={A.x + 6} y={A.y + 20} fontSize="8" fontFamily="Segoe UI" fill="#0369a1">1: R·Q²</text>
+      <text x={sx(qMaxPos * 0.88)} y={sy(R * (qMaxPos * 0.88) ** 2) - 4} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#0369a1">1: R·Q²</text>
 
       {/* Кривая 3: активизированная характеристика ШВС h_т + R·Q² */}
       <path d={activPath} fill="none" stroke="#dc2626" strokeWidth="1.4" strokeDasharray="4 2" />
@@ -134,11 +156,16 @@ export default function HQFireDiagram({
 
       {/* Кривая 2: линия тепловой депрессии h_т */}
       <line x1={padL} x2={padL + W} y1={sy(hT)} y2={sy(hT)} stroke="#c2410c" strokeWidth="1" strokeDasharray="6 3" />
-      <text x={padL + 4} y={sy(hT) - 3} fontSize="8" fontFamily="Segoe UI" fill="#c2410c">2: h_т = {hT.toFixed(0)} Па</text>
+      <text x={padL + W - 2} y={sy(hT) - 3} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#c2410c">2: h_т = {hT.toFixed(0)} Па</text>
 
       {/* Граница критической депрессии h_кр (нисходящий, при наличии параллели) */}
       {!ascending && hKr !== undefined && hKr > 0 && (
-        <line x1={padL} x2={padL + W} y1={sy(hKr)} y2={sy(hKr)} stroke="#7c3aed" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.7" />
+        <>
+          <line x1={padL} x2={padL + W} y1={sy(hKr)} y2={sy(hKr)} stroke="#7c3aed" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.7" />
+          <text x={padL + W - 2} y={sy(hKr) + 9} textAnchor="end" fontSize="8" fontFamily="Segoe UI" fill="#7c3aed">
+            h_кр = {hKr.toFixed(0)} Па
+          </text>
+        </>
       )}
 
       {/* Точка A — до пожара (общая) */}
