@@ -5850,6 +5850,7 @@ export default function CadPage() {
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "fireload", label: "Пож.нагрузка" },
+                { id: "airdemand", label: "Расход воздуха" },
                 { id: "coords", label: "Координаты" },
 
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
@@ -7511,7 +7512,7 @@ export default function CadPage() {
             })()}
 
             {/* ═══ ВКЛАДКИ ВЕТВИ (Топология / Вентилятор / Трубы: вода / Конвейер) ══ */}
-            {(["topology","fan","waterpipes","conveyor","fireload","params","bulkhead"].includes(activeSide)) && !selectedNode && selectedBranch && (
+            {(["topology","fan","waterpipes","conveyor","fireload","params","bulkhead","airdemand"].includes(activeSide)) && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}
@@ -7546,6 +7547,7 @@ export default function CadPage() {
                 onOpenTypesLibrary={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
                 ventSections={ventSections}
                 onOpenSectionsLibrary={() => setShowVentSections(true)}
+                ventNorms={ventNorms}
                 bulkheadSymTypeId={(() => {
                   const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   return bkSym?.typeId;

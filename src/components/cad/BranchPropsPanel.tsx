@@ -6,7 +6,11 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
-import { type VentSection } from "@/lib/ventSections";
+import {
+  type VentSection, type VentNorms, type FaceType,
+  DEFAULT_VENT_NORMS, FACE_TYPE_OPTIONS, simultaneityFactor,
+} from "@/lib/ventSections";
+import { calcFaceDemand, FACTOR_LABEL } from "@/lib/airDemand";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
@@ -46,6 +50,8 @@ interface BranchPropsPanelProps {
   ventSections?: VentSection[];
   /** Открыть справочник участков рудника */
   onOpenSectionsLibrary?: () => void;
+  /** Нормы расхода воздуха (ФНиП № 505) */
+  ventNorms?: VentNorms;
   /** Открыть справочник оборудования на вкладке типов выработок */
   onOpenTypesLibrary?: () => void;
   /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
@@ -70,6 +76,7 @@ interface BranchPropsPanelProps {
 
 const INNER_TABS = [
   "Топология", "Вентилятор", "Трубы: вода", "Конвейер", "Пож.нагрузка", "Перемычка",
+  "Расход воздуха",
 ] as const;
 type InnerTab = typeof INNER_TABS[number];
 
@@ -86,7 +93,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -99,6 +106,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
     conveyor: "Конвейер",
     fireload: "Пож.нагрузка",
     bulkhead: "Перемычка",
+    airdemand: "Расход воздуха",
   };
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
@@ -2213,6 +2221,235 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   </div>
                 );
               })()}
+            </div>
+          );
+        })()}
+
+        {/* ═══ КАРТОЧКА ЗАБОЯ: расчёт количества воздуха ═══════════════════
+            ФНиП № 505 п.155 — позабойный расчёт. Потребность считается по
+            каждому фактору отдельно, в зачёт идёт максимум. */}
+        {innerTab === "Расход воздуха" && (() => {
+          const faceType = (branch.ventFaceType ?? "none") as FaceType;
+          const isNone = faceType === "none";
+          const section = ventSections.find(s => s.id === (branch.ventSectionId ?? "")) ?? null;
+          const d = calcFaceDemand(branch, ventNorms, section);
+
+          // Подсказка расчётного значения для полей «взять из норм»
+          const ph = (v: number) => `${v}`;
+
+          const FactorRow = ({ label, value, active, hint }: {
+            label: string; value: number; active: boolean; hint?: string;
+          }) => (
+            <div className="flex items-center px-1 py-0.5"
+              style={{
+                borderBottom: "1px solid #ebebeb",
+                background: active ? "#eff6ff" : undefined,
+              }}>
+              <span className="text-[11px] flex-shrink-0"
+                style={{ width: 128, color: active ? "#1d4ed8" : "#4b5563", fontWeight: active ? 600 : 400 }}>
+                {label}
+              </span>
+              <span className="text-[11px] text-right flex-1 tabular-nums"
+                style={{ color: active ? "#1d4ed8" : "#374151", fontWeight: active ? 700 : 400 }}>
+                {value > 0 ? value.toFixed(2) : "—"}
+              </span>
+              <span className="text-[10px] text-gray-400 flex-shrink-0" style={{ width: 34, textAlign: "right" }}>
+                м³/с
+              </span>
+              {hint && <span className="text-[9px] text-gray-400 pl-1 flex-shrink-0" title={hint}>ⓘ</span>}
+            </div>
+          );
+
+          return (
+            <div>
+              <SectionHeader title="Забой" />
+
+              <InlineLabel label="Тип забоя">
+                <SelectField
+                  value={faceType}
+                  onChange={(v) => onUpdate({ ventFaceType: v })}
+                  options={FACE_TYPE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                />
+              </InlineLabel>
+
+              {isNone ? (
+                <div className="px-2 py-2 text-[10px] text-gray-500 leading-snug">
+                  Укажите тип забоя — выработка попадёт в расчёт количества
+                  воздуха. Потребность считается по людям, газам взрывных работ,
+                  дизельной технике и минимальной скорости; в зачёт идёт
+                  наибольшее из значений (ФНиП № 505, п. 155).
+                </div>
+              ) : (<>
+                <InlineLabel label="Наименование">
+                  <EditInput value={branch.ventDescription ?? ""}
+                    onChange={(v) => onUpdate({ ventDescription: v })} />
+                </InlineLabel>
+                <InlineLabel label="Участок">
+                  <select
+                    value={branch.ventSectionId ?? ""}
+                    onChange={(e) => onUpdate({ ventSectionId: e.target.value })}
+                    className="w-full text-[11px] px-1"
+                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                    <option value="">— не задан —</option>
+                    {ventSections.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.number ? `${s.number}. ` : ""}{s.name || "Без названия"}
+                      </option>
+                    ))}
+                  </select>
+                </InlineLabel>
+                <InlineLabel label="Резервный забой">
+                  <CheckField checked={branch.ventReserve ?? false}
+                    onChange={(v) => onUpdate({ ventReserve: v })} />
+                </InlineLabel>
+
+                {/* ── По людям ── */}
+                <SectionHeader title="По людям" />
+                <InlineLabel label="Людей в смену, чел">
+                  <EditInput type="number" step="1"
+                    value={branch.ventPeopleCount || ""}
+                    onChange={(v) => onUpdate({ ventPeopleCount: Math.max(0, Math.round(parseFloat(v) || 0)) })} />
+                </InlineLabel>
+                <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+                  Норма {ventNorms.airPerPerson} м³/мин на человека, по максимальному
+                  числу одновременно работающих.
+                </div>
+
+                {/* ── Взрывные работы ── */}
+                <SectionHeader title="Взрывные работы" />
+                <InlineLabel label="ВВ по углю, кг">
+                  <EditInput type="number" step="0.1"
+                    value={branch.ventBlastMassCoal || ""}
+                    onChange={(v) => onUpdate({ ventBlastMassCoal: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="ВВ по породе, кг">
+                  <EditInput type="number" step="0.1"
+                    value={branch.ventBlastMassRock || ""}
+                    onChange={(v) => onUpdate({ ventBlastMassRock: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="Время провет., мин">
+                  <EditInput type="number" step="1"
+                    value={branch.ventBlastTime || ""}
+                    placeholder={ph(ventNorms.blastVentTime)}
+                    onChange={(v) => onUpdate({ ventBlastTime: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="Объём выраб., м³">
+                  <EditInput type="number" step="1"
+                    value={branch.ventBlastVolume || ""}
+                    placeholder={(branch.area * branch.length).toFixed(0)}
+                    onChange={(v) => onUpdate({ ventBlastVolume: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="Коэф. обводнён.">
+                  <EditInput type="number" step="0.05"
+                    value={branch.ventBlastWatering || ""}
+                    placeholder={ph(ventNorms.wateringFactor)}
+                    onChange={(v) => onUpdate({ ventBlastWatering: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+                  Газовыделение: {ventNorms.gasPerKgCoal} л/кг по углю,
+                  {" "}{ventNorms.gasPerKgRock} л/кг по породе. Пустые поля —
+                  значения из справочника норм.
+                </div>
+
+                {/* ── Дизельное оборудование ── */}
+                <SectionHeader title="Дизельное оборудование" />
+                <InlineLabel label="Число машин">
+                  <EditInput type="number" step="1"
+                    value={branch.ventDieselCount || ""}
+                    onChange={(v) => {
+                      const n = Math.max(0, Math.round(parseFloat(v) || 0));
+                      onUpdate({ ventDieselCount: n });
+                    }} />
+                </InlineLabel>
+                <InlineLabel label="Мощность Σ, кВт">
+                  <EditInput type="number" step="1"
+                    value={branch.ventDieselPower || ""}
+                    onChange={(v) => onUpdate({ ventDieselPower: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="Норма, м³/мин·кВт">
+                  <EditInput type="number" step="0.1"
+                    value={branch.ventDieselNorm || ""}
+                    placeholder={ph(ventNorms.airPerKwDiesel)}
+                    onChange={(v) => onUpdate({ ventDieselNorm: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="Коэф. одноврем.">
+                  <EditInput type="number" step="0.05"
+                    value={branch.ventDieselSimult || ""}
+                    placeholder={ph(simultaneityFactor(branch.ventDieselCount ?? 0, ventNorms))}
+                    onChange={(v) => onUpdate({ ventDieselSimult: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+                  Коэффициент одновременности подставляется по числу машин;
+                  можно задать своё значение.
+                </div>
+
+                {/* ── Коэффициенты ── */}
+                <SectionHeader title="Коэффициенты" />
+                <InlineLabel label="Коэф. запаса">
+                  <EditInput type="number" step="0.05"
+                    value={branch.ventReserveFactor || ""}
+                    placeholder={ph(d.reserveFactor)}
+                    onChange={(v) => onUpdate({ ventReserveFactor: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <InlineLabel label="Коэф. утечек">
+                  <EditInput type="number" step="0.05"
+                    value={branch.ventLeakFactor || ""}
+                    placeholder={ph(d.leakFactor)}
+                    onChange={(v) => onUpdate({ ventLeakFactor: Math.max(0, parseFloat(v) || 0) })} />
+                </InlineLabel>
+                <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+                  Пусто — берётся из участка, а если там не задано — из норм.
+                </div>
+
+                {/* ── Результат ── */}
+                <SectionHeader title="Потребность по факторам" />
+                <FactorRow label="По людям"          value={d.byPeople} active={d.factor === "people"} />
+                <FactorRow label="По газам ВР"       value={d.byBlast}  active={d.factor === "blast"} />
+                <FactorRow label="По дизелю"         value={d.byDiesel} active={d.factor === "diesel"} />
+                <FactorRow label="По мин. скорости"  value={d.byVMin}   active={d.factor === "vmin"} />
+
+                {d.formula && (
+                  <div className="px-2 py-1 text-[9px] text-gray-500 leading-snug"
+                    style={{ background: "#f8fafc", borderBottom: "1px solid #ebebeb" }}>
+                    Определяющий: {FACTOR_LABEL[d.factor]} = {d.formula}
+                  </div>
+                )}
+
+                <InlineLabel label="Расчётная, м³/с">
+                  <ComputedInput value={d.base > 0 ? d.base.toFixed(2) : "—"} />
+                </InlineLabel>
+                <InlineLabel label="С коэффициентами">
+                  <div className="w-full text-[11px] text-right px-1 font-bold tabular-nums"
+                    style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px", color: "#0f172a" }}>
+                    {d.total > 0 ? `${d.total.toFixed(2)} м³/с` : "—"}
+                  </div>
+                </InlineLabel>
+                <InlineLabel label="Фактически, м³/с">
+                  <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
+                    style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+                      color: d.flowOk ? "#15803d" : "#dc2626" }}>
+                    {d.actualFlow.toFixed(2)}
+                  </div>
+                </InlineLabel>
+                <InlineLabel label="Скорость, м/с">
+                  <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
+                    style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+                      color: d.velocityOk ? "#15803d" : "#dc2626" }}
+                    title={`Допустимо: ${d.vMin}–${d.vMax} м/с`}>
+                    {d.actualVelocity.toFixed(2)}
+                  </div>
+                </InlineLabel>
+
+                <div className="px-2 py-1.5 text-[11px] font-semibold leading-snug"
+                  style={{ color: d.verdict === "Обеспечено" ? "#15803d" : "#b91c1c" }}>
+                  {d.verdict}
+                  {d.recommendation && (
+                    <div className="text-[9px] font-normal text-gray-500 pt-0.5">
+                      {d.recommendation}
+                    </div>
+                  )}
+                </div>
+              </>)}
             </div>
           );
         })()}

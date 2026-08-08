@@ -110,12 +110,15 @@ export function EditInput({
   type = "text",
   step,
   readOnly,
+  placeholder,
 }: {
   value: string | number;
   onChange?: (v: string) => void;
   type?: string;
   step?: string;
   readOnly?: boolean;
+  /** Подсказка в пустом поле — например, значение «по умолчанию из норм» */
+  placeholder?: string;
 }) {
   return (
     <input
@@ -123,6 +126,7 @@ export function EditInput({
       step={step}
       value={value}
       readOnly={readOnly}
+      placeholder={placeholder}
       onChange={(e) => onChange?.(e.target.value)}
       className="w-full text-[11px] text-right px-1 cad-edit-input"
       style={{
