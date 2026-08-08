@@ -12,6 +12,7 @@ import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberD
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
+import WaterFireCheckDialog from "@/components/cad/WaterFireCheckDialog";
 import VdsDialog from "@/components/cad/VdsDialog";
 import LicenseDialog from "@/components/LicenseDialog";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
@@ -97,6 +98,9 @@ export interface CadToolDialogsProps {
   // Устойчивость при пожаре
   showFireStability: boolean;
   setShowFireStability: (v: boolean) => void;
+  // Проверка пожарно-оросительного трубопровода (ППЗ)
+  showWaterCheck: boolean;
+  setShowWaterCheck: (v: boolean) => void;
   // ВДС (воздушно-депрессионная съёмка)
   showVds: boolean;
   setShowVds: (v: boolean) => void;
@@ -255,6 +259,16 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           solved={!!p.solveResult}
           computeReversalFacts={p.computeFireStabilityFacts}
           onClose={() => p.setShowFireStability(false)}
+        />
+      )}
+
+      {/* ── Проверка ППЗ (Акт проверки пожарного водопровода) ───────────── */}
+      {p.showWaterCheck && (
+        <WaterFireCheckDialog
+          branches={p.branches}
+          nodes={p.nodes}
+          projectName={p.projectFileName.replace(/\.vproj$/, "")}
+          onClose={() => p.setShowWaterCheck(false)}
         />
       )}
 

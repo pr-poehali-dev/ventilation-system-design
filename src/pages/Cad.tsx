@@ -1168,6 +1168,8 @@ export default function CadPage() {
   const [showSolverParams, setShowSolverParams] = useState(false);
   // Диалог «Устойчивость при пожаре» (Акт устойчивости)
   const [showFireStability, setShowFireStability] = useState(false);
+  // Диалог «Проверка ППЗ» (пожарно-оросительный трубопровод)
+  const [showWaterCheck, setShowWaterCheck] = useState(false);
   // Диалог «ВДС» (воздушно-депрессионная съёмка)
   const [showVds, setShowVds] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
@@ -5721,6 +5723,13 @@ export default function CadPage() {
               sublabel="при пожаре"
               title="Проверка устойчивости вентиляционных режимов при пожаре и формирование Акта устойчивости"
               onClick={() => setShowFireStability(true)}
+            />
+            <RibbonBigBtn
+              icon="Droplets"
+              label="Проверка"
+              sublabel="ППЗ"
+              title="Пакетная проверка пожарно-оросительного трубопровода: напор и расход воды в каждой точке водоразбора, поиск худших точек сети"
+              onClick={() => setShowWaterCheck(true)}
             />
             <RibbonBigBtn
               icon="Gauge"
@@ -11852,6 +11861,8 @@ export default function CadPage() {
       setDepressogramManualBranches={setDepressogramManualBranches}
       showFireStability={showFireStability}
       setShowFireStability={setShowFireStability}
+      showWaterCheck={showWaterCheck}
+      setShowWaterCheck={setShowWaterCheck}
       showVds={showVds}
       setShowVds={setShowVds}
       solveResult={solveResult}
