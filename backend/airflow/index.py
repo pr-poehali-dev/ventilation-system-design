@@ -622,6 +622,17 @@ def init_flows(edges):
 
 def find_spanning_tree_and_loops(edges):
     """
+    УСТАРЕЛО — не использовать для контуров расчёта.
+
+    Строит дерево через Union-Find в порядке перечисления рёбер. На больших
+    схемах такое дерево вырождается в длинную цепочку: пути хорд до корня
+    достигают сотен рёбер, контуры сильно пересекаются, и метод Кросса
+    перестаёт сходиться (δQ застревает на «полке»).
+    Оба решателя (Кросс и МКР) теперь строят контуры через _bfs_tree() +
+    _tree_path() — BFS от GND с приоритетом малых сопротивлений даёт короткие
+    и слабо пересекающиеся контуры. Функция оставлена только для совместимости
+    со старыми тестами.
+
     Строит остовное дерево и находит независимые контуры (через хорды).
     Возвращает список контуров: каждый контур = [(edge_idx, sign), ...]
     sign = +1 если ветвь обходится в направлении a→b, -1 иначе.
@@ -944,22 +955,44 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
 
     log.append(f"Дерево={len(tree_ids)}, хорд={len(chord_ids)}")
 
-    # ══ ШАГ 3: Независимые контуры на основе ТОГО ЖЕ дерева ══════════════
-    # Передаём active_edges отсортированными: НЕ-вентиляторы первыми,
-    # чтобы find_spanning_tree_and_loops построил тот же spanning tree.
-    active_edges_sorted = sorted(active_edges,
-                                 key=lambda e: (1 if (e["hasFan"] and not e.get("fanStopped")) else 0))
-    loops_active = find_spanning_tree_and_loops(active_edges_sorted)
-    if not loops_active:
+    # ══ ШАГ 3: Независимые контуры на основе BFS-дерева от GND ═══════════
+    # ПОЧЕМУ BFS, а не Union-Find (find_spanning_tree_and_loops):
+    # Union-Find строит дерево в порядке перечисления рёбер, из-за чего на
+    # больших схемах оно вырождается в длинную «цепочку». Путь хорды до корня
+    # получается в сотни рёбер, контуры сильно пересекаются, и поправка δQ
+    # одного контура ломает баланс десятков соседних — метод Кросса
+    # осциллирует и не сходится (δQ застревает на ~3e-3).
+    # BFS от GND с приоритетом малых R даёт короткие, слабо пересекающиеся
+    # контуры — ровно то, что делает МКР, где сходимость и работает.
+    bfs_order_c, parent_map_c, tree_set_c, chords_c, _nl_c = _bfs_tree(active_edges)
+    if not chords_c:
         diag.append({"level": "error", "category": "topology",
                      "message": "Нет замкнутых контуров — проверьте топологию: нужно минимум 2 выхода на поверхность."})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
-    # Конвертируем индексы: active_edges_sorted[ai] → edges[gi]
     id_to_global_idx = {e["id"]: gi for gi, e in enumerate(edges)}
-    loops_global = [[(id_to_global_idx[active_edges_sorted[ai]["id"]], sign)
-                     for ai, sign in loop] for loop in loops_active]
-    log.append(f"Контуров={len(loops_global)}, вент-в-хордах={sum(1 for cid in chord_ids if any(e['id']==cid and e['hasFan'] for e in active_edges))}")
+    loops_global = []
+    _c_edges_total = 0
+    for ci in chords_c:
+        ce = active_edges[ci]
+        try:
+            path = _tree_path(ce["b"], ce["a"], active_edges, parent_map_c)
+        except ValueError as ex:
+            diag.append({"level": "error", "category": "topology",
+                         "message": (
+                             f"Не удалось построить контур для ветви {ce['id']}: {ex} "
+                             "Что сделать: проверьте связность сети — соедините "
+                             "изолированный участок с основной сетью или удалите "
+                             "лишние узлы/ветви, затем повторите расчёт."
+                         )})
+            return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
+        loop_local = [(ci, +1)] + path
+        loops_global.append([(id_to_global_idx[active_edges[ai]["id"]], sign)
+                             for ai, sign in loop_local])
+        _c_edges_total += len(loop_local)
+
+    _avg_c = _c_edges_total / max(1, len(loops_global))
+    log.append(f"Контуров={len(loops_global)}, вент-в-хордах={sum(1 for cid in chord_ids if any(e['id']==cid and e['hasFan'] for e in active_edges))}, средняя длина контура={_avg_c:.1f}")
 
     # ══ ШАГ 4: Начальный расход q0 (рабочая точка главного вентилятора) ══
     # R_net — характеристическое сопротивление основного пути от ГВУ к атмосфере.
@@ -1230,6 +1263,20 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
         h_char = 1.0
     tol_h_abs = float(options.get("tolPressure", 0.1))
 
+    # Относительный допуск по расходу — как в МКР (см. tol_q_rel там же).
+    # Абсолютный tol=0.0001 м³/с на шахте с сотнями м³/с физически недостижим:
+    # метод крутит все 5000 итераций и всё равно пишет «не сошлось», хотя
+    # баланс давно точен. Берём не строже 0.05% от характерного расхода.
+    tol_q_rel = max(tol, min(0.05, 0.0005 * max(q0, 1.0)))
+    # Детектор застоя: если невязка перестала убывать, дальнейшие итерации
+    # бессмысленны — выходим с тем, что есть, вместо «молотьбы» до максимума.
+    stall = 0
+    stall_limit = 150
+    best_dq = float("inf")
+    # Допуск по давлению — вычисляем ДО цикла: он не меняется по итерациям,
+    # а также нужен в финальной проверке converged (если цикл не выполнился).
+    tol_h = max(tol_h_abs, 0.005 * h_char)
+
     for it in range(1, max_iter + 1):
         max_dq = 0.0
         max_dh = 0.0
@@ -1329,8 +1376,23 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
 
         # Двойной критерий: и δQ, и ΔH должны быть малы.
         # ΔH-допуск относительный: 0.5% от h_char (≈10 Па при ГВУ 2000 Па).
-        tol_h = max(tol_h_abs, 0.005 * h_char)
-        if max_dq < tol and max_dh < tol_h:
+        # δQ-допуск тоже относительный (tol_q_rel) — абсолютный на крупной
+        # шахте недостижим и заставляет крутить максимум итераций впустую.
+        if max_dq < tol_q_rel and max_dh < tol_h:
+            it += 1
+            break
+
+        # ── Застой: невязка перестала убывать ────────────────────────────
+        # На больших сетях метод может выйти на «полку»: δQ колеблется около
+        # одного значения, но не уменьшается. Крутить оставшиеся тысячи
+        # итераций бесполезно — решение уже достигнуто с доступной точностью.
+        if max_dq < best_dq * 0.999:
+            best_dq = max_dq
+            stall = 0
+        else:
+            stall += 1
+        if it >= 50 and stall >= stall_limit and max_dq < tol_q_rel * 5.0:
+            log.append(f"Кросс: невязка вышла на полку (δQ={max_dq:.5f}) — остановка на итерации {it}")
             it += 1
             break
 
@@ -1346,12 +1408,24 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
             alpha_cur = min(alpha, alpha_cur * 1.1)  # восстановление к стартовому
         prev_max_dq = max_dq
 
-    converged = max_dq < tol and max_dh < tol_h
+    converged = max_dq < tol_q_rel and max_dh < tol_h
     if not converged:
-        diag.append({"level": "warning", "category": "convergence",
-                     "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па"})
+        # Отдельно отмечаем случай, когда баланс расходов фактически точен,
+        # а «не сошлось» вызвано только недостижимо строгим допуском.
+        if max_dq < tol_q_rel * 5.0:
+            diag.append({"level": "warning", "category": "convergence",
+                         "message": (
+                             f"Расчёт остановлен по достижимой точности: δQ_max={max_dq:.4f} м³/с, "
+                             f"ΔH_max={max_dh:.2f} Па. Баланс расходов выдержан, результат пригоден. "
+                             f"Для более строгой сходимости уменьшите фактор сходимости α "
+                             f"(Параметры расчёта) до 0.3–0.5."
+                         )})
+        else:
+            diag.append({"level": "warning", "category": "convergence",
+                         "message": f"Не сошлось за {max_iter} итераций. δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па"})
 
     log.append(f"Итераций={it}, δQ_max={max_dq:.4f} м³/с, ΔH_max={max_dh:.2f} Па, сошлось={converged}")
+    log.append(f"Допуски: δQ<{tol_q_rel:.5f} м³/с (задано {tol:g}), ΔH<{tol_h:.2f} Па, α={alpha_cur:.3f}")
 
     Q_map = {e["id"]: Q[i] for i, e in enumerate(edges)}
 

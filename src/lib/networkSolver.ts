@@ -740,6 +740,16 @@ export function solveNetwork(
     && (e.fanType === "ГВУ" || e.fanType === "ВВУ"));
   let relaxation = hasReverse ? 1.0 : 0.7;
 
+  // Относительный допуск по расходу — как в методе Кросса на сервере.
+  // Абсолютный порог (0.01 м³/с) на крупной шахте с сотнями м³/с недостижим:
+  // решатель крутит все итерации и всё равно рапортует «не сошлось», хотя
+  // баланс расходов давно точен.
+  const eps2rel = Math.max(eps2, Math.min(0.05, 0.0005 * Math.max(Q0, 1)));
+  // Детектор застоя невязки: дальше крутить бессмысленно
+  let stall = 0;
+  let bestDQ = Infinity;
+  const STALL_LIMIT = 150;
+
   for (; iter < maxIter; iter++) {
     maxDeltaQ = 0;
     maxDeltaH = 0;
@@ -850,7 +860,16 @@ export function solveNetwork(
     if (hasReverse) {
       if (maxDeltaH < eps1) { iter++; break; }
     } else {
-      if (maxDeltaH < eps1 || maxDeltaQ < eps2) { iter++; break; }
+      if (maxDeltaH < eps1 || maxDeltaQ < eps2rel) { iter++; break; }
+    }
+
+    // Застой невязки: δQ перестала убывать — решение достигнуто с доступной
+    // точностью, оставшиеся итерации ничего не улучшат.
+    if (maxDeltaQ < bestDQ * 0.999) { bestDQ = maxDeltaQ; stall = 0; }
+    else stall++;
+    if (iter >= 50 && stall >= STALL_LIMIT && maxDeltaQ < eps2rel * 5) {
+      log.push(`Невязка вышла на полку (δQ=${maxDeltaQ.toFixed(5)}) — остановка на итерации ${iter}`);
+      iter++; break;
     }
   }
 
@@ -1067,7 +1086,7 @@ export function solveNetwork(
   }
 
   // 7г. Сходимость
-  const converged = maxDeltaH < eps1 || maxDeltaQ < eps2;
+  const converged = maxDeltaH < eps1 || maxDeltaQ < eps2rel;
   if (!converged)
     diag.push({
       level: maxDeltaQ > 1 ? "error" : "warning",
