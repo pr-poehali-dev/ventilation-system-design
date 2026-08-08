@@ -2272,6 +2272,28 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 />
               </InlineLabel>
 
+              {/* Загрязнение воздуха — свойство самой выработки, не зависит
+                  от того, задан тип забоя или нет. Влияет на окраску стрелок
+                  направления воздуха ниже по потоку. */}
+              <label className="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-blue-50 transition-colors"
+                style={{ borderBottom: "1px solid #ebebeb" }}>
+                <input
+                  type="checkbox"
+                  checked={branch.pollutesAir ?? false}
+                  onChange={(e) => onUpdate({ pollutesAir: e.target.checked })}
+                  className="w-3.5 h-3.5 rounded"
+                  style={{ accentColor: "#2563eb" }}
+                />
+                <span className="text-[11px] text-gray-700 leading-tight">Загрязняет воздух</span>
+              </label>
+              {(branch.pollutesAir ?? false) && (
+                <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
+                  style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
+                  Стрелки направления воздуха в ветвях ниже по потоку от этой ветви
+                  будут отображаться синим цветом.
+                </div>
+              )}
+
               {isNone ? (
                 <div className="px-2 py-2 text-[10px] text-gray-500 leading-snug">
                   Укажите тип забоя — выработка попадёт в расчёт количества
