@@ -23,6 +23,7 @@ import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import { withWaterPumps } from "@/lib/waterHydraulics";
 import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
+import VentSectionsPanel from "@/components/cad/VentSectionsPanel";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
@@ -4461,6 +4462,7 @@ export default function CadPage() {
             <RibbonBigBtn icon="Wind" label="Вентиляторы" sublabel="" onClick={() => { setEquipRefTab("fans"); setShowEquipRef(true); }} />
             <RibbonBigBtn icon="Layers" label="Типы выработок" sublabel="" onClick={() => { setEquipRefTab("types"); setShowEquipRef(true); }} />
             <RibbonBigBtn icon="Square" label="Перемычки" sublabel="" onClick={() => { setEquipRefTab("bulkheads"); setShowEquipRef(true); }} />
+            <RibbonBigBtn icon="Calculator" label="Нормы" sublabel="расхода воздуха" onClick={() => { setEquipRefTab("airnorms"); setShowEquipRef(true); }} />
           </div>
         </RibbonGroup>
         <RibbonGroup label="Аварии">
@@ -5889,7 +5891,7 @@ export default function CadPage() {
               </button>
               <select
                 className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white"
-                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "velocityV" ? "velocityV" : activeSide === "section" ? "section" : activeSide === "check" ? "check" : "props"}
+                value={activeSide === "horizons" ? "horizons" : activeSide === "search" ? "search" : activeSide === "positions" ? "positions" : activeSide === "flowQ" ? "flowQ" : activeSide === "velocityV" ? "velocityV" : activeSide === "section" ? "section" : activeSide === "ventsections" ? "ventsections" : activeSide === "check" ? "check" : "props"}
                 onChange={(e) => {
                   if (e.target.value === "horizons") setActiveSide("horizons");
                   else if (e.target.value === "search") setActiveSide("search");
@@ -5898,6 +5900,7 @@ export default function CadPage() {
                   else if (e.target.value === "velocityV") { setActiveSide("velocityV"); setColorMode("velocityV"); }
                   else if (e.target.value === "section") { setActiveSide("section"); setColorMode("section"); }
                   else if (e.target.value === "check") setActiveSide("check");
+                  else if (e.target.value === "ventsections") setActiveSide("ventsections");
                   else { setActiveSide("general"); }
                 }}>
                 <option value="props">Свойства</option>
@@ -5907,6 +5910,7 @@ export default function CadPage() {
                 <option value="flowQ">Расход воздуха</option>
                 <option value="velocityV">Скорость воздуха</option>
                 <option value="section">Форма сечения</option>
+                <option value="ventsections">Участки</option>
                 {/* Разделитель: «Проверка» — отдельный по смыслу раздел (аудит схемы),
                     поэтому визуально отделяем его от разделов отображения. */}
                 <option disabled style={{ color: "#d1d5db" }}>──────────</option>
@@ -5935,6 +5939,7 @@ export default function CadPage() {
               {activeSide === "flowQ" && "Расход воздуха"}
               {activeSide === "rescue" && "Расчёт горноспасателей"}
               {activeSide === "check" && "Проверка схемы"}
+              {activeSide === "ventsections" && "Участки рудника"}
             </span>
             <div className="flex items-center gap-1">
               {activeSide === "params" && selectedNode && (
@@ -9266,6 +9271,23 @@ export default function CadPage() {
 
             {/* ═══ ВКЛАДКА: РАСХОД ВОЗДУХА ════════════════════════════ */}
             {/* ═══ ВКЛАДКА: ФОРМА СЕЧЕНИЯ ═════════════════════════════ */}
+            {/* ═══ УЧАСТКИ РУДНИКА (расчёт количества воздуха) ═════════ */}
+            {activeSide === "ventsections" && (
+              <VentSectionsPanel
+                sections={ventSections}
+                onChange={setVentSections}
+                branches={branches}
+                selectedBranchIds={Array.from(selectedBranchIds)}
+                onSelectBranches={(ids) => {
+                  setSelectedNodeId(null);
+                  setSelectedNodeIds(new Set());
+                  setSelectedBranchId(ids[0] ?? null);
+                  setSelectedBranchIds(new Set(ids));
+                }}
+                onOpenNorms={() => { setShowEquipRef(true); setEquipRefTab("airnorms"); }}
+              />
+            )}
+
             {activeSide === "section" && (() => {
               // Считаем ветви каждой формы по ВИДИМЫМ горизонтам — легенда должна
               // отражать то, что реально видно на схеме.

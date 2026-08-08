@@ -70,7 +70,7 @@ export interface SchemaSymbol {
   pumpParallel?: number;
 }
 
-export type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "fireload" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "velocityV" | "section" | "compare" | "bulkhead";
+export type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "fireload" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "velocityV" | "section" | "ventsections" | "compare" | "bulkhead";
 
 export type CompareStatus = "added" | "removed" | "changed" | "unchanged";
 

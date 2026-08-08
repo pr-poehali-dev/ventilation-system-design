@@ -1744,7 +1744,7 @@ function AirNormsSection({ norms, onChange }: {
   );
 
   return (
-    <div className="flex-1 overflow-auto px-4 py-2">
+    <div className="px-4 py-2">
       <div className="text-[10px] text-gray-500 leading-snug pb-1">
         Нормы применяются при расчёте количества воздуха. Значения по умолчанию —
         по ФНиП № 505 и практике проектирования рудников. Предприятие может
