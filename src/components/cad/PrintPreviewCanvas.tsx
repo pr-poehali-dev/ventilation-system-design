@@ -45,7 +45,8 @@ interface Props {
   textBlocks?: TextBlock[];
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
-  colorMode?: "none" | "flowQ" | "velocityV" | "section";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
+  sectionColors?: Map<string, string>;
   posInnerColors?: Map<string, string>;
   posOuterColors?: Map<string, string>;
   positions?: Position[];
@@ -82,6 +83,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   infoConfig = null,
   unitsConfig = DEFAULT_UNITS_CONFIG,
   colorMode = "none",
+  sectionColors,
   posInnerColors,
   posOuterColors,
   positions = [],
@@ -248,7 +250,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         thinLines, colorByHorizon,
         showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        colorMode, posInnerColors, posOuterColors,
+        colorMode, sectionColors, posInnerColors, posOuterColors,
         printMode: true,
         fixedObjectScale,
         xyScale,
@@ -261,7 +263,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
       is3D, zScale, width, height, superSample,
       branchWidth, branchBorder, thinLines, colorByHorizon,
       showFlowArrows, flowDisplay, infoConfig, unitsConfig,
-      colorMode, posInnerColors, posOuterColors]);
+      colorMode, sectionColors, posInnerColors, posOuterColors]);
 
   useImperativeHandle(ref, () => ({
     getFitView: () => ({ scale: activeView.scale, offsetX: activeView.offsetX, offsetY: activeView.offsetY }),

@@ -25,11 +25,15 @@ interface Props {
   onOpenNorms?: () => void;
   /** Открыть сводный расчёт количества воздуха */
   onOpenSummary?: () => void;
+  /** Включена ли заливка схемы по участкам */
+  colorFill?: boolean;
+  /** Переключить заливку схемы по участкам */
+  onToggleColorFill?: () => void;
 }
 
 export default function VentSectionsPanel({
   sections, onChange, branches, selectedBranchIds,
-  onSelectBranches, onOpenNorms, onOpenSummary,
+  onSelectBranches, onOpenNorms, onOpenSummary, colorFill, onToggleColorFill,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string>("");
 
@@ -115,6 +119,23 @@ export default function VentSectionsPanel({
           </button>
         )}
       </div>
+
+      {/* Заливка схемы по участкам */}
+      {onToggleColorFill && (
+        <div className="flex items-center gap-2 px-2 py-1.5 flex-shrink-0"
+          style={{ borderBottom: "1px solid #eef1f6" }}>
+          <button onClick={onToggleColorFill}
+            className="h-6 px-3 rounded text-[11px] font-semibold"
+            style={{
+              background: colorFill ? "#dc2626" : "#f3f4f6",
+              color: colorFill ? "white" : "#374151",
+              border: "1px solid " + (colorFill ? "#b91c1c" : "#d1d5db"),
+            }}>
+            {colorFill ? "Заливка ВКЛ" : "Заливка ВЫКЛ"}
+          </button>
+          <span className="text-[10px] text-gray-400">Окрасить схему по участкам</span>
+        </div>
+      )}
 
       {/* Сводка */}
       <div className="px-2 py-1 text-[10px] text-gray-500 flex-shrink-0"

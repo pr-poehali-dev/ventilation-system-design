@@ -30,7 +30,9 @@ export interface SvgExportOptions {
   colorByHorizon?: boolean;
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
-  colorMode?: "none" | "flowQ" | "velocityV" | "section";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
+  /** Цвета участков рудника: id ветви → цвет (для colorMode="ventsection") */
+  sectionColors?: Map<string, string>;
   flowColorMin?: number;
   flowColorMax?: number;
   flowColorHue?: "red" | "blue" | "green";
@@ -110,6 +112,11 @@ function getBranchColor(b: TopoBranch, opts: SvgExportOptions): string {
 
   if (colorMode === "section") {
     return SECTION_KIND_COLORS[sectionKind(b)];
+  }
+
+  // Заливка по участкам рудника: выработки вне участков остаются белыми.
+  if (colorMode === "ventsection") {
+    return opts.sectionColors?.get(b.id) ?? "#ffffff";
   }
 
   if (colorMode === "velocityV") {

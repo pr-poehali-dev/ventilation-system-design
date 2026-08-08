@@ -59,6 +59,7 @@ export interface CadToolDialogsProps {
   zScale: number;
   getSvgRef: React.MutableRefObject<(() => string) | null>;
   colorMode: PrintProps["colorMode"];
+  sectionColors?: PrintProps["sectionColors"];
   posColorInner: boolean;
   posColorOuter: boolean;
   positions: Position[];
@@ -167,6 +168,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           zScale={p.zScale}
           getSvgRaw={() => p.getSvgRef.current?.() ?? ""}
           colorMode={p.colorMode}
+          sectionColors={p.sectionColors}
           posInnerColors={p.posColorInner && p.positions.length > 0 ? (() => {
             const m = new Map<string, string>();
             p.positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));

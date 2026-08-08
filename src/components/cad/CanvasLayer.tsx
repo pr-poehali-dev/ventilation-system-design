@@ -72,7 +72,9 @@ interface CanvasLayerProps {
   xyScale?: number;
   transparentBg?: boolean;
   compareBranchColors?: Map<string, string>;
-  colorMode?: "none" | "flowQ" | "velocityV" | "section";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
+  /** Цвета участков рудника: id ветви → цвет (для colorMode="ventsection") */
+  sectionColors?: Map<string, string>;
   flowColorMin?: number;
   flowColorMax?: number;
   flowColorHue?: "red" | "blue" | "green";
@@ -221,6 +223,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         transparentBg: p.transparentBg,
         compareBranchColors: p.compareBranchColors,
         colorMode: p.colorMode,
+        sectionColors: p.sectionColors,
         flowColorMin: p.flowColorMin,
         flowColorMax: p.flowColorMax,
         flowColorHue: p.flowColorHue,
@@ -279,7 +282,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,
     props.transparentBg,
     props.compareBranchColors,
-    props.colorMode, props.flowColorMin, props.flowColorMax, props.flowColorHue,
+    props.colorMode, props.sectionColors, props.flowColorMin, props.flowColorMax, props.flowColorHue,
     props.velColorMin, props.velColorMax, props.velColorHue,
     props.posInnerColors,
     props.rescuePathNodeIds, props.rescueNodeLetters,

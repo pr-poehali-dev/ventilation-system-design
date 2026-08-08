@@ -231,7 +231,9 @@ interface Props {
   /** Режим выбора узла для горноспасателей */
   rescuePickMode?: string | null;
   /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
-  colorMode?: "none" | "flowQ" | "velocityV" | "section";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
+  /** Цвета участков рудника: id ветви → цвет (для colorMode="ventsection") */
+  sectionColors?: Map<string, string>;
   /** Минимальное значение шкалы расхода, м³/с */
   flowColorMin?: number;
   /** Максимальное значение шкалы расхода, м³/с */
@@ -310,6 +312,7 @@ export default function TopoCanvas(props: Props) {
     onRescueBranchPick,
     rescuePickMode,
     colorMode = "none",
+    sectionColors,
     flowColorMin = 0,
     flowColorMax = 75,
     flowColorHue = "red",
@@ -375,10 +378,12 @@ export default function TopoCanvas(props: Props) {
     if (colorMode === "flowQ") return flowQColorFn(Q, flowColorMin, flowColorMax, flowColorHue);
     if (colorMode === "velocityV") return flowQColorFn(b.velocity, velColorMin, velColorMax, velColorHue);
     if (colorMode === "section") return SECTION_KIND_COLORS[sectionKind(b)];
+    // Участки рудника: выработки вне участков остаются без заливки.
+    if (colorMode === "ventsection") return sectionColors?.get(b.id) ?? null;
     if (colorMode === "none") return null;
     if (Q > 0) return velocityColorFn(b.velocity);
     return null;
-  }, [posInnerColors, horizonMap, colorByHorizon, colorMode, flowColorMin, flowColorMax, flowColorHue, velColorMin, velColorMax, velColorHue]);
+  }, [posInnerColors, horizonMap, colorByHorizon, colorMode, sectionColors, flowColorMin, flowColorMax, flowColorHue, velColorMin, velColorMax, velColorHue]);
 
   // Видимые ветви: если горизонт привязан и скрыт — фильтруем
   const visibleBranches = useMemo(() => branches.filter((b) => {
@@ -2665,6 +2670,7 @@ export default function TopoCanvas(props: Props) {
           transparentBg={hasActivePrintLayer}
           compareBranchColors={compareBranchColors}
           colorMode={colorMode}
+          sectionColors={sectionColors}
           flowColorMin={flowColorMin}
           flowColorMax={flowColorMax}
           flowColorHue={flowColorHue}
@@ -3049,6 +3055,7 @@ export default function TopoCanvas(props: Props) {
             : colorMode === "flowQ" ? gradColor(Math.abs(Q), flowColorMin, flowColorMax, flowColorHue)
             : colorMode === "velocityV" ? gradColor(V, velColorMin, velColorMax, velColorHue)
             : colorMode === "section" ? SECTION_KIND_COLORS[sectionKind(b)]
+            : colorMode === "ventsection" ? (sectionColors?.get(b.id) ?? "#ffffff")
             : colorMode === "none" ? "#ffffff"
             : Q > 0 ? velocityColor(V)
             : "#ffffff";

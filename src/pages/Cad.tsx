@@ -1197,7 +1197,7 @@ export default function CadPage() {
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
   // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха, horizon = по цвету горизонта
-  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "velocityV" | "section" | "horizon">("none");
+  const [colorMode, setColorMode] = useState<"none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon">("none");
   // Настройки шкалы расхода (мин/макс, цвет)
   const [flowColorMin, setFlowColorMin] = useState(0);
   const [flowColorMax, setFlowColorMax] = useState(75);
@@ -1465,6 +1465,16 @@ export default function CadPage() {
   const [ventNorms, setVentNorms] = useState<VentNorms>(DEFAULT_VENT_NORMS);
   const [showVentSections, setShowVentSections] = useState(false);
   const [showAirDemand, setShowAirDemand] = useState(false);
+
+  // Цвета участков для заливки схемы: id ветви → цвет участка.
+  // Цвет хранится в справочнике участков, поэтому карту готовим здесь.
+  const ventSectionColors = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of ventSections) {
+      for (const bid of s.branchIds) m.set(bid, s.color);
+    }
+    return m;
+  }, [ventSections]);
 
   // Гидравлический расчёт водопроводной сети ППЗ (backend).
   // Объявлен здесь (а не выше вместе с waterNetwork state), т.к. использует schemaSymbols.
@@ -2504,7 +2514,7 @@ export default function CadPage() {
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
     if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); }
     // colorMode сохраняется явно — восстанавливаем точное значение
-    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "section" | "horizon");
+    if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon");
     else if (data.colorByHorizon) setColorMode("horizon");
     else setColorMode("none");
     if (data.posColorInner !== undefined) setPosColorInner(data.posColorInner as boolean);
@@ -9262,6 +9272,9 @@ export default function CadPage() {
                 }}
                 onOpenNorms={() => { setShowEquipRef(true); setEquipRefTab("airnorms"); }}
                 onOpenSummary={() => setShowAirDemand(true)}
+                colorFill={colorMode === "ventsection"}
+                onToggleColorFill={() =>
+                  setColorMode(colorMode === "ventsection" ? "none" : "ventsection")}
               />
             )}
 
@@ -9549,7 +9562,7 @@ export default function CadPage() {
             {/* ── Режим цветовой заливки ── */}
             <select
               value={colorMode}
-              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "velocityV" | "section" | "horizon")}
+              onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon")}
               className="h-6 text-[11px] px-1 rounded"
               style={{ border: "1px solid #d0d0d0", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
               title="Режим цветовой заливки ветвей">
@@ -9557,6 +9570,7 @@ export default function CadPage() {
               <option value="flowQ">Расход воздуха</option>
               <option value="velocityV">Скорость воздуха</option>
               <option value="section">Форма сечения</option>
+              <option value="ventsection">Участки рудника</option>
               <option value="horizon">Цвет горизонта</option>
             </select>
 
@@ -9925,6 +9939,7 @@ export default function CadPage() {
               onViewChange={setViewInfo}
               flowDisplay={flowDisplay}
               colorMode={colorMode === "horizon" ? "none" : colorMode}
+              sectionColors={ventSectionColors}
               flowColorMin={flowColorMin}
               flowColorMax={flowColorMax}
               flowColorHue={flowColorHue}
@@ -11875,6 +11890,7 @@ export default function CadPage() {
       zScale={zScale}
       getSvgRef={getSvgRef}
       colorMode={colorMode === "horizon" ? "none" : colorMode}
+      sectionColors={ventSectionColors}
       posColorInner={posColorInner}
       posColorOuter={posColorOuter}
       positions={positions}

@@ -121,7 +121,13 @@ export interface CanvasRenderOptions {
   /** Карта branchId → зона поражения взрывом {hazardLevel} */
   branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
   /** Режим цвета: none = по скорости, flowQ = по расходу */
-  colorMode?: "none" | "flowQ" | "velocityV" | "section";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
+  /**
+   * Цвета участков рудника: id ветви → цвет участка (для colorMode="ventsection").
+   * Карта готовится снаружи, т.к. цвет хранится в справочнике участков,
+   * а не на самой ветви.
+   */
+  sectionColors?: Map<string, string>;
   /** Нижний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
   flowColorMin?: number;
   /** Верхний предел шкалы заливки по расходу, м³/с (для colorMode="flowQ") */
@@ -413,7 +419,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, waterBranchResults, branchFireColors, branchExplosionColors,
-    colorMode = "none", flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
+    colorMode = "none", sectionColors, flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
     velColorMin = 0, velColorMax = 15, velColorHue = "blue",
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
@@ -608,6 +614,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : colorMode === "velocityV" ? flowQColor(V, velColorMin, velColorMax, velColorHue)
       // Заливка по форме сечения — фиксированный цвет на каждую форму.
       : colorMode === "section" ? SECTION_KIND_COLORS[sectionKind(b)]
+      // Заливка по участкам рудника. Выработки вне участков остаются белыми,
+      // чтобы «неразнесённые» сразу бросались в глаза.
+      : colorMode === "ventsection" ? (sectionColors?.get(b.id) ?? defaultBranchColor)
       : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
       : defaultBranchColor;

@@ -56,7 +56,9 @@ interface PrintDialogProps {
   unitsConfig?: UnitsConfig;
   zScale?: number;
   getSvgRaw?: () => string;
-  colorMode?: "none" | "flowQ" | "velocityV" | "section";
+  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
+  /** Цвета участков рудника: id ветви → цвет (для colorMode="ventsection") */
+  sectionColors?: Map<string, string>;
   posInnerColors?: Map<string, string>;
   posOuterColors?: Map<string, string>;
   positions?: Position[];
@@ -121,6 +123,7 @@ export default function PrintDialog({
   zScale = 1,
   getSvgRaw,
   colorMode = "none",
+  sectionColors,
   posInnerColors,
   posOuterColors,
   positions = [],
@@ -960,7 +963,7 @@ export default function PrintDialog({
         showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
         printMode: true, fixedObjectScale, xyScale,
-        colorMode, posInnerColors, posOuterColors,
+        colorMode, sectionColors, posInnerColors, posOuterColors,
       });
 
       if (schemaSymbols.length > 0) {
@@ -1015,7 +1018,7 @@ export default function PrintDialog({
         showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
         printMode: true, fixedObjectScale, xyScale,
-        colorMode, posInnerColors, posOuterColors,
+        colorMode, sectionColors, posInnerColors, posOuterColors,
       });
       ctx.restore();
       if (schemaSymbols.length > 0) {
@@ -1040,7 +1043,7 @@ export default function PrintDialog({
   }, [baseView, paper, workArea, marginLeft, marginTop, canvasSize,
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
-      colorMode, posInnerColors, posOuterColors, fixedObjectScale, xyScale,
+      colorMode, sectionColors, posInnerColors, posOuterColors, fixedObjectScale, xyScale,
       hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect,
       drawPositionsToCanvas]);
 
@@ -1155,7 +1158,7 @@ body{background:white;font-family:Arial,sans-serif}
           proj, viewState, zScale,
           is3D: baseView.isScene3D,
           branchWidth, branchBorder, thinLines, colorByHorizon,
-          infoConfig, unitsConfig, colorMode,
+          infoConfig, unitsConfig, colorMode, sectionColors,
           posInnerColors, posOuterColors,
           positions: showPositions ? positions : [],
           positionGostMm, scalePositionMin, scalePositionMax,
@@ -1211,7 +1214,7 @@ body{background:white;font-family:Arial,sans-serif}
         proj, viewState, zScale,
         is3D: baseView.isScene3D,
         branchWidth, branchBorder, thinLines, colorByHorizon,
-        infoConfig, unitsConfig, colorMode,
+        infoConfig, unitsConfig, colorMode, sectionColors,
         posInnerColors, posOuterColors,
         positions: showPositions ? positions : [],
         positionGostMm, scalePositionMin, scalePositionMax,
@@ -1241,7 +1244,7 @@ body{background:white;font-family:Arial,sans-serif}
           proj, viewState, zScale,
           is3D: baseView.isScene3D,
           branchWidth, branchBorder, thinLines, colorByHorizon,
-          infoConfig, unitsConfig, colorMode,
+          infoConfig, unitsConfig, colorMode, sectionColors,
           posInnerColors, posOuterColors,
           positions: showPositions ? positions : [],
           positionGostMm, scalePositionMin, scalePositionMax,
@@ -1362,7 +1365,7 @@ body{background:white;font-family:Arial,sans-serif}
       renderTileToCanvas, tiles, paper, showPageNumbers,
       marginLeft, marginRight, marginBottom,
       buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
-      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode,
+      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode, sectionColors,
       posInnerColors, posOuterColors, positions, showPositions,
       fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols]);
 
@@ -1716,6 +1719,7 @@ body{background:white;font-family:Arial,sans-serif}
                         infoConfig={infoConfig}
                         unitsConfig={unitsConfig}
                         colorMode={colorMode}
+                        sectionColors={sectionColors}
                         posInnerColors={posInnerColors}
                         posOuterColors={posOuterColors}
                         positions={positions}
