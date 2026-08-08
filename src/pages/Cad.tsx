@@ -18,6 +18,7 @@ import HQFireDiagramDialog from "@/components/cad/HQFireDiagramDialog";
 import type { HQDiagramData } from "@/lib/hqDiagramExcel";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
+import NodePeoplePanel from "@/components/cad/NodePeoplePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import InfoPanel from "@/components/cad/InfoPanel";
@@ -1170,6 +1171,8 @@ export default function CadPage() {
   const [showFireStability, setShowFireStability] = useState(false);
   // Диалог «Проверка ППЗ» (пожарно-оросительный трубопровод)
   const [showWaterCheck, setShowWaterCheck] = useState(false);
+  // Диалог «Зона поражения» (вывод людей при пожаре)
+  const [showEvacRisk, setShowEvacRisk] = useState(false);
   // Диалог «ВДС» (воздушно-депрессионная съёмка)
   const [showVds, setShowVds] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
@@ -5732,6 +5735,13 @@ export default function CadPage() {
               onClick={() => setShowWaterCheck(true)}
             />
             <RibbonBigBtn
+              icon="Users"
+              label="Зона"
+              sublabel="поражения"
+              title="Вывод людей при пожаре: кто попадает в зону задымления, успевают ли выйти по самоспасателю, кому нужен пункт переключения"
+              onClick={() => setShowEvacRisk(true)}
+            />
+            <RibbonBigBtn
               icon="Gauge"
               label="ВДС"
               sublabel=""
@@ -6728,6 +6738,15 @@ export default function CadPage() {
                 waterResult={waterNetwork.nodeResults.get(selectedNode.id)}
                 allNodes={nodes}
                 allNodeResults={waterNetwork.nodeResults}
+              />
+            )}
+
+            {/* ═══ ВКЛАДКА: АВАРИИ — узел (люди и средства защиты) ═══════ */}
+            {activeSide === "accidents" && selectedNode && (
+              <NodePeoplePanel
+                node={selectedNode}
+                onUpdate={(patch) => updateNode(selectedNode.id, patch)}
+                allNodes={nodes}
               />
             )}
 
@@ -11863,6 +11882,8 @@ export default function CadPage() {
       setShowFireStability={setShowFireStability}
       showWaterCheck={showWaterCheck}
       setShowWaterCheck={setShowWaterCheck}
+      showEvacRisk={showEvacRisk}
+      setShowEvacRisk={setShowEvacRisk}
       showVds={showVds}
       setShowVds={setShowVds}
       solveResult={solveResult}

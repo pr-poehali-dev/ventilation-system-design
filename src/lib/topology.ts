@@ -48,6 +48,26 @@ export interface TopoNode {
   fireComputedFlow: number;           // м³/ч — расход
   fireComputedR: number;              // МН·с²/м⁸ — сопротивление
   fireComputedDrainTime: number;      // мин — время истечения (для резервуара)
+  // ─── Люди и средства защиты (расчёт зоны поражения при пожаре) ─────────
+  // Роль узла в плане ликвидации аварий по отношению к людям.
+  //   workplace — рабочее место (в узле находятся люди в смену)
+  //   refuge    — камера-убежище (место ожидания помощи)
+  //   switchpoint — ПВП, пункт переключения самоспасателей
+  //   exit      — выход на поверхность (цель эвакуации)
+  peopleNodeType?: "none" | "workplace" | "refuge" | "switchpoint" | "exit";
+  peopleCount?: number;            // чел — численность людей в смену
+  peopleShift?: string;            // смена / участок (для отчёта)
+  peopleDescription?: string;      // наименование рабочего места
+  // Самоспасатель: время защитного действия по паспорту, мин.
+  // 0 = взять значение по умолчанию из параметров расчёта.
+  selfRescuerTime?: number;
+  selfRescuerModel?: string;       // марка самоспасателя
+  // Ёмкость камеры-убежища / ПВП, чел (для refuge и switchpoint)
+  refugeCapacity?: number;
+  // Вычисленные параметры эвакуации (заполняются расчётом зоны поражения)
+  evacComputedTime?: number;       // мин — время выхода до поверхности
+  evacComputedSafe?: boolean;      // успевают выйти по самоспасателю
+  evacComputedSmoke?: boolean;     // рабочее место попадает в зону задымления
 }
 
 export interface TopoBranch {
@@ -453,6 +473,13 @@ export function makeNode(id: string, partial?: Partial<TopoNode>): TopoNode {
     fireComputedFlow: 0,
     fireComputedR: 0,
     fireComputedDrainTime: 0,
+    peopleNodeType: "none",
+    peopleCount: 0,
+    peopleShift: "",
+    peopleDescription: "",
+    selfRescuerTime: 0,
+    selfRescuerModel: "",
+    refugeCapacity: 0,
     ...partial,
   };
 }

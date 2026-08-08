@@ -13,6 +13,7 @@ import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
 import WaterFireCheckDialog from "@/components/cad/WaterFireCheckDialog";
+import EvacRiskDialog from "@/components/cad/EvacRiskDialog";
 import VdsDialog from "@/components/cad/VdsDialog";
 import LicenseDialog from "@/components/LicenseDialog";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
@@ -101,6 +102,9 @@ export interface CadToolDialogsProps {
   // Проверка пожарно-оросительного трубопровода (ППЗ)
   showWaterCheck: boolean;
   setShowWaterCheck: (v: boolean) => void;
+  // Зона поражения по людям
+  showEvacRisk: boolean;
+  setShowEvacRisk: (v: boolean) => void;
   // ВДС (воздушно-депрессионная съёмка)
   showVds: boolean;
   setShowVds: (v: boolean) => void;
@@ -269,6 +273,16 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           nodes={p.nodes}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           onClose={() => p.setShowWaterCheck(false)}
+        />
+      )}
+
+      {/* ── Зона поражения: вывод людей при пожаре ──────────────────────── */}
+      {p.showEvacRisk && (
+        <EvacRiskDialog
+          branches={p.branches}
+          nodes={p.nodes}
+          projectName={p.projectFileName.replace(/\.vproj$/, "")}
+          onClose={() => p.setShowEvacRisk(false)}
         />
       )}
 

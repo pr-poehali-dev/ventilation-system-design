@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import {
   checkWaterNetwork, checkFireWaterSupply,
-  DEFAULT_WATER_NORMS, DEFAULT_FIRE_WATER_OPTIONS,
+  DEFAULT_WATER_NORMS, DEFAULT_FIRE_WATER_OPTIONS, DEFAULT_RESCUE_WATER_OPTIONS,
   type WaterCheckRow, type WaterNorms, type FireHydrantRow,
 } from "@/lib/waterFireCheck";
 import { exportWaterCheckAct } from "@/lib/waterCheckExport";
@@ -42,6 +42,10 @@ export default function WaterFireCheckDialog({
   const [hoseLength, setHoseLength] = useState(String(DEFAULT_FIRE_WATER_OPTIONS.hoseLength));
   const [maxHoses, setMaxHoses]     = useState(String(DEFAULT_FIRE_WATER_OPTIONS.maxHoses));
   const [intensity, setIntensity]   = useState(String(DEFAULT_FIRE_WATER_OPTIONS.intensity));
+  // ── Ход отделения ВГСЧ ──
+  const [baseNodeId, setBaseNodeId]       = useState("");
+  const [hoseDeployTime, setHoseDeployTime] = useState(String(DEFAULT_RESCUE_WATER_OPTIONS.hoseDeployTime));
+  const [idaWorkTime, setIdaWorkTime]     = useState(String(DEFAULT_RESCUE_WATER_OPTIONS.idaWorkTime));
 
   // Ветви с установленным очагом пожара
   const fireBranches = useMemo(() => branches.filter(b => b.hasFire), [branches]);
@@ -85,9 +89,15 @@ export default function WaterFireCheckDialog({
         minDuration: num(minDuration, DEFAULT_WATER_NORMS.minDuration),
       },
       consumerName,
+      {
+        baseNodeId,
+        hoseDeployTime: num(hoseDeployTime, DEFAULT_RESCUE_WATER_OPTIONS.hoseDeployTime),
+        idaWorkTime:    num(idaWorkTime,    DEFAULT_RESCUE_WATER_OPTIONS.idaWorkTime),
+      },
     );
   }, [mode, activeFireBranch, nodes, branches, hoseLength, maxHoses, intensity,
-      minPressure, maxPressure, minFlow, minDuration]);
+      minPressure, maxPressure, minFlow, minDuration,
+      baseNodeId, hoseDeployTime, idaWorkTime]);
 
   const visibleRows = mode === "fire"
     ? (fireResult?.hydrants ?? [])
@@ -182,6 +192,37 @@ export default function WaterFireCheckDialog({
                     {numInput(intensity, setIntensity)}
                   </div>
                 </div>
+
+                {/* ── Ход отделения ВГСЧ ── */}
+                <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px dashed #dde3ee" }}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-[12px] text-gray-600">База ВГСЧ</span>
+                    <select value={baseNodeId} onChange={e => setBaseNodeId(e.target.value)}
+                      className="text-[12px] border border-gray-300 rounded px-2 py-1 flex-1">
+                      <option value="">— не учитывать ход отделения —</option>
+                      {nodes.map(n => (
+                        <option key={n.id} value={n.id}>
+                          {n.number ? `№ ${n.number}` : n.id.slice(-4)}
+                          {n.name ? ` — ${n.name}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-3 gap-x-6 gap-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-gray-600 flex-1">Развёртывание рукава, мин</span>
+                      {numInput(hoseDeployTime, setHoseDeployTime)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[12px] text-gray-600 flex-1">Время ИДА, мин</span>
+                      {numInput(idaWorkTime, setIdaWorkTime)}
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-gray-400 leading-snug pt-1.5">
+                    Укажите базу ВГСЧ — программа посчитает время хода отделения до каждого крана
+                    с учётом задымления и уклонов, и определит, откуда вода пойдёт раньше всего.
+                  </div>
+                </div>
               </>
             )}
           </div>
@@ -206,6 +247,15 @@ export default function WaterFireCheckDialog({
                 {" "}подача {fireResult.totalFlow} м³/ч при требуемых {fireResult.requiredFlow} м³/ч
                 {fireResult.duration > 0 && ` · воды на ${Math.round(fireResult.duration)} мин`}
               </div>
+              {/* Откуда вода пойдёт раньше всего — это НЕ всегда ближайший кран */}
+              {fireResult.rescueComputed && fireResult.fastestHydrant && (
+                <div className="text-[10px] pt-1" style={{ color: "#1d4ed8" }}>
+                  Вода быстрее всего от крана <b>№ {fireResult.fastestHydrant.nodeNumber}</b>:
+                  {" "}ход отделения {Math.round(fireResult.fastestHydrant.rescueTime ?? 0)} мин
+                  {" "}+ развёртывание {fireResult.fastestHydrant.hoseCount} рукав.
+                  {" "}= подача через <b>{Math.round(fireResult.waterStartTime ?? 0)} мин</b>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -287,8 +337,9 @@ export default function WaterFireCheckDialog({
               <thead className="sticky top-0" style={{ background: "#eef2f9", zIndex: 1 }}>
                 <tr className="text-gray-600">
                   {(mode === "fire"
-                    ? ["№", "Узел", "Наименование", "До очага, м", "Рукавов", "Напор, МПа",
-                       "Расход, м³/ч", "Требуется, м³/ч", "Время, мин", "Результат"]
+                    ? ["№", "Узел", "Наименование", "До очага, м", "Рукавов",
+                       ...(fireResult?.rescueComputed ? ["Ход ВГСЧ, мин", "Подача воды, мин"] : []),
+                       "Напор, МПа", "Расход, м³/ч", "Требуется, м³/ч", "Время, мин", "Результат"]
                     : ["№", "Узел", "Наименование", "Напор, МПа", "Потери, МПа",
                        "Расход, м³/ч", "Требуется, м³/ч", "Время, мин", "V, м/с", "Результат"]
                   ).map(h => (
@@ -325,6 +376,23 @@ export default function WaterFireCheckDialog({
                             color: fr.reachesFire ? "#6b7280" : "#dc2626" }}>
                           {fr.hoseCount}
                         </td>
+                        {/* Ход отделения ВГСЧ и время начала подачи воды */}
+                        {fireResult?.rescueComputed && (<>
+                          <td className="px-2 py-1 text-right tabular-nums"
+                            style={{ borderBottom: "1px solid #eef1f6",
+                              color: fr.rescueReachable ? "#6b7280" : "#dc2626",
+                              fontWeight: fr.rescueReachable ? undefined : 600 }}
+                            title={fr.rescueO2 !== null ? `Расход кислорода: ${fr.rescueO2} л` : undefined}>
+                            {fr.rescueTime !== null ? fr.rescueTime.toFixed(0) : "—"}
+                            {!fr.rescueReachable && " ⚠"}
+                          </td>
+                          <td className="px-2 py-1 text-right tabular-nums"
+                            style={{ borderBottom: "1px solid #eef1f6",
+                              fontWeight: fireResult.fastestHydrant?.nodeId === fr.nodeId ? 700 : undefined,
+                              color: fireResult.fastestHydrant?.nodeId === fr.nodeId ? "#1d4ed8" : "#374151" }}>
+                            {fr.waterStartTime !== null ? fr.waterStartTime.toFixed(0) : "—"}
+                          </td>
+                        </>)}
                       </>);
                     })()}
                     <td className="px-2 py-1 text-right tabular-nums"

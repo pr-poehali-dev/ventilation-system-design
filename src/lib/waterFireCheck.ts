@@ -22,6 +22,10 @@
 
 import type { TopoNode, TopoBranch } from "./topology";
 import { calcWaterNetwork } from "./waterHydraulics";
+import {
+  calcRescue,
+  type RescueParams, type TopoNodeLite, type TopoBranchLite,
+} from "./rescueCalculator";
 
 /** Нормативные требования к точке водоразбора */
 export interface WaterNorms {
@@ -134,6 +138,15 @@ export interface FireHydrantRow extends WaterCheckRow {
   hoseCount: number;
   /** Кран дотягивается до очага рукавами */
   reachesFire: boolean;
+  // ── Ход отделения ВГСЧ (заполняется, если задана база ВГСЧ) ──
+  /** Время хода отделения от базы ВГСЧ до крана, мин (null = не считалось) */
+  rescueTime: number | null;
+  /** Время начала подачи воды: ход ВГСЧ + развёртывание рукавов, мин */
+  waterStartTime: number | null;
+  /** Расход кислорода ИДА на путь до крана, л */
+  rescueO2: number | null;
+  /** Отделение доходит до крана в пределах защитного действия ИДА */
+  rescueReachable: boolean;
 }
 
 export interface FireWaterResult {
@@ -155,7 +168,36 @@ export interface FireWaterResult {
   /** Вердикт по очагу */
   verdict: string;
   error: string | null;
+  // ── Итоги по ходу ВГСЧ ──
+  /** Кран, от которого вода пойдёт РАНЬШЕ всего (с учётом хода отделения) */
+  fastestHydrant: FireHydrantRow | null;
+  /** Минимальное время начала подачи воды на очаг, мин */
+  waterStartTime: number | null;
+  /** База ВГСЧ задана и ход посчитан */
+  rescueComputed: boolean;
 }
+
+/** Параметры хода отделения ВГСЧ до пожарных кранов */
+export interface RescueWaterOptions {
+  /** Узел базы ВГСЧ (пусто = ход не считается) */
+  baseNodeId: string;
+  /** Время развёртывания одного рукава, мин */
+  hoseDeployTime: number;
+  /** Время действия ИДА, мин */
+  idaWorkTime: number;
+  /** Расход кислорода, л/мин */
+  oxygenConsumption: number;
+  /** Объём баллона ИДА, л */
+  oxygenVolume: number;
+}
+
+export const DEFAULT_RESCUE_WATER_OPTIONS: RescueWaterOptions = {
+  baseNodeId: "",
+  hoseDeployTime: 1.5,
+  idaWorkTime: 240,
+  oxygenConsumption: 2.0,
+  oxygenVolume: 400,
+};
 
 /** Параметры тушения очага */
 export interface FireWaterOptions {
@@ -238,9 +280,11 @@ export function checkFireWaterSupply(
   optsPartial: Partial<FireWaterOptions> = {},
   normsPartial: Partial<WaterNorms> = {},
   consumerNameById?: (id: string | undefined) => string,
+  rescuePartial: Partial<RescueWaterOptions> = {},
 ): FireWaterResult {
   const opts = { ...DEFAULT_FIRE_WATER_OPTIONS, ...optsPartial };
   const norms: WaterNorms = { ...DEFAULT_WATER_NORMS, ...normsPartial };
+  const rOpts = { ...DEFAULT_RESCUE_WATER_OPTIONS, ...rescuePartial };
 
   // Имя выработки: у ветви нет отдельного поля name — используем её тип
   // (так же, как в Акте устойчивости, см. fireStability.ts).
@@ -249,6 +293,7 @@ export function checkFireWaterSupply(
     fireBranchId: fireBranch.id, fireBranchName: branchName,
     hydrants: [], reaching: [], totalFlow: 0, requiredFlow: 0,
     sufficient: false, duration: 0, verdict: "Расчёт невозможен", error,
+    fastestHydrant: null, waterStartTime: null, rescueComputed: false,
   });
 
   const consumers = nodes.filter(n => (n.fireNodeType ?? "none") === "consumer");
@@ -310,6 +355,55 @@ export function checkFireWaterSupply(
   const capacity = reservoirs.reduce((s, r) => s + (r.fireCapacity ?? 0), 0);
   const duration = sumFlow > 0 ? +((capacity / sumFlow) * 60).toFixed(1) : 0;
 
+  // ── Ход отделения ВГСЧ от базы до каждого крана ─────────────────────────
+  // Используем штатный расчёт calcRescue (РД 15-11-2007): он учитывает угол
+  // наклона выработок, задымление на пути и расход кислорода ИДА. Считаем
+  // операцию «разведка» — отделение идёт до крана, разворачивает рукава и
+  // подаёт воду; транспортировка пострадавшего здесь не нужна.
+  const baseId = rOpts.baseNodeId;
+  const rescueComputed = !!baseId && nodes.some(n => n.id === baseId);
+
+  const rescueByNode = new Map<string, { time: number; o2: number; ok: boolean }>();
+  if (rescueComputed) {
+    const liteNodes: TopoNodeLite[] = nodes.map(n => ({
+      id: n.id, name: n.name ?? "", number: n.number ?? "",
+      x: n.x, y: n.y, z: n.z,
+    }));
+    const liteBranches: TopoBranchLite[] = branches.map(b => ({
+      id: b.id, fromId: b.fromId, toId: b.toId,
+      length: b.length ?? 0, angle: b.angle ?? 0, area: b.area ?? 0,
+      type: b.type,
+      fireComputedSmokeDens: b.fireComputedSmokeDens,
+      fireComputedCO: b.fireComputedCO,
+      flow: b.flow,
+      hasBulkhead: b.hasBulkhead, bulkheadId: b.bulkheadId,
+      isLeakage: b.isLeakage, resistance: b.resistance,
+    }));
+    const rParams: RescueParams = {
+      operationType: "scout",
+      useAirTemp: false,
+      useIdaTime: true,
+      idaWorkTime: rOpts.idaWorkTime,
+      provideCare: false,
+      careTime: 0,
+      useInterpolation: true,
+      oxygenConsumption: rOpts.oxygenConsumption,
+      oxygenVolume: rOpts.oxygenVolume,
+    };
+    for (const x of ranked) {
+      if (x.node.id === baseId) {
+        rescueByNode.set(x.node.id, { time: 0, o2: 0, ok: true });
+        continue;
+      }
+      const rr = calcRescue(liteNodes, liteBranches, baseId, x.node.id, rParams);
+      rescueByNode.set(x.node.id, {
+        time: rr.totalTimeForward,
+        o2: rr.totalO2Forward,
+        ok: rr.ok,
+      });
+    }
+  }
+
   const hydrants: FireHydrantRow[] = ranked.map((x, i) => {
     const c = x.node;
     const res = nodeResults.get(c.id);
@@ -319,6 +413,7 @@ export function checkFireWaterSupply(
     const hasData = outlet > 0 || (c.fireResistanceMode === "manual" && (c.fireManualR ?? 0) > 0);
     const hoseCount = Math.ceil(x.dist / Math.max(1, opts.hoseLength));
     const reaches = x.dist <= maxReach;
+    const rescueInfo = rescueByNode.get(c.id) ?? null;
 
     const fails: WaterFailKind[] = [];
     if (!hasData) fails.push("no-data");
@@ -335,6 +430,8 @@ export function checkFireWaterSupply(
     let recommendation = "";
     if (!reaches) {
       recommendation = `Не дотягивается: нужно ${hoseCount} рукавов при лимите ${opts.maxHoses}`;
+    } else if (rescueInfo && !rescueInfo.ok) {
+      recommendation = "Отделение не доходит в пределах защитного действия ИДА — нужна ближняя база или подземный пункт";
     } else if (fails.includes("no-data")) {
       recommendation = "Задать модель ствола или диаметр насадка";
     } else if (fails.includes("no-water")) {
@@ -371,6 +468,14 @@ export function checkFireWaterSupply(
       distanceToFire: +x.dist.toFixed(1),
       hoseCount,
       reachesFire: reaches,
+      // Время начала подачи воды = ход отделения до крана
+      //   + развёртывание рукавной линии (по числу рукавов)
+      rescueTime: rescueInfo ? +rescueInfo.time.toFixed(1) : null,
+      waterStartTime: rescueInfo
+        ? +(rescueInfo.time + hoseCount * rOpts.hoseDeployTime).toFixed(1)
+        : null,
+      rescueO2: rescueInfo ? +rescueInfo.o2.toFixed(0) : null,
+      rescueReachable: rescueInfo ? rescueInfo.ok : true,
     };
   });
 
@@ -380,6 +485,16 @@ export function checkFireWaterSupply(
     && reaching.some(h => h.ok)
     && totalFlow >= requiredFlow;
 
+  // ── Кран, от которого вода пойдёт раньше всего ──────────────────────────
+  // Важно: это НЕ всегда ближайший к очагу. Кран может быть рядом с очагом,
+  // но далеко от базы ВГСЧ — тогда воду быстрее подадут от другого.
+  const candidates = reaching.filter(h => h.ok && h.rescueReachable);
+  const timed = candidates.filter(h => h.waterStartTime !== null);
+  const fastestHydrant = timed.length > 0
+    ? timed.reduce((m, h) => ((h.waterStartTime ?? 0) < (m.waterStartTime ?? 0) ? h : m), timed[0])
+    : (candidates.length > 0 ? candidates[0] : null);
+  const waterStartTime = fastestHydrant?.waterStartTime ?? null;
+
   let verdict: string;
   if (reaching.length === 0) {
     verdict = "Очаг не обеспечен водой: ни один кран не дотягивается рукавами";
@@ -387,8 +502,12 @@ export function checkFireWaterSupply(
     verdict = "Очаг не обеспечен: краны рядом есть, но напора недостаточно";
   } else if (totalFlow < requiredFlow) {
     verdict = `Расхода недостаточно: подаётся ${totalFlow} м³/ч при требуемых ${requiredFlow} м³/ч`;
+  } else if (rescueComputed && candidates.length === 0) {
+    verdict = "Краны с водой есть, но отделение ВГСЧ до них не доходит в пределах ИДА";
   } else if (duration > 0 && duration < norms.minDuration) {
     verdict = `Воды хватит только на ${Math.round(duration)} мин при норме ${norms.minDuration} мин`;
+  } else if (waterStartTime !== null) {
+    verdict = `Очаг обеспечен: подача воды через ${Math.round(waterStartTime)} мин, ${totalFlow} м³/ч`;
   } else {
     verdict = `Очаг обеспечен водой: ${reaching.filter(h => h.ok).length} кран(ов), ${totalFlow} м³/ч`;
   }
@@ -404,6 +523,9 @@ export function checkFireWaterSupply(
     duration,
     verdict,
     error: null,
+    fastestHydrant,
+    waterStartTime,
+    rescueComputed,
   };
 }
 
