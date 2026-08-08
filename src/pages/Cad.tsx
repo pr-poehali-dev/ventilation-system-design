@@ -22,6 +22,7 @@ import NodePeoplePanel from "@/components/cad/NodePeoplePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import { withWaterPumps } from "@/lib/waterHydraulics";
+import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
@@ -1457,6 +1458,10 @@ export default function CadPage() {
   }, [branches, schemaSymbols, mineBulkheads]);
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
+  // Участки рудника и нормы расхода воздуха (ФНиП № 505 п.155) — в проекте
+  const [ventSections, setVentSections] = useState<VentSection[]>([]);
+  const [ventNorms, setVentNorms] = useState<VentNorms>(DEFAULT_VENT_NORMS);
+  const [showVentSections, setShowVentSections] = useState(false);
 
   // Гидравлический расчёт водопроводной сети ППЗ (backend).
   // Объявлен здесь (а не выше вместе с waterNetwork state), т.к. использует schemaSymbols.
@@ -2060,6 +2065,8 @@ export default function CadPage() {
     userPumps,
     mineBulkheads,
     mineTypes,
+    ventSections,
+    ventNorms,
     calcMode,
     solverTolerance,
     solverMaxIter,
@@ -2474,6 +2481,12 @@ export default function CadPage() {
       }
     }
     if (data.mineTypes) setMineTypes(data.mineTypes as BranchType[]);
+    // Участки рудника и нормы расхода воздуха. Нормы сливаем с дефолтом —
+    // в старых проектах их нет, а в новых версиях могут появиться поля.
+    setVentSections(Array.isArray(data.ventSections) ? (data.ventSections as VentSection[]) : []);
+    setVentNorms(data.ventNorms
+      ? { ...DEFAULT_VENT_NORMS, ...(data.ventNorms as Partial<VentNorms>) }
+      : DEFAULT_VENT_NORMS);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
     if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
@@ -7526,6 +7539,8 @@ export default function CadPage() {
                 onOpenFanLibrary={() => { setShowEquipRef(true); setEquipRefTab("fans"); }}
                 mineTypes={mineTypes}
                 onOpenTypesLibrary={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
+                ventSections={ventSections}
+                onOpenSectionsLibrary={() => setShowVentSections(true)}
                 bulkheadSymTypeId={(() => {
                   const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   return bkSym?.typeId;
@@ -11745,6 +11760,13 @@ export default function CadPage() {
       horizons={horizons}
       projectFileName={projectFileName}
       unitsConfig={unitsConfig}
+      ventNorms={ventNorms}
+      setVentNorms={setVentNorms}
+      ventSections={ventSections}
+      setVentSections={setVentSections}
+      showVentSections={showVentSections}
+      setShowVentSections={setShowVentSections}
+      selectedBranchIds={Array.from(selectedBranchIds)}
       showDxfImport={showDxfImport}
       setShowDxfImport={setShowDxfImport}
       handleDxfImport={handleDxfImport}

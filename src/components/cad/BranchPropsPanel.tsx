@@ -6,6 +6,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import { type VentSection } from "@/lib/ventSections";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
@@ -41,6 +42,10 @@ interface BranchPropsPanelProps {
   onOpenFanLibrary?: () => void;
   /** Типы выработок из справочника рудника */
   mineTypes?: BranchType[];
+  /** Участки рудника (группы выработок для расчёта количества воздуха) */
+  ventSections?: VentSection[];
+  /** Открыть справочник участков рудника */
+  onOpenSectionsLibrary?: () => void;
   /** Открыть справочник оборудования на вкладке типов выработок */
   onOpenTypesLibrary?: () => void;
   /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
@@ -81,7 +86,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -218,6 +223,33 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 <option value="arch">Арочное</option>
                 <option value="custom">Задано вручную</option>
               </select>
+            </InlineLabel>
+
+            {/* Участок рудника — группа выработок для позабойного расчёта
+                количества воздуха (ФНиП № 505, п. 155). */}
+            <InlineLabel label="Участок">
+              <div className="flex items-center gap-0.5 w-full">
+                <select
+                  value={branch.ventSectionId ?? ""}
+                  onChange={(e) => onUpdate({ ventSectionId: e.target.value })}
+                  className="flex-1 min-w-0 text-[11px] px-1"
+                  style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                  <option value="">— не задан —</option>
+                  {ventSections.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.number ? `${s.number}. ` : ""}{s.name || "Без названия"}
+                    </option>
+                  ))}
+                </select>
+                {onOpenSectionsLibrary && (
+                  <button
+                    onClick={onOpenSectionsLibrary}
+                    title="Справочник участков рудника"
+                    style={{ fontSize: 10, padding: "1px 4px", border: "1px solid #c8c8c8", borderRadius: 2, background: "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+                    …
+                  </button>
+                )}
+              </div>
             </InlineLabel>
 
             {branch.shape === "round" && (

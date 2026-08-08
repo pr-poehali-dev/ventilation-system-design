@@ -260,6 +260,55 @@ export interface TopoBranch {
   fireLoadCable: boolean;          // Кабель (электро/связи)
   fireLoadWoodSupport: boolean;    // Деревянная крепь
 
+  // ─── Расчёт количества воздуха (карточка забоя) ──────────────────────
+  // ФНиП № 505 п.155: расчёт ведётся позабойно с суммированием по участкам.
+  // Потребность считается по каждому фактору отдельно, в зачёт идёт максимум,
+  // затем результат проверяется по минимальной и максимальной скорости.
+  /** Тип забоя (FaceType из ventSections.ts). Пусто/none = не участвует */
+  ventFaceType?: string;
+  /** ID участка (VentSection), к которому отнесён забой */
+  ventSectionId?: string;
+  /** Резервный забой — в норматив идёт доля reserveShare */
+  ventReserve?: boolean;
+  /** Наименование забоя (для отчёта) */
+  ventDescription?: string;
+  /** Максимальное число одновременно работающих людей в забое, чел */
+  ventPeopleCount?: number;
+  // ── Взрывные работы ──
+  /** Масса одновременно взрываемого ВВ по УГЛЮ, кг */
+  ventBlastMassCoal?: number;
+  /** Масса одновременно взрываемого ВВ по ПОРОДЕ, кг */
+  ventBlastMassRock?: number;
+  /** Время проветривания после взрыва, мин. 0 = взять из норм */
+  ventBlastTime?: number;
+  /** Объём проветриваемой выработки, м³. 0 = вычислить из сечения и длины */
+  ventBlastVolume?: number;
+  /** Коэффициент обводнённости. 0 = взять из норм */
+  ventBlastWatering?: number;
+  // ── Дизельное оборудование ──
+  /** Число дизельных машин в забое */
+  ventDieselCount?: number;
+  /** Суммарная мощность ДВС, кВт */
+  ventDieselPower?: number;
+  /** Норма подачи на кВт, м³/мин. 0 = взять из норм */
+  ventDieselNorm?: number;
+  /** Коэффициент одновременности. 0 = определить по числу машин */
+  ventDieselSimult?: number;
+  // ── Коэффициенты забоя (0 = взять из участка или норм) ──
+  /** Коэффициент запаса */
+  ventReserveFactor?: number;
+  /** Коэффициент утечек */
+  ventLeakFactor?: number;
+  // ── Результаты расчёта (заполняются программой) ──
+  ventComputedByPeople?: number;   // м³/с — потребность по людям
+  ventComputedByBlast?: number;    // м³/с — по газам взрывных работ
+  ventComputedByDiesel?: number;   // м³/с — по дизельной технике
+  ventComputedByVMin?: number;     // м³/с — по минимальной скорости
+  ventComputedFactor?: string;     // определяющий фактор
+  ventComputedTotal?: number;      // м³/с — итог по забою (с коэффициентами)
+  ventComputedVelocity?: number;   // м/с — скорость при расчётном расходе
+  ventComputedVelocityOk?: boolean; // скорость в допустимых пределах
+
   // ─── Вентиляционный трубопровод (ВМП / тупиковые забои) ─────────────
   hasVentPipe: boolean;            // ветвь содержит вентрубопровод
   isVentPipeBranch?: boolean;      // ветвь САМА является нитью вентрубопровода (реальная параллельная ветвь, тёмно-серая, узкая)
@@ -692,6 +741,22 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireLoadConveyor: false,
     fireLoadCable: false,
     fireLoadWoodSupport: false,
+    ventFaceType: "none",
+    ventSectionId: "",
+    ventReserve: false,
+    ventDescription: "",
+    ventPeopleCount: 0,
+    ventBlastMassCoal: 0,
+    ventBlastMassRock: 0,
+    ventBlastTime: 0,
+    ventBlastVolume: 0,
+    ventBlastWatering: 0,
+    ventDieselCount: 0,
+    ventDieselPower: 0,
+    ventDieselNorm: 0,
+    ventDieselSimult: 0,
+    ventReserveFactor: 0,
+    ventLeakFactor: 0,
     // Взрыв
     hasExplosion: false,
     explosionT: 0.5,

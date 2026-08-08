@@ -11,8 +11,9 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, type PumpModel } from "@/lib/pumps";
 import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, type ConsumerGroup } from "@/lib/waterConsumers";
 import PumpChart from "@/components/cad/PumpChart";
+import { type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 
-type TabId = "fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
+type TabId = "fans" | "types" | "bulkheads" | "airnorms" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
 
 export interface MineFanExport {
   catalogId: string;
@@ -46,12 +47,16 @@ interface Props {
   initialMineBulkheads?: MineBulkheadExport[];
   unitsConfig?: UnitsConfig;
   onUnitsConfigChange?: (cfg: UnitsConfig) => void;
+  /** Нормы расхода воздуха (ФНиП № 505) */
+  ventNorms?: VentNorms;
+  onVentNormsChange?: (n: VentNorms) => void;
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
   { id: "fans",      label: "Вентиляторы",        icon: "Wind",      group: "Вентиляция" },
   { id: "types",     label: "Типы выработок",      icon: "Layers",    group: "Вентиляция" },
   { id: "bulkheads", label: "Перемычки",           icon: "Square",    group: "Вентиляция" },
+  { id: "airnorms",  label: "Нормы расхода воздуха", icon: "Calculator", group: "Вентиляция" },
   { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии" },
   { id: "typical",   label: "Типовые меры",        icon: "FileText",  group: "Аварии" },
   { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод" },
@@ -1710,7 +1715,103 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: {
+// ─── Нормы расхода воздуха (ФНиП № 505) ─────────────────────────────────────
+function AirNormsSection({ norms, onChange }: {
+  norms: VentNorms;
+  onChange: (n: VentNorms) => void;
+}) {
+  const set = (patch: Partial<VentNorms>) => onChange({ ...norms, ...patch });
+
+  const Row = ({ label, value, onSet, step = "0.01", unit, hint }: {
+    label: string; value: number; onSet: (v: number) => void;
+    step?: string; unit?: string; hint?: string;
+  }) => (
+    <div className="flex items-start gap-2 py-1" style={{ borderBottom: "1px solid #f0f2f7" }}>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] text-gray-700">{label}</div>
+        {hint && <div className="text-[10px] text-gray-400 leading-snug">{hint}</div>}
+      </div>
+      <input type="number" step={step} value={value}
+        onChange={e => onSet(parseFloat(e.target.value) || 0)}
+        className="text-[11px] px-1 text-right flex-shrink-0"
+        style={{ background: "white", border: "1px solid #c8c8c8", height: 20, width: 80, outline: "none" }} />
+      <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 74 }}>{unit ?? ""}</span>
+    </div>
+  );
+
+  const Group = ({ title }: { title: string }) => (
+    <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mt-3 mb-1">{title}</div>
+  );
+
+  return (
+    <div className="flex-1 overflow-auto px-4 py-2">
+      <div className="text-[10px] text-gray-500 leading-snug pb-1">
+        Нормы применяются при расчёте количества воздуха. Значения по умолчанию —
+        по ФНиП № 505 и практике проектирования рудников. Предприятие может
+        согласовать собственные значения (особенно по дизельной технике).
+      </div>
+
+      <Group title="По людям" />
+      <Row label="Расход воздуха на одного человека" unit="м³/мин" step="0.5"
+        value={norms.airPerPerson} onSet={v => set({ airPerPerson: v })}
+        hint="ФНиП: 6 м³/мин на человека, по максимальному числу одновременно работающих" />
+
+      <Group title="По газам взрывных работ" />
+      <Row label="Газовыделение при взрывании по углю" unit="л на 1 кг ВВ" step="1"
+        value={norms.gasPerKgCoal} onSet={v => set({ gasPerKgCoal: v })} />
+      <Row label="Газовыделение при взрывании по породе" unit="л на 1 кг ВВ" step="1"
+        value={norms.gasPerKgRock} onSet={v => set({ gasPerKgRock: v })} />
+      <Row label="Время проветривания после взрыва" unit="мин" step="1"
+        value={norms.blastVentTime} onSet={v => set({ blastVentTime: v })} />
+      <Row label="Коэффициент обводнённости" unit="" step="0.05"
+        value={norms.wateringFactor} onSet={v => set({ wateringFactor: v })}
+        hint="1,0 — сухая выработка; при обводнённости газы поглощаются водой" />
+      <Row label="ПДК условного оксида углерода" unit="%" step="0.001"
+        value={norms.coLimit} onSet={v => set({ coLimit: v })} />
+
+      <Group title="По дизельному оборудованию" />
+      <Row label="Норма подачи на единицу мощности" unit="м³/мин на кВт" step="0.1"
+        value={norms.airPerKwDiesel} onSet={v => set({ airPerKwDiesel: v })}
+        hint="6,8 м³/мин·кВт — пересчёт классической нормы 5 м³/мин на 1 л.с. Норма установлена в 1970-х и для современной техники обычно снижается по согласованию" />
+      <Row label="Коэффициент одновременности: 1 машина" unit="" step="0.05"
+        value={norms.simult1} onSet={v => set({ simult1: v })} />
+      <Row label="Коэффициент одновременности: 2 машины" unit="" step="0.05"
+        value={norms.simult2} onSet={v => set({ simult2: v })} />
+      <Row label="Коэффициент одновременности: 3 и более" unit="" step="0.05"
+        value={norms.simult3} onSet={v => set({ simult3: v })} />
+
+      <Group title="Скорости движения воздуха" />
+      <Row label="Минимальная в очистных и подготовительных" unit="м/с" step="0.05"
+        value={norms.vMinFace} onSet={v => set({ vMinFace: v })} />
+      <Row label="Минимальная в прочих выработках" unit="м/с" step="0.05"
+        value={norms.vMinOther} onSet={v => set({ vMinOther: v })} />
+      <Row label="Максимальная в выработках" unit="м/с" step="0.5"
+        value={norms.vMaxDrift} onSet={v => set({ vMaxDrift: v })} />
+      <Row label="Максимальная в стволах с подъёмом людей" unit="м/с" step="0.5"
+        value={norms.vMaxShaft} onSet={v => set({ vMaxShaft: v })}
+        hint="Превышение максимальной скорости так же недопустимо, как и недостаток" />
+
+      <Group title="Коэффициенты запаса и утечек" />
+      <Row label="Общий коэффициент запаса" unit="" step="0.05"
+        value={norms.reserveFactor} onSet={v => set({ reserveFactor: v })}
+        hint="ФНиП п.155 требует введения обоснованных коэффициентов запаса" />
+      <Row label="Общий коэффициент утечек" unit="" step="0.05"
+        value={norms.leakFactor} onSet={v => set({ leakFactor: v })} />
+      <Row label="Доля потребности для резервных забоев" unit="" step="0.05"
+        value={norms.reserveShare} onSet={v => set({ reserveShare: v })}
+        hint="0,5 — в норматив включается половина расчётной потребности" />
+
+      <div className="flex justify-end py-3">
+        <button onClick={() => onChange(DEFAULT_VENT_NORMS)}
+          className="text-[11px] px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+          Сбросить к нормативным значениям
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
@@ -1720,8 +1821,13 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   initialMineBulkheads?: MineBulkheadExport[];
   unitsConfig?: UnitsConfig;
   onUnitsConfigChange?: (cfg: UnitsConfig) => void;
+  ventNorms?: VentNorms;
+  onVentNormsChange?: (n: VentNorms) => void;
 }) {
   if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} initialMineFans={initialMineFans} />;
+  if (tab === "airnorms") return <AirNormsSection
+    norms={ventNorms ?? DEFAULT_VENT_NORMS}
+    onChange={onVentNormsChange ?? (() => {})} />;
   if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
   if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads} />;
   if (tab === "units") return <UnitsConfigPanel unitsConfig={unitsConfig ?? DEFAULT_UNITS_CONFIG} onChange={onUnitsConfigChange ?? (() => {})} />;
@@ -1740,7 +1846,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1792,7 +1898,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
               Дважды кликните по строке для редактирования характеристик

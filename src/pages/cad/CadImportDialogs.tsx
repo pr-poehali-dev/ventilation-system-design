@@ -23,6 +23,8 @@ import CadContextMenu from "@/components/cad/CadContextMenu";
 import { nodeContextItems, branchContextItems, canvasContextItems } from "./cadComponents";
 import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type UnitsConfig } from "@/lib/unitsConfig";
+import VentSectionsDialog from "@/components/cad/VentSectionsDialog";
+import { type VentNorms, type VentSection } from "@/lib/ventSections";
 
 // Тип-псевдонимы берём из React-компонентов, чтобы сигнатуры совпадали 1:1
 type EquipTab = React.ComponentProps<typeof EquipmentRefDialog>["activeTab"];
@@ -35,6 +37,16 @@ export interface CadImportDialogsProps {
   horizons: Horizon[];
   projectFileName: string;
   unitsConfig: UnitsConfig;
+
+  /** Нормы расхода воздуха и участки рудника (ФНиП № 505) */
+  ventNorms: VentNorms;
+  setVentNorms: (n: VentNorms) => void;
+  ventSections: VentSection[];
+  setVentSections: (s: VentSection[]) => void;
+  showVentSections: boolean;
+  setShowVentSections: (v: boolean) => void;
+  /** Выделенные на схеме ветви — для быстрого добавления в участок */
+  selectedBranchIds: string[];
 
   showDxfImport: boolean;
   setShowDxfImport: (v: boolean) => void;
@@ -164,6 +176,19 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           initialMineBulkheads={p.mineBulkheads}
           unitsConfig={p.unitsConfig}
           onUnitsConfigChange={p.setUnitsConfig}
+          ventNorms={p.ventNorms}
+          onVentNormsChange={p.setVentNorms}
+        />
+      )}
+
+      {/* ═══ УЧАСТКИ РУДНИКА ════════════════════════════════════════════════ */}
+      {p.showVentSections && (
+        <VentSectionsDialog
+          sections={p.ventSections}
+          onChange={p.setVentSections}
+          branches={p.branches}
+          selectedBranchIds={p.selectedBranchIds}
+          onClose={() => p.setShowVentSections(false)}
         />
       )}
 
