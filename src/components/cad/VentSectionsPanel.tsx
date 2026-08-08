@@ -23,11 +23,13 @@ interface Props {
   onSelectBranches?: (ids: string[]) => void;
   /** Открыть справочник норм расхода воздуха */
   onOpenNorms?: () => void;
+  /** Открыть сводный расчёт количества воздуха */
+  onOpenSummary?: () => void;
 }
 
 export default function VentSectionsPanel({
   sections, onChange, branches, selectedBranchIds,
-  onSelectBranches, onOpenNorms,
+  onSelectBranches, onOpenNorms, onOpenSummary,
 }: Props) {
   const [expandedId, setExpandedId] = useState<string>("");
 
@@ -104,6 +106,12 @@ export default function VentSectionsPanel({
           <button onClick={onOpenNorms} title="Справочник норм расхода воздуха"
             className="text-[11px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100">
             Нормы
+          </button>
+        )}
+        {onOpenSummary && (
+          <button onClick={onOpenSummary} title="Сводный расчёт количества воздуха по руднику"
+            className="text-[11px] px-2 py-1 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 ml-auto">
+            Расчёт
           </button>
         )}
       </div>

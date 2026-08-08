@@ -24,6 +24,7 @@ import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import { withWaterPumps } from "@/lib/waterHydraulics";
 import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 import VentSectionsPanel from "@/components/cad/VentSectionsPanel";
+import AirDemandDialog from "@/components/cad/AirDemandDialog";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
@@ -1463,6 +1464,7 @@ export default function CadPage() {
   const [ventSections, setVentSections] = useState<VentSection[]>([]);
   const [ventNorms, setVentNorms] = useState<VentNorms>(DEFAULT_VENT_NORMS);
   const [showVentSections, setShowVentSections] = useState(false);
+  const [showAirDemand, setShowAirDemand] = useState(false);
 
   // Гидравлический расчёт водопроводной сети ППЗ (backend).
   // Объявлен здесь (а не выше вместе с waterNetwork state), т.к. использует schemaSymbols.
@@ -5723,6 +5725,13 @@ export default function CadPage() {
               onClick={() => setShowDepressogram(true)}
             />
             <RibbonBigBtn
+              icon="Calculator"
+              label="Расход"
+              sublabel="воздуха"
+              title="Сводный расчёт количества воздуха по забоям и участкам (ФНиП № 505, п. 155) с выгрузкой в Excel"
+              onClick={() => setShowAirDemand(true)}
+            />
+            <RibbonBigBtn
               icon="ShieldCheck"
               label="Устойчивость"
               sublabel="при пожаре"
@@ -9287,6 +9296,7 @@ export default function CadPage() {
                   setSelectedBranchIds(new Set(ids));
                 }}
                 onOpenNorms={() => { setShowEquipRef(true); setEquipRefTab("airnorms"); }}
+                onOpenSummary={() => setShowAirDemand(true)}
               />
             )}
 
@@ -11777,6 +11787,25 @@ export default function CadPage() {
         </div>
       </div>
     </div>
+
+    {/* Сводный расчёт количества воздуха (ФНиП № 505, п. 155) */}
+    {showAirDemand && (
+      <AirDemandDialog
+        branches={branches}
+        sections={ventSections}
+        norms={ventNorms}
+        projectName={projectFileName}
+        onSelectBranch={(id) => {
+          setSelectedNodeId(null);
+          setSelectedNodeIds(new Set());
+          setSelectedBranchId(id);
+          setSelectedBranchIds(new Set([id]));
+          setActiveSide("airdemand");
+          setShowAirDemand(false);
+        }}
+        onClose={() => setShowAirDemand(false)}
+      />
+    )}
 
     <CadImportDialogs
       nodes={nodes}
