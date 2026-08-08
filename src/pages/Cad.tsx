@@ -5866,8 +5866,12 @@ export default function CadPage() {
           ).map((t) => (
             <button key={t.id}
               onClick={() => setActiveSide(t.id)}
-              className="h-20 flex items-center justify-center transition-colors flex-shrink-0"
+              className="flex items-center justify-center transition-colors flex-shrink-0 py-3"
               style={{
+                /* Высота подстраивается под подпись: длинные названия
+                   («Расход воздуха») остаются в одну строку, короткие
+                   сохраняют прежний размер кнопки. */
+                minHeight: 80,
                 background: activeSide === t.id ? "#ffffff" : "transparent",
                 borderRight: activeSide === t.id ? "1px solid #ffffff" : "1px solid transparent",
                 marginRight: activeSide === t.id ? "-1px" : "0",
@@ -5878,6 +5882,7 @@ export default function CadPage() {
                 style={{
                   writingMode: "vertical-rl",
                   transform: "rotate(180deg)",
+                  whiteSpace: "nowrap",
                   color: activeSide === t.id ? "#2563eb" : "#444",
                   fontWeight: activeSide === t.id ? 600 : 400,
                 }}>
