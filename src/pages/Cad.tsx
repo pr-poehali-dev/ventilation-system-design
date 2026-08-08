@@ -5860,7 +5860,6 @@ export default function CadPage() {
                 { id: "conveyor", label: "Конвейер" },
                 { id: "fireload", label: "Пож.нагрузка" },
                 { id: "airdemand", label: "Расход воздуха" },
-                { id: "coords", label: "Координаты" },
 
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
                 ...(selectedBranch?.hasExplosion ? [{ id: "blast" as SideTab, label: "💥 Взрыв" }] : []),
@@ -5942,7 +5941,6 @@ export default function CadPage() {
               {activeSide === "blast" && "Место взрыва"}
               {activeSide === "areas" && "Учёт по участкам"}
               {activeSide === "indicators" && "Индикаторы"}
-              {activeSide === "coords" && "Координаты"}
               {activeSide === "measure" && "Замеры"}
               {activeSide === "pipes" && "Трубопроводы"}
               {activeSide === "positions" && "Позиции"}
@@ -9051,7 +9049,6 @@ export default function CadPage() {
 
             {/* ═══ ОСТАЛЬНЫЕ ВКЛАДКИ ═════════════════════════════════════ */}
             {(activeSide === "thermo"
-              || activeSide === "coords"
               || activeSide === "measure" || activeSide === "pipes") && (
               <div className="p-4 text-center text-gray-400 text-xs">
                 Вкладка «{activeSide}» в разработке
