@@ -98,11 +98,47 @@ export function calcDrainTime(capacityM3: number, flowM3h: number): number {
   return (capacityM3 / flowM3h) * 60;
 }
 
-// ─── Вспомогательные типы для внутреннего расчёта ─────────────────────────────
+// ─── Насосные станции на водопроводе ─────────────────────────────────────────
+/**
+ * Минимальные сведения о символе насоса со схемы.
+ * Насос хранится не в ветви, а как символ (typeId="pump"), привязанный к ней.
+ */
+export interface PumpSymbolLite {
+  typeId: string;
+  branchId?: string;
+  pumpHead?: number;      // м вод. ст. — номинальный напор одного насоса
+  pumpParallel?: number;  // число параллельно работающих насосов
+  airDirection?: string;  // "reverse" = качает против направления ветви
+}
 
-interface NodePressure {
-  nodeId: string;
-  pressure: number; // МПа
+/**
+ * «Впечатывает» параметры насосных станций со схемы в поля ветвей, чтобы
+ * гидравлический расчёт учёл создаваемый ими напор.
+ *
+ * ВАЖНО: любой расчёт водопровода (гидравлика, проверка ППЗ, акт) обязан
+ * прогонять ветви через эту функцию — иначе насос на схеме есть, а давление
+ * в расчёте не поднимается.
+ */
+export function withWaterPumps<T extends TopoBranch>(
+  branches: T[],
+  symbols: PumpSymbolLite[],
+): T[] {
+  const pumpByBranch = new Map<string, PumpSymbolLite>();
+  for (const s of symbols) {
+    if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
+  }
+  if (pumpByBranch.size === 0) return branches;
+  return branches.map(b => {
+    const pump = pumpByBranch.get(b.id);
+    if (!pump) return b;
+    const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
+    return {
+      ...b,
+      wpHasPump: head > 0,
+      wpPumpHead: head,
+      wpPumpReverse: pump.airDirection === "reverse",
+    };
+  });
 }
 
 // ─── Основная функция расчёта ──────────────────────────────────────────────────
@@ -293,8 +329,28 @@ export function calcWaterNetwork(
         const hasReducer = br.wpHasReducer ?? false;
         const reducerOutTarget = br.wpReducerOutPressure ?? 0.5;
         const reducerActive = hasReducer && pAvailRaw > reducerOutTarget;
-        const pAvail = reducerActive ? reducerOutTarget : pAvailRaw;
+        const pAfterReducer = reducerActive ? reducerOutTarget : pAvailRaw;
         const reducerDeltaP = reducerActive ? pAvailRaw - reducerOutTarget : 0;
+
+        // ── Насос: повышает напор в направлении своего потока ─────────────
+        // wpPumpHead — суммарный напор насоса, м вод. ст. (с учётом
+        // параллельных). Переводим в МПа: P = ρ·g·H / 1e6.
+        // По умолчанию насос качает по направлению ветви from→to; при реверсе
+        // (wpPumpReverse) — против. Напор добавляем только когда обход top-down
+        // идёт в ту же сторону, что качает насос.
+        // Логика идентична backend/water-hydraulics/index.py — иначе расчёт
+        // в браузере и на сервере давал бы разные давления.
+        const hasPump = br.wpHasPump ?? false;
+        const pumpHeadM = hasPump ? (br.wpPumpHead ?? 0) : 0;
+        const pumpReverse = br.wpPumpReverse ?? false;
+        let pumpDeltaP = 0;
+        if (hasPump && pumpHeadM > 0) {
+          const pumpDirFromTo = !pumpReverse;
+          if (isFrom === pumpDirFromTo) {
+            pumpDeltaP = 1000 * 9.81 * pumpHeadM / 1e6;
+          }
+        }
+        const pAvail = pAfterReducer + pumpDeltaP;
 
         // Суммарный расход в этой трубе (из bottom-up прохода)
         const flow = branchFlow.get(branchId) ?? 0;
@@ -312,6 +368,9 @@ export function calcWaterNetwork(
           reducerInP:   pAvailRaw,
           reducerOutP:  pAvail,
           reducerDeltaP,
+          pumpActive: hasPump && pumpDeltaP > 0,
+          pumpHeadM,
+          pumpDeltaP,
           flowFromTo: isFrom, // вода течёт nid → neighborId
         });
 

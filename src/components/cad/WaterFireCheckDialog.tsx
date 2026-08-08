@@ -8,10 +8,13 @@ import {
 } from "@/lib/waterFireCheck";
 import { exportWaterCheckAct } from "@/lib/waterCheckExport";
 import { CONSUMER_CATALOG } from "@/lib/waterConsumers";
+import { withWaterPumps, type PumpSymbolLite } from "@/lib/waterHydraulics";
 
 interface Props {
   branches: TopoBranch[];
   nodes: TopoNode[];
+  /** Символы схемы — нужны, чтобы учесть напор насосных станций */
+  schemaSymbols?: PumpSymbolLite[];
   projectName?: string;
   /** Подсветить точку на схеме по клику в таблице */
   onHighlightNode?: (nodeId: string) => void;
@@ -25,8 +28,15 @@ function consumerName(id: string | undefined): string {
 }
 
 export default function WaterFireCheckDialog({
-  branches, nodes, projectName = "Подземный рудник", onHighlightNode, onClose,
+  branches: rawBranches, nodes, schemaSymbols = [],
+  projectName = "Подземный рудник", onHighlightNode, onClose,
 }: Props) {
+  // Впечатываем напор насосных станций со схемы в поля ветвей — без этого
+  // насос на схеме есть, а давление в проверке не поднимается.
+  const branches = useMemo(
+    () => withWaterPumps(rawBranches, schemaSymbols),
+    [rawBranches, schemaSymbols],
+  );
   const [minPressure, setMinPressure]   = useState(String(DEFAULT_WATER_NORMS.minPressure));
   const [maxPressure, setMaxPressure]   = useState(String(DEFAULT_WATER_NORMS.maxPressure));
   const [minFlow, setMinFlow]           = useState(String(DEFAULT_WATER_NORMS.minFlow));
@@ -318,6 +328,12 @@ export default function WaterFireCheckDialog({
           <div className="px-4 py-2 flex items-center gap-5 text-[11px]"
             style={{ background: "#f6f8fc", borderBottom: "1px solid #e0e4ee" }}>
             <span className="text-gray-600">Проверено точек: <b>{result.total}</b></span>
+            {result.pumpCount > 0 && (
+              <span style={{ color: "#1d4ed8" }}
+                title="Напор насосных станций учтён в расчёте давлений">
+                Насосов: {result.pumpCount} (+{result.pumpHeadTotal} м вод. ст.)
+              </span>
+            )}
             <span className="text-green-700">Обеспечено: {result.total - result.failed}</span>
             {result.failed > 0
               ? <span className="text-red-600 font-semibold">Не обеспечено: {result.failed}</span>

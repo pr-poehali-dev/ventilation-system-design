@@ -120,6 +120,12 @@ export interface WaterCheckResult {
   worst: WaterCheckRow | null;
   /** Сеть непригодна к расчёту (нет резервуара / нет труб / нет кранов) */
   error: string | null;
+  /** Число работающих насосных станций на водопроводе */
+  pumpCount: number;
+  /** Суммарный напор насосных станций, м вод. ст. */
+  pumpHeadTotal: number;
+  /** Прибавка давления от насосов, МПа */
+  pumpBoostMPa: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -349,7 +355,15 @@ export function checkFireWaterSupply(
   branchResults.forEach(br => {
     if ((br.flow ?? 0) > 0.01) maxVelAll = Math.max(maxVelAll, br.velocity ?? 0);
   });
-  const srcP = Math.max(...reservoirs.map(r => r.fireInitPressure ?? 0));
+  // Располагаемое давление = напор резервуара + суммарная прибавка насосов,
+  // которые реально работают в этом сценарии. Без учёта насосов потери
+  // получались бы нулевыми (давление у крана выше напора резервуара).
+  const srcPBase = Math.max(...reservoirs.map(r => r.fireInitPressure ?? 0));
+  let pumpBoostAll = 0;
+  branchResults.forEach(br => {
+    if (br.pumpActive) pumpBoostAll += br.pumpDeltaP ?? 0;
+  });
+  const srcP = srcPBase + pumpBoostAll;
 
   const sumFlow = ranked.reduce((s, x) => s + (nodeResults.get(x.node.id)?.flow ?? 0), 0);
   const capacity = reservoirs.reduce((s, r) => s + (r.fireCapacity ?? 0), 0);
@@ -437,7 +451,9 @@ export function checkFireWaterSupply(
     } else if (fails.includes("no-water")) {
       recommendation = "Вода не поступает — проверить вентили и связность трубопровода";
     } else if (fails.includes("no-pressure")) {
-      recommendation = `Не хватает напора ${pressureDeficit.toFixed(2)} МПа — нужен насос`;
+      recommendation = pumpBoostAll > 0
+        ? `Не хватает напора ${pressureDeficit.toFixed(2)} МПа — увеличить напор насосной станции на ${Math.ceil(pressureDeficit * 1e6 / (1000 * 9.81))} м вод. ст.`
+        : `Не хватает напора ${pressureDeficit.toFixed(2)} МПа — нужен насос`;
     } else if (fails.includes("over-pressure")) {
       recommendation = "Избыточный напор — установить редукционный клапан";
     }
@@ -569,8 +585,15 @@ export function checkWaterNetwork(
   const reservoirs = nodes.filter(n => (n.fireNodeType ?? "none") === "reservoir");
   const consumers  = nodes.filter(n => (n.fireNodeType ?? "none") === "consumer");
 
+  // Насосные станции на водопроводе (параметры уже впечатаны в ветви
+  // функцией withWaterPumps — см. waterHydraulics.ts)
+  const pumpBranches = waterBranches.filter(b => b.wpHasPump && (b.wpPumpHead ?? 0) > 0);
+  const pumpCount = pumpBranches.length;
+  const pumpHeadTotal = +pumpBranches.reduce((s, b) => s + (b.wpPumpHead ?? 0), 0).toFixed(1);
+
   const empty = (error: string): WaterCheckResult =>
-    ({ rows: [], norms, total: 0, failed: 0, worst: null, error });
+    ({ rows: [], norms, total: 0, failed: 0, worst: null, error,
+       pumpCount, pumpHeadTotal, pumpBoostMPa: 0 });
 
   if (waterBranches.length === 0) return empty("В схеме нет участков водопровода. Отметьте выработки с трубопроводом ППЗ.");
   if (reservoirs.length === 0)    return empty("В схеме нет резервуара (источника воды). Добавьте узел типа «Резервуар».");
@@ -616,15 +639,20 @@ export function checkWaterNetwork(
     const capacity = reservoirs.reduce((s, r) => s + (r.fireCapacity ?? 0), 0);
     const duration = totalFlow > 0 ? +((capacity / totalFlow) * 60).toFixed(1) : 0;
 
-    // Максимальная скорость воды на трубах, по которым реально идёт вода
+    // Максимальная скорость воды на трубах, по которым реально идёт вода,
+    // и суммарная прибавка давления от работающих насосных станций
     let maxVel = 0;
+    let pumpBoost = 0;
     branchResults.forEach(br => {
       if ((br.flow ?? 0) > 0.01) maxVel = Math.max(maxVel, br.velocity ?? 0);
+      if (br.pumpActive) pumpBoost += br.pumpDeltaP ?? 0;
     });
 
-    // Потери от резервуара до крана: начальный напор источника минус то,
-    // что осталось у крана (наглядно показывает «где просело»).
-    const srcP = Math.max(...reservoirs.map(r => r.fireInitPressure ?? 0));
+    // Потери до крана: располагаемое давление (напор резервуара + насосы)
+    // минус то, что осталось у крана — наглядно показывает, «где просело».
+    // Насосы обязательно учитывать: иначе при их наличии давление у крана
+    // выше напора резервуара и потери ошибочно выходят нулевыми.
+    const srcP = Math.max(...reservoirs.map(r => r.fireInitPressure ?? 0)) + pumpBoost;
     const pressureLoss = +Math.max(0, srcP - pressure).toFixed(4);
 
     const requiredFlow = (c.fireRequiredFlow ?? 0) > 0 ? c.fireRequiredFlow : norms.minFlow;
@@ -658,7 +686,11 @@ export function checkWaterNetwork(
     } else if (fails.includes("no-pressure")) {
       const parts = [`Поднять напор на ${pressureDeficit.toFixed(2)} МПа`];
       if (maxVel > norms.maxVelocity) parts.push("увеличить диаметр труб (скорость воды выше допустимой)");
-      else parts.push("установить повысительный насос или увеличить диаметр труб");
+      else if (pumpBoost > 0) {
+        // Насос в сети уже есть — значит не хватает именно его напора
+        const needM = Math.ceil(pressureDeficit * 1e6 / (1000 * 9.81));
+        parts.push(`увеличить напор насосной станции на ${needM} м вод. ст. или диаметр труб`);
+      } else parts.push("установить повысительный насос или увеличить диаметр труб");
       recommendation = parts.join(": ");
     } else if (fails.includes("over-pressure")) {
       recommendation = `Установить редукционный клапан: превышение ${(pressure - norms.maxPressure).toFixed(2)} МПа`;
@@ -715,5 +747,8 @@ export function checkWaterNetwork(
     failed: rows.filter(r => !r.ok).length,
     worst,
     error: null,
+    pumpCount,
+    pumpHeadTotal,
+    pumpBoostMPa: +(1000 * 9.81 * pumpHeadTotal / 1e6).toFixed(4),
   };
 }

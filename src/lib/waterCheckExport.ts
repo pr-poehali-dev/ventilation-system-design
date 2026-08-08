@@ -109,6 +109,14 @@ function buildTitleSheet(meta: WaterActMeta, result: WaterCheckResult): XLSX.Wor
     [`   • количество одновременно работающих стволов — ${n.simultaneous};`],
     [`   • максимальная скорость воды в трубопроводе — ${n.maxVelocity} м/с.`],
     [""],
+    ...(result.pumpCount > 0
+      ? [
+          ["В расчёте учтена работа насосных станций противопожарного водопровода:"],
+          [`   • количество насосных станций — ${result.pumpCount};`],
+          [`   • суммарный напор — ${result.pumpHeadTotal} м вод. ст. (${result.pumpBoostMPa} МПа).`],
+          [""],
+        ]
+      : []),
     [`Дата: ${meta.date}`],
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);

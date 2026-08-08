@@ -271,6 +271,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
         <WaterFireCheckDialog
           branches={p.branches}
           nodes={p.nodes}
+          schemaSymbols={p.schemaSymbols}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           onClose={() => p.setShowWaterCheck(false)}
         />

@@ -21,6 +21,7 @@ import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import NodePeoplePanel from "@/components/cad/NodePeoplePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
+import { withWaterPumps } from "@/lib/waterHydraulics";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
@@ -1464,25 +1465,11 @@ export default function CadPage() {
     if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
     // Дебаунс 400мс — при больших схемах (Canvas >800 ветвей) не спамим запросами
     const tid = setTimeout(() => {
-      // Карта: branchId → символ насоса (для передачи напора в расчёт)
-      const pumpByBranch = new Map<string, typeof schemaSymbols[number]>();
-      for (const s of schemaSymbols) {
-        if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
-      }
       // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload.
-      // Если на ветви стоит насос — «впечатываем» его параметры в поля ветви
-      // (аналогично редукционному клапану), чтобы backend учёл напор насоса.
-      const waterBranches = branches.filter(b => b.hasWaterPipe).map(b => {
-        const pump = pumpByBranch.get(b.id);
-        if (!pump) return b;
-        const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
-        return {
-          ...b,
-          wpHasPump: head > 0,
-          wpPumpHead: head,                                  // м вод. ст. (суммарно по параллельным)
-          wpPumpReverse: pump.airDirection === "reverse",    // насос качает против направления ветви
-        };
-      });
+      // Параметры насосных станций со схемы «впечатываем» в поля ветвей общей
+      // функцией withWaterPumps — той же, что использует проверка ППЗ, чтобы
+      // напор насоса учитывался одинаково во всех расчётах.
+      const waterBranches = withWaterPumps(branches.filter(b => b.hasWaterPipe), schemaSymbols);
       const waterNodeIds = new Set<string>();
       waterBranches.forEach(b => { waterNodeIds.add(b.fromId); waterNodeIds.add(b.toId); });
       // Также добавляем узлы с fireNodeType (резервуары и потребители)
