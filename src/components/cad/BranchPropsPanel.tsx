@@ -8,7 +8,8 @@ import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import {
   type VentSection, type VentNorms, type FaceType,
-  DEFAULT_VENT_NORMS, FACE_TYPE_OPTIONS, simultaneityFactor,
+  DEFAULT_VENT_NORMS, FACE_TYPE_OPTIONS, FACE_TYPE_LABEL, FACE_TYPE_FACTORS,
+  simultaneityFactor,
 } from "@/lib/ventSections";
 import { calcFaceDemand, FACTOR_LABEL } from "@/lib/airDemand";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
@@ -2234,6 +2235,25 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
           const section = ventSections.find(s => s.id === (branch.ventSectionId ?? "")) ?? null;
           const d = calcFaceDemand(branch, ventNorms, section);
 
+          // Набор факторов, применимых к выбранному типу забоя: лишние поля
+          // не показываем, чтобы карточка не пугала объёмом. Если по скрытому
+          // фактору остались данные от прежнего типа забоя — блок показываем
+          // с предупреждением, иначе цифра «молча» уйдёт в расчёт.
+          const F = FACE_TYPE_FACTORS[faceType];
+          const hasBlastData  = (branch.ventBlastMassCoal ?? 0) > 0 || (branch.ventBlastMassRock ?? 0) > 0;
+          const hasDieselData = (branch.ventDieselPower ?? 0) > 0 || (branch.ventDieselCount ?? 0) > 0;
+          const showBlast  = F.blast  || hasBlastData;
+          const showDiesel = F.diesel || hasDieselData;
+
+          /** Предупреждение о данных, не типичных для этого типа забоя */
+          const StaleNote = ({ what }: { what: string }) => (
+            <div className="mx-2 mb-1 px-2 py-1 rounded text-[9px] leading-snug"
+              style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
+              Для типа «{FACE_TYPE_LABEL[faceType]}» {what} обычно не учитывают,
+              но данные заданы и участвуют в расчёте. Очистите поля, если они не нужны.
+            </div>
+          );
+
           // Подсказка расчётного значения для полей «взять из норм»
           const ph = (v: number) => `${v}`;
 
@@ -2302,6 +2322,13 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   наибольшее из значений (ФНиП № 505, п. 155).
                 </div>
               ) : (<>
+                <div className="px-2 py-1 text-[9px] text-gray-500 leading-snug"
+                  style={{ background: "#f8fafc", borderBottom: "1px solid #ebebeb" }}>
+                  Учитываемые факторы: люди
+                  {F.blast && ", газы взрывных работ"}
+                  {F.diesel && ", дизельное оборудование"}
+                  , минимальная скорость.
+                </div>
                 <InlineLabel label="Наименование">
                   <EditInput value={branch.ventDescription ?? ""}
                     onChange={(v) => onUpdate({ ventDescription: v })} />
@@ -2338,7 +2365,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 </div>
 
                 {/* ── Взрывные работы ── */}
+                {showBlast && (<>
                 <SectionHeader title="Взрывные работы" />
+                {!F.blast && <StaleNote what="газы взрывных работ" />}
                 <InlineLabel label="ВВ по углю, кг">
                   <EditInput type="number" step="0.1"
                     value={branch.ventBlastMassCoal || ""}
@@ -2372,9 +2401,12 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   {" "}{ventNorms.gasPerKgRock} л/кг по породе. Пустые поля —
                   значения из справочника норм.
                 </div>
+                </>)}
 
                 {/* ── Дизельное оборудование ── */}
+                {showDiesel && (<>
                 <SectionHeader title="Дизельное оборудование" />
+                {!F.diesel && <StaleNote what="дизельное оборудование" />}
                 <InlineLabel label="Число машин">
                   <EditInput type="number" step="1"
                     value={branch.ventDieselCount || ""}
@@ -2404,6 +2436,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                   Коэффициент одновременности подставляется по числу машин;
                   можно задать своё значение.
                 </div>
+                </>)}
 
                 {/* ── Коэффициенты ── */}
                 <SectionHeader title="Коэффициенты" />
@@ -2426,8 +2459,10 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 {/* ── Результат ── */}
                 <SectionHeader title="Потребность по факторам" />
                 <FactorRow label="По людям"          value={d.byPeople} active={d.factor === "people"} />
-                <FactorRow label="По газам ВР"       value={d.byBlast}  active={d.factor === "blast"} />
-                <FactorRow label="По дизелю"         value={d.byDiesel} active={d.factor === "diesel"} />
+                {showBlast &&
+                  <FactorRow label="По газам ВР"     value={d.byBlast}  active={d.factor === "blast"} />}
+                {showDiesel &&
+                  <FactorRow label="По дизелю"       value={d.byDiesel} active={d.factor === "diesel"} />}
                 <FactorRow label="По мин. скорости"  value={d.byVMin}   active={d.factor === "vmin"} />
 
                 {d.formula && (

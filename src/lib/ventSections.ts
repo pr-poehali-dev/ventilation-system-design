@@ -124,6 +124,39 @@ export const FACE_TYPE_OPTIONS: { value: FaceType; label: string }[] =
     .map(v => ({ value: v, label: FACE_TYPE_LABEL[v] }));
 
 /**
+ * Какие факторы потребности применимы к типу забоя.
+ * Нужно, чтобы карточка забоя не показывала лишние поля: в конвейерной
+ * выработке не ведут взрывные работы, в камере служебного назначения — тоже.
+ *
+ * Фактор «по минимальной скорости» здесь не указан: он применяется всегда
+ * и считается из сечения выработки, ручного ввода не требует.
+ *
+ * ВАЖНО: это влияет ТОЛЬКО на отображение полей. Расчёт (airDemand.ts)
+ * по-прежнему считает все факторы — если данные заданы, они учтутся.
+ */
+export interface FaceFactorSet {
+  /** Расход по числу людей */
+  people: boolean;
+  /** Разбавление газов взрывных работ */
+  blast: boolean;
+  /** Проветривание дизельного оборудования */
+  diesel: boolean;
+}
+
+export const FACE_TYPE_FACTORS: Record<FaceType, FaceFactorSet> = {
+  none:        { people: false, blast: false, diesel: false },
+  // Очистной и подготовительный забой, тупиковая выработка — полный набор
+  stoping:     { people: true,  blast: true,  diesel: true  },
+  development: { people: true,  blast: true,  diesel: true  },
+  deadend:     { people: true,  blast: true,  diesel: true  },
+  // Камеры служебного назначения: взрывных работ нет, но техника бывает
+  // (гараж, ремонтная камера, зарядная)
+  chamber:     { people: true,  blast: false, diesel: true  },
+  // Конвейерная выработка: транспорт, взрывных работ и дизеля нет
+  conveyor:    { people: true,  blast: false, diesel: false },
+};
+
+/**
  * Нормы расхода воздуха — редактируемый справочник проекта.
  * Значения по умолчанию соответствуют ФНиП № 505 и сложившейся практике
  * проектирования рудников.
