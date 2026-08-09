@@ -1724,17 +1724,6 @@ def compute_node_pressures(edges, Q, nodes_in):
             visited.add(other)
             queue.append(other)
 
-    # Депрессия узла отсчитывается ОТ ВЫХОДА ГЛАВНОГО ВЕНТИЛЯТОРА — как в
-    # АэроСети. Раньше базой была атмосфера, и в узле выходило только −172 Па
-    # вместо −1572 Па: показывались потери от поверхности до узла, а не полная
-    # депрессия шахты. Физика та же, сдвигается только точка отсчёта.
-    main_fan_H = 0.0
-    _fans = [e for e in edges if e.get("hasFan") and not e.get("fanStopped")]
-    _main = [e for e in _fans if e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ")] or _fans
-    if _main:
-        _fe = _main[0]
-        main_fan_H = fan_H(_fe, abs(Q.get(_fe["id"], 0.0)))
-
     # Формируем список узлов с давлениями
     nodes_out = []
     for n in nodes_in:
@@ -1748,8 +1737,8 @@ def compute_node_pressures(edges, Q, nodes_in):
         z = node_z.get(nid, 0.0)
         # Коррекция на высоту: +12 Па/м (вниз давление растёт)
         p_abs = round(P + 12.0 * (-z))
-        # Депрессия узла: ноль на выходе ВГП, к устью растёт по модулю
-        p_fan = round(P - P_ATM - main_fan_H)
+        # Депрессия = избыточное давление над атмосферой (распределение напора по сети)
+        p_fan = round(P - P_ATM)
         nodes_out.append({"id": nid, "computedPressure": p_abs, "computedFanPressure": p_fan})
     return nodes_out
 
