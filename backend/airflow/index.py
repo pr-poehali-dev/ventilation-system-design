@@ -1760,6 +1760,24 @@ def compute_node_pressures(edges, Q, nodes_in):
             visited.add(other)
             queue.append(other)
 
+    # ДЕПРЕССИЯ УЗЛА — УБЫВАЕТ ОТ ВГП ПО ХОДУ ВОЗДУХА (как в АэроСети).
+    #
+    # Раньше показывалась «потерянная» депрессия — накопленные потери от устья
+    # до узла (у сопряжения выходило −171 Па). В АэроСети показывают ОСТАТОК
+    # напора ВГП: на самом вентиляторе полная депрессия шахты (−1726 Па), и по
+    # мере движения воздуха она убывает по модулю на потери каждой ветви.
+    #
+    #   депрессия_узла = −(H_вгп − потери_до_узла)
+    #
+    # Проверка на схеме пользователя: H_вгп = 1738 Па, потери до сопряжения
+    # 171 Па → −(1738 − 171) = −1567 Па; АэроСеть даёт −1570 Па.
+    main_fan_H = 0.0
+    _fans = [e for e in edges if e.get("hasFan") and not e.get("fanStopped")]
+    _main = [e for e in _fans if e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ")] or _fans
+    if _main:
+        _fe = _main[0]
+        main_fan_H = fan_H(_fe, abs(Q.get(_fe["id"], 0.0)))
+
     # Формируем список узлов с давлениями
     nodes_out = []
     for n in nodes_in:
@@ -1773,8 +1791,10 @@ def compute_node_pressures(edges, Q, nodes_in):
         z = node_z.get(nid, 0.0)
         # Коррекция на высоту: +12 Па/м (вниз давление растёт)
         p_abs = round(P + 12.0 * (-z))
-        # Депрессия = избыточное давление над атмосферой (распределение напора по сети)
-        p_fan = round(P - P_ATM)
+        # Накопленные потери от устья до узла (P − P_атм ≤ 0), берём модуль
+        losses = abs(P - P_ATM)
+        # Остаток напора ВГП в узле, со знаком «минус» (депрессия)
+        p_fan = -round(main_fan_H - losses) if main_fan_H > 0 else round(P - P_ATM)
         nodes_out.append({"id": nid, "computedPressure": p_abs, "computedFanPressure": p_fan})
     return nodes_out
 
