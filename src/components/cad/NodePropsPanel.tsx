@@ -86,14 +86,7 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
       <Row label="Давление абс. (расч.), Па">
         <ComputedInput value={numVal(node.computedPressure, 0)} />
       </Row>
-      {/* Депрессия от выхода ВГП — как в АэроСети: ноль на вентиляторе,
-          у устья набирается полная депрессия шахты. Основное значение для
-          инженера, поэтому идёт первым. */}
-      <Row label="Депрессия от ВГП (расч.), Па">
-        <ComputedInput value={numVal(node.computedNodeDepression, 0)} />
-      </Row>
-      {/* Прежнее значение: отсчёт от атмосферы (потери от поверхности до узла) */}
-      <Row label="Депрессия от атмосферы, Па">
+      <Row label="Депрессия (расч.), Па">
         <ComputedInput value={numVal(node.computedFanPressure, 0)} />
       </Row>
       <Row label="Давление взрыва (расч.), кПа">
