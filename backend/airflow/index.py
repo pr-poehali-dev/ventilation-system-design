@@ -1702,24 +1702,60 @@ def compute_node_pressures(edges, Q, nodes_in):
     visited = {GND}
     queue = collections.deque([GND])
 
+    # ОБХОД ПО ХОДУ ВОЗДУХА (как в АэроСети).
+    # Раньше очередь шла по графу в произвольном порядке смежности, и потеря
+    # ветви прибавлялась/вычиталась по тому, как выработка НАРИСОВАНА (a→b),
+    # а не куда реально течёт воздух. На разветвлённой сети узел получал
+    # давление «с чужой стороны»: на сопряжении выходило −172 Па (потери от
+    # устья) вместо −1570 Па (депрессия от ВГП).
+    #
+    # Теперь давление разносится строго вниз по потоку: сначала обходим сеть
+    # по направлению движения воздуха, и лишь то, что осталось недостижимым
+    # (тупики, ветви с нулевым расходом), добираем обычным обходом.
+    def _edge_dP(e, q):
+        """Падение давления вдоль ветви в направлении a→b."""
+        R = float(e.get("R", 0.0))
+        habs = 0.0
+        if e.get("hasFan") and not e.get("fanStopped"):
+            habs = fan_H(e, abs(q))
+        fan_dir = -1.0 if e.get("fanReverse") else 1.0
+        H = fan_dir * habs
+        # Естественная тяга действует как дополнительный источник напора:
+        # в депрессии ветви она учтена, здесь её тоже нужно учитывать, иначе
+        # на глубоких стволах узлы расходятся на сотни паскалей.
+        h_nat = float(e.get("naturalDraft", 0.0) or 0.0)
+        return R * q * abs(q) - H - h_nat
+
+    # Проход 1: строго по направлению потока
     while queue:
         u = queue.popleft()
         for other, ei in adj[u]:
             if other in visited:
                 continue
-            e  = edges[ei]
-            q  = Q.get(e["id"], 0.0)
-            R  = float(e.get("R", 0.0))
-            # Напор вентилятора со знаком (+ = нагнетание a→b)
-            habs = 0.0
-            if e.get("hasFan") and not e.get("fanStopped"):
-                habs = fan_H(e, abs(q))
-            fan_dir = -1.0 if e.get("fanReverse") else 1.0
-            H = fan_dir * habs
-            # ΔP = R·Q·|Q| - H (падение давления от a к b)
-            dP = R * q * abs(q) - H
+            e = edges[ei]
+            q = Q.get(e["id"], 0.0)
+            # Идём только «вниз по потоку»: из u воздух должен вытекать.
+            # q > 0 → поток a→b, значит из a в b; q < 0 → наоборот.
+            downstream = (e["a"] == u and q > 0) or (e["b"] == u and q < 0)
+            if not downstream:
+                continue
+            dP = _edge_dP(e, q)
             Pu = pressure[u]
-            # u == a → P_b = P_a - dP; u == b → P_a = P_b + dP → P_other = Pu + dP
+            pressure[other] = Pu - dP if e["a"] == u else Pu + dP
+            visited.add(other)
+            queue.append(other)
+
+    # Проход 2: добираем узлы, не достижимые по потоку (тупики, Q≈0)
+    queue = collections.deque(visited)
+    while queue:
+        u = queue.popleft()
+        for other, ei in adj[u]:
+            if other in visited:
+                continue
+            e = edges[ei]
+            q = Q.get(e["id"], 0.0)
+            dP = _edge_dP(e, q)
+            Pu = pressure[u]
             pressure[other] = Pu - dP if e["a"] == u else Pu + dP
             visited.add(other)
             queue.append(other)

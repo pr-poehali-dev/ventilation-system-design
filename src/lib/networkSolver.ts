@@ -999,25 +999,50 @@ export function solveNetwork(
   // ──────────────────────────────────────────────────────────────────────────
   const pressure = new Map<string, number>([[root, 101325]]);
   const pVis     = new Set([root]);
-  const pQueue   = [root];
 
+  // ΔP вдоль ветви в направлении a→b (потеря с учётом вентилятора).
+  // R в кМюрг → мм вод. ст., переводим в Па (×9,81); напор H уже в Па.
+  const edgeDP = (e: Edge): number => {
+    const Habs    = fanH(e, e.Q);                   // |H| >= 0
+    const fan_dir = e.fanReverse ? -1 : 1;
+    const H       = fan_dir * Habs;                 // знаковый: > 0 нагнетание a→b
+    return e.R * e.Q * Math.abs(e.Q) * PA_PER_MM_H2O - H;
+  };
+
+  // ОБХОД ПО ХОДУ ВОЗДУХА (как в АэроСети).
+  // Раньше давление разносилось по остовному дереву в произвольном порядке, и
+  // знак потери определялся тем, как выработка НАРИСОВАНА (a→b), а не куда
+  // реально течёт воздух. Из-за этого на сопряжении получались потери от
+  // устья вместо депрессии от ВГП.
+  const pQueue = [root];
   while (pQueue.length) {
     const u = pQueue.shift()!;
     for (const { edgeIdx, other } of adj.get(u)!) {
-      if (pVis.has(other) || !treeSet.has(edgeIdx)) continue;
-      const e  = edges[edgeIdx];
-      const Habs    = fanH(e, e.Q);                   // |H| >= 0
-      const fan_dir = e.fanReverse ? -1 : 1;
-      const H       = fan_dir * Habs;                 // знаковый: > 0 нагнетание a→b
-      // ΔP = R·Q·|Q| − H (потеря давления от a к b с учётом вентилятора).
-      // R в кМюрг → мм вод. ст., переводим в Па (×9,81); напор H уже в Па.
-      const dP = e.R * e.Q * Math.abs(e.Q) * PA_PER_MM_H2O - H;
+      if (pVis.has(other)) continue;
+      const e = edges[edgeIdx];
+      // Идём только вниз по потоку: из узла u воздух должен вытекать.
+      const downstream = (e.a === u && e.Q > 0) || (e.b === u && e.Q < 0);
+      if (!downstream) continue;
+      const dP = edgeDP(e);
       const Pu = pressure.get(u)!;
-      // u === e.a → P_b = P_a − dP
-      // u === e.b → P_a = P_b + dP, т.е. P_a = Pu + dP → P_other = Pu + dP
       pressure.set(other, e.a === u ? Pu - dP : Pu + dP);
       pVis.add(other);
       pQueue.push(other);
+    }
+  }
+
+  // Добираем узлы, недостижимые по потоку (тупики, ветви с Q≈0) — по дереву.
+  const pQueue2 = [...pVis];
+  while (pQueue2.length) {
+    const u = pQueue2.shift()!;
+    for (const { edgeIdx, other } of adj.get(u)!) {
+      if (pVis.has(other) || !treeSet.has(edgeIdx)) continue;
+      const e  = edges[edgeIdx];
+      const dP = edgeDP(e);
+      const Pu = pressure.get(u)!;
+      pressure.set(other, e.a === u ? Pu - dP : Pu + dP);
+      pVis.add(other);
+      pQueue2.push(other);
     }
   }
 
