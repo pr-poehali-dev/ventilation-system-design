@@ -1021,15 +1021,23 @@ export function solveNetwork(
     }
   }
 
+  // Депрессия узла отсчитывается ОТ ВЫХОДА ГЛАВНОГО ВЕНТИЛЯТОРА — так же, как
+  // в АэроСети. Раньше базой была атмосфера (P − 101325), и в узле выходило
+  // только −172 Па вместо −1572 Па: показывались потери от поверхности до
+  // узла, а не полная депрессия шахты. Физика расчёта не меняется, сдвигается
+  // только точка отсчёта — на величину напора ВГП.
+  const mainFanEdge = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
+                   ?? edges.find(e => e.hasFan && !e.fanStopped);
+  const mainFanH = mainFanEdge ? fanH(mainFanEdge, mainFanEdge.Q) : 0;
+
   const nodesOut = nodesIn.map(n => {
     const id = n.atmosphereLink ? GND_ID : n.id;
     const P  = pressure.get(id);
     if (P === undefined) return n;
-    // Давление вентилятора в узле = избыточное над атмосферой (распределение напора по сети)
     return {
       ...n,
       computedPressure: Math.round(P + 12 * (-n.z)),
-      computedFanPressure: Math.round(P - 101325),
+      computedFanPressure: Math.round(P - 101325 - mainFanH),
     };
   });
 
