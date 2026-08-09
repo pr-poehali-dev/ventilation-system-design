@@ -1724,6 +1724,17 @@ def compute_node_pressures(edges, Q, nodes_in):
             visited.add(other)
             queue.append(other)
 
+    # Напор главного вентилятора — база отсчёта депрессии узлов «как в АэроСети».
+    # Там ноль депрессии на выходе ВГП, а не на поверхности: у устья получается
+    # полная депрессия шахты, а не только потери от атмосферы до узла.
+    # Физика расчёта та же, отличается только точка отсчёта.
+    main_fan_H = 0.0
+    _fans = [e for e in edges if e.get("hasFan") and not e.get("fanStopped")]
+    _main = [e for e in _fans if e.get("fanType", "ГВУ") in ("ГВУ", "ВВУ")] or _fans
+    if _main:
+        _fe = _main[0]
+        main_fan_H = fan_H(_fe, abs(Q.get(_fe["id"], 0.0)))
+
     # Формируем список узлов с давлениями
     nodes_out = []
     for n in nodes_in:
@@ -1732,14 +1743,21 @@ def compute_node_pressures(edges, Q, nodes_in):
         pid = GND if (n.get("isAtm") or n.get("atmosphereLink")) else nid
         P = pressure.get(pid)
         if P is None:
-            nodes_out.append({"id": nid, "computedPressure": 0, "computedFanPressure": 0})
+            nodes_out.append({"id": nid, "computedPressure": 0,
+                              "computedFanPressure": 0, "computedNodeDepression": 0})
             continue
         z = node_z.get(nid, 0.0)
         # Коррекция на высоту: +12 Па/м (вниз давление растёт)
         p_abs = round(P + 12.0 * (-z))
         # Депрессия = избыточное давление над атмосферой (распределение напора по сети)
         p_fan = round(P - P_ATM)
-        nodes_out.append({"id": nid, "computedPressure": p_abs, "computedFanPressure": p_fan})
+        nodes_out.append({
+            "id": nid,
+            "computedPressure": p_abs,
+            "computedFanPressure": p_fan,
+            # Отсчёт от выхода ВГП (как в АэроСети)
+            "computedNodeDepression": round(p_fan - main_fan_H),
+        })
     return nodes_out
 
 

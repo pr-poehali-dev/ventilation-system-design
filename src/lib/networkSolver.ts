@@ -1021,15 +1021,25 @@ export function solveNetwork(
     }
   }
 
+  // Напор главного вентилятора — база отсчёта депрессии узлов «как в АэроСети».
+  // Там ноль депрессии — на выходе ВГП, а не на поверхности, поэтому у устья
+  // получается полная депрессия шахты (напр. −1572 Па), а у нас от атмосферы
+  // выходило только −172 Па. Физика одна, отличается точка отсчёта.
+  const mainFanEdge = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
+                   ?? edges.find(e => e.hasFan && !e.fanStopped);
+  const mainFanH = mainFanEdge ? fanH(mainFanEdge, mainFanEdge.Q) : 0;
+
   const nodesOut = nodesIn.map(n => {
     const id = n.atmosphereLink ? GND_ID : n.id;
     const P  = pressure.get(id);
     if (P === undefined) return n;
     // Давление вентилятора в узле = избыточное над атмосферой (распределение напора по сети)
+    const excess = P - 101325;
     return {
       ...n,
       computedPressure: Math.round(P + 12 * (-n.z)),
-      computedFanPressure: Math.round(P - 101325),
+      computedFanPressure: Math.round(excess),
+      computedNodeDepression: Math.round(excess - mainFanH),
     };
   });
 

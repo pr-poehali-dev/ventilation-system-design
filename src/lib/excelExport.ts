@@ -100,6 +100,7 @@ export const NODE_COLUMNS: ExportColumn[] = [
   { key: "computedAirTemp",  label: "Фактическая температура воздуха °C", group: "Температура" },
   { key: "modelAirTemp",     label: "Модельная температура воздуха °C",   group: "Температура" },
   { key: "computedPressure", label: "Модельное давление воздуха Па",      group: "Давление" },
+  { key: "computedNodeDepression", label: "Депрессия от ВГП Па",          group: "Давление" },
   { key: "wallTemp",         label: "Фактическая температура стенок °C",  group: "Температура" },
   { key: "computedWallTemp", label: "Модельная температура стенок °C",    group: "Температура" },
   { key: "computedGasConc",  label: "Модельная концентрация газа %",      group: "Газы" },
@@ -220,6 +221,7 @@ function getNodeValue(n: TopoNode, key: string): string | number {
     case "computedAirTemp":  return +n.computedAirTemp.toFixed(1);
     case "modelAirTemp":     return +n.computedAirTemp.toFixed(1);
     case "computedPressure": return +n.computedPressure.toFixed(1);
+    case "computedNodeDepression": return +(n.computedNodeDepression ?? 0).toFixed(1);
     case "wallTemp":         return +n.wallTemp.toFixed(1);
     case "computedWallTemp": return +n.computedWallTemp.toFixed(1);
     case "computedGasConc":  return +n.computedGasConc.toFixed(3);
