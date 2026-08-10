@@ -352,10 +352,6 @@ const WINDOW_MU = 0.59;          // по умолчанию (металл и п�
 const WINDOW_MU_CONCRETE = 0.75; // бетонная дверь с окном
 const WINDOW_MU_BRICK = 0.66;    // кирпичная дверь с окном
 const WINDOW_MU_WOOD = 0.8148;   // деревянная дверь с окном
-// Открытая металлическая дверь: эталон АэроСеть — окно 10 м², сечение 14,6 м²
-// → R = 0,00038 кМюрг. Открытая створка почти не сужает поток, поэтому μ выше,
-// чем у решётчатой и глухой двери.
-const WINDOW_MU_OPEN_METAL = 0.9245;
 // Ускорение свободного падения — переводной множитель между «нашими» единицами
 // сопротивления (Н·с²/м⁸, ΔP = R·Q² в Па) и рудничными кМюрг АэроСети
 // (кгс·с²/м⁸, ΔP = R·Q²·g). R_нашего = R_АэроСети · g.
@@ -413,12 +409,35 @@ function latticeMetalRkMurg(windowArea: number, sectionArea?: number): number {
   return r > 0 ? r : 0;
 }
 
-// Дверь вентиляционная ОТКРЫТАЯ МЕТАЛЛИЧЕСКАЯ ("open_metal") с заданным окном.
-// Считается как диафрагма С УЧЁТОМ скорости подхода (μ=0,9245).
-// Эталон: окно 10 м², сечение 14,6 м² → R = 0,00038 кМюрг.
-// Прежняя формула (μ=0,59, без подхода) давала 0,00176 — завышение в 4,6 раза.
+// Дверь вентиляционная ОТКРЫТАЯ МЕТАЛЛИЧЕСКАЯ ("open_metal") — ОТДЕЛЬНЫЙ расчёт.
+//
+// Как у решётчатой и у двери с регулируемым окном, коэффициент расхода зависит
+// от степени открытия m = Sок/Sвыр — постоянным μ два эталона не описываются:
+//   окно 10 м², сечение 14,6 м² (m=0,685) → R=0,00038 кМюрг (эквивалент μ≈0,925)
+//   окно 4 м²,  сечение 20,3 м² (m=0,197) → R=0,00800 кМюрг (эквивалент μ≈0,678)
+//
+// Считаем через безразмерный коэффициент сопротивления диафрагмы
+// (скорость отнесена к площади окна):
+//   ζ = (1 + k·(1−m)^n − m)²,   R_кМюрг = ζ·ρ/(2·g·Sок²)
+// Параметры откалиброваны ровно по двум эталонам выше (совпадение 0,00%).
+// Значения k и n близки к решётчатой двери — физически это та же диафрагма.
+const OPEN_METAL_K = 0.6916;
+const OPEN_METAL_N = 0.3289;
+
 function isOpenMetalWindow(typeId?: string): boolean {
   return typeId === "open_metal";
+}
+
+// R открытой металлической двери в кМюрг.
+function openMetalRkMurg(windowArea: number, sectionArea?: number): number {
+  const Sok = windowArea;
+  if (Sok <= 0.001) return 0;
+  const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
+  // Без известного сечения берём предельный случай m=0 (окно ≪ выработки).
+  const m = S > 0 ? Math.min(1, Sok / S) : 0;
+  const zeta = Math.pow(1 + OPEN_METAL_K * Math.pow(1 - m, OPEN_METAL_N) - m, 2);
+  const r = zeta * 1.2 / (2 * G_ACCEL * Sok * Sok);
+  return r > 0 ? r : 0;
 }
 
 // Дверь с РЕГУЛИРУЕМЫМ ОКНОМ МЕТАЛЛИЧЕСКАЯ ("win_metal", дубль "proem_metal")
@@ -481,9 +500,9 @@ function metalWindowRkMurg(windowArea: number, sectionArea?: number): number {
 // latticeMetalRkMurg (переменный коэффициент, зависит от степени открытия).
 //   Проверка: Sок=8, Sвыр=15,3 → 0,00100; Sок=5, Sвыр=20 → 0,00470 кМюрг.
 //
-// Открытая металлическая дверь "open_metal" (μ=0,9245): та же диафрагма с
-// учётом подхода; открытая створка почти не сужает поток, поэтому μ выше:
-//   Проверка: Sок=10, Sвыр=14,6 → R≈0,00038 кМюрг (совпадает с АэроСетью).
+// Открытая металлическая дверь "open_metal" — считается ОТДЕЛЬНОЙ функцией
+// openMetalRkMurg (переменный коэффициент, зависит от степени открытия).
+//   Проверка: Sок=10, Sвыр=14,6 → 0,00038; Sок=4, Sвыр=20,3 → 0,00800 кМюрг.
 export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, typeId?: string): number {
   const Sok = windowArea;
   if (Sok <= 0.001) return 0;
@@ -495,11 +514,13 @@ export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, t
   if (isMetalWindow(typeId)) {
     return metalWindowRkMurg(Sok, sectionArea);
   }
-  if (isConcreteWindow(typeId) || isBrickWindow(typeId) || isWoodWindow(typeId)
-      || isOpenMetalWindow(typeId)) {
-    const mu = isBrickWindow(typeId)     ? WINDOW_MU_BRICK
-             : isWoodWindow(typeId)      ? WINDOW_MU_WOOD
-             : isOpenMetalWindow(typeId) ? WINDOW_MU_OPEN_METAL
+  // Открытая металлическая — своя модель (см. openMetalRkMurg).
+  if (isOpenMetalWindow(typeId)) {
+    return openMetalRkMurg(Sok, sectionArea);
+  }
+  if (isConcreteWindow(typeId) || isBrickWindow(typeId) || isWoodWindow(typeId)) {
+    const mu = isBrickWindow(typeId) ? WINDOW_MU_BRICK
+             : isWoodWindow(typeId)  ? WINDOW_MU_WOOD
              : WINDOW_MU_CONCRETE;
     const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
     const approach = S > 0 ? 1 / (S * S) : 0;
