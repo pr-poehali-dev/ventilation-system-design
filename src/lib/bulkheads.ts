@@ -355,6 +355,10 @@ const WINDOW_MU_WOOD = 0.8148;   // деревянная дверь с окно�
 // Решётчатая металлическая дверь: эталон АэроСеть — окно 8 м², сечение 15,3 м²
 // → R = 0,001 кМюрг (диафрагма с учётом скорости подхода).
 const WINDOW_MU_LAT_METAL = 0.8334;
+// Открытая металлическая дверь: эталон АэроСеть — окно 10 м², сечение 14,6 м²
+// → R = 0,00038 кМюрг. Открытая створка почти не сужает поток, поэтому μ выше,
+// чем у решётчатой и глухой двери.
+const WINDOW_MU_OPEN_METAL = 0.9245;
 // Ускорение свободного падения — переводной множитель между «нашими» единицами
 // сопротивления (Н·с²/м⁸, ΔP = R·Q² в Па) и рудничными кМюрг АэроСети
 // (кгс·с²/м⁸, ΔP = R·Q²·g). R_нашего = R_АэроСети · g.
@@ -387,6 +391,14 @@ function isLatticeMetalWindow(typeId?: string): boolean {
   return typeId === "lat_metal";
 }
 
+// Дверь вентиляционная ОТКРЫТАЯ МЕТАЛЛИЧЕСКАЯ ("open_metal") с заданным окном.
+// Считается как диафрагма С УЧЁТОМ скорости подхода (μ=0,9245).
+// Эталон: окно 10 м², сечение 14,6 м² → R = 0,00038 кМюрг.
+// Прежняя формула (μ=0,59, без подхода) давала 0,00176 — завышение в 4,6 раза.
+function isOpenMetalWindow(typeId?: string): boolean {
+  return typeId === "open_metal";
+}
+
 // Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ в кМюрг (кгс·с²/м⁸ — те же
 // единицы, что и solidBulkheadRkMurg).
 //
@@ -411,13 +423,19 @@ function isLatticeMetalWindow(typeId?: string): boolean {
 // Решётчатая металлическая дверь "lat_metal" (μ=0,8334): диафрагма с учётом
 // подхода (НЕ по «чистой» скорости в окне, как обычная металлическая дверь):
 //   Проверка: Sок=8, Sвыр=15,3 → R≈0,00100 кМюрг (совпадает с АэроСетью).
+//
+// Открытая металлическая дверь "open_metal" (μ=0,9245): та же диафрагма с
+// учётом подхода; открытая створка почти не сужает поток, поэтому μ выше:
+//   Проверка: Sок=10, Sвыр=14,6 → R≈0,00038 кМюрг (совпадает с АэроСетью).
 export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, typeId?: string): number {
   const Sok = windowArea;
   if (Sok <= 0.001) return 0;
-  if (isConcreteWindow(typeId) || isBrickWindow(typeId) || isWoodWindow(typeId) || isLatticeMetalWindow(typeId)) {
-    const mu = isBrickWindow(typeId)       ? WINDOW_MU_BRICK
-             : isWoodWindow(typeId)        ? WINDOW_MU_WOOD
+  if (isConcreteWindow(typeId) || isBrickWindow(typeId) || isWoodWindow(typeId)
+      || isLatticeMetalWindow(typeId) || isOpenMetalWindow(typeId)) {
+    const mu = isBrickWindow(typeId)        ? WINDOW_MU_BRICK
+             : isWoodWindow(typeId)         ? WINDOW_MU_WOOD
              : isLatticeMetalWindow(typeId) ? WINDOW_MU_LAT_METAL
+             : isOpenMetalWindow(typeId)    ? WINDOW_MU_OPEN_METAL
              : WINDOW_MU_CONCRETE;
     const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
     const approach = S > 0 ? 1 / (S * S) : 0;
