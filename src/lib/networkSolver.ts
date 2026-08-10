@@ -1031,10 +1031,31 @@ export function solveNetwork(
     }
   }
 
-  // Добираем узлы, недостижимые по потоку (тупики, ветви с Q≈0) — по дереву.
+  // Ветви с НУЛЕВЫМ расходом (закрытые ляды, перемычки, тупики).
+  // Обход «по потоку» через них пройти не может, и узел за такой ветвью раньше
+  // получал давление со случайной стороны сети (закрытый ствол ЮВС показывал
+  // −181 Па вместо −1570). При Q=0 потерь на трение нет, поэтому депрессия по
+  // обе стороны ветви одинакова.
+  const ZERO_Q = 1e-6;
   const pQueue2 = [...pVis];
   while (pQueue2.length) {
     const u = pQueue2.shift()!;
+    for (const { edgeIdx, other } of adj.get(u)!) {
+      if (pVis.has(other)) continue;
+      const e = edges[edgeIdx];
+      if (Math.abs(e.Q) > ZERO_Q) continue;
+      const dP = edgeDP(e);
+      const Pu = pressure.get(u)!;
+      pressure.set(other, e.a === u ? Pu - dP : Pu + dP);
+      pVis.add(other);
+      pQueue2.push(other);
+    }
+  }
+
+  // Остаток — изолированные фрагменты сети, по остовному дереву.
+  const pQueue3 = [...pVis];
+  while (pQueue3.length) {
+    const u = pQueue3.shift()!;
     for (const { edgeIdx, other } of adj.get(u)!) {
       if (pVis.has(other) || !treeSet.has(edgeIdx)) continue;
       const e  = edges[edgeIdx];
@@ -1042,7 +1063,7 @@ export function solveNetwork(
       const Pu = pressure.get(u)!;
       pressure.set(other, e.a === u ? Pu - dP : Pu + dP);
       pVis.add(other);
-      pQueue2.push(other);
+      pQueue3.push(other);
     }
   }
 

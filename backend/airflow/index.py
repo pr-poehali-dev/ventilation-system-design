@@ -1744,7 +1744,34 @@ def compute_node_pressures(edges, Q, nodes_in):
             visited.add(other)
             queue.append(other)
 
-    # Проход 2: добираем узлы, не достижимые по потоку (тупики, Q≈0)
+    # Проход 2: ветви с НУЛЕВЫМ расходом (закрытые ляды, перемычки, тупики).
+    #
+    # Через такую ветвь обход «по потоку» пройти не может, и раньше узел за ней
+    # добирался обычным обходом — давление приходило со случайной стороны сети.
+    # На схеме пользователя закрытый ствол ЮВС (Q=0) получал −181 Па вместо
+    # −1570 Па, потому что значение пришло со стороны свежей струи.
+    #
+    # Физика: при Q=0 потерь на трение нет (R·q²=0), поэтому депрессия по обе
+    # стороны ветви ОДИНАКОВА — значение соседа копируется как есть (с учётом
+    # только вентилятора/тяги, если они на этой ветви есть).
+    ZERO_Q = 1e-6
+    queue = collections.deque(visited)
+    while queue:
+        u = queue.popleft()
+        for other, ei in adj[u]:
+            if other in visited:
+                continue
+            e = edges[ei]
+            q = Q.get(e["id"], 0.0)
+            if abs(q) > ZERO_Q:
+                continue
+            dP = _edge_dP(e, q)
+            Pu = pressure[u]
+            pressure[other] = Pu - dP if e["a"] == u else Pu + dP
+            visited.add(other)
+            queue.append(other)
+
+    # Проход 3: всё, что осталось недостижимым (изолированные фрагменты сети)
     queue = collections.deque(visited)
     while queue:
         u = queue.popleft()
