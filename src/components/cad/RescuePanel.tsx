@@ -168,7 +168,7 @@ function ChartTab({
 
 // Таблица сегментов
 function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: string }) {
-  if (segments.length === 0) return null;
+  if (!segments || segments.length === 0) return null;
   return (
     <div className="mt-2">
       <div className="text-[11px] font-semibold text-gray-700 mb-1">{title}</div>
@@ -355,10 +355,12 @@ function RescueResultDialog({
               <div className={`text-[22px] font-bold ${result.o2IdaPercent > 100 ? "text-red-600" : "text-gray-900"}`}>
                 {result.totalO2.toFixed(1)} л
               </div>
-              <div className="text-[10px] text-gray-500">
-                {result.totalO2.toFixed(1)} л из {Math.round(result.totalO2 / (result.o2IdaPercent / 100))} л ({result.o2IdaPercent.toFixed(2)}%)
-                <br />В зоне задымления
-              </div>
+              {result.o2IdaPercent > 0 && (
+                <div className="text-[10px] text-gray-500">
+                  {result.totalO2.toFixed(1)} л из {Math.round(result.totalO2 / (result.o2IdaPercent / 100))} л ({result.o2IdaPercent.toFixed(2)}%)
+                  <br />В зоне задымления
+                </div>
+              )}
             </div>
             <div className={`border rounded p-2 ${result.ok ? "bg-green-50" : "bg-red-50"}`}>
               <div className="text-[10px] text-gray-500 mb-1 font-medium">СТАТУС</div>
@@ -407,7 +409,7 @@ function RescueResultDialog({
           </div>
 
           {/* Предупреждения */}
-          {result.warnings.length > 0 && (
+          {(result.warnings?.length ?? 0) > 0 && (
             <div className="border border-red-200 bg-red-50 rounded p-2">
               {result.warnings.map((w, i) => (
                 <div key={i} className="text-[11px] text-red-700">⚠ {w}</div>
@@ -720,7 +722,13 @@ export default function RescuePanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nodes, branches, startNodeId, targetNodeId, params }),
       });
+      // HTTP-ошибка (400/500) НЕ бросает исключение в fetch — проверяем явно.
+      // Без этой проверки ответ вида {"error": "..."} попадал в res, поле
+      // segments оставалось undefined, и res.segments.map() ниже роняло всё
+      // React-дерево — пользователь видел чёрный экран.
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      if (data?.error || !Array.isArray(data?.segments)) throw new Error("bad payload");
       // branchDirs приходит как объект — конвертируем в Map
       res = {
         ...data,
@@ -735,8 +743,8 @@ export default function RescuePanel({
     setShowDialog(true);
     setShowResultLink(true);
     const branchIds = new Set([
-      ...res.segments.map(s => s.branchId),
-      ...res.segmentsBack.map(s => s.branchId),
+      ...(res.segments ?? []).map(s => s.branchId),
+      ...(res.segmentsBack ?? []).map(s => s.branchId),
     ]);
     const nodeIds = new Set([startNodeId, targetNodeId, ...activeWaypoints]);
     onRouteChange(branchIds, nodeIds, res.branchDirs);
