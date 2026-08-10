@@ -421,13 +421,48 @@ function isOpenMetalWindow(typeId?: string): boolean {
   return typeId === "open_metal";
 }
 
+// Дверь с РЕГУЛИРУЕМЫМ ОКНОМ МЕТАЛЛИЧЕСКАЯ ("win_metal", дубль "proem_metal")
+// — ОТДЕЛЬНЫЙ расчёт.
+//
+// Как и у решётчатой, коэффициент расхода зависит от степени открытия
+// m = Sок/Sвыр — два эталона АэроСети одним μ не описываются:
+//   окно 2 м² (окно ≪ сечения, m≈0)   → R=0,0440 кМюрг  (эквивалент μ≈0,590)
+//   окно 1 м², сечение 12 м² (m=0,083) → R=0,1500 кМюрг  (эквивалент μ≈0,639)
+//
+// Считаем через безразмерный коэффициент сопротивления диафрагмы
+// (скорость отнесена к площади окна):
+//   ζ = (1 + k·(1−m)^n − m)²,   R_кМюрг = ζ·ρ/(2·g·Sок²)
+// Параметры откалиброваны ровно по двум эталонам выше (совпадение 0,00%).
+// При m→1 (окно во всё сечение) ζ→0.
+const WIN_METAL_K = 0.6961;
+const WIN_METAL_N = 0.8025;
+
+function isMetalWindow(typeId?: string): boolean {
+  return typeId === "win_metal" || typeId === "proem_metal";
+}
+
+// R металлической двери с регулируемым окном в кМюрг.
+function metalWindowRkMurg(windowArea: number, sectionArea?: number): number {
+  const Sok = windowArea;
+  if (Sok <= 0.001) return 0;
+  const S = sectionArea && sectionArea > 0 ? sectionArea : 0;
+  // Без известного сечения берём предельный случай m=0 (окно ≪ выработки).
+  const m = S > 0 ? Math.min(1, Sok / S) : 0;
+  const zeta = Math.pow(1 + WIN_METAL_K * Math.pow(1 - m, WIN_METAL_N) - m, 2);
+  const r = zeta * 1.2 / (2 * G_ACCEL * Sok * Sok);
+  return r > 0 ? r : 0;
+}
+
 // Сопротивление перемычки с РЕГУЛИРУЕМЫМ ОКНОМ в кМюрг (кгс·с²/м⁸ — те же
 // единицы, что и solidBulkheadRkMurg).
 //
-// Металлическая/прочие двери (μ=0,59): перепад определяется СКОРОСТЬЮ ВОЗДУХА
-// В ОКНЕ (Q/Sок), сечение выработки не влияет:
+// Металлическая с регулируемым окном "win_metal" — считается ОТДЕЛЬНОЙ функцией
+// metalWindowRkMurg (переменный коэффициент, зависит от степени открытия).
+//   Проверка: Sок=2 → 0,0440; Sок=1, Sвыр=12 → 0,1500 кМюрг.
+//
+// Прочие двери с окном (μ=0,59): перепад по СКОРОСТИ ВОЗДУХА В ОКНЕ (Q/Sок),
+// сечение выработки не влияет:
 //   ΔP_Па = ρ/2·(Q/(μ·Sок))²  ⇒  R_кМюрг = ρ/(2·g·μ²·Sок²)
-//   Проверка: Sок=2 → R≈0,044 кМюрг (совпадает с АэроСетью).
 //
 // Бетонная дверь (μ=0,75): диафрагма С УЧЁТОМ скорости подхода в выработке —
 // вычитается динамический напор набегающего потока (1/Sвыр²):
@@ -455,6 +490,10 @@ export function windowBulkheadRkMurg(windowArea: number, sectionArea?: number, t
   // Решётчатая металлическая — отдельная модель с переменным коэффициентом.
   if (isLatticeMetalWindow(typeId)) {
     return latticeMetalRkMurg(Sok, sectionArea);
+  }
+  // Металлическая с регулируемым окном — своя модель (см. metalWindowRkMurg).
+  if (isMetalWindow(typeId)) {
+    return metalWindowRkMurg(Sok, sectionArea);
   }
   if (isConcreteWindow(typeId) || isBrickWindow(typeId) || isWoodWindow(typeId)
       || isOpenMetalWindow(typeId)) {
