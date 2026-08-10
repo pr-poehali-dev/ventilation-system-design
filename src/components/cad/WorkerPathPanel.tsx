@@ -67,7 +67,7 @@ function exportCsv(result: WorkerPathResult) {
   rows.push([`Время хода (в одну сторону), мин`, result.totalTime.toFixed(1)]);
   rows.push([]);
   rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "Σt, мин"]);
-  for (const s of result.segments) {
+  for (const s of (result.segments ?? [])) {
     const zl = !s.zone || s.zone === "clean" ? "Чистая" : s.zone === "smoky_low" ? "Задым. 5-10м" : "Задым. <5м";
     rows.push([
       s.branchName, String(s.segmentNumber),
@@ -77,7 +77,7 @@ function exportCsv(result: WorkerPathResult) {
     ]);
   }
   rows.push(["ИТОГО", "",
-    String(Math.round(result.segments.reduce((a, s) => a + s.length, 0))), "",
+    String(Math.round((result.segments ?? []).reduce((a, s) => a + s.length, 0))), "",
     "", "", result.totalTime.toFixed(2), "",
   ]);
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
@@ -96,8 +96,10 @@ function zoneLabel(z: "clean" | "smoky_low" | "smoky_high" | undefined) {
 
 function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: () => void }) {
   const method = result.method === "rd" ? "РД 15-11-2007" : "ФНиП №467";
-  const totalLen = Math.round(result.segments.reduce((a, s) => a + s.length, 0));
-  const hasSmoky = result.segments.some(s => s.zone && s.zone !== "clean");
+  // segments может отсутствовать, если результат пришёл неполным — не роняем диалог
+  const segs = result.segments ?? [];
+  const totalLen = Math.round(segs.reduce((a, s) => a + s.length, 0));
+  const hasSmoky = segs.some(s => s.zone && s.zone !== "clean");
 
   // ── Перемещаемое окно (drag за заголовок) ──
   const DIALOG_W = 760;
@@ -161,12 +163,12 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
               <div className="text-[24px] font-bold text-blue-900">
                 {totalLen} м
               </div>
-              <div className="text-[10px] text-gray-500">{result.segments.length} сегм. маршрута</div>
+              <div className="text-[10px] text-gray-500">{segs.length} сегм. маршрута</div>
             </div>
           </div>
 
           {/* Предупреждения */}
-          {result.warnings.length > 0 && (
+          {(result.warnings?.length ?? 0) > 0 && (
             <div className="border border-red-200 bg-red-50 rounded p-2">
               {result.warnings.map((w, i) => (
                 <div key={i} className="text-[11px] text-red-700">⚠ {w}</div>
@@ -205,7 +207,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                   </tr>
                 </thead>
                 <tbody>
-                  {result.segments.map((s: WorkerSegment, i: number) => {
+                  {segs.map((s: WorkerSegment, i: number) => {
                     const z = zoneLabel(s.zone);
                     const rowBg = s.zone === "smoky_high" ? "#fff1f2" : s.zone === "smoky_low" ? "#fffbeb" : (i % 2 === 0 ? "white" : "#f8fafc");
                     return (
@@ -329,13 +331,20 @@ export default function WorkerPathPanel({
   const handleCalc = () => {
     if (!canCalc) return;
     const wps = useWaypoints ? waypointIds.filter(Boolean) : [];
-    const res = calcWorkerPath(nodes, branches, pickedStartId, pickedTargetId, method, wps);
+    let res: WorkerPathResult;
+    try {
+      res = calcWorkerPath(nodes, branches, pickedStartId, pickedTargetId, method, wps);
+    } catch (e) {
+      // Ошибка расчёта не должна ронять приложение (раньше это давало чёрный экран).
+      alert(`Не удалось рассчитать маршрут: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
     setResult(res);
     onRouteChange(
-      new Set(res.segments.map(s => s.branchId)),
-      new Set([res.startNodeId, res.targetNodeId, ...res.waypointNodeIds,
-               ...res.segments.flatMap(s => [s.fromNodeId, s.toNodeId])]),
-      res.branchDirs,
+      new Set((res.segments ?? []).map(s => s.branchId)),
+      new Set([res.startNodeId, res.targetNodeId, ...(res.waypointNodeIds ?? []),
+               ...(res.segments ?? []).flatMap(s => [s.fromNodeId, s.toNodeId])]),
+      res.branchDirs ?? new Map<string, boolean>(),
     );
     setShowDialog(true);
   };
@@ -508,7 +517,7 @@ export default function WorkerPathPanel({
           </div>
 
           {/* Результат (краткий) */}
-          {result && result.segments.length > 0 && (
+          {result && (result.segments?.length ?? 0) > 0 && (
             <div className="border rounded p-2 mt-1" style={{ background: "#f0f9ff" }}>
               <div className="text-[10px] text-gray-500 font-medium mb-1">Результат расчёта</div>
               <div className="flex gap-3">

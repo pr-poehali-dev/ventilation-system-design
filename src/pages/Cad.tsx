@@ -48,6 +48,7 @@ import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type E
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
+import PanelErrorBoundary from "@/components/cad/PanelErrorBoundary";
 import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
@@ -9200,6 +9201,7 @@ export default function CadPage() {
 
             {/* ═══ РАСЧЁТ ГОРНОСПАСАТЕЛЕЙ ══════════════════════════════ */}
             {activeSide === "rescue" && (
+              <PanelErrorBoundary title="горноспасатели">
               <RescuePanel
                 nodes={nodes}
                 branches={branches.map(b => {
@@ -9223,10 +9225,12 @@ export default function CadPage() {
                 }}
                 onWaypointsChange={setRescueWaypointIds}
               />
+              </PanelErrorBoundary>
             )}
 
             {/* ═══ ВРЕМЯ ХОДА ГОРНОРАБОЧЕГО ════════════════════════════ */}
             {activeSide === "workerPath" && (
+              <PanelErrorBoundary title="время хода горнорабочего">
               <WorkerPathPanel
                 nodes={nodes}
                 branches={branches.map(b => {
@@ -9253,6 +9257,7 @@ export default function CadPage() {
                 }}
                 onWaypointsChange={setWorkerWaypointIds}
               />
+              </PanelErrorBoundary>
             )}
 
             {/* ═══ ВКЛАДКА: РАСХОД ВОЗДУХА ════════════════════════════ */}
