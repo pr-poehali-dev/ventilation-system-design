@@ -1062,12 +1062,14 @@ export function solveNetwork(
     const id = n.atmosphereLink ? GND_ID : n.id;
     const P  = pressure.get(id);
     if (P === undefined) return n;
-    const losses = Math.abs(P - 101325);
+    // Потери — величина ЗНАКОВАЯ. Math.abs() переворачивал знак у узлов с
+    // давлением выше атмосферного, и депрессия уходила глубже напора ГВУ.
+    const losses = 101325 - P;
     return {
       ...n,
       computedPressure: Math.round(P + 12 * (-n.z)),
       computedFanPressure: mainFanH > 0
-        ? -Math.round(mainFanH - losses)
+        ? -Math.round(Math.min(Math.max(mainFanH - losses, 0), mainFanH))
         : Math.round(P - 101325),
     };
   });

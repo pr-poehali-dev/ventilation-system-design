@@ -1800,10 +1800,19 @@ def compute_node_pressures(edges, Q, nodes_in):
         z = node_z.get(nid, 0.0)
         # Коррекция на высоту: +12 Па/м (вниз давление растёт)
         p_abs = round(P + 12.0 * (-z))
-        # Потери от устья свежей струи до узла (P − P_атм ≤ 0), берём модуль
-        losses = abs(P - P_ATM)
-        # Остаток напора ГВУ в узле, со знаком «минус» (депрессия)
-        p_fan = -round(main_fan_H - losses) if main_fan_H > 0 else round(P - P_ATM)
+        # Потери от устья свежей струи до узла — величина ЗНАКОВАЯ.
+        # Раньше здесь стоял abs(), и у узлов с давлением ВЫШЕ атмосферного
+        # (нагнетательная сторона, подсосы) знак переворачивался: потери −88 Па
+        # превращались в +88, а депрессия узла уходила глубже напора ГВУ
+        # (−1830 Па при напоре 1742 Па), чего быть не может.
+        losses = P_ATM - P
+        if main_fan_H > 0:
+            # Депрессия узла не может превышать полную депрессию шахты
+            # и не может быть положительной на всасывающем проветривании.
+            rest = min(max(main_fan_H - losses, 0.0), main_fan_H)
+            p_fan = -round(rest)
+        else:
+            p_fan = round(P - P_ATM)
         nodes_out.append({"id": nid, "computedPressure": p_abs, "computedFanPressure": p_fan})
     return nodes_out
 
