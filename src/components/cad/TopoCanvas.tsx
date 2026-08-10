@@ -3663,9 +3663,10 @@ export default function TopoCanvas(props: Props) {
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
             const realBw = Math.max(bkBw * _branchObjSF, 1.0);
             SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
-          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water") && sym.branchId && hasBranchPts) {
-            // Вентилятор, насос и запорный вентиль масштабируются от ширины ветви
-            // (как перемычка), поэтому синхронны с масштабом схемы и не «плавают».
+          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce") && sym.branchId && hasBranchPts) {
+            // Вентилятор, насос, запорный вентиль и редукционный клапан
+            // масштабируются от ширины ветви (как перемычка), поэтому синхронны
+            // с масштабом схемы и не «плавают» при зуме.
             const fanBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
             SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
@@ -4012,11 +4013,13 @@ export default function TopoCanvas(props: Props) {
                   // центр клапана лежит на линии трубы
                   const cpx = px + nx * pipeOff;
                   const cpy = py + ny * pipeOff;
-                  // размер клапана: пропорционален ширине ветви × масштаб вида
-                  const valveSZ = Math.max(4, bw * view.scale * 4);
+                  // Размер клапана берём из общего SZ — он считается по ширине ветви
+                  // и «Масштабу УО» (как вентилятор/насос). Прежняя формула
+                  // bw*view.scale*4 игнорировала ползунок «Масштаб УО».
+                  const valveSZ = SZ * 1.2;
                   const HS = valveSZ * 0.55;
                   const HT = valveSZ * 0.45;
-                  const lw = Math.max(0.5, bw * view.scale * 0.35);
+                  const lw = Math.max(0.5, valveSZ * 0.09);
                   const q = (da: number, dn: number) => `${cpx + ax*da + nx*dn},${cpy + ay*da + ny*dn}`;
                   return (
                     <g pointerEvents="none">
@@ -4864,9 +4867,10 @@ export default function TopoCanvas(props: Props) {
               // ph = SZ * 0.85 → SZ = ph / 0.85.
               const ph = realBranchW * (bulkheadScale / 100);
               SZ = Math.max(6, (ph / 0.85) * sc);
-            } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water") && sym.branchId && hasBranchPts) {
-              // Вентилятор, насос и запорный вентиль масштабируются от ширины ветви
-              // (как перемычка) — синхронно с масштабом схемы, не «плавают».
+            } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce") && sym.branchId && hasBranchPts) {
+              // Вентилятор, насос, запорный вентиль и редукционный клапан
+              // масштабируются от ширины ветви (как перемычка) — синхронно
+              // с масштабом схемы, не «плавают» при зуме.
               const fanBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
               SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
@@ -4886,7 +4890,11 @@ export default function TopoCanvas(props: Props) {
               const vbw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               vcpx = px + vnx * vbw * 0.38;
               vcpy = py + vny * vbw * 0.38;
-              vSZ = Math.max(4, vbw * view.scale * 4) * 1.2;
+              // Размер берём из SZ, посчитанного выше по ширине ветви и «Масштабу УО»
+              // (как у вентилятора/насоса). Раньше здесь стояла собственная формула
+              // vbw*view.scale*4, которая игнорировала ползунок «Масштаб УО» —
+              // клапан не менял размер и «плавал» относительно остальных символов.
+              vSZ = SZ;
             }
 
             // Вентилятор: остановлен ли (берём из branch.fanStopped)
@@ -5147,9 +5155,11 @@ export default function TopoCanvas(props: Props) {
                   const pipeOff = bw * 0.38;
                   const cpx = px + nx * pipeOff;
                   const cpy = py + ny * pipeOff;
-                  const valveSZ = Math.max(4, bw * view.scale * 4);
+                  // Размер — из общего SZ (ширина ветви × «Масштаб УО»), как
+                  // у вентилятора и насоса. Совпадает с vSZ, посчитанным выше.
+                  const valveSZ = vSZ * 1.2;
                   const HS = valveSZ * 0.55, HT = valveSZ * 0.45;
-                  const lw = Math.max(0.5, bw * view.scale * 0.35);
+                  const lw = Math.max(0.5, valveSZ * 0.09);
                   const q = (da: number, dn: number) => `${cpx + ax*da + nx*dn},${cpy + ay*da + ny*dn}`;
                   return (
                     <g pointerEvents="none">

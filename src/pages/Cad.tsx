@@ -7585,6 +7585,15 @@ export default function CadPage() {
                 bulkheadRKmu={bulkheadRByBranch.get(selectedBranch.id) ?? 0}
                 nodes={nodes}
                 waterBranchResult={waterNetwork.branchResults.get(selectedBranch.id)}
+                reducerSymbolScale={(() => {
+                  const sym = schemaSymbols.find(s => REDUCER_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
+                  return sym?.scale ?? 1;
+                })()}
+                onReducerSymbolScale={schemaSymbols.some(s => REDUCER_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id) ? (scale) => {
+                  setSchemaSymbols(prev => prev.map(s =>
+                    REDUCER_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id ? { ...s, scale } : s
+                  ));
+                } : undefined}
                 onRemoveReducer={selectedBranch.wpHasReducer ? () => {
                   const sym = schemaSymbols.find(s => REDUCER_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   if (sym) removeSymbol(sym.id);

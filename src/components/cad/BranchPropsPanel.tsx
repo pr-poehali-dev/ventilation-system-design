@@ -71,6 +71,10 @@ interface BranchPropsPanelProps {
   waterBranchResult?: WaterBranchResult;
   /** Удалить УО редукционного клапана и сбросить флаг на ветви */
   onRemoveReducer?: () => void;
+  /** Текущий масштаб символа УО редукционного клапана на схеме */
+  reducerSymbolScale?: number;
+  /** Изменить масштаб символа УО редукционного клапана */
+  onReducerSymbolScale?: (scale: number) => void;
   onRemoveGate?: () => void;
 }
 
@@ -94,7 +98,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -1633,6 +1637,24 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                         </button>
                       )}
                     </div>
+
+                    {/* Масштаб УО — как у вентилятора и насоса */}
+                    {onReducerSymbolScale && (
+                      <InlineLabel label="Масштаб УО">
+                        <div className="flex items-center gap-1 w-full">
+                          <input type="range" min={5} max={400} step={5}
+                            value={Math.round((reducerSymbolScale ?? 1) * 100)}
+                            onChange={(e) => onReducerSymbolScale(Number(e.target.value) / 100)}
+                            className="flex-1" style={{ accentColor: "#2563eb" }} />
+                          <input type="number" min={5} max={400} step={5}
+                            value={Math.round((reducerSymbolScale ?? 1) * 100)}
+                            onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); onReducerSymbolScale(v / 100); }}
+                            className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                            style={{ fontSize: 11 }} />
+                          <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
+                        </div>
+                      </InlineLabel>
+                    )}
 
                     {/* Модель */}
                     <InlineLabel label="Модель:">
