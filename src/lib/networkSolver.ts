@@ -1046,26 +1046,17 @@ export function solveNetwork(
     }
   }
 
-  // ДЕПРЕССИЯ УЗЛА — УБЫВАЕТ ОТ ВГП ПО ХОДУ ВОЗДУХА (как в АэроСети).
-  // Показываем не «потерянную» депрессию (потери от устья до узла), а ОСТАТОК
-  // напора ВГП: на вентиляторе полная депрессия шахты, дальше по ходу воздуха
-  // она убывает по модулю на потери каждой ветви.
-  //   депрессия_узла = −(H_вгп − потери_до_узла)
-  const mainFanEdge = edges.find(e => e.hasFan && !e.fanStopped && (e.fanType === "ГВУ" || e.fanType === "ВВУ"))
-                   ?? edges.find(e => e.hasFan && !e.fanStopped);
-  const mainFanH = mainFanEdge ? fanH(mainFanEdge, mainFanEdge.Q) : 0;
-
+  // ДЕПРЕССИЯ УЗЛА = НАКОПЛЕННЫЕ ПОТЕРИ ОТ УСТЬЯ СВЕЖЕЙ СТРУИ (как в АэроСети).
+  // Ноль на устье, по ходу воздуха растёт по модулю, максимум у ГВУ.
+  // Разность депрессий соседних узлов = депрессия связывающей их ветви.
   const nodesOut = nodesIn.map(n => {
     const id = n.atmosphereLink ? GND_ID : n.id;
     const P  = pressure.get(id);
     if (P === undefined) return n;
-    const losses = Math.abs(P - 101325);   // потери от устья до узла
     return {
       ...n,
       computedPressure: Math.round(P + 12 * (-n.z)),
-      computedFanPressure: mainFanH > 0
-        ? -Math.round(mainFanH - losses)
-        : Math.round(P - 101325),
+      computedFanPressure: Math.round(P - 101325),
     };
   });
 
