@@ -1049,28 +1049,17 @@ export function solveNetwork(
     }
   }
 
-  // ДЕПРЕССИЯ УЗЛА ОТСЧИТЫВАЕТСЯ ОТ ГВУ (как в АэроСети):
-  //   депрессия_узла = −(H_гву − потери_от_устья_до_узла)
-  // У вентилятора — полная депрессия шахты, по ходу воздуха к устью она
-  // убывает по модулю. Разность соседних узлов = депрессия ветви между ними.
-  const mainFans = edges.filter(e => e.hasFan && !e.fanStopped);
-  const mainList = mainFans.filter(e => e.fanType === "ГВУ" || e.fanType === "ВВУ");
-  const fanSet   = mainList.length ? mainList : mainFans;
-  const mainFanH = fanSet.length ? Math.max(...fanSet.map(e => fanH(e, e.Q))) : 0;
-
+  // ДЕПРЕССИЯ УЗЛА (как в АэроСети).
+  // Ноль на устье свежей струи, по ходу воздуха растёт по модулю, у ГВУ равна
+  // полной депрессии шахты. Разность соседних узлов = депрессия их ветви.
   const nodesOut = nodesIn.map(n => {
     const id = n.atmosphereLink ? GND_ID : n.id;
     const P  = pressure.get(id);
     if (P === undefined) return n;
-    // Потери — величина ЗНАКОВАЯ. Math.abs() переворачивал знак у узлов с
-    // давлением выше атмосферного, и депрессия уходила глубже напора ГВУ.
-    const losses = 101325 - P;
     return {
       ...n,
       computedPressure: Math.round(P + 12 * (-n.z)),
-      computedFanPressure: mainFanH > 0
-        ? -Math.round(Math.min(Math.max(mainFanH - losses, 0), mainFanH))
-        : Math.round(P - 101325),
+      computedFanPressure: Math.round(P - 101325),
     };
   });
 
