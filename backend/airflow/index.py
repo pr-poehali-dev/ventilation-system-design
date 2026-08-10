@@ -1720,12 +1720,10 @@ def compute_node_pressures(edges, Q, nodes_in):
             habs = fan_H(e, abs(q))
         fan_dir = -1.0 if e.get("fanReverse") else 1.0
         H = fan_dir * habs
-        # Естественная тяга: знак берём ТАК ЖЕ, как в депрессии ветви
-        # (H_ветви = R·q² − h_nat·sign(q)), иначе при обратном потоке разность
-        # давлений узлов не совпадала с депрессией связывающей их ветви.
+        # Естественная тяга — источник напора в направлении a→b (как и вентилятор),
+        # поэтому знак НЕ зависит от направления потока.
         h_nat = float(e.get("naturalDraft", 0.0) or 0.0)
-        h_nat_signed = h_nat if q >= 0 else -h_nat
-        return R * q * abs(q) - H - h_nat_signed
+        return R * q * abs(q) - H - h_nat
 
     # Проход 1: строго по направлению потока
     while queue:
