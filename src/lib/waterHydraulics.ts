@@ -141,6 +141,44 @@ export function withWaterPumps<T extends TopoBranch>(
   });
 }
 
+/**
+ * Открытые потребители, гидравлически СВЯЗАННЫЕ с указанным резервуаром.
+ *
+ * Обход идёт только по трубам с открытым запорным вентилем, поэтому краны из
+ * другой ветки водопровода и краны, отрезанные закрытым вентилем, в список не
+ * попадают. Используется панелью резервуара, чтобы «Открытые краны» и время
+ * работы совпадали с гидравлическим расчётом.
+ */
+export function connectedOpenConsumers(
+  reservoirId: string,
+  nodes: TopoNode[],
+  branches: TopoBranch[],
+): TopoNode[] {
+  const open = branches.filter(b => b.hasWaterPipe && !(b.wpHasGate && b.wpGateClosed));
+  const adj = new Map<string, string[]>();
+  for (const b of open) {
+    if (!adj.has(b.fromId)) adj.set(b.fromId, []);
+    if (!adj.has(b.toId)) adj.set(b.toId, []);
+    adj.get(b.fromId)!.push(b.toId);
+    adj.get(b.toId)!.push(b.fromId);
+  }
+  const seen = new Set<string>([reservoirId]);
+  const stack = [reservoirId];
+  while (stack.length > 0) {
+    const nid = stack.pop()!;
+    for (const nb of adj.get(nid) ?? []) {
+      if (seen.has(nb)) continue;
+      seen.add(nb);
+      stack.push(nb);
+    }
+  }
+  return nodes.filter(n =>
+    (n.fireNodeType ?? "none") === "consumer" &&
+    (n.fireHydrantOpen ?? false) &&
+    seen.has(n.id),
+  );
+}
+
 // ─── Основная функция расчёта ──────────────────────────────────────────────────
 export function calcWaterNetwork(
   nodes: TopoNode[],
@@ -214,6 +252,28 @@ export function calcWaterNetwork(
     addAdj(b.fromId, b.id, b.toId);
     addAdj(b.toId,   b.id, b.fromId);
   }
+
+  // ─── Связность сети ─────────────────────────────────────────────────────────
+  // Множество узлов, достижимых от заданного по ОТКРЫТЫМ трубам. Граф adj
+  // построен только из waterBranches, поэтому закрытые вентили уже вырезаны:
+  // потребитель за закрытым вентилем в это множество не попадёт.
+  const reachCache = new Map<string, Set<string>>();
+  const reachableFrom = (startId: string): Set<string> => {
+    const cached = reachCache.get(startId);
+    if (cached) return cached;
+    const seen = new Set<string>([startId]);
+    const stack = [startId];
+    while (stack.length > 0) {
+      const nid = stack.pop()!;
+      for (const { neighborId } of adj.get(nid) ?? []) {
+        if (seen.has(neighborId)) continue;
+        seen.add(neighborId);
+        stack.push(neighborId);
+      }
+    }
+    reachCache.set(startId, seen);
+    return seen;
+  };
 
   // ─── Итерационный расчёт (3 итерации достаточно для нелинейной сети) ─────────
   // На каждой итерации:
@@ -432,8 +492,14 @@ export function calcWaterNetwork(
         });
       }
     } else if (ft === "reservoir") {
-      // Суммарный расход резервуара = сумма всех потребителей
-      const totalFlow = consumers.reduce((s, c) => s + (consumerFlow.get(c.id) ?? 0), 0);
+      // Суммарный расход резервуара = сумма потребителей, ГИДРАВЛИЧЕСКИ
+      // СВЯЗАННЫХ именно с этим резервуаром. Краны из другой (несвязанной)
+      // ветки водопровода или отрезанные закрытым вентилем воду из него не
+      // берут и на время работы не влияют.
+      const reach = reachableFrom(n.id);
+      const totalFlow = consumers.reduce(
+        (s, c) => s + (reach.has(c.id) ? (consumerFlow.get(c.id) ?? 0) : 0), 0,
+      );
       const capacity  = n.fireCapacity ?? 0;
       nodeResults.set(n.id, {
         nodeId: n.id,

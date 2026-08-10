@@ -1,5 +1,5 @@
-import { type TopoNode } from "@/lib/topology";
-import { type WaterNodeResult } from "@/lib/waterHydraulics";
+import { type TopoNode, type TopoBranch } from "@/lib/topology";
+import { type WaterNodeResult, connectedOpenConsumers } from "@/lib/waterHydraulics";
 import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, getConsumerById, type ConsumerGroup } from "@/lib/waterConsumers";
 import { SectionHeader } from "@/components/cad/BranchPropsPrimitives";
 
@@ -8,6 +8,7 @@ interface NodeFirePanelProps {
   onUpdate: (patch: Partial<TopoNode>) => void;
   waterResult?: WaterNodeResult;
   allNodes?: TopoNode[];
+  allBranches?: TopoBranch[];
   allNodeResults?: Map<string, WaterNodeResult>;
 }
 
@@ -104,15 +105,16 @@ function computedVal(v: number | undefined, d = 3, suffix = ""): string {
   return `${v.toFixed(d)}${suffix ? " " + suffix : ""}`;
 }
 
-export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = [], allNodeResults }: NodeFirePanelProps) {
+export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = [], allBranches = [], allNodeResults }: NodeFirePanelProps) {
   const fireType = node.fireNodeType ?? "none";
   const isOpen = node.fireHydrantOpen ?? false;
   const isConsumer = fireType === "consumer";
   const isReservoir = fireType === "reservoir";
 
-  // Список всех открытых потребителей и их расчётные данные
+  // Открытые потребители, СВЯЗАННЫЕ с этим резервуаром по трубам. Краны из
+  // другой ветки водопровода и краны за закрытым вентилем воду отсюда не берут.
   const openConsumers = isReservoir
-    ? allNodes.filter(n => (n.fireNodeType ?? "none") === "consumer" && (n.fireHydrantOpen ?? false))
+    ? connectedOpenConsumers(node.id, allNodes, allBranches)
     : [];
   const totalFlow = openConsumers.reduce((s, c) => s + (allNodeResults?.get(c.id)?.flow ?? 0), 0);
   const capacity = node.fireCapacity ?? 0;
