@@ -123,7 +123,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set([
       "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_total_r", "v_geom_r", "v_unit_r", "v_unit_r_100",
-      "v_velocity", "v_adddep", "v_flow", "v_dep",
+      "v_velocity", "v_adddep", "v_flow", "v_dep", "v_dep_total",
       "v_r_friction", "v_r_local", "v_reynolds", "v_power",
     ])
   );
@@ -607,6 +607,34 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
 
             <ParamRow id="v_dep" label="Депрессия H, Па" visible={visible.has("v_dep")} onToggle={toggle}>
               <ComputedInput value={numFmt(branch.dP, 1)} />
+            </ParamRow>
+
+            <ParamRow id="v_dep_total" label="Общая депрессия, Па" visible={visible.has("v_dep_total")} onToggle={toggle}>
+              {(() => {
+                // Общая депрессия = R_общее · Q² · 9,81 − H вентилятора, где
+                // R_общее = выработка + перемычка/окно + окно ГВУ (та же сумма,
+                // что в строке «Общее сопротивление»). Именно эта величина
+                // считается решателем сети и используется в расчёте пожара.
+                const fanCrossingKmu = (branch.hasFan && (branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
+                  ? (branch.fanCrossingR ?? 0) / 1000 : 0;
+                const totalR = branch.resistance + (bulkheadRKmu ?? 0) + fanCrossingKmu;
+                const Q = branch.flow ?? 0;
+                const fanH = branch.hasFan ? (branch.fanPressure ?? 0) : 0;
+                const dpTotal = totalR * Math.abs(Q) * Q * G_ACCEL - fanH;
+                const hasBk = (bulkheadRKmu ?? 0) > 0;
+                return (
+                  <div className="flex items-center flex-1 min-w-0">
+                    <ComputedInput value={numFmt(dpTotal, 1)} />
+                    {hasBk && (
+                      <span
+                        title={`Учтено сопротивление вентиляционного сооружения на ветви. Депрессия самой выработки — ${numFmt(branch.dP, 1)} Па.`}
+                        className="ml-1 flex-shrink-0 cursor-help"
+                        style={{ fontSize: 11, color: "#2563eb" }}
+                      >⛨</span>
+                    )}
+                  </div>
+                );
+              })()}
             </ParamRow>
 
             <ParamRow id="v_r_friction" label={`R трение, ${uRes.symbol}`} visible={visible.has("v_r_friction")} onToggle={toggle}>

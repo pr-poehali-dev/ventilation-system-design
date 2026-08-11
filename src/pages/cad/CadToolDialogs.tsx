@@ -33,6 +33,9 @@ export interface CadToolDialogsProps {
   nodes: TopoNode[];
   branches: TopoBranch[];
   branchesRaw: TopoBranch[];
+  /** Ветви с проставленной ОБЩЕЙ депрессией (выработка + вентсооружение) —
+   *  для аварийных расчётов, где порог опрокидывания сравнивается с полной ΔP */
+  branchesWithTotalDep?: TopoBranch[];
   horizons: Horizon[];
   projectFileName: string;
   unitsConfig: UnitsConfig;
@@ -258,7 +261,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
       {/* ── Устойчивость при пожаре (Акт устойчивости) ──────────────────── */}
       {p.showFireStability && (
         <FireStabilityDialog
-          branches={p.branches}
+          branches={p.branchesWithTotalDep ?? p.branches}
           nodes={p.nodes}
           positions={p.positions}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}

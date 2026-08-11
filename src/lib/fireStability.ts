@@ -256,7 +256,13 @@ export function calcFireStability(
     const thermalDep = fact
       ? fact.thermalDep
       : Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
-    const branchDep  = Math.abs(b.dP ?? 0);
+    // ОБЩАЯ депрессия ветви (выработка + перемычка/окно − напор вентилятора).
+    // b.dP содержит депрессию только выработки и на ветви с перемычкой занижена
+    // в сотни раз — по ней критерий опрокидывания давал ложный результат.
+    const dpTotal = Number(b.dPTotal);
+    const branchDep = (Number.isFinite(dpTotal) && Math.abs(dpTotal) > 1e-9)
+      ? Math.abs(dpTotal)
+      : Math.abs(b.dP ?? 0);
 
     // ── Критическая депрессия (Прил. 5, формулы 5.3–5.5) ────────────────
     // Передаём ΔP ветви и высотные отметки узлов — без них не работали
@@ -267,7 +273,7 @@ export function calcFireStability(
     const crit = descending
       ? calcCriticalDepression({
           fireBranchId: b.id, fireFromId: b.fromId, fireToId: b.toId,
-          fireFlow_m3s: airFlow, fireDP_pa: b.dP, branches,
+          fireFlow_m3s: airFlow, fireDP_pa: branchDep, branches,
           nodeElevations, fireElevation: fireZ,
         })
       : null;

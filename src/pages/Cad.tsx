@@ -1517,6 +1517,35 @@ export default function CadPage() {
     }
     return map;
   }, [branches, schemaSymbols, mineBulkheads]);
+
+  // ОБЩАЯ депрессия ветви (Па) = R_общее·Q²·9,81 − H вентилятора, где
+  // R_общее = выработка + перемычка/окно + окно ГВУ. Поле b.dP содержит
+  // депрессию ТОЛЬКО выработки (локальный пересчёт recalcBranchAero не знает
+  // о перемычках-символах), поэтому для пожара и устойчивости берём эту карту.
+  // Считаем локально по тем же слагаемым, что строка «Общее сопротивление» в
+  // свойствах ветви, — иначе панель и расчёт показывали бы разные числа после
+  // правки перемычки (значение сервера устаревало бы до следующего F9).
+  const totalDepByBranch = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of branches) {
+      const bkR = bulkheadRByBranch.get(b.id) ?? 0;
+      const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
+        ? (b.fanCrossingR ?? 0) / 1000 : 0;
+      const totalR = b.resistance + bkR + fanCrossingKmu;
+      const Q = b.flow ?? 0;
+      const fanH = b.hasFan ? (b.fanPressure ?? 0) : 0;
+      map.set(b.id, totalR * Math.abs(Q) * Q * G_ACCEL - fanH);
+    }
+    return map;
+  }, [branches, bulkheadRByBranch]);
+
+  // Ветви с проставленной общей депрессией — передаются в аварийные расчёты
+  // (Акт устойчивости, расчёт пожара), где порог опрокидывания должен
+  // сравниваться с ПОЛНОЙ депрессией ветви, а не с депрессией одной выработки.
+  const branchesWithTotalDep = useMemo(
+    () => branches.map(b => ({ ...b, dPTotal: totalDepByBranch.get(b.id) ?? b.dPTotal })),
+    [branches, totalDepByBranch],
+  );
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
   // Участки рудника и нормы расхода воздуха (ФНиП № 505 п.155) — в проекте
@@ -3370,6 +3399,10 @@ export default function CadPage() {
           flow: rb.Q,
           velocity: rb.velocity,
           dP: rb.H,
+          // H сервера посчитан по ПОЛНОМУ R ребра (выработка + перемычка/окно +
+          // окно ГВУ) — это и есть общая депрессия ветви. Сохраняем отдельно,
+          // т.к. локальный пересчёт (recalcBranchAero) знает только R выработки.
+          dPTotal: rb.H,
           isDead: rb.isDead ?? false,
           fanPressure: newFanPressure,
           fanEfficiency: newFanEfficiency,
@@ -4811,7 +4844,15 @@ export default function CadPage() {
                 const branchesForFire = branches.map(b => {
                   const finalQ = currentFlows.get(b.id) ?? b.flow;
                   // originalFlow — расход ДО пожара (до итераций), для детектирования опрокидывания
-                  const bUpdated = { ...b, flow: finalQ, originalFlow: originalFlows.get(b.id) ?? b.flow };
+                  // dPTotal — ОБЩАЯ депрессия ветви (выработка + перемычка/окно).
+                  // Без неё расчёт брал депрессию одной выработки и на ветви
+                  // с перемычкой занижал порог опрокидывания в сотни раз.
+                  const bUpdated = {
+                    ...b,
+                    flow: finalQ,
+                    originalFlow: originalFlows.get(b.id) ?? b.flow,
+                    dPTotal: totalDepByBranch.get(b.id) ?? b.dPTotal,
+                  };
                   if (!b.hasFire) return bUpdated;
                   // Режим «Температурой» — оставляем ручную T (не пересчитываем).
                   if (b.fireMode === "temp") return bUpdated;
@@ -7092,7 +7133,13 @@ export default function CadPage() {
                   <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Вентиляционный режим (из расчёта сети)</div>
                   <Row label="Расход воздуха Q, м³/с:" value={Math.abs(b.flow) > 0.001 ? `${Math.abs(b.flow).toFixed(2)}` : "— (не рассчитан)"} />
                   <Row label="Скорость воздуха, м/с:" value={b.velocity > 0 ? `${b.velocity.toFixed(2)}` : "—"} />
-                  <Row label="Депрессия ветви ΔP, Па:" value={b.dP ? `${Math.abs(b.dP).toFixed(1)}` : "—"} />
+                  {/* ОБЩАЯ депрессия: выработка + вентсооружение. Именно она
+                      участвует в проверке опрокидывания при пожаре. */}
+                  <Row label="Общая депрессия ΔP, Па:" value={(() => {
+                    const dpT = totalDepByBranch.get(b.id);
+                    return dpT !== undefined && Math.abs(dpT) > 0.001 ? `${Math.abs(dpT).toFixed(1)}` : (b.dP ? `${Math.abs(b.dP).toFixed(1)}` : "—");
+                  })()} />
+                  <Row label="в т.ч. выработка, Па:" value={b.dP ? `${Math.abs(b.dP).toFixed(1)}` : "—"} />
                   <Row label="Угол наклона, °:" value={`${(b.angle ?? 0).toFixed(1)}`} />
                   <Row label="Длина ветви, м:" value={`${b.length.toFixed(1)}`} />
                   {Math.abs(b.flow) < 0.001 && (
@@ -11983,6 +12030,7 @@ export default function CadPage() {
       nodes={nodes}
       branches={branches}
       branchesRaw={branchesRaw}
+      branchesWithTotalDep={branchesWithTotalDep}
       horizons={horizons}
       projectFileName={projectFileName}
       unitsConfig={unitsConfig}

@@ -26,6 +26,20 @@ const G = 9.81;                // м/с²
 // Здесь дополнительный перевод НЕ нужен — иначе депрессия завысится в 9,81 раза.
 // В паскалях выражены и тепловая депрессия пожара, и естественная тяга, и напор
 // вентилятора, поэтому все величины сопоставимы напрямую.
+//
+// ОБЩАЯ депрессия ветви. Поле b.dP после локального пересчёта содержит депрессию
+// ТОЛЬКО выработки — сопротивление перемычки/окна в него не входит (перемычка
+// чаще задана символом на схеме, её R сворачивается в общий R ребра только в
+// решателе). На ветви с перемычкой это занижает депрессию в сотни раз и ломает
+// проверку опрокидывания. Поэтому везде берём b.dPTotal (полная депрессия:
+// выработка + вентсооружение − напор вентилятора), а b.dP — только запасной
+// вариант, если общая депрессия ещё не посчитана.
+function branchDepPa(b?: { dP?: number; dPTotal?: number } | null): number {
+  if (!b) return 0;
+  const total = Number(b.dPTotal);
+  if (Number.isFinite(total) && Math.abs(total) > 1e-9) return Math.abs(total);
+  return Math.abs(Number(b.dP) || 0);
+}
 
 // Коэффициент теплоотдачи продуктов горения в стенки выработки, Вт/(м²·К).
 // По мере движения по выработке горячий воздух остывает, отдавая тепло породе,
@@ -949,7 +963,9 @@ function selectParallelWorkings(
 function inclineFieldDepression(inp: CriticalDepInput): number {
   const byId = new Map(inp.branches.map(br => [br.id, br]));
   const fire = byId.get(inp.fireBranchId);
-  const selfDp = Math.abs(Number(inp.fireDP_pa ?? fire?.dP) || 0);
+  const selfDp = Number.isFinite(Number(inp.fireDP_pa))
+    ? Math.abs(Number(inp.fireDP_pa))
+    : branchDepPa(fire);
 
   // Смежность: узел → инцидентные ветви
   const adj = new Map<string, string[]>();
@@ -975,7 +991,7 @@ function inclineFieldDepression(inp: CriticalDepInput): number {
       const nb = byId.get(nextId);
       if (!nb) return;
       visited.add(nextId);
-      total += Math.abs(Number(nb.dP) || 0);
+      total += branchDepPa(nb);
       node = nb.fromId === node ? nb.toId : nb.fromId;
       prev = nextId;
     }
@@ -1638,7 +1654,7 @@ export function calcFireMode(
           fireFromId: fb.fromId,
           fireToId: fb.toId,
           fireFlow_m3s: airQ,
-          fireDP_pa: fb.dP,
+          fireDP_pa: branchDepPa(fb),
           branches,
           nodeElevations,
           fireElevation: fireZ,
@@ -1652,7 +1668,7 @@ export function calcFireMode(
     // 0.5·|ΔP| был эвристическим и занижал границу вдвое.
     const reversalThreshold = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
       ? critRaw.h_kr
-      : Math.abs(fb.dP ?? 0);
+      : branchDepPa(fb);
     const willReverse = isDescending && reversalThreshold > 0
       && Math.abs(thermalDep) >= reversalThreshold;
     const critical = (critRaw && critRaw.hasParallel && critRaw.h_kr > 0)
