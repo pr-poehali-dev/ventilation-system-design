@@ -7153,6 +7153,71 @@ export default function CadPage() {
                     );
                   })()}
 
+                  {/* ── Исходные данные расчёта (задаются ДО «Расчёта пожара») ──
+                      Время пожара, расстояние «очаг→устье» и порог видимости
+                      задымления раньше были разбросаны: первые два появлялись
+                      только в блоке РЕЗУЛЬТАТОВ (то есть уже после расчёта), а
+                      порог видимости жил в нижней панели задымления. Пользователь
+                      не видел исходных данных, пока считал, и узнавал о них по
+                      факту — со значениями по умолчанию. Собираем их здесь, до
+                      кнопки расчёта, чтобы ситуация была понятна сразу. */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Исходные данные расчёта</div>
+                  {/* Выбор метода тоже перенесён сюда: от него зависит, нужны ли
+                      время пожара и расстояние «очаг→устье». Оставь он в блоке
+                      результатов — до первого расчёта переключить метод было бы
+                      нельзя, и поля норматива просто не показались бы. */}
+                  <div className="px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
+                    <div className="text-[10px] text-gray-600 mb-0.5">Метод тепловой депрессии:</div>
+                    <div className="flex gap-1">
+                      {([
+                        { id: "aerosети" as ThermalDepMethod, label: "Методика" },
+                        { id: "normative" as ThermalDepMethod, label: "Норматив (4.5)" },
+                      ]).map(opt => (
+                        <button
+                          key={opt.id}
+                          onClick={() => changeThermalDepMethod(opt.id)}
+                          className="text-[10px] px-1.5 py-0.5 rounded flex-1"
+                          style={{
+                            background: thermalDepMethod === opt.id ? "#991b1b" : "#f3f4f6",
+                            color: thermalDepMethod === opt.id ? "#fff" : "#374151",
+                            border: `1px solid ${thermalDepMethod === opt.id ? "#991b1b" : "#d1d5db"}`,
+                          }}
+                        >{opt.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {thermalDepMethod === "normative" && (
+                    <>
+                      <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
+                        title="t — время с момента возникновения пожара (ф. 4.8), не более 150 мин">
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Время пожара t, мин:</span>
+                        <input type="number" min={1} max={NORMATIVE_TIME_MAX_MIN} step={5}
+                          value={normFireTime}
+                          onChange={e => changeNormFireTime(parseFloat(e.target.value))}
+                          className="flex-1 text-[11px] text-right px-1"
+                          style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                      </div>
+                      <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
+                        title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Очаг→устье x, м:</span>
+                        <input type="number" min={0} step={10}
+                          value={normMouthDist}
+                          onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
+                          className="flex-1 text-[11px] text-right px-1"
+                          style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                      </div>
+                    </>
+                  )}
+                  <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
+                    title="Дым распространяется, пока видимость в дыму ниже этого порога; дальше считается чистый воздух.">
+                    <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Порог видимости, м:</span>
+                    <input type="number" min={1} max={200} step={5}
+                      value={smokeVisThreshold}
+                      onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(200, Number(e.target.value))))}
+                      className="flex-1 text-[11px] text-right px-1"
+                      style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                  </div>
+
                   {/* Контекст из сетевого расчёта */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Вентиляционный режим (из расчёта сети)</div>
                   <Row label="Расход воздуха Q, м³/с:" value={Math.abs(b.flow) > 0.001 ? `${Math.abs(b.flow).toFixed(2)}` : "— (не рассчитан)"} />
@@ -7176,52 +7241,15 @@ export default function CadPage() {
                   {fr && (
                     <>
                       <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#991b1b" }}>Результаты расчёта пожара</div>
-                      <div className="px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
-                        <div className="text-[10px] text-gray-600 mb-0.5">Метод тепловой депрессии:</div>
-                        <div className="flex gap-1">
-                          {([
-                            { id: "aerosети" as ThermalDepMethod, label: "Методика" },
-                            { id: "normative" as ThermalDepMethod, label: "Норматив (4.5)" },
-                          ]).map(opt => (
-                            <button
-                              key={opt.id}
-                              onClick={() => changeThermalDepMethod(opt.id)}
-                              className="text-[10px] px-1.5 py-0.5 rounded flex-1"
-                              style={{
-                                background: thermalDepMethod === opt.id ? "#991b1b" : "#f3f4f6",
-                                color: thermalDepMethod === opt.id ? "#fff" : "#374151",
-                                border: `1px solid ${thermalDepMethod === opt.id ? "#991b1b" : "#d1d5db"}`,
-                              }}
-                            >{opt.label}</button>
-                          ))}
-                        </div>
-                        {thermalDepMethod === "normative" && (
-                          <div className="mt-1">
-                            <label className="flex items-center justify-between gap-1 py-0.5" title="t — время с момента возникновения пожара (ф. 4.8), не более 150 мин">
-                              <span className="text-[10px] text-gray-600 truncate">Время пожара t, мин:</span>
-                              <input
-                                type="number" min={1} max={NORMATIVE_TIME_MAX_MIN} step={5}
-                                value={normFireTime}
-                                onChange={e => changeNormFireTime(parseFloat(e.target.value))}
-                                className="px-1 py-0.5 text-[10px] text-right border border-gray-300 rounded"
-                                style={{ width: 56 }}
-                              />
-                            </label>
-                            <label className="flex items-center justify-between gap-1 py-0.5" title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
-                              <span className="text-[10px] text-gray-600 truncate">Очаг→устье x, м:</span>
-                              <input
-                                type="number" min={0} step={10}
-                                value={normMouthDist}
-                                onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
-                                className="px-1 py-0.5 text-[10px] text-right border border-gray-300 rounded"
-                                style={{ width: 56 }}
-                                title={normMouthDist === 0 ? "0 — авто по схеме" : undefined}
-                              />
-                            </label>
-                          </div>
-                        )}
-                        <div className="text-[9px] text-gray-400 mt-0.5">Применится при следующем «Расчёте пожара»</div>
-                      </div>
+                      {/* Ввод исходных данных (метод, время пожара, очаг→устье,
+                          порог видимости) перенесён выше — в блок «Исходные данные
+                          расчёта», видимый ДО нажатия «Расчёт пожара». В
+                          результатах ввода больше нет: правка полей после расчёта
+                          выглядела бы так, будто она уже учтена в показанных
+                          цифрах, хотя применяется только при следующем расчёте.
+                          Здесь лишь напоминаем, каким методом получен результат. */}
+                      <Row label="Метод тепловой депрессии:"
+                        value={thermalDepMethod === "normative" ? "Норматив (4.5)" : "Методика"} />
                       <Row label="Температура продуктов, °C:" value={safeFixed(fr.airTempOut, 1)} bold />
                       <Row label="Тепловая депрессия h_t, Па:" value={safeFixed(fr.thermalDepression, 1)} bold={Math.abs(fr.thermalDepression) > 10} />
                       {fr.normative && (
