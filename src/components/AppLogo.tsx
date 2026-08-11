@@ -1,12 +1,21 @@
-import { useState } from "react";
+// Логотип программы.
+//
+// ВАЖНО: логотип берётся из файла, встроенного в саму программу, а НЕ из
+// интернета. Раньше он грузился по внешней ссылке, и в десктопной версии на
+// руднике (без связи, работа по аварийному ключу) картинка не загружалась:
+// в окне «О программе» и на стартовом экране была «сломанная» иконка, а в
+// заголовке подставлялся запасной значок другого вида.
+//
+// Файл лежит в public/logo.png и попадает в сборку, поэтому одинаково
+// отображается в браузере и в настольной программе, с интернетом и без него.
+//
+// Пути относительные (без ведущего «/») — в десктопе страница открывается
+// как локальный файл, и абсолютный путь указывал бы в корень диска.
+const LOGO_URL = "logo.png";
 
-// Основной логотип проекта (CDN). Работает онлайн.
-const LOGO_URL =
-  "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/f615a5b6-1200-469a-956d-b8be955dd6d0.png";
-
-// Локальный запасной логотип — используется, если CDN недоступен
-// (например, в десктопной программе без интернета).
-const FALLBACK_URL = "/icon.svg";
+// Запасной вариант того же логотипа меньшего размера — на случай, если
+// основной файл почему-то не прочитался.
+const FALLBACK_URL = "logo-256.png";
 
 interface Props {
   className?: string;
@@ -15,16 +24,16 @@ interface Props {
 }
 
 export default function AppLogo({ className, style, alt = "ПВ-Система" }: Props) {
-  const [src, setSrc] = useState(LOGO_URL);
   return (
     <img
-      src={src}
+      src={LOGO_URL}
       alt={alt}
       className={className}
       style={style}
       draggable={false}
-      onError={() => {
-        if (src !== FALLBACK_URL) setSrc(FALLBACK_URL);
+      onError={(e) => {
+        const img = e.currentTarget;
+        if (!img.src.endsWith(FALLBACK_URL)) img.src = FALLBACK_URL;
       }}
     />
   );
