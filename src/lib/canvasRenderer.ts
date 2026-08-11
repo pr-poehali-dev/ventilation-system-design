@@ -11,9 +11,15 @@ export const CANVAS_THRESHOLD = 800;
 
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 
-// Кэш SVG-иконок пожарного крана (красный = закрыт, синий = открыт)
-const FIRE_CRANE_RED_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/28ea1d46-e9bf-4ca3-bdb2-ae11cf9b1e3b.svg";
-const FIRE_CRANE_BLUE_URL = "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9b358780-445c-487f-90d2-0b86b4c3c6fb.svg";
+// Кэш SVG-иконок пожарного крана (красный = закрыт, синий = открыт).
+//
+// Иконки лежат в файлах программы, а НЕ грузятся из интернета: в десктопной
+// версии на руднике связи нет, и внешние картинки не отображались — на схеме
+// вместо условных обозначений кранов оставались пустые места.
+// Путь относительный (без ведущего «/») — в десктопе страница открывается как
+// локальный файл, и абсолютный путь указывал бы в корень диска.
+const FIRE_CRANE_RED_URL = "icons/fire-crane-red.svg";
+const FIRE_CRANE_BLUE_URL = "icons/fire-crane-blue.svg";
 let fireCraneRedImg: HTMLImageElement | null = null;
 let fireCraneRedLoaded = false;
 let fireCraneBlueImg: HTMLImageElement | null = null;

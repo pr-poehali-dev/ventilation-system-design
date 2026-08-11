@@ -4575,9 +4575,10 @@ export default function TopoCanvas(props: Props) {
                 const svgAspect = 21000 / 29700;
                 const drawH = sz;
                 const drawW = sz * svgAspect;
+                // Иконки из файлов программы — работают без интернета (рудник, ВГСЧ)
                 const svgUrl = hydrantOpen
-                  ? "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/9b358780-445c-487f-90d2-0b86b4c3c6fb.svg"
-                  : "https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/28ea1d46-e9bf-4ca3-bdb2-ae11cf9b1e3b.svg";
+                  ? "icons/fire-crane-blue.svg"
+                  : "icons/fire-crane-red.svg";
                 return (
                   <g>
                     <image
