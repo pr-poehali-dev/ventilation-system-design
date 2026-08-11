@@ -15,7 +15,9 @@ import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type CompareResult } from "./cadTypes";
 
 type MergeNodeState = { nodeId: string; branchA: string; branchB: string };
-type SquadState = { typeId: string; x: number; y: number; branchId: string | null };
+// t — доля длины ветви (точка клика курсором), чтобы отделение встало
+// в указанное место, а не в середину ветви.
+type SquadState = { typeId: string; x: number; y: number; branchId: string | null; t?: number };
 
 export interface CadModalsProps {
   nodes: TopoNode[];
@@ -48,7 +50,7 @@ export interface CadModalsProps {
   setSquadDialog: (v: SquadState | null) => void;
   squadCount: string;
   setSquadCount: (v: string) => void;
-  addSymbol: (typeId: string, x: number, y: number, branchId?: string | null, label?: string) => void;
+  addSymbol: (typeId: string, x: number, y: number, branchId?: string | null, label?: string, scale?: number, t?: number) => void;
   setTool: (v: "select") => void;
   setActiveSymbolTypeId: (v: string | null) => void;
 
@@ -377,7 +379,7 @@ export default function CadModals(p: CadModalsProps) {
                 onKeyDown={e => {
                   if (e.key === "Enter") {
                     const n = parseInt(p.squadCount) || 5;
-                    p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`);
+                    p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`, undefined, p.squadDialog!.t);
                     p.setTool("select"); p.setActiveSymbolTypeId(null); p.setSquadDialog(null);
                   }
                   if (e.key === "Escape") p.setSquadDialog(null);
@@ -388,7 +390,7 @@ export default function CadModals(p: CadModalsProps) {
                   className="h-7 px-3 text-[11px] border border-gray-300 rounded hover:bg-gray-100">Отмена</button>
                 <button onClick={() => {
                   const n = parseInt(p.squadCount) || 5;
-                  p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`);
+                  p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`, undefined, p.squadDialog!.t);
                   p.setTool("select"); p.setActiveSymbolTypeId(null); p.setSquadDialog(null);
                 }}
                   className="h-7 px-3 text-[11px] rounded text-white" style={{ background: "#2563eb" }}>

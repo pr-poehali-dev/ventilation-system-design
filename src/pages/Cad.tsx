@@ -1699,7 +1699,9 @@ export default function CadPage() {
   }, [selectedBranchId, selectedBranch?.hasFan, fanSymbolBranchId]);
 
   // Диалог ввода числа людей при размещении отделения
-  const [squadDialog, setSquadDialog] = useState<{ typeId: string; x: number; y: number; branchId: string | null } | null>(null);
+  // t — доля длины ветви (точка клика). Храним в диалоге, чтобы отделение
+  // встало туда, куда указали курсором, а не в середину ветви.
+  const [squadDialog, setSquadDialog] = useState<{ typeId: string; x: number; y: number; branchId: string | null; t?: number } | null>(null);
   const [squadCount, setSquadCount] = useState<string>("5");
 
   const SQUAD_TYPES = ["squad_moving", "squad_working"];
@@ -10816,13 +10818,13 @@ export default function CadPage() {
               }}
               onSymbolPlace={(typeId, x, y, branchId, t) => {
                 if (SQUAD_TYPES.includes(typeId)) {
-                  setSquadDialog({ typeId, x, y, branchId });
+                  setSquadDialog({ typeId, x, y, branchId, t });
                   setSquadCount("5");
                 } else {
                   if (typeId === "fan" && branchId) {
                     const alreadyHasFan = schemaSymbols.some(s => s.typeId === "fan" && s.branchId === branchId);
                     if (!alreadyHasFan) {
-                      addSymbol(typeId, x, y, branchId);
+                      addSymbol(typeId, x, y, branchId, undefined, undefined, t);
                       updateBranch(branchId, { hasFan: true, fanMode: "curve", fanType: "ВМП", fanInstall: "Без перемычки" });
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
@@ -10894,8 +10896,10 @@ export default function CadPage() {
                     const br = branches.find(b => b.id === branchId);
                     const defaultValve = PRESSURE_REDUCING_VALVES[0];
                     const newSym: SchemaSymbol = {
+                      // t — доля длины ветви от её начала. Берём из точки клика,
+                      // а не 0.5: раньше редуктор всегда «прыгал» на середину.
                       id: `SYM_RD_${Date.now()}`,
-                      typeId, x, y, branchId, t: 0.5,
+                      typeId, x, y, branchId, t: t ?? 0.5,
                     };
                     setSchemaSymbols(prev => [...prev, newSym]);
                     // Ветвь: ставим флаг редуктора и дефолтные параметры
@@ -10917,8 +10921,10 @@ export default function CadPage() {
                     // течение воды в ветви. По умолчанию установлен открытым.
                     const br = branches.find(b => b.id === branchId);
                     const newSym: SchemaSymbol = {
+                      // t из точки клика, а не 0.5 — вентиль ставится там,
+                      // куда указал курсор.
                       id: `SYM_VW_${Date.now()}`,
-                      typeId, x, y, branchId, t: 0.5,
+                      typeId, x, y, branchId, t: t ?? 0.5,
                     };
                     setSchemaSymbols(prev => [...prev, newSym]);
                     if (br) {
@@ -10933,8 +10939,10 @@ export default function CadPage() {
                     const br = branches.find(b => b.id === branchId);
                     const isWindow = WINDOW_BULKHEAD_IDS.has(typeId);
                     const newSym: SchemaSymbol = {
+                      // t из точки клика, а не 0.5 — перемычка встаёт туда,
+                      // куда указал курсор.
                       id: `SYM_BK_${Date.now()}`,
-                      typeId, x, y, branchId, t: 0.5,
+                      typeId, x, y, branchId, t: t ?? 0.5,
                       bkResMode: "project",
                       bkWindowArea: isWindow ? (br?.area ?? 0) : 0,
                       bkManualR: 0,
@@ -10955,7 +10963,11 @@ export default function CadPage() {
                     setSelectedNodeId(null);
                     setActiveSide("params");
                   } else {
-                    addSymbol(typeId, x, y, branchId);
+                    // t — доля длины ветви от начала, вычисленная по точке клика.
+                    // Раньше не передавалась, и addSymbol подставлял 0.5: любое
+                    // условное обозначение вставало ровно посередине ветви,
+                    // а не туда, куда указал курсор.
+                    addSymbol(typeId, x, y, branchId, undefined, undefined, t);
                   }
                   setTool("select");
                   setActiveSymbolTypeId(null);
