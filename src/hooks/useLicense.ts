@@ -35,6 +35,25 @@ export function useLicense(): UseLicenseReturn {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // ── ШАГ 0. МГНОВЕННЫЙ СТАРТ ПО СОХРАНЁННОЙ ЛИЦЕНЗИИ ───────────────────
+      // Раньше первым делом шли ожидания: чтение лицензии с диска и опрос
+      // локального ядра за аппаратным номером ПК (до 3 секунд повторов), и лишь
+      // потом поднимался сохранённый ключ. На руднике без интернета к этому
+      // добавлялось ожидание ответа облака — запуск ощущался как зависание.
+      //
+      // Теперь сохранённую лицензию поднимаем СРАЗУ, синхронно из локального
+      // хранилища, ещё до любых сетевых операций. Программа открыта и готова к
+      // работе немедленно, а всё остальное доуточняется в фоне.
+      const quick = loadCachedLicense();
+      const quickEmergency = quick?.licensed ? null : checkOfflineEmergency();
+      if (quick?.licensed) {
+        setInfo(quick);
+        setStatus("licensed");
+      } else if (quickEmergency?.licensed) {
+        setInfo(quickEmergency);
+        setStatus("licensed");
+      }
+
       // Дожидаемся восстановления лицензии с диска (десктоп), затем — fingerprint
       await storageReady;
       const mi = await getMachineInfo();
@@ -43,7 +62,8 @@ export function useLicense(): UseLicenseReturn {
       setMachineInfo(mi);
       machineInfoRef.current = mi;
 
-      // 1. Смотрим кэш
+      // 1. Смотрим кэш (после восстановления с диска он мог появиться —
+      //    например, после чистки кэша WebView2, когда localStorage пуст).
       const cached = loadCachedLicense();
       if (cached?.licensed) {
         setInfo(cached);
@@ -58,7 +78,11 @@ export function useLicense(): UseLicenseReturn {
         setStatus("licensed");
       }
 
-      // 2. Проверяем на сервере (обновляем сведения о ПК)
+      // 2. Проверяем на сервере (обновляем сведения о ПК).
+      //    К этому моменту программа УЖЕ открыта и работает по сохранённой
+      //    лицензии, поэтому проверка идёт фоном и ничего не задерживает.
+      //    Ожидание ответа ограничено по времени (см. checkLicense) — без
+      //    интернета уходим на сохранённую лицензию за несколько секунд.
       try {
         const fresh = await checkLicense(mi.fingerprint, mi);
         if (cancelled) return;
@@ -78,8 +102,12 @@ export function useLicense(): UseLicenseReturn {
         }
       } catch {
         if (cancelled) return;
-        // Нет сети — приоритет: обычный кэш → аварийный ключ → демо
+        // Нет сети или истекло время ожидания — приоритет:
+        // обычный кэш → аварийный ключ → демо.
+        // Сохранённая лицензия при обрыве связи НЕ сбрасывается: человек
+        // продолжает работать, как будто ничего не произошло.
         if (cached?.licensed) {
+          setInfo(cached);
           setStatus("licensed");
         } else if (emergency?.licensed) {
           setInfo(emergency);

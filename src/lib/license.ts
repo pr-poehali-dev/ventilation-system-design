@@ -12,7 +12,7 @@ export async function getCoreVersion(): Promise<string> {
   const isDesktop = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
   if (!isDesktop) { _coreVersion = ""; return ""; }
   try {
-    const res = await fetch("/api/status", { cache: "no-store" });
+    const res = await fetchLocal("/api/status", { cache: "no-store" });
     const data = await res.json();
     _coreVersion = data?.version ? String(data.version) : "";
   } catch {
@@ -25,6 +25,21 @@ const HW_FP_KEY        = "pvs_hw_fp";
 const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
 
 const IS_DESKTOP = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
+
+// ── Запрос к локальному ядру с ограничением времени ──────────────────────────
+// Локальное ядро (server.exe) запускается рядом с окном программы и обычно
+// отвечает мгновенно. Но если оно ещё догружается или не поднялось вовсе,
+// запрос без ограничения висел бы неопределённо долго и задерживал запуск.
+// Две секунды с запасом хватает для локального обращения.
+async function fetchLocal(url: string, init?: RequestInit, timeoutMs = 2000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ── Слой хранилища ───────────────────────────────────────────────────────────
 // Веб:     localStorage.
@@ -66,7 +81,9 @@ const storage = {
   async init(): Promise<void> {
     if (!IS_DESKTOP) return;
     try {
-      const res = await fetch("/api/license-store", { cache: "no-store" });
+      // Ограничение по времени: локальное ядро могло ещё не подняться.
+      // Без него запуск ждал бы ответа неопределённо долго.
+      const res = await fetchLocal("/api/license-store", { cache: "no-store" });
       const data = await res.json();
       const store = (data?.store ?? {}) as Record<string, unknown>;
       for (const [k, v] of Object.entries(store)) {
@@ -152,7 +169,7 @@ async function getDesktopMachine(): Promise<{ machineId: string; hostname: strin
   // требовала активацию заново. Поэтому повторяем попытки ~3 секунды.
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      const res = await fetch("/api/machine", { cache: "no-store" });
+      const res = await fetchLocal("/api/machine", { cache: "no-store" });
       const data = await res.json();
       const machineId = data?.machineId ? String(data.machineId) : "";
       if (machineId) {
@@ -276,23 +293,43 @@ export function clearFingerprintCache() {
 }
 
 // ── Проверка лицензии ─────────────────────────────────────────────────────────
+// Ограничение времени ожидания ответа.
+//
+// ЗАЧЕМ: на руднике и в ВГСЧ интернета часто нет. Раньше запрос ждал ответа
+// без ограничения (а в десктопе локальное ядро держало соединение до 30 секунд),
+// и запуск программы «подвисал» на полминуты — хотя лицензия сохранена на диске
+// и действует. Теперь ждём несколько секунд и уходим на сохранённую лицензию.
+//
+// В десктопе ограничение жёстче: там запрос идёт через локальное ядро, которое
+// само ретранслирует его в облако, и «подвисание» ощущается как зависание окна.
+const CHECK_TIMEOUT_MS = IS_DESKTOP ? 4000 : 8000;
+
 export async function checkLicense(fingerprint: string, machineInfo?: MachineInfo): Promise<LicenseInfo> {
   const coreVersion = await getCoreVersion();
-  const res = await fetch(LICENSE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "check",
-      fingerprint,
-      hw_fingerprint: machineInfo?.hwFingerprint,
-      hostname:    machineInfo?.hostname,
-      platform:    machineInfo?.platform,
-      screen_info: machineInfo?.screen,
-      app_version: APP_VERSION,
-      core_version: coreVersion || undefined,
-      is_desktop: IS_DESKTOP,
-    }),
-  });
+  // AbortController обрывает ожидание, если ответа нет в отведённое время.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(LICENSE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        action: "check",
+        fingerprint,
+        hw_fingerprint: machineInfo?.hwFingerprint,
+        hostname:    machineInfo?.hostname,
+        platform:    machineInfo?.platform,
+        screen_info: machineInfo?.screen,
+        app_version: APP_VERSION,
+        core_version: coreVersion || undefined,
+        is_desktop: IS_DESKTOP,
+      }),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json();
 
   // Если сервер обновил fingerprint (восстановление после переустановки) — сбрасываем кэш
