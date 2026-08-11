@@ -573,7 +573,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               })()}
             </ParamRow>
 
-            <ParamRow id="v_total_r" label={`Общее сопротивление, ${uRes.symbol}`} visible={visible.has("v_total_r")} onToggle={toggle}>
+            <ParamRow id="v_total_r" label={`Общее сопр. R, ${uRes.symbol}`} visible={visible.has("v_total_r")} onToggle={toggle}>
               {(() => {
                 // Общее R ветви = сопротивление выработки + сопротивление
                 // перемычки (если установлена) + сопротивление вентилятора,
@@ -598,7 +598,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </ParamRow>
 
             <ParamRow id="v_adddep" label="Доп. депрессия, Па" visible={visible.has("v_adddep")} onToggle={toggle}>
-              <ComputedInput value={branch.hasFan ? numFmt(branch.fanPressure, 1) : "0"} />
+              {/* Депрессии показываем до сотых: на слабонапорных ветвях разница
+                  в десятых долях паскаля существенна для анализа устойчивости. */}
+              <ComputedInput value={branch.hasFan ? numFmt(branch.fanPressure, 2) : "0.00"} />
             </ParamRow>
 
             <ParamRow id="v_flow" label="Расход Q, м³/с" visible={visible.has("v_flow")} onToggle={toggle}>
@@ -606,7 +608,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             </ParamRow>
 
             <ParamRow id="v_dep" label="Депрессия H, Па" visible={visible.has("v_dep")} onToggle={toggle}>
-              <ComputedInput value={numFmt(branch.dP, 1)} />
+              <ComputedInput value={numFmt(branch.dP, 2)} />
             </ParamRow>
 
             <ParamRow id="v_dep_total" label="Общая депрессия, Па" visible={visible.has("v_dep_total")} onToggle={toggle}>
@@ -624,10 +626,10 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 const hasBk = (bulkheadRKmu ?? 0) > 0;
                 return (
                   <div className="flex items-center flex-1 min-w-0">
-                    <ComputedInput value={numFmt(dpTotal, 1)} />
+                    <ComputedInput value={numFmt(dpTotal, 2)} />
                     {hasBk && (
                       <span
-                        title={`Учтено сопротивление вентиляционного сооружения на ветви. Депрессия самой выработки — ${numFmt(branch.dP, 1)} Па.`}
+                        title={`Учтено сопротивление вентиляционного сооружения на ветви. Депрессия самой выработки — ${numFmt(branch.dP, 2)} Па.`}
                         className="ml-1 flex-shrink-0 cursor-help"
                         style={{ fontSize: 11, color: "#2563eb" }}
                       >⛨</span>
