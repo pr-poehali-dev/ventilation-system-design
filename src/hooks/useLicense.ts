@@ -92,15 +92,60 @@ export function useLicense(): UseLicenseReturn {
     return () => { cancelled = true; };
   }, []);
 
-  // Периодический heartbeat, пока лицензия активна — для мониторинга онлайн-сессий
+  // ─── Периодический heartbeat («я на связи») ────────────────────────────────
+  // Нужен только для мониторинга онлайн-сессий в админ-панели. На лимит рабочих
+  // мест НЕ влияет: место занимается при активации и живёт в license_seats.
+  //
+  // ОПТИМИЗАЦИЯ ВЫЗОВОВ. Раньше сигнал уходил каждые 3 минуты безусловно —
+  // 160 обращений за смену с каждого рабочего места, в том числе когда окно
+  // свёрнуто и за программой никто не сидит.
+  //
+  // Теперь:
+  //   • интервал 8 минут вместо 3 — вдвое с лишним реже;
+  //   • пока вкладка скрыта (свернули окно, ушли на другую задачу) сигнал
+  //     не отправляется вовсе;
+  //   • при возвращении к программе сигнал уходит сразу, чтобы место мгновенно
+  //     снова стало «онлайн».
+  //
+  // ВАЖНО: 8 минут выбраны не случайно. Админ-панель считает место онлайн, если
+  // последний сигнал был не позже 10 минут назад (backend/admin-licenses,
+  // online_minutes=10). Интервал обязан оставаться заметно меньше этого порога,
+  // иначе работающие люди начнут мигать «офлайн». Увеличивать 8 минут можно
+  // только вместе с порогом в админке.
   useEffect(() => {
     if (status !== "licensed" || !fingerprint) return;
-    const mi = machineInfoRef.current ?? machineInfo ?? undefined;
-    sendHeartbeat(fingerprint, mi);
-    const id = setInterval(() => {
-      sendHeartbeat(fingerprint, machineInfoRef.current ?? undefined);
-    }, 3 * 60 * 1000);
-    return () => clearInterval(id);
+
+    const HEARTBEAT_MS = 8 * 60 * 1000;
+    let lastSentAt = 0;
+
+    const ping = () => {
+      lastSentAt = Date.now();
+      sendHeartbeat(fingerprint, machineInfoRef.current ?? machineInfo ?? undefined);
+    };
+
+    // Первый сигнал — сразу, чтобы место появилось в мониторинге без задержки.
+    ping();
+
+    const tick = () => {
+      // Вкладка скрыта — программа простаивает, сервер не тревожим.
+      if (document.hidden) return;
+      ping();
+    };
+    const id = setInterval(tick, HEARTBEAT_MS);
+
+    // Вернулись к программе — отмечаемся, но не чаще, чем раз в интервал:
+    // частые переключения между окнами не должны порождать поток запросов.
+    const onVisible = () => {
+      if (document.hidden) return;
+      if (Date.now() - lastSentAt < HEARTBEAT_MS) return;
+      ping();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [status, fingerprint, machineInfo]);
 
   const activate = useCallback(async (key: string) => {

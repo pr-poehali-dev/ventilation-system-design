@@ -34,7 +34,18 @@ export default function AppUpdateBanner() {
   useEffect(() => {
     let cancelled = false;
 
+    // ОПТИМИЗАЦИЯ ВЫЗОВОВ. Раньше версия запрашивалась каждые 30 минут и, кроме
+    // того, при КАЖДОМ возврате на вкладку — при работе в двух окнах это давало
+    // поток запросов на ровном месте. Версия программы так часто не меняется.
+    //
+    // Теперь интервал 4 часа, а между любыми двумя проверками выдерживается
+    // минимум 30 минут (throttle) — переключение окон больше не спамит сервер.
+    const MIN_GAP_MS = 30 * 60 * 1000;
+    let lastCheckAt = 0;
+
     const check = async () => {
+      if (Date.now() - lastCheckAt < MIN_GAP_MS) return;
+      lastCheckAt = Date.now();
       try {
         const d = await fetchRemoteVersion();
         if (cancelled) return;
@@ -53,8 +64,9 @@ export default function AppUpdateBanner() {
     // 1. При старте — с небольшой задержкой, чтобы не мешать загрузке интерфейса.
     const t = window.setTimeout(check, 4000);
     // 2. Периодически — чтобы длительно открытая вкладка узнала о новой версии.
-    const iv = window.setInterval(check, 30 * 60 * 1000);
+    const iv = window.setInterval(check, 4 * 60 * 60 * 1000);
     // 3. При возврате на вкладку — самый частый сценарий, когда вышло обновление.
+    //    Сам check защищён throttle-ом, поэтому частые переключения безопасны.
     const onVisible = () => { if (document.visibilityState === "visible") check(); };
     document.addEventListener("visibilitychange", onVisible);
 
