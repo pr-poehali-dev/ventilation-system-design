@@ -3199,6 +3199,25 @@ export default function CadPage() {
     window.setTimeout(() => setFireCalcProgress(null), 400);
   };
 
+  // ─── Память последнего расчёта воздухораспределения ────────────────────────
+  // Повторное нажатие F9 на неизменённой схеме раньше заново гоняло полный
+  // расчёт на сервере: для крупных сетей это секунды ожидания и потраченное
+  // вычислительное время впустую.
+  //
+  // Теперь запоминаем ТЕЛО ЗАПРОСА (все исходные данные решателя) и ответ.
+  // Если следующий запрос дословно совпал с прошлым — отдаём сохранённый
+  // результат мгновенно, не обращаясь к серверу.
+  //
+  // Почему сравниваем именно тело запроса: в него входит всё, что влияет на
+  // результат — сопротивления, вентиляторы, перемычки, температуры, метод и
+  // допуски расчёта. Изменилось что угодно из этого — строка станет другой и
+  // расчёт честно уйдёт на сервер.
+  //
+  // Память живёт в пределах сессии (useRef) и сбрасывается при загрузке другого
+  // проекта — см. resetSolveCache().
+  const solveCacheRef = useRef<{ key: string; data: unknown } | null>(null);
+  const resetSolveCache = () => { solveCacheRef.current = null; };
+
   // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
@@ -3239,14 +3258,35 @@ export default function CadPage() {
             ? { normalFlows }
             : {}),
       };
-      const resp = await postAirflow(requestBody);
-      const data = await resp.json();
+      // Схема и настройки расчёта не изменились с прошлого раза → берём
+      // сохранённый результат и не тратим вычислительное время на сервере.
+      const cacheKey = JSON.stringify(requestBody);
+      const cached = solveCacheRef.current;
 
-      if (!resp.ok || data.error) {
-        const msg = data.error || "Ошибка расчёта";
-        setVcError(msg);
-        addLog("error", msg);
-        return;
+      let data: {
+        error?: string; log?: string[]; branches?: unknown; nodes?: unknown;
+        converged?: boolean; iterations?: number; maxResidual?: number;
+        cyclesCount?: number; diagnostics?: { level: string; message: string }[];
+      };
+
+      let fromCache = false;
+      if (cached && cached.key === cacheKey) {
+        data = cached.data as typeof data;
+        fromCache = true;
+        addLog("info", "Схема не изменилась — показан результат прошлого расчёта");
+      } else {
+        const resp = await postAirflow(requestBody);
+        data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          const msg = data.error || "Ошибка расчёта";
+          // Неудачный расчёт не запоминаем — следующая попытка должна считать заново.
+          resetSolveCache();
+          setVcError(msg);
+          addLog("error", msg);
+          return;
+        }
+        solveCacheRef.current = { key: cacheKey, data };
       }
 
       // Пишем лог из бэкенда
@@ -3254,8 +3294,9 @@ export default function CadPage() {
         (data.log as string[]).forEach(line => addLog("info", line));
       }
 
-      // Отметка, что расчёт выполнен на аварийном резервном сервере
-      if (isOnBackup()) {
+      // Отметка, что расчёт выполнен на аварийном резервном сервере.
+      // При показе из памяти запроса к серверу не было — сообщение не пишем.
+      if (!fromCache && isOnBackup()) {
         addLog("warn", "Расчёт выполнен на аварийном резервном сервере");
       }
 
