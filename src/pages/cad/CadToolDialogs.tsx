@@ -12,6 +12,7 @@ import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberD
 import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
 import DepressogramDialog from "@/components/cad/DepressogramDialog";
 import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
+import type { FireStabilityFact } from "@/lib/fireStability";
 import WaterFireCheckDialog from "@/components/cad/WaterFireCheckDialog";
 import EvacRiskDialog from "@/components/cad/EvacRiskDialog";
 import VdsDialog from "@/components/cad/VdsDialog";
@@ -113,7 +114,10 @@ export interface CadToolDialogsProps {
   showVds: boolean;
   setShowVds: (v: boolean) => void;
   solveResult: SolveResult | null;
-  computeFireStabilityFacts: (ambientTemp: number) => Promise<Map<string, boolean>>;
+  computeFireStabilityFacts: (
+    ambientTemp: number,
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<Map<string, FireStabilityFact>>;
 
   // Лицензия
   showLicenseDialog: boolean;
