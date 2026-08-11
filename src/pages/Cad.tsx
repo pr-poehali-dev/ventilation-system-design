@@ -252,6 +252,28 @@ export default function CadPage() {
   }, []);
 
   const [activeRibbon, setActiveRibbon] = useState<RibbonTab>("home");
+  // Лента свёрнута — видны только корешки вкладок, панель инструментов скрыта.
+  // Освобождает ~80 px по высоте под схему на небольших экранах.
+  // Выбор запоминается между запусками (как в Аэросети и офисных программах).
+  const [ribbonCollapsed, setRibbonCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("pvs_ribbon_collapsed") === "1"; } catch { return false; }
+  });
+  // Выбор вкладки. Если лента свёрнута — разворачиваем: иначе клик по корешку
+  // не давал бы никакого видимого отклика и выглядел бы как неработающая кнопка.
+  const selectRibbon = (tab: RibbonTab) => {
+    setActiveRibbon(tab);
+    if (ribbonCollapsed) {
+      setRibbonCollapsed(false);
+      try { localStorage.setItem("pvs_ribbon_collapsed", "0"); } catch { /* ignore */ }
+    }
+  };
+  const toggleRibbonCollapsed = () => {
+    setRibbonCollapsed(v => {
+      const next = !v;
+      try { localStorage.setItem("pvs_ribbon_collapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const [activeSide, setActiveSide] = useState<SideTab>("params");
   const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
   const [mineFans, setMineFans] = useState<MineFanExport[]>([
@@ -3584,6 +3606,12 @@ export default function CadPage() {
         }
         return;
       }
+      // Ctrl+F1 — свернуть/развернуть ленту (привычно по офисным программам)
+      if (e.ctrlKey && e.key === "F1") {
+        e.preventDefault();
+        toggleRibbonCollapsed();
+        return;
+      }
       // F3 — режим привязки ветвей к позиции
       if (e.key === "F3") {
         e.preventDefault();
@@ -4134,19 +4162,25 @@ export default function CadPage() {
       <div className="flex items-end h-7 px-1 gap-0.5"
         style={{ background: "#f0f0f0", borderBottom: "1px solid #b8b8b8" }}>
         <RibbonTabBtn label="Файл" active={activeRibbon === "file"} onClick={() => setActiveRibbon("file")} fileStyle />
-        <RibbonTabBtn label="Главная" active={activeRibbon === "home"} onClick={() => setActiveRibbon("home")} />
-        <RibbonTabBtn label="Схема" active={activeRibbon === "vent"} onClick={() => setActiveRibbon("vent")} />
-        <RibbonTabBtn label="Вентиляция" active={activeRibbon === "thermo"} onClick={() => setActiveRibbon("thermo")} />
+        <RibbonTabBtn label="Главная" active={activeRibbon === "home"} onClick={() => selectRibbon("home")} />
+        <RibbonTabBtn label="Схема" active={activeRibbon === "vent"} onClick={() => selectRibbon("vent")} />
+        <RibbonTabBtn label="Вентиляция" active={activeRibbon === "thermo"} onClick={() => selectRibbon("thermo")} />
         <RibbonTabBtn label="Аварии" active={activeRibbon === "involve"}
-          onClick={() => { if (isDemo) { setShowLicenseDialog(true); return; } setActiveRibbon("involve"); }}
+          onClick={() => { if (isDemo) { setShowLicenseDialog(true); return; } selectRibbon("involve"); }}
           title={isDemo ? "Аварийные расчёты — только в полной версии" : undefined} />
-        <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => setActiveRibbon("general")} />
+        <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => selectRibbon("general")} />
         <RibbonTabBtn label="Печать" active={false} onClick={() => setShowPrintDialog(true)} />
         <RibbonTabBtn label="Помощь" active={false} onClick={() => setShowHelpDialog(true)} />
         <div className="ml-auto pr-2 pb-0.5">
+          {/* Сворачивание ленты. Стрелка смотрит вниз, когда лента развёрнута
+              (клик — убрать), и вверх, когда свёрнута (клик — показать). */}
           <button className="w-5 h-5 hover:bg-black/10 flex items-center justify-center"
-            title="Свернуть ленту">
-            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 3 L5 7 L9 3" stroke="#444" fill="none" strokeWidth="1.2" /></svg>
+            onClick={toggleRibbonCollapsed}
+            title={ribbonCollapsed ? "Развернуть ленту (Ctrl+F1)" : "Свернуть ленту (Ctrl+F1)"}>
+            <svg width="10" height="10" viewBox="0 0 10 10">
+              <path d={ribbonCollapsed ? "M1 7 L5 3 L9 7" : "M1 3 L5 7 L9 3"}
+                stroke="#444" fill="none" strokeWidth="1.2" />
+            </svg>
           </button>
         </div>
       </div>
@@ -4624,7 +4658,7 @@ export default function CadPage() {
       {/* Вкладка Вентиляция использует общий ribbon-блок с условием activeRibbon === "thermo" */}
 
       {/* ═══ RIBBON CONTENT: СПРАВОЧНИКИ ══════════════════════════════════ */}
-      {activeRibbon === "general" && (
+      {activeRibbon === "general" && !ribbonCollapsed && (
       <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
         style={{ background: "linear-gradient(180deg,#fafafa,#ececec)", borderBottom: "1px solid #b8b8b8" }}>
         <RibbonGroup label="Вентиляция">
@@ -4660,7 +4694,7 @@ export default function CadPage() {
       )}
 
       {/* ═══ RIBBON CONTENT: АВАРИИ ════════════════════════════════════════ */}
-      {activeRibbon === "involve" && (
+      {activeRibbon === "involve" && !ribbonCollapsed && (
       <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
         style={{ background: "linear-gradient(180deg,#fff5f5,#fce8e8)", borderBottom: "1px solid #fca5a5" }}>
 
@@ -5334,7 +5368,7 @@ export default function CadPage() {
       )}
 
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
-      {activeRibbon !== "general" && activeRibbon !== "involve" && (
+      {activeRibbon !== "general" && activeRibbon !== "involve" && !ribbonCollapsed && (
       <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
         style={{ background: "linear-gradient(180deg,#f5f5f5,#e8e8e8)", borderBottom: "1px solid #b0b0b0" }}>
 
