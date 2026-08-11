@@ -84,6 +84,35 @@ const safeFixed = (v: unknown, digits = 1): string => {
 };
 
 
+// ─── Память расчётов ядра (общая для всех видов расчёта) ─────────────────────
+// Расчёт пожара и проверка устойчивости проветривания устроены итерационно:
+// внутри одного нажатия кнопки сеть пересчитывается несколько раз подряд, а
+// раунды нередко повторяются с ТЕМИ ЖЕ исходными данными — когда сценарий уже
+// сошёлся и его параметры между раундами перестали меняться. Такие повторы
+// раньше уходили на сервер и считались заново.
+//
+// Память живёт на уровне отправки запроса, поэтому одинаково работает для всех
+// расчётов: воздухораспределение (F9), пожар, устойчивость, батч-сценарии.
+//
+// Ограничения сделаны намеренно:
+//   • храним последние 24 ответа — этого хватает на раунды одного расчёта,
+//     при этом память не растёт бесконечно на больших схемах;
+//   • ключ = полное тело запроса, поэтому любое изменение данных (сопротивление,
+//     температура, депрессия пожара, метод, допуски) даёт новый расчёт;
+//   • ошибочные ответы не запоминаются — см. postAirflow ниже.
+const AIRFLOW_CACHE_LIMIT = 24;
+const airflowCache = new Map<string, string>();
+
+/** Сбрасывает память расчётов (вызывается при загрузке другого проекта). */
+function clearAirflowCache(): void {
+  airflowCache.clear();
+}
+
+/** Есть ли готовый результат для такого запроса (для пояснения в журнале). */
+function wasAirflowCached(body: unknown): boolean {
+  return airflowCache.has(JSON.stringify(body));
+}
+
 // Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
 // ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
 // поэтому крупный JSON сжимаем gzip прямо в браузере (CompressionStream).
@@ -100,6 +129,17 @@ const safeFixed = (v: unknown, digits = 1): string => {
 // распознаёт конверт и распаковывает.
 async function postAirflow(body: unknown): Promise<Response> {
   const json = JSON.stringify(body);
+
+  // Точно такой же запрос уже считался — отдаём сохранённый ответ.
+  // Возвращаем новый Response, т.к. тело ответа читается только один раз.
+  const hit = airflowCache.get(json);
+  if (hit !== undefined) {
+    return new Response(hit, {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const canGzip = typeof (globalThis as { CompressionStream?: unknown }).CompressionStream !== "undefined";
   // Готовим финальное тело запроса (со сжатием для крупных схем > 512 КБ).
   let payload = json;
@@ -130,6 +170,24 @@ async function postAirflow(body: unknown): Promise<Response> {
       body: payload,
     }),
   );
+
+  // Успешный расчёт запоминаем. Ошибки (в т.ч. «error» в теле ответа) НЕ
+  // сохраняем: повторная попытка должна честно уйти на сервер.
+  // Тело читаем в текст и отдаём копию — исходный Response одноразовый.
+  if (response.ok) {
+    try {
+      const text = await response.clone().text();
+      if (!text.includes('"error"')) {
+        if (airflowCache.size >= AIRFLOW_CACHE_LIMIT) {
+          // Вытесняем самую старую запись (Map хранит порядок вставки).
+          const oldest = airflowCache.keys().next().value;
+          if (oldest !== undefined) airflowCache.delete(oldest);
+        }
+        airflowCache.set(json, text);
+      }
+    } catch { /* не смогли прочитать — просто не запоминаем */ }
+  }
+
   return response;
 }
 
@@ -2350,6 +2408,8 @@ export default function CadPage() {
   const applyProjectData = (data: Record<string, unknown>, fileName: string) => {
     // Блокируем начальный пресет вида — файл загружен
     initialFileLoadedRef.current = true;
+    // Загружается другая схема — результаты прошлого проекта неактуальны.
+    clearAirflowCache();
 
     // ── ПОЛНЫЙ СБРОС СОСТОЯНИЯ ДО ДЕФОЛТОВ ПЕРЕД ЗАГРУЗКОЙ ─────────────
     // Чтобы данные предыдущего проекта не «просачивались» в новый
@@ -2602,6 +2662,7 @@ export default function CadPage() {
     }
 
     // ── Топология ──
+    clearAirflowCache();
     setNodes([]);
     setBranches([]);
     setSchemaSymbols([]);
@@ -3199,25 +3260,6 @@ export default function CadPage() {
     window.setTimeout(() => setFireCalcProgress(null), 400);
   };
 
-  // ─── Память последнего расчёта воздухораспределения ────────────────────────
-  // Повторное нажатие F9 на неизменённой схеме раньше заново гоняло полный
-  // расчёт на сервере: для крупных сетей это секунды ожидания и потраченное
-  // вычислительное время впустую.
-  //
-  // Теперь запоминаем ТЕЛО ЗАПРОСА (все исходные данные решателя) и ответ.
-  // Если следующий запрос дословно совпал с прошлым — отдаём сохранённый
-  // результат мгновенно, не обращаясь к серверу.
-  //
-  // Почему сравниваем именно тело запроса: в него входит всё, что влияет на
-  // результат — сопротивления, вентиляторы, перемычки, температуры, метод и
-  // допуски расчёта. Изменилось что угодно из этого — строка станет другой и
-  // расчёт честно уйдёт на сервер.
-  //
-  // Память живёт в пределах сессии (useRef) и сбрасывается при загрузке другого
-  // проекта — см. resetSolveCache().
-  const solveCacheRef = useRef<{ key: string; data: unknown } | null>(null);
-  const resetSolveCache = () => { solveCacheRef.current = null; };
-
   // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
@@ -3258,35 +3300,20 @@ export default function CadPage() {
             ? { normalFlows }
             : {}),
       };
-      // Схема и настройки расчёта не изменились с прошлого раза → берём
-      // сохранённый результат и не тратим вычислительное время на сервере.
-      const cacheKey = JSON.stringify(requestBody);
-      const cached = solveCacheRef.current;
+      // Схема и настройки расчёта не изменились с прошлого раза → postAirflow
+      // отдаст сохранённый результат мгновенно, не обращаясь к серверу
+      // (общая память расчётов, см. airflowCache в начале файла).
+      const fromCache = wasAirflowCached(requestBody);
+      if (fromCache) addLog("info", "Схема не изменилась — показан результат прошлого расчёта");
 
-      let data: {
-        error?: string; log?: string[]; branches?: unknown; nodes?: unknown;
-        converged?: boolean; iterations?: number; maxResidual?: number;
-        cyclesCount?: number; diagnostics?: { level: string; message: string }[];
-      };
+      const resp = await postAirflow(requestBody);
+      const data = await resp.json();
 
-      let fromCache = false;
-      if (cached && cached.key === cacheKey) {
-        data = cached.data as typeof data;
-        fromCache = true;
-        addLog("info", "Схема не изменилась — показан результат прошлого расчёта");
-      } else {
-        const resp = await postAirflow(requestBody);
-        data = await resp.json();
-
-        if (!resp.ok || data.error) {
-          const msg = data.error || "Ошибка расчёта";
-          // Неудачный расчёт не запоминаем — следующая попытка должна считать заново.
-          resetSolveCache();
-          setVcError(msg);
-          addLog("error", msg);
-          return;
-        }
-        solveCacheRef.current = { key: cacheKey, data };
+      if (!resp.ok || data.error) {
+        const msg = data.error || "Ошибка расчёта";
+        setVcError(msg);
+        addLog("error", msg);
+        return;
       }
 
       // Пишем лог из бэкенда
