@@ -2211,7 +2211,11 @@ export default function CadPage() {
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
   const { recentFiles, addRecentFile, updateHasHandle, removeRecentFile, clearRecentFiles } = useRecentFiles();
-  const [projectFileName, setProjectFileName] = useState<string>("Проект1.vproj");
+  // Имя файла проекта. При старте — ПУСТО: имя появляется только когда проект
+  // открыт из файла или сохранён. Раньше здесь стояло «Проект1.vproj», и свежий
+  // пустой запуск выглядел как уже существующий проект — а при закрытии
+  // программа спрашивала о сохранении, хотя пользователь ничего не создавал.
+  const [projectFileName, setProjectFileName] = useState<string>("");
   // Флаг несохранённых изменений
   const [isDirty, setIsDirty] = useState<boolean>(false);
   // Диалог подтверждения закрытия
@@ -2229,6 +2233,9 @@ export default function CadPage() {
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
   // Ссылка на актуальную функцию сохранения — для вызова из window (баннер обновления)
   const handleSaveRef = useRef<(() => Promise<void> | void) | null>(null);
+  // Ссылка на «Сохранить как» — нужна, чтобы «Сохранить» для нового безымянного
+  // проекта открыл диалог выбора файла (handleSaveAs объявлен ниже по коду).
+  const handleSaveAsRef = useRef<(() => Promise<void> | void) | null>(null);
   // Текущие параметры вида для сохранения в файл
   const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number } | null>(null);
 
@@ -2279,15 +2286,32 @@ export default function CadPage() {
     smokeVisThreshold,
   });
 
+  // Проект считается ПУСТЫМ, пока на схеме ничего нет и файл не открыт/не
+  // сохранён. Такой проект нечего терять: спрашивать о сохранении при выходе
+  // не нужно. Раньше этой проверки не было — любое служебное изменение
+  // состояния сразу после запуска (подгрузка каталога перемычек, настроек
+  // отображения, единиц измерения) взводило флаг «есть изменения», и программа
+  // требовала сохранения у пользователя, который ничего не делал.
+  const isEmptyProject =
+    nodes.length === 0 &&
+    branchesRaw.length === 0 &&
+    schemaSymbols.length === 0 &&
+    !projectFileName;
+
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
   const isFirstRender = useRef(true);
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
+    // Пустой безымянный проект не помечаем изменённым.
+    if (nodes.length === 0 && branchesRaw.length === 0 && schemaSymbols.length === 0 && !projectFileName) {
+      setIsDirty(false);
+      return;
+    }
     setIsDirty(true);
   }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
-      showFlowArrows, flowDisplay, zScale, xyScale]);
+      showFlowArrows, flowDisplay, zScale, xyScale, projectFileName]);
 
   // Предупреждение при закрытии/обновлении вкладки
   // В десктопном режиме (WebView2) beforeunload отключён — закрытие обрабатывается через C#
@@ -2297,13 +2321,14 @@ export default function CadPage() {
     if (isDesktop) return; // в десктопе браузерный диалог не нужен
 
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!isDirty) return;
+      // Пустой безымянный проект терять нечего — не мешаем закрытию.
+      if (!isDirty || isEmptyProject) return;
       e.preventDefault();
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [isDirty]);
+  }, [isDirty, isEmptyProject]);
 
   // В десктопном режиме — регистрируем callbacks для C# перед закрытием окна
   useEffect(() => {
@@ -2317,12 +2342,12 @@ export default function CadPage() {
     if (!w.__IS_DESKTOP__) return;
 
     // C# вызывает __pvsCanClose() — если true, закрываем без диалога
-    w.__pvsCanClose = () => !isDirty;
+    w.__pvsCanClose = () => !isDirty || isEmptyProject;
 
     // C# вызывает __pvsShowCloseDialog() когда нажата системная кнопка X
     // Показываем наш React-диалог вместо браузерного "Покинуть сайт?"
     w.__pvsShowCloseDialog = () => {
-      if (!isDirty) {
+      if (!isDirty || isEmptyProject) {
         // Несохранённых данных нет — сразу подтверждаем закрытие
         w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close-confirmed" }));
         return;
@@ -2330,7 +2355,7 @@ export default function CadPage() {
       // Показываем кастомный диалог
       setShowCloseConfirm(true);
     };
-  }, [isDirty]);
+  }, [isDirty, isEmptyProject]);
 
   // Пробрасываем состояние «есть несохранённые изменения» и функцию сохранения
   // в window — чтобы глобальный баннер обновления (AppUpdateBanner) мог перед
@@ -2353,8 +2378,16 @@ export default function CadPage() {
     await writable.close();
   };
 
+  // Имя для сохранения. Пока проект безымянный (новый, ещё не сохранённый),
+  // предлагаем «Проект1.vproj» — но только в момент сохранения, а не в
+  // заголовке окна при запуске.
+  const DEFAULT_PROJECT_NAME = "Проект1.vproj";
+  const suggestedFileName = () => projectFileName || DEFAULT_PROJECT_NAME;
+
   const handleSave = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
+    // Новый проект ещё не привязан к файлу — сразу спрашиваем, куда сохранить.
+    if (!projectFileName && !fileHandleRef.current) { await handleSaveAsRef.current?.(); return; }
     const data = buildProjectData();
     // Если есть открытый handle — перезаписываем без диалога
     if (fileHandleRef.current) {
@@ -2372,7 +2405,7 @@ export default function CadPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = projectFileName;
+    a.download = suggestedFileName();
     a.click();
     URL.revokeObjectURL(url);
     setIsDirty(false);
@@ -2386,7 +2419,7 @@ export default function CadPage() {
     if ("showSaveFilePicker" in window) {
       try {
         const handle = await (window as Window & { showSaveFilePicker: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
-          suggestedName: projectFileName,
+          suggestedName: suggestedFileName(),
           types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
         });
         fileHandleRef.current = handle;
@@ -2403,7 +2436,7 @@ export default function CadPage() {
       }
     }
     // Fallback: prompt + скачивание
-    const name = window.prompt("Имя файла:", projectFileName);
+    const name = window.prompt("Имя файла:", suggestedFileName());
     if (!name) return;
     const fname = name.endsWith(".vproj") ? name : `${name}.vproj`;
     setProjectFileName(fname);
@@ -2416,6 +2449,7 @@ export default function CadPage() {
     URL.revokeObjectURL(url);
     setIsDirty(false);
   };
+  handleSaveAsRef.current = handleSaveAs;
 
   const handleOpen = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
@@ -2837,7 +2871,11 @@ export default function CadPage() {
     setMineTypes([]);
 
     // ── Имя файла и вид ──
-    setProjectFileName("Проект1.vproj");
+    // Новый проект — БЕЗ имени: файла ещё нет. Имя появится при первом
+    // сохранении (или при открытии .vproj). Заодно снимаем флаг изменений,
+    // иначе сброс состояния сам себя пометил бы как «несохранённые данные».
+    setProjectFileName("");
+    setIsDirty(false);
     fileHandleRef.current = null;
     setImportNonce(n => n + 1);
     setActiveRibbon("home");
@@ -4084,7 +4122,7 @@ export default function CadPage() {
           else w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-maximize" }));
         };
         const winClose = () => {
-          if (isDirty) { setShowCloseConfirm(true); return; }
+          if (isDirty && !isEmptyProject) { setShowCloseConfirm(true); return; }
           if (typeof w.__pvsWinClose === "function") w.__pvsWinClose();
           else w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close" }));
         };
@@ -4110,13 +4148,18 @@ export default function CadPage() {
             <AppLogo className="w-4 h-4 object-contain" />
           </button>
           <span className="text-xs font-medium text-gray-700">ПВ-Система</span>
-          {projectFileName && (
-            <>
-              <span className="text-xs text-gray-400">—</span>
-              <span className="text-xs font-semibold" style={{ color: "#1a3a6b" }}>
-                {projectFileName}{isDirty ? " *" : ""}
-              </span>
-            </>
+          {/* Пока проект не сохранён и не открыт из файла, имени нет — пишем
+              «Новый проект» серым. Придумывать «Проект1.vproj» нельзя: файла с
+              таким именем не существует, и пользователь ищет его на диске. */}
+          <span className="text-xs text-gray-400">—</span>
+          {projectFileName ? (
+            <span className="text-xs font-semibold" style={{ color: "#1a3a6b" }}>
+              {projectFileName}{isDirty ? " *" : ""}
+            </span>
+          ) : (
+            <span className="text-xs" style={{ color: "#9ca3af" }}>
+              Новый проект{isDirty ? " *" : ""}
+            </span>
           )}
         </div>
 
@@ -4333,7 +4376,10 @@ export default function CadPage() {
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Сохранить проект</div>
                     <div className="mb-3 flex items-center gap-2">
                       <span className="text-[11px] text-gray-600">Файл:</span>
+                      {/* У нового проекта имени ещё нет — показываем его как
+                          подсказку в пустом поле, а не как готовое значение. */}
                       <input type="text" value={projectFileName}
+                        placeholder={DEFAULT_PROJECT_NAME}
                         onChange={(e) => setProjectFileName(e.target.value)}
                         className="flex-1 text-[12px] px-2 py-1 border border-gray-300 rounded"
                         style={{ fontFamily: "inherit" }} />
@@ -4345,7 +4391,7 @@ export default function CadPage() {
                       </div>
                       <div>
                         <div className="text-[13px] font-medium text-blue-700">Сохранить</div>
-                        <div className="text-[11px] text-gray-400">Ctrl+S — скачать файл {projectFileName}</div>
+                        <div className="text-[11px] text-gray-400">Ctrl+S — скачать файл {suggestedFileName()}</div>
                       </div>
                     </button>
                     <div className="text-[11px] text-gray-500 mt-2 px-1">
@@ -12022,7 +12068,7 @@ export default function CadPage() {
         branches={branches}
         sections={ventSections}
         norms={ventNorms}
-        projectName={projectFileName}
+        projectName={suggestedFileName()}
         onSelectBranch={(id) => {
           setSelectedNodeId(null);
           setSelectedNodeIds(new Set());
@@ -12039,7 +12085,7 @@ export default function CadPage() {
       nodes={nodes}
       branches={branches}
       horizons={horizons}
-      projectFileName={projectFileName}
+      projectFileName={suggestedFileName()}
       unitsConfig={unitsConfig}
       ventNorms={ventNorms}
       setVentNorms={setVentNorms}
@@ -12107,7 +12153,7 @@ export default function CadPage() {
         branches={branches}
         positions={positions}
         bulkheadRByBranch={bulkheadRByBranch}
-        projectName={projectFileName.replace(/\.vproj$/, "")}
+        projectName={suggestedFileName().replace(/\.vproj$/, "")}
         onClose={() => setShowCsvExport(false)}
       />
     )}
@@ -12118,7 +12164,7 @@ export default function CadPage() {
       branchesRaw={branchesRaw}
       branchesWithTotalDep={branchesWithTotalDep}
       horizons={horizons}
-      projectFileName={projectFileName}
+      projectFileName={suggestedFileName()}
       unitsConfig={unitsConfig}
       showLegend={showLegend}
       setShowLegend={setShowLegend}
@@ -12201,7 +12247,7 @@ export default function CadPage() {
       nodes={nodes}
       branches={branches}
       branchesRaw={branchesRaw}
-      projectFileName={projectFileName}
+      projectFileName={suggestedFileName()}
       scaleSettingsOpen={scaleSettingsOpen}
       setScaleSettingsOpen={setScaleSettingsOpen}
       scaleTextMin={scaleTextMin}
