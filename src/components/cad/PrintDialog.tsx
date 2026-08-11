@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import { API_URLS } from "@/lib/api-urls";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
-import { renderCanvas, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { renderCanvas, ensureFireCraneIcons, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -843,6 +843,10 @@ export default function PrintDialog({
     row: number,
     dpi: number,
   ): Promise<string> => {
+    // Дожидаемся готовности иконок пожарных кранов. Лист печати рисуется ОДИН
+    // раз, и если иконка ещё читалась с диска, в чертёж вместо условного
+    // обозначения крана попал бы запасной кружок.
+    await ensureFireCraneIcons();
     const mmToPx = (mm: number) => Math.round(mm * dpi / 25.4);
 
     const canvasW = mmToPx(paper.w);

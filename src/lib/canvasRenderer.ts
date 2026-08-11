@@ -42,6 +42,40 @@ function getFireCraneImg(open: boolean): { img: HTMLImageElement; loaded: boolea
   }
 }
 
+/**
+ * Гарантирует, что иконки пожарных кранов прочитаны и готовы к отрисовке.
+ *
+ * ЗАЧЕМ: на экране схема перерисовывается постоянно, поэтому иконка, не
+ * успевшая загрузиться, появится через мгновение при следующей перерисовке.
+ * А печать и экспорт рисуют лист ОДИН раз: если в этот момент иконка ещё
+ * читалась с диска, в чертёж попал бы запасной кружок вместо условного
+ * обозначения крана.
+ *
+ * Вызывать перед печатью/экспортом. Ожидание ограничено 3 секундами — чтение
+ * локального файла занимает миллисекунды, но зависнуть печать не должна.
+ */
+export async function ensureFireCraneIcons(): Promise<void> {
+  const wait = (img: HTMLImageElement, isLoaded: () => boolean) =>
+    new Promise<void>((resolve) => {
+      if (isLoaded() || img.complete) return resolve();
+      const done = () => resolve();
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", done, { once: true });
+      setTimeout(done, 3000);
+    });
+
+  const red = getFireCraneImg(false);
+  const blue = getFireCraneImg(true);
+  await Promise.all([
+    wait(red.img, () => fireCraneRedLoaded),
+    wait(blue.img, () => fireCraneBlueLoaded),
+  ]);
+  // Пометка «загружено» для картинок, прочитанных из кэша браузера:
+  // у них событие load не сработает, но complete уже true.
+  if (red.img.complete && red.img.naturalWidth > 0) fireCraneRedLoaded = true;
+  if (blue.img.complete && blue.img.naturalWidth > 0) fireCraneBlueLoaded = true;
+}
+
 
 
 // ─── Кэш подложек-планов горизонтов (dataURL → HTMLImageElement) ────────────
