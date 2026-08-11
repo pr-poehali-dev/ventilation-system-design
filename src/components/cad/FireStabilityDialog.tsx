@@ -201,19 +201,33 @@ export default function FireStabilityDialog({
                       ? <span className="text-red-600 font-semibold">Неустойчиво: {unstable}</span>
                       : <span className="text-gray-400">Неустойчиво: 0</span>}
                     {(() => {
-                      // Минимальный запас устойчивости в категории, Па: показывает
-                      // самую «слабую» выработку — насколько она далека от
-                      // опрокидывания. Отрицательное значение = порог перекрыт.
-                      const margins = rows
-                        .map(r => r.marginDep_Pa)
-                        .filter((m): m is number => m != null);
-                      if (margins.length === 0) return null;
-                      const min = Math.min(...margins);
+                      const isDescending = cat === "descending-incline" || cat === "descending-vertical";
+                      // ЗАПАС ДО ОПРОКИДЫВАНИЯ — только для НИСХОДЯЩИХ выработок:
+                      // опрокинуться может лишь нисходящая струя. У восходящих
+                      // тепловая депрессия действует по потоку и разгоняет его.
+                      if (isDescending) {
+                        const margins = rows
+                          .map(r => r.marginDep_Pa)
+                          .filter((m): m is number => m != null);
+                        if (margins.length === 0) return null;
+                        const min = Math.min(...margins);
+                        return (
+                          <span
+                            className={min < 0 ? "text-red-600" : "text-gray-500"}
+                            title="Наименьший запас до опрокидывания в этой группе (h_кр − h_т). Отрицательное значение — критическая депрессия уже превышена.">
+                            Мин. запас: {min.toFixed(1)} Па
+                          </span>
+                        );
+                      }
+                      // ВОСХОДЯЩИЕ: сама струя устойчива. Показываем, у скольких
+                      // выработок тяга пожара создаёт риск опрокидывания струи
+                      // в ПАРАЛЛЕЛЬНОЙ выработке (Прил. 7, условие 7.1).
+                      const risk = rows.filter(r => r.exceedsCritical).length;
+                      if (risk === 0) return null;
                       return (
-                        <span
-                          className={min < 0 ? "text-red-600" : "text-gray-500"}
-                          title="Наименьший запас до опрокидывания в этой группе (h_кр − h_т). Отрицательное значение — критическая депрессия уже превышена.">
-                          Мин. запас: {min.toFixed(1)} Па
+                        <span className="text-amber-600"
+                          title="Струя в самой восходящей выработке устойчива (тепловая депрессия разгоняет поток). Но по условию 7.1 Прил. 7 тяга пожара может опрокинуть струю в параллельной выработке — требуется проверка.">
+                          Риск для параллельных: {risk}
                         </span>
                       );
                     })()}
