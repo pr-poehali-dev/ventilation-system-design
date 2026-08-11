@@ -1,12 +1,8 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// helpSectionsAdvanced — разделы руководства: аварии, ППЗ, горноспасатели,
-// отображение, горячие клавиши, справочники, печать, советы и приёмы.
-// Содержимое перенесено из HelpDialog.tsx без изменений.
-// ─────────────────────────────────────────────────────────────────────────────
-import Icon from "@/components/ui/icon";
-import { type Section, H3, Li, Block, KBD, QStep } from "./HelpPrimitives";
+import { type Section, H3, KBD } from "./HelpPrimitives";
 
-export const ADVANCED_SECTIONS: Section[] = [
+// Разделы руководства: аварии, ППЗ, горноспасатели, отображение, горячие
+// клавиши, справочники, печать, советы. Перенесено без изменений.
+export const HELP_SECTIONS_ADVANCED: Section[] = [
     {
       id: "accidents",
       icon: "Flame",

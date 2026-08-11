@@ -62,6 +62,12 @@ export interface StabilityRow {
   branchDep_Pa: number;      // располагаемая депрессия ветви, Па
   hKr_Pa: number | null;     // критическая депрессия h_кр (5.3), Па (null — нет параллельной выработки)
   exceedsCritical: boolean;  // |h_т| ≥ h_кр (опрокидывание по нормативу)
+  // Запас устойчивости, Па: h_кр − h_т. Показывает, НАСКОЛЬКО выработка далека
+  // от опрокидывания в абсолютных единицах (в отличие от безразмерного p_у).
+  //   > 0 — запас: тепловая депрессия ещё не достигла критической;
+  //   < 0 — превышение: на столько депрессия пожара перекрыла порог.
+  // null — критическую депрессию определить нельзя (нет параллельного пути).
+  marginDep_Pa: number | null;
   p_u: number | null;        // показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1)
   stabilityClass: StabilityClass; // класс по p_у (Прил. 3)
   // ── Приложение 7: восходящие выработки ──────────────────────────────
@@ -358,6 +364,13 @@ export function calcFireStability(
     const critDep_Pa = descending ? hKr_Pa : holdingDep_Pa;
     // Превышение критической депрессии — общий признак для обоих направлений.
     const exceedsCritical = critDep_Pa != null && thermalDep >= critDep_Pa;
+    // Запас устойчивости в паскалях: сколько ещё «выдержит» выработка до
+    // опрокидывания (h_кр − h_т). Отрицательное значение — на столько порог
+    // уже перекрыт. Считается для обоих направлений: для нисходящих база —
+    // критическая депрессия (Прил. 5), для восходящих — удерживающая (7.1).
+    const marginDep_Pa = critDep_Pa != null
+      ? +(critDep_Pa - thermalDep).toFixed(1)
+      : null;
 
     const puBase = critDep_Pa;
     const p_uRaw = (puBase != null && puBase > 0 && thermalDep > 0.01)
@@ -399,6 +412,7 @@ export function calcFireStability(
       branchDep_Pa: +branchDep.toFixed(1),
       hKr_Pa: critDep_Pa,
       exceedsCritical,
+      marginDep_Pa,
       p_u,
       stabilityClass,
       Q0_m3s, Q0_73, Q0_74, Q0_a, Q0_source,

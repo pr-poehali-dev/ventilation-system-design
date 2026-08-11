@@ -200,6 +200,23 @@ export default function FireStabilityDialog({
                     {unstable > 0
                       ? <span className="text-red-600 font-semibold">Неустойчиво: {unstable}</span>
                       : <span className="text-gray-400">Неустойчиво: 0</span>}
+                    {(() => {
+                      // Минимальный запас устойчивости в категории, Па: показывает
+                      // самую «слабую» выработку — насколько она далека от
+                      // опрокидывания. Отрицательное значение = порог перекрыт.
+                      const margins = rows
+                        .map(r => r.marginDep_Pa)
+                        .filter((m): m is number => m != null);
+                      if (margins.length === 0) return null;
+                      const min = Math.min(...margins);
+                      return (
+                        <span
+                          className={min < 0 ? "text-red-600" : "text-gray-500"}
+                          title="Наименьший запас до опрокидывания в этой группе (h_кр − h_т). Отрицательное значение — критическая депрессия уже превышена.">
+                          Мин. запас: {min.toFixed(1)} Па
+                        </span>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

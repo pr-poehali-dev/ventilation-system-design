@@ -45,6 +45,7 @@ const TABLE_HEADERS = [
   "Расчётная температура пожара, °C",
   "Тепловая депрессия h_т, Па",
   "Критическая депрессия h_кр, Па",
+  "Запас устойчивости, Па",
   "Показатель устойчивости p_у",
   "Степень устойчивости",
   "Пожарная нагрузка",
@@ -163,6 +164,9 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
       r.fireTemp_C,
       r.thermalDep_Pa,
       r.hKr_Pa != null ? r.hKr_Pa : "—",
+      // Запас до опрокидывания: h_кр − h_т. Отрицательное значение печатаем со
+      // знаком «−» — видно, на сколько паскалей порог уже перекрыт.
+      r.marginDep_Pa != null ? r.marginDep_Pa : "—",
       r.p_u != null ? r.p_u : "—",
       r.stability,
       r.fireLoadDesc,
@@ -218,7 +222,7 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
   ws["!cols"] = [
     { wch: 6 }, { wch: 9 }, { wch: 9 }, { wch: 26 }, { wch: 10 }, { wch: 9 },
     { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 18 }, { wch: 40 },
+    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 18 }, { wch: 40 },
   ];
   // Объединение вводной строки
   ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: TABLE_HEADERS.length - 1 } }];
