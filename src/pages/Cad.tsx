@@ -21,7 +21,7 @@ import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import NodePeoplePanel from "@/components/cad/NodePeoplePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
-import { withWaterPumps } from "@/lib/waterHydraulics";
+import { withWaterPumps, waterInputsFingerprint } from "@/lib/waterHydraulics";
 import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 import VentSectionsPanel from "@/components/cad/VentSectionsPanel";
 import AirDemandDialog from "@/components/cad/AirDemandDialog";
@@ -1479,10 +1479,31 @@ export default function CadPage() {
 
   // Гидравлический расчёт водопроводной сети ППЗ (backend).
   // Объявлен здесь (а не выше вместе с waterNetwork state), т.к. использует schemaSymbols.
+  //
+  // ОПТИМИЗАЦИЯ ВЫЗОВОВ. Раньше эффект зависел от [nodes, branches, schemaSymbols]
+  // целиком, поэтому расчёт улетал на сервер при любом действии на схеме:
+  // перетащили узел, переименовали выработку, поменяли сечение под воздух.
+  // Гидравлике эти правки безразличны — набегали десятки лишних вызовов в минуту.
+  //
+  // Теперь считаем «отпечаток» только водопроводных данных (waterInputsFingerprint)
+  // и уходим на сервер, лишь когда он изменился. Плюс дебаунс увеличен до 900 мс,
+  // чтобы во время ввода числа в поле не слать запрос на каждое нажатие клавиши.
+  const waterFp = useMemo(
+    () => waterInputsFingerprint(nodes, branches, schemaSymbols),
+    [nodes, branches, schemaSymbols],
+  );
+  const lastWaterFpRef = useRef<string | null>(null);
+
   useEffect(() => {
     const hasWater = branches.some(b => b.hasWaterPipe);
-    if (!hasWater) { setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() }); return; }
-    // Дебаунс 400мс — при больших схемах (Canvas >800 ветвей) не спамим запросами
+    if (!hasWater) {
+      lastWaterFpRef.current = null;
+      setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
+      return;
+    }
+    // Данные водопровода не изменились → результат прежний, сервер не тревожим.
+    if (lastWaterFpRef.current === waterFp) return;
+    // Дебаунс 900мс — при вводе значений и перетаскивании не спамим запросами
     const tid = setTimeout(() => {
       // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload.
       // Параметры насосных станций со схемы «впечатываем» в поля ветвей общей
@@ -1494,6 +1515,9 @@ export default function CadPage() {
       // Также добавляем узлы с fireNodeType (резервуары и потребители)
       nodes.forEach(n => { if ((n.fireNodeType ?? "none") !== "none") waterNodeIds.add(n.id); });
       const waterNodes = nodes.filter(n => waterNodeIds.has(n.id));
+      // Запоминаем отпечаток ДО запроса: пока ответ в пути, повторные правки
+      // с тем же составом данных не должны порождать второй такой же запрос.
+      lastWaterFpRef.current = waterFp;
       fetch(WATER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1504,10 +1528,18 @@ export default function CadPage() {
         (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
         (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
         setWaterNetwork({ nodeResults: nr, branchResults: br });
-      }).catch((err) => { console.error("[water-hydraulics] fetch error:", err); });
-    }, 400);
+      }).catch((err) => {
+        // Запрос не прошёл — сбрасываем отпечаток, чтобы следующая правка
+        // (или повторный вход в панель) снова попыталась посчитать.
+        lastWaterFpRef.current = null;
+        console.error("[water-hydraulics] fetch error:", err);
+      });
+    }, 900);
     return () => clearTimeout(tid);
-  }, [nodes, branches, schemaSymbols]);
+    // Намеренно зависим ТОЛЬКО от отпечатка водопровода: nodes/branches/schemaSymbols
+    // читаются внутри и всегда актуальны, но сами по себе перезапуск не вызывают.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waterFp]);
 
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);

@@ -141,6 +141,81 @@ export function withWaterPumps<T extends TopoBranch>(
   });
 }
 
+// ─── Отпечаток исходных данных водопровода ───────────────────────────────────
+/**
+ * Компактная строка-«отпечаток» всех данных, от которых ЗАВИСИТ гидравлический
+ * расчёт водопровода.
+ *
+ * Зачем: расчёт гидравлики выполняется на сервере, и раньше он перезапускался
+ * при ЛЮБОМ изменении схемы — сдвинули узел мышкой, переименовали выработку,
+ * поменяли сечение под воздух. Гидравлике всё это безразлично, но запрос
+ * улетал, и при активном редактировании набегали десятки лишних вызовов
+ * в минуту.
+ *
+ * Теперь расчёт сравнивает отпечаток с предыдущим и уходит на сервер, только
+ * если реально изменилось что-то водопроводное: труба, вентиль, редуктор,
+ * насос, резервуар, кран или высотная отметка узла (влияет на столб воды).
+ *
+ * ВАЖНО: набор полей обязан совпадать с тем, что читает backend/water-hydraulics.
+ * Добавили новый параметр трубы или узла в расчёт — добавьте его и сюда,
+ * иначе результат перестанет обновляться при его изменении.
+ */
+export function waterInputsFingerprint(
+  nodes: TopoNode[],
+  branches: TopoBranch[],
+  symbols: PumpSymbolLite[],
+): string {
+  const parts: string[] = [];
+
+  // Ветви с трубопроводом: геометрия трубы, арматура, редуктор.
+  // Длина трубы по умолчанию берётся от длины выработки, поэтому length тоже учитываем.
+  for (const b of branches) {
+    if (!b.hasWaterPipe) continue;
+    const x = b as TopoBranch & Record<string, unknown>;
+    parts.push([
+      "b", b.id, b.fromId, b.toId,
+      x.wpDiameter, x.wpLength, x.wpLengthManual, b.length,
+      x.wpRoughness, x.wpRoughnessMode, x.wpLocalXi, x.wpManualR,
+      x.wpHasGate, x.wpGateClosed,
+      x.wpHasReducer, x.wpReducerOutPressure, x.wpReducerMaxFlow,
+      x.wpHasPump, x.wpPumpHead, x.wpPumpReverse,
+    ].join(","));
+  }
+
+  // Узлы: резервуары, потребители (краны) и высотные отметки.
+  // z нужен всем узлам водопровода — разность высот даёт напор столба воды.
+  for (const n of nodes) {
+    const x = n as TopoNode & Record<string, unknown>;
+    const ft = (x.fireNodeType as string) ?? "none";
+    if (ft === "none") continue;
+    parts.push([
+      "n", n.id, ft, n.z,
+      x.fireInitPressure, x.fireCapacity,
+      x.fireHydrantOpen, x.fireHydrantDiameter,
+      x.fireResistanceMode, x.fireManualR,
+    ].join(","));
+  }
+
+  // Высотные отметки узлов, через которые проходит труба (без fireNodeType).
+  const pipeNodeIds = new Set<string>();
+  for (const b of branches) {
+    if (!b.hasWaterPipe) continue;
+    pipeNodeIds.add(b.fromId); pipeNodeIds.add(b.toId);
+  }
+  for (const n of nodes) {
+    if (!pipeNodeIds.has(n.id)) continue;
+    parts.push(["z", n.id, n.z].join(","));
+  }
+
+  // Насосные станции со схемы: напор, число насосов, направление качания.
+  for (const s of symbols) {
+    if (s.typeId !== "pump" || !s.branchId) continue;
+    parts.push(["p", s.branchId, s.pumpHead, s.pumpParallel, s.airDirection].join(","));
+  }
+
+  return parts.join(";");
+}
+
 /**
  * Открытые потребители, гидравлически СВЯЗАННЫЕ с указанным резервуаром.
  *
