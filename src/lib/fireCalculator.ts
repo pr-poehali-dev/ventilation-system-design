@@ -1311,9 +1311,32 @@ export function computeHotNodeTemps(
   fireBranches: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[],
   allBranches: { id: string; fromId: string; toId: string; flow?: number; length?: number; area?: number; perimeter?: number }[],
   ambientTemp_C: number,
+  // БАЗОВАЯ (дожаровая) температура узла, °C — та же, что решатель присваивает
+  // непрогретым узлам: t_ср рудника + геотермический градиент по глубине, а для
+  // атмосферных узлов — температура поверхности.
+  //
+  // Зачем. Раньше дым остывал К ТЕМПЕРАТУРЕ ПОВЕРХНОСТИ (ambientTemp_C = 20°C),
+  // а решатель непрогретым узлам давал t_ср рудника (15°C). Весь путь дыма
+  // оказывался на несколько градусов теплее остальной сети НЕ из-за пожара, а
+  // из-за разной точки отсчёта. На стволе глубиной 300 м разница 5,6°C даёт
+  // фантомную тягу ≈70 Па — сопоставимо с депрессией перемычки, из-за чего
+  // расход в смежной выработке душился в разы (депрессия на перемычке
+  // 187→6 Па вместо 164→156 Па в АэроСети).
+  //
+  // Теперь дым остывает к РЕАЛЬНОЙ температуре вмещающего массива, поэтому
+  // вдали от очага струя сливается с окружающим воздухом без лишней разности
+  // плотностей — тяга работает только там, где действительно горячо.
+  baseNodeTemp_C?: Record<string, number>,
 ): Record<string, number> {
   const hot: Record<string, number> = {};
   if (fireBranches.length === 0) return hot;
+
+  // Базовая температура узла (к ней остывает струя). Если карта не передана —
+  // прежнее поведение (остывание к ambient).
+  const baseOf = (nid: string) => {
+    const t = baseNodeTemp_C?.[nid];
+    return Number.isFinite(t) ? (t as number) : ambientTemp_C;
+  };
 
 
 
@@ -1379,14 +1402,17 @@ export function computeHotNodeTemps(
     const halfLen = (fb.length ?? 0) * 0.5;                 // очаг в среднем в середине ветви
     const per = (fb.perimeter && fb.perimeter > 0) ? fb.perimeter : 4 * Math.sqrt(Math.max(1, fb.area ?? 1));
     const m = 1.25 * Math.max(Math.abs(dirFlow), fireRefFlow);
-    const tOut = ambientTemp_C
-      + (Math.min(1200, fb.fireTemp) - ambientTemp_C) * Math.exp(-wallLoss(per, halfLen, m));
+    // Струя остывает К ТЕМПЕРАТУРЕ ВМЕЩАЮЩЕГО МАССИВА в точке выхода, а не к
+    // температуре поверхности (см. baseNodeTemp_C выше).
+    const tWall = baseOf(outNode);
+    const tOut = tWall
+      + (Math.min(1200, fb.fireTemp) - tWall) * Math.exp(-wallLoss(per, halfLen, m));
     fireOutlet.set(fb.id, { node: outNode, t: tOut, m });
   }
 
-  // Текущая оценка температур узлов (старт — атмосфера/массив рудника).
+  // Текущая оценка температур узлов (старт — базовая температура массива).
   const nodeT = new Map<string, number>();
-  const getT = (nid: string) => nodeT.get(nid) ?? ambientTemp_C;
+  const getT = (nid: string) => nodeT.get(nid) ?? baseOf(nid);
 
   for (let it = 0; it < 60; it++) {
     let maxDelta = 0;
@@ -1412,13 +1438,15 @@ export function computeHotNodeTemps(
         // очага (fireRefFlow) искусственно ослаблял остывание на маломощных
         // смежных ветвях и тащил перегрев по всей сети.
         const m = 1.25 * Math.max(0.4, flow);
-        const tOut = ambientTemp_C
-          + (tIn - ambientTemp_C) * Math.exp(-wallLoss(bPer, b.length ?? 0, m));
+        // Остывание — к температуре вмещающего массива на выходе ветви.
+        const bWall = baseOf(nodeId);
+        const tOut = bWall
+          + (tIn - bWall) * Math.exp(-wallLoss(bPer, b.length ?? 0, m));
         sumMT += m * tOut;
         sumM  += m;
       }
       if (sumM <= 0) return;
-      const tMix = Math.max(ambientTemp_C, Math.min(1200, sumMT / sumM));
+      const tMix = Math.max(baseOf(nodeId), Math.min(1200, sumMT / sumM));
       next.set(nodeId, tMix);
       maxDelta = Math.max(maxDelta, Math.abs(tMix - getT(nodeId)));
     });
@@ -1427,10 +1455,14 @@ export function computeHotNodeTemps(
     if (maxDelta < 0.05) break;
   }
 
-  // Возвращаем только заметно перегретые узлы (> ambient + 0.5°C), чтобы тёплый
-  // столб доходил до ствола, но атмосферные узлы не трогались.
+  // Возвращаем только заметно перегретые узлы — перегрев считаем ОТНОСИТЕЛЬНО
+  // СОБСТВЕННОЙ базовой температуры узла, а не относительно фиксированных 20°C.
+  // Раньше порог был общий (ambient+0.5), и узел, остывший чуть ниже него,
+  // выпадал из «горячих» — решатель давал ему t_ср рудника. Между соседними
+  // узлами возникала ступенька в несколько градусов на ровном месте и вместе
+  // с ней фантомная тяга, душившая расход в смежных выработках.
   nodeT.forEach((t, nid) => {
-    if (t > ambientTemp_C + 0.5) hot[nid] = Math.round(t * 100) / 100;
+    if (t > baseOf(nid) + 0.5) hot[nid] = Math.round(t * 100) / 100;
   });
   return hot;
 }

@@ -1539,6 +1539,30 @@ export default function CadPage() {
     return map;
   }, [branches, bulkheadRByBranch]);
 
+  // БАЗОВАЯ (дожаровая) температура узлов, °C — ровно та, которую решатель
+  // присваивает непрогретым узлам (см. backend/airflow/index.py, патч узлов):
+  //   • атмосферный узел      → температура поверхности;
+  //   • узел с ручной T       → заданная пользователем;
+  //   • обычный подземный узел→ t_ср рудника + геоградиент × глубина / 100.
+  // Нужна модели распространения тепла: дым должен остывать к температуре
+  // вмещающего массива, а не к температуре поверхности. Иначе весь путь дыма
+  // оказывается теплее сети из-за разной точки отсчёта, и возникает фантомная
+  // тяга, душащая расход в смежных выработках.
+  const baseNodeTemps = useMemo(() => {
+    const map: Record<string, number> = {};
+    const zVals = nodes.map(n => n.z ?? 0);
+    const zSurface = zVals.length > 0 ? Math.max(...zVals) : 0;
+    for (const n of nodes) {
+      if (n.atmosphereLink) { map[n.id] = surfaceTemp; continue; }
+      // Ручная температура узла (в решателе это признак userTemp).
+      if ((n.airTemp ?? 20) !== 20) { map[n.id] = n.airTemp as number; continue; }
+      if (!useNaturalDraft) { map[n.id] = surfaceTemp; continue; }
+      const depth = Math.max(0, zSurface - (n.z ?? 0));
+      map[n.id] = mineAirTemp + geoGradient * depth / 100;
+    }
+    return map;
+  }, [nodes, surfaceTemp, mineAirTemp, geoGradient, useNaturalDraft]);
+
   // Ветви с проставленной общей депрессией — передаются в аварийные расчёты
   // (Акт устойчивости, расчёт пожара), где порог опрокидывания должен
   // сравниваться с ПОЛНОЙ депрессией ветви, а не с депрессией одной выработки.
@@ -3173,7 +3197,7 @@ export default function CadPage() {
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
         const hotNodeTemps = computeHotNodeTemps(
           [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, reversedConfirmed: s.reversedConfirmed, length: target.length, area: target.area, perimeter: target.perimeter }],
-          branchesForHot, ambientTemp,
+          branchesForHot, ambientTemp, baseNodeTemps,
         );
         scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
       }
@@ -4786,7 +4810,7 @@ export default function CadPage() {
 
                   // Карта горячих узлов по актуальным расходам.
                   const branchesForHot = branchesIter.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: currentFlows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-                  const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP);
+                  const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
 
                   // Шаг D: пересчитать сеть с горячими узлами
                   const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP, hotNodeTemps);
