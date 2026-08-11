@@ -105,12 +105,25 @@ export default defineConfig({
     //
     // Рабочий экран со схемой вентиляции намеренно НЕ дробится: он нужен сразу
     // при запуске, дробление лишь добавило бы задержку на главном сценарии.
+    // ВАЖНО: manualChunks задаётся ФУНКЦИЕЙ, а не объектом.
+    // Сборка идёт на rolldown-vite, а rolldown (в отличие от rollup) объектную
+    // форму { "имя-части": [пакеты] } не поддерживает: сборка десктопа падала с
+    // «TypeError: manualChunks is not a function» уже после трансформации
+    // модулей. Функция получает путь модуля и возвращает имя части — этот
+    // вариант понимают оба сборщика.
     rollupOptions: {
       output: {
-        manualChunks: {
-          "vendor-react": ["react", "react-dom", "react-router-dom"],
-          "vendor-charts": ["recharts"],
-          "vendor-pdf": ["jspdf"],
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return;
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) {
+            return "vendor-react";
+          }
+          if (/[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-[^\\/]+)[\\/]/.test(id)) {
+            return "vendor-charts";
+          }
+          if (/[\\/]node_modules[\\/](jspdf|canvg|dompurify|html2canvas)[\\/]/.test(id)) {
+            return "vendor-pdf";
+          }
         },
       },
     },
