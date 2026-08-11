@@ -13,6 +13,27 @@ import {
   type VentSection,
 } from "@/lib/ventSections";
 
+// ВАЖНО: inputStyle и Field объявлены НА ВЕРХНЕМ УРОВНЕ модуля, а не внутри
+// VentSectionsPanel. Раньше Field создавался внутри компонента — при каждом
+// рендере это была НОВАЯ функция-компонент, поэтому React размонтировал всё
+// поддерево и монтировал заново, а поле ввода теряло фокус после первого же
+// символа. В режиме Canvas панель перерисовывается на каждое движение мыши над
+// схемой (обновляется подсветка), поэтому фокус слетал мгновенно и поля
+// казались «некликабельными». В SVG-режиме ререндеров меньше — баг не проявлялся.
+const inputStyle = {
+  background: "white", border: "1px solid #c8c8c8", height: 18,
+  outline: "none", fontFamily: "inherit",
+} as const;
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1 py-0.5">
+      <span className="text-[10px] text-gray-600 flex-shrink-0" style={{ width: 92 }}>{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
 interface Props {
   sections: VentSection[];
   onChange: (sections: VentSection[]) => void;
@@ -84,18 +105,6 @@ export default function VentSectionsPanel({
   // Ветви, не отнесённые ни к одному участку
   const assigned = new Set(sections.flatMap(s => s.branchIds));
   const unassigned = branches.filter(b => !b.isVentPipeBranch && !assigned.has(b.id)).length;
-
-  const inputStyle = {
-    background: "white", border: "1px solid #c8c8c8", height: 18,
-    outline: "none", fontFamily: "inherit",
-  } as const;
-
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-center gap-1 py-0.5">
-      <span className="text-[10px] text-gray-600 flex-shrink-0" style={{ width: 92 }}>{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
 
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>

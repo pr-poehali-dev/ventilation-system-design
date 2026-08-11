@@ -12,6 +12,24 @@ import {
   type VentSection,
 } from "@/lib/ventSections";
 
+// Field и inputStyle — НА ВЕРХНЕМ УРОВНЕ модуля. Объявление компонента внутри
+// другого компонента создаёт новый тип на каждый рендер: React размонтирует
+// поддерево и монтирует заново, из-за чего поле ввода теряет фокус после
+// первого символа (та же причина, что была в VentSectionsPanel).
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 130 }}>{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  background: "white", border: "1px solid #c8c8c8", height: 20,
+  outline: "none", fontFamily: "inherit",
+} as const;
+
 interface Props {
   sections: VentSection[];
   onChange: (sections: VentSection[]) => void;
@@ -73,18 +91,6 @@ export default function VentSectionsDialog({
     if (!b) return `${bid} (нет в схеме)`;
     return `${b.id}${b.type ? ` — ${b.type}` : ""}`;
   };
-
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-center gap-2 py-0.5">
-      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 130 }}>{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
-
-  const inputStyle = {
-    background: "white", border: "1px solid #c8c8c8", height: 20,
-    outline: "none", fontFamily: "inherit",
-  } as const;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center pt-16"

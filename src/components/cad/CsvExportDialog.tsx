@@ -37,17 +37,23 @@ function Chk({ label, order, checked, onChange, disabled }: {
   );
 }
 
-// ── Диалог единиц измерения ──────────────────────────────────────────────────
-function UnitsDialog({ units, onSave, onCancel }: {
-  units: CsvExportUnits; onSave: (u: CsvExportUnits) => void; onCancel: () => void;
-}) {
-  const [res, setRes] = useState<"kmu" | "si">(units.resistanceUnit);
-  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+// Row — на верхнем уровне модуля. Внутри компонента он пересоздавался бы на
+// каждый рендер, React размонтировал бы поддерево, и выпадающий список внутри
+// терял бы фокус (та же причина, что была в панели участков).
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
     <div className="flex items-center gap-2 py-1">
       <span className="text-[12px] text-gray-700 flex-shrink-0" style={{ width: 120 }}>{label}</span>
       {children}
     </div>
   );
+}
+
+// ── Диалог единиц измерения ──────────────────────────────────────────────────
+function UnitsDialog({ units, onSave, onCancel }: {
+  units: CsvExportUnits; onSave: (u: CsvExportUnits) => void; onCancel: () => void;
+}) {
+  const [res, setRes] = useState<"kmu" | "si">(units.resistanceUnit);
   const fixedSelect = (val: string) => (
     <select value={val} disabled className="flex-1 text-[12px] px-1 py-0.5 border rounded bg-gray-100 text-gray-500"
       style={{ borderColor: "#d1d5db" }}>
