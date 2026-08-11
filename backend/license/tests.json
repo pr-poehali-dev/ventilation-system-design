@@ -10,6 +10,15 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Check with legacy_hw_fingerprint returns not licensed for unknown",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "check", "fingerprint": "test-unknown-fp-new-1", "hw_fingerprint": "test-unknown-hw-new-1", "legacy_hw_fingerprint": "test-unknown-hw-legacy-1", "hostname": "Firefox / Windows", "platform": "Windows"},
+      "expectedStatus": 200,
+      "expectedBody": {"licensed": false},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Activate with invalid key format",
       "method": "POST",
       "path": "/",

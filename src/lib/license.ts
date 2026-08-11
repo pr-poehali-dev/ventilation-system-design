@@ -23,6 +23,11 @@ export async function getCoreVersion(): Promise<string> {
 const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
 const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
+// Версия формулы отпечатка. Увеличивается при изменении состава характеристик,
+// чтобы кэш, посчитанный по прежней формуле, не использовался после обновления.
+// v2 — отпечаток без браузерозависимых характеристик (один ПК = одно место
+// во всех браузерах).
+const FP_VERSION = 2;
 
 const IS_DESKTOP = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
 
@@ -113,6 +118,13 @@ export interface LicenseInfo {
 export interface MachineInfo {
   fingerprint: string;    // SHA-256(UUID + железо) — точный, меняется при сбросе PWA
   hwFingerprint: string;  // SHA-256(только железо) — выживает после переустановки PWA/ОС
+  /**
+   * Отпечаток по СТАРОЙ (браузерозависимой) формуле. Передаётся на сервер, пока
+   * не все рабочие места перешли на новую: по нему находится ранее
+   * активированное место и перепривязывается к новому отпечатку — без
+   * повторного ввода ключа и без расхода лишнего места.
+   */
+  legacyHwFingerprint?: string;
   hostname: string;
   platform: string;
   screen: string;
@@ -144,10 +156,42 @@ function detectPlatform(): string {
   return pl || "Unknown";
 }
 
+// ── Семейство ОС (грубо) ─────────────────────────────────────────────────────
+// Только Windows/macOS/Linux/Android/iOS, БЕЗ версии. Версию Windows разные
+// браузеры сообщают по-разному (Chrome «замораживает» её в User-Agent), поэтому
+// в отпечаток она не годится.
+function detectOsFamily(): string {
+  const p = detectPlatform();
+  if (p.startsWith("Windows")) return "Windows";
+  return p;
+}
+
 // ── Аппаратные компоненты (без UUID) ─────────────────────────────────────────
 // Эти данные НЕ зависят от localStorage — выживают после переустановки PWA.
 // Используются как hw_fingerprint для восстановления лицензии после переустановки.
+//
+// ВАЖНО: здесь допустимы ТОЛЬКО характеристики самого компьютера, одинаковые во
+// всех браузерах на нём. Раньше сюда входили значения, которые у каждого
+// браузера свои, из-за чего Chrome, Firefox и Edge на одном ПК давали РАЗНЫЕ
+// отпечатки: программа требовала ключ заново в каждом браузере и занимала
+// отдельное рабочее место. Исключены:
+//   • deviceMemory — сообщает только Chrome, у Firefox/Safari его нет;
+//   • hardwareConcurrency — Firefox в режиме защиты от слежки занижает;
+//   • navigator.language — «ru» против «ru-RU» в разных браузерах;
+//   • версия Windows — Chrome «замораживает» её в User-Agent.
 function getHwComponents(): string[] {
+  return [
+    `${screen.width}x${screen.height}x${screen.colorDepth}`,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    detectOsFamily(),
+  ];
+}
+
+// Прежний (браузерозависимый) состав отпечатка. Нужен ТОЛЬКО для переноса уже
+// активированных мест: по нему сервер находит старую запись и перепривязывает
+// её к новому отпечатку, чтобы человеку не пришлось вводить ключ заново и не
+// расходовалось лишнее рабочее место.
+function getLegacyHwComponents(): string[] {
   return [
     `${screen.width}x${screen.height}x${screen.colorDepth}`,
     Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -190,9 +234,15 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   try {
     const cached = storage.get(HW_FP_KEY);
     if (cached) {
-      const parsed = JSON.parse(cached) as MachineInfo & { cachedAt: number };
-      if (Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000 && parsed.hwFingerprint) {
+      const parsed = JSON.parse(cached) as MachineInfo & { cachedAt: number; fpVersion?: number };
+      // fpVersion: помечает, по какой формуле посчитан кэш. Кэш старой версии
+      // (без метки) игнорируем — иначе после обновления программы отпечаток
+      // ещё 30 дней оставался бы браузерозависимым и ключ по-прежнему
+      // спрашивался бы в каждом браузере.
+      const fresh = Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000;
+      if (fresh && parsed.hwFingerprint && parsed.fpVersion === FP_VERSION) {
         return { fingerprint: parsed.fingerprint, hwFingerprint: parsed.hwFingerprint,
+                 legacyHwFingerprint: parsed.legacyHwFingerprint,
                  hostname: parsed.hostname, platform: parsed.platform, screen: parsed.screen };
       }
     }
@@ -212,6 +262,13 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     : getHwComponents();
   const hwFingerprint = await sha256hex(hwComponents.join("||"));
 
+  // Отпечаток по ПРЕЖНЕЙ формуле — только для веба и только чтобы сервер смог
+  // опознать уже активированное место и перенести его на новый отпечаток.
+  // В десктопе отпечаток и раньше строился из machine-id, переносить нечего.
+  const legacyHwFingerprint = machineId
+    ? undefined
+    : await sha256hex(getLegacyHwComponents().join("||"));
+
   // Привязка к рабочему месту — ТОЛЬКО по железу: fingerprint = hwFingerprint.
   const fingerprint = hwFingerprint;
 
@@ -227,7 +284,9 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     ? `ПВ-Система (десктоп)${pcName ? ` · ${pcName}` : ""} / ${platform}`
     : `${browser} / ${platform}`;
 
-  const info: MachineInfo = { fingerprint, hwFingerprint, hostname, platform, screen: scr };
+  const info: MachineInfo = {
+    fingerprint, hwFingerprint, legacyHwFingerprint, hostname, platform, screen: scr,
+  };
 
   // В десктопе НЕ кэшируем отпечаток, посчитанный без machine-id (ядро не
   // ответило): иначе временный сбой запомнился бы на 30 дней и всё это время
@@ -235,7 +294,7 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   const trustworthy = !IS_DESKTOP || !!machineId;
   if (trustworthy) {
     try {
-      storage.set(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now() }));
+      storage.set(HW_FP_KEY, JSON.stringify({ ...info, cachedAt: Date.now(), fpVersion: FP_VERSION }));
     } catch { /* ignore */ }
   }
 
@@ -319,6 +378,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
         action: "check",
         fingerprint,
         hw_fingerprint: machineInfo?.hwFingerprint,
+        legacy_hw_fingerprint: machineInfo?.legacyHwFingerprint,
         hostname:    machineInfo?.hostname,
         platform:    machineInfo?.platform,
         screen_info: machineInfo?.screen,
@@ -391,6 +451,7 @@ export async function activateLicense(
       action: "activate",
       fingerprint,
       hw_fingerprint: machineInfo?.hwFingerprint,
+      legacy_hw_fingerprint: machineInfo?.legacyHwFingerprint,
       key,
       hostname:    machineInfo?.hostname,
       platform:    machineInfo?.platform,

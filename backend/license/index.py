@@ -88,6 +88,10 @@ def handler(event: dict, context) -> dict:
     action         = body.get("action", "").strip()
     fingerprint    = body.get("fingerprint", "").strip()[:128]
     hw_fp_raw      = body.get("hw_fingerprint", "").strip()[:128]
+    # Отпечаток по ПРЕЖНЕЙ (браузерозависимой) формуле. Нужен для переноса уже
+    # активированных мест на новый отпечаток: иначе после обновления программы
+    # каждый браузер выглядел бы новым компьютером и требовал ввод ключа заново.
+    legacy_hw_raw  = body.get("legacy_hw_fingerprint", "").strip()[:128]
     user_agent     = (event.get("headers") or {}).get("user-agent", "")[:500]
     hostname       = (body.get("hostname") or "")[:200]
     platform       = (body.get("platform") or "")[:100]
@@ -108,8 +112,9 @@ def handler(event: dict, context) -> dict:
     if not fingerprint:
         return resp(400, {"error": "fingerprint_required"})
 
-    fph    = fp_hash(fingerprint)
-    hw_fph = fp_hash(hw_fp_raw) if hw_fp_raw else None
+    fph        = fp_hash(fingerprint)
+    hw_fph     = fp_hash(hw_fp_raw) if hw_fp_raw else None
+    legacy_fph = fp_hash(legacy_hw_raw) if legacy_hw_raw else None
 
     conn = get_conn()
     cur  = conn.cursor()
@@ -139,6 +144,29 @@ def handler(event: dict, context) -> dict:
             # значит это другой браузер на том же ПК: обновим fingerprint на текущий.
             if row and row[6] is not None:
                 # seat_id есть; проверим, отличается ли текущий fingerprint
+                hw_restored = True
+
+        # 1a. МИГРАЦИЯ на новый отпечаток. Место было активировано, когда
+        #     отпечаток считался с учётом характеристик браузера. Находим его по
+        #     старому отпечатку и перепривязываем к новому — человек продолжает
+        #     работать без повторного ввода ключа, лишнее место не занимается.
+        if not row and legacy_fph and legacy_fph != hw_fph:
+            cur.execute("""
+                SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
+                       (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
+                       s.id AS seat_id, TRUE AS hw_match, l.id
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.hw_fingerprint = %s OR s.fingerprint = %s
+                ORDER BY s.last_seen_at DESC LIMIT 1
+            """, (legacy_fph, legacy_fph))
+            row = cur.fetchone()
+            if row:
+                # Переносим место на новый отпечаток железа.
+                cur.execute(
+                    "UPDATE license_seats SET hw_fingerprint = %s WHERE id = %s",
+                    (hw_fph, row[6]),
+                )
                 hw_restored = True
 
         # 2. Запасной вариант: найти по точному fingerprint
@@ -274,6 +302,22 @@ def handler(event: dict, context) -> dict:
             )
             existing = cur.fetchone()
             if existing:
+                hw_restored = True
+
+        # 1a. МИГРАЦИЯ: место было активировано по старому (браузерозависимому)
+        #     отпечатку. Находим его и переносим на новый — повторная активация
+        #     не создаёт лишнее место и не расходует лимит.
+        if not existing and legacy_fph and legacy_fph != hw_fph:
+            cur.execute("""
+                SELECT id FROM license_seats
+                WHERE license_id = %s AND (hw_fingerprint = %s OR fingerprint = %s)
+            """, (lic_id, legacy_fph, legacy_fph))
+            existing = cur.fetchone()
+            if existing:
+                cur.execute(
+                    "UPDATE license_seats SET hw_fingerprint = %s WHERE id = %s",
+                    (hw_fph, existing[0]),
+                )
                 hw_restored = True
 
         # 2. Запасной вариант: seat по точному fingerprint
