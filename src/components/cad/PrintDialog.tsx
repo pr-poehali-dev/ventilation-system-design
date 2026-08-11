@@ -10,7 +10,8 @@ import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
-import { jsPDF } from "jspdf";
+// jsPDF подключается по требованию (в момент экспорта в PDF), а не при старте
+// программы: библиотека весит сотни килобайт, а нужна лишь при печати.
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
 
@@ -1297,6 +1298,7 @@ body{background:white;font-family:Arial,sans-serif}
       const tilesList = tiles.list;
 
       if (exportFormat === "pdf") {
+        const { jsPDF } = await import("jspdf");
         const isLandscape = paper.w > paper.h;
         const pdf = new jsPDF({
           orientation: isLandscape ? "landscape" : "portrait",

@@ -10,11 +10,30 @@ import { BrowserRouter, HashRouter, Routes, Route } from "react-router-dom";
 declare const __IS_DESKTOP__: boolean | undefined;
 const isDesktop = typeof __IS_DESKTOP__ !== 'undefined' ? __IS_DESKTOP__ : window.location.protocol === 'file:';
 const Router = isDesktop ? HashRouter : BrowserRouter;
-import { useEffect, useState } from "react";
-import Index from "./pages/Index";
+import { useEffect, useState, lazy, Suspense } from "react";
 import Cad from "./pages/Cad";
-import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
+
+// ── Ленивая загрузка второстепенных страниц ─────────────────────────────────
+// Раньше весь интерфейс собирался в один файл, и при запуске в память
+// загружалась в том числе админ-панель управления лицензиями и старая
+// демо-страница — обычному пользователю они не нужны никогда.
+//
+// Теперь эти страницы подгружаются только при переходе на них. Рабочий экран
+// (схема вентиляции) остаётся в основном файле и открывается сразу — его
+// дробить нельзя, иначе появится задержка на главном сценарии.
+const Admin = lazy(() => import("./pages/Admin"));
+const Index = lazy(() => import("./pages/Index"));
+
+// Заставка на время подгрузки страницы (доли секунды на локальном диске).
+const PageLoading = () => (
+  <div style={{
+    display: "flex", alignItems: "center", justifyContent: "center",
+    height: "100vh", fontFamily: "sans-serif", color: "#64748b", fontSize: 14,
+  }}>
+    Загрузка…
+  </div>
+);
 import MobileStub from "./components/MobileStub";
 import { LicenseProvider } from "./context/LicenseContext";
 import AppUpdateBanner from "./components/AppUpdateBanner";
@@ -77,13 +96,15 @@ const App = () => {
       <Sonner />
       <LicenseProvider>
         <Router>
-          <Routes>
-            <Route path="/" element={<Cad />} />
-            <Route path="/admin" element={<Admin />} />
-            <Route path="/legacy" element={<Index />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
+              <Route path="/" element={<Cad />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/legacy" element={<Index />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
         </Router>
         <AppUpdateBanner />
       </LicenseProvider>
