@@ -51,9 +51,14 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
 
   const totalLength = branches.reduce((s, b) => s + (b.vpLengthManual ? b.vpLength : b.length), 0);
 
-  const [diameter, setDiameter]       = useState(first.vpDiameter || 500);
+  // Диаметр и α берём с учётом правок во вкладке «Топология» (pipeDiameter /
+  // pipeAlpha) — иначе окно показывало старые значения и при «Применить»
+  // затирало то, что пользователь только что изменил в свойствах ветви.
+  const [diameter, setDiameter]       = useState(
+    first.vpDiameter || (first.pipeDiameter ? Math.round(first.pipeDiameter * 1000) : 500),
+  );
   const [pipeType, setPipeType]       = useState(first.vpPipeType || "flex_standard");
-  const [pipeAlpha, setPipeAlpha]     = useState(first.vpPipeAlpha ?? 0.45);
+  const [pipeAlpha, setPipeAlpha]     = useState(first.pipeAlpha ?? first.vpPipeAlpha ?? 0.45);
   const [lengthManual, setLengthManual] = useState(first.vpLengthManual || false);
   const [length, setLength]           = useState(first.vpLengthManual ? first.vpLength : totalLength);
   const [leakage, setLeakage]         = useState(first.vpLeakageCoeff ?? 0.5);
@@ -131,6 +136,11 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       resistanceMode: manualR ? "manual" : "pipe",
       pipeAlpha,
       pipeDiameter: diameter / 1000,
+      // Сечение ветви пересчитываем под диаметр рукава, чтобы во вкладке
+      // «Топология» площадь и периметр соответствовали выбранной марке.
+      shape: "round",
+      diameter: diameter / 1000,
+      manualSection: false,
       localXi,
     };
     onApply(patch);

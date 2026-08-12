@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
+import { VENT_DUCT_BRANDS, getDuctBrand, getDuctSize } from "@/lib/ventDucts";
 import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
@@ -416,41 +417,122 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
               </InlineLabel>
             )}
 
-            {branch.resistanceMode === "pipe" && (
+            {branch.resistanceMode === "pipe" && (() => {
+              const duct = getDuctBrand(branch.vpBrandId);
+              return (
               <>
+                {/* Марка рукава — синхронизирована с окном построения
+                    вентрубопровода: выбор марки подставляет α, диаметр,
+                    паспортные утечки и предельное рабочее давление. */}
+                <InlineLabel label="Марка рукава">
+                  <select
+                    value={branch.vpBrandId ?? ""}
+                    onChange={(e) => {
+                      const b = getDuctBrand(e.target.value);
+                      if (!b) {
+                        onUpdate({ vpBrandId: "", vpWorkPressure: 0 });
+                        return;
+                      }
+                      const curD = Math.round((branch.pipeDiameter ?? 0.5) * 1000);
+                      const size = getDuctSize(b, curD) ?? b.sizes[0];
+                      onUpdate({
+                        vpBrandId: b.id,
+                        pipeAlpha: b.alpha,
+                        vpPipeAlpha: b.alpha,
+                        pipeDiameter: size.diameter / 1000,
+                        vpDiameter: size.diameter,
+                        shape: "round", diameter: size.diameter / 1000, manualSection: false,
+                        vpLeakageCoeff: size.lossPer100m,
+                        vpWorkPressure: size.workPressure,
+                        vpPipeType: "",
+                      });
+                    }}
+                    className="w-full text-[11px] px-1"
+                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                    <option value="">— без марки —</option>
+                    {VENT_DUCT_BRANDS.map(b => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </InlineLabel>
+                {duct ? (
+                  <>
+                    {/* У марки диаметр выбирается только из выпускаемых типоразмеров */}
+                    <InlineLabel label="Диаметр D, мм">
+                      <select
+                        value={Math.round((branch.pipeDiameter ?? 0.5) * 1000)}
+                        onChange={(e) => {
+                          const d = Number(e.target.value);
+                          const size = getDuctSize(duct, d);
+                          onUpdate({
+                            pipeDiameter: d / 1000,
+                            vpDiameter: d,
+                            // Сечение ветви — под диаметр рукава
+                            shape: "round", diameter: d / 1000, manualSection: false,
+                            ...(size ? { vpLeakageCoeff: size.lossPer100m, vpWorkPressure: size.workPressure } : {}),
+                          });
+                        }}
+                        className="w-full text-[11px] px-1"
+                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                        {duct.sizes.map(sz => (
+                          <option key={sz.diameter} value={sz.diameter}>Ø {sz.diameter}</option>
+                        ))}
+                      </select>
+                    </InlineLabel>
+                    <InlineLabel label="Утечки, % на 100 м">
+                      <ComputedInput value={numFmt(branch.vpLeakageCoeff ?? 0, 1)} />
+                    </InlineLabel>
+                    <InlineLabel label="Раб. давление, Па">
+                      <ComputedInput value={numFmt(branch.vpWorkPressure ?? 0, 0)} />
+                    </InlineLabel>
+                  </>
+                ) : (
                 <InlineLabel label="Диаметр D, м">
                   <EditInput
                     type="number" step="0.05"
                     value={branch.pipeDiameter ?? 0.5}
-                    onChange={(v) => onUpdate({ pipeDiameter: parseFloat(v) || 0 })}
+                    onChange={(v) => {
+                      const d = parseFloat(v) || 0;
+                      onUpdate({ pipeDiameter: d, vpDiameter: Math.round(d * 1000) });
+                    }}
                   />
                 </InlineLabel>
-                <InlineLabel label="Тип трубопровода">
-                  <select
-                    value={PIPE_ALPHA_TYPES.find(p => p.alpha === (branch.pipeAlpha ?? 9))?.id ?? ""}
-                    onChange={(e) => {
-                      const p = PIPE_ALPHA_TYPES.find(x => x.id === e.target.value);
-                      if (p) onUpdate({ pipeAlpha: p.alpha });
-                    }}
-                    className="w-full text-[11px] px-1"
-                    style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
-                    <option value="">— выбрать из справочника —</option>
-                    {PIPE_ALPHA_TYPES.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.alphaMin}–{p.alphaMax})
-                      </option>
-                    ))}
-                  </select>
-                </InlineLabel>
+                )}
+                {/* Тип трубопровода — только когда марка не задана: у марки
+                    коэффициент α берётся из её паспорта. */}
+                {!duct && (
+                  <InlineLabel label="Тип трубопровода">
+                    <select
+                      value={PIPE_ALPHA_TYPES.find(p => p.alpha === (branch.pipeAlpha ?? 9))?.id ?? ""}
+                      onChange={(e) => {
+                        const p = PIPE_ALPHA_TYPES.find(x => x.id === e.target.value);
+                        if (p) onUpdate({ pipeAlpha: p.alpha, vpPipeAlpha: p.alpha, vpPipeType: p.id });
+                      }}
+                      className="w-full text-[11px] px-1"
+                      style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                      <option value="">— выбрать из справочника —</option>
+                      {PIPE_ALPHA_TYPES.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.alphaMin}–{p.alphaMax})
+                        </option>
+                      ))}
+                    </select>
+                  </InlineLabel>
+                )}
                 <InlineLabel label="Коэф. α, ×10⁻⁴">
                   <EditInput
                     type="number" step="0.05"
                     value={branch.pipeAlpha ?? 9}
-                    onChange={(v) => onUpdate({ pipeAlpha: parseFloat(v) || 0 })}
+                    onChange={(v) => {
+                      const a = parseFloat(v) || 0;
+                      // Ручная правка α — марка больше не соответствует паспорту
+                      onUpdate({ pipeAlpha: a, vpPipeAlpha: a, ...(duct ? { vpBrandId: "" } : {}) });
+                    }}
                   />
                 </InlineLabel>
               </>
-            )}
+              );
+            })()}
 
             <InlineLabel label="Местные ξ (сумма)">
               <EditInput
