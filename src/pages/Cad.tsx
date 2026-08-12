@@ -57,9 +57,10 @@ import { postCompute, refreshComputeConfig, isOnBackup } from "@/lib/computeServ
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
   type CompareBranchDiff, type CompareNodeDiff,
-  type TextBlock, type Excavation, type ViewPresetName,
+  type TextBlock, type Excavation, type ViewPresetName, type HeatingSeason,
   makeTextBlock, DEFAULT_EXC, LAYERS,
 } from "./cad/cadTypes";
+import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
@@ -1240,6 +1241,10 @@ export default function CadPage() {
   const [solverAlpha, setSolverAlpha] = useState(0.8);
   // Температура воздуха на поверхности (для расчёта естественной тяги)
   const [surfaceTemp, setSurfaceTemp] = useState(20);
+  // Сезон работы шахты. От него зависит, включены ли калориферы: в режиме
+  // «зимой» калорифер греет только при heatingSeason="winter", а при переходе
+  // на «лето» отключается, и подогрев из температур узлов убирается.
+  const [heatingSeason, setHeatingSeason] = useState<HeatingSeason>("winter");
   // Учитывать естественную тягу (галочка как в Аэросети)
   const [useNaturalDraft, setUseNaturalDraft] = useState(true);
   // Геотермический градиент °C / 100 м глубины. По умолчанию 0 (ИЗОТЕРМИЯ) — как в
@@ -1738,6 +1743,109 @@ export default function CadPage() {
       computedWallTemp: surfaceTemp,
     })));
   };
+
+  // ── Калориферы: подогрев воздуха и разнос температур по сети ──────────────
+  // Возвращает температуры узлов с учётом работающих калориферов. Подогрев
+  // идёт ВНИЗ ПО ПОТОКУ от ветви с калорифером: греется сам узел за ним и все
+  // узлы, куда этот воздух приходит дальше (с разбавлением на слияниях).
+  // Если калориферов нет или все выключены — возвращает базовые температуры,
+  // то есть подогрев автоматически СБРАСЫВАЕТСЯ (в т.ч. при переходе на лето).
+  const calcHeaterTemps = useCallback((): {
+    temps: Map<string, number>;
+    info: { symId: string; branchId: string; power: number; dt: number; outTemp: number; meetsNorm: boolean }[];
+  } => {
+    const temps = new Map<string, number>();
+    for (const n of nodes) temps.set(n.id, baseNodeTemps[n.id] ?? surfaceTemp);
+    const info: { symId: string; branchId: string; power: number; dt: number; outTemp: number; meetsNorm: boolean }[] = [];
+
+    const heaters = schemaSymbols.filter(
+      s => HEATER_SYMBOL_IDS.has(s.typeId) && s.branchId && isHeaterActive(s.htMode, heatingSeason),
+    );
+    if (heaters.length === 0) return { temps, info };
+
+    const brMap = new Map(branches.map(b => [b.id, b]));
+    // Суммарный приток в узел — для разбавления подогретого воздуха на слияниях
+    const inflowQ = new Map<string, number>();
+    for (const b of branches) {
+      const q = Math.abs(b.flow ?? 0);
+      if (q <= 0) continue;
+      const outId = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+      inflowQ.set(outId, (inflowQ.get(outId) ?? 0) + q);
+    }
+
+    for (const sym of heaters) {
+      const b = brMap.get(sym.branchId!);
+      if (!b) continue;
+      const flow = b.flow ?? 0;
+      const inNodeId  = flow >= 0 ? b.fromId : b.toId;
+      const outNodeId = flow >= 0 ? b.toId   : b.fromId;
+      const inTemp = temps.get(inNodeId) ?? surfaceTemp;
+
+      const res = calcHeater({
+        method: sym.htMethod ?? "power",
+        power_kW: sym.htPower ?? 0,
+        outTemp_C: sym.htOutTemp ?? MIN_SHAFT_TEMP_C,
+        efficiency: sym.htEfficiency ?? DEFAULT_HEATER_EFFICIENCY,
+        inTemp_C: inTemp,
+        airFlow_m3s: flow,
+      });
+      info.push({
+        symId: sym.id, branchId: b.id,
+        power: res.power_kW, dt: res.deltaT_C,
+        outTemp: res.outTemp_C, meetsNorm: res.meetsNorm,
+      });
+      if (res.deltaT_C <= 0) continue;
+
+      // Разносим подогрев вниз по потоку обходом в ширину. Ограничение по числу
+      // шагов защищает от зацикливания на кольцевых схемах.
+      const queue: { nodeId: string; dt: number }[] = [{ nodeId: outNodeId, dt: res.deltaT_C }];
+      const visited = new Set<string>();
+      let guard = 0;
+      while (queue.length > 0 && guard++ < 20000) {
+        const cur = queue.shift()!;
+        if (cur.dt < 0.05) continue;               // подогрев рассеялся
+        if (visited.has(cur.nodeId)) continue;
+        visited.add(cur.nodeId);
+        temps.set(cur.nodeId, (temps.get(cur.nodeId) ?? surfaceTemp) + cur.dt);
+
+        for (const nb of branches) {
+          const nf = nb.flow ?? 0;
+          if (Math.abs(nf) <= 0) continue;
+          const nIn  = nf >= 0 ? nb.fromId : nb.toId;
+          if (nIn !== cur.nodeId) continue;
+          const nOut = nf >= 0 ? nb.toId : nb.fromId;
+          // Разбавление: подогретый поток смешивается со всем притоком узла
+          const total = Math.max(Math.abs(nf), inflowQ.get(nOut) ?? Math.abs(nf));
+          const dil = total > 0 ? Math.abs(nf) / total : 1;
+          queue.push({ nodeId: nOut, dt: cur.dt * dil });
+        }
+      }
+    }
+    return { temps, info };
+  }, [nodes, branches, schemaSymbols, heatingSeason, baseNodeTemps, surfaceTemp]);
+
+  // Итог по калориферам — для панели свойств и лога расчёта
+  const heaterInfo = useMemo(() => calcHeaterTemps(), [calcHeaterTemps]);
+
+  // АВТОСБРОС подогрева. Как только все калориферы перестали работать
+  // (выключены вручную или наступило лето), расчётные температуры узлов
+  // возвращаются к фоновым — иначе в свойствах узлов остались бы «зимние»
+  // подогретые значения и продолжали бы создавать фантомную естественную тягу.
+  const heatersWorking = heaterInfo.info.some(h => h.dt > 0);
+  const prevHeatersWorking = useRef(heatersWorking);
+  useEffect(() => {
+    if (prevHeatersWorking.current && !heatersWorking) {
+      setNodes(prev => prev.map(n => {
+        const baseT = baseNodeTemps[n.id] ?? surfaceTemp;
+        return { ...n, computedAirTemp: baseT, computedWallTemp: baseT };
+      }));
+      addLog("info", "Калориферы отключены — подогрев снят, температуры узлов сброшены к фоновым");
+    }
+    prevHeatersWorking.current = heatersWorking;
+    // baseNodeTemps намеренно не в зависимостях: сброс нужен строго в момент
+    // отключения калориферов, а не при каждом пересчёте фоновых температур.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heatersWorking]);
 
   // Активировать инструмент размещения символа
   const handlePickSymbol = (typeId: string) => {
@@ -2260,6 +2368,7 @@ export default function CadPage() {
     solverMaxIter,
     solverAlpha,
     surfaceTemp,
+    heatingSeason,
     useNaturalDraft,
     geoGradient,
     mineAirTemp,
@@ -2709,6 +2818,7 @@ export default function CadPage() {
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
     if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
     if (data.surfaceTemp !== undefined) setSurfaceTemp(data.surfaceTemp as number);
+    if (data.heatingSeason !== undefined) setHeatingSeason(data.heatingSeason as HeatingSeason);
     if (data.useNaturalDraft !== undefined) setUseNaturalDraft(data.useNaturalDraft as boolean);
     if (data.geoGradient !== undefined) setGeoGradient(data.geoGradient as number);
     if (data.mineAirTemp !== undefined) setMineAirTemp(data.mineAirTemp as number);
@@ -3390,17 +3500,40 @@ export default function CadPage() {
     if (zeroR.length > 0) addLog("warn", `R=0 у ${zeroR.length} ветвей: ${zeroR.slice(0, 5).map(b => `${b.id}(L=${b.length.toFixed(0)},S=${b.area.toFixed(1)},P=${b.perimeter.toFixed(1)})`).join(", ")}${zeroR.length > 5 ? "..." : ""}`);
     const atmNodes = nodes.filter(n => n.atmosphereLink);
     addLog("info", `Атм. узлов=${atmNodes.length}: ${atmNodes.map(n => n.id).join(", ")}`);
+    // Подогрев воздуха работающими калориферами. Температуры считаются по
+    // расходам ПРОШЛОГО расчёта и уходят в решатель как заданные: подогретый
+    // воздух легче, поэтому калорифер влияет на естественную тягу.
+    // Если калориферы выключены (или лето) — подогрева нет, температуры
+    // возвращаются к базовым автоматически.
+    const htRes = calcHeaterTemps();
+    const htTemps = htRes.temps;
+    const htActive = htRes.info.filter(h => h.dt > 0);
+    if (htActive.length > 0) {
+      addLog("info", `Калориферы (${heatingSeason === "winter" ? "зима" : "лето"}): работают ${htActive.length} шт.`);
+      htActive.forEach(h => {
+        addLog("info", `  Калорифер на ветви ${h.branchId}: N=${h.power.toFixed(1)} кВт, Δt=+${h.dt.toFixed(1)}°C, t за калорифером ${h.outTemp.toFixed(1)}°C`);
+        if (!h.meetsNorm) {
+          addLog("warn", `  ⚠ Ветвь ${h.branchId}: температура за калорифером ${h.outTemp.toFixed(1)}°C ниже нормативных +${MIN_SHAFT_TEMP_C}°C`);
+        }
+      });
+    }
     try {
       const requestBody = {
           method: calcMode,
-          nodes: nodes.map(n => ({
-            id: n.id,
-            isAtm: n.atmosphereLink,
-            z: n.z ?? 0,
-            // userTemp=true — пользователь задал температуру вручную (не дефолт 20°C)
-            airTemp: n.atmosphereLink ? surfaceTemp : (n.airTemp ?? surfaceTemp),
-            userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
-          })),
+          nodes: nodes.map(n => {
+            const baseT = n.atmosphereLink ? surfaceTemp : (n.airTemp ?? surfaceTemp);
+            const heatedT = htTemps.get(n.id);
+            // Подогрев применяем только если он реально есть (иначе базовая T)
+            const useT = (heatedT !== undefined && heatedT > baseT + 0.05) ? heatedT : baseT;
+            return {
+              id: n.id,
+              isAtm: n.atmosphereLink,
+              z: n.z ?? 0,
+              // userTemp=true — температура задана (вручную или калорифером)
+              airTemp: useT,
+              userTemp: (!n.atmosphereLink && (n.airTemp ?? 20) !== 20) || useT !== baseT,
+            };
+          }),
           surfaceTemp,
           useNaturalDraft,
           geoGradient,
@@ -3508,6 +3641,14 @@ export default function CadPage() {
           return p !== undefined ? { ...n, computedPressure: p.computedPressure, computedFanPressure: p.computedFanPressure } : n;
         }));
       }
+
+      // Расчётные температуры узлов с учётом подогрева калориферами.
+      // Калориферы выключены / лето → htTemps = базовые температуры, поэтому
+      // подогрев прошлого расчёта СБРАСЫВАЕТСЯ сам, без отдельной кнопки.
+      setNodes(prev => prev.map(n => {
+        const t = htTemps.get(n.id) ?? surfaceTemp;
+        return { ...n, computedAirTemp: t, computedWallTemp: t };
+      }));
 
       // Сохраняем расходы прямого режима (без реверса) для последующей проверки k_rev >= 0.6
       if (!branches.some(b => b.fanReverse) && data.converged) {
@@ -5935,6 +6076,20 @@ export default function CadPage() {
                         Все узлы получают T = T_пов, разность плотностей = 0, тяга = 0 Па
                       </div>
                     )}
+                    {/* Сезон — управляет работой калориферов */}
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <label className="text-[10px] text-gray-500 block mb-1">Сезон (работа калориферов)</label>
+                      <select value={heatingSeason}
+                        onChange={e => setHeatingSeason(e.target.value as HeatingSeason)}
+                        className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1">
+                        <option value="winter">Зима — калориферы включены</option>
+                        <option value="summer">Лето — калориферы отключены</option>
+                      </select>
+                      <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
+                        При переходе на лето подогрев снимается, температуры узлов
+                        возвращаются к фоновым автоматически.
+                      </div>
+                    </div>
                   </div>
                   <button onClick={() => setShowSolverParams(false)}
                     className="w-full mt-1 py-1 bg-blue-600 text-white text-[11px] rounded hover:bg-blue-700">
@@ -7901,6 +8056,7 @@ export default function CadPage() {
               const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
               if (!sym) return null;
               const isMeasureStationSym = sym.typeId === "measure_station";
+              const isHeaterSym = HEATER_SYMBOL_IDS.has(sym.typeId);
               const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStationSym;
               const isWindowBulkhead = WINDOW_BULKHEAD_IDS.has(sym.typeId);
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
@@ -7984,6 +8140,143 @@ export default function CadPage() {
                       placeholder="Введите описание объекта..."
                       style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
                   </div>
+
+                  {/* ── Калорифер ── */}
+                  {isHeaterSym && (() => {
+                    const hRes = heaterInfo.info.find(h => h.symId === sym.id);
+                    const active = isHeaterActive(sym.htMode, heatingSeason);
+                    const method = sym.htMethod ?? "power";
+                    return (
+                    <>
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
+                        Калорифер
+                      </div>
+
+                      {/* Режим работы по сезону */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Режим</span>
+                        <select
+                          value={sym.htMode ?? "winter"}
+                          onChange={e => updSym({ htMode: e.target.value as "winter" | "always" | "off" })}
+                          className="flex-1 text-[11px] px-1"
+                          style={{ background: "white", border: "1px solid #c8c8c8", height: 20, outline: "none", borderRadius: 2 }}>
+                          <option value="winter">Только зимой</option>
+                          <option value="always">Круглый год</option>
+                          <option value="off">Выключен</option>
+                        </select>
+                      </div>
+
+                      {/* Текущее состояние */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Состояние</span>
+                        <span className="flex-1 text-[11px] font-semibold"
+                          style={{ color: active ? "#15803d" : "#9ca3af" }}>
+                          {active ? "Работает" : "Отключён"}
+                          <span className="font-normal text-gray-400">
+                            {" "}({heatingSeason === "winter" ? "зима" : "лето"})
+                          </span>
+                        </span>
+                      </div>
+
+                      {/* Способ задания */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Задание</span>
+                        <select
+                          value={method}
+                          onChange={e => updSym({ htMethod: e.target.value as "power" | "temp" })}
+                          className="flex-1 text-[11px] px-1"
+                          style={{ background: "white", border: "1px solid #c8c8c8", height: 20, outline: "none", borderRadius: 2 }}>
+                          <option value="power">По тепловой мощности</option>
+                          <option value="temp">По температуре за калорифером</option>
+                        </select>
+                      </div>
+
+                      {method === "power" ? (
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <span className="text-gray-500 w-24 flex-shrink-0">Мощность</span>
+                          <input type="number" min={0} step={10}
+                            value={sym.htPower ?? ""}
+                            onChange={e => updSym({ htPower: e.target.value === "" ? undefined : Number(e.target.value) })}
+                            placeholder="0"
+                            className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                            style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          <span className="text-gray-400 flex-shrink-0">кВт</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 mb-1.5">
+                          <span className="text-gray-500 w-24 flex-shrink-0">t за калор.</span>
+                          <input type="number" min={-20} max={60} step={1}
+                            value={sym.htOutTemp ?? ""}
+                            onChange={e => updSym({ htOutTemp: e.target.value === "" ? undefined : Number(e.target.value) })}
+                            placeholder={String(MIN_SHAFT_TEMP_C)}
+                            className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                            style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          <span className="text-gray-400 flex-shrink-0">°C</span>
+                        </div>
+                      )}
+
+                      {/* КПД установки */}
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-24 flex-shrink-0">КПД</span>
+                        <input type="number" min={1} max={100} step={1}
+                          value={Math.round((sym.htEfficiency ?? DEFAULT_HEATER_EFFICIENCY) * 100)}
+                          onChange={e => {
+                            const v = Math.min(100, Math.max(1, Number(e.target.value) || 85));
+                            updSym({ htEfficiency: v / 100 });
+                          }}
+                          className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                        <span className="text-gray-400 flex-shrink-0">%</span>
+                      </div>
+
+                      {/* Результат расчёта */}
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
+                        Расчёт подогрева
+                      </div>
+                      {!active ? (
+                        <div className="text-[11px] text-gray-400 mb-1.5">
+                          Калорифер отключён — подогрева нет
+                        </div>
+                      ) : !brForSym || Math.abs(brForSym.flow ?? 0) < 0.001 ? (
+                        <div className="text-[11px] text-gray-400 mb-1.5">
+                          Нет расхода воздуха — выполните расчёт сети (F9)
+                        </div>
+                      ) : hRes ? (
+                        <>
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className="text-gray-500 w-24 flex-shrink-0">Подогрев Δt</span>
+                            <span className="flex-1 text-right text-[11px] font-semibold text-orange-700">
+                              +{hRes.dt.toFixed(1)}
+                            </span>
+                            <span className="text-gray-400 flex-shrink-0">°C</span>
+                          </div>
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className="text-gray-500 w-24 flex-shrink-0">t за калор.</span>
+                            <span className="flex-1 text-right text-[11px] font-semibold"
+                              style={{ color: hRes.meetsNorm ? "#15803d" : "#dc2626" }}>
+                              {hRes.outTemp.toFixed(1)}
+                            </span>
+                            <span className="text-gray-400 flex-shrink-0">°C</span>
+                          </div>
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className="text-gray-500 w-24 flex-shrink-0">
+                              {method === "temp" ? "Потр. мощность" : "Мощность"}
+                            </span>
+                            <span className="flex-1 text-right text-[11px] font-semibold text-gray-700">
+                              {hRes.power.toFixed(1)}
+                            </span>
+                            <span className="text-gray-400 flex-shrink-0">кВт</span>
+                          </div>
+                          {!hRes.meetsNorm && (
+                            <div className="text-[10px] text-red-600 mt-1 leading-snug">
+                              Температура за калорифером ниже нормативных +{MIN_SHAFT_TEMP_C} °C
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </>
+                    );
+                  })()}
 
                   {/* ── Замерная станция ── */}
                   {isMeasureStationSym && (

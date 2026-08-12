@@ -68,7 +68,32 @@ export interface SchemaSymbol {
   pumpPower?: number;
   /** Число параллельно работающих насосов */
   pumpParallel?: number;
+
+  // ── Калорифер (typeId: "heater") ────────────────────────────────────
+  /**
+   * Режим работы по сезону:
+   *   "winter" — работает только в холодный период (типовой режим калорифера),
+   *   "always" — работает круглый год,
+   *   "off"    — выключен вручную независимо от сезона.
+   * Фактическая работа = режим + текущий сезон проекта (heatingSeason).
+   */
+  htMode?: "winter" | "always" | "off";
+  /** Тепловая мощность калорифера, кВт */
+  htPower?: number;
+  /**
+   * Заданная температура воздуха ЗА калорифером, °C. Если задана — воздух
+   * подогревается именно до неё, а мощность считается как потребная.
+   * Если не задана — нагрев считается от мощности htPower.
+   */
+  htOutTemp?: number;
+  /** Способ задания: по мощности или по температуре за калорифером */
+  htMethod?: "power" | "temp";
+  /** КПД калорифера (доли 0..1). По умолчанию 0,85 */
+  htEfficiency?: number;
 }
+
+/** Сезон работы шахты — определяет, включены ли калориферы */
+export type HeatingSeason = "winter" | "summer";
 
 export type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "fireload" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "velocityV" | "section" | "ventsections" | "airdemand" | "compare" | "bulkhead";
 
