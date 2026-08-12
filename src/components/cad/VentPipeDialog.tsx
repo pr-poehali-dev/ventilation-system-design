@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { type TopoBranch } from "@/lib/topology";
 import { resistanceFromPipe, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
+import { VENT_DUCT_BRANDS, getDuctBrand, getDuctSize, formatStaticResistance } from "@/lib/ventDucts";
 
 // ─── Справочник диаметров вентиляционных труб ────────────────────────────────
 const VENT_PIPE_DIAMETERS = [
@@ -60,6 +61,33 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
   const [localXi, setLocalXi]         = useState(first.vpLocalXi ?? 0);
   const [manualR, setManualR]         = useState<boolean>((first.vpManualR ?? 0) > 0);
   const [manualRVal, setManualRVal]   = useState(first.vpManualR ?? 0);
+  // Марка рукава из справочника — подставляет паспортные характеристики
+  const [brandId, setBrandId]         = useState(first.vpBrandId ?? "");
+
+  const brand = getDuctBrand(brandId);
+  const brandSize = getDuctSize(brand, diameter);
+
+  // Выбор марки: подставляем паспортные α, утечки и давление.
+  const applyBrand = (id: string) => {
+    setBrandId(id);
+    const b = getDuctBrand(id);
+    if (!b) return;
+    setPipeAlpha(b.alpha);
+    setPipeType("");
+    // Если текущий диаметр не выпускается в этой марке — берём первый типоразмер
+    const size = getDuctSize(b, diameter) ?? b.sizes[0];
+    if (size) {
+      setDiameter(size.diameter);
+      setLeakage(size.lossPer100m);
+    }
+  };
+
+  // Смена диаметра: если выбрана марка — подтягиваем её паспортные утечки
+  const applyDiameter = (d: number) => {
+    setDiameter(d);
+    const size = getDuctSize(brand, d);
+    if (size) setLeakage(size.lossPer100m);
+  };
 
   // Итоговая длина (авто или ручная)
   const effLength = lengthManual ? length : totalLength;
@@ -91,6 +119,8 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       vpJointCount: joints,
       vpLocalXi: localXi,
       vpManualR: manualR ? manualRVal : 0,
+      vpBrandId: brandId,
+      vpWorkPressure: brandSize?.workPressure ?? 0,
       vpComputedR: R,
       vpComputedFlow: 0,
       vpComputedVelocity: 0,
@@ -146,6 +176,55 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
             </div>
           </div>
 
+          {/* Марка рукава */}
+          <div>
+            <div className="text-[12px] font-bold text-gray-700 mb-2 flex items-center gap-1">
+              <Icon name="BookMarked" size={13} />
+              Марка рукава
+            </div>
+            <select value={brandId} onChange={e => applyBrand(e.target.value)} className={inputCls}>
+              <option value="">— без марки (параметры вручную) —</option>
+              {VENT_DUCT_BRANDS.map(b => (
+                <option key={b.id} value={b.id}>
+                  {b.name}{b.antistatic ? " (антистатический)" : ""}
+                </option>
+              ))}
+            </select>
+
+            {brand && (
+              <div className="mt-2 border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 bg-gray-50 border-b border-gray-200">
+                  Характеристики · {brand.name}
+                </div>
+                <table className="w-full text-[11px]">
+                  <tbody>
+                    {[
+                      ["Диаметр трубы", `${(brandSize ?? brand.sizes[0]).diameter} мм`],
+                      ["Плотность мембраны", `${brand.density} ± ${brand.densityTol}% г/м²`],
+                      ["Адгезия сварного шва, не менее", `${brand.seamAdhesion} Н`],
+                      ["Разрыв мембраны: уток / основа, не менее", `${brand.tensileWeft} / ${brand.tensileWarp} Н`],
+                      ["Раздирание: уток / основа, не менее", `${brand.tearWeft} / ${brand.tearWarp} Н`],
+                      ["Воздухопроницаемость, не более", `${brand.airPermeability} мм²/м²`],
+                      ["Потери на 100 м вентстава, не более", `${(brandSize ?? brand.sizes[0]).lossPer100m} %`],
+                      ["Температура эксплуатации", `${brand.tempMin} … +${brand.tempMax} °C`],
+                      ["Эл. стат. сопротивление, не более", `${formatStaticResistance(brand.staticResistance)} Ом`],
+                      ["Кислородный индекс, не менее", `${brand.oxygenIndex} %`],
+                      ["Рабочее давление (нагнетание), не более", `${(brandSize ?? brand.sizes[0]).workPressure} Па`],
+                    ].map(([k, v], i) => (
+                      <tr key={k} style={{ background: i % 2 ? "#fafafa" : "white" }}>
+                        <td className="px-3 py-1 text-gray-600 align-top">{k}</td>
+                        <td className="px-3 py-1 text-right font-semibold text-gray-900 whitespace-nowrap">{v}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200 bg-gray-50">
+                  Паспортные утечки и рабочее давление подставлены в расчёт автоматически
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Параметры трубы */}
           <div>
             <div className="text-[12px] font-bold text-gray-700 mb-2 flex items-center gap-1">
@@ -155,18 +234,28 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Диаметр</label>
-                <select value={diameter} onChange={e => setDiameter(Number(e.target.value))}
+                {/* Если выбрана марка — предлагаем только её типоразмеры */}
+                <select value={diameter} onChange={e => applyDiameter(Number(e.target.value))}
                   className={inputCls}>
-                  {VENT_PIPE_DIAMETERS.map(d => (
+                  {(brand
+                    ? brand.sizes.map(s => ({ d: s.diameter, label: `Ø ${s.diameter} мм` }))
+                    : VENT_PIPE_DIAMETERS
+                  ).map(d => (
                     <option key={d.d} value={d.d}>{d.label}</option>
                   ))}
-                  <option value={diameter} hidden={VENT_PIPE_DIAMETERS.some(d => d.d === diameter)}>
+                  <option value={diameter} hidden={
+                    brand
+                      ? brand.sizes.some(s => s.diameter === diameter)
+                      : VENT_PIPE_DIAMETERS.some(d => d.d === diameter)
+                  }>
                     Ø {diameter} мм (задан)
                   </option>
                 </select>
-                <input type="number" min={100} max={2000} step={50} value={diameter}
-                  onChange={e => setDiameter(Number(e.target.value))}
-                  className={`${inputCls} mt-1`} placeholder="Другой диаметр, мм" />
+                {!brand && (
+                  <input type="number" min={100} max={2000} step={50} value={diameter}
+                    onChange={e => applyDiameter(Number(e.target.value))}
+                    className={`${inputCls} mt-1`} placeholder="Другой диаметр, мм" />
+                )}
               </div>
               <div>
                 <label className={labelCls}>Тип трубопровода</label>
@@ -297,6 +386,17 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                 {(calc.leakage * 100).toFixed(1)}% от расхода
               </div>
             </div>
+            {brandSize && (() => {
+              // Ориентировочное давление в ставе: ΔP = R·Q², где Q — паспортная
+              // подача ВМП неизвестна, поэтому показываем сам предел и
+              // напоминаем сверить его с напором вентилятора.
+              return (
+                <div className="mt-2 pt-2 border-t border-green-200 text-[11px] flex justify-between">
+                  <span className="text-gray-700">Предел по паспорту рукава:</span>
+                  <span className="font-semibold text-gray-900">{brandSize.workPressure} Па</span>
+                </div>
+              );
+            })()}
             {calc.leakage > 0.3 && (
               <div className="mt-2 text-[10px] text-orange-600 flex items-center gap-1">
                 <Icon name="AlertTriangle" size={11} />

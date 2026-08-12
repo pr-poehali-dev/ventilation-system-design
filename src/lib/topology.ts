@@ -331,6 +331,10 @@ export interface TopoBranch {
   // Аэродинамическое сопротивление по формуле R=6.48·α·L/D⁵ (как во вкладке «Топология»)
   vpPipeType: string;              // id типа трубопровода из справочника PIPE_ALPHA_TYPES
   vpPipeAlpha: number;             // α трубопровода, ×10⁻⁴ Н·с²/м⁴
+  // Марка гибкого рукава из справочника VENT_DUCT_BRANDS. Задаёт паспортные
+  // утечки на 100 м и предельное рабочее давление для выбранного диаметра.
+  vpBrandId?: string;              // id марки рукава ("" = марка не выбрана)
+  vpWorkPressure?: number;         // Па — предельное рабочее давление по паспорту
   // Вычисленные параметры вентрубопровода
   vpComputedR: number;             // Н·с²/м⁸ — аэродинамическое сопротивление трубы
   vpComputedFlow: number;          // м³/с — расход в трубе
@@ -697,6 +701,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     vpRoughness: 0.2,
     vpPipeType: "flex_standard",
     vpPipeAlpha: 0.45,
+    vpBrandId: "",
+    vpWorkPressure: 0,
     vpComputedR: 0,
     vpComputedFlow: 0,
     vpComputedVelocity: 0,

@@ -61,6 +61,7 @@ import {
   makeTextBlock, DEFAULT_EXC, LAYERS,
 } from "./cad/cadTypes";
 import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
+import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
@@ -3698,6 +3699,29 @@ export default function CadPage() {
         const t = htTemps.get(n.id) ?? surfaceTemp;
         return { ...n, computedAirTemp: t, computedWallTemp: t };
       }));
+
+      // ── Проверка вентставов по паспортному рабочему давлению рукава ──
+      // Депрессия нити не должна превышать предел марки, иначе рукав раздувает
+      // и рвёт по сварному шву. Считаем по всей нити между её концами.
+      (() => {
+        const dpById = new Map(resultBranches.map(rb => [rb.id, Math.abs(rb.H ?? 0)]));
+        const byBrand = new Map<string, { limit: number; dp: number; count: number }>();
+        for (const b of branches) {
+          if (!b.hasVentPipe || !b.vpBrandId || !(b.vpWorkPressure ?? 0)) continue;
+          const key = `${b.vpBrandId}__${b.vpDiameter}`;
+          const cur = byBrand.get(key) ?? { limit: b.vpWorkPressure ?? 0, dp: 0, count: 0 };
+          cur.dp += dpById.get(b.id) ?? 0;
+          cur.count += 1;
+          byBrand.set(key, cur);
+        }
+        byBrand.forEach((v, key) => {
+          const [bid, dia] = key.split("__");
+          const brandName = VENT_DUCT_BRANDS.find(x => x.id === bid)?.name ?? bid;
+          if (v.dp > v.limit) {
+            addLog("warn", `⚠ Вентстав ${brandName} Ø${dia} мм: давление ${v.dp.toFixed(0)} Па превышает паспортный предел ${v.limit} Па`);
+          }
+        });
+      })();
 
       // Сохраняем расходы прямого режима (без реверса) для последующей проверки k_rev >= 0.6
       if (!branches.some(b => b.fanReverse) && data.converged) {
