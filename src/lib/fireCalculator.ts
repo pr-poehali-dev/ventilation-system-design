@@ -18,6 +18,11 @@ import { PA_PER_MM_H2O } from "./aerodynamics";
 const CP_AIR = 1.005;          // кДж/(кг·К)
 const RHO_AIR_0 = 1.2;        // кг/м³ при 20°C
 const G = 9.81;                // м/с²
+// Потолок расчётной видимости, м. Ограничение нужно, чтобы при почти нулевой
+// задымлённости не получать бесконечность. Должен быть не меньше максимального
+// порога видимости в настройках пожара (1000 м), иначе порог выше потолка
+// невозможно проверить: все ветви показывали бы одинаковое значение.
+const VIS_MAX_M = 1000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ЕДИНИЦЫ ДЕПРЕССИИ. Депрессия ветви b.dP приходит из расчёта сети уже в
@@ -1526,7 +1531,11 @@ export function calcGasConcentrations(
   const smokeMassRate = burnRate_kgs * combustible.smokeYield;
   const smokeSpec = 7700;
   const smokeDensity = Math.min(10, (smokeMassRate * smokeSpec) / airFlow_Nm3s);
-  const visibility = smokeDensity > 0 ? Math.min(100, 3 / smokeDensity) : 100;
+  // Видимость по закону Бугера: L = K/μ, где K≈3 для светящихся объектов.
+  // Потолок 1000 м, а не 100: при пороге видимости выше 100 м расчёт показывал
+  // ровно «100 м» на всех слабо задымлённых ветвях и порог нельзя было
+  // проверить по таблице результатов.
+  const visibility = smokeDensity > 0 ? Math.min(VIS_MAX_M, 3 / smokeDensity) : VIS_MAX_M;
 
   return { coConc, co2Conc, smokeDensity, visibility };
 }
@@ -1770,7 +1779,6 @@ export function calcFireMode(
 
     // Вносим задымление в ВЫХОДНОЙ узел очага
     const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
-    const inNodeId  = (fb.flow ?? 0) >= 0 ? fb.fromId : fb.toId;
 
     // Позиция очага вдоль ветви: fireT=0 → у fromId, fireT=1 → у toId
     const fireT = (fb.fireT ?? 0.5);
@@ -1907,7 +1915,9 @@ export function calcFireMode(
   interface SmokeParams { coC: number; co2C: number; smokeC: number; tempC: number; }
   const smokeAtNode = new Map<string, SmokeParams>();
   // Итоговые концентрации CO / CO₂ в задымлённых узлах (для панели свойств узла)
-  const nodeGas = new Map<string, { co: number; co2: number }>();
+  // Тип обязан совпадать с полем nodeGas в результате расчёта: кроме газов
+  // сюда пишутся температура воздуха и стенок задымлённого узла.
+  const nodeGas = new Map<string, { co: number; co2: number; airTemp: number; wallTemp: number }>();
 
   // Инициализация: только ВЫХОДНЫЕ узлы очагов попадают в начало обхода.
   // Входной узел очага (inNodeId) — источник свежего воздуха, НЕ задымляется.
@@ -2046,7 +2056,7 @@ export function calcFireMode(
       // чтобы на коротких приочаговых ветвях температура не «схлопывалась».
       const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
       const tempOut  = ambientTemp_C + (sp.tempC - ambientTemp_C) * coolExp;
-      const visOut   = smokeOut > 0 ? Math.min(100, 3 / smokeOut) : 100;
+      const visOut   = smokeOut > 0 ? Math.min(VIS_MAX_M, 3 / smokeOut) : VIS_MAX_M;
       const hazard   = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
 
       // Порог: если дым в этой ветви уже рассеялся ниже порога видимости —

@@ -7293,9 +7293,9 @@ export default function CadPage() {
                   <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
                     title="Дым распространяется, пока видимость в дыму ниже этого порога; дальше считается чистый воздух.">
                     <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Порог видимости, м:</span>
-                    <input type="number" min={1} max={200} step={5}
+                    <input type="number" min={1} max={1000} step={5}
                       value={smokeVisThreshold}
-                      onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(200, Number(e.target.value))))}
+                      onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(1000, Number(e.target.value))))}
                       className="flex-1 text-[11px] text-right px-1"
                       style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
                   </div>
@@ -11825,9 +11825,9 @@ export default function CadPage() {
                   Порог видимости:
                 </span>
                 <input
-                  type="number" min={1} max={200} step={5}
+                  type="number" min={1} max={1000} step={5}
                   value={smokeVisThreshold}
-                  onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(200, Number(e.target.value))))}
+                  onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(1000, Number(e.target.value))))}
                   title="Дым распространяется, пока видимость в дыму ниже этого порога. Применяется при следующем расчёте пожара."
                   style={{
                     width: 48, fontSize: 11, background: "#3b0000", color: "#fca5a5",
