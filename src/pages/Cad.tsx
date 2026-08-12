@@ -10754,9 +10754,11 @@ export default function CadPage() {
                   setActiveSide("waterpipes");
                   return;
                 }
-                // Для перемычек, замерных станций и насосов — НЕ выбираем ветвь,
-                // чтобы открылась панель символа (а не свойства ветви).
-                if (sym?.branchId && sym.typeId !== "pump" && !BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
+                // Для перемычек, замерных станций, насосов и калориферов — НЕ
+                // выбираем ветвь, чтобы открылась панель символа с его
+                // параметрами, а не свойства выработки.
+                if (sym?.branchId && sym.typeId !== "pump" && !BULKHEAD_SYMBOL_IDS.has(sym.typeId)
+                    && !HEATER_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                 } else {
@@ -10792,6 +10794,13 @@ export default function CadPage() {
                   setSelectedNodeId(null);
                   setFanSymbolBranchId(null);
                   setActiveSide("waterpipes");
+                } else if (sym && HEATER_SYMBOL_IDS.has(sym.typeId)) {
+                  // Двойной клик по калориферу — его собственные параметры
+                  // (мощность, температура, сезон), а не свойства выработки.
+                  setSelectedBranchId(null);
+                  setSelectedNodeId(null);
+                  setFanSymbolBranchId(null);
+                  setActiveSide("params");
                 } else if (sym && BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   // Двойной клик на перемычку — открываем ветвь и переходим на вкладку Топология
                   // (там находится блок настроек перемычки)
