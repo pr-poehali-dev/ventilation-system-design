@@ -15,7 +15,7 @@ import {
   buildApproverElements, buildApproverLines, getApproverFieldValue, computeApproverBox,
   type ApproverFieldKey,
 } from "@/lib/approverTemplate";
-import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import { DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
@@ -24,245 +24,22 @@ import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, hitBranchLabelCanvas,
 // ─────────────────────────────────────────────────────────────────────────────
 // Интерактивный CAD-холст для построения топологии
 // 2D (план) + 3D с произвольным ракурсом
+//
+// Файл разделён на модули (логика и разметка перенесены 1:1):
+//   topoCanvas/topoCanvasTypes  — Props, ViewState, CadTool, FlowDisplayMode
+//   topoCanvas/topoCanvasUtils  — утилиты попадания (hitNode/hitBranch), fmtR
+//   topoCanvas/TopoCanvasHud    — ViewCube, масштабная линейка, маркер вращения
+//   topoCanvas/TopoCanvasStatus — индикаторы внизу и подсказки инструментов
 // ─────────────────────────────────────────────────────────────────────────────
+import { type Props, type ViewState } from "@/components/cad/topoCanvas/topoCanvasTypes";
+// Утилиты попадания hitNode*/hitBranch* живут в topoCanvasUtils, но внутри
+// компонента используются его собственные обёртки (учитывают толщину линии и
+// масштаб), поэтому здесь импортируются только общие константы и fmtR.
+import { EMPTY_SET, EMPTY_ARRAY, fmtR } from "@/components/cad/topoCanvas/topoCanvasUtils";
+import { ViewCube, ScaleBar, PivotMarker } from "@/components/cad/topoCanvas/TopoCanvasHud";
+import { TopoCanvasIndicators, TopoCanvasHints } from "@/components/cad/topoCanvas/TopoCanvasStatus";
 
-// Стабильные пустые константы — НЕ создавать inline (new Set()/[] создают новую ссылку при каждом рендере,
-// что сбрасывает мемоизацию и вызывает лишние перерисовки canvas)
-const EMPTY_SET = new Set<string>();
-const EMPTY_ARRAY: never[] = [];
-
-
-// Форматирует сопротивление с авто-выбором значащих цифр (не показывает 0.0000)
-function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
-  const v = unit.fromBase(rMkyurg);
-  if (v === 0) return `0 ${unit.symbol}`;
-  // Определяем количество знаков чтобы показать хотя бы 2 значащих цифры
-  const mag = Math.floor(Math.log10(Math.abs(v)));
-  const decimals = Math.max(unit.decimals, -mag + 1);
-  return `${v.toFixed(decimals)}${unit.symbol}`;
-}
-
-export type CadTool = "select" | "node" | "branch" | "pan" | "rotate" | "symbol" | "textblock";
-
-interface Props {
-  nodes: TopoNode[];
-  branches: TopoBranch[];
-  selectedNodeId: string | null;
-  selectedBranchId: string | null;
-  /** Множество ID выделенных ветвей (Ctrl+клик). */
-  selectedBranchIds?: Set<string>;
-  /** Ctrl+клик по ветви — добавить/убрать из множества. */
-  onBranchMultiSelect?: (id: string) => void;
-  /** Множество ID выделенных узлов (Ctrl+клик). */
-  selectedNodeIds?: Set<string>;
-  /** Ctrl+клик по узлу — добавить/убрать из множества. */
-  onNodeMultiSelect?: (id: string) => void;
-  tool: CadTool;
-  /** Создать новый узел в указанной мировой точке. Возвращает ID нового узла. */
-  onNodeAdd: (x: number, y: number, z: number) => string | void;
-  /** Перемещение узла (теперь в 3D возможно по любой координате) */
-  onNodeMove: (id: string, x: number, y: number, z?: number) => void;
-  /** Создать ветвь между двумя существующими узлами. Возвращает ID новой ветви. */
-  onBranchAdd: (fromId: string, toId: string) => string | void;
-  /** Разделить ветвь, вставив новый узел в указанной точке. Возвращает ID нового узла. */
-  onSplitBranchAt?: (branchId: string, x: number, y: number, z: number) => string | void;
-  onSelectNode: (id: string | null) => void;
-  onSelectBranch: (id: string | null) => void;
-  zLevel: number;
-  /** Сигнал применения пресета ракурса (смена nonce = триггер) */
-  viewPreset?: { name: ViewPreset; nonce: number } | null;
-  /** Сообщить наверх о смене режима 2D/3D */
-  onViewChange?: (info: { is3D: boolean; azimuth: number; elevation: number }) => void;
-  /** Способ отображения направления потока воздуха */
-  flowDisplay?: FlowDisplayMode;
-  /** Активная рабочая плоскость для построения в 3D (если null — auto по ракурсу) */
-  workPlane?: WorkPlane | null;
-  /** Список горизонтов для фильтрации/окрашивания ветвей. */
-  horizons?: Horizon[];
-  /** ID горизонта для временной подсветки его ветвей (наведение в списке слоёв). */
-  highlightHorizonId?: string | null;
-  /** Базовая толщина линии ветви (px), общая настройка. По умолчанию 2.5. */
-  branchWidth?: number;
-  /** Толщина обводки ветви (px), 0 = без обводки. */
-  branchBorder?: number;
-  /** Тонкие линии (F6): всё в 1px без обводки и без анимации, для печатной/схемной подачи. */
-  thinLines?: boolean;
-  /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме. */
-  fixedObjectScale?: boolean;
-  /** Порог автопереключения SVG↔Canvas по числу видимых ветвей. По умолчанию CANVAS_THRESHOLD (800). */
-  canvasThreshold?: number;
-  /** Пределы масштабов объектов (активны при fixedObjectScale=true). */
-  scaleLimits?: {
-    textMin: number; textMax: number;
-    branchMin: number; branchMax: number;
-  };
-  /** Масштаб перемычек в % от ширины ветви (150 = 1.5× ширины ветви). */
-  bulkheadScale?: number;
-  /** Масштаб вентиляторов в % от ширины ветви (450 = 4.5× ширины ветви). */
-  fanScale?: number;
-  /** Окрашивать ветви по цвету горизонта (вместо цвета по скорости/потоку). */
-  colorByHorizon?: boolean;
-  /** Показывать стрелки направления свежей струи после расчёта (F9). */
-  showFlowArrows?: boolean;
-  /** Внешний управляемый масштаб (px/м). Если задан — синхронизируется в обе стороны. */
-  scaleOverride?: number;
-  /** Колбэк при изменении масштаба внутри (например, колесом мыши). */
-  onScaleChange?: (scale: number) => void;
-  /** Сигнал «вписать всю сеть в экран» — меняется значение → TopoCanvas пересчитывает. */
-  fitToScreenNonce?: number;
-  /** Сигнал «центрировать камеру на указанном узле/ветви». */
-  focusNonce?: number;
-  focusNodeId?: string | null;
-  focusBranchId?: string | null;
-  /** Центрировать камеру на произвольной мировой точке (позиция ПЛА и т.п.) */
-  focusPos?: { x: number; y: number; z: number } | null;
-  /** Восстановить конкретный вид (при открытии файла с сохранённым view) */
-  restoreView?: { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number } | null;
-  /** Колбэк: view успешно восстановлен из файла — родитель должен обнулить restoreView */
-  onRestoreViewDone?: () => void;
-  /** Колбэк: сообщать наружу текущий полный вид (для сохранения в файл) */
-  onViewStateChange?: (v: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number }) => void;
-  /** ID горизонта, у которого можно редактировать подложку (тащить углы). */
-  editingHorizonImageId?: string | null;
-  /** Колбэк изменения углов подложки горизонта (после drag). */
-  onHorizonImageBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
-  /** ID горизонта, у которого редактируются bounds слоя печати (тащить рамку/углы). */
-  editingPrintLayerId?: string | null;
-  /** Колбэк изменения bounds слоя печати горизонта. */
-  onPrintLayerBoundsChange?: (horizonId: string, bounds: { x1: number; y1: number; x2: number; y2: number }) => void;
-  /** Колбэк изменения полей слоя печати (заголовок, утверждающий и др.) */
-  onPrintLayerChange?: (horizonId: string, patch: Partial<import("@/lib/topology").HorizonPrintLayer>) => void;
-  /** Контекстное меню по правой кнопке на узле (id узла, экранные координаты). */
-  onNodeContextMenu?: (id: string, screenX: number, screenY: number) => void;
-  /** Контекстное меню по правой кнопке на ветви (id ветви, экранные координаты). */
-  onBranchContextMenu?: (id: string, screenX: number, screenY: number) => void;
-  /** Контекстное меню по правой кнопке на пустом месте (экранные координаты). */
-  onCanvasContextMenu?: (screenX: number, screenY: number) => void;
-  /** Конфигурация панели информации — какие метки рисовать на схеме. */
-  infoConfig?: import("@/lib/infoConfig").InfoDisplayConfig;
-  /** Масштаб по оси Z относительно XY (1 = без изменений, 2 = вдвое растянуть). */
-  zScale?: number;
-  /** Масштаб по осям X и Y (горизонтальное растяжение схемы). */
-  xyScale?: number;
-  /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
-    indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;
-    bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
-  }[];
-  /** Клик по символу — выбрать */
-  onSelectSymbol?: (id: string | null) => void;
-  /** Выбранный символ */
-  selectedSymbolId?: string | null;
-  /** Перемещение свободного символа */
-  onSymbolMove?: (id: string, x: number, y: number) => void;
-  /** Перемещение символа вдоль ветви (t: 0..1) */
-  onSymbolMoveAlongBranch?: (id: string, t: number) => void;
-  /** Смещение символа от ветви (px offset) */
-  onSymbolOffset?: (id: string, ox: number, oy: number) => void;
-  /** Смещение бейджа индикаторов (px offset) */
-  onSymbolIndOffset?: (id: string, ox: number, oy: number) => void;
-  /** Смещение бейджа индикаторов замерной станции (px offset) */
-  onSymbolMsIndOffset?: (id: string, ox: number, oy: number) => void;
-  /** Начало перемещения символа (для сохранения истории undo) */
-  onSymbolDragStart?: (id: string) => void;
-  /** Клик на символ (для открытия свойств — одиночный) */
-  onSymbolClick?: (id: string) => void;
-  /** Двойной клик на символ (для открытия настроек вентилятора/перемычки) */
-  onSymbolDblClick?: (id: string) => void;
-  /** Множественный выбор символов (Ctrl+click) */
-  selectedSymbolIds?: Set<string>;
-  /** Добавить/убрать символ из множественного выбора */
-  onSymbolMultiSelect?: (id: string) => void;
-  /** Масштаб символа (delta: +0.2 или -0.2) */
-  onSymbolScale?: (id: string, delta: number) => void;
-  /** Удаление символа */
-  onSymbolDelete?: (id: string) => void;
-  /** Активный тип символа для инструмента "symbol" */
-  activeSymbolTypeId?: string | null;
-  /** Размещение символа на ветви/точке (tool=symbol, клик на ветвь). t — позиция 0..1 вдоль ветви */
-  onSymbolPlace?: (typeId: string, x: number, y: number, branchId: string | null, t?: number) => void;
-  /** Тип символа в режиме "ожидания привязки" (после копирования/дублирования) */
-  pendingSymbolTypeId?: string | null;
-  /** Разместить ожидающий символ: t — позиция 0..1 вдоль ветви, null = свободно */
-  onPendingSymbolPlace?: (branchId: string, t: number, x: number, y: number) => void;
-  /** Конфигурация единиц измерения для отображения меток на схеме */
-  unitsConfig?: UnitsConfig;
-  /** Смещение блока индикаторов ветви (перетаскивание пользователем) */
-  onBranchLabelOffset?: (id: string, ox: number, oy: number) => void;
-  /** Колбэк: зарегистрировать функцию получения SVG для печати */
-  onRegisterGetSvg?: (fn: () => string) => void;
-  /** Колбэк: зарегистрировать прямой доступ к canvas DOM элементу */
-  onRegisterCanvasEl?: (el: HTMLCanvasElement | null) => void;
-  /** Колбэк: зарегистрировать прямой доступ к SVG DOM элементу */
-  onRegisterSvgEl?: (el: SVGSVGElement | null) => void;
-  /** Режим размещения маркера позиции на схеме (клик = разместить) */
-  positionPlaceMode?: boolean;
-  /** Колбэк: пользователь кликнул на схему в режиме размещения позиции */
-  onPositionPlace?: (wx: number, wy: number, wz: number) => void;
-  /** Режим привязки ветвей к позиции (F3) — все ветви подсвечиваются */
-  branchBindMode?: boolean;
-  /** Карта branchId → цвет позиции (для подсветки привязанных ветвей в F3) */
-  branchPositionColors?: Map<string, { color: string; bound: boolean }>;
-  /** Карта branchId → color для окраски ветвей цветом позиции ВНУТРИ (ПЛА) */
-  posInnerColors?: Map<string, string>;
-  /** Карта branchId → color для окраски ветвей цветом позиции СНАРУЖИ (ПЛА) */
-  posOuterColors?: Map<string, string>;
-  /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
-  waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
-  waterBranchResults?: Map<string, import("@/lib/waterHydraulics").WaterBranchResult>;
-  /** Карта branchId → сегмент задымления {color, fromT, toT} */
-  branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
-  /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
-  branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
-  /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
-  reversedBranchIds?: Set<string>;
-  /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */
-  rescuePathBranchIds?: Set<string>;
-  /** Направление движения по ветви маршрута: true = fromId→toId, false = toId→fromId */
-  rescuePathBranchDirs?: Map<string, boolean>;
-  /** ID узлов маршрута горноспасателей (старт/финиш) — подсвечиваются */
-  rescuePathNodeIds?: Set<string>;
-  /** Буквенные метки узлов горноспасателей: nodeId → «А»/«Б»/«В» */
-  rescueNodeLetters?: Map<string, string>;
-  /** Callback при клике по узлу в режиме pick (rescuePickMode) */
-  onRescueNodePick?: (nodeId: string) => void;
-  /** Callback при клике по ветви в режиме pick (rescuePickMode) */
-  onRescueBranchPick?: (branchId: string) => void;
-  /** Режим выбора узла для горноспасателей */
-  rescuePickMode?: string | null;
-  /** Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха */
-  colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
-  /** Цвета участков рудника: id ветви → цвет (для colorMode="ventsection") */
-  sectionColors?: Map<string, string>;
-  /** Минимальное значение шкалы расхода, м³/с */
-  flowColorMin?: number;
-  /** Максимальное значение шкалы расхода, м³/с */
-  flowColorMax?: number;
-  /** Цветовая гамма шкалы расхода */
-  flowColorHue?: "red" | "blue" | "green";
-  /** Минимальное значение шкалы скорости, м/с */
-  velColorMin?: number;
-  /** Максимальное значение шкалы скорости, м/с */
-  velColorMax?: number;
-  /** Цветовая гамма шкалы скорости */
-  velColorHue?: "red" | "blue" | "green";
-  /** Карта branchId → цвет для сравнения схем (added/removed/changed) */
-  compareBranchColors?: Map<string, string>;
-}
-
-export type FlowDisplayMode =
-  | "off"        // только статичные линии без направления
-  | "flow"       // бегущая пунктирная анимация (по умолчанию)
-  | "chevrons"   // шевроны ▶ ▶ ▶ вдоль ветви
-  | "both";      // и бегущий пунктир, и шевроны
-
-interface ViewState {
-  scale: number;
-  offsetX: number;
-  offsetY: number;
-  azimuth: number;     // °
-  elevation: number;   // °
-}
+export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
 export default function TopoCanvas(props: Props) {
   const {
@@ -4711,83 +4488,13 @@ export default function TopoCanvas(props: Props) {
         />}
 
         {/* ── МАСШТАБНАЯ ЛИНЕЙКА (как в АэроСети) ─────────────────── */}
-        {!useCanvas && (() => {
-          // Подбираем «красивое» значение шага линейки
-          const targetPx = 120;  // целевая длина линейки в пикселях
-          const rawM = targetPx / view.scale;  // метры при текущем масштабе
-          const exp = Math.pow(10, Math.floor(Math.log10(rawM)));
-          const nice = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
-          const stepM = nice.find(n => n * view.scale >= 60) ?? nice[nice.length - 1];
-          const barPx = stepM * view.scale;
-          const bx = 16, by = size.h - 36;
-          const segments = 5;
-          const segPx = barPx / segments;
-          void exp;
-          return (
-            <g style={{ pointerEvents: "none" }} data-export-exclude="true">
-              {/* Белая подложка */}
-              <rect x={bx - 4} y={by - 18} width={barPx + 8} height={36}
-                fill="white" fillOpacity="0.88" rx="3"
-                stroke="#c0c0c0" strokeWidth="0.5" />
-              {/* Полосы чёрно-белые как в Аэросети */}
-              {Array.from({ length: segments }).map((_, i) => (
-                <rect key={i}
-                  x={bx + i * segPx} y={by - 8}
-                  width={segPx} height={10}
-                  fill={i % 2 === 0 ? "#1a1a1a" : "#ffffff"}
-                  stroke="#1a1a1a" strokeWidth="0.8" />
-              ))}
-              {/* Левая граница */}
-              <line x1={bx} y1={by - 8} x2={bx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
-              {/* Правая граница */}
-              <line x1={bx + barPx} y1={by - 8} x2={bx + barPx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
-              {/* Деления по середине */}
-              {Array.from({ length: segments - 1 }).map((_, i) => (
-                <line key={i}
-                  x1={bx + (i + 1) * segPx} y1={by - 8}
-                  x2={bx + (i + 1) * segPx} y2={by - 12}
-                  stroke="#1a1a1a" strokeWidth="1" />
-              ))}
-              {/* Метки */}
-              <text x={bx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
-                fill="#111" textAnchor="middle" fontWeight="600">0</text>
-              <text x={bx + barPx / 2} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
-                fill="#111" textAnchor="middle">
-                {stepM / 2 >= 1000 ? `${stepM / 2000}тыс` : `${stepM / 2}`}
-              </text>
-              <text x={bx + barPx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
-                fill="#111" textAnchor="middle" fontWeight="600">
-                {stepM >= 1000 ? `${stepM / 1000} км` : `${stepM} м`}
-              </text>
-            </g>
-          );
-        })()}
+        {!useCanvas && <ScaleBar scale={view.scale} height={size.h} />}
 
         {/* ─── МАРКЕР PIVOT-ТОЧКИ (виден только во время вращения) ─── */}
+        {/* Перепроецируем pivot в текущей проекции (углы уже обновлены). */}
         {!useCanvas && rotStart && (() => {
-          // Перепроецируем pivot в текущей проекции (углы уже обновлены).
           const ps = project3D(rotStart.pivot, proj);
-          return (
-            <g style={{ pointerEvents: "none" }}>
-              {/* Внешний полупрозрачный круг */}
-              <circle cx={ps.sx} cy={ps.sy} r="14"
-                fill="none" stroke="#f59e0b" strokeWidth="1.2"
-                strokeDasharray="3 2" opacity="0.6" />
-              {/* Крестик */}
-              <line x1={ps.sx - 8} y1={ps.sy} x2={ps.sx + 8} y2={ps.sy}
-                stroke="#f59e0b" strokeWidth="1.5" />
-              <line x1={ps.sx} y1={ps.sy - 8} x2={ps.sx} y2={ps.sy + 8}
-                stroke="#f59e0b" strokeWidth="1.5" />
-              {/* Центральная точка */}
-              <circle cx={ps.sx} cy={ps.sy} r="2.5"
-                fill="#f59e0b" stroke="#7c2d12" strokeWidth="0.8" />
-              {/* Подпись */}
-              <text x={ps.sx + 18} y={ps.sy + 4} fontSize="10"
-                fontFamily="Arial, sans-serif" fill="#7c2d12" fontWeight="600">
-                центр вращения
-              </text>
-            </g>
-          );
+          return <PivotMarker sx={ps.sx} sy={ps.sy} />;
         })()}
       </svg>
 
@@ -5871,246 +5578,30 @@ export default function TopoCanvas(props: Props) {
             />
           </g>
           {/* Масштабная линейка */}
-          {(() => {
-            const targetPx = 120;
-            const rawM = targetPx / view.scale;
-            const exp = Math.pow(10, Math.floor(Math.log10(rawM)));
-            const nice = [1, 2, 5, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
-            const stepM = nice.find(n => n * view.scale >= 60) ?? nice[nice.length - 1];
-            const barPx = stepM * view.scale;
-            const bx = 16, by = size.h - 36;
-            const segments = 5;
-            const segPx = barPx / segments;
-            void exp;
-            return (
-              <g style={{ pointerEvents: "none" }} data-export-exclude="true">
-                <rect x={bx - 4} y={by - 18} width={barPx + 8} height={36}
-                  fill="white" fillOpacity="0.88" rx="3"
-                  stroke="#c0c0c0" strokeWidth="0.5" />
-                {Array.from({ length: segments }).map((_, i) => (
-                  <rect key={i}
-                    x={bx + i * segPx} y={by - 8}
-                    width={segPx} height={10}
-                    fill={i % 2 === 0 ? "#1a1a1a" : "#ffffff"}
-                    stroke="#1a1a1a" strokeWidth="0.8" />
-                ))}
-                <line x1={bx} y1={by - 8} x2={bx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
-                <line x1={bx + barPx} y1={by - 8} x2={bx + barPx} y2={by - 14} stroke="#1a1a1a" strokeWidth="1.5" />
-                {Array.from({ length: segments - 1 }).map((_, i) => (
-                  <line key={i}
-                    x1={bx + (i + 1) * segPx} y1={by - 8}
-                    x2={bx + (i + 1) * segPx} y2={by - 12}
-                    stroke="#1a1a1a" strokeWidth="1" />
-                ))}
-                <text x={bx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
-                  fill="#111" textAnchor="middle" fontWeight="600">0</text>
-                <text x={bx + barPx / 2} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
-                  fill="#111" textAnchor="middle">
-                  {stepM / 2 >= 1000 ? `${stepM / 2000}тыс` : `${stepM / 2}`}
-                </text>
-                <text x={bx + barPx} y={by + 12} fontSize="10" fontFamily="Arial, sans-serif"
-                  fill="#111" textAnchor="middle" fontWeight="600">
-                  {stepM >= 1000 ? `${stepM / 1000} км` : `${stepM} м`}
-                </text>
-              </g>
-            );
-          })()}
+          <ScaleBar scale={view.scale} height={size.h} />
         </svg>
       )}
 
-      {/* Индикаторы */}
-      <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"
-        style={{ color: "#444", marginLeft: "0px", paddingBottom: "0px" }}>
-        {useCanvas && (
-          <span className="mr-2 px-1 rounded" style={{ background: "#d1fae5", color: "#065f46" }}>
-            Canvas · {visibleBranches.length} вет.
-          </span>
-        )}
-        {is3D && <span className="mr-2">3D · Az: {view.azimuth.toFixed(0)}° · El: {view.elevation.toFixed(0)}°</span>}
-        {hoverPos && (() => {
-          // Вывод координат с учётом активной плоскости
-          const fixZ = effPlane.axis === "z" ? effPlane.value : null;
-          const fixY = effPlane.axis === "y" ? effPlane.value : null;
-          const fixX = effPlane.axis === "x" ? effPlane.value : null;
-          return (
-            <span>
-              X: {fixX ?? hoverPos.x} м · Y: {fixY ?? hoverPos.y} м · Z: {fixZ ?? (is3D ? "?" : zLevel)} м
-            </span>
-          );
-        })()}
-        <span className="ml-3 px-1.5 py-0.5 rounded"
-          style={{ background: "#fef3c7", color: "#92400e" }}>
-          Плоск: {effPlane.axis.toUpperCase()}={effPlane.value} м
-        </span>
-      </div>
-      <div className="absolute bottom-1 right-2 text-[11px] font-mono pointer-events-none"
-        style={{ color: "#444" }}>
-        М 1:{(1 / Math.max(0.00001, view.scale * 0.001)).toFixed(0)}
-      </div>
+      {/* Индикаторы внизу холста (координаты, плоскость, масштаб) */}
+      <TopoCanvasIndicators
+        useCanvas={useCanvas}
+        visibleBranchCount={visibleBranches.length}
+        is3D={is3D}
+        azimuth={view.azimuth}
+        elevation={view.elevation}
+        hoverPos={hoverPos}
+        effPlane={effPlane}
+        zLevel={zLevel}
+        scale={view.scale}
+      />
 
-      {/* Подсказка — режим ожидания привязки */}
-      {pendingSymbolTypeId && (
-        <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#059669", color: "white" }}>
-          Кликните на ветвь чтобы разместить УО · Esc — отмена
-        </div>
-      )}
-
-      {/* Подсказка */}
-      {tool === "node" && (
-        <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#2563eb", color: "white" }}>
-          ✚ Клик на холсте — создать узел на плоскости{" "}
-          {effPlane.axis === "z" ? `Z = ${effPlane.value} м (XY)` :
-           effPlane.axis === "y" ? `Y = ${effPlane.value} м (XZ)` :
-           `X = ${effPlane.value} м (YZ)`}
-        </div>
-      )}
-      {tool === "branch" && (
-        <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#2563eb", color: "white" }}>
-          {branchFrom ? "Выберите второй узел" : "Выберите начальный узел ветви"}
-        </div>
-      )}
-      {tool === "rotate" && (
-        <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#7c3aed", color: "white" }}>
-          🔄 Драг — вращение камеры (Az/El)
-        </div>
-      )}
+      {/* Подсказки активного инструмента */}
+      <TopoCanvasHints
+        pendingSymbolTypeId={pendingSymbolTypeId}
+        tool={tool}
+        effPlane={effPlane}
+        branchFrom={branchFrom}
+      />
     </div>
   );
-}
-
-// ─── ViewCube: индикатор/переключатель ракурсов ────────────────────────────
-function ViewCube({ x, y, azimuth, elevation, onPick }: {
-  x: number; y: number; azimuth: number; elevation: number; onPick: (p: ViewPreset) => void;
-}) {
-  const az = (azimuth * Math.PI) / 180;
-  const el = (elevation * Math.PI) / 180;
-  const proj = (px: number, py: number, pz: number) => {
-    const x1 = Math.cos(az) * px + Math.sin(az) * py;
-    const y1 = -Math.sin(az) * px + Math.cos(az) * py;
-    const y2 = Math.sin(el) * y1 - Math.cos(el) * pz;
-    return { sx: x1, sy: -y2 };
-  };
-  const s = 18;  // полу-сторона куба
-  // 8 вершин куба
-  const verts = [
-    proj(-s, -s, -s), proj(s, -s, -s), proj(s, s, -s), proj(-s, s, -s),
-    proj(-s, -s,  s), proj(s, -s,  s), proj(s, s,  s), proj(-s, s,  s),
-  ];
-  // 6 граней (топ/бот/фронт/бэк/лев/прав), порядок вершин CCW
-  const faces: { idx: [number, number, number, number]; preset: ViewPreset; color: string; label: string }[] = [
-    { idx: [4, 5, 6, 7], preset: "plan",   color: "#fde68a", label: "ПЛАН" },
-    { idx: [0, 3, 2, 1], preset: "plan",   color: "#fef3c7", label: "" },     // низ
-    { idx: [0, 1, 5, 4], preset: "front",  color: "#bfdbfe", label: "ФРНТ" },
-    { idx: [2, 3, 7, 6], preset: "back",   color: "#dbeafe", label: "ТЫЛ" },
-    { idx: [0, 4, 7, 3], preset: "left",   color: "#bbf7d0", label: "ЛЕВ" },
-    { idx: [1, 2, 6, 5], preset: "right",  color: "#d1fae5", label: "ПРАВ" },
-  ];
-  // Сортировка граней по средней Z (примитивный hidden-faces)
-  const facesWithDepth = faces.map((f) => {
-    const cx = (verts[f.idx[0]].sx + verts[f.idx[2]].sx) / 2;
-    const cy = (verts[f.idx[0]].sy + verts[f.idx[2]].sy) / 2;
-    return { ...f, cx, cy };
-  });
-
-  return (
-    <g transform={`translate(${x},${y})`}>
-      <rect x={-26} y={-26} width={52} height={52} fill="white" fillOpacity="0.7" stroke="#9ca3af" rx="4" />
-      {facesWithDepth.map((f, i) => {
-        const pts = f.idx.map((vi) => `${verts[vi].sx},${verts[vi].sy}`).join(" ");
-        const cx = f.idx.reduce((a, vi) => a + verts[vi].sx, 0) / 4;
-        const cy = f.idx.reduce((a, vi) => a + verts[vi].sy, 0) / 4;
-        return (
-          <g key={i} style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPick(f.preset); }}>
-            <polygon points={pts} fill={f.color} stroke="#374151" strokeWidth="0.8" />
-            {f.label && (
-              <text x={cx} y={cy + 3} textAnchor="middle" fontSize="7" fontWeight="600" fill="#1f2937"
-                style={{ pointerEvents: "none" }}>
-                {f.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      {/* Изо-уголки */}
-      <circle cx={20} cy={-20} r="4" fill="#a78bfa" stroke="#374151" strokeWidth="0.6"
-        style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPick("isoSE"); }} />
-      <circle cx={-20} cy={-20} r="4" fill="#a78bfa" stroke="#374151" strokeWidth="0.6"
-        style={{ cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); onPick("isoSW"); }} />
-    </g>
-  );
-}
-
-// ─── Утилиты попадания ─────────────────────────────────────────────────────
-function hitNodeR(sx: number, sy: number,
-  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[],
-  r = 8): string | null {
-  const r2 = r * r;
-  for (let i = projNodes.length - 1; i >= 0; i--) {
-    const p = projNodes[i];
-    const dx = sx - p.sx;
-    const dy = sy - p.sy;
-    if (dx * dx + dy * dy < r2) return p.node.id;
-  }
-  return null;
-}
-
-function hitNode(sx: number, sy: number,
-  projNodes: { node: TopoNode; sx: number; sy: number; depth: number }[]): string | null {
-  return hitNodeR(sx, sy, projNodes, 8);
-}
-
-type ProjNodeEntry = { node: TopoNode; sx: number; sy: number; depth: number };
-
-function hitBranchR(sx: number, sy: number,
-  projNodesMap: Map<string, ProjNodeEntry>,
-  branches: TopoBranch[], tol = 5): string | null {
-  const tol2 = tol * tol;
-
-  // Функция: расстояние² от точки (sx,sy) до отрезка (x1,y1)→(x2,y2)
-  const distSqToSeg = (x1: number, y1: number, x2: number, y2: number): number => {
-    const C = x2 - x1, D = y2 - y1;
-    const lenSq = C * C + D * D;
-    if (lenSq === 0) { const dx = sx - x1, dy = sy - y1; return dx * dx + dy * dy; }
-    const t = Math.max(0, Math.min(1, ((sx - x1) * C + (sy - y1) * D) / lenSq));
-    const dx = sx - (x1 + t * C), dy = sy - (y1 + t * D);
-    return dx * dx + dy * dy;
-  };
-
-  for (const b of branches) {
-    const from = projNodesMap.get(b.fromId);
-    const to = projNodesMap.get(b.toId);
-    if (!from || !to) continue;
-    const C = to.sx - from.sx, D = to.sy - from.sy;
-    const lenSq = C * C + D * D;
-    if (lenSq === 0) continue;
-
-    // 1. Проверка попадания по основной линии ветви
-    if (distSqToSeg(from.sx, from.sy, to.sx, to.sy) < tol2) return b.id;
-
-    // 2. Если есть вентруба — проверяем попадание по параллельной линии трубы
-    //    (смещение: нормаль к ветви × vpOffset пикселей, как в рендере)
-    if (b.hasVentPipe) {
-      const segLen = Math.sqrt(lenSq);
-      const ux = C / segLen, uy = D / segLen;
-      // нормаль (перпендикуляр влево)
-      const nx = -uy, ny = ux;
-      // Используем толщину ветви ≈ 4px + 3px offset (как в SVG рендере: w/2 + 3)
-      const vpOff = 4 / 2 + 3;
-      const vx1 = from.sx + nx * vpOff, vy1 = from.sy + ny * vpOff;
-      const vx2 = to.sx   + nx * vpOff, vy2 = to.sy   + ny * vpOff;
-      // tolerance для трубы чуть больше (7px) — тонкая линия
-      if (distSqToSeg(vx1, vy1, vx2, vy2) < 7 * 7) return b.id;
-    }
-  }
-  return null;
-}
-
-function hitBranch(sx: number, sy: number,
-  projNodesMap: Map<string, ProjNodeEntry>,
-  branches: TopoBranch[]): string | null {
-  return hitBranchR(sx, sy, projNodesMap, branches, 8);
 }
