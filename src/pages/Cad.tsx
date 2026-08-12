@@ -207,6 +207,15 @@ export default function CadPage() {
     if (license.status === "demo") setShowLicenseDialog(true);
   }, [license.status]);
 
+  // ПОЛНЫЙ путь файла на диске — заполняется, когда проект открыт двойным
+  // кликом в проводнике (десктоп). В этом сценарии FileSystemFileHandle не
+  // существует, и без пути «Сохранить» уходило в «Сохранить как».
+  // Наличие пути позволяет перезаписать исходный файл напрямую через C#-мост.
+  const filePathRef = useRef<string | null>(null);
+  // Ссылка на applyProjectData — обработчик открытия файла из ОС регистрируется
+  // раньше, чем объявлена сама функция.
+  const applyProjectDataRef = useRef<((data: Record<string, unknown>, fileName: string, fromDisk?: boolean) => void) | null>(null);
+
   // Открытие .vproj файла из десктопа (двойной клик по файлу в проводнике).
   // ВАЖНО: window.electronAPI инжектируется C# (WebView2) и может появиться
   // ПОЗЖЕ, чем смонтируется React. Раньше эффект просто выходил, если API ещё
@@ -219,11 +228,19 @@ export default function CadPage() {
     let cancelled = false;
     let registered: EAPI | null = null;
 
-    const handler = ({ content }: { path: string; content: string }) => {
+    const handler = ({ path, content }: { path: string; content: string }) => {
       try {
         const data = JSON.parse(content);
         if (data && data.nodes && Array.isArray(data.nodes)) {
-          applyProjectData(data, data.name || "project.vproj");
+          // Имя берём из ИМЕНИ ФАЙЛА на диске, а не из data.name внутри JSON.
+          // Иначе схема, сохранённая когда-то под другим именем, открывалась
+          // со «старым» названием, не совпадающим с файлом в проводнике.
+          const fileName = (path || "").split(/[\\/]/).pop() || "project.vproj";
+          // Запоминаем путь — «Сохранить» перезапишет именно этот файл,
+          // без диалога «Сохранить как».
+          filePathRef.current = path || null;
+          fileHandleRef.current = null;
+          applyProjectDataRef.current?.(data, fileName, true);
         }
       } catch { /* повреждённый файл — тихо игнорируем */ }
     };
@@ -2498,8 +2515,30 @@ export default function CadPage() {
   const handleSave = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
     // Новый проект ещё не привязан к файлу — сразу спрашиваем, куда сохранить.
-    if (!projectFileName && !fileHandleRef.current) { await handleSaveAsRef.current?.(); return; }
+    if (!projectFileName && !fileHandleRef.current && !filePathRef.current) {
+      await handleSaveAsRef.current?.(); return;
+    }
     const data = buildProjectData();
+
+    // Проект открыт двойным кликом из проводника: перезаписываем ИСХОДНЫЙ файл
+    // по его пути через десктопный мост — без диалога «Сохранить как».
+    if (filePathRef.current) {
+      type EAPI = { writeFile?: (path: string, content: string) => Promise<{ ok?: boolean; error?: string }> };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eAPI = (window as any).electronAPI as EAPI | undefined;
+      if (eAPI?.writeFile) {
+        try {
+          const res = await eAPI.writeFile(
+            filePathRef.current,
+            JSON.stringify({ ...data, name: projectFileName || suggestedFileName() }, null, 2),
+          );
+          if (!res?.error) { setIsDirty(false); return; }
+        } catch { /* файл недоступен — уходим в обычные пути сохранения */ }
+      }
+      // Записать по пути не удалось — больше не пытаемся, идём обычным путём
+      filePathRef.current = null;
+    }
+
     // Если есть открытый handle — перезаписываем без диалога
     if (fileHandleRef.current) {
       try {
@@ -2534,6 +2573,7 @@ export default function CadPage() {
           types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
         });
         fileHandleRef.current = handle;
+        filePathRef.current = null;
         const fname = handle.name;
         setProjectFileName(fname);
         await writeToHandle(handle, { ...data, name: fname });
@@ -2583,7 +2623,8 @@ export default function CadPage() {
             if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
           }
           fileHandleRef.current = handle;
-          applyProjectData(data, file.name);
+          filePathRef.current = null;
+          applyProjectData(data, file.name, true);
           // Сохраняем handle в IndexedDB — чтобы открывать из «Последние» без диалога
           void saveHandleToIDB(file.name, handle).then(() => updateHasHandle(file.name, true));
         } else {
@@ -2611,7 +2652,8 @@ export default function CadPage() {
               if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
             }
             fileHandleRef.current = null;
-            applyProjectData(data, file.name);
+            filePathRef.current = null;
+            applyProjectData(data, file.name, true);
           } else {
             alert("Файл не является проектом Вентиляция-CAD.");
           }
@@ -2625,7 +2667,10 @@ export default function CadPage() {
   };
 
   // Применить данные из JSON — с слиянием дефолтов для ветвей
-  const applyProjectData = (data: Record<string, unknown>, fileName: string) => {
+  // fromDisk=true — проект открыт из РЕАЛЬНОГО файла на диске (проводник,
+  // диалог «Открыть», «Последние»). Тогда название берём строго из имени файла,
+  // иначе схема показывалась бы под старым именем, записанным внутри JSON.
+  const applyProjectData = (data: Record<string, unknown>, fileName: string, fromDisk?: boolean) => {
     // Блокируем начальный пресет вида — файл загружен
     initialFileLoadedRef.current = true;
     // Загружается другая схема — результаты прошлого проекта неактуальны.
@@ -2851,7 +2896,9 @@ export default function CadPage() {
     else setPositions([]);
     if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
     else setTextBlocks([]);
-    const resolvedName = (data.name as string) ?? fileName;
+    const resolvedName = fromDisk
+      ? fileName
+      : ((data.name as string) ?? fileName);
     setProjectFileName(resolvedName);
     setSelectedNodeId(null);
     setSelectedBranchId(null);
@@ -2871,6 +2918,7 @@ export default function CadPage() {
     saveRecentData(resolvedName, data);
     setActiveRibbon("home");
   };
+  applyProjectDataRef.current = applyProjectData;
 
   const handlePrint = () => {
     window.print();
@@ -2989,6 +3037,7 @@ export default function CadPage() {
     setProjectFileName("");
     setIsDirty(false);
     fileHandleRef.current = null;
+    filePathRef.current = null;
     setImportNonce(n => n + 1);
     setActiveRibbon("home");
   };
@@ -4738,7 +4787,8 @@ export default function CadPage() {
                           const data = JSON.parse(await file.text()) as Record<string, unknown>;
                           if (!confirmReplace()) return;
                           fileHandleRef.current = handle;
-                          applyProjectData(data, file.name);
+                          filePathRef.current = null;
+                          applyProjectData(data, file.name, true);
                           setActiveRibbon("home");
                           return;
                         }
@@ -10510,7 +10560,9 @@ export default function CadPage() {
                   }
                   if ((nodes.length > 0 || branchesRaw.length > 0) &&
                       !window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
-                  applyProjectData(data, file.name);
+                  fileHandleRef.current = null;
+                  filePathRef.current = null;
+                  applyProjectData(data, file.name, true);
                 } catch {
                   alert("Ошибка чтения файла.");
                 }

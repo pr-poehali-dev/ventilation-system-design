@@ -16,7 +16,17 @@ public partial class App : Application
 
         try
         {
-            var win = new MainWindow(e.Args.Length > 0 ? e.Args[0] : null);
+            // Путь из проводника приводим к ПОЛНОМУ: при запуске по двойному
+            // клику аргумент может прийти относительным, и тогда приложение не
+            // находило файл (открывался пустой проект) либо «Сохранить» не могло
+            // перезаписать исходный файл.
+            string? startFile = null;
+            if (e.Args.Length > 0 && !string.IsNullOrWhiteSpace(e.Args[0]))
+            {
+                try { startFile = Path.GetFullPath(e.Args[0]); }
+                catch { startFile = e.Args[0]; }
+            }
+            var win = new MainWindow(startFile);
             win.Show();
         }
         catch (Exception ex)
