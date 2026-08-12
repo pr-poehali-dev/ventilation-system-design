@@ -8,6 +8,11 @@
  * Источник методики: РД 15-11-2007, ГОСТ Р 22.0.007, практика Аэросети.
  */
 
+// Видимость в дыму и границы зон k3 берём из общего модуля: раньше здесь была
+// своя формула L = 2/μ, а в расчёте пожара — L = 3/μ, и одна и та же ветвь
+// попадала в разные зоны задымления в разных разделах программы.
+import { visibilityFromDensity, zoneFromDensity } from "./smokeVisibility";
+
 export type RescueOperationType =
   | "scout_and_transport"   // Разведка туда, транспортировка обратно
   | "scout"                 // Только разведка
@@ -160,16 +165,12 @@ function getSpeed(zone: "clean" | "smoky_low" | "smoky_high", angleDeg: number):
 }
 
 // Зона задымления по плотности дыма (коэффициент k3):
-//   smoke_density (м⁻¹): 0 → Рв = ∞; Рв = 2 / smoke_density
+//   Рв считается общей формулой (см. smokeVisibility.ts), а не локальной.
 //   k3 = 1    : Рв > 10 м (чистый воздух)
 //   k3 = 1.43 : Рв 5–10 м (слабое задымление)
 //   k3 = 2.0  : Рв < 5 м  (густое задымление)
 function getZone(smokeDensity: number): "clean" | "smoky_low" | "smoky_high" {
-  if (smokeDensity <= 0.001) return "clean";
-  const vis = 2.0 / smokeDensity;
-  if (vis >= 10) return "clean";
-  if (vis >= 5)  return "smoky_low";
-  return "smoky_high";
+  return zoneFromDensity(smokeDensity);
 }
 
 // ─── Интерфейсы данных ──────────────────────────────────────────────────────
@@ -276,7 +277,7 @@ function buildPath(
   const path: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
   let cur: string | null = toId;
   while (cur && prev.has(cur) && prev.get(cur) !== null) {
-    const p = prev.get(cur)!;
+    const p: { nodeId: string; branchId: string; forward: boolean } | null | undefined = prev.get(cur);
     if (!p) break;
     path.unshift({ nodeId: p.nodeId, branchId: p.branchId, forward: p.forward });
     cur = p.nodeId;
@@ -368,7 +369,7 @@ export function calcRescue(
       // Так считает ПО Вентиляция — нормативный расход без учёта задымления
       const o2_per_100m = speed_cl > 0 ? o2c * 100 / speed_cl : 0;
 
-      const vis = smokeDens > 0 ? 2 / smokeDens : 999;
+      const vis = visibilityFromDensity(smokeDens);
 
       const fromNodeId = isForward ? b.fromId : b.toId;
       const toNodeId   = isForward ? b.toId   : b.fromId;

@@ -13,16 +13,15 @@
 
 import { type TopoBranch, type TopoNode } from "./topology";
 import { PA_PER_MM_H2O } from "./aerodynamics";
+// Видимость в дыму считается ЕДИНОЙ формулой для всей программы (закон Бугера).
+// Раньше здесь была своя формула L=3/μ, а в расчёте маршрутов ВГСЧ — L=2/μ,
+// из-за чего зоны задымления не совпадали между разделами.
+import { visibilityFromDensity, densityFromVisibility } from "./smokeVisibility";
 
 // ─── Константы ────────────────────────────────────────────────────────────────
 const CP_AIR = 1.005;          // кДж/(кг·К)
 const RHO_AIR_0 = 1.2;        // кг/м³ при 20°C
 const G = 9.81;                // м/с²
-// Потолок расчётной видимости, м. Ограничение нужно, чтобы при почти нулевой
-// задымлённости не получать бесконечность. Должен быть не меньше максимального
-// порога видимости в настройках пожара (1000 м), иначе порог выше потолка
-// невозможно проверить: все ветви показывали бы одинаковое значение.
-const VIS_MAX_M = 1000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ЕДИНИЦЫ ДЕПРЕССИИ. Депрессия ветви b.dP приходит из расчёта сети уже в
@@ -1531,11 +1530,7 @@ export function calcGasConcentrations(
   const smokeMassRate = burnRate_kgs * combustible.smokeYield;
   const smokeSpec = 7700;
   const smokeDensity = Math.min(10, (smokeMassRate * smokeSpec) / airFlow_Nm3s);
-  // Видимость по закону Бугера: L = K/μ, где K≈3 для светящихся объектов.
-  // Потолок 1000 м, а не 100: при пороге видимости выше 100 м расчёт показывал
-  // ровно «100 м» на всех слабо задымлённых ветвях и порог нельзя было
-  // проверить по таблице результатов.
-  const visibility = smokeDensity > 0 ? Math.min(VIS_MAX_M, 3 / smokeDensity) : VIS_MAX_M;
+  const visibility = visibilityFromDensity(smokeDensity);
 
   return { coConc, co2Conc, smokeDensity, visibility };
 }
@@ -1991,7 +1986,8 @@ export function calcFireMode(
   // Это гарантирует связность: задымлены только ветви на непрерывном пути от
   // очага, где концентрация ещё опасна (никаких «оторванных» задымлённых ветвей).
   const SMOKE_VIS_THRESHOLD = smokeVisThreshold > 0 ? smokeVisThreshold : 50; // м — граница различимого задымления
-  const SMOKE_DENS_THRESHOLD = 3 / SMOKE_VIS_THRESHOLD; // соответствующая плотность
+  // Плотность, соответствующая порогу — по той же формуле видимости, что и всюду.
+  const SMOKE_DENS_THRESHOLD = densityFromVisibility(SMOKE_VIS_THRESHOLD);
 
   while (pq.length > 0) {
     const [entryTime, smokedNodeId] = pqPop();
@@ -2056,7 +2052,7 @@ export function calcFireMode(
       // чтобы на коротких приочаговых ветвях температура не «схлопывалась».
       const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
       const tempOut  = ambientTemp_C + (sp.tempC - ambientTemp_C) * coolExp;
-      const visOut   = smokeOut > 0 ? Math.min(VIS_MAX_M, 3 / smokeOut) : VIS_MAX_M;
+      const visOut   = visibilityFromDensity(smokeOut);
       const hazard   = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
 
       // Порог: если дым в этой ветви уже рассеялся ниже порога видимости —

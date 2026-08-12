@@ -17,9 +17,19 @@
 import type { TopoNode, TopoBranch } from "./topology";
 import { calcWorkerPath, type TopoNodeLite, type TopoBranchLite } from "./rescueCalculator";
 import { getSelfRescuerById } from "./selfRescuers";
+import { densityFromVisibility } from "./smokeVisibility";
+
+/**
+ * Дальность видимости, ниже которой путь выхода считается задымлённым, м.
+ * Порог намеренно консервативный: для людей БЕЗ средств защиты опасны уже
+ * следы дыма, задолго до потери видимости. Задаётся в метрах и переводится
+ * в плотность общей формулой — чтобы не разъезжаться с расчётом пожара и
+ * маршрутов ВГСЧ (раньше здесь стояло «магическое» число 0.01).
+ */
+export const EVAC_VIS_THRESHOLD_M = 300;
 
 /** Порог оптической плотности дыма, выше которого путь считается задымлённым */
-const SMOKE_THRESHOLD = 0.01;
+const SMOKE_THRESHOLD = densityFromVisibility(EVAC_VIS_THRESHOLD_M);
 /** Порог концентрации CO (%), опасный для человека без защиты */
 const CO_THRESHOLD = 0.0025;
 
