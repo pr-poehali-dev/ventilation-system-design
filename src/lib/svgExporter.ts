@@ -9,7 +9,7 @@ import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 
@@ -716,6 +716,17 @@ export function generateSvg(opts: SvgExportOptions): string {
         parts.push(`<line x1="${n(-tailLen)}" y1="0" x2="${n(tailLen - tipH)}" y2="0" stroke="white" stroke-width="${n(tailW + 2)}" stroke-linecap="round"/>`);
         parts.push(`<line x1="${n(-tailLen)}" y1="0" x2="${n(tailLen - tipH)}" y2="0" stroke="${jetColor}" stroke-width="${n(tailW)}" stroke-linecap="round"${dash}/>`);
         parts.push(`<polygon points="${n(tailLen - tipH)},${n(-tipW)} ${n(tailLen)},0 ${n(tailLen - tipH)},${n(tipW)}" fill="${jetColor}" stroke="white" stroke-width="${n(Math.max(0.5, SZ * 0.02))}"/>`);
+        parts.push(`</g>`);
+      } else if (HEATER_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
+        // Калорифер — корпус поперёк ветви со змеевиком (как на экране)
+        const ph = Math.max(3, SZ * 0.85);
+        const pw = Math.max(2, ph * 0.55);
+        parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})">`);
+        parts.push(`<rect x="${n(-pw/2)}" y="${n(-ph/2)}" width="${n(pw)}" height="${n(ph)}" fill="#fff3e0" stroke="#1a1a1a" stroke-width="${n(Math.max(0.4, pw * 0.14))}"/>`);
+        for (let i = 0; i < 4; i++) {
+          const yq = -ph / 2 + (ph / 5) * (i + 1);
+          parts.push(`<line x1="${n(-pw*0.32)}" y1="${n(yq)}" x2="${n(pw*0.32)}" y2="${n(yq)}" stroke="#e65100" stroke-width="${n(Math.max(0.8, ph * 0.07))}" stroke-linecap="round"/>`);
+        }
         parts.push(`</g>`);
       } else if (isMeasureStation && hasBranchPts) {
         // Замерная станция — две красные линии поперёк ветви

@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -78,7 +78,8 @@ export async function drawSymbolsToCanvas(
     const brForSym2 = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
     const isMeasureStationSym = sym.typeId === "measure_station";
     let SZ: number;
-    if ((isBulkheadSym || isMeasureStationSym) && hasBranchPts) {
+    const isHeaterSym = HEATER_SYMBOL_IDS.has(sym.typeId);
+    if ((isBulkheadSym || isMeasureStationSym || isHeaterSym) && hasBranchPts) {
       const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
       SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
     } else {
@@ -156,6 +157,30 @@ export async function drawSymbolsToCanvas(
       ctx.lineCap = "square";
       ctx.beginPath(); ctx.moveTo(-halfLen, -gap); ctx.lineTo(halfLen, -gap); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(-halfLen,  gap); ctx.lineTo(halfLen,  gap); ctx.stroke();
+      ctx.restore();
+    } else if (isHeaterSym && hasBranchPts) {
+      // Калорифер: корпус поперёк ветви + змеевик. Геометрия 1:1 как на экране.
+      const ph = Math.max(3, SZ * 0.85);
+      const pw = Math.max(2, ph * 0.55);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(brAngleForSym);
+      ctx.fillStyle = "#fff3e0";
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.lineWidth = Math.max(0.4, pw * 0.14);
+      ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+      ctx.strokeRect(-pw / 2, -ph / 2, pw, ph);
+      ctx.strokeStyle = "#e65100";
+      ctx.lineWidth = Math.max(0.8, ph * 0.07);
+      ctx.lineCap = "round";
+      const coils = 4;
+      for (let i = 0; i < coils; i++) {
+        const y = -ph / 2 + (ph / (coils + 1)) * (i + 1);
+        ctx.beginPath();
+        ctx.moveTo(-pw * 0.32, y);
+        ctx.lineTo(pw * 0.32, y);
+        ctx.stroke();
+      }
       ctx.restore();
     } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);

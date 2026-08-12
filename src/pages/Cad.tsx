@@ -39,7 +39,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -10934,6 +10934,25 @@ export default function CadPage() {
                     setSelectedBranchId(branchId);
                     setSelectedNodeId(null);
                     setActiveSide("waterpipes");
+                  } else if (HEATER_SYMBOL_IDS.has(typeId)) {
+                    // Калорифер ставится ТОЛЬКО на ветвь: он масштабируется от
+                    // ширины выработки и разворачивается поперёк неё, поэтому
+                    // без привязки к ветви отображался бы некорректно.
+                    if (!branchId) {
+                      window.alert("Калорифер устанавливается на выработку.\n\nУкажите ветвь, в которую он встроен.");
+                      setTool("select");
+                      setActiveSymbolTypeId(null);
+                      return;
+                    }
+                    const newSym: SchemaSymbol = {
+                      id: `SYM_HT_${Date.now()}`,
+                      typeId, x, y, branchId, t: t ?? 0.5,
+                    };
+                    setSchemaSymbols(prev => [...prev, newSym]);
+                    setSelectedSymbolId(newSym.id);
+                    setSelectedBranchId(null);
+                    setSelectedNodeId(null);
+                    setActiveSide("params");
                   } else if (BULKHEAD_SYMBOL_IDS.has(typeId) && branchId) {
                     // Каждый символ перемычки хранит свои параметры независимо (bk* поля)
                     const br = branches.find(b => b.id === branchId);

@@ -6,7 +6,7 @@ import {
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
   sectionKind, SECTION_KIND_COLORS,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -3656,7 +3656,7 @@ export default function TopoCanvas(props: Props) {
             const fireBwSvg = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
-          } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
+          } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || HEATER_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
             const bkBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             // Размер перемычки = реальная ширина ветви на экране × bulkheadScale%.
             // _objSF — тот же коэффициент толщины ветви, что и при отрисовке ветвей,
@@ -3823,6 +3823,32 @@ export default function TopoCanvas(props: Props) {
                             fill={p.fill} stroke="none" />
                         );
                       })}
+                    </g>
+                  );
+                }
+                // ── Калорифер на ветви ───────────────────────────────
+                // Рисуется примитивами и поворачивается вдоль ветви — так же,
+                // как перемычка, поэтому масштабируется синхронно с шириной
+                // выработки и не «плавает» при зуме.
+                if (HEATER_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
+                  const brAngle = Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI;
+                  const ph = Math.max(3, SZ * 0.85);        // поперёк ветви
+                  const pw = Math.max(2, ph * 0.55);        // вдоль ветви
+                  const sw2 = Math.max(0.4, pw * 0.14);
+                  const coils = 4;
+                  const lines = [];
+                  for (let i = 0; i < coils; i++) {
+                    const y = -ph / 2 + (ph / (coils + 1)) * (i + 1);
+                    lines.push(
+                      <line key={`hc${i}`} x1={-pw * 0.32} y1={y} x2={pw * 0.32} y2={y}
+                        stroke="#e65100" strokeWidth={Math.max(0.8, ph * 0.07)} strokeLinecap="round" />
+                    );
+                  }
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
+                      <rect x={-pw / 2} y={-ph / 2} width={pw} height={ph}
+                        fill="#fff3e0" stroke="#1a1a1a" strokeWidth={sw2} />
+                      {lines}
                     </g>
                   );
                 }
@@ -4858,7 +4884,7 @@ export default function TopoCanvas(props: Props) {
               const fireBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               const autoSZ = Math.max(8, fireBw * view.scale * 4);
               SZ = Math.max(8, autoSZ * sc);
-            } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
+            } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || HEATER_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
               const msBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
               // Реальная толщина ветви в пикселях на экране (тот же objSF, что и
               // при отрисовке ветвей в canvasRenderer). Благодаря этому перемычка
@@ -5070,6 +5096,32 @@ export default function TopoCanvas(props: Props) {
                     </g>
                   );
                 })() : null}
+                {/* Калорифер: та же геометрия и масштаб, что в SVG-режиме */}
+                {HEATER_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts ? (() => {
+                  const brAngle = Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI;
+                  const bkBwH = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
+                  const realBwH = Math.max(bkBwH * _branchObjSF, 1.0);
+                  const SZh = Math.max(6, (realBwH * (bulkheadScale / 100) / 0.85) * (sym.scale ?? 1));
+                  const ph = Math.max(3, SZh * 0.85);
+                  const pw = Math.max(2, ph * 0.55);
+                  const sw2 = Math.max(0.4, pw * 0.14);
+                  const coils = 4;
+                  const lines = [];
+                  for (let i = 0; i < coils; i++) {
+                    const y = -ph / 2 + (ph / (coils + 1)) * (i + 1);
+                    lines.push(
+                      <line key={`hco${i}`} x1={-pw * 0.32} y1={y} x2={pw * 0.32} y2={y}
+                        stroke="#e65100" strokeWidth={Math.max(0.8, ph * 0.07)} strokeLinecap="round" />
+                    );
+                  }
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+                      <rect x={-pw / 2} y={-ph / 2} width={pw} height={ph}
+                        fill="#fff3e0" stroke="#1a1a1a" strokeWidth={sw2} />
+                      {lines}
+                    </g>
+                  );
+                })() : null}
                 {/* Перемычки: рисуем геометрически с поворотом по углу ветви */}
                 {isBulkheadOv && hasBranchPts ? (() => {
                   const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
@@ -5199,7 +5251,8 @@ export default function TopoCanvas(props: Props) {
                       <polygon points={pts} fill={jetColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                     </g>
                   );
-                })() : (lt && !(sym.typeId === "emergency_exit" && hasBranchPts)) ? (
+                })() : (lt && !(sym.typeId === "emergency_exit" && hasBranchPts)
+                        && !(HEATER_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts)) ? (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible" pointerEvents="none"
                     opacity={isFanStoppedOv ? 0.35 : 1}

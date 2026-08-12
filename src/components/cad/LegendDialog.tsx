@@ -839,6 +839,15 @@ const ITEMS: LegendItem[] = [
   // ТЕПЛО И ГАЗОВЫДЕЛЕНИЕ
   // ══════════════════════════════════════════════════════════════════════════
   {
+    id: "heater", group: "Тепло и газовыделение", name: "Калорифер",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <line x1={2} y1={20} x2={16} y2={20} stroke="#1a1a1a" strokeWidth={1.2} />
+      <line x1={32} y1={20} x2={46} y2={20} stroke="#1a1a1a" strokeWidth={1.2} />
+      <rect x={16} y={6} width={16} height={28} fill="#fff3e0" stroke="#1a1a1a" strokeWidth={1.5} />
+      <path d="M19,11 L29,11 M19,17 L29,17 M19,23 L29,23 M19,29 L29,29" stroke="#e65100" strokeWidth={2} strokeLinecap="round" />
+    </svg>,
+  },
+  {
     id: "heat_fire", group: "Тепло и газовыделение", name: "Пожар",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
       <circle cx={24} cy={28} r={10} fill="none" stroke="#dc2626" strokeWidth={1.5} />

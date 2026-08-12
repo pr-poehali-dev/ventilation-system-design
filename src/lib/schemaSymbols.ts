@@ -82,6 +82,13 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<rect x="16" y="2" width="16" height="36" fill="none" stroke="#222" stroke-width="1.5"/><line x1="16" y1="12" x2="32" y2="12" stroke="#222" stroke-width="1"/><line x1="16" y1="20" x2="32" y2="20" stroke="#222" stroke-width="1"/><line x1="16" y1="28" x2="32" y2="28" stroke="#222" stroke-width="1"/>`,
   },
   {
+    // Калорифер — подогрев поступающего в шахту воздуха. Ставится НА ВЕТВЬ и
+    // масштабируется от её ширины, как перемычка (см. HEATER_SYMBOL_IDS).
+    // Символ: корпус поперёк ветви + змеевик нагревательных элементов.
+    id: "heater", name: "Калорифер", group: "Общие",
+    svgContent: `<rect x="16" y="6" width="16" height="28" fill="#fff3e0" stroke="#1a1a1a" stroke-width="1.5"/><path d="M19,11 L29,11 M19,17 L29,17 M19,23 L29,23 M19,29 L29,29" stroke="#e65100" stroke-width="2" stroke-linecap="round"/><line x1="4" y1="20" x2="16" y2="20" stroke="#1a1a1a" stroke-width="1.2"/><line x1="32" y1="20" x2="44" y2="20" stroke="#1a1a1a" stroke-width="1.2"/>`,
+  },
+  {
     id: "conveyor", name: "Привод конвейера", group: "Приборы",
     svgContent: `<polygon points="4,28 44,16 44,22 4,34" fill="#555"/><circle cx="44" cy="19" r="5" fill="none" stroke="#222" stroke-width="1.5"/>`,
   },
@@ -451,6 +458,15 @@ export const WINDOW_BULKHEAD_IDS = new Set([
   "win_base", "win_conc", "win_wood", "win_brick", "win_metal",
   "lat_base", "lat_conc", "lat_wood", "lat_brick", "lat_metal",
   "proem_base", "proem_conc", "proem_wood", "proem_brick", "proem_metal",
+]);
+
+/**
+ * ID калориферов. Ставятся на ветвь и масштабируются от её ширины ТОЧНО так же,
+ * как перемычки (bulkheadScale), но перемычками НЕ являются: не создают
+ * аэродинамического сопротивления и не имеют bk*-параметров.
+ */
+export const HEATER_SYMBOL_IDS = new Set([
+  "heater",
 ]);
 
 // ID редукционных клапанов водопровода ППЗ

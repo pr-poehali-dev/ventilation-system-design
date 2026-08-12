@@ -2,7 +2,7 @@
 // Содержит ту же логику что в TopoCanvas, но без интерактивности.
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { type TopoBranch } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 
@@ -73,7 +73,8 @@ export default function SchemaSymbolsOverlay({
         const isMeasureStationSym2 = sym.typeId === "measure_station";
         const isEmergencyExitSym = sym.typeId === "emergency_exit";
         let SZ: number;
-        if ((isBulkheadSym || isMeasureStationSym2 || isEmergencyExitSym) && hasBranchPts) {
+        const isHeaterSym = HEATER_SYMBOL_IDS.has(sym.typeId);
+        if ((isBulkheadSym || isMeasureStationSym2 || isEmergencyExitSym || isHeaterSym) && hasBranchPts) {
           const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
           SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
         } else {
@@ -86,6 +87,29 @@ export default function SchemaSymbolsOverlay({
 
         const isMeasureStation = isMeasureStationSym2;
         const isBulkhead = isBulkheadSym;
+
+        // Калорифер: корпус поперёк ветви + змеевик. Геометрия 1:1 как в TopoCanvas.
+        const renderHeater = () => {
+          if (!hasBranchPts) return null;
+          const angDeg = Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI;
+          const ph = Math.max(3, SZ * 0.85);
+          const pw = Math.max(2, ph * 0.55);
+          const coilLines = [];
+          for (let i = 0; i < 4; i++) {
+            const yq = -ph / 2 + (ph / 5) * (i + 1);
+            coilLines.push(
+              <line key={`hp${i}`} x1={-pw * 0.32} y1={yq} x2={pw * 0.32} y2={yq}
+                stroke="#e65100" strokeWidth={Math.max(0.8, ph * 0.07)} strokeLinecap="round" />
+            );
+          }
+          return (
+            <g transform={`translate(${px},${py}) rotate(${angDeg})`}>
+              <rect x={-pw / 2} y={-ph / 2} width={pw} height={ph}
+                fill="#fff3e0" stroke="#1a1a1a" strokeWidth={Math.max(0.4, pw * 0.14)} />
+              {coilLines}
+            </g>
+          );
+        };
 
         const renderVentJet = () => {
           if (!VENT_JET_SYMBOL_IDS.has(sym.typeId) || !hasBranchPts) return null;
@@ -397,6 +421,7 @@ export default function SchemaSymbolsOverlay({
           <g key={sym.id}>
             {/* Символ */}
             {VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts ? renderVentJet() :
+             isHeaterSym && hasBranchPts ? renderHeater() :
              isMeasureStation && hasBranchPts ? renderMeasureStation() :
              isEmergencyExitSym && hasBranchPts ? renderEmergencyExit() :
              isBulkhead && hasBranchPts ? renderBulkhead() : (
