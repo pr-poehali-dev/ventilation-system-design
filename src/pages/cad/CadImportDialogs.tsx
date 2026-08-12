@@ -45,9 +45,6 @@ export interface CadImportDialogsProps {
   setVentSections: (s: VentSection[]) => void;
   showVentSections: boolean;
   setShowVentSections: (v: boolean) => void;
-  /** Выделенные на схеме ветви — для быстрого добавления в участок */
-  selectedBranchIds: string[];
-
   showDxfImport: boolean;
   setShowDxfImport: (v: boolean) => void;
   handleDxfImport: (r: DxfImportResult, mode: ImportMode) => void;
@@ -97,6 +94,8 @@ export interface CadImportDialogsProps {
   handleCtxAction: (action: string) => void;
   branchParamBuffer: unknown;
   selectedNodeIds: Set<string>;
+  /** Выделенные на схеме ветви: используются и в контекстном меню (размер
+      выделения), и в диалоге участков (быстрое добавление выделенных). */
   selectedBranchIds: Set<string>;
 }
 
@@ -187,7 +186,7 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           sections={p.ventSections}
           onChange={p.setVentSections}
           branches={p.branches}
-          selectedBranchIds={p.selectedBranchIds}
+          selectedBranchIds={Array.from(p.selectedBranchIds)}
           onClose={() => p.setShowVentSections(false)}
         />
       )}

@@ -12502,7 +12502,6 @@ export default function CadPage() {
       setVentSections={setVentSections}
       showVentSections={showVentSections}
       setShowVentSections={setShowVentSections}
-      selectedBranchIds={Array.from(selectedBranchIds)}
       showDxfImport={showDxfImport}
       setShowDxfImport={setShowDxfImport}
       handleDxfImport={handleDxfImport}
