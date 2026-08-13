@@ -145,7 +145,21 @@ export default function BranchTopologyTab({
       </div>
     </InlineLabel>
 
-    {branch.shape === "round" && (
+    {/* Способ задания сечения: по габаритам (S и P считаются) или вручную
+        (задаются прямо S и P). Тип выработки из справочника включает ручной
+        режим — там площадь берётся из справочника. */}
+    <InlineLabel label="Задание сечения">
+      <select
+        value={branch.manualSection ? "manual" : "dims"}
+        onChange={(e) => onUpdate({ manualSection: e.target.value === "manual" })}
+        className="w-full text-[11px] px-1"
+        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+        <option value="dims">По габаритам</option>
+        <option value="manual">Вручную (S и P)</option>
+      </select>
+    </InlineLabel>
+
+    {!branch.manualSection && branch.shape === "round" && (
       <InlineLabel label="Диаметр D, м">
         <EditInput
           type="number" step="0.1"
@@ -154,7 +168,7 @@ export default function BranchTopologyTab({
         />
       </InlineLabel>
     )}
-    {(branch.shape === "rect" || branch.shape === "trap" || branch.shape === "arch") && (
+    {!branch.manualSection && (branch.shape === "rect" || branch.shape === "trap" || branch.shape === "arch") && (
       <InlineLabel label="Ширина a, м">
         <EditInput
           type="number" step="0.1"
@@ -163,7 +177,7 @@ export default function BranchTopologyTab({
         />
       </InlineLabel>
     )}
-    {(branch.shape === "rect" || branch.shape === "trap" || branch.shape === "arch") && (
+    {!branch.manualSection && (branch.shape === "rect" || branch.shape === "trap" || branch.shape === "arch") && (
       <InlineLabel label="Высота b, м">
         <EditInput
           type="number" step="0.1"
@@ -172,7 +186,7 @@ export default function BranchTopologyTab({
         />
       </InlineLabel>
     )}
-    {branch.shape === "arch" && (
+    {!branch.manualSection && branch.shape === "arch" && (
       <InlineLabel label="Стрела свода h, м">
         <EditInput
           type="number" step="0.05"
@@ -181,7 +195,7 @@ export default function BranchTopologyTab({
         />
       </InlineLabel>
     )}
-    {branch.shape === "trap" && (
+    {!branch.manualSection && branch.shape === "trap" && (
       <InlineLabel label="Верх c, м">
         <EditInput
           type="number" step="0.1"
@@ -190,31 +204,31 @@ export default function BranchTopologyTab({
         />
       </InlineLabel>
     )}
-    {branch.shape === "custom" && (
-      <>
-        <InlineLabel label="Площадь S, м²">
-          <EditInput
-            type="number" step="0.1"
-            value={branch.area}
-            onChange={(v) => onUpdate({ area: parseFloat(v) || 0 })}
-          />
-        </InlineLabel>
-        <InlineLabel label="Периметр P, м">
-          <EditInput
-            type="number" step="0.1"
-            value={branch.perimeter}
-            onChange={(v) => onUpdate({ perimeter: parseFloat(v) || 0 })}
-          />
-        </InlineLabel>
-      </>
-    )}
-
+    {/* Итоговые S и P. Если сечение задано вручную (в т.ч. после выбора типа
+        выработки из справочника) — разрешаем править их напрямую, иначе они
+        считаются по габаритам и остаются только для чтения. */}
     <InlineLabel label="Периметр P, м">
-      <ComputedInput value={numFmt(branch.perimeter, 2)} />
+      {branch.manualSection ? (
+        <EditInput
+          type="number" step="0.1"
+          value={branch.perimeter}
+          onChange={(v) => onUpdate({ perimeter: parseFloat(v) || 0, manualSection: true })}
+        />
+      ) : (
+        <ComputedInput value={numFmt(branch.perimeter, 2)} />
+      )}
     </InlineLabel>
 
     <InlineLabel label="Площадь S, м²">
-      <ComputedInput value={numFmt(branch.area, 2)} />
+      {branch.manualSection ? (
+        <EditInput
+          type="number" step="0.1"
+          value={branch.area}
+          onChange={(v) => onUpdate({ area: parseFloat(v) || 0, manualSection: true })}
+        />
+      ) : (
+        <ComputedInput value={numFmt(branch.area, 2)} />
+      )}
     </InlineLabel>
 
     <InlineLabel label="Гидр. диаметр Dh, м">

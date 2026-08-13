@@ -1992,6 +1992,21 @@ export default function CadPage() {
       ? Math.round(ref.perimeter * Math.sqrt(area / ref.area) * 100) / 100
       : 0;
 
+    // Габариты (ширина/высота/стрела/диаметр) подгоняем под площадь типа тем
+    // же коэффициентом подобия k = √(S / S_эталона). Иначе в полях остались бы
+    // значения по умолчанию (7 × 5.5, h 3.5), противоречащие площади типа.
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const k = ref.area > 0 && area > 0 ? Math.sqrt(area / ref.area) : 0;
+    const dims: Partial<TopoBranch> = k > 0
+      ? t.shape === "round"
+        ? { diameter: r2(k) }
+        : t.shape === "rect"
+          ? { rectWidth: r2(k), rectHeight: r2(k) }
+          : t.shape === "trap"
+            ? { rectWidth: r2(k), rectHeight: r2(k), trapTopWidth: r2(0.8 * k) }
+            : { rectWidth: r2(k), rectHeight: r2(0.5 * k), archHeight: r2(0.5 * k) }
+      : {};
+
     // Поверхность/крепь: в справочнике хранится названием — находим её id,
     // чтобы расчёт сопротивления получил корректный тип крепи.
     const surf = SURFACE_TYPES.find((s) => s.name === t.surface);
@@ -2001,6 +2016,7 @@ export default function CadPage() {
       // тем, что ввёл пользователь на вкладке «Общие».
       mineTypeName: t.name,
       shape: t.shape,
+      ...dims,
       area,
       perimeter,
       manualSection: true,
