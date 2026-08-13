@@ -81,6 +81,10 @@ import {
 } from "./cad/cadCompute";
 import CadTitleBar from "./cad/CadTitleBar";
 import CadStatusBar from "./cad/CadStatusBar";
+import { useCadHotkeys } from "./cad/useCadHotkeys";
+import { useCadSchemaCheck, useCadLeftPanelResize } from "./cad/useCadSchemaCheck";
+import { useCadHeaters } from "./cad/useCadHeaters";
+import { buildVentPipeLine as buildVentPipeLineImpl } from "./cad/buildVentPipeLine";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -779,197 +783,13 @@ export default function CadPage() {
   };
 
   // ─── ПОСТРОЕНИЕ ВЕНТ. ТРУБОПРОВОДА КАК ПАРАЛЛЕЛЬНОЙ НИТИ ─────────────
-  // По выбранным ветвям строим ОТДЕЛЬНУЮ нить трубопровода: дубликаты узлов
-  // маршрута со смещением вбок, соединённые узкими светло-серыми ветвями
-  // (isVentPipeBranch, ширина ~20% от ветви). Концы нити привязаны к первому и
-  // последнему узлу маршрута — через трубопровод пойдёт воздух (можно ставить ВМП).
+  // Логика вынесена в buildVentPipeLine без изменений: тот же порядок шагов и
+  // те же формулы. Состояние передаётся параметрами.
   const buildVentPipeLine = (branchIds: string[], vpPatchRaw: Partial<TopoBranch>): void => {
-    const brMap = new Map(branchesRaw.map((b) => [b.id, b]));
-    const selected = branchIds.map((id) => brMap.get(id)).filter(Boolean) as TopoBranch[];
-    if (selected.length === 0) return;
-
-    // Параметры трубы (диаметр, материал, R, утечки и т.д.) переносим на ветви
-    // нити — тогда они видны и редактируемы во вкладке свойств ветви. Флаг
-    // hasVentPipe оставляем true (нужен для отображения параметров), а лишний
-    // пунктирный legacy-оверлей для таких ветвей скрыт по isVentPipeBranch.
-    // Вентилятор на ветви вентрубопровода НЕ ставим — явно снимаем hasFan,
-    // иначе на нити появляется лишний символ ВМП.
-    const noFan: Partial<TopoBranch> = { hasFan: false };
-    const vpPatch: Partial<TopoBranch> = { ...vpPatchRaw, hasVentPipe: true, ...noFan };
-
-    // ── РЕДАКТИРОВАНИЕ существующей нити ────────────────────────────────
-    // Если ВСЕ выбранные ветви — уже ветви вентрубопровода (isVentPipeBranch),
-    // значит пользователь повторно открыл диалог для готовой нити. В этом случае
-    // НЕ создаём дубликат, а обновляем эти ветви на месте (синхронизируем
-    // геометрию сечения и распределённое сопротивление трубы).
-    if (selected.every((b) => b.isVentPipeBranch)) {
-      pushHistory();
-      const editDiaM = (vpPatchRaw.vpDiameter ?? 500) / 1000;
-      const editSec = calcSection({ shape: "round", diameter: editDiaM });
-      const editGeom: Partial<TopoBranch> = {
-        shape: "round",
-        diameter: editDiaM,
-        area: Math.round(editSec.area * 1000) / 1000,
-        perimeter: Math.round(editSec.perimeter * 1000) / 1000,
-        dh: Math.round(editSec.dh * 1000) / 1000,
-        manualSection: false,
-      };
-      // Ручной R (если задан) распределяем по длине сегментов; иначе каждый
-      // сегмент считает R по формуле R=6.48·α·L/D⁵ (режим "pipe" из vpPatch).
-      const editManualR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0 ? vpPatchRaw.vpManualR : 0;
-      const mainLen = selected.reduce((s, b) => s + (b.length ?? 0), 0) || 1;
-      const idSet = new Set(branchIds);
-      setBranches((prev) => prev.map((b) => {
-        if (!idSet.has(b.id)) return b;
-        const manualOverride: Partial<TopoBranch> = editManualR > 0
-          ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen) }
-          : {};
-        return {
-          ...b,
-          ...vpPatch,
-          ...editGeom,
-          ...manualOverride,
-        };
-      }));
-      return;
-    }
-
-    // 1) Упорядочиваем ветви в цепочку from→to и получаем последовательность узлов.
-    type Item = { b: TopoBranch; fromId: string; toId: string };
-    const chain: Item[] = [{ b: selected[0], fromId: selected[0].fromId, toId: selected[0].toId }];
-    const rest = selected.slice(1);
-    let changed = true;
-    while (rest.length && changed) {
-      changed = false;
-      for (let i = 0; i < rest.length; i++) {
-        const b = rest[i];
-        const head = chain[0], tail = chain[chain.length - 1];
-        if (b.fromId === tail.toId) { chain.push({ b, fromId: b.fromId, toId: b.toId }); rest.splice(i, 1); changed = true; break; }
-        if (b.toId === tail.toId)   { chain.push({ b, fromId: b.toId, toId: b.fromId }); rest.splice(i, 1); changed = true; break; }
-        if (b.toId === head.fromId) { chain.unshift({ b, fromId: b.fromId, toId: b.toId }); rest.splice(i, 1); changed = true; break; }
-        if (b.fromId === head.fromId){ chain.unshift({ b, fromId: b.toId, toId: b.fromId }); rest.splice(i, 1); changed = true; break; }
-      }
-    }
-    // Ветви, не примкнувшие к цепочке (разрыв) — добавляем как есть в конец.
-    for (const b of rest) chain.push({ b, fromId: b.fromId, toId: b.toId });
-
-    // 2) Последовательность узлов маршрута.
-    const nodeSeq: string[] = [chain[0].fromId];
-    for (const c of chain) nodeSeq.push(c.toId);
-
-    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
-    // Смещение нити вбок — перпендикулярно среднему направлению маршрута.
-    const firstN = nodeMap.get(nodeSeq[0]);
-    const lastN = nodeMap.get(nodeSeq[nodeSeq.length - 1]);
-    if (!firstN || !lastN) return;
-    const dxAll = (lastN.x - firstN.x), dyAll = (lastN.y - firstN.y);
-    const lenAll = Math.hypot(dxAll, dyAll) || 1;
-    // Перпендикуляр (нормированный) × величина смещения (доля длины маршрута, но в разумных пределах)
-    const off = Math.max(2, Math.min(15, lenAll * 0.04));
-    const perpX = (-dyAll / lenAll) * off;
-    const perpY = (dxAll / lenAll) * off;
-
-    pushHistory();
-
-    // 3) Создаём дубликаты узлов маршрута со смещением.
-    const workNodes = [...nodes];
-    const workBranches = [...branchesRaw];
-    const dupNodeId = new Map<string, string>(); // исходный узел → узел нити
-
-    for (const origId of nodeSeq) {
-      if (dupNodeId.has(origId)) continue;
-      const orig = nodeMap.get(origId);
-      if (!orig) continue;
-      const nid = nextNodeId(workNodes);
-      const usedNums = new Set(workNodes.map((n) => parseInt(n.number, 10)).filter((v) => !isNaN(v)));
-      let num = 1; while (usedNums.has(num)) num++;
-      const nn = makeNode(nid, {
-        x: orig.x + perpX, y: orig.y + perpY, z: orig.z,
-        name: "", number: String(num),
-        horizonId: orig.horizonId,
-      } as Partial<TopoNode>);
-      workNodes.push(nn);
-      dupNodeId.set(origId, nid);
-    }
-
-    // Аэродинамическое сопротивление трубы.
-    // Если R задан вручную (vpManualR) — распределяем его по длине сегментов.
-    // Иначе каждый сегмент считает R сам по формуле R=6.48·α·L/D⁵ (режим "pipe"),
-    // как во вкладке «Топология» — vpPatch уже содержит resistanceMode/pipeAlpha/pipeDiameter.
-    const manualPipeR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0 ? vpPatchRaw.vpManualR : 0;
-    const chainTotalLen = chain.reduce((s, c) => s + (c.b.length ?? 0), 0) || 1;
-
-    // Геометрия сечения ветвей нити = КРУГЛАЯ труба диаметром vpDiameter (мм → м).
-    const pipeDiaM = (vpPatchRaw.vpDiameter ?? 500) / 1000;
-    const pipeSec = calcSection({ shape: "round", diameter: pipeDiaM });
-    const pipeGeom: Partial<TopoBranch> = {
-      shape: "round",
-      diameter: pipeDiaM,
-      area: Math.round(pipeSec.area * 1000) / 1000,
-      perimeter: Math.round(pipeSec.perimeter * 1000) / 1000,
-      dh: Math.round(pipeSec.dh * 1000) / 1000,
-      manualSection: false,
-    };
-
-    // 4) Соединяем дубликаты ветвями-трубопроводом (узкими, светло-серыми).
-    const createdIds: string[] = [];
-    for (const c of chain) {
-      const fromDup = dupNodeId.get(c.fromId);
-      const toDup = dupNodeId.get(c.toId);
-      if (!fromDup || !toDup) continue;
-      const bid = nextBranchId(workBranches);
-      // В ручном режиме — доля общего R по длине; иначе оставляем режим "pipe" из vpPatch.
-      const manualOverride: Partial<TopoBranch> = manualPipeR > 0
-        ? { resistanceMode: "manual", manualR: manualPipeR * ((c.b.length ?? 0) / chainTotalLen) }
-        : {};
-      const nb = makeBranch(bid, fromDup, toDup, {
-        horizonId: c.b.horizonId,
-        type: "Вентрубопровод",
-        length: c.b.length,
-        manualLength: true,
-        lineWidth: Math.max(0.6, (c.b.lineWidth && c.b.lineWidth > 0 ? c.b.lineWidth : branchWidth) * 0.2),
-        lineBorder: 0.1,
-        isVentPipeBranch: true,
-        ...vpPatch,
-        ...pipeGeom,
-        ...manualOverride,
-      });
-      workBranches.push(nb);
-      createdIds.push(bid);
-    }
-
-    // 5) Привязываем концы нити к исходным узлам маршрута (вход/выход воздуха).
-    // Длину этих соединительных ветвей считаем ПО КООРДИНАТАМ (узел маршрута →
-    // смещённый дубликат), а не оставляем 0 — иначе проверка ругается «L=0».
-    const workNodeMap = new Map(workNodes.map((n) => [n.id, n]));
-    const startDup = dupNodeId.get(nodeSeq[0]);
-    const endDup = dupNodeId.get(nodeSeq[nodeSeq.length - 1]);
-    if (startDup && startDup !== nodeSeq[0]) {
-      const bid = nextBranchId(workBranches);
-      const a = workNodeMap.get(nodeSeq[0]);
-      const b = workNodeMap.get(startDup);
-      const segLen = a && b ? Math.round(calcBranchLength(a, b)) : 0;
-      workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
-        horizonId: firstN.horizonId, type: "Вентрубопровод (вход)", length: segLen, manualLength: false,
-        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
-      }));
-    }
-    if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
-      const bid = nextBranchId(workBranches);
-      const a = workNodeMap.get(endDup);
-      const b = workNodeMap.get(nodeSeq[nodeSeq.length - 1]);
-      const segLen = a && b ? Math.round(calcBranchLength(a, b)) : 0;
-      workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
-        horizonId: lastN.horizonId, type: "Вентрубопровод (выход)", length: segLen, manualLength: false,
-        lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
-      }));
-    }
-
-    setNodes(workNodes);
-    setBranches(workBranches);
-    setSelectedBranchIds(new Set(createdIds));
-    setSelectedBranchId(createdIds[0] ?? null);
-    setSelectedNodeId(null);
+    buildVentPipeLineImpl(branchIds, vpPatchRaw, {
+      nodes, branchesRaw, branchWidth, nextNodeId, nextBranchId, pushHistory,
+      setNodes, setBranches, setSelectedBranchIds, setSelectedBranchId, setSelectedNodeId,
+    });
   };
 
   // ─── РАЗДЕЛЕНИЕ ВЕТВИ НОВЫМ УЗЛОМ ───────────────────────────────────
@@ -1657,107 +1477,12 @@ export default function CadPage() {
   };
 
   // ── Калориферы: подогрев воздуха и разнос температур по сети ──────────────
-  // Возвращает температуры узлов с учётом работающих калориферов. Подогрев
-  // идёт ВНИЗ ПО ПОТОКУ от ветви с калорифером: греется сам узел за ним и все
-  // узлы, куда этот воздух приходит дальше (с разбавлением на слияниях).
-  // Если калориферов нет или все выключены — возвращает базовые температуры,
-  // то есть подогрев автоматически СБРАСЫВАЕТСЯ (в т.ч. при переходе на лето).
-  const calcHeaterTemps = useCallback((): {
-    temps: Map<string, number>;
-    info: { symId: string; branchId: string; power: number; dt: number; outTemp: number; meetsNorm: boolean }[];
-  } => {
-    const temps = new Map<string, number>();
-    for (const n of nodes) temps.set(n.id, baseNodeTemps[n.id] ?? surfaceTemp);
-    const info: { symId: string; branchId: string; power: number; dt: number; outTemp: number; meetsNorm: boolean }[] = [];
-
-    const heaters = schemaSymbols.filter(
-      s => HEATER_SYMBOL_IDS.has(s.typeId) && s.branchId && isHeaterActive(s.htMode, heatingSeason),
-    );
-    if (heaters.length === 0) return { temps, info };
-
-    const brMap = new Map(branches.map(b => [b.id, b]));
-    // Суммарный приток в узел — для разбавления подогретого воздуха на слияниях
-    const inflowQ = new Map<string, number>();
-    for (const b of branches) {
-      const q = Math.abs(b.flow ?? 0);
-      if (q <= 0) continue;
-      const outId = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
-      inflowQ.set(outId, (inflowQ.get(outId) ?? 0) + q);
-    }
-
-    for (const sym of heaters) {
-      const b = brMap.get(sym.branchId!);
-      if (!b) continue;
-      const flow = b.flow ?? 0;
-      const inNodeId  = flow >= 0 ? b.fromId : b.toId;
-      const outNodeId = flow >= 0 ? b.toId   : b.fromId;
-      const inTemp = temps.get(inNodeId) ?? surfaceTemp;
-
-      const res = calcHeater({
-        method: sym.htMethod ?? "power",
-        power_kW: sym.htPower ?? 0,
-        outTemp_C: sym.htOutTemp ?? MIN_SHAFT_TEMP_C,
-        efficiency: sym.htEfficiency ?? DEFAULT_HEATER_EFFICIENCY,
-        inTemp_C: inTemp,
-        airFlow_m3s: flow,
-      });
-      info.push({
-        symId: sym.id, branchId: b.id,
-        power: res.power_kW, dt: res.deltaT_C,
-        outTemp: res.outTemp_C, meetsNorm: res.meetsNorm,
-      });
-      if (res.deltaT_C <= 0) continue;
-
-      // Разносим подогрев вниз по потоку обходом в ширину. Ограничение по числу
-      // шагов защищает от зацикливания на кольцевых схемах.
-      const queue: { nodeId: string; dt: number }[] = [{ nodeId: outNodeId, dt: res.deltaT_C }];
-      const visited = new Set<string>();
-      let guard = 0;
-      while (queue.length > 0 && guard++ < 20000) {
-        const cur = queue.shift()!;
-        if (cur.dt < 0.05) continue;               // подогрев рассеялся
-        if (visited.has(cur.nodeId)) continue;
-        visited.add(cur.nodeId);
-        temps.set(cur.nodeId, (temps.get(cur.nodeId) ?? surfaceTemp) + cur.dt);
-
-        for (const nb of branches) {
-          const nf = nb.flow ?? 0;
-          if (Math.abs(nf) <= 0) continue;
-          const nIn  = nf >= 0 ? nb.fromId : nb.toId;
-          if (nIn !== cur.nodeId) continue;
-          const nOut = nf >= 0 ? nb.toId : nb.fromId;
-          // Разбавление: подогретый поток смешивается со всем притоком узла
-          const total = Math.max(Math.abs(nf), inflowQ.get(nOut) ?? Math.abs(nf));
-          const dil = total > 0 ? Math.abs(nf) / total : 1;
-          queue.push({ nodeId: nOut, dt: cur.dt * dil });
-        }
-      }
-    }
-    return { temps, info };
-  }, [nodes, branches, schemaSymbols, heatingSeason, baseNodeTemps, surfaceTemp]);
-
-  // Итог по калориферам — для панели свойств и лога расчёта
-  const heaterInfo = useMemo(() => calcHeaterTemps(), [calcHeaterTemps]);
-
-  // АВТОСБРОС подогрева. Как только все калориферы перестали работать
-  // (выключены вручную или наступило лето), расчётные температуры узлов
-  // возвращаются к фоновым — иначе в свойствах узлов остались бы «зимние»
-  // подогретые значения и продолжали бы создавать фантомную естественную тягу.
-  const heatersWorking = heaterInfo.info.some(h => h.dt > 0);
-  const prevHeatersWorking = useRef(heatersWorking);
-  useEffect(() => {
-    if (prevHeatersWorking.current && !heatersWorking) {
-      setNodes(prev => prev.map(n => {
-        const baseT = baseNodeTemps[n.id] ?? surfaceTemp;
-        return { ...n, computedAirTemp: baseT, computedWallTemp: baseT };
-      }));
-      addLog("info", "Калориферы отключены — подогрев снят, температуры узлов сброшены к фоновым");
-    }
-    prevHeatersWorking.current = heatersWorking;
-    // baseNodeTemps намеренно не в зависимостях: сброс нужен строго в момент
-    // отключения калориферов, а не при каждом пересчёте фоновых температур.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heatersWorking]);
+  // Логика вынесена в useCadHeaters без изменений: тот же алгоритм обхода вниз
+  // по потоку и тот же автосброс подогрева при отключении калориферов.
+  const { calcHeaterTemps, heaterInfo, heatersWorking } = useCadHeaters({
+    nodes, branches, schemaSymbols, heatingSeason,
+    baseNodeTemps, surfaceTemp, setNodes, addLog,
+  });
 
   // Активировать инструмент размещения символа
   const handlePickSymbol = (typeId: string) => {
@@ -1900,26 +1625,17 @@ export default function CadPage() {
     setShowPrintDialog(true);
   };
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [searchScope, setSearchScope] = useState<"all" | "nodes" | "branches">("all");
-  const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
-  const [checkTab, setCheckTab] = useState<
-    "near" | "isolated" | "dupes" | "dupbranch" | "zeroR" | "zeroLen" | "highR" | "bulkR" | "manualLen" | "isolatedBranch"
-  >("near");
-  // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
-  const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
-  // Порог сопротивления перемычки, кМюрг (норматив — 686 кМюрг)
-  const [checkBulkRThreshold, setCheckBulkRThreshold] = useState<number>(686);
-  // Результат проверки схемы — считается только когда открыта панель «Проверка».
-  // Мемоизация исключает тяжёлый O(n) пересчёт на каждый ререндер (ховеры и т.п.).
-  const schemaCheckResult = useMemo(() => {
-    if (activeSide !== "check") return null;
-    return checkSchema(nodes, branches, {
-      nearThreshold: checkThreshold,
-      highRThreshold: checkHighRThreshold,
-      bulkRThreshold: checkBulkRThreshold,
-    });
-  }, [activeSide, nodes, branches, checkThreshold, checkHighRThreshold, checkBulkRThreshold]);
+  // Состояние поиска и проверки схемы вынесено в useCadSchemaCheck без
+  // изменений: те же начальные значения и та же мемоизация результата.
+  const {
+    searchQuery, setSearchQuery,
+    searchScope, setSearchScope,
+    checkThreshold, setCheckThreshold,
+    checkTab, setCheckTab,
+    checkHighRThreshold, setCheckHighRThreshold,
+    checkBulkRThreshold, setCheckBulkRThreshold,
+    schemaCheckResult,
+  } = useCadSchemaCheck(activeSide, nodes, branches);
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
   const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
@@ -3047,25 +2763,8 @@ export default function CadPage() {
   // (автопереключение правого таба при выборе объекта убрано — пользователь выбирает вкладку вручную)
 
   // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
-  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(420);
-  const leftDragRef = useRef<{ startX: number; startW: number } | null>(null);
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!leftDragRef.current) return;
-      const dx = e.clientX - leftDragRef.current.startX;
-      const next = Math.min(640, Math.max(220, leftDragRef.current.startW + dx));
-      setLeftPanelWidth(next);
-    };
-    const onUp = () => { leftDragRef.current = null; document.body.style.cursor = ""; };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, []);
-  const startLeftDrag = (e: React.MouseEvent) => {
-    leftDragRef.current = { startX: e.clientX, startW: leftPanelWidth };
-    document.body.style.cursor = "col-resize";
-    e.preventDefault();
-  };
+  // Вынесено в useCadLeftPanelResize без изменений: те же границы 220…640 px.
+  const { leftPanelWidth, setLeftPanelWidth, startLeftDrag } = useCadLeftPanelResize();
 
   // ─────────────────────────────────────────────────────────────────────────
   // Формирует payload ветвей для запроса к backend/airflow.
@@ -3787,164 +3486,6 @@ export default function CadPage() {
   // Подключаем ref чтобы updateBranch мог вызвать расчёт (нужен прямой режим перед реверсом)
   handleSolveRef.current = handleSolve;
 
-  // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
-  // F6 — переключить «тонкие линии» (как в АэроСеть/Венти-CAD: подача в одну тонкую линию).
-  // F9 — запустить расчёт воздухораспределения. Esc — снять выделение.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // isEditing: true если активный элемент — поле ввода или contentEditable
-      const active = document.activeElement as HTMLElement | null;
-      const tag = active?.tagName ?? "";
-      const isEditing = ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT")
-        && active !== document.body)
-        || (active?.isContentEditable ?? false);
-
-      if (e.ctrlKey && (e.key === "z" || e.key === "я" || e.key === "Я")) {
-        e.preventDefault();
-        handleUndo();
-        return;
-      }
-      if (e.ctrlKey && (e.key === "s" || e.key === "ы" || e.key === "Ы")) {
-        e.preventDefault();
-        handleSave();
-        return;
-      }
-      // Ctrl+F / Ctrl+А — открыть поиск по схеме
-      if (e.ctrlKey && (e.key === "f" || e.key === "F" || e.key === "а" || e.key === "А")) {
-        e.preventDefault();
-        setLeftPanelOpen(true);
-        setActiveSide("search");
-        return;
-      }
-      // Ctrl+P / Ctrl+З — открыть диалог печати
-      if (e.ctrlKey && (e.key === "p" || e.key === "P" || e.key === "з" || e.key === "З")) {
-        e.preventDefault();
-        setShowPrintDialog(true);
-        return;
-      }
-      // Ctrl+V / Ctrl+М — вставить условное обозначение из буфера (режим ожидания привязки)
-      if (e.ctrlKey && (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М") && !isEditing) {
-        if (symbolClipboard) {
-          e.preventDefault();
-          setPendingSymbol({ ...symbolClipboard, id: `SYM_${Date.now()}` });
-        }
-        return;
-      }
-      // Ctrl+C / Ctrl+С — скопировать выбранное обозначение
-      if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && !isEditing && selectedSymbolId) {
-        const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
-        if (sym) { e.preventDefault(); setSymbolClipboard(sym); }
-        return;
-      }
-      // Ctrl+D / Ctrl+В — дублировать выбранное обозначение (режим ожидания привязки)
-      if (e.ctrlKey && (e.key === "d" || e.key === "D" || e.key === "в" || e.key === "В") && !isEditing && selectedSymbolId) {
-        const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
-        if (sym) {
-          e.preventDefault();
-          setPendingSymbol({ ...sym, id: `SYM_${Date.now()}` });
-        }
-        return;
-      }
-      // Ctrl+F1 — свернуть/развернуть ленту (привычно по офисным программам)
-      if (e.ctrlKey && e.key === "F1") {
-        e.preventDefault();
-        toggleRibbonCollapsed();
-        return;
-      }
-      // F3 — режим привязки ветвей к позиции
-      if (e.key === "F3") {
-        e.preventDefault();
-        if (selectedPositionId) setPosBranchBindMode((v) => !v);
-        return;
-      }
-      // F6, F9 — всегда работают
-      if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
-      if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
-      // И/B — добавить выноску (режим рисования) или убрать
-      if ((e.key === "и" || e.key === "И" || e.key === "b" || e.key === "B") && !isEditing) {
-        e.preventDefault();
-        if (selectedPositionId) {
-          const pos = positions.find(p => p.id === selectedPositionId);
-          if (pos) {
-            const hasLeader = pos.leaderEndX != null || pos.leaderBranchId != null;
-            if (hasLeader) {
-              // Уже есть выноска — убираем
-              setPositions(prev => prev.map(p =>
-                p.id === selectedPositionId
-                  ? { ...p, leaderEndX: null, leaderEndY: null, leaderBranchId: null, leaderT: null }
-                  : p
-              ));
-            } else {
-              // Нет выноски — запускаем режим рисования
-              setLeaderDrawMode(selectedPositionId);
-              setLeaderCursorScreen(null);
-              setLeaderSnapBranch(null);
-            }
-          }
-        }
-        return;
-      }
-
-      // Ctrl+R — развернуть выбранную ветвь
-      if (e.ctrlKey && (e.key === "r" || e.key === "R") && !isEditing) {
-        e.preventDefault();
-        if (selectedBranchId) handleReverseBranch(selectedBranchId);
-        return;
-      }
-
-      // S+S (англ.) / Ы+Ы (рус.) — диалог выделения подобных объектов
-      const isSKey = e.key === "s" || e.key === "S" || e.key === "ы" || e.key === "Ы";
-      if (isSKey && !isEditing) {
-        const now = Date.now();
-        if (now - lastSPressRef.current < 600) {
-          e.preventDefault();
-          setShowSelectSimilar(true);
-          lastSPressRef.current = 0;
-        } else {
-          lastSPressRef.current = now;
-        }
-        return;
-      }
-
-      // Del/Backspace — блокируем только если input активен И имеет текстовое содержимое
-      // (т.е. пользователь действительно редактирует текст, а не просто кликнул по полю)
-      if (e.key === "Delete") {
-        if (isEditing) return; // редактируем текст в поле — не удаляем объект
-        e.preventDefault();
-        handleDeleteSelected();
-        return;
-      }
-      if (e.key === "Backspace") {
-        if (isEditing) return;
-        e.preventDefault();
-        handleDeleteSelected();
-        return;
-      }
-
-      if (isEditing) return;
-
-      if (e.key === "Escape" || e.key === "Enter") {
-        // Выход из режима рисования выноски
-        if (leaderDrawMode) {
-          setLeaderDrawMode(null);
-          setLeaderExtraMode(false);
-          setLeaderCursorScreen(null);
-          setLeaderSnapBranch(null);
-          return;
-        }
-        if (pendingSymbol) {
-          setPendingSymbol(null);
-          return;
-        }
-        setSelectedNodeId(null);
-        setSelectedBranchId(null);
-        setTool("select");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, selectedSymbolIds, selectedBranchIds, schemaSymbols, symbolClipboard, pendingSymbol, selectedPositionId, leaderDrawMode]);
 
   // Проверяет, является ли узел промежуточным (ровно 2 смежных ветви)
   const getNodeAdjacentBranches = (nodeId: string) => {
@@ -4203,6 +3744,23 @@ export default function CadPage() {
       setTimeout(() => handleSolveRef.current?.(), 100);
     }
   };
+
+  // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
+  // Логика вынесена в useCadHotkeys без изменений: тот же обработчик и тот же
+  // порядок проверок клавиш.
+  useCadHotkeys({
+    nodes, branchesRaw, schemaSymbols, positions,
+    selectedNodeId, selectedBranchId, selectedBranchIds,
+    selectedSymbolId, selectedSymbolIds, selectedPositionId,
+    symbolClipboard, pendingSymbol, leaderDrawMode, lastSPressRef,
+    handleUndo, handleSave, handleSolve, handleDeleteSelected,
+    handleReverseBranch, toggleRibbonCollapsed,
+    setLeftPanelOpen, setActiveSide, setShowPrintDialog,
+    setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
+    setThinLines, setPositions, setLeaderDrawMode, setLeaderExtraMode,
+    setLeaderCursorScreen, setLeaderSnapBranch, setShowSelectSimilar,
+    setSelectedNodeId, setSelectedBranchId, setTool,
+  });
 
   const handleCtxAction = (action: string) => {
     const nodeId = ctxMenu?.kind === "node" ? ctxMenu.id : undefined;
