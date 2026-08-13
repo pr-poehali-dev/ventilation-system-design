@@ -29,7 +29,12 @@ const HW_FP_KEY        = "pvs_hw_fp";
 // получал лицензию без ввода ключа. Свой случайный номер делает установку
 // различимой.
 const INSTALL_ID_KEY   = "pvs_install_id";
-const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
+// Сколько живёт сохранённая лицензия без единого подтверждения от сервера.
+// Раньше было 12 часов: любой запуск на следующий день заново дёргал сервер,
+// даже если ключ выдан на год. Теперь 14 суток — ровно столько же, сколько
+// разрешённый оффлайн-режим на руднике. Как часто программа реально ходит на
+// сервер, задаёт nextCheckAt (см. calcNextCheckAt), а не этот срок.
+const CACHE_TTL_MS     = 14 * 24 * 60 * 60 * 1000; // 14 суток
 // Версия формулы отпечатка. Увеличивается при изменении состава характеристик,
 // чтобы кэш, посчитанный по прежней формуле, не использовался после обновления.
 // v2 — отпечаток без браузерозависимых характеристик (один ПК = одно место
@@ -123,6 +128,14 @@ export interface LicenseInfo {
   daysLeft?: number;       // дней до истечения оффлайн-кэша (только при offline=true)
   offlineExpired?: boolean; // кэш просрочен (>14 дней без интернета)
   emergency?: boolean;     // true — активирован аварийный оффлайн-ключ (без интернета)
+  /** Дата окончания лицензии (ISO), как её знает сервер */
+  expiresAt?: string;
+  /**
+   * Когда имеет смысл снова спросить сервер (метка времени).
+   * До этого момента программа работает по сохранённой лицензии и в сеть
+   * не обращается вовсе — см. isCheckDue().
+   */
+  nextCheckAt?: number;
 }
 
 export interface MachineInfo {
@@ -367,6 +380,42 @@ export function loadCachedLicense(): LicenseInfo | null {
   } catch { return null; }
 }
 
+/**
+ * КОГДА ИМЕЕТ СМЫСЛ СНОВА СПРОСИТЬ СЕРВЕР.
+ *
+ * Раньше программа обращалась к серверу при КАЖДОМ запуске. У активных людей
+ * это десятки обращений в день (открыл-закрыл, перезагрузка, второе окно) —
+ * при том что ключ выдан на год и за сутки с ним ничего не происходит.
+ *
+ * Теперь срок следующей проверки зависит от того, сколько ключу осталось жить:
+ *   • больше 60 дней  — раз в 7 суток (типичный годовой ключ);
+ *   • от 7 до 60 дней — раз в сутки;
+ *   • меньше 7 дней   — каждый запуск (человек должен вовремя узнать об окончании).
+ *
+ * Отзыв лицензии всё равно сработает: место перестанет подтверждаться при
+ * очередной проверке, а сохранённая лицензия живёт ограниченное время.
+ */
+function calcNextCheckAt(expiresAt?: string): number {
+  const now = Date.now();
+  if (!expiresAt) return now + 24 * 60 * 60 * 1000; // срок неизвестен — раз в сутки
+  const daysLeft = (new Date(expiresAt).getTime() - now) / (24 * 60 * 60 * 1000);
+  if (daysLeft > 60) return now + 7 * 24 * 60 * 60 * 1000;
+  if (daysLeft > 7)  return now + 24 * 60 * 60 * 1000;
+  return now; // срок на исходе — проверяем каждый запуск
+}
+
+/**
+ * Пора ли обращаться к серверу. Если нет — программа стартует полностью
+ * офлайн, по сохранённой лицензии, без единого сетевого запроса.
+ */
+export function isCheckDue(cached: LicenseInfo | null): boolean {
+  if (!cached?.licensed) return true;      // лицензии нет — спросить надо
+  if (cached.emergency) return true;       // аварийный ключ — проверяем, вдруг связь появилась
+  const next = cached.nextCheckAt;
+  if (typeof next !== "number") return true;
+  return Date.now() >= next;
+}
+
 function saveCache(info: LicenseInfo) {
   try {
     storage.set(STORAGE_KEY, JSON.stringify({ ...info, checkedAt: Date.now() }));
@@ -463,6 +512,10 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
     seats:     data.seats,
     offline:   !!data.offline,
     daysLeft:  data.days_left,
+    expiresAt: data.expires_at ?? undefined,
+    // Планируем следующее обращение к серверу по реальному сроку ключа:
+    // годовой ключ — раз в неделю, истекающий — каждый запуск.
+    nextCheckAt: data.licensed ? calcNextCheckAt(data.expires_at) : undefined,
   };
   saveCache(info);
   return info;
@@ -538,6 +591,8 @@ export async function activateLicense(
     key: data.key,
     owner: data.owner,
     seats: data.seats,
+    expiresAt: data.expires_at ?? undefined,
+    nextCheckAt: calcNextCheckAt(data.expires_at),
   };
   saveCache(info);
   return info;

@@ -278,18 +278,38 @@ def handler(event: dict, context) -> dict:
             """, (user_agent, hostname, platform, screen_info,
                   app_version, core_version, ip, modules, seat_id))
 
-        log_event(cur, license_id=lic_id, license_key=key, seat_id=seat_id,
-                  event_type="check_ok", fph=fph, hostname=hostname,
-                  platform=platform, app_version=app_version, ip=ip,
-                  detail=modules or None)
+        # ЭКОНОМИЯ ЗАПИСЕЙ В ЖУРНАЛ. Раньше КАЖДАЯ успешная проверка добавляла
+        # строку в license_events. При десятке рабочих мест это тысячи почти
+        # одинаковых записей в неделю: журнал распухал, а полезного в нём —
+        # только факт «программа запускалась в такой-то день».
+        #
+        # Теперь успешную проверку пишем НЕ ЧАЩЕ РАЗА В СУТКИ на рабочее место.
+        # Для отчётности этого достаточно (видно, в какие дни человек работал),
+        # а нагрузка на базу падает в разы. Все нештатные события (отозвана,
+        # просрочена, места кончились) по-прежнему пишутся всегда.
+        cur.execute("""
+            SELECT 1 FROM license_events
+            WHERE seat_id = %s AND event_type = 'check_ok'
+              AND created_at > NOW() - INTERVAL '1 day'
+            LIMIT 1
+        """, (seat_id,))
+        if not cur.fetchone():
+            log_event(cur, license_id=lic_id, license_key=key, seat_id=seat_id,
+                      event_type="check_ok", fph=fph, hostname=hostname,
+                      platform=platform, app_version=app_version, ip=ip,
+                      detail=modules or None)
 
         conn.commit()
         conn.close()
+        # expires_at отдаём клиенту, чтобы он знал реальный срок ключа и не
+        # спрашивал сервер каждый запуск: при ключе на год достаточно одной
+        # проверки в неделю (см. src/lib/license.ts, nextCheckAt).
         return resp(200, {
             "licensed": True,
             "key": key,
             "owner": owner,
             "seats": {"max": max_seats, "used": int(used_seats)},
+            "expires_at": expires_at.isoformat() if expires_at else None,
             "fingerprint_updated": hw_restored,
         })
 
@@ -453,6 +473,9 @@ def handler(event: dict, context) -> dict:
             "key": license_key,
             "owner": owner,
             "seats": {"max": max_seats, "used": int(used_seats)},
+            # Срок ключа — чтобы программа сразу знала, когда её снова проверять
+            # (годовой ключ достаточно подтверждать раз в неделю).
+            "expires_at": expires_at.isoformat() if expires_at else None,
             "fingerprint_updated": hw_restored,
         })
 

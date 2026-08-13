@@ -273,7 +273,10 @@ def handler(event: dict, context) -> dict:
                 SELECT id, fingerprint, activated_at, last_seen_at,
                        user_agent, hostname, platform, screen_info,
                        app_version, last_ip, last_modules,
-                       (last_seen_at > NOW() - INTERVAL '10 minutes') AS online,
+                       -- 45 минут: программа шлёт сигнал «я на связи» раз в 30
+                       -- минут (см. src/hooks/useLicense.ts), порог обязан быть
+                       -- больше интервала, иначе место мигало бы «офлайн».
+                       (last_seen_at > NOW() - INTERVAL '45 minutes') AS online,
                        core_version,
                        -- Сколько разных адресов в интернете обращалось под этим
                        -- местом за 30 дней. Несколько адресов — признак, что
@@ -330,7 +333,12 @@ def handler(event: dict, context) -> dict:
 
         # ── monitoring_overview — сводка мониторинга по всем 5 направлениям ───────
         if action == "monitoring_overview":
-            online_min = int(body.get("online_minutes", 10))
+            # Порог «место онлайн». Связан с интервалом сигнала «я на связи» в
+            # программе (src/hooks/useLicense.ts, HEARTBEAT_MS = 30 минут):
+            # порог обязан быть заметно больше интервала, иначе работающие люди
+            # мигали бы «офлайн» между сигналами. Интервал подняли ради экономии
+            # обращений к серверу — вместе с ним подняли и порог.
+            online_min = int(body.get("online_minutes", 45))
             expiring_days = int(body.get("expiring_days", 30))
 
             # 1. Живые сессии: онлайн-места (heartbeat < online_min минут)

@@ -38,14 +38,23 @@ export default function AppUpdateBanner() {
     // того, при КАЖДОМ возврате на вкладку — при работе в двух окнах это давало
     // поток запросов на ровном месте. Версия программы так часто не меняется.
     //
-    // Теперь интервал 4 часа, а между любыми двумя проверками выдерживается
-    // минимум 30 минут (throttle) — переключение окон больше не спамит сервер.
-    const MIN_GAP_MS = 30 * 60 * 1000;
-    let lastCheckAt = 0;
+    // Затем интервал подняли до 4 часов с паузой 30 минут между проверками.
+    // Но пауза жила в памяти вкладки: после перезапуска программы счётчик
+    // обнулялся, и каждый новый запуск снова дёргал сервер.
+    //
+    // Теперь интервал 12 часов, пауза между проверками — 6 часов, и отметка о
+    // последней проверке хранится на устройстве: перезапуски программы больше
+    // не порождают лишних обращений. Новая версия выходит не чаще, чем раз в
+    // несколько дней, — узнать о ней дважды в сутки более чем достаточно.
+    const MIN_GAP_MS = 6 * 60 * 60 * 1000;
+    const LAST_KEY = "pvs_last_ver_check";
+    const readLast = (): number => {
+      try { return Number(localStorage.getItem(LAST_KEY)) || 0; } catch { return 0; }
+    };
 
     const check = async () => {
-      if (Date.now() - lastCheckAt < MIN_GAP_MS) return;
-      lastCheckAt = Date.now();
+      if (Date.now() - readLast() < MIN_GAP_MS) return;
+      try { localStorage.setItem(LAST_KEY, String(Date.now())); } catch { /* ignore */ }
       try {
         const d = await fetchRemoteVersion();
         if (cancelled) return;
@@ -64,7 +73,7 @@ export default function AppUpdateBanner() {
     // 1. При старте — с небольшой задержкой, чтобы не мешать загрузке интерфейса.
     const t = window.setTimeout(check, 4000);
     // 2. Периодически — чтобы длительно открытая вкладка узнала о новой версии.
-    const iv = window.setInterval(check, 4 * 60 * 60 * 1000);
+    const iv = window.setInterval(check, 12 * 60 * 60 * 1000);
     // 3. При возврате на вкладку — самый частый сценарий, когда вышло обновление.
     //    Сам check защищён throttle-ом, поэтому частые переключения безопасны.
     const onVisible = () => { if (document.visibilityState === "visible") check(); };
