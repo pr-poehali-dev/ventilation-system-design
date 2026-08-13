@@ -879,12 +879,39 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // торцами в общих узлах. В SVG порядок сохраняется естественно, здесь —
     // выносим дым в конец fill-прохода слоя.
 
-    // Бегущий пунктир
-    if (showDashes) {
-      ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "butt";
-      ctx.globalAlpha = 0.95; ctx.setLineDash([10, 8]); ctx.lineDashOffset = -animOffset;
-      ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
-      ctx.lineCap = "round"; ctx.lineDashOffset = 0;
+    // Движение воздуха — цепочка стрелок, бегущих вдоль ветви.
+    // Раньше рисовался бегущий пунктир: он передавал скорость, но не направление.
+    // Стрелки показывают, куда идёт воздух, и так же «едут» вдоль ветви.
+    if (showDashes && segLen > 24) {
+      const step = Math.max(22, Math.min(48, w * 6));
+      const ah = Math.max(3, Math.min(7, w * 0.9));
+      const al = Math.max(5, Math.min(12, w * 1.6));
+      const from0 = al, to0 = segLen - al - step;
+      if (to0 > from0) {
+        const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+        // Общий для всех ветвей счётчик анимации приводим к шагу этой ветви,
+        // чтобы стрелки ехали непрерывно и не «прыгали» при смене шага.
+        const shift = ((animOffset / 18) % 1) * step;
+        const ux = dx / segLen, uy = dy / segLen;
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = Math.max(0.5, w * 0.12);
+        ctx.lineJoin = "round";
+        for (let i = 0; i < count; i++) {
+          const d0 = from0 + i * step + shift;
+          ctx.save();
+          ctx.translate(sxA + ux * d0, syA + uy * d0);
+          ctx.rotate(angle);
+          ctx.beginPath();
+          ctx.moveTo(-al, -ah); ctx.lineTo(al, 0); ctx.lineTo(-al, ah);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
     }
 
     // Шевроны — один ctx.save/restore на всю ветвь вместо N штук

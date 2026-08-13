@@ -10165,7 +10165,7 @@ export default function CadPage() {
                 color: flowDisplay !== "off" ? "white" : "#1f1f1f",
                 border: "1px solid " + (flowDisplay !== "off" ? "#1d4ed8" : "#d0d0d0"),
               }}
-              title="Анимация движения воздуха — вкл/откл">
+              title="Движение воздуха — стрелки направления вдоль ветвей, вкл/откл">
               <Icon name="Wind" size={11} /> Анимация
             </button>
 

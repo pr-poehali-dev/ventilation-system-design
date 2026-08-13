@@ -2995,16 +2995,42 @@ export default function TopoCanvas(props: Props) {
                 );
               })()}
 
-              {/* Бегущий пунктир в направлении потока (как в Вентиляция 2.0) */}
-              {showDashes && (
-                <line x1={sxA} y1={syA} x2={sxB} y2={syB}
-                  stroke={color} strokeWidth={w} strokeLinecap="butt"
-                  strokeDasharray="10 8" opacity="0.95">
-                  {/* dashoffset уменьшается → штрихи бегут от A к B */}
-                  <animate attributeName="stroke-dashoffset"
-                    from="18" to="0" dur={`${animDur}s`} repeatCount="indefinite" />
-                </line>
-              )}
+              {/* Движение воздуха — цепочка стрелок, бегущих вдоль ветви.
+                  Раньше здесь был бегущий пунктир: он показывал скорость, но не
+                  показывал НАПРАВЛЕНИЕ — приходилось догадываться по цвету и
+                  меткам. Стрелки сразу видно, куда идёт воздух.
+                  Шаг цепочки постоянный, вся цепочка сдвигается на один шаг за
+                  цикл — получается непрерывный «бег» без разрывов. */}
+              {showDashes && segLen > 24 && (() => {
+                const step = Math.max(22, Math.min(48, w * 6));
+                const angle = Math.atan2(uy, ux) * 180 / Math.PI;
+                const ah = Math.max(3, Math.min(7, w * 0.9));   // половина высоты
+                const al = Math.max(5, Math.min(12, w * 1.6));  // длина наконечника
+                // Держим стрелки внутри ветви: цепочка уезжает вперёд на шаг,
+                // поэтому крайние позиции считаем с запасом на этот сдвиг.
+                const from0 = al, to0 = segLen - al - step;
+                if (to0 <= from0) return null;
+                const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                return (
+                  <g opacity="0.95">
+                    <animateTransform attributeName="transform" type="translate"
+                      from="0 0" to={`${ux * step} ${uy * step}`}
+                      dur={`${animDur}s`} repeatCount="indefinite" />
+                    {Array.from({ length: count }, (_, i) => {
+                      const d0 = from0 + i * step;
+                      const cx = sxA + ux * d0;
+                      const cy = syA + uy * d0;
+                      return (
+                        <g key={i} transform={`translate(${cx},${cy}) rotate(${angle})`}>
+                          <polygon points={`${-al},${-ah} ${al},0 ${-al},${ah}`}
+                            fill={color} stroke="white" strokeWidth={Math.max(0.5, w * 0.12)}
+                            strokeLinejoin="round" />
+                        </g>
+                      );
+                    })}
+                  </g>
+                );
+              })()}
 
               {/* Шевроны ▶▶▶ вдоль ветви, повёрнутые по направлению потока */}
               {showChevrons && segLen > 24 && (() => {
