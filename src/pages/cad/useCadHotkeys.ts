@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import type { Position } from "@/lib/positions";
 import type { SideTab } from "./cadTypes";
 import type { CadTool } from "@/components/cad/TopoCanvas";
+import { FAN_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import type { SchemaSymbol } from "./cadTypes";
 
 export interface CadHotkeysDeps {
@@ -80,6 +81,30 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
     setSelectedNodeId, setSelectedBranchId, setTool,
   } = d;
 
+
+  // ── Копирование вентилятора вместе с характеристиками ────────────────────
+  // Вентилятор — это свойства ВЕТВИ (модель, обороты, угол лопаток, установка),
+  // а значок УО лишь показывает его на схеме. Раньше Ctrl+C копировал только
+  // значок, и на новом месте появлялась «пустая» картинка без настроек.
+  // Здесь снимаем настройки вентилятора с ветви и кладём их в буфер вместе
+  // со значком, чтобы при вставке применить к новой ветви.
+  const FAN_PRESET_FIELDS = [
+    "fanType", "fanMode", "fanPressure", "fanName", "fanCurveId", "fanRpm",
+    "fanBladeAngle", "fanParallel", "fanInstall", "fanCrossingR",
+    "fanWindowArea", "fanReverse", "fanStopped",
+  ] as const;
+
+  const withFanPreset = (sym: SchemaSymbol): SchemaSymbol => {
+    if (!FAN_SYMBOL_IDS.has(sym.typeId) || !sym.branchId) return sym;
+    const br = (branchesRaw as Array<Record<string, unknown>>).find(b => b.id === sym.branchId);
+    if (!br || !br.hasFan) return sym;
+    const preset: Record<string, unknown> = {};
+    for (const f of FAN_PRESET_FIELDS) {
+      if (br[f] !== undefined) preset[f] = br[f];
+    }
+    return { ...sym, fanPreset: preset };
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // isEditing: true если активный элемент — поле ввода или contentEditable
@@ -123,7 +148,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
       // Ctrl+C / Ctrl+С — скопировать выбранное обозначение
       if (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "с" || e.key === "С") && !isEditing && selectedSymbolId) {
         const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
-        if (sym) { e.preventDefault(); setSymbolClipboard(sym); }
+        if (sym) { e.preventDefault(); setSymbolClipboard(withFanPreset(sym)); }
         return;
       }
       // Ctrl+D / Ctrl+В — дублировать выбранное обозначение (режим ожидания привязки)
@@ -131,7 +156,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
         if (sym) {
           e.preventDefault();
-          setPendingSymbol({ ...sym, id: `SYM_${Date.now()}` });
+          setPendingSymbol({ ...withFanPreset(sym), id: `SYM_${Date.now()}` });
         }
         return;
       }

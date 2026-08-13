@@ -337,6 +337,10 @@ export async function drawSymbolsToCanvas(
       const uFlowF = getUnit(unitsConfig, "flow");
       const fanLines: string[] = [];
       if (brFan?.hasFan) {
+        // Название вентилятора — из его параметров (поле «Название»), первой
+        // строкой. Раньше индикатор «Описание» брал название ВЕТВИ и показывал
+        // тип выработки, а не марку вентилятора.
+        if (icFan.fanNameInd && brFan.fanName) fanLines.push(brFan.fanName);
         // Расход в рабочей точке вентилятора — то же значение, что показано в
         // свойствах вентилятора («Q выраб.»), со знаком при реверсе.
         if (icFan.fanFlow) {

@@ -9178,8 +9178,12 @@ export default function CadPage() {
                     indRow("fanShaftPower", "Мощность вентилятора"),
                     indRow("fanEfficiency", "КПД вентилятора"),
                   ])}
+                  {/* Отдельный ключ fanNameInd — подпись берётся из НАЗВАНИЯ
+                      ВЕНТИЛЯТОРА (поле «Название» в его параметрах). Раньше
+                      здесь стоял branchName, общий с подписью ветви, поэтому
+                      показывался тип выработки, а не название вентилятора. */}
                   {indSection("Описание", [
-                    indRow("branchName", "Описание объекта"),
+                    indRow("fanNameInd", "Название вентилятора"),
                   ])}
                 </div>
               );
@@ -10425,6 +10429,14 @@ export default function CadPage() {
                   offsetX: 0,
                   offsetY: 0,
                 };
+                // ── Вставка ВЕНТИЛЯТОРА вместе с характеристиками ──────────
+                // Вентилятор — это свойства ВЕТВИ (модель, обороты, угол
+                // лопаток, установка), значок лишь показывает его на схеме.
+                // Раньше вставлялась «пустая» картинка без настроек — теперь
+                // скопированные параметры применяются к новой ветви.
+                if (FAN_SYMBOL_IDS.has(newSym.typeId) && newSym.fanPreset) {
+                  updateBranch(branchId, { hasFan: true, ...(newSym.fanPreset as Partial<TopoBranch>) });
+                }
                 setSchemaSymbols(prev => [...prev, newSym]);
                 setSelectedSymbolId(newSym.id);
                 setSelectedBranchId(null);

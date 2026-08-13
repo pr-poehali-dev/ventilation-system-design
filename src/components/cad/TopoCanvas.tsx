@@ -3284,6 +3284,10 @@ export default function TopoCanvas(props: Props) {
                 const uPresF = getUnit(unitsConfig, "pressure");
                 const uFlowF = getUnit(unitsConfig, "flow");
                 const fanLines: string[] = [];
+                // Название вентилятора — из его параметров (поле «Название»),
+                // первой строкой. Раньше индикатор «Описание» брал название
+                // ВЕТВИ и показывал тип выработки, а не марку вентилятора.
+                if (icFan.fanNameInd && brFan.fanName) fanLines.push(brFan.fanName);
                 // Расход в рабочей точке вентилятора — то же значение, что в
                 // свойствах вентилятора («Q выраб.»), со знаком при реверсе.
                 if (icFan.fanFlow) {

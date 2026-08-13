@@ -42,6 +42,8 @@ export interface InfoDisplayConfig {
   // ─── Индикаторы вентилятора ─────────────────────────────────────
   /** Расход воздуха в рабочей точке вентилятора — подпись у значка вентилятора */
   fanFlow: boolean;
+  /** Название вентилятора (поле «Название» в его параметрах) — подпись у значка */
+  fanNameInd: boolean;
   fanPressure: boolean;
   fanShaftPower: boolean;
   fanEfficiency: boolean;
@@ -100,6 +102,7 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   branchQCOStart: false,
   branchQCOEnd: false,
   fanFlow: false,
+  fanNameInd: false,
   fanPressure: false,
   fanShaftPower: false,
   fanEfficiency: false,
