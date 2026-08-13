@@ -75,123 +75,12 @@ import {
   ToolBtn, toolLabel, ViewBtn, FlowBtn,
 } from "./cad/cadComponents";
 
-const AIRFLOW_URL      = API_URLS.airflow;
-const EXPLOSION_URL    = API_URLS.explosionCalculator;
-const WATER_URL        = API_URLS.waterHydraulics;
-
-// Безопасное форматирование числа: не роняет рендер на NaN/undefined/Infinity.
-const safeFixed = (v: unknown, digits = 1): string => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n.toFixed(digits) : "—";
-};
-
-
-// ─── Память расчётов ядра (общая для всех видов расчёта) ─────────────────────
-// Расчёт пожара и проверка устойчивости проветривания устроены итерационно:
-// внутри одного нажатия кнопки сеть пересчитывается несколько раз подряд, а
-// раунды нередко повторяются с ТЕМИ ЖЕ исходными данными — когда сценарий уже
-// сошёлся и его параметры между раундами перестали меняться. Такие повторы
-// раньше уходили на сервер и считались заново.
-//
-// Память живёт на уровне отправки запроса, поэтому одинаково работает для всех
-// расчётов: воздухораспределение (F9), пожар, устойчивость, батч-сценарии.
-//
-// Ограничения сделаны намеренно:
-//   • храним последние 24 ответа — этого хватает на раунды одного расчёта,
-//     при этом память не растёт бесконечно на больших схемах;
-//   • ключ = полное тело запроса, поэтому любое изменение данных (сопротивление,
-//     температура, депрессия пожара, метод, допуски) даёт новый расчёт;
-//   • ошибочные ответы не запоминаются — см. postAirflow ниже.
-const AIRFLOW_CACHE_LIMIT = 24;
-const airflowCache = new Map<string, string>();
-
-/** Сбрасывает память расчётов (вызывается при загрузке другого проекта). */
-function clearAirflowCache(): void {
-  airflowCache.clear();
-}
-
-/** Есть ли готовый результат для такого запроса (для пояснения в журнале). */
-function wasAirflowCached(body: unknown): boolean {
-  return airflowCache.has(JSON.stringify(body));
-}
-
-// Отправка запроса на расчёт воздухораспределения. Большие схемы (тысячи
-// ветвей) весят несколько МБ и упираются в лимит размера тела запроса —
-// поэтому крупный JSON сжимаем gzip прямо в браузере (CompressionStream).
-//
-// ВАЖНО: сжатое тело передаём НЕ бинарно и НЕ через заголовок
-// Content-Encoding: gzip. И то, и другое ненадёжно — прокси/шлюз (особенно
-// десктопный WebView2/C#) может распаковать тело сам, потерять заголовок или
-// «испортить» бинарные байты, и функция получала мусор → «Ошибка парсинга
-// JSON» на схемах >2000 ветвей.
-//
-// Надёжный транспорт: gzip → base64 → кладём строкой в обычный JSON-конверт
-// {"__gzip__": "<base64>"}. Content-Type остаётся application/json, тело —
-// чистый текст, который ни один прокси не трогает. Бэкенд первым делом
-// распознаёт конверт и распаковывает.
-async function postAirflow(body: unknown): Promise<Response> {
-  const json = JSON.stringify(body);
-
-  // Точно такой же запрос уже считался — отдаём сохранённый ответ.
-  // Возвращаем новый Response, т.к. тело ответа читается только один раз.
-  const hit = airflowCache.get(json);
-  if (hit !== undefined) {
-    return new Response(hit, {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  const canGzip = typeof (globalThis as { CompressionStream?: unknown }).CompressionStream !== "undefined";
-  // Готовим финальное тело запроса (со сжатием для крупных схем > 512 КБ).
-  let payload = json;
-  if (canGzip && json.length > 512_000) {
-    try {
-      const stream = new Response(json).body!.pipeThrough(
-        new CompressionStream("gzip"),
-      );
-      const gzBuf = await new Response(stream).arrayBuffer();
-      // Uint8Array → base64 порциями (btoa не принимает большие строки целиком)
-      const bytes = new Uint8Array(gzBuf);
-      let bin = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-      }
-      payload = JSON.stringify({ __gzip__: btoa(bin) });
-    } catch {
-      payload = json;
-    }
-  }
-  // Отправка на активный расчётный сервер с аварийным failover на резерв
-  // (переключается администратором либо автоматически при исчерпании лимита).
-  const { response } = await postCompute((url) =>
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payload,
-    }),
-  );
-
-  // Успешный расчёт запоминаем. Ошибки (в т.ч. «error» в теле ответа) НЕ
-  // сохраняем: повторная попытка должна честно уйти на сервер.
-  // Тело читаем в текст и отдаём копию — исходный Response одноразовый.
-  if (response.ok) {
-    try {
-      const text = await response.clone().text();
-      if (!text.includes('"error"')) {
-        if (airflowCache.size >= AIRFLOW_CACHE_LIMIT) {
-          // Вытесняем самую старую запись (Map хранит порядок вставки).
-          const oldest = airflowCache.keys().next().value;
-          if (oldest !== undefined) airflowCache.delete(oldest);
-        }
-        airflowCache.set(json, text);
-      }
-    } catch { /* не смогли прочитать — просто не запоминаем */ }
-  }
-
-  return response;
-}
+import {
+  AIRFLOW_URL, EXPLOSION_URL, WATER_URL, safeFixed,
+  clearAirflowCache, wasAirflowCached, postAirflow,
+} from "./cad/cadCompute";
+import CadTitleBar from "./cad/CadTitleBar";
+import CadStatusBar from "./cad/CadStatusBar";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -4330,84 +4219,13 @@ export default function CadPage() {
       style={{ background: "#f0f0f0", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "#1f1f1f", height: "100dvh" }}>
 
       {/* ═══ TITLE BAR ════════════════════════════════════════════════════ */}
-      {(() => {
-        // Универсальные функции управления окном: работают и через WebView2 и через postMessage
-        type W = Window & { __pvsWinMinimize?: () => void; __pvsWinMaximize?: () => void; __pvsWinClose?: () => void; __pvsWinDrag?: () => void; __pvsWindowMaximized?: boolean; chrome?: { webview?: { postMessage: (s: string) => void } } };
-        const w = window as W;
-        const winMinimize = () => {
-          if (typeof w.__pvsWinMinimize === "function") w.__pvsWinMinimize();
-          else w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-minimize" }));
-        };
-        const winMaximize = () => {
-          if (typeof w.__pvsWinMaximize === "function") w.__pvsWinMaximize();
-          else w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-maximize" }));
-        };
-        const winClose = () => {
-          if (isDirty && !isEmptyProject) { setShowCloseConfirm(true); return; }
-          if (typeof w.__pvsWinClose === "function") w.__pvsWinClose();
-          else w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close" }));
-        };
-        const winDrag = () => {
-          if (typeof w.__pvsWinDrag === "function") w.__pvsWinDrag();
-          else w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-drag" }));
-        };
-        const isMaximized = !!w.__pvsWindowMaximized;
-        return (
-      <div className="h-7 flex items-center select-none"
-        style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}
-        onMouseDown={e => { if ((e.target as HTMLElement).closest('button')) return; winDrag(); }}
-        onDoubleClick={winMaximize}>
-
-        {/* Иконка + название — слева */}
-        <div className="flex items-center gap-1.5 px-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowAbout(true)}
-            title="О программе"
-            className="flex items-center justify-center hover:bg-black/10 rounded-sm p-0.5 transition-colors"
-            style={{ lineHeight: 0 }}>
-            <AppLogo className="w-4 h-4 object-contain" />
-          </button>
-          <span className="text-xs font-medium text-gray-700">ПВ-Система</span>
-          {/* Пока проект не сохранён и не открыт из файла, имени нет — пишем
-              «Новый проект» серым. Придумывать «Проект1.vproj» нельзя: файла с
-              таким именем не существует, и пользователь ищет его на диске. */}
-          <span className="text-xs text-gray-400">—</span>
-          {projectFileName ? (
-            <span className="text-xs font-semibold" style={{ color: "#1a3a6b" }}>
-              {projectFileName}{isDirty ? " *" : ""}
-            </span>
-          ) : (
-            <span className="text-xs" style={{ color: "#9ca3af" }}>
-              Новый проект{isDirty ? " *" : ""}
-            </span>
-          )}
-        </div>
-
-        {/* Растяжка — drag-зона по центру */}
-        <div className="flex-1 h-full" />
-
-        {/* Кнопки управления окном — справа */}
-        <div className="flex items-center h-full shrink-0">
-          <button
-            className="w-10 h-full hover:bg-black/10 flex items-center justify-center text-[11px] text-gray-600 transition-colors"
-            title="Свернуть" onClick={winMinimize}>
-            ─
-          </button>
-          <button
-            className="w-10 h-full hover:bg-black/10 flex items-center justify-center text-[11px] text-gray-600 transition-colors"
-            title={isMaximized ? "Восстановить" : "Развернуть"} onClick={winMaximize}>
-            {isMaximized ? "❐" : "▢"}
-          </button>
-          <button
-            className="w-10 h-full hover:bg-red-500 hover:text-white flex items-center justify-center text-[11px] text-gray-600 transition-colors"
-            title="Закрыть" onClick={winClose}>
-            ✕
-          </button>
-        </div>
-      </div>
-        );
-      })()}
+      <CadTitleBar
+        projectFileName={projectFileName}
+        isDirty={isDirty}
+        isEmptyProject={isEmptyProject}
+        setShowAbout={setShowAbout}
+        setShowCloseConfirm={setShowCloseConfirm}
+      />
 
       {/* ── Демо-баннер ────────────────────────────────────────────────── */}
       {isDemo && (
@@ -12405,76 +12223,18 @@ export default function CadPage() {
       </div>
 
       {/* ═══ STATUS BAR ═══════════════════════════════════════════════════ */}
-      <div className="h-5 flex items-center justify-between px-2 text-[11px]"
-        style={{ background: "#f0f0f0", borderTop: "1px solid #b8b8b8", color: "#444" }}>
-        <div className="flex items-center gap-3">
-          <span>Готово</span>
-          <span className="text-gray-400">|</span>
-          {selectedNode && <span>Узел: <b>{selectedNode.number || selectedNode.id}</b> · X={selectedNode.x} Y={selectedNode.y} Z={selectedNode.z}</span>}
-          {selectedBranch && <span>Ветвь: <b>{selectedBranch.id}</b> ({selectedBranch.fromId} → {selectedBranch.toId}) · L={selectedBranch.length} м</span>}
-          {!selectedNode && !selectedBranch && <span>Выделите узел или ветвь</span>}
-        </div>
-        <div className="flex items-center gap-3">
-          <span>Инструмент: <b>{toolLabel(tool)}</b></span>
-          <span className="text-gray-400">|</span>
-          <span style={{ color: viewInfo.is3D ? "#7c3aed" : "#0369a1", fontWeight: 600 }}>
-            {viewInfo.is3D ? `3D · Az ${viewInfo.azimuth.toFixed(0)}° / El ${viewInfo.elevation.toFixed(0)}°` : "2D План"}
-          </span>
-          <span className="text-gray-400">|</span>
-          <span>Z-уровень: {zLevel} м</span>
-          <span className="text-gray-400">|</span>
-          {solveResult ? (
-            <>
-              <span className="px-1.5 py-0.5 rounded font-semibold" style={{
-                background: solveResult.ok ? "#dcfce7" : "#fee2e2",
-                color: solveResult.ok ? "#15803d" : "#b91c1c",
-                border: `1px solid ${solveResult.ok ? "#86efac" : "#fca5a5"}`,
-              }}>
-                {solveResult.ok ? "✔" : "✘"} Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
-              </span>
-              {/* Статус реверса по нормативу ПБ */}
-              {branches.some(b => b.fanReverse) && (() => {
-                const revDiag = solveResult.diagnostics?.find(d => d.category === "fan" && (d.level === "error" || d.level === "warning" || d.level === "info"));
-                if (!revDiag) return null;
-                const colors = { error: "#dc2626", warning: "#d97706", info: "#16a34a" };
-                const icons  = { error: "✕", warning: "⚠", info: "✓" };
-                return (
-                  <span className="ml-1 px-1.5 py-0.5 rounded text-[10px]"
-                    style={{ background: revDiag.level === "error" ? "#fee2e2" : revDiag.level === "warning" ? "#fef3c7" : "#f0fdf4",
-                      color: colors[revDiag.level], border: `1px solid ${revDiag.level === "error" ? "#fca5a5" : revDiag.level === "warning" ? "#fcd34d" : "#86efac"}`,
-                      cursor: "pointer" }}
-                    title={revDiag.message}
-                    onClick={() => {}}>
-                    {icons[revDiag.level]} Реверс
-                  </span>
-                );
-              })()}
-            </>
-          ) : (
-            <span className="px-1.5 py-0.5 rounded" style={{
-              background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d",
-            }} title="Нажмите F9, чтобы выполнить расчёт сети">
-              ● Расчёт не выполнялся — F9
-            </span>
-          )}
-
-          <span className="text-gray-400">|</span>
-          <button
-            onClick={() => setShowLogPanel(v => !v)}
-            className="px-2 py-0.5 rounded text-[11px]"
-            style={{
-              background: showLogPanel ? "#1e293b" : "#e2e8f0",
-              color: showLogPanel ? "#e2e8f0" : "#475569",
-              border: "1px solid #cbd5e1",
-              cursor: "pointer",
-            }}
-          >
-            Лог{logEntries.length > 0 ? ` (${logEntries.length})` : ""}
-          </button>
-          <span className="text-gray-400">|</span>
-          <span style={{ color: "#6b7280" }}>S+S — выделить подобное</span>
-        </div>
-      </div>
+      <CadStatusBar
+        selectedNode={selectedNode}
+        selectedBranch={selectedBranch}
+        tool={tool}
+        viewInfo={viewInfo}
+        zLevel={zLevel}
+        solveResult={solveResult}
+        branches={branches}
+        showLogPanel={showLogPanel}
+        setShowLogPanel={setShowLogPanel}
+        logEntries={logEntries}
+      />
     </div>
 
     {/* Сводный расчёт количества воздуха (ФНиП № 505, п. 155) */}
