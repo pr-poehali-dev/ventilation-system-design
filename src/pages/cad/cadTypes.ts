@@ -51,6 +51,13 @@ export interface SchemaSymbol {
   msIndOffsetX?: number;
   msIndOffsetY?: number;
   msIndFontSize?: number;
+  // ── Подпись вентилятора (показатели у значка) ───────────────────────
+  /** Смещение подписи вентилятора по горизонтали (перетаскивание мышью) */
+  fanIndOffsetX?: number;
+  /** Смещение подписи вентилятора по вертикали */
+  fanIndOffsetY?: number;
+  /** Размер шрифта подписи вентилятора (по умолчанию 9) */
+  fanIndFontSize?: number;
   /**
    * Характеристики вентилятора, СКОПИРОВАННЫЕ вместе со значком (Ctrl+C/Ctrl+D).
    *

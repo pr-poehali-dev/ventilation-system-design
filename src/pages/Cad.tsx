@@ -7631,6 +7631,7 @@ export default function CadPage() {
               const isHeaterSym = HEATER_SYMBOL_IDS.has(sym.typeId);
               const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId) && !isMeasureStationSym;
               const isWindowBulkhead = WINDOW_BULKHEAD_IDS.has(sym.typeId);
+              const isFanSym = FAN_SYMBOL_IDS.has(sym.typeId);
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
               // ΔP перемычки = R_sym × Q × |Q| (не dP всей ветви, а только вклад этого символа)
               const symDeltaP = (() => {
@@ -7973,6 +7974,35 @@ export default function CadPage() {
                           </div>
                         </div>
                       )}
+                    </>
+                  )}
+
+                  {/* ── Подпись вентилятора: размер и положение ─────────────
+                      Показатели вентилятора рисуются отдельной подписью у его
+                      значка (какие именно — задаётся на вкладке «Индикаторы
+                      вентилятора»). Здесь настраивается их размер, а положение
+                      меняется перетаскиванием подписи мышью. */}
+                  {isFanSym && brForSym?.hasFan && (
+                    <>
+                      <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-3 uppercase tracking-wide">
+                        Подпись вентилятора
+                      </div>
+                      <div className="flex items-center gap-1 mb-1.5">
+                        <span className="text-gray-500 w-20 flex-shrink-0">Размер</span>
+                        <input type="number" min={1} max={50} step={0.5}
+                          value={sym.fanIndFontSize ?? 9}
+                          onChange={(e) => updSym({ fanIndFontSize: Math.max(1, Math.min(50, Number(e.target.value) || 9)) })}
+                          className="w-16 border border-gray-300 rounded px-1 text-right"
+                          style={{ fontSize: 11 }} />
+                      </div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <button
+                          onClick={() => updSym({ fanIndOffsetX: 0, fanIndOffsetY: 0 })}
+                          className="px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 text-[11px] text-gray-700">
+                          Вернуть на место
+                        </button>
+                        <span className="text-[10px] text-gray-400">подпись двигается мышью</span>
+                      </div>
                     </>
                   )}
 
@@ -10269,6 +10299,7 @@ export default function CadPage() {
               onSymbolOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, offsetX: ox, offsetY: oy } : s))}
               onSymbolIndOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, indOffsetX: ox, indOffsetY: oy } : s))}
               onSymbolMsIndOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, msIndOffsetX: ox, msIndOffsetY: oy } : s))}
+              onSymbolFanIndOffset={(id, ox, oy) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, fanIndOffsetX: ox, fanIndOffsetY: oy } : s))}
               onSymbolScale={(id, delta) => setSchemaSymbols(prev => prev.map(s => s.id === id ? { ...s, scale: Math.max(0.4, Math.min(4, (s.scale ?? 1) + delta)) } : s))}
               onSymbolDelete={(id) => {
                 pushHistory();

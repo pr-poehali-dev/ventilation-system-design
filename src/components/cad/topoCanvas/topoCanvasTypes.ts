@@ -121,7 +121,11 @@ export interface Props {
   schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
     indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;
     bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
+    /** Подпись вентилятора: смещение перетаскиванием и размер шрифта */
+    fanIndOffsetX?: number; fanIndOffsetY?: number; fanIndFontSize?: number;
   }[];
+  /** Перетаскивание подписи вентилятора мышью */
+  onSymbolFanIndOffset?: (id: string, ox: number, oy: number) => void;
   /** Клик по символу — выбрать */
   onSelectSymbol?: (id: string | null) => void;
   /** Выбранный символ */

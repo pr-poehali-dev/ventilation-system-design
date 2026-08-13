@@ -62,7 +62,7 @@ export default function TopoCanvas(props: Props) {
     selectedNodeIds, onNodeMultiSelect,
     infoConfig, zScale = 1, xyScale = 1,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
-    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolMsIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
+    onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
     selectedSymbolIds, onSymbolMultiSelect,
     onSymbolScale, onSymbolDelete,
     activeSymbolTypeId, onSymbolPlace,
@@ -3308,7 +3308,9 @@ export default function TopoCanvas(props: Props) {
                 // чтобы всё на схеме читалось одинаково.
                 const fBwLbl = (thinLines ? 1 : (brFan.lineWidth && brFan.lineWidth > 0 ? brFan.lineWidth : branchWidth)) * _branchObjSF;
                 const fTextSc = Math.max(0.3, fBwLbl * 0.28) * _indZoomSF;
-                const fSizeF = Math.max(3, 8.5 * fTextSc);
+                // Размер шрифта можно задать в параметрах вентилятора
+                // (поле «Размер»), по умолчанию 9 — как у замерных станций.
+                const fSizeF = Math.max(3, 8.5 * fTextSc * ((sym.fanIndFontSize ?? 9) / 9));
                 const lineHF = fSizeF + 3 * _indZoomSF;
                 const boxWF = Math.max(...fanLines.map(l => l.length)) * fSizeF * 0.52 + 10 * _indZoomSF;
                 const boxHF = fanLines.length * lineHF + 6 * _indZoomSF;
@@ -3317,23 +3319,44 @@ export default function TopoCanvas(props: Props) {
                 const perpXF = brLenF > 0 ? -brDyF / brLenF : 0;
                 const perpYF = brLenF > 0 ?  brDxF / brLenF : 0;
                 const gapF = 16 * _branchObjSF * _indZoomSF;
-                const bxF = px + perpXF * (gapF + boxWF / 2);
-                const byF = py + perpYF * (gapF + boxHF / 2);
+                // Подпись можно оттащить мышью — смещение хранится в символе
+                // и не сбивается при изменении масштаба схемы.
+                const fanDragSF = (_branchObjSF * _indZoomSF) || 1;
+                const bxF = px + perpXF * (gapF + boxWF / 2) + (sym.fanIndOffsetX ?? 0) * fanDragSF;
+                const byF = py + perpYF * (gapF + boxHF / 2) + (sym.fanIndOffsetY ?? 0) * fanDragSF;
                 const opacityF = Math.min(1, (view.scale - 0.05) / 0.06);
 
                 return (
                   <g opacity={opacityF}>
                     <line x1={px} y1={py} x2={bxF} y2={byF - boxHF / 2}
                       stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
-                    {fanLines.map((line, i) => (
-                      <text key={i}
-                        x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
-                        textAnchor="middle" fontSize={fSizeF}
-                        fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
-                        style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
-                        {line}
-                      </text>
-                    ))}
+                    <g style={{ cursor: "move" }}
+                      onMouseDown={(e) => {
+                        if (tool !== "select") return;
+                        e.stopPropagation();
+                        const startX = e.clientX, startY = e.clientY;
+                        const origOx = sym.fanIndOffsetX ?? 0;
+                        const origOy = sym.fanIndOffsetY ?? 0;
+                        const onMove = (me: MouseEvent) => {
+                          onSymbolFanIndOffset?.(sym.id, origOx + (me.clientX - startX) / fanDragSF, origOy + (me.clientY - startY) / fanDragSF);
+                        };
+                        const onUp = () => {
+                          window.removeEventListener("mousemove", onMove);
+                          window.removeEventListener("mouseup", onUp);
+                        };
+                        window.addEventListener("mousemove", onMove);
+                        window.addEventListener("mouseup", onUp);
+                      }}>
+                      {fanLines.map((line, i) => (
+                        <text key={i}
+                          x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
+                          textAnchor="middle" fontSize={fSizeF}
+                          fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                          {line}
+                        </text>
+                      ))}
+                    </g>
                   </g>
                 );
               })()}

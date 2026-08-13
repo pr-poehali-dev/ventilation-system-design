@@ -357,7 +357,9 @@ export async function drawSymbolsToCanvas(
           fanLines.push(`ηв=${((brFan.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
       }
       if (fanLines.length > 0) {
-        const fsF = Math.max(6, Math.round(SZ * 0.34));
+        // Размер задаётся в параметрах вентилятора (поле «Размер»), по
+        // умолчанию 9 — как у замерных станций.
+        const fsF = Math.max(6, Math.round(SZ * 0.34 * (((sym as { fanIndFontSize?: number }).fanIndFontSize ?? 9) / 9)));
         const lhF = fsF + 3;
         const boxHF = fanLines.length * lhF + 6;
         const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
@@ -367,8 +369,11 @@ export async function drawSymbolsToCanvas(
         const perpYf = brLenF > 0 ?  brDxF / brLenF : 0;
         const maxLenF = Math.max(...fanLines.map(l => l.length));
         const boxWF = maxLenF * fsF * 0.52 + 10;
-        const bxF = px + perpXf * (16 + boxWF / 2);
-        const byF = py + perpYf * (16 + boxHF / 2);
+        // Смещение подписи, заданное перетаскиванием мышью (см. TopoCanvas).
+        const fanOffX = (sym as { fanIndOffsetX?: number }).fanIndOffsetX ?? 0;
+        const fanOffY = (sym as { fanIndOffsetY?: number }).fanIndOffsetY ?? 0;
+        const bxF = px + perpXf * (16 + boxWF / 2) + fanOffX;
+        const byF = py + perpYf * (16 + boxHF / 2) + fanOffY;
 
         ctx.save();
         ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4;
