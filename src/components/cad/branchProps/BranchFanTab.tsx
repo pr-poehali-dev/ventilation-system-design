@@ -20,6 +20,11 @@ interface BranchFanTabProps {
   onRemoveFan?: () => void;
   fanSymbolScale?: number;
   onFanSymbolScale?: (scale: number) => void;
+  /** Размер подписи вентилятора (показатели у значка), по умолчанию 9 */
+  fanIndFontSize?: number;
+  onFanIndFontSize?: (size: number) => void;
+  /** Вернуть подпись на место (сбросить смещение перетаскивания) */
+  onFanIndResetOffset?: () => void;
   onFanSymbolDelete?: () => void;
   onReverse?: () => void;
   normalFlows?: Record<string, number>;
@@ -29,6 +34,7 @@ interface BranchFanTabProps {
 
 export default function BranchFanTab({
   branch, onUpdate, numFmt, onRemoveFan, fanSymbolScale, onFanSymbolScale,
+  fanIndFontSize, onFanIndFontSize, onFanIndResetOffset,
   onFanSymbolDelete, onReverse, normalFlows, mineFans, onOpenFanLibrary,
 }: BranchFanTabProps) {
   return (
@@ -71,6 +77,38 @@ export default function BranchFanTab({
           <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
         </div>
       </InlineLabel>
+    )}
+
+    {/* Размер ПОДПИСИ вентилятора (показатели у значка: расход, напор,
+        мощность, КПД, название). Какие именно строки выводить — задаётся на
+        вкладке «Индикаторы вентилятора». Положение подписи меняется
+        перетаскиванием её мышью прямо на схеме. */}
+    {onFanIndFontSize && (
+      <InlineLabel label="Размер подписи">
+        <div className="flex items-center gap-1 w-full">
+          <input type="range" min={1} max={50} step={0.5}
+            value={fanIndFontSize ?? 9}
+            onChange={(e) => onFanIndFontSize(Number(e.target.value))}
+            className="flex-1" style={{ accentColor: "#2563eb" }} />
+          <input type="number" min={1} max={50} step={0.5}
+            value={fanIndFontSize ?? 9}
+            onChange={(e) => { const v = Math.min(50, Math.max(1, Number(e.target.value) || 9)); onFanIndFontSize(v); }}
+            className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+            style={{ fontSize: 11 }} />
+        </div>
+      </InlineLabel>
+    )}
+
+    {onFanIndResetOffset && (
+      <div className="px-1 pb-1">
+        <button
+          onClick={onFanIndResetOffset}
+          className="text-[11px] px-2 py-0.5 rounded"
+          style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}
+          title="Подпись двигается мышью прямо на схеме — эта кнопка вернёт её на место">
+          Вернуть подпись на место
+        </button>
+      </div>
     )}
 
     {(onFanSymbolDelete || onReverse) && (
@@ -520,10 +558,36 @@ export default function BranchFanTab({
       const autoDS = cv && cv.diameter > 0 ? Math.PI * cv.diameter * cv.diameter / 4 : 0;
       const dS = (branch.fanWindowArea ?? 0) > 0.001 ? branch.fanWindowArea! : autoDS;
       if (dS <= 0.001) return null;
+      const sBr = branch.area ?? 0;
+      const rWin = fanWindowRkMurg(dS, sBr);
+      // ПОЧЕМУ R МОЖЕТ БЫТЬ НУЛЁМ. Окно в перемычке — это сужение потока:
+      // сопротивление возникает только если окно УЖЕ выработки. Формула
+      // R = ρ/(2·μ²)·(1/ΔS² − 1/S²) при ΔS ≥ S даёт ноль или отрицательное
+      // значение, и раньше пользователь видел просто «0.0000» без пояснений.
+      // Теперь показываем причину: сечение выработки не задано или меньше окна.
+      const noSection = sBr <= 0.001;
+      const windowTooBig = !noSection && dS >= sBr;
       return (
-        <InlineLabel label="R окна, кМюрг">
-          <ComputedInput value={numFmt(fanWindowRkMurg(dS, branch.area ?? 0), 4)} />
-        </InlineLabel>
+        <>
+          <InlineLabel label="R окна, кМюрг">
+            <ComputedInput value={numFmt(rWin, 4)} />
+          </InlineLabel>
+          {windowTooBig && (
+            <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
+              style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+              ⚠ Площадь окна ΔS={numFmt(dS, 2)} м² не меньше сечения выработки
+              S={numFmt(sBr, 2)} м² — окно не сужает поток, поэтому R окна = 0.
+              Проверьте сечение выработки или уменьшите площадь окна.
+            </div>
+          )}
+          {noSection && (
+            <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
+              style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+              ⚠ У выработки не задано сечение S — R окна посчитан без учёта
+              скорости подхода (как для очень большой выработки).
+            </div>
+          )}
+        </>
       );
     })()}
     {(() => {

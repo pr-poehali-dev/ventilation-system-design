@@ -3555,12 +3555,15 @@ export default function CadPage() {
       pushHistory();
       const toDelete = schemaSymbols.filter(s => selectedSymbolIds.has(s.id));
       for (const sym of toDelete) {
-        if (sym.typeId === "fan" && sym.branchId) {
+        // Значков вентилятора пять видов — проверяем весь набор, иначе
+        // при удалении оставались бы характеристики на выработке.
+        if (FAN_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
           updateBranch(sym.branchId, {
             hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0,
             fanStopped: false, fanReverse: false, fanRpm: 0,
             fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
             fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
+            fanWindowArea: 0, fanMode: "constant",
           }, false);
         }
         if (BULKHEAD_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
@@ -3584,12 +3587,16 @@ export default function CadPage() {
     } else if (selectedSymbolId) {
       pushHistory();
       const sym = schemaSymbols.find(s => s.id === selectedSymbolId);
-      if (sym?.typeId === "fan" && sym.branchId) {
+      // Значков вентилятора пять видов — проверяем весь набор, иначе при
+      // удалении клавишей Del исчезала бы только картинка, а модель, обороты
+      // и напор оставались на выработке и участвовали в расчёте.
+      if (sym && FAN_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
         updateBranch(sym.branchId, {
           hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0,
           fanStopped: false, fanReverse: false, fanRpm: 0,
           fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
           fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
+          fanWindowArea: 0, fanMode: "constant",
         }, false);
       }
       // При удалении перемычки — сбрасываем флаг hasBulkhead и параметры ветви,
@@ -7564,9 +7571,23 @@ export default function CadPage() {
                     s.typeId === "fan" && s.branchId === selectedBranch.id ? { ...s, scale } : s
                   ));
                 } : undefined}
-                onFanSymbolDelete={schemaSymbols.some(s => s.typeId === "fan" && s.branchId === selectedBranch.id) ? () => {
-                  const sym = schemaSymbols.find(s => s.typeId === "fan" && s.branchId === selectedBranch.id);
+                onFanSymbolDelete={schemaSymbols.some(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id) ? () => {
+                  const sym = schemaSymbols.find(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   if (sym) removeSymbol(sym.id);
+                } : undefined}
+                fanIndFontSize={(() => {
+                  const sym = schemaSymbols.find(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
+                  return sym?.fanIndFontSize ?? 9;
+                })()}
+                onFanIndFontSize={schemaSymbols.some(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id) ? (size) => {
+                  setSchemaSymbols(prev => prev.map(s =>
+                    FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id ? { ...s, fanIndFontSize: size } : s
+                  ));
+                } : undefined}
+                onFanIndResetOffset={schemaSymbols.some(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id) ? () => {
+                  setSchemaSymbols(prev => prev.map(s =>
+                    FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id ? { ...s, fanIndOffsetX: 0, fanIndOffsetY: 0 } : s
+                  ));
                 } : undefined}
                 onReverse={selectedBranch.hasFan ? () => handleReverseBranch(selectedBranch.id) : undefined}
                 normalFlows={normalFlows}
@@ -10304,12 +10325,21 @@ export default function CadPage() {
               onSymbolDelete={(id) => {
                 pushHistory();
                 const sym = schemaSymbols.find(s => s.id === id);
-                if (sym?.typeId === "fan" && sym.branchId) {
+                // Сброс вентилятора при удалении его значка.
+                // РАНЬШЕ проверялся только тип "fan", а значков вентилятора
+                // пять («вентилятор», «местного проветривания», «осевой»,
+                // «рециркуляционный», «стационарный»). Из-за этого при удалении
+                // клавишей Del исчезала только картинка, а характеристики
+                // (модель, обороты, напор) оставались на выработке и продолжали
+                // участвовать в расчёте. Теперь сбрасываем для ЛЮБОГО значка
+                // вентилятора и очищаем ВСЕ его поля, включая площадь окна.
+                if (sym && FAN_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   updateBranch(sym.branchId, {
                     hasFan: false, fanCurveId: "", fanName: "", fanPressure: 0,
                     fanStopped: false, fanReverse: false, fanRpm: 0,
                     fanBladeAngle: 0, fanParallel: 1, fanEfficiency: 0,
                     fanShaftPower: 0, fanInstall: "Без перемычки", fanCrossingR: 0,
+                    fanWindowArea: 0, fanMode: "constant",
                   }, false);
                 }
                 // Сброс перемычки при удалении символа

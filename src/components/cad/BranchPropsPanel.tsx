@@ -30,6 +30,11 @@ interface BranchPropsPanelProps {
   fanSymbolScale?: number;
   /** Изменить масштаб символа УО */
   onFanSymbolScale?: (scale: number) => void;
+  /** Размер подписи вентилятора (показатели у значка) */
+  fanIndFontSize?: number;
+  onFanIndFontSize?: (size: number) => void;
+  /** Вернуть подпись вентилятора на место */
+  onFanIndResetOffset?: () => void;
   /** Удалить только символ УО (без удаления вентилятора из ветви) */
   onFanSymbolDelete?: () => void;
   /** Развернуть ветвь вентилятора (сменить направление нагнетания) */
@@ -95,7 +100,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -179,6 +184,9 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             onRemoveFan={onRemoveFan}
             fanSymbolScale={fanSymbolScale}
             onFanSymbolScale={onFanSymbolScale}
+            fanIndFontSize={fanIndFontSize}
+            onFanIndFontSize={onFanIndFontSize}
+            onFanIndResetOffset={onFanIndResetOffset}
             onFanSymbolDelete={onFanSymbolDelete}
             onReverse={onReverse}
             normalFlows={normalFlows}
