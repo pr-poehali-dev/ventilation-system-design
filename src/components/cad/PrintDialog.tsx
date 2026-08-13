@@ -307,6 +307,10 @@ export default function PrintDialog({
   // «Подготовка 2 из 5»: при многолистовой схеме отрисовка идёт долго, и без
   // счётчика непонятно, идёт работа или программа встала.
   const [printProgress, setPrintProgress] = useState<{ done: number; total: number } | null>(null);
+  // Запрос отмены подготовки. Проверяется между листами: прервать отрисовку
+  // одного листа нельзя, но на большой схеме листов много — и отмена
+  // срабатывает на ближайшей границе.
+  const printCancelRef = useRef(false);
 
   // Автооткрытие диалога экспорта PDF если вызван из меню Файл → Экспорт
   useEffect(() => {
@@ -1018,6 +1022,7 @@ export default function PrintDialog({
   const handlePrint = useCallback(async () => {
     if (printingRef.current) return;
     printingRef.current = true;
+    printCancelRef.current = false;
     setPrinting(true);
     try {
     const PRINT_DPI = 300;
@@ -1032,6 +1037,8 @@ export default function PrintDialog({
       // Отдаём управление интерфейсу между листами: без этого при печати
       // многолистовой схемы окно программы «замирало» на всё время рендера.
       await new Promise((r) => setTimeout(r, 0));
+      // Пользователь нажал «Отмена» — выходим, не отправляя ничего на печать.
+      if (printCancelRef.current) return;
     }
 
     // Штамп теперь рендерится через HorizonPrintLayerOverlay — не нужен отдельный HTML
@@ -1081,6 +1088,7 @@ body{background:white;font-family:Arial,sans-serif}
     if (!tile) return;
     if (printingRef.current) return;
     printingRef.current = true;
+    printCancelRef.current = false;
     setPrinting(true);
     try {
     const pageNum = tileIdx + 1;
@@ -1655,10 +1663,19 @@ body{background:white;font-family:Arial,sans-serif}
               <><Icon name="Printer" size={13} className="inline mr-1.5" />Печать</>
             )}
           </button>
-          <button onClick={onClose}
-            className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
-            Закрыть
-          </button>
+          {/* Во время подготовки эта кнопка отменяет её, а не закрывает окно:
+              закрытие посреди отрисовки оставило бы печать «висеть». */}
+          {printing ? (
+            <button onClick={() => { printCancelRef.current = true; }}
+              className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
+              Отмена
+            </button>
+          ) : (
+            <button onClick={onClose}
+              className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
+              Закрыть
+            </button>
+          )}
         </div>
       </div>
 
