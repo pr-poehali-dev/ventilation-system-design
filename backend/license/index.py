@@ -92,6 +92,13 @@ def handler(event: dict, context) -> dict:
     # активированных мест на новый отпечаток: иначе после обновления программы
     # каждый браузер выглядел бы новым компьютером и требовал ввод ключа заново.
     legacy_hw_raw  = body.get("legacy_hw_fingerprint", "").strip()[:128]
+    # Отпечаток по ПРЕДЫДУЩЕЙ формуле — без скрытого номера установки. Раньше
+    # он состоял только из разрешения экрана, часового пояса и семейства ОС,
+    # поэтому у разных ПК с типовым монитором совпадал: чужой компьютер
+    # опознавался как уже активированное место и получал лицензию без ключа.
+    # Принимаем его РОВНО ОДИН РАЗ — чтобы работающие люди после обновления не
+    # вводили ключ заново; дальше место закрепляется за конкретной установкой.
+    prev_hw_raw    = body.get("prev_hw_fingerprint", "").strip()[:128]
     user_agent     = (event.get("headers") or {}).get("user-agent", "")[:500]
     hostname       = (body.get("hostname") or "")[:200]
     platform       = (body.get("platform") or "")[:100]
@@ -115,6 +122,7 @@ def handler(event: dict, context) -> dict:
     fph        = fp_hash(fingerprint)
     hw_fph     = fp_hash(hw_fp_raw) if hw_fp_raw else None
     legacy_fph = fp_hash(legacy_hw_raw) if legacy_hw_raw else None
+    prev_fph   = fp_hash(prev_hw_raw) if prev_hw_raw else None
 
     conn = get_conn()
     cur  = conn.cursor()
@@ -157,16 +165,47 @@ def handler(event: dict, context) -> dict:
                        s.id AS seat_id, TRUE AS hw_match, l.id
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
-                WHERE s.hw_fingerprint = %s OR s.fingerprint = %s
+                WHERE (s.hw_fingerprint = %s OR s.fingerprint = %s)
+                  AND s.install_bound = FALSE
                 ORDER BY s.last_seen_at DESC LIMIT 1
             """, (legacy_fph, legacy_fph))
             row = cur.fetchone()
             if row:
-                # Переносим место на новый отпечаток железа.
-                cur.execute(
-                    "UPDATE license_seats SET hw_fingerprint = %s WHERE id = %s",
-                    (hw_fph, row[6]),
-                )
+                # Переносим место на новый отпечаток железа и закрепляем его за
+                # этой установкой: старый отпечаток тоже складывался из общих
+                # характеристик и мог совпасть у другого компьютера.
+                cur.execute("""
+                    UPDATE license_seats
+                    SET hw_fingerprint = %s, install_bound = TRUE
+                    WHERE id = %s
+                """, (hw_fph, row[6]))
+                hw_restored = True
+
+        # 1b. РАЗОВЫЙ перенос на отпечаток со скрытым номером установки.
+        #     Место было активировано, когда отпечаток складывался только из
+        #     разрешения экрана, часового пояса и семейства ОС. Такие значения
+        #     совпадают у разных компьютеров, поэтому новый ПК подхватывал
+        #     чужое место без ввода ключа.
+        #     Переносим место на новый отпечаток ОДИН раз и ставим install_bound:
+        #     дальше место принадлежит конкретной установке, и повторно
+        #     «подхватить» его по общим характеристикам уже нельзя.
+        if not row and prev_fph and prev_fph != hw_fph:
+            cur.execute("""
+                SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
+                       (SELECT COUNT(*) FROM license_seats WHERE license_id = l.id) AS used_seats,
+                       s.id AS seat_id, TRUE AS hw_match, l.id
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.hw_fingerprint = %s AND s.install_bound = FALSE
+                ORDER BY s.last_seen_at DESC LIMIT 1
+            """, (prev_fph,))
+            row = cur.fetchone()
+            if row:
+                cur.execute("""
+                    UPDATE license_seats
+                    SET hw_fingerprint = %s, install_bound = TRUE
+                    WHERE id = %s
+                """, (hw_fph, row[6]))
                 hw_restored = True
 
         # 2. Запасной вариант: найти по точному fingerprint
@@ -320,6 +359,24 @@ def handler(event: dict, context) -> dict:
                 )
                 hw_restored = True
 
+        # 1b. Перенос места на отпечаток со скрытым номером установки.
+        #     Здесь это безопасно: человек ввёл ключ вручную. Переиспользуем его
+        #     прежнее место вместо создания нового — лимит рабочих мест не
+        #     расходуется впустую.
+        if not existing and prev_fph and prev_fph != hw_fph:
+            cur.execute("""
+                SELECT id FROM license_seats
+                WHERE license_id = %s AND hw_fingerprint = %s AND install_bound = FALSE
+            """, (lic_id, prev_fph))
+            existing = cur.fetchone()
+            if existing:
+                cur.execute("""
+                    UPDATE license_seats
+                    SET hw_fingerprint = %s, install_bound = TRUE
+                    WHERE id = %s
+                """, (hw_fph, existing[0]))
+                hw_restored = True
+
         # 2. Запасной вариант: seat по точному fingerprint
         #    (если hw_fingerprint пустой или ещё не заполнен в БД)
         if not existing:
@@ -349,8 +406,9 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 INSERT INTO license_seats
                     (license_id, fingerprint, hw_fingerprint, user_agent, hostname,
-                     platform, screen_info, app_version, core_version, last_ip, last_modules)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     platform, screen_info, app_version, core_version, last_ip, last_modules,
+                     install_bound)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
             """, (lic_id, fph, hw_fph, user_agent or None,
                   hostname or None, platform or None, screen_info or None,
                   app_version or None, core_version or None, ip or None, modules or None))
@@ -372,7 +430,11 @@ def handler(event: dict, context) -> dict:
                     app_version    = COALESCE(NULLIF(%s, ''), app_version),
                     core_version   = COALESCE(NULLIF(%s, ''), core_version),
                     last_ip        = COALESCE(NULLIF(%s, ''), last_ip),
-                    last_modules   = COALESCE(NULLIF(%s, ''), last_modules)
+                    last_modules   = COALESCE(NULLIF(%s, ''), last_modules),
+                    -- Ключ введён вручную: закрепляем место за этой установкой,
+                    -- чтобы другой ПК больше не подхватил его по совпадению
+                    -- общих характеристик (экран, часовой пояс, ОС).
+                    install_bound  = TRUE
                 WHERE id = %s
             """, (fph, hw_fph, user_agent, hostname, platform, screen_info,
                   app_version, core_version, ip, modules, existing[0]))

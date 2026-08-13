@@ -274,7 +274,14 @@ def handler(event: dict, context) -> dict:
                        user_agent, hostname, platform, screen_info,
                        app_version, last_ip, last_modules,
                        (last_seen_at > NOW() - INTERVAL '10 minutes') AS online,
-                       core_version
+                       core_version,
+                       -- Сколько разных адресов в интернете обращалось под этим
+                       -- местом за 30 дней. Несколько адресов — признак, что
+                       -- одним рабочим местом пользуются с разных компьютеров.
+                       (SELECT COUNT(DISTINCT e.ip) FROM license_events e
+                        WHERE e.seat_id = license_seats.id
+                          AND e.ip IS NOT NULL AND e.ip <> ''
+                          AND e.created_at > NOW() - INTERVAL '30 days') AS ip_count
                 FROM license_seats WHERE license_id = %s
                 ORDER BY last_seen_at DESC
             """, (lic_id,))
@@ -294,6 +301,7 @@ def handler(event: dict, context) -> dict:
                     "last_modules": r[10],
                     "online":      bool(r[11]),
                     "core_version": r[12],
+                    "ip_count":    int(r[13] or 0),
                 })
             return resp(200, {"seats": seats})
 

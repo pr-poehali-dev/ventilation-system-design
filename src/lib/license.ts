@@ -22,12 +22,22 @@ export async function getCoreVersion(): Promise<string> {
 }
 const STORAGE_KEY      = "pvs_license";
 const HW_FP_KEY        = "pvs_hw_fp";
+// Скрытый номер установки (только браузер). Браузер не даёт доступа к
+// заводскому номеру ПК, а из общедоступных характеристик (экран, часовой пояс,
+// семейство ОС) складывался ОДИНАКОВЫЙ отпечаток у разных компьютеров с
+// типовым монитором. Чужой ПК опознавался как уже активированное место и
+// получал лицензию без ввода ключа. Свой случайный номер делает установку
+// различимой.
+const INSTALL_ID_KEY   = "pvs_install_id";
 const CACHE_TTL_MS     = 12 * 60 * 60 * 1000; // 12 часов
 // Версия формулы отпечатка. Увеличивается при изменении состава характеристик,
 // чтобы кэш, посчитанный по прежней формуле, не использовался после обновления.
 // v2 — отпечаток без браузерозависимых характеристик (один ПК = одно место
 // во всех браузерах).
-const FP_VERSION = 2;
+// v3 — в браузере к отпечатку добавлен скрытый номер установки: без него
+// разные ПК с одинаковым монитором давали один отпечаток и подхватывали
+// чужое рабочее место без ввода ключа.
+const FP_VERSION = 3;
 
 const IS_DESKTOP = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
 
@@ -125,6 +135,12 @@ export interface MachineInfo {
    * повторного ввода ключа и без расхода лишнего места.
    */
   legacyHwFingerprint?: string;
+  /**
+   * Отпечаток по предыдущей формуле (без скрытого номера установки).
+   * Передаётся, чтобы уже активированное место один раз закрепилось за этой
+   * установкой — без повторного ввода ключа.
+   */
+  prevHwFingerprint?: string;
   hostname: string;
   platform: string;
   screen: string;
@@ -187,6 +203,32 @@ function getHwComponents(): string[] {
   ];
 }
 
+/**
+ * Скрытый номер установки для браузерной версии.
+ *
+ * Выдаётся один раз при первом запуске и хранится дальше. Нужен потому, что
+ * перечисленных выше характеристик мало: два разных компьютера с типовым
+ * монитором, в одном часовом поясе и на Windows дают ОДИН отпечаток. Сервер
+ * находил по нему уже активированное место и выдавал лицензию новому ПК без
+ * ввода ключа — при этом место не создавалось, и человека не было видно в
+ * списке онлайн.
+ *
+ * В десктопной версии не используется: там берётся настоящий номер системы.
+ */
+function getInstallId(): string {
+  try {
+    const existing = storage.get(INSTALL_ID_KEY);
+    if (existing) return existing;
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const id = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+    storage.set(INSTALL_ID_KEY, id);
+    return id;
+  } catch {
+    return "";
+  }
+}
+
 // Прежний (браузерозависимый) состав отпечатка. Нужен ТОЛЬКО для переноса уже
 // активированных мест: по нему сервер находит старую запись и перепривязывает
 // её к новому отпечатку, чтобы человеку не пришлось вводить ключ заново и не
@@ -243,6 +285,7 @@ export async function getMachineInfo(): Promise<MachineInfo> {
       if (fresh && parsed.hwFingerprint && parsed.fpVersion === FP_VERSION) {
         return { fingerprint: parsed.fingerprint, hwFingerprint: parsed.hwFingerprint,
                  legacyHwFingerprint: parsed.legacyHwFingerprint,
+                 prevHwFingerprint: parsed.prevHwFingerprint,
                  hostname: parsed.hostname, platform: parsed.platform, screen: parsed.screen };
       }
     }
@@ -257,9 +300,11 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   // разрешения, поездка в другой часовой пояс или апгрейд ОЗУ меняли отпечаток.
   // Программа считала это новым компьютером, занимала ещё одно рабочее место и
   // в итоге отказывала в активации: «места кончились».
+  // В браузере к характеристикам добавляем скрытый номер установки — иначе
+  // разные ПК с одинаковым монитором дают один отпечаток (см. getInstallId).
   const hwComponents = machineId
     ? [`mid:${machineId}`]
-    : getHwComponents();
+    : [...getHwComponents(), `iid:${getInstallId()}`];
   const hwFingerprint = await sha256hex(hwComponents.join("||"));
 
   // Отпечаток по ПРЕЖНЕЙ формуле — только для веба и только чтобы сервер смог
@@ -268,6 +313,15 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   const legacyHwFingerprint = machineId
     ? undefined
     : await sha256hex(getLegacyHwComponents().join("||"));
+
+  // Отпечаток по ПРЕДЫДУЩЕЙ формуле (без номера установки). Нужен ровно один
+  // раз: чтобы уже работающие люди после обновления не вводили ключ заново.
+  // Сервер по нему находит место и намертво закрепляет его за этой установкой,
+  // после чего такой перенос для места больше не выполняется — иначе чужой ПК
+  // с тем же монитором снова подхватил бы место.
+  const prevHwFingerprint = machineId
+    ? undefined
+    : await sha256hex(getHwComponents().join("||"));
 
   // Привязка к рабочему месту — ТОЛЬКО по железу: fingerprint = hwFingerprint.
   const fingerprint = hwFingerprint;
@@ -285,7 +339,8 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     : `${browser} / ${platform}`;
 
   const info: MachineInfo = {
-    fingerprint, hwFingerprint, legacyHwFingerprint, hostname, platform, screen: scr,
+    fingerprint, hwFingerprint, legacyHwFingerprint, prevHwFingerprint,
+    hostname, platform, screen: scr,
   };
 
   // В десктопе НЕ кэшируем отпечаток, посчитанный без machine-id (ядро не
@@ -379,6 +434,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
         fingerprint,
         hw_fingerprint: machineInfo?.hwFingerprint,
         legacy_hw_fingerprint: machineInfo?.legacyHwFingerprint,
+        prev_hw_fingerprint: machineInfo?.prevHwFingerprint,
         hostname:    machineInfo?.hostname,
         platform:    machineInfo?.platform,
         screen_info: machineInfo?.screen,
@@ -452,6 +508,7 @@ export async function activateLicense(
       fingerprint,
       hw_fingerprint: machineInfo?.hwFingerprint,
       legacy_hw_fingerprint: machineInfo?.legacyHwFingerprint,
+      prev_hw_fingerprint: machineInfo?.prevHwFingerprint,
       key,
       hostname:    machineInfo?.hostname,
       platform:    machineInfo?.platform,

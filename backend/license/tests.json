@@ -19,6 +19,15 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "Check with prev_hw_fingerprint returns not licensed for unknown",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "check", "fingerprint": "test-unknown-fp-iid-1", "hw_fingerprint": "test-unknown-hw-iid-1", "prev_hw_fingerprint": "test-unknown-hw-prev-1", "hostname": "Chrome / Windows", "platform": "Windows"},
+      "expectedStatus": 200,
+      "expectedBody": {"licensed": false},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "Activate with invalid key format",
       "method": "POST",
       "path": "/",

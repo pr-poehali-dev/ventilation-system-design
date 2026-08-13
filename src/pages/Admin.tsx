@@ -49,6 +49,8 @@ interface Seat {
   last_modules?: string | null;
   online?: boolean;
   core_version?: string | null;
+  /** Сколько разных адресов в интернете обращалось под этим местом за 30 дней */
+  ip_count?: number;
 }
 
 export interface MonitoringData {
@@ -787,6 +789,14 @@ export default function Admin() {
                                       <span className={`w-1.5 h-1.5 rounded-full ${seat.online ? "bg-green-500" : "bg-gray-400"}`} />
                                       {seat.online ? "онлайн" : "офлайн"}
                                     </span>
+                                    {(seat.ip_count ?? 0) > 1 && (
+                                      <span
+                                        className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium inline-flex items-center gap-1"
+                                        title="Под этим местом работали с разных адресов в интернете — возможно, им пользуются несколько компьютеров">
+                                        <Icon name="TriangleAlert" size={11} />
+                                        замечено с {seat.ip_count} адресов
+                                      </span>
+                                    )}
                                     {seat.app_version && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-medium font-mono">
                                         v{seat.app_version}
