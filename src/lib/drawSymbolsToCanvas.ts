@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -319,6 +319,67 @@ export async function drawSymbolsToCanvas(
           ctx.strokeText(line, bxMs, tyMs);
           ctx.fillStyle = "#1a2a4a";
           ctx.fillText(line, bxMs, tyMs);
+        });
+        ctx.restore();
+      }
+    }
+
+    // ── Индикаторы вентилятора ────────────────────────────────────────
+    // Раньше показатели вентилятора (расход, напор, мощность, КПД) попадали в
+    // ОБЩУЮ подпись ветви — вместе с длиной, сечением и прочим. На схеме они
+    // оказывались далеко от самого вентилятора, и было непонятно, к какому
+    // оборудованию относятся. Теперь рисуем их отдельной подписью прямо у
+    // значка вентилятора — как это сделано у замерной станции.
+    if (FAN_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
+      const brFan = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+      const icFan = (brFan?.indicators ?? {}) as Record<string, boolean>;
+      const uPresF = getUnit(unitsConfig, "pressure");
+      const uFlowF = getUnit(unitsConfig, "flow");
+      const fanLines: string[] = [];
+      if (brFan?.hasFan) {
+        // Расход в рабочей точке вентилятора — то же значение, что показано в
+        // свойствах вентилятора («Q выраб.»), со знаком при реверсе.
+        if (icFan.fanFlow) {
+          const qFan = (brFan.fanReverse && brFan.fanType !== "ВМП")
+            ? -Math.abs(brFan.flow ?? 0)
+            : Math.abs(brFan.flow ?? 0);
+          fanLines.push(`Qв=${uFlowF.fromBase(qFan).toFixed(uFlowF.decimals)}${uFlowF.symbol}`);
+        }
+        if (icFan.fanPressure)
+          fanLines.push(`Нв=${uPresF.fromBase(Math.abs(brFan.fanPressure ?? 0)).toFixed(uPresF.decimals)}${uPresF.symbol}`);
+        if (icFan.fanShaftPower && (brFan.fanShaftPower ?? 0) > 0)
+          fanLines.push(`Nв=${((brFan.fanShaftPower ?? 0) / 1000).toFixed(1)} кВт`);
+        if (icFan.fanEfficiency && (brFan.fanEfficiency ?? 0) > 0)
+          fanLines.push(`ηв=${((brFan.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
+      }
+      if (fanLines.length > 0) {
+        const fsF = Math.max(6, Math.round(SZ * 0.34));
+        const lhF = fsF + 3;
+        const boxHF = fanLines.length * lhF + 6;
+        const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
+        const brLenF = Math.hypot(brDxF, brDyF);
+        // Смещаем подпись перпендикулярно ветви — чтобы не легла на выработку.
+        const perpXf = brLenF > 0 ? -brDyF / brLenF : 0;
+        const perpYf = brLenF > 0 ?  brDxF / brLenF : 0;
+        const maxLenF = Math.max(...fanLines.map(l => l.length));
+        const boxWF = maxLenF * fsF * 0.52 + 10;
+        const bxF = px + perpXf * (16 + boxWF / 2);
+        const byF = py + perpYf * (16 + boxHF / 2);
+
+        ctx.save();
+        ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bxF, byF - boxHF / 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        fanLines.forEach((line, i) => {
+          const tyF = byF - boxHF / 2 + i * lhF + 3;
+          ctx.font = `400 ${fsF}px "Segoe UI", sans-serif`;
+          ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
+          ctx.strokeText(line, bxF, tyF);
+          ctx.fillStyle = "#1a2a4a";
+          ctx.fillText(line, bxF, tyF);
         });
         ctx.restore();
       }

@@ -1093,12 +1093,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
         if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
         if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
-        // ─── Индикаторы вентилятора (вкладка «Индикаторы вентилятора») ───
-        if (b.hasFan) {
-          if (ic.fanPressure) dataLines.push(`Нв=${uPres.fromBase(Math.abs(b.fanPressure ?? 0)).toFixed(uPres.decimals)}${uPres.symbol}`);
-          if (ic.fanShaftPower && (b.fanShaftPower ?? 0) > 0) dataLines.push(`Nв=${((b.fanShaftPower ?? 0) / 1000).toFixed(1)} кВт`);
-          if (ic.fanEfficiency && (b.fanEfficiency ?? 0) > 0) dataLines.push(`ηв=${((b.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
-        }
+        // Показатели вентилятора (расход, напор, мощность, КПД) в подписи ветви
+        // БОЛЬШЕ НЕ выводим: они рисуются отдельной подписью у самого значка
+        // вентилятора (см. drawSymbolsToCanvas). Раньше они попадали сюда — в
+        // общий блок с длиной и сечением — и на схеме оказывались далеко от
+        // оборудования, к которому относятся.
         // ─── Водопроводные показатели трубы (вкладка «Водопровод») ───
         if (b.hasWaterPipe) {
           if (ic.waterVelocity && (b.wpComputedVelocity ?? 0) > 0)

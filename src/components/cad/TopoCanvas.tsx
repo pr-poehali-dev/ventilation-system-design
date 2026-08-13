@@ -6,7 +6,7 @@ import {
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
   sectionKind, SECTION_KIND_COLORS,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -3200,12 +3200,9 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
                   if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
-                  // ─── Индикаторы вентилятора (вкладка «Индикаторы вентилятора») ───
-                  if (b.hasFan) {
-                    if (ic.fanPressure) dataLines.push(`Нв=${uPres.fromBase(Math.abs(b.fanPressure ?? 0)).toFixed(uPres.decimals)}${uPres.symbol}`);
-                    if (ic.fanShaftPower && (b.fanShaftPower ?? 0) > 0) dataLines.push(`Nв=${((b.fanShaftPower ?? 0) / 1000).toFixed(1)} кВт`);
-                    if (ic.fanEfficiency && (b.fanEfficiency ?? 0) > 0) dataLines.push(`ηв=${((b.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
-                  }
+                  // Показатели вентилятора в подписи ветви БОЛЬШЕ НЕ выводим —
+                  // они рисуются отдельной подписью у значка вентилятора (см.
+                  // блок «Индикаторы вентилятора на схеме» ниже).
                   // ─── Водопроводные показатели трубы (вкладка «Водопровод») ───
                   if (b.hasWaterPipe) {
                     if (ic.waterVelocity && (b.wpComputedVelocity ?? 0) > 0)
@@ -4154,6 +4151,67 @@ export default function TopoCanvas(props: Props) {
                         </text>
                       ))}
                     </g>
+                  </g>
+                );
+              })()}
+
+              {/* ── Индикаторы вентилятора на схеме ──────────────────────
+                  Раньше показатели вентилятора попадали в ОБЩУЮ подпись ветви
+                  (вместе с длиной и сечением) и оказывались далеко от самого
+                  вентилятора. Теперь — отдельная подпись у его значка. */}
+              {view.scale > 0.05 && FAN_SYMBOL_IDS.has(sym.typeId) && hasBranchPts && (() => {
+                const brFan = symBrSvg;
+                if (!brFan?.hasFan) return null;
+                const icFan = (brFan.indicators ?? {}) as Record<string, boolean>;
+                const uPresF = getUnit(unitsConfig, "pressure");
+                const uFlowF = getUnit(unitsConfig, "flow");
+                const fanLines: string[] = [];
+                // Расход в рабочей точке вентилятора — то же значение, что в
+                // свойствах вентилятора («Q выраб.»), со знаком при реверсе.
+                if (icFan.fanFlow) {
+                  const qFan = (brFan.fanReverse && brFan.fanType !== "ВМП")
+                    ? -Math.abs(brFan.flow ?? 0)
+                    : Math.abs(brFan.flow ?? 0);
+                  fanLines.push(`Qв=${uFlowF.fromBase(qFan).toFixed(uFlowF.decimals)}${uFlowF.symbol}`);
+                }
+                if (icFan.fanPressure)
+                  fanLines.push(`Нв=${uPresF.fromBase(Math.abs(brFan.fanPressure ?? 0)).toFixed(uPresF.decimals)}${uPresF.symbol}`);
+                if (icFan.fanShaftPower && (brFan.fanShaftPower ?? 0) > 0)
+                  fanLines.push(`Nв=${((brFan.fanShaftPower ?? 0) / 1000).toFixed(1)} кВт`);
+                if (icFan.fanEfficiency && (brFan.fanEfficiency ?? 0) > 0)
+                  fanLines.push(`ηв=${((brFan.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
+                if (!fanLines.length) return null;
+
+                // Размер подписи — как у подписей ветвей (по толщине ветви),
+                // чтобы всё на схеме читалось одинаково.
+                const fBwLbl = (thinLines ? 1 : (brFan.lineWidth && brFan.lineWidth > 0 ? brFan.lineWidth : branchWidth)) * _branchObjSF;
+                const fTextSc = Math.max(0.3, fBwLbl * 0.28) * _indZoomSF;
+                const fSizeF = Math.max(3, 8.5 * fTextSc);
+                const lineHF = fSizeF + 3 * _indZoomSF;
+                const boxWF = Math.max(...fanLines.map(l => l.length)) * fSizeF * 0.52 + 10 * _indZoomSF;
+                const boxHF = fanLines.length * lineHF + 6 * _indZoomSF;
+                const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
+                const brLenF = Math.hypot(brDxF, brDyF);
+                const perpXF = brLenF > 0 ? -brDyF / brLenF : 0;
+                const perpYF = brLenF > 0 ?  brDxF / brLenF : 0;
+                const gapF = 16 * _branchObjSF * _indZoomSF;
+                const bxF = px + perpXF * (gapF + boxWF / 2);
+                const byF = py + perpYF * (gapF + boxHF / 2);
+                const opacityF = Math.min(1, (view.scale - 0.05) / 0.06);
+
+                return (
+                  <g opacity={opacityF}>
+                    <line x1={px} y1={py} x2={bxF} y2={byF - boxHF / 2}
+                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                    {fanLines.map((line, i) => (
+                      <text key={i}
+                        x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
+                        textAnchor="middle" fontSize={fSizeF}
+                        fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                        style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                        {line}
+                      </text>
+                    ))}
                   </g>
                 );
               })()}
