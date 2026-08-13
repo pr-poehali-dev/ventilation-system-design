@@ -46,6 +46,8 @@ export interface Props {
   onViewChange?: (info: { is3D: boolean; azimuth: number; elevation: number }) => void;
   /** Способ отображения направления потока воздуха */
   flowDisplay?: FlowDisplayMode;
+  /** Множитель скорости анимации: 1 — обычная, 0.5 — вдвое медленнее */
+  animSpeed?: number;
   /** Активная рабочая плоскость для построения в 3D (если null — auto по ракурсу) */
   workPlane?: WorkPlane | null;
   /** Список горизонтов для фильтрации/окрашивания ветвей. */

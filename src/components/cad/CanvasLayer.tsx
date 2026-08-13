@@ -55,6 +55,8 @@ interface CanvasLayerProps {
   colorByHorizon: boolean;
   showFlowArrows: boolean;
   flowDisplay: FlowDisplayMode;
+  /** Множитель скорости анимации: 1 — обычная, 0.5 — вдвое медленнее */
+  animSpeed?: number;
 
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
@@ -112,7 +114,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     proj, view, is3D, zScale, zLevel,
     selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
     hoverBranchId,
-    branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay,
+    branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay, animSpeed,
     infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG, waterNodeResults,
     onMouseDown, onMouseMove, onMouseUp, onWheel, onContextMenu,
     onTouchStart, onTouchMove, onTouchEnd,
@@ -208,6 +210,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         colorByHorizon: p.colorByHorizon,
         showFlowArrows: p.showFlowArrows,
         flowDisplay: p.flowDisplay,
+        animSpeed: p.animSpeed,
         animOffset: animOffsetRef.current,
         infoConfig: p.infoConfig,
         unitsConfig: p.unitsConfig ?? DEFAULT_UNITS_CONFIG,
@@ -282,7 +285,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.selectedNodeId, props.selectedNodeIds,
     props.hoverBranchId, props.highlightHorizonId,
     props.branchWidth, props.branchBorder, props.thinLines,
-    props.colorByHorizon, props.showFlowArrows, props.flowDisplay,
+    props.colorByHorizon, props.showFlowArrows, props.flowDisplay, props.animSpeed,
     props.infoConfig, props.unitsConfig,
     props.waterNodeResults, props.waterBranchResults, props.branchFireColors, props.branchExplosionColors,
     props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,

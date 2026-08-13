@@ -45,7 +45,7 @@ export default function TopoCanvas(props: Props) {
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onNodeDragStart, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
-    viewPreset, onViewChange, flowDisplay = "off", workPlane,
+    viewPreset, onViewChange, flowDisplay = "off", animSpeed = 1, workPlane,
     horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
     bulkheadScale = 150,
     fanScale = 450,
@@ -2439,6 +2439,7 @@ export default function TopoCanvas(props: Props) {
           colorByHorizon={colorByHorizon}
           showFlowArrows={showFlowArrows}
           flowDisplay={flowDisplay}
+          animSpeed={animSpeed}
           infoConfig={infoConfig}
           unitsConfig={unitsConfig}
           waterNodeResults={waterNodeResults}
@@ -2855,7 +2856,8 @@ export default function TopoCanvas(props: Props) {
 
           // Длительность анимации (с): ~ обратно пропорц. скорости.
           // V=15 м/с → 0.6 с, V=1 м/с → 4 с, нижняя граница 0.4 с
-          const animDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V)));
+          // animSpeed — множитель из настроек (меньше = медленнее анимация)
+          const animDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V))) / Math.max(0.1, animSpeed);
 
           // Длина отрезка в px и единичный вектор направления
           const dx = sxB - sxA;
@@ -3002,17 +3004,25 @@ export default function TopoCanvas(props: Props) {
                   Шаг цепочки постоянный, вся цепочка сдвигается на один шаг за
                   цикл — получается непрерывный «бег» без разрывов. */}
               {showDashes && segLen > 24 && (() => {
-                const step = Math.max(22, Math.min(48, w * 6));
                 const angle = Math.atan2(uy, ux) * 180 / Math.PI;
-                const ah = Math.max(3, Math.min(7, w * 0.9));   // половина высоты
-                const al = Math.max(5, Math.min(12, w * 1.6));  // длина наконечника
+                // Стрелка ТОЧНО ТАКАЯ ЖЕ, как при расчёте воздухораспределения.
+                // Цвет по типу струи: КРАСНЫЙ свежая, СИНИЙ исходящая.
+                const arrowColor = pollutedBranchIds.has(b.id) ? "#2563eb" : "#dc2626";
+                const tipH    = w * 2.2;
+                const tipW    = w * 0.5;
+                const tailLen = w * 3.0;
+                const tailW   = Math.max(0.5, w * 0.15);
+                // Расстояние между стрелками — заметно больше прежнего, чтобы
+                // цепочка читалась как отдельные стрелки, а не сплошная лента.
+                const step = Math.max(70, Math.min(160, (tailLen + tipH) * 3.2));
                 // Держим стрелки внутри ветви: цепочка уезжает вперёд на шаг,
                 // поэтому крайние позиции считаем с запасом на этот сдвиг.
-                const from0 = al, to0 = segLen - al - step;
+                const from0 = tailLen, to0 = segLen - tipH - step;
                 if (to0 <= from0) return null;
                 const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                const pts = `0,-${tipW} ${tipH},0 0,${tipW}`;
                 return (
-                  <g opacity="0.95">
+                  <g>
                     <animateTransform attributeName="transform" type="translate"
                       from="0 0" to={`${ux * step} ${uy * step}`}
                       dur={`${animDur}s`} repeatCount="indefinite" />
@@ -3021,10 +3031,17 @@ export default function TopoCanvas(props: Props) {
                       const cx = sxA + ux * d0;
                       const cy = syA + uy * d0;
                       return (
-                        <g key={i} transform={`translate(${cx},${cy}) rotate(${angle})`}>
-                          <polygon points={`${-al},${-ah} ${al},0 ${-al},${ah}`}
-                            fill={color} stroke="white" strokeWidth={Math.max(0.5, w * 0.12)}
-                            strokeLinejoin="round" />
+                        <g key={i} transform={`translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`}>
+                          {/* Белая обводка хвостика */}
+                          <line x1={-tailLen} y1={0} x2={0} y2={0}
+                            stroke="white" strokeWidth={tailW + 1.5} strokeLinecap="round" />
+                          {/* Белая обводка наконечника */}
+                          <polygon points={pts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                          {/* Хвостик */}
+                          <line x1={-tailLen} y1={0} x2={0} y2={0}
+                            stroke={arrowColor} strokeWidth={tailW} strokeLinecap="round" />
+                          {/* Наконечник */}
+                          <polygon points={pts} fill={arrowColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                         </g>
                       );
                     })}
@@ -5437,7 +5454,7 @@ export default function TopoCanvas(props: Props) {
                       const oFlowVis = !thinLines && view.scale >= _xySF * 0.25
                         && oQ > 0.1 && flowDisplay !== "off";
                       const oDashes = oFlowVis && (flowDisplay === "flow" || flowDisplay === "both");
-                      const oDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, oV)));
+                      const oDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, oV))) / Math.max(0.1, animSpeed);
                       return (
                         <g key={`ovoccl-${ob.id}`}>
                           {bw > 0 && (
@@ -5453,15 +5470,20 @@ export default function TopoCanvas(props: Props) {
                               перерисовываются поверх схемы, анимация выглядела
                               иначе, чем на остальных, и шла с другой скоростью. */}
                           {oDashes && oLen > 24 && (() => {
-                            const step = Math.max(22, Math.min(48, ow * 6));
-                            const ah = Math.max(3, Math.min(7, ow * 0.9));
-                            const al = Math.max(5, Math.min(12, ow * 1.6));
-                            const from0 = al, to0 = oLen - al - step;
+                            // Тот же вид, что при расчёте воздухораспределения:
+                            // КРАСНЫЙ — свежая струя, СИНИЙ — исходящая.
+                            const oAnimTipH    = ow * 2.2;
+                            const oAnimTipW    = ow * 0.5;
+                            const oAnimTailLen = ow * 3.0;
+                            const oAnimTailW   = Math.max(0.5, ow * 0.15);
+                            const step = Math.max(70, Math.min(160, (oAnimTailLen + oAnimTipH) * 3.2));
+                            const from0 = oAnimTailLen, to0 = oLen - oAnimTipH - step;
                             if (to0 <= from0) return null;
                             const cnt = Math.max(1, Math.floor((to0 - from0) / step) + 1);
                             const oux = oDx / oLen, ouy = oDy / oLen;
+                            const oAnimPts = `0,-${oAnimTipW} ${oAnimTipH},0 0,${oAnimTipW}`;
                             return (
-                              <g opacity="0.95">
+                              <g>
                                 <animateTransform attributeName="transform" type="translate"
                                   from="0 0" to={`${oux * step} ${ouy * step}`}
                                   dur={`${oDur}s`} repeatCount="indefinite" />
@@ -5470,9 +5492,16 @@ export default function TopoCanvas(props: Props) {
                                   return (
                                     <g key={`ovarr-${ob.id}-${ai}`}
                                       transform={`translate(${(oAx + oux * d0).toFixed(1)},${(oAy + ouy * d0).toFixed(1)}) rotate(${oAng.toFixed(1)})`}>
-                                      <polygon points={`${-al},${-ah} ${al},0 ${-al},${ah}`}
-                                        fill={occColor(ob)} stroke="white"
-                                        strokeWidth={Math.max(0.5, ow * 0.12)} strokeLinejoin="round" />
+                                      {/* Белая обводка хвостика */}
+                                      <line x1={-oAnimTailLen} y1={0} x2={0} y2={0}
+                                        stroke="white" strokeWidth={oAnimTailW + 1.5} strokeLinecap="round" />
+                                      {/* Белая обводка наконечника */}
+                                      <polygon points={oAnimPts} fill="none" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+                                      {/* Хвостик */}
+                                      <line x1={-oAnimTailLen} y1={0} x2={0} y2={0}
+                                        stroke={oArrCol} strokeWidth={oAnimTailW} strokeLinecap="round" />
+                                      {/* Наконечник */}
+                                      <polygon points={oAnimPts} fill={oArrCol} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
                                     </g>
                                   );
                                 })}

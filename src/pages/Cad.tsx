@@ -1014,6 +1014,9 @@ export default function CadPage() {
 
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
+  // Скорость анимации движения воздуха: 1 — обычная, 0.5 — вдвое медленнее.
+  // На больших схемах быстрый бег стрелок мешает читать чертёж.
+  const [animSpeed, setAnimSpeed] = useState<number>(1);
   // Режим цветовой заливки ветвей: none = выкл, flowQ = по расходу воздуха, horizon = по цвету горизонта
   const [colorMode, setColorMode] = useState<"none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon">("none");
   // Настройки шкалы расхода (мин/макс, цвет)
@@ -2090,6 +2093,7 @@ export default function CadPage() {
     showPositions,
     showFlowArrows,
     flowDisplay,
+    animSpeed,
     zScale,
     xyScale,
     view: savedViewStateRef.current ?? undefined,
@@ -2585,6 +2589,7 @@ export default function CadPage() {
     if (data.showPositions !== undefined) setShowPositions(data.showPositions as boolean);
     if (data.showFlowArrows !== undefined) setShowFlowArrows(data.showFlowArrows as boolean);
     if (data.flowDisplay) setFlowDisplay(data.flowDisplay as "off" | "flow" | "chevrons" | "both");
+    if (data.animSpeed !== undefined) setAnimSpeed(data.animSpeed as number);
     if (data.zScale !== undefined) setZScale(data.zScale as number);
     if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
@@ -9727,6 +9732,22 @@ export default function CadPage() {
               <Icon name="Wind" size={11} /> Анимация
             </button>
 
+            {/* Скорость анимации — появляется только когда анимация включена.
+                На больших схемах быстрый бег стрелок мешает читать чертёж. */}
+            {flowDisplay !== "off" && (
+              <select
+                value={animSpeed}
+                onChange={e => setAnimSpeed(Number(e.target.value))}
+                className="h-6 px-1 rounded text-[11px] bg-white"
+                style={{ border: "1px solid #d0d0d0", color: "#1f1f1f" }}
+                title="Скорость движения стрелок">
+                <option value={0.25}>Очень медленно</option>
+                <option value={0.5}>Медленно</option>
+                <option value={1}>Обычно</option>
+                <option value={2}>Быстро</option>
+              </select>
+            )}
+
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
             {/* ── Пределы масштабов (фиксированный размер объектов) ── */}
@@ -10078,6 +10099,7 @@ export default function CadPage() {
               viewPreset={viewPreset}
               onViewChange={setViewInfo}
               flowDisplay={flowDisplay}
+              animSpeed={animSpeed}
               colorMode={colorMode === "horizon" ? "none" : colorMode}
               sectionColors={ventSectionColors}
               flowColorMin={flowColorMin}

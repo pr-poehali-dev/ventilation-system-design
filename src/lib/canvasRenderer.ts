@@ -156,6 +156,11 @@ export interface CanvasRenderOptions {
    * в этой ветви. Для печати передаётся 0 (статичный кадр).
    */
   animOffset: number;
+  /**
+   * Множитель скорости анимации из настроек: 1 — обычная, 0.5 — вдвое
+   * медленнее, 2 — вдвое быстрее. На больших схемах удобно замедлить.
+   */
+  animSpeed?: number;
 
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig: UnitsConfig;
@@ -462,7 +467,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
-    flowDisplay, animOffset,
+    flowDisplay, animOffset, animSpeed = 1,
     horizonMap, infoConfig, unitsConfig, waterNodeResults, waterBranchResults, branchFireColors, branchExplosionColors,
     colorMode = "none", sectionColors, flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
     velColorMin = 0, velColorMax = 15, velColorHue = "blue",
@@ -888,33 +893,57 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // Раньше рисовался бегущий пунктир: он передавал скорость, но не направление.
     // Стрелки показывают, куда идёт воздух, и так же «едут» вдоль ветви.
     if (showDashes && segLen > 24) {
-      const step = Math.max(22, Math.min(48, w * 6));
-      const ah = Math.max(3, Math.min(7, w * 0.9));
-      const al = Math.max(5, Math.min(12, w * 1.6));
-      const from0 = al, to0 = segLen - al - step;
+      // Стрелка ТОЧНО ТАКАЯ ЖЕ, как при расчёте воздухораспределения:
+      // наконечник с тонким хвостиком и белой обводкой. Цвет по типу струи —
+      // КРАСНЫЙ свежая, СИНИЙ исходящая (та же логика, что у стрелок потока).
+      const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
+      const tipH    = w * 2.2;
+      const tipW    = w * 0.5;
+      const tailLen = w * 3.0;
+      const tailW   = Math.max(0.5, w * 0.15);
+      // Расстояние между стрелками — заметно больше прежнего, чтобы цепочка
+      // читалась как отдельные стрелки, а не сплошная лента.
+      const step = Math.max(70, Math.min(160, (tailLen + tipH) * 3.2));
+      const from0 = tailLen, to0 = segLen - tipH - step;
       if (to0 > from0) {
         const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
         // Скорость бега — своя у каждой ветви, по скорости воздуха V. Та же
         // формула, что в SVG-режиме: V=1 м/с → цикл 4 с, V=10 м/с → 0.4 с.
-        // Раньше сдвиг был общим на всю схему, и стрелки везде ехали одинаково.
-        const dur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V)));
+        // animSpeed — общий множитель из настроек (меньше = медленнее).
+        const dur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V))) / Math.max(0.1, animSpeed);
         const shift = ((animOffset / dur) % 1) * step;
         const ux = dx / segLen, uy = dy / segLen;
         ctx.save();
         ctx.setLineDash([]);
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = color;
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = Math.max(0.5, w * 0.12);
-        ctx.lineJoin = "round";
+        ctx.globalAlpha = 1;
         for (let i = 0; i < count; i++) {
           const d0 = from0 + i * step + shift;
           ctx.save();
           ctx.translate(sxA + ux * d0, syA + uy * d0);
           ctx.rotate(angle);
+          // Белая обводка всей стрелки (контур)
+          ctx.strokeStyle = "white";
+          ctx.lineWidth = tailW + 1.5;
+          ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
+          ctx.lineJoin = "round";
+          ctx.lineWidth = 1.2;
           ctx.beginPath();
-          ctx.moveTo(-al, -ah); ctx.lineTo(al, 0); ctx.lineTo(-al, ah);
-          ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
+          ctx.stroke();
+          // Хвостик
+          ctx.strokeStyle = arrowColor;
+          ctx.lineWidth = tailW;
+          ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
+          // Наконечник
+          ctx.fillStyle = arrowColor;
+          ctx.strokeStyle = "white";
+          ctx.lineWidth = 0.8;
+          ctx.lineJoin = "round";
+          ctx.beginPath();
+          ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
+          ctx.fill(); ctx.stroke();
           ctx.restore();
         }
         ctx.restore();
