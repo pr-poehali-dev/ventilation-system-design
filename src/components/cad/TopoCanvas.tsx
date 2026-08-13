@@ -5447,14 +5447,38 @@ export default function TopoCanvas(props: Props) {
                           <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
                             stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round"
                             opacity={oFlowVis ? 0.55 : 1} />
-                          {oDashes && (
-                            <line x1={oAx} y1={oAy} x2={oBx} y2={oBy}
-                              stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="butt"
-                              strokeDasharray="10 8" opacity="0.95">
-                              <animate attributeName="stroke-dashoffset"
-                                from="18" to="0" dur={`${oDur}s`} repeatCount="indefinite" />
-                            </line>
-                          )}
+                          {/* Стрелки движения воздуха — ТОЧНО ТАКИЕ ЖЕ, как на
+                              обычных ветвях. Раньше здесь оставался бегущий
+                              пунктир: на ветвях верхнего горизонта, которые
+                              перерисовываются поверх схемы, анимация выглядела
+                              иначе, чем на остальных, и шла с другой скоростью. */}
+                          {oDashes && oLen > 24 && (() => {
+                            const step = Math.max(22, Math.min(48, ow * 6));
+                            const ah = Math.max(3, Math.min(7, ow * 0.9));
+                            const al = Math.max(5, Math.min(12, ow * 1.6));
+                            const from0 = al, to0 = oLen - al - step;
+                            if (to0 <= from0) return null;
+                            const cnt = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                            const oux = oDx / oLen, ouy = oDy / oLen;
+                            return (
+                              <g opacity="0.95">
+                                <animateTransform attributeName="transform" type="translate"
+                                  from="0 0" to={`${oux * step} ${ouy * step}`}
+                                  dur={`${oDur}s`} repeatCount="indefinite" />
+                                {Array.from({ length: cnt }, (_, ai) => {
+                                  const d0 = from0 + ai * step;
+                                  return (
+                                    <g key={`ovarr-${ob.id}-${ai}`}
+                                      transform={`translate(${(oAx + oux * d0).toFixed(1)},${(oAy + ouy * d0).toFixed(1)}) rotate(${oAng.toFixed(1)})`}>
+                                      <polygon points={`${-al},${-ah} ${al},0 ${-al},${ah}`}
+                                        fill={occColor(ob)} stroke="white"
+                                        strokeWidth={Math.max(0.5, ow * 0.12)} strokeLinejoin="round" />
+                                    </g>
+                                  );
+                                })}
+                              </g>
+                            );
+                          })()}
                           {/* Шевроны ▶▶▶ — режим «Шевроны»/«Оба» тоже затирался occluder-ом */}
                           {oFlowVis && (flowDisplay === "chevrons" || flowDisplay === "both") && oLen > 24 && (() => {
                             const cnt = Math.max(1, Math.floor(oLen / 30));

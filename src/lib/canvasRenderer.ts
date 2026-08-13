@@ -150,6 +150,11 @@ export interface CanvasRenderOptions {
   showFlowArrows: boolean;
   flowDisplay: FlowDisplayMode;
 
+  /**
+   * Время анимации в СЕКУНДАХ (не пиксели). По нему каждая ветвь считает
+   * собственную фазу движения стрелок — скорость зависит от скорости воздуха
+   * в этой ветви. Для печати передаётся 0 (статичный кадр).
+   */
   animOffset: number;
 
   infoConfig?: InfoDisplayConfig | null;
@@ -889,9 +894,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const from0 = al, to0 = segLen - al - step;
       if (to0 > from0) {
         const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
-        // Общий для всех ветвей счётчик анимации приводим к шагу этой ветви,
-        // чтобы стрелки ехали непрерывно и не «прыгали» при смене шага.
-        const shift = ((animOffset / 18) % 1) * step;
+        // Скорость бега — своя у каждой ветви, по скорости воздуха V. Та же
+        // формула, что в SVG-режиме: V=1 м/с → цикл 4 с, V=10 м/с → 0.4 с.
+        // Раньше сдвиг был общим на всю схему, и стрелки везде ехали одинаково.
+        const dur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V)));
+        const shift = ((animOffset / dur) % 1) * step;
         const ux = dx / segLen, uy = dy / segLen;
         ctx.save();
         ctx.setLineDash([]);
