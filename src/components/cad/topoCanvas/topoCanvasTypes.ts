@@ -30,6 +30,9 @@ export interface Props {
   onNodeAdd: (x: number, y: number, z: number) => string | void;
   /** Перемещение узла (теперь в 3D возможно по любой координате) */
   onNodeMove: (id: string, x: number, y: number, z?: number) => void;
+  /** Начало перетаскивания узла — момент для снимка истории (undo).
+      Вызывается ОДИН раз при захвате, а не на каждое движение мыши. */
+  onNodeDragStart?: (id: string) => void;
   /** Создать ветвь между двумя существующими узлами. Возвращает ID новой ветви. */
   onBranchAdd: (fromId: string, toId: string) => string | void;
   /** Разделить ветвь, вставив новый узел в указанной точке. Возвращает ID нового узла. */

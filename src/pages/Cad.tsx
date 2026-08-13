@@ -1143,8 +1143,13 @@ export default function CadPage() {
     return newNodeId;
   };
 
+  // Перемещение узла мышью. saveHistory=false: снимок для undo уже сделан
+  // ОДИН раз в момент захвата узла (onNodeDragStart). Раньше история писалась
+  // на КАЖДОЕ движение мыши — копирование всех узлов/ветвей/символов десятки
+  // раз в секунду тормозило большие схемы, а стек отмены (50 шагов) целиком
+  // забивался одним перетаскиванием, и откатить прошлые действия было нельзя.
   const handleNodeMove = (id: string, x: number, y: number, z?: number) => {
-    updateNode(id, z !== undefined ? { x, y, z } : { x, y });
+    updateNode(id, z !== undefined ? { x, y, z } : { x, y }, false);
   };
 
   // ─── Результат расчёта пожара ───────────────────────────────────────
@@ -10654,6 +10659,7 @@ export default function CadPage() {
               }
               onNodeAdd={handleNodeAdd}
               onNodeMove={handleNodeMove}
+              onNodeDragStart={() => pushHistory()}
               onBranchAdd={handleBranchAdd}
               onSplitBranchAt={handleSplitBranchAt}
               onSelectNode={(id) => {

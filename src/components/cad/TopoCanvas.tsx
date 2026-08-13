@@ -44,7 +44,7 @@ export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoC
 export default function TopoCanvas(props: Props) {
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
-    onNodeAdd, onNodeMove, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
+    onNodeAdd, onNodeMove, onNodeDragStart, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", workPlane,
     horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
     bulkheadScale = 150,
@@ -1248,6 +1248,10 @@ export default function TopoCanvas(props: Props) {
           const pn = projNodes.find((p) => p.node.id === hitN);
           const dsx = pn ? sx - pn.sx : 0;
           const dsy = pn ? sy - pn.sy : 0;
+          // Снимок истории — ОДИН раз в начале перетаскивания. Раньше он писался
+          // на каждое движение мыши внутри onNodeMove: это и тормозило схему, и
+          // забивало стек undo (50 шагов уходили на один сдвиг узла).
+          onNodeDragStart?.(hitN);
           setDraggingNode({ id: hitN, plane, dsx, dsy });
         }
       }
