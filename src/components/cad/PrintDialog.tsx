@@ -303,6 +303,10 @@ export default function PrintDialog({
   // память кончалась и программа переставала отвечать.
   const [printing, setPrinting] = useState(false);
   const printingRef = useRef(false);
+  // Сколько листов уже подготовлено и сколько всего — для надписи на кнопке
+  // «Подготовка 2 из 5»: при многолистовой схеме отрисовка идёт долго, и без
+  // счётчика непонятно, идёт работа или программа встала.
+  const [printProgress, setPrintProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Автооткрытие диалога экспорта PDF если вызван из меню Файл → Экспорт
   useEffect(() => {
@@ -1020,9 +1024,11 @@ export default function PrintDialog({
     const total = totalPages * copies;
 
     const tilesList = reverseOrder ? [...tiles.list].reverse() : tiles.list;
+    setPrintProgress({ done: 0, total: tilesList.length });
     const pngPages: string[] = [];
     for (const t of tilesList) {
       pngPages.push(await renderTileToCanvas(t.col, t.row, PRINT_DPI));
+      setPrintProgress({ done: pngPages.length, total: tilesList.length });
       // Отдаём управление интерфейсу между листами: без этого при печати
       // многолистовой схемы окно программы «замирало» на всё время рендера.
       await new Promise((r) => setTimeout(r, 0));
@@ -1062,6 +1068,7 @@ body{background:white;font-family:Arial,sans-serif}
     } finally {
       printingRef.current = false;
       setPrinting(false);
+      setPrintProgress(null);
     }
   }, [paper, marginTop, marginBottom, marginRight,
       showPageNumbers, copies, reverseOrder, projectName,
@@ -1098,6 +1105,7 @@ body{background:white;font-family:Arial,sans-serif}
     } finally {
       printingRef.current = false;
       setPrinting(false);
+      setPrintProgress(null);
     }
   }, [tiles, paper, marginBottom, marginRight, projectName,
       showPageNumbers, renderTileToCanvas, closeCtxMenu]);
@@ -1428,6 +1436,7 @@ body{background:white;font-family:Arial,sans-serif}
           <PrintSettingsPanel
             handlePrint={handlePrint}
             printing={printing}
+            printProgress={printProgress}
             setShowExportDialog={setShowExportDialog}
             templates={templates}
             loadTemplate={loadTemplate}
@@ -1638,7 +1647,10 @@ body{background:white;font-family:Arial,sans-serif}
             className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
             style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
             {printing ? (
-              <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />Подготовка…</>
+              <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />
+                {printProgress && printProgress.total > 1
+                  ? `Подготовка ${printProgress.done} из ${printProgress.total}`
+                  : "Подготовка…"}</>
             ) : (
               <><Icon name="Printer" size={13} className="inline mr-1.5" />Печать</>
             )}
