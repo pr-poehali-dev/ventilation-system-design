@@ -2306,7 +2306,12 @@ export default function CadPage() {
   const [showLegend, setShowLegend] = useState(false);
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
-  const { recentFiles, addRecentFile, updateHasHandle, removeRecentFile, clearRecentFiles } = useRecentFiles();
+  const { recentFiles, addRecentFile, updateHasHandle, syncHandles, removeRecentFile, clearRecentFiles } = useRecentFiles();
+  // При открытии вкладки «Последние» сверяем пометки с реальным хранилищем:
+  // иначе файл показывался «недоступен», хотя открывался с диска нормально.
+  useEffect(() => {
+    if (fileSectionState === "recent") void syncHandles();
+  }, [fileSectionState, syncHandles]);
   // Имя файла проекта. При старте — ПУСТО: имя появляется только когда проект
   // открыт из файла или сохранён. Раньше здесь стояло «Проект1.vproj», и свежий
   // пустой запуск выглядел как уже существующий проект — а при закрытии
@@ -4743,6 +4748,9 @@ export default function CadPage() {
                     alert(`Файл «${rf.name}» недоступен.\nОткройте его через «Файл → Открыть» — он снова появится в списке.`);
                   };
 
+                  // Пометка «недоступен» — только когда открыть действительно
+                  // нечем. Флаг hasHandle сверяется с IndexedDB при открытии
+                  // вкладки (syncHandles), поэтому здесь он уже достоверен.
                   const canOpen = (rf: typeof recentFiles[0]) =>
                     rf.hasHandle || !!loadRecentData(rf.name);
 

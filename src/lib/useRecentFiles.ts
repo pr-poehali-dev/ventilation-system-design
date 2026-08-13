@@ -59,6 +59,23 @@ export async function loadHandleFromIDB(name: string): Promise<FileSystemFileHan
   }
 }
 
+/** Список имён, для которых в IndexedDB реально лежит handle */
+export async function listHandleNamesFromIDB(): Promise<string[]> {
+  try {
+    const db = await openIDB();
+    const keys = await new Promise<string[]>((res, rej) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).getAllKeys();
+      req.onsuccess = () => res((req.result as IDBValidKey[]).map(String));
+      req.onerror   = () => rej(req.error);
+    });
+    db.close();
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
 async function removeHandleFromIDB(name: string) {
   try {
     const db = await openIDB();
@@ -146,6 +163,27 @@ export function useRecentFiles() {
     });
   }, []);
 
+  /**
+   * Сверяет флаги hasHandle со списком реально сохранённых handle в IndexedDB.
+   * Нужно потому, что флаг живёт в localStorage и мог рассинхронизироваться:
+   * файл помечался «недоступен», хотя handle на месте и открывается с диска.
+   */
+  const syncHandles = useCallback(async () => {
+    const names = new Set(await listHandleNamesFromIDB());
+    setRecentFiles((prev) => {
+      let changed = false;
+      const updated = prev.map((f) => {
+        const has = names.has(f.name);
+        if (!!f.hasHandle === has) return f;
+        changed = true;
+        return { ...f, hasHandle: has };
+      });
+      if (!changed) return prev;
+      saveRecent(updated);
+      return updated;
+    });
+  }, []);
+
   const removeRecentFile = useCallback((name: string) => {
     removeRecentData(name);
     void removeHandleFromIDB(name);
@@ -167,5 +205,5 @@ export function useRecentFiles() {
     saveRecent([]);
   }, []);
 
-  return { recentFiles, addRecentFile, updateHasHandle, removeRecentFile, clearRecentFiles };
+  return { recentFiles, addRecentFile, updateHasHandle, syncHandles, removeRecentFile, clearRecentFiles };
 }
