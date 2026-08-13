@@ -1965,6 +1965,62 @@ export default function CadPage() {
     setSelectedNodeId(null);
   };
 
+  // ─── Применение типа выработки к выбранным ветвям ────────────────────
+  // Тип из справочника «Типы выработок» задаёт не только подпись (b.type),
+  // но и характеристики сечения и аэродинамики: форму, поверхность/крепь,
+  // площадь, максимальную скорость и коэффициент α.
+  // Площадь берётся из справочника как есть (manualSection=true), поэтому
+  // периметр считаем по той же форме, приведя её к нужной площади — иначе
+  // сопротивление считалось бы по периметру от прежнего сечения.
+  const applyBranchType = (typeName: string) => {
+    const t = mineTypes.find((m) => m.name === typeName);
+    if (!t) return;
+
+    // Периметр для площади S при заданной форме: у подобных фигур P ~ √S,
+    // поэтому берём эталонное сечение формы и масштабируем его периметр.
+    const ref = calcSection(
+      t.shape === "round"
+        ? { shape: "round", diameter: 1 }
+        : t.shape === "rect"
+          ? { shape: "rect", width: 1, height: 1 }
+          : t.shape === "trap"
+            ? { shape: "trap", width: 1, height: 1, topWidth: 0.8 }
+            : { shape: "arch", width: 1, height: 0.5, archHeight: 0.5 },
+    );
+    const area = t.area > 0 ? t.area : 0;
+    const perimeter = ref.area > 0 && area > 0
+      ? Math.round(ref.perimeter * Math.sqrt(area / ref.area) * 100) / 100
+      : 0;
+
+    // Поверхность/крепь: в справочнике хранится названием — находим её id,
+    // чтобы расчёт сопротивления получил корректный тип крепи.
+    const surf = SURFACE_TYPES.find((s) => s.name === t.surface);
+
+    const patch: Partial<TopoBranch> = {
+      type: t.name,
+      shape: t.shape,
+      area,
+      perimeter,
+      manualSection: true,
+      alphaCoef: t.alphaCoef,
+      vMax: t.vMax,
+      surface: t.surface,
+      ...(surf ? { surfaceId: surf.id } : {}),
+      resistanceMode: "alpha",
+    };
+
+    // Применяем ко всем выбранным ветвям, а при одиночном выборе — к текущей.
+    const targets = selectedBranchIds.size > 1
+      ? [...selectedBranchIds]
+      : selectedBranchId ? [selectedBranchId] : [];
+    if (targets.length === 0) return;
+
+    pushHistory();
+    setBranches((prev) =>
+      prev.map((b) => (targets.includes(b.id) ? { ...b, ...patch } : b)),
+    );
+  };
+
   // ─── МУЛЬТИВЫБОР УЗЛОВ (Ctrl+клик) ─────────────────────────────────
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const handleNodeMultiSelect = (id: string) => {
@@ -9329,7 +9385,7 @@ export default function CadPage() {
                       {mineTypes.length > 0 ? (
                         <select
                           value={mineTypes.some(t => t.name === selectedBranch.type) ? selectedBranch.type : ""}
-                          onChange={(e) => updateBranch(selectedBranch.id, { type: e.target.value })}
+                          onChange={(e) => applyBranchType(e.target.value)}
                           className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
                           {!mineTypes.some(t => t.name === selectedBranch.type) && (
                             <option value="" disabled>— выберите тип —</option>
