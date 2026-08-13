@@ -12,6 +12,7 @@ import {
 
 interface PrintSettingsPanelProps {
   handlePrint: () => void;
+  printing: boolean;
   setShowExportDialog: (v: boolean) => void;
   templates: Record<string, object>;
   loadTemplate: (name: string) => void;
@@ -57,7 +58,7 @@ interface PrintSettingsPanelProps {
 }
 
 export default function PrintSettingsPanel({
-  handlePrint, setShowExportDialog, templates, loadTemplate, saveTemplate, deleteTemplate,
+  handlePrint, printing, setShowExportDialog, templates, loadTemplate, saveTemplate, deleteTemplate,
   templateName, setTemplateName, format, setFormat, orientation, setOrientation,
   customW, setCustomW, customH, setCustomH, copies, setCopies,
   reverseOrder, setReverseOrder, pageRange, setPageRange,
@@ -73,10 +74,11 @@ export default function PrintSettingsPanel({
 
   {/* Кнопки */}
   <div className="flex gap-2 px-2 py-2 border-b border-gray-300">
-    <button onClick={handlePrint}
-      className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white">
-      <Icon name="Printer" size={22} className="text-gray-700" />
-      <span style={{ fontSize: 11, color: "#222" }}>Печать</span>
+    <button onClick={handlePrint} disabled={printing}
+      className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white disabled:opacity-60">
+      <Icon name={printing ? "Loader" : "Printer"} size={22}
+        className={printing ? "text-gray-700 animate-spin" : "text-gray-700"} />
+      <span style={{ fontSize: 11, color: "#222" }}>{printing ? "Подготовка…" : "Печать"}</span>
     </button>
     <button onClick={() => setShowExportDialog(true)}
       className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white">

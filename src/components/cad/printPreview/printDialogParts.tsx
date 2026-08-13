@@ -20,10 +20,39 @@ export function printViaIframe(html: string) {
   doc.write(html);
   doc.close();
   iframe.contentWindow?.focus();
-  setTimeout(() => {
+
+  // Ждём, пока браузер РЕАЛЬНО декодирует картинки листов, и только потом
+  // вызываем печать. Раньше здесь стояла слепая пауза 500 мс: лист A3 при
+  // 300 dpi весит десятки мегабайт и декодируется дольше — print() уходил
+  // на неготовый документ, и окно печати зависало с пустой страницей.
+  let done = false;
+  const start = () => {
+    if (done) return;
+    done = true;
     iframe.contentWindow?.print();
     setTimeout(() => iframe.remove(), 2000);
-  }, 500);
+  };
+
+  const imgs = Array.from(doc.images);
+  const waitAll = imgs.length === 0
+    ? Promise.resolve()
+    : Promise.all(imgs.map((img) => (
+        img.complete && img.naturalWidth > 0
+          ? Promise.resolve()
+          : new Promise<void>((res) => {
+              img.addEventListener("load",  () => res(), { once: true });
+              img.addEventListener("error", () => res(), { once: true });
+            })
+      )));
+
+  // Страховка: даже если какая-то картинка не отдала событие, печать всё
+  // равно запустится — программа не должна «зависать» насовсем.
+  const guard = setTimeout(start, 60000);
+  void waitAll.then(() => {
+    clearTimeout(guard);
+    // Даём кадр на раскладку страниц, затем печатаем.
+    requestAnimationFrame(() => setTimeout(start, 50));
+  });
 }
 
 export type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0" | "custom";

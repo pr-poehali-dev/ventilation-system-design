@@ -298,6 +298,11 @@ export default function PrintDialog({
   const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
   const [pdfExporting, setPdfExporting] = useState(false);
+  // Идёт подготовка листов к печати. Нужно, чтобы заблокировать кнопку:
+  // повторное нажатие запускало второй рендер листа (десятки МБ на лист),
+  // память кончалась и программа переставала отвечать.
+  const [printing, setPrinting] = useState(false);
+  const printingRef = useRef(false);
 
   // Автооткрытие диалога экспорта PDF если вызван из меню Файл → Экспорт
   useEffect(() => {
@@ -1007,6 +1012,10 @@ export default function PrintDialog({
 
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
+    if (printingRef.current) return;
+    printingRef.current = true;
+    setPrinting(true);
+    try {
     const PRINT_DPI = 300;
     const total = totalPages * copies;
 
@@ -1014,6 +1023,9 @@ export default function PrintDialog({
     const pngPages: string[] = [];
     for (const t of tilesList) {
       pngPages.push(await renderTileToCanvas(t.col, t.row, PRINT_DPI));
+      // Отдаём управление интерфейсу между листами: без этого при печати
+      // многолистовой схемы окно программы «замирало» на всё время рендера.
+      await new Promise((r) => setTimeout(r, 0));
     }
 
     // Штамп теперь рендерится через HorizonPrintLayerOverlay — не нужен отдельный HTML
@@ -1047,6 +1059,10 @@ body{background:white;font-family:Arial,sans-serif}
 </style></head><body>${pageHtmls.join("")}</body></html>`;
 
     printViaIframe(html);
+    } finally {
+      printingRef.current = false;
+      setPrinting(false);
+    }
   }, [paper, marginTop, marginBottom, marginRight,
       showPageNumbers, copies, reverseOrder, projectName,
       tiles, totalPages, renderTileToCanvas]);
@@ -1056,6 +1072,10 @@ body{background:white;font-family:Arial,sans-serif}
     closeCtxMenu();
     const tile = tiles.list[tileIdx];
     if (!tile) return;
+    if (printingRef.current) return;
+    printingRef.current = true;
+    setPrinting(true);
+    try {
     const pageNum = tileIdx + 1;
     const png = await renderTileToCanvas(tile.col, tile.row, 300);
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1075,6 +1095,10 @@ body{background:white;font-family:Arial,sans-serif}
 </div>
 </body></html>`;
     printViaIframe(html);
+    } finally {
+      printingRef.current = false;
+      setPrinting(false);
+    }
   }, [tiles, paper, marginBottom, marginRight, projectName,
       showPageNumbers, renderTileToCanvas, closeCtxMenu]);
 
@@ -1403,6 +1427,7 @@ body{background:white;font-family:Arial,sans-serif}
           {/* Левая панель */}
           <PrintSettingsPanel
             handlePrint={handlePrint}
+            printing={printing}
             setShowExportDialog={setShowExportDialog}
             templates={templates}
             loadTemplate={loadTemplate}
@@ -1609,10 +1634,14 @@ body{background:white;font-family:Arial,sans-serif}
         {/* Кнопки внизу */}
         <div className="flex items-center justify-end gap-2 px-4 py-2 flex-shrink-0"
           style={{ background: "#efefef", borderTop: "1px solid #d0d0d0" }}>
-          <button onClick={handlePrint}
-            className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600"
+          <button onClick={handlePrint} disabled={printing}
+            className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
             style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
-            <Icon name="Printer" size={13} className="inline mr-1.5" />Печать
+            {printing ? (
+              <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />Подготовка…</>
+            ) : (
+              <><Icon name="Printer" size={13} className="inline mr-1.5" />Печать</>
+            )}
           </button>
           <button onClick={onClose}
             className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
