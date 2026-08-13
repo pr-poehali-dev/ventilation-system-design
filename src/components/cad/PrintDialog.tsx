@@ -14,26 +14,15 @@ import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 // программы: библиотека весит сотни килобайт, а нужна лишь при печати.
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
+// Общие части и блоки диалога вынесены в отдельные файлы (перенос 1:1)
+import {
+  printViaIframe, Section, Row, inp, sel, ih, PAPER_SIZES,
+  type PaperFormat, type Orientation,
+} from "@/components/cad/printPreview/printDialogParts";
+import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel";
+import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
 
 // ── Печать через скрытый iframe (работает в Electron и браузере без всплывающих окон) ──
-function printViaIframe(html: string) {
-  const existing = document.getElementById("__pvs_print_frame__");
-  if (existing) existing.remove();
-  const iframe = document.createElement("iframe");
-  iframe.id = "__pvs_print_frame__";
-  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none";
-  document.body.appendChild(iframe);
-  const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (!doc) return;
-  doc.open();
-  doc.write(html);
-  doc.close();
-  iframe.contentWindow?.focus();
-  setTimeout(() => {
-    iframe.contentWindow?.print();
-    setTimeout(() => iframe.remove(), 2000);
-  }, 500);
-}
 
 interface PrintDialogProps {
   onClose: () => void;
@@ -73,44 +62,7 @@ interface PrintDialogProps {
   onExportDialogOpened?: () => void;
 }
 
-type PaperFormat = "A4" | "A3" | "A2" | "A1" | "A0" | "custom";
-type Orientation = "portrait" | "landscape";
 
-const PAPER_SIZES: Record<Exclude<PaperFormat, "custom">, { w: number; h: number }> = {
-  A4: { w: 210, h: 297 },
-  A3: { w: 297, h: 420 },
-  A2: { w: 420, h: 594 },
-  A1: { w: 594, h: 841 },
-  A0: { w: 841, h: 1189 },
-};
-
-function Section({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div style={{ borderBottom: "1px solid #d0d0d0" }}>
-      <button onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left"
-        style={{ fontSize: 12, fontWeight: 700, color: "#1a1a1a", background: "#e4e4e4" }}>
-        <span style={{ fontSize: 8, color: "#555" }}>{open ? "▼" : "►"}</span>
-        {title}
-      </button>
-      {open && <div className="px-3 py-2 space-y-1.5">{children}</div>}
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span style={{ width: 88, fontSize: 12, color: "#1a1a1a", flexShrink: 0, fontWeight: 500 }}>{label}</span>
-      <div className="flex-1">{children}</div>
-    </div>
-  );
-}
-
-const inp = "border border-gray-500 px-1.5 rounded text-[12px] text-gray-900 bg-white focus:outline-none focus:border-blue-500";
-const sel = inp + " cursor-pointer w-full";
-const ih = { height: 22 } as React.CSSProperties;
 
 export default function PrintDialog({
   onClose, projectName = "Проект",
@@ -1445,198 +1397,34 @@ body{background:white;font-family:Arial,sans-serif}
         <div className="flex flex-1 overflow-hidden">
 
           {/* Левая панель */}
-          <div className="flex-shrink-0 overflow-y-auto border-r border-gray-300"
-            style={{ width: 215, background: "#f4f4f4", color: "#1a1a1a" }}>
-
-            {/* Кнопки */}
-            <div className="flex gap-2 px-2 py-2 border-b border-gray-300">
-              <button onClick={handlePrint}
-                className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white">
-                <Icon name="Printer" size={22} className="text-gray-700" />
-                <span style={{ fontSize: 11, color: "#222" }}>Печать</span>
-              </button>
-              <button onClick={() => setShowExportDialog(true)}
-                className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white">
-                <Icon name="Download" size={22} className="text-gray-700" />
-                <span style={{ fontSize: 11, color: "#222" }}>Экспорт</span>
-              </button>
-            </div>
-
-            {/* Шаблон */}
-            <Section title="Шаблон">
-              <select className={sel} style={ih} value=""
-                onChange={e => { if (e.target.value) loadTemplate(e.target.value); }}>
-                <option value="">— выбрать шаблон —</option>
-                {Object.keys(templates).map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <div style={{ fontSize: 11, color: "#444", marginTop: 4 }}>Название шаблона:</div>
-              <input className={inp + " w-full"} style={ih} placeholder="Мой шаблон"
-                value={templateName} onChange={e => setTemplateName(e.target.value)} />
-              <div className="flex gap-1 pt-1">
-                <button onClick={saveTemplate}
-                  className="flex-1 py-0.5 text-[11px] border border-gray-400 rounded hover:bg-gray-200 bg-white font-medium text-gray-800">Сохранить</button>
-                <button onClick={() => templateName && deleteTemplate(templateName)}
-                  className="flex-1 py-0.5 text-[11px] border border-gray-400 rounded hover:bg-red-50 hover:border-red-400 bg-white text-gray-700">Удалить</button>
-              </div>
-            </Section>
-
-            {/* Основные параметры */}
-            <Section title="Основные параметры">
-              <div style={{ fontSize: 12, color: "#333", marginBottom: 3 }}>Принтер:</div>
-              <select className={sel} style={ih}><option>Системный принтер</option></select>
-            </Section>
-
-            {/* Диапазон */}
-            <Section title="Печатный диапазон">
-              <Row label="Страницы:">
-                <input className={inp + " w-full"} style={ih} placeholder="Пример: 1-1"
-                  value={pageRange} onChange={e => setPageRange(e.target.value)} />
-              </Row>
-              <Row label="Копии:">
-                <input type="number" min={1} max={99} className={inp} style={{ ...ih, width: 60 }}
-                  value={copies} onChange={e => setCopies(Math.max(1, +e.target.value || 1))} />
-              </Row>
-              <label className="flex items-center gap-1.5 cursor-pointer pt-0.5">
-                <input type="checkbox" checked={reverseOrder} onChange={e => setReverseOrder(e.target.checked)}
-                  style={{ accentColor: "#2563eb" }} />
-                <span style={{ fontSize: 12, color: "#1a1a1a" }}>Печать в обратном порядке</span>
-              </label>
-            </Section>
-
-            {/* Размер бумаги */}
-            <Section title="Размер бумаги">
-              <Row label="Ориентация:">
-                <select className={sel} style={ih} value={orientation}
-                  onChange={e => setOrientation(e.target.value as Orientation)}>
-                  <option value="landscape">Альбомная</option>
-                  <option value="portrait">Книжная</option>
-                </select>
-              </Row>
-              <Row label="Формат:">
-                <select className={sel} style={ih} value={format}
-                  onChange={e => setFormat(e.target.value as PaperFormat)}>
-                  {(["A4","A3","A2","A1","A0"] as PaperFormat[]).map(f =>
-                    <option key={f} value={f}>{f} ({PAPER_SIZES[f].w}×{PAPER_SIZES[f].h} мм)</option>)}
-                  <option value="custom">Произвольный</option>
-                </select>
-              </Row>
-              {format === "custom" ? (
-                <>
-                  <Row label="Ширина:">
-                    <div className="flex items-center gap-1">
-                      <input type="number" className={inp} style={{ ...ih, width: 60 }}
-                        value={customW} onChange={e => setCustomW(+e.target.value || 210)} />
-                      <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-                    </div>
-                  </Row>
-                  <Row label="Высота:">
-                    <div className="flex items-center gap-1">
-                      <input type="number" className={inp} style={{ ...ih, width: 60 }}
-                        value={customH} onChange={e => setCustomH(+e.target.value || 297)} />
-                      <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-                    </div>
-                  </Row>
-                </>
-              ) : (
-                <>
-                  <Row label="Ширина:"><span style={{ fontSize: 12, color: "#333" }}>{paper.w} мм</span></Row>
-                  <Row label="Высота:"><span style={{ fontSize: 12, color: "#333" }}>{paper.h} мм</span></Row>
-                </>
-              )}
-            </Section>
-
-            {/* Преобразование схемы */}
-            <Section title="Преобразование схемы">
-              <Row label="Масштаб:">
-                <div className="flex items-center gap-1">
-                  <input type="number" min={1} max={10000} className={inp} style={{ ...ih, width: 60 }}
-                    value={scaleDisplay}
-                    onChange={e => {
-                      const v = Math.max(1, +e.target.value || 1);
-                      setScaleDisplay(v);
-                      // userScale = множитель относительно fit (100% = fit = 1.0)
-                      setUserScale(v / 100);
-                    }} />
-                  <span style={{ fontSize: 11, color: "#555" }}>%</span>
-                </div>
-              </Row>
-              <button onClick={() => {
-                // 100% = fit в 1 лист
-                setUserScale(null);
-                setUserOffsetX(null); setUserOffsetY(null);
-                setOffsetXDisplay(0); setOffsetYDisplay(0);
-                setScaleDisplay(100);
-              }}
-                className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-blue-50 hover:border-blue-400 bg-white font-medium text-gray-800">
-                Подобрать масштаб
-              </button>
-              <div style={{ fontSize: 12, color: "#333", fontWeight: 500, paddingTop: 4 }}>Смещение:</div>
-              <Row label="вправо:">
-                <div className="flex items-center gap-1">
-                  <input type="number" className={inp} style={{ ...ih, width: 60 }}
-                    value={offsetXDisplay}
-                    onChange={e => {
-                      const mm = +e.target.value || 0;
-                      setOffsetXDisplay(mm);
-                      // дельта от дефолтного положения
-                      setUserOffsetX(baseView.defaultOffsetX + mm * 150 / 25.4);
-                    }} />
-                  <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-                </div>
-              </Row>
-              <Row label="вниз:">
-                <div className="flex items-center gap-1">
-                  <input type="number" className={inp} style={{ ...ih, width: 60 }}
-                    value={offsetYDisplay}
-                    onChange={e => {
-                      const mm = +e.target.value || 0;
-                      setOffsetYDisplay(mm);
-                      setUserOffsetY(baseView.defaultOffsetY + mm * 150 / 25.4);
-                    }} />
-                  <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-                </div>
-              </Row>
-            </Section>
-
-            {/* Поля */}
-            <Section title="Поля" defaultOpen={false}>
-              {([["Верхнее:", marginTop, setMarginTop],["Нижнее:", marginBottom, setMarginBottom],
-                 ["Левое:", marginLeft, setMarginLeft],["Правое:", marginRight, setMarginRight]
-              ] as [string, number, (v: number) => void][]).map(([lbl, val, set]) => (
-                <Row key={lbl} label={lbl}>
-                  <div className="flex items-center gap-1">
-                    <input type="number" min={0} max={50} className={inp} style={{ ...ih, width: 55 }}
-                      value={val} onChange={e => set(Math.max(0, +e.target.value || 0))} />
-                    <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-                  </div>
-                </Row>
-              ))}
-            </Section>
-
-            {/* Номера страниц */}
-            <Section title="Номера страниц" defaultOpen={false}>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" checked={showPageNumbers} onChange={e => setShowPageNumbers(e.target.checked)}
-                  style={{ accentColor: "#2563eb" }} />
-                <span style={{ fontSize: 12, color: "#1a1a1a" }}>Номера страниц</span>
-              </label>
-              <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-                Рамка, штамп и УО управляются через «Слой печати» в панели горизонтов.
-              </p>
-            </Section>
-
-            {/* Сброс */}
-            <div className="px-3 py-2">
-              <button onClick={() => {
-                setUserScale(null); setUserOffsetX(null); setUserOffsetY(null);
-                setScaleDisplay(100); setOffsetXDisplay(0); setOffsetYDisplay(0);
-                setMarginTop(5); setMarginBottom(5); setMarginLeft(5); setMarginRight(5);
-                setShowPageNumbers(true);
-              }} className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-gray-200 bg-white text-gray-700">
-                Сбросить настройки
-              </button>
-            </div>
-          </div>
+          <PrintSettingsPanel
+            handlePrint={handlePrint}
+            setShowExportDialog={setShowExportDialog}
+            templates={templates}
+            loadTemplate={loadTemplate}
+            saveTemplate={saveTemplate}
+            deleteTemplate={deleteTemplate}
+            templateName={templateName} setTemplateName={setTemplateName}
+            format={format} setFormat={setFormat}
+            orientation={orientation} setOrientation={setOrientation}
+            customW={customW} setCustomW={setCustomW}
+            customH={customH} setCustomH={setCustomH}
+            copies={copies} setCopies={setCopies}
+            reverseOrder={reverseOrder} setReverseOrder={setReverseOrder}
+            pageRange={pageRange} setPageRange={setPageRange}
+            scaleDisplay={scaleDisplay} setScaleDisplay={setScaleDisplay}
+            offsetXDisplay={offsetXDisplay} setOffsetXDisplay={setOffsetXDisplay}
+            offsetYDisplay={offsetYDisplay} setOffsetYDisplay={setOffsetYDisplay}
+            setUserScale={setUserScale}
+            setUserOffsetX={setUserOffsetX} setUserOffsetY={setUserOffsetY}
+            marginTop={marginTop} setMarginTop={setMarginTop}
+            marginBottom={marginBottom} setMarginBottom={setMarginBottom}
+            marginLeft={marginLeft} setMarginLeft={setMarginLeft}
+            marginRight={marginRight} setMarginRight={setMarginRight}
+            showPageNumbers={showPageNumbers} setShowPageNumbers={setShowPageNumbers}
+            paper={paper}
+            baseView={baseView}
+          />
 
           {/* Предпросмотр */}
           <div
@@ -1831,118 +1619,15 @@ body{background:white;font-family:Arial,sans-serif}
 
       {/* Диалог экспорта */}
       {showExportDialog && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.6)", pointerEvents: "auto" }}>
-          <div className="bg-white rounded shadow-2xl border border-gray-400"
-            style={{ width: 400, fontFamily: "Tahoma, Segoe UI, Arial, sans-serif" }}>
-
-            <div className="flex items-center justify-between px-4 py-2"
-              style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)", borderRadius: "4px 4px 0 0" }}>
-              <div className="flex items-center gap-2">
-                <Icon name="Download" size={14} className="text-white" />
-                <span className="text-white font-bold text-[13px]">Экспорт схемы</span>
-              </div>
-              <button onClick={() => setShowExportDialog(false)}
-                className="text-white hover:bg-red-500 w-5 h-5 flex items-center justify-center rounded">✕</button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Формат файла:</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["png","png-hq","jpg","bmp","tiff","svg","pdf","pdf-vector"] as const).map(f => (
-                    <button key={f} onClick={() => setExportFormat(f)}
-                      className="py-1.5 rounded border text-[12px] font-semibold uppercase"
-                      style={{
-                        background: exportFormat === f ? "#2563eb" : "white",
-                        color: exportFormat === f ? "white" : "#1a1a1a",
-                        borderColor: exportFormat === f ? "#2563eb" : "#9ca3af",
-                      }}>
-                      {f === "pdf-vector" ? "PDF ✦" : f === "png-hq" ? "PNG ★" : f.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>
-                  {exportFormat === "png"        && "PNG — растр, без потерь. Рекомендуется для экрана."}
-                  {exportFormat === "png-hq"     && <span style={{ color: "#1a6e2e", fontWeight: 600 }}>PNG ★ — высококачественный растр через SVG-вектор. Рамка, штамп, УО — всё чётко при любом DPI. Идеально для широкоформатной печати.</span>}
-                  {exportFormat === "jpg"        && "JPEG — растр, с потерями, меньше размер"}
-                  {exportFormat === "bmp"        && "BMP — растр, без сжатия"}
-                  {exportFormat === "tiff"       && "TIFF — растр, для полиграфии"}
-                  {exportFormat === "svg"        && "SVG — вектор, идеально для плоттера, масштаб бесконечен"}
-                  {exportFormat === "pdf"        && "PDF — растровый, все страницы, выбранный DPI"}
-                  {exportFormat === "pdf-vector" && "PDF ✦ — векторный, идеально для плоттера. Конвертируется на сервере из SVG."}
-                </div>
-              </div>
-
-              {!["svg", "pdf-vector"].includes(exportFormat) && (
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Разрешение (DPI):</div>
-                  <div className="flex gap-2 mb-2">
-                    {[72,96,150,300,600].map(d => (
-                      <button key={d} onClick={() => setExportDpi(d)}
-                        className="flex-1 py-1 rounded border text-[11px] font-medium"
-                        style={{
-                          background: exportDpi === d ? "#2563eb" : "white",
-                          color: exportDpi === d ? "white" : "#1a1a1a",
-                          borderColor: exportDpi === d ? "#2563eb" : "#9ca3af",
-                        }}>{d}</button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span style={{ fontSize: 12, color: "#333" }}>Своё:</span>
-                    <input type="number" min={36} max={1200} value={exportDpi}
-                      onChange={e => setExportDpi(Math.max(36, Math.min(1200, +e.target.value || 96)))}
-                      className="border border-gray-400 rounded px-2 text-[12px] text-gray-900"
-                      style={{ width: 70, height: 24 }} />
-                    <span style={{ fontSize: 11, color: "#555" }}>dpi</span>
-                  </div>
-                  {(() => {
-                    const pw = Math.round(paper.w * exportDpi / 25.4);
-                    const ph = Math.round(paper.h * exportDpi / 25.4);
-                    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-                    const MAX_PX = isMobile ? 8192 : 32768;
-                    const clipped = pw > MAX_PX || ph > MAX_PX;
-                    const effW = Math.min(pw, MAX_PX);
-                    const effH = Math.min(ph, MAX_PX);
-                    return (
-                      <div style={{ fontSize: 11, marginTop: 6, color: clipped ? "#b45309" : "#555" }}>
-                        Размер: {effW} × {effH} пикс.
-                        {clipped && <span> (ограничено браузером — исходный {pw}×{ph})</span>}
-                        {exportFormat === "png-hq" && !clipped && <span style={{ color: "#1a6e2e" }}> — вектор без пикселизации</span>}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {exportFormat === "jpg" && (
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 6 }}>
-                    Качество: {exportQuality}%
-                  </div>
-                  <input type="range" min={10} max={100} step={5}
-                    value={exportQuality} onChange={e => setExportQuality(+e.target.value)}
-                    className="w-full" style={{ accentColor: "#2563eb" }} />
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 px-5 pb-5 justify-end">
-              <button onClick={handleExport} disabled={pdfExporting}
-                className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60 disabled:cursor-wait"
-                style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
-                {pdfExporting
-                  ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />{exportFormat === "pdf-vector" ? "Конвертация SVG→PDF..." : exportFormat === "png-hq" ? "Рендер PNG HQ..." : "Генерация PDF..."}</>
-                  : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat === "pdf-vector" ? "PDF ✦ вектор" : exportFormat === "png-hq" ? "PNG ★ HQ" : exportFormat.toUpperCase()}</>
-                }
-              </button>
-              <button onClick={() => setShowExportDialog(false)} disabled={pdfExporting}
-                className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700 disabled:opacity-60">
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
+        <PrintExportDialog
+          exportFormat={exportFormat} setExportFormat={setExportFormat}
+          exportDpi={exportDpi} setExportDpi={setExportDpi}
+          exportQuality={exportQuality} setExportQuality={setExportQuality}
+          pdfExporting={pdfExporting}
+          handleExport={handleExport}
+          setShowExportDialog={setShowExportDialog}
+          paper={paper}
+        />
       )}
     </div>
   );
