@@ -1966,9 +1966,9 @@ export default function CadPage() {
   };
 
   // ─── Применение типа выработки к выбранным ветвям ────────────────────
-  // Тип из справочника «Типы выработок» задаёт не только подпись (b.type),
-  // но и характеристики сечения и аэродинамики: форму, поверхность/крепь,
-  // площадь, максимальную скорость и коэффициент α.
+  // Тип из справочника «Типы выработок» задаёт характеристики сечения и
+  // аэродинамики: форму, поверхность/крепь, площадь, максимальную скорость
+  // и коэффициент α. Название выработки (b.type) при этом НЕ меняется.
   // Площадь берётся из справочника как есть (manualSection=true), поэтому
   // периметр считаем по той же форме, приведя её к нужной площади — иначе
   // сопротивление считалось бы по периметру от прежнего сечения.
@@ -1997,7 +1997,9 @@ export default function CadPage() {
     const surf = SURFACE_TYPES.find((s) => s.name === t.surface);
 
     const patch: Partial<TopoBranch> = {
-      type: t.name,
+      // Тип пишем в ОТДЕЛЬНОЕ поле: название выработки (type) остаётся
+      // тем, что ввёл пользователь на вкладке «Общие».
+      mineTypeName: t.name,
       shape: t.shape,
       area,
       perimeter,
@@ -2707,8 +2709,20 @@ export default function CadPage() {
     setNodes(rawNodes.map((n) => makeNode(n.id, n)));
     // Каждую ветвь прогоняем через makeBranch чтобы гарантировать все поля (fanRpm и т.д.)
     const rawBranches = (data.branches as TopoBranch[]) ?? [];
+    // Совместимость со старыми файлами: раньше выбранный тип выработки
+    // записывался в поле названия (type) и затирал его. Если отдельное поле
+    // ещё не заполнено, а название совпадает с типом из справочника —
+    // переносим его в mineTypeName, чтобы выбор в списке не потерялся.
+    const loadedTypeNames = new Set(
+      ((data.mineTypes as BranchType[]) ?? []).map((t) => t.name),
+    );
     const mergedBranches = rawBranches.map((b) =>
-      makeBranch(b.id, b.fromId, b.toId, b)
+      makeBranch(b.id, b.fromId, b.toId, {
+        ...b,
+        ...(!b.mineTypeName && b.type && loadedTypeNames.has(b.type)
+          ? { mineTypeName: b.type }
+          : {}),
+      })
     );
     // Пересчитываем R всех ветвей при загрузке — чтобы не использовать устаревшие кешированные значения
     const recalcedBranches = recalcAll(rawNodes.map((n) => makeNode(n.id, n)), mergedBranches);
@@ -9384,10 +9398,10 @@ export default function CadPage() {
                     <PropGroup title="Тип выработки">
                       {mineTypes.length > 0 ? (
                         <select
-                          value={mineTypes.some(t => t.name === selectedBranch.type) ? selectedBranch.type : ""}
+                          value={mineTypes.some(t => t.name === selectedBranch.mineTypeName) ? selectedBranch.mineTypeName : ""}
                           onChange={(e) => applyBranchType(e.target.value)}
                           className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
-                          {!mineTypes.some(t => t.name === selectedBranch.type) && (
+                          {!mineTypes.some(t => t.name === selectedBranch.mineTypeName) && (
                             <option value="" disabled>— выберите тип —</option>
                           )}
                           {mineTypes.map(t => (
