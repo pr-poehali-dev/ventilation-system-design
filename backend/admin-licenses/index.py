@@ -460,7 +460,43 @@ def handler(event: dict, context) -> dict:
             """)
             logins_24h = int(cur.fetchone()[0])
 
+            # 6. РАСХОД ВЫЧИСЛИТЕЛЬНОГО ВРЕМЕНИ — сколько обращений к
+            # лицензионной службе пришло за месяц. Считается по отдельному
+            # счётчику license_usage_daily (журнал событий для этого не годится:
+            # он намеренно пишется не чаще раза в сутки на рабочее место).
+            cur.execute("""
+                SELECT COALESCE(SUM(cnt) FILTER (WHERE day >= CURRENT_DATE - 29), 0) AS month_total,
+                       COALESCE(SUM(cnt) FILTER (WHERE day >= CURRENT_DATE - 6),  0) AS week_total,
+                       COALESCE(SUM(cnt) FILTER (WHERE day  = CURRENT_DATE),      0) AS today_total
+                FROM license_usage_daily
+            """)
+            u = cur.fetchone()
+            usage_month, usage_week, usage_today = int(u[0]), int(u[1]), int(u[2])
+
+            # Разбивка по видам обращений за месяц (проверка / сигнал / активация)
+            cur.execute("""
+                SELECT action, SUM(cnt) FROM license_usage_daily
+                WHERE day >= CURRENT_DATE - 29
+                GROUP BY action ORDER BY SUM(cnt) DESC
+            """)
+            usage_by_action = [{"action": r[0], "count": int(r[1])} for r in cur.fetchall()]
+
+            # По дням за 30 суток — для графика
+            cur.execute("""
+                SELECT day, SUM(cnt) FROM license_usage_daily
+                WHERE day >= CURRENT_DATE - 29
+                GROUP BY day ORDER BY day
+            """)
+            usage_daily = [{"day": str(r[0]), "count": int(r[1])} for r in cur.fetchall()]
+
             return resp(200, {
+                "usage": {
+                    "month": usage_month,
+                    "week": usage_week,
+                    "today": usage_today,
+                    "by_action": usage_by_action,
+                    "daily": usage_daily,
+                },
                 "sessions": {"online": online_seats, "total": total_seats, "list": online_list},
                 "violations": {"counts": violations, "multi_ip": multi_ip},
                 "expiring": expiring,

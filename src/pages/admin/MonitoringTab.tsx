@@ -78,9 +78,10 @@ export default function MonitoringTab({ data, loading }: Props) {
   return (
     <div className="space-y-5">
       {/* Верхние метрики */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         {[
           { label: "Онлайн сейчас", value: data.sessions.online, sub: `из ${data.sessions.total} мест`, icon: "Wifi", color: "#16a34a" },
+          { label: "Обращений за месяц", value: (data.usage?.month ?? 0).toLocaleString("ru"), sub: "к серверу", icon: "Gauge", color: "#7c3aed" },
           { label: "Входов за 24 ч", value: data.logins_24h, sub: "активность", icon: "LogIn", color: "#2563eb" },
           { label: "Нарушения (30 дн)", value: totalViolations, sub: "попыток", icon: "ShieldAlert", color: totalViolations ? "#dc2626" : "#94a3b8" },
           { label: "Скоро истекают", value: data.expiring.length, sub: "лицензий", icon: "CalendarClock", color: data.expiring.length ? "#d97706" : "#94a3b8" },
@@ -165,6 +166,91 @@ export default function MonitoringTab({ data, loading }: Props) {
           </div>
         )}
       </Card>
+
+      {/* 2. Расход вычислительного времени — сколько обращений к лицензионной
+             службе пришло за месяц. Нужен, чтобы видеть расход по тарифу и
+             замечать всплески. */}
+      {data.usage && (() => {
+        const u = data.usage;
+        const days = u.daily.length || 1;
+        const perDay = Math.round(u.month / Math.min(days, 30));
+        // Прогноз на месяц по темпу последней недели — сколько выйдет,
+        // если нагрузка останется такой же.
+        const forecast = Math.round((u.week / 7) * 30);
+        const maxDay = Math.max(1, ...u.daily.map(d => d.count));
+        const ACTION_LABELS: Record<string, string> = {
+          check: "Проверка лицензии",
+          heartbeat: "Сигнал «на связи»",
+          activate: "Активация ключа",
+          transfer: "Перенос лицензии",
+          unknown: "Прочее",
+        };
+        return (
+          <Card title="Расход обращений к серверу" icon="Gauge" color="#7c3aed">
+            <div className="grid grid-cols-4 gap-4 mb-4">
+              {[
+                { label: "За месяц", value: u.month.toLocaleString("ru"), sub: "обращений" },
+                { label: "За неделю", value: u.week.toLocaleString("ru"), sub: "обращений" },
+                { label: "Сегодня", value: u.today.toLocaleString("ru"), sub: "обращений" },
+                { label: "В среднем", value: perDay.toLocaleString("ru"), sub: "в сутки" },
+              ].map(s => (
+                <div key={s.label} className="rounded-lg p-3" style={{ background: "#faf5ff" }}>
+                  <div className="text-[10px] text-gray-500 mb-1">{s.label}</div>
+                  <div className="text-[20px] font-bold leading-none" style={{ color: "#7c3aed" }}>{s.value}</div>
+                  <div className="text-[10px] text-gray-400 mt-1">{s.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* График по дням */}
+            {u.daily.length > 0 && (
+              <div className="mb-4">
+                <div className="text-[11px] text-gray-400 mb-2">По дням (за 30 суток), максимум {maxDay}:</div>
+                <div className="flex items-end gap-[3px]" style={{ height: 56 }}>
+                  {u.daily.map(d => (
+                    <div key={d.day} className="flex-1 rounded-t"
+                      style={{
+                        height: `${Math.max(3, (d.count / maxDay) * 100)}%`,
+                        background: "#a78bfa",
+                        minWidth: 4,
+                      }}
+                      title={`${new Date(d.day).toLocaleDateString("ru-RU")} — ${d.count} обращений`} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-5">
+              <div>
+                <div className="text-[11px] text-gray-400 mb-1.5">Из чего складывается (за месяц):</div>
+                {u.by_action.length === 0 ? (
+                  <div className="text-[11px] text-gray-300">Нет данных</div>
+                ) : u.by_action.map(a => (
+                  <div key={a.action} className="flex items-center justify-between text-[12px] py-0.5">
+                    <span className="text-gray-600">{ACTION_LABELS[a.action] ?? a.action}</span>
+                    <span className="font-semibold text-gray-700">{a.count.toLocaleString("ru")}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="text-[11px] text-gray-400 mb-1.5">Прогноз</div>
+                <div className="text-[12px] text-gray-600">
+                  При нынешнем темпе за месяц выйдет около{" "}
+                  <span className="font-semibold" style={{ color: "#7c3aed" }}>
+                    {forecast.toLocaleString("ru")}
+                  </span>{" "}
+                  обращений.
+                </div>
+                <div className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+                  Считается по темпу последней недели. Проверка лицензии уходит
+                  раз в неделю на рабочее место, сигнал «на связи» — раз в 30 минут,
+                  пока программа открыта.
+                </div>
+              </div>
+            </div>
+          </Card>
+        );
+      })()}
 
       <div className="grid grid-cols-2 gap-5">
         {/* 3. Нарушения */}

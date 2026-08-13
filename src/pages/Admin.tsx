@@ -68,6 +68,14 @@ export interface MonitoringData {
   core_versions?: { version: string; count: number; orgs?: { owner: string; count: number }[] }[];
   modules_usage: { modules: string; count: number }[];
   logins_24h: number;
+  /** Расход вычислительного времени — обращения к лицензионной службе */
+  usage?: {
+    month: number;
+    week: number;
+    today: number;
+    by_action: { action: string; count: number }[];
+    daily: { day: string; count: number }[];
+  };
 }
 
 interface LicenseForm {

@@ -56,6 +56,26 @@ def client_ip(event: dict) -> str:
     return (ident.get("sourceIp") or "")[:64]
 
 
+def bump_usage(cur, action: str):
+    """
+    Счётчик обращений к лицензионной службе (по дням) — для контроля расхода
+    вычислительного времени в облаке.
+
+    Одна строка на день и вид обращения: таблица не растёт, запись дешёвая.
+    Отдельный счётчик нужен потому, что журнал событий намеренно пишется не
+    чаще раза в сутки на рабочее место, и реальное число вызовов по нему
+    посчитать нельзя.
+    """
+    try:
+        cur.execute("""
+            INSERT INTO license_usage_daily (day, action, cnt)
+            VALUES (CURRENT_DATE, %s, 1)
+            ON CONFLICT (day, action) DO UPDATE SET cnt = license_usage_daily.cnt + 1
+        """, (action[:20],))
+    except Exception as e:
+        print(f"[license] bump_usage failed: {e}")
+
+
 def log_event(cur, *, license_id=None, license_key=None, seat_id=None,
               event_type="", fph=None, hostname=None, platform=None,
               app_version=None, ip=None, detail=None):
@@ -126,6 +146,15 @@ def handler(event: dict, context) -> dict:
 
     conn = get_conn()
     cur  = conn.cursor()
+
+    # Считаем КАЖДОЕ обращение (до всех проверок) — так счётчик показывает
+    # реальный расход вычислительного времени, включая обращения от чужих и
+    # неизвестных мест. Виден в админ-панели, вкладка «Мониторинг».
+    #
+    # Сохраняем СРАЗУ: часть веток ниже закрывает соединение без commit
+    # (лицензия не найдена, отозвана, просрочена) — иначе счётчик бы терялся.
+    bump_usage(cur, action or "unknown")
+    conn.commit()
 
     # ── check ──────────────────────────────────────────────────────────────────
     if action == "check":
