@@ -11,6 +11,31 @@ import { API_URLS } from "@/lib/api-urls";
 
 const RESCUE_URL = API_URLS.rescueCalculator;
 
+// Кэш ответов сервера по маршрутам ВГСЧ.
+//
+// ЗАЧЕМ. Раньше КАЖДОЕ нажатие «Рассчитать маршрут» отправляло на сервер всю
+// схему целиком — сотни ветвей и узлов. При подборе вариантов (сравнить два
+// маршрута, вернуться к предыдущему, перепроверить после обсуждения) один и
+// тот же расчёт уходил на сервер снова и снова.
+//
+// Теперь повтор того же расчёта берётся из памяти мгновенно. Ключ — исходные
+// данные запроса: изменилась схема, узлы или настройки — считаем заново.
+// Кэш живёт до перезагрузки программы, хранится 12 последних расчётов.
+const rescueCache = new Map<string, unknown>();
+const RESCUE_CACHE_MAX = 12;
+
+function rescueCacheGet(key: string): unknown | null {
+  return rescueCache.has(key) ? rescueCache.get(key)! : null;
+}
+
+function rescueCacheSet(key: string, value: unknown) {
+  if (rescueCache.size >= RESCUE_CACHE_MAX) {
+    const oldest = rescueCache.keys().next().value;
+    if (oldest !== undefined) rescueCache.delete(oldest);
+  }
+  rescueCache.set(key, value);
+}
+
 interface NodeLite { id: string; name: string; number: string; x: number; y: number; z: number; }
 interface BranchLite {
   id: string; fromId: string; toId: string;
@@ -716,23 +741,30 @@ export default function RescuePanel({
     };
 
     let res: RescueResult;
+    const reqBody = JSON.stringify({ nodes, branches, startNodeId, targetNodeId, params });
     try {
-      const resp = await fetch(RESCUE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes, branches, startNodeId, targetNodeId, params }),
-      });
-      // HTTP-ошибка (400/500) НЕ бросает исключение в fetch — проверяем явно.
-      // Без этой проверки ответ вида {"error": "..."} попадал в res, поле
-      // segments оставалось undefined, и res.segments.map() ниже роняло всё
-      // React-дерево — пользователь видел чёрный экран.
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      if (data?.error || !Array.isArray(data?.segments)) throw new Error("bad payload");
+      // Тот же самый расчёт уже делали — берём готовый ответ из памяти, сервер
+      // не тревожим. Иначе спрашиваем сервер и запоминаем ответ.
+      let data = rescueCacheGet(reqBody) as Record<string, unknown> | null;
+      if (!data) {
+        const resp = await fetch(RESCUE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: reqBody,
+        });
+        // HTTP-ошибка (400/500) НЕ бросает исключение в fetch — проверяем явно.
+        // Без этой проверки ответ вида {"error": "..."} попадал в res, поле
+        // segments оставалось undefined, и res.segments.map() ниже роняло всё
+        // React-дерево — пользователь видел чёрный экран.
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        data = await resp.json() as Record<string, unknown>;
+        if (data?.error || !Array.isArray(data?.segments)) throw new Error("bad payload");
+        rescueCacheSet(reqBody, data);
+      }
       // branchDirs приходит как объект — конвертируем в Map
       res = {
-        ...data,
-        branchDirs: new Map<string, boolean>(Object.entries(data.branchDirs ?? {})),
+        ...(data as unknown as RescueResult),
+        branchDirs: new Map<string, boolean>(Object.entries((data.branchDirs as Record<string, boolean>) ?? {})),
       };
     } catch {
       // fallback на локальный расчёт при недоступности backend

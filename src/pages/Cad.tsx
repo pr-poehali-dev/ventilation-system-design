@@ -4822,30 +4822,48 @@ export default function CadPage() {
                   return;
                 }
                 const results: ExplosionResult[] = [];
+
+                // ЭКОНОМИЯ ОБРАЩЕНИЙ. Раньше на КАЖДОЕ место взрыва уходил
+                // отдельный запрос: пять очагов на схеме — пять обращений к
+                // серверу при каждом нажатии «Рассчитать». Теперь все очаги
+                // уходят ОДНИМ запросом и возвращаются одним ответом.
+                const expPayload = expBranches.map(b => ({
+                  method: b.explosionMethod ?? "fnip_494",
+                  sourceType: b.explosionSourceType ?? "mass",
+                  gasId: b.explosionGasId ?? "methane",
+                  gasVolume_m3: b.explosionGasVolume ?? 100,
+                  gasConcentration: b.explosionGasConcentration ?? 9.5,
+                  explosiveId: b.explosionExplosiveId ?? "ammonit",
+                  explosiveMass_kg: b.explosionExplosiveMass ?? 100,
+                  excavationArea_m2: b.area ?? 12,
+                  excavationLength_m: b.length ?? 100,
+                  ambientPressure_kPa: 101.3,
+                  considerWalls: b.explosionConsiderWalls ?? true,
+                }));
+                // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
+                // и каждый взрыв считается на месте (резервный расчёт ниже).
+                const expServerData = new Map<string, ExplosionResult>();
+                try {
+                  const respAll = await fetch(EXPLOSION_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ items: expPayload }),
+                  });
+                  const dataAll = await respAll.json();
+                  const arr = Array.isArray(dataAll?.results) ? dataAll.results : [];
+                  expBranches.forEach((b, i) => {
+                    if (arr[i]) expServerData.set(b.id, arr[i]);
+                  });
+                } catch { /* нет связи — посчитаем на месте */ }
+
                 const updatedBranchesPromises = branches.map(async b => {
                   if (!b.hasExplosion) return b;
                   const area = b.area ?? 12;
                   const length = b.length ?? 100;
                   let res: ExplosionResult;
                   try {
-                    const resp = await fetch(EXPLOSION_URL, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        method: b.explosionMethod ?? "fnip_494",
-                        sourceType: b.explosionSourceType ?? "mass",
-                        gasId: b.explosionGasId ?? "methane",
-                        gasVolume_m3: b.explosionGasVolume ?? 100,
-                        gasConcentration: b.explosionGasConcentration ?? 9.5,
-                        explosiveId: b.explosionExplosiveId ?? "ammonit",
-                        explosiveMass_kg: b.explosionExplosiveMass ?? 100,
-                        excavationArea_m2: area,
-                        excavationLength_m: length,
-                        ambientPressure_kPa: 101.3,
-                        considerWalls: b.explosionConsiderWalls ?? true,
-                      }),
-                    });
-                    const data = await resp.json();
+                    const data = expServerData.get(b.id);
+                    if (!data) throw new Error("no server data");
                     // Восстанавливаем pressureAtDistance / impulseAtDistance по формуле Садовского
                     // напрямую из q_tnt_kg и wall_factor (не зависит от таблицы точек)
                     const _qTnt = data.q_tnt_kg ?? 0.001;

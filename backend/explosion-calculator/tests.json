@@ -12,9 +12,7 @@
         "excavationArea_m2": 20,
         "considerWalls": false
       },
-      "expectedStatus": 200,
-      "expectedBody": {"statusCode": 200},
-      "bodyMatcher": "none"
+      "expectedStatus": 200
     },
     {
       "name": "Расчёт взрыва ВВ (аммонит, ФНиП-494, 50 кг)",
@@ -28,9 +26,32 @@
         "excavationArea_m2": 15,
         "considerWalls": true
       },
-      "expectedStatus": 200,
-      "expectedBody": {"statusCode": 200},
-      "bodyMatcher": "none"
+      "expectedStatus": 200
+    },
+    {
+      "name": "Пакетный расчёт нескольких взрывов одним запросом",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "items": [
+          {
+            "method": "fnip_494",
+            "sourceType": "mass",
+            "explosiveId": "ammonit",
+            "explosiveMass_kg": 100,
+            "excavationArea_m2": 12
+          },
+          {
+            "method": "gas_dynamics",
+            "sourceType": "gas",
+            "gasId": "methane",
+            "gasVolume_m3": 500,
+            "gasConcentration": 9.5,
+            "excavationArea_m2": 16
+          }
+        ]
+      },
+      "expectedStatus": 200
     }
   ]
 }

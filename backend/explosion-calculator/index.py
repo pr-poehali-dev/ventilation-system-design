@@ -115,13 +115,8 @@ def pressure_at(r, q_tnt, method, wall_factor):
     return round(dp_fn(r, q_tnt) * wall_factor, 1)
 
 
-def handler(event: dict, context) -> dict:
-    """Расчёт параметров воздушной ударной волны при взрыве (Садовский / ФНиП-494)."""
-    if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS, "body": ""}
-
-    body = json.loads(event.get("body") or "{}")
-
+def calc_one(body: dict) -> dict:
+    """Расчёт одного взрыва по его исходным данным. Возвращает готовый результат."""
     method       = body.get("method", "gas_dynamics")
     source_type  = body.get("sourceType", "gas")
     area_m2      = float(body.get("excavationArea_m2", 12))
@@ -207,4 +202,28 @@ def handler(event: dict, context) -> dict:
         "log":                log,
         "warnings":           warnings,
     }
-    return {"statusCode": 200, "headers": CORS, "body": json.dumps(result, ensure_ascii=False)}
+    return result
+
+
+def handler(event: dict, context) -> dict:
+    """Расчёт параметров воздушной ударной волны при взрыве (Садовский / ФНиП-494)."""
+    if event.get("httpMethod") == "OPTIONS":
+        return {"statusCode": 200, "headers": CORS, "body": ""}
+
+    body = json.loads(event.get("body") or "{}")
+
+    # ПАКЕТНЫЙ РЕЖИМ. Раньше программа отправляла ОТДЕЛЬНЫЙ запрос на каждое
+    # место взрыва: пять очагов на схеме — пять обращений к серверу, и так при
+    # каждом нажатии «Рассчитать». Теперь все очаги можно посчитать одним
+    # запросом: {"items": [ {...}, {...} ]} → {"results": [ {...}, {...} ]}.
+    # Расчёт быстрый и полностью на процессоре, поэтому пачка считается за то
+    # же время, что и один взрыв.
+    items = body.get("items")
+    if isinstance(items, list):
+        results = [calc_one(it if isinstance(it, dict) else {}) for it in items[:200]]
+        return {"statusCode": 200, "headers": CORS,
+                "body": json.dumps({"results": results}, ensure_ascii=False)}
+
+    # Одиночный расчёт — прежний формат, чтобы ничего не сломать.
+    return {"statusCode": 200, "headers": CORS,
+            "body": json.dumps(calc_one(body), ensure_ascii=False)}

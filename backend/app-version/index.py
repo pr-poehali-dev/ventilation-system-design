@@ -127,7 +127,17 @@ def handler(event: dict, context) -> dict:
                      f"&response-content-disposition={cd}")
         return {"statusCode": 302, "headers": {**CORS, "Location": direct}, "body": ""}
 
-    # ── GET: информация о версии + свежие прямые ссылки ───────────────────────
+    # ── GET: информация о версии ──────────────────────────────────────────────
+    #
+    # ЭКОНОМИЯ. Раньше на КАЖДУЮ проверку версии функция дополнительно ходила
+    # на Яндекс.Диск ДВА раза — за прямыми ссылками на установщик и на ядро.
+    # Это самая долгая часть ответа (сетевой запрос наружу с ожиданием до 60 с),
+    # причём ссылки никто не использовал: скачивание идёт отдельным адресом
+    # ?file=exe, который получает свежую ссылку в момент нажатия «Скачать».
+    #
+    # Теперь обычная проверка версии — это одно быстрое чтение из хранилища,
+    # без обращений наружу. Ссылки отдаём только по явному запросу
+    # (?with_links=1), чтобы ничего не сломать у старых клиентов.
     if method == "GET":
         info = get_version_info(s3)
         out = {
@@ -135,15 +145,19 @@ def handler(event: dict, context) -> dict:
             "server_version": info["server_version"],
             "notes":          info["notes"],
         }
-        try:
-            out["download_url"] = resolve_download_url(info["exe_public_url"])
-        except Exception:
-            out["download_url"] = ""
-        try:
-            out["server_url"] = resolve_download_url(info["server_public_url"])
-        except Exception:
-            out["server_url"] = ""
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps(out, ensure_ascii=False)}
+        if params.get("with_links") in ("1", "true", "yes"):
+            try:
+                out["download_url"] = resolve_download_url(info["exe_public_url"])
+            except Exception:
+                out["download_url"] = ""
+            try:
+                out["server_url"] = resolve_download_url(info["server_public_url"])
+            except Exception:
+                out["server_url"] = ""
+        # Ответ можно недолго держать в кэше: версия меняется редко, а так
+        # повторные обращения с одного устройства не доходят до функции.
+        headers = {**CORS, "Cache-Control": "public, max-age=1800"}
+        return {"statusCode": 200, "headers": headers, "body": json.dumps(out, ensure_ascii=False)}
 
     # ── POST: требует пароль ───────────────────────────────────────────────────
     if method == "POST":
