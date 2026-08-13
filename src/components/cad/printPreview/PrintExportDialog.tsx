@@ -8,8 +8,7 @@ import React from "react";
 import Icon from "@/components/ui/icon";
 
 // Набор форматов — ровно тот же, что в состоянии PrintDialog.
-// В списке ниже есть ещё "tiff": так было в исходном коде, поведение сохранено.
-type ExportFormat = "png" | "png-hq" | "jpg" | "bmp" | "svg" | "pdf" | "pdf-vector";
+type ExportFormat = "png" | "png-hq" | "jpg" | "bmp" | "tiff" | "svg" | "pdf" | "pdf-vector";
 
 interface PrintExportDialogProps {
   exportFormat: ExportFormat;

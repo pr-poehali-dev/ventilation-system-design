@@ -138,7 +138,7 @@ export default function PrintSettingsPanel({
     <Row label="Формат:">
       <select className={sel} style={ih} value={format}
         onChange={e => setFormat(e.target.value as PaperFormat)}>
-        {(["A4","A3","A2","A1","A0"] as PaperFormat[]).map(f =>
+        {(["A4","A3","A2","A1","A0"] as Exclude<PaperFormat, "custom">[]).map(f =>
           <option key={f} value={f}>{f} ({PAPER_SIZES[f].w}×{PAPER_SIZES[f].h} мм)</option>)}
         <option value="custom">Произвольный</option>
       </select>

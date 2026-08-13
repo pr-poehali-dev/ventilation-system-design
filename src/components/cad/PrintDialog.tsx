@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { API_URLS } from "@/lib/api-urls";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
-import { type TopoNode, type TopoBranch, type Horizon, project3D } from "@/lib/topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "@/lib/topology";
 import { renderCanvas, ensureFireCraneIcons, type FlowDisplayMode } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -294,7 +294,7 @@ export default function PrintDialog({
   }, []);
 
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState<"png"|"png-hq"|"jpg"|"bmp"|"svg"|"pdf"|"pdf-vector">("png");
+  const [exportFormat, setExportFormat] = useState<"png"|"png-hq"|"jpg"|"bmp"|"tiff"|"svg"|"pdf"|"pdf-vector">("png");
   const [exportDpi, setExportDpi] = useState(300);
   const [exportQuality, setExportQuality] = useState(95);
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -1330,7 +1330,7 @@ body{background:white;font-family:Arial,sans-serif}
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
     if (!templateName.trim()) { alert("Введите название"); return; }
-    const tpl = { format, orientation, scale, marginTop, marginBottom, marginLeft, marginRight, showPageNumbers };
+    const tpl = { format, orientation, scale: scaleDisplay, marginTop, marginBottom, marginLeft, marginRight, showPageNumbers };
     const next = { ...templates, [templateName.trim()]: tpl };
     setTemplates(next); localStorage.setItem("printTemplates", JSON.stringify(next));
   };
@@ -1339,7 +1339,11 @@ body{background:white;font-family:Arial,sans-serif}
     if (!t) return;
     if (t.format) setFormat(t.format as PaperFormat);
     if (t.orientation) setOrientation(t.orientation as Orientation);
-    if (t.scale) setScale(t.scale as number);
+    if (t.scale) {
+      const sc = t.scale as number;
+      setScaleDisplay(sc);
+      setUserScale(sc / 100);
+    }
     if (t.marginTop !== undefined) setMarginTop(t.marginTop as number);
     if (t.marginBottom !== undefined) setMarginBottom(t.marginBottom as number);
     if (t.marginLeft !== undefined) setMarginLeft(t.marginLeft as number);
@@ -1480,7 +1484,7 @@ body{background:white;font-family:Arial,sans-serif}
                         offsetX: baseView.offsetX, offsetY: baseView.offsetY,
                         defaultOffsetX: baseView.defaultOffsetX, defaultOffsetY: baseView.defaultOffsetY,
                       };
-                      handleTileMouseDown(e, prevToPage);
+                      handleTileMouseDown(e, _kPrev);
                     }}
                     style={{
                       width: prevW, height: prevH, background: "white", flexShrink: 0,
