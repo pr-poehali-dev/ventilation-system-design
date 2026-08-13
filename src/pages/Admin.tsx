@@ -2,6 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { API_URLS } from "@/lib/api-urls";
 import MonitoringTab from "@/pages/admin/MonitoringTab";
+// Вкладки панели вынесены в отдельные файлы (перенос 1:1, без правок логики)
+import UpdateTab from "@/pages/admin/UpdateTab";
+import ServerTab from "@/pages/admin/ServerTab";
+import EmergencyTab from "@/pages/admin/EmergencyTab";
 
 const ADMIN_URL = API_URLS.adminLicenses;
 
@@ -587,330 +591,52 @@ export default function Admin() {
 
         {/* ── Вкладка: Обновление версии ── */}
         {activeTab === "update" && (
-          <div className="max-w-xl mx-auto">
-            {/* Текущие версии */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Icon name="Info" size={16} className="text-blue-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Опубликованные версии</span>
-              </div>
-              {currentVersion ? (
-                <div className="flex gap-8">
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Установщик PVS.exe</div>
-                    <span className="text-[24px] font-bold text-green-600">{currentVersion.version}</span>
-                    {currentVersion.notes && <div className="text-[11px] text-gray-400 mt-0.5">{currentVersion.notes}</div>}
-                  </div>
-                  <div className="w-px bg-gray-200" />
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Расчётное ядро server.exe</div>
-                    <span className="text-[24px] font-bold text-blue-600">{currentVersion.server_version || "—"}</span>
-                    <div className="text-[11px] text-gray-400 mt-0.5">обновляется без переустановки</div>
-                  </div>
-                </div>
-              ) : (
-                <span className="text-[12px] text-gray-400">Загрузка...</span>
-              )}
-            </div>
-
-            {/* Форма загрузки установщика */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Icon name="Package" size={16} className="text-blue-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Новый установщик PVS-Setup.exe</span>
-                <span className="text-[10px] text-gray-400 ml-1">— пользователи переустанавливают программу</span>
-              </div>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">Номер версии</label>
-                    <input type="text" value={updVersion} onChange={e => { setUpdVersion(e.target.value); setUpdStatus("idle"); }}
-                      className={inputCls} placeholder="1.2.0" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-gray-500 mb-1">Что нового</label>
-                    <input type="text" value={updNotes} onChange={e => setUpdNotes(e.target.value)}
-                      className={inputCls} placeholder="Новые функции..." />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл</label>
-                  <input type="url" value={updUrl} onChange={e => { setUpdUrl(e.target.value); setUpdStatus("idle"); }}
-                    className={inputCls} placeholder="https://cdn.poehali.dev/.../PVS-Setup.exe" />
-                  <div className="text-[10px] text-gray-400 mt-1">Загрузите PVS-Setup.exe в Хранилище проекта (Ядро → Хранилище → Загрузить), скопируйте ссылку на файл и вставьте сюда. Также подойдёт публичная ссылка с Яндекс.Диска.</div>
-                </div>
-                {updStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Версия опубликована! Пользователи получат обновление.</div>}
-                {updStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{updErr}</div>}
-                <button type="button" onClick={handleUploadExeFromUrl} disabled={!updUrl.trim() || !updVersion || updStatus === "uploading"}
-                  className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
-                  style={{ background: "#1a3a6b" }}>
-                  {updStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Публикация...</> : <><Icon name="Upload" size={14} />Опубликовать установщик</>}
-                </button>
-              </div>
-            </div>
-
-            {/* Форма загрузки server.exe */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Icon name="Cpu" size={16} className="text-purple-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Обновить расчётное ядро server.exe</span>
-                <span className="text-[10px] text-gray-400 ml-1">— без переустановки у пользователей</span>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Версия ядра</label>
-                  <input type="text" value={srvVersion} onChange={e => { setSrvVersion(e.target.value); setSrvStatus("idle"); }}
-                    className={inputCls} placeholder="1.2.0" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 mb-1">Ссылка на файл</label>
-                  <input type="url" value={srvUrl} onChange={e => { setSrvUrl(e.target.value); setSrvStatus("idle"); }}
-                    className={inputCls} placeholder="https://cdn.poehali.dev/.../server.exe" />
-                  <div className="text-[10px] text-gray-400 mt-1">Загрузите server.exe в Хранилище проекта (Ядро → Хранилище → Загрузить), скопируйте ссылку на файл и вставьте сюда. Также подойдёт публичная ссылка с Яндекс.Диска.</div>
-                </div>
-                {srvStatus === "ok" && <div className="flex items-center gap-2 text-purple-700 bg-purple-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Ядро опубликовано! При следующем запуске пользователи получат обновление автоматически.</div>}
-                {srvStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{srvErr}</div>}
-                <button type="button" onClick={handleUploadServerFromUrl} disabled={!srvUrl.trim() || !srvVersion || srvStatus === "uploading"}
-                  className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
-                  style={{ background: "#7c3aed" }}>
-                  {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Публикация...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
-                </button>
-              </div>
-            </div>
-          </div>
+          <UpdateTab
+            currentVersion={currentVersion}
+            updVersion={updVersion} setUpdVersion={setUpdVersion}
+            updNotes={updNotes} setUpdNotes={setUpdNotes}
+            updUrl={updUrl} setUpdUrl={setUpdUrl}
+            updStatus={updStatus} setUpdStatus={setUpdStatus} updErr={updErr}
+            srvVersion={srvVersion} setSrvVersion={setSrvVersion}
+            srvUrl={srvUrl} setSrvUrl={setSrvUrl}
+            srvStatus={srvStatus} setSrvStatus={setSrvStatus} srvErr={srvErr}
+            handleUploadExeFromUrl={handleUploadExeFromUrl}
+            handleUploadServerFromUrl={handleUploadServerFromUrl}
+            inputCls={inputCls}
+          />
         )}
 
         {/* ── Вкладка: Сервер расчёта ── */}
         {activeTab === "server" && (
-          <div className="max-w-xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon name="Server" size={16} className="text-blue-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Расчётный сервер</span>
-              </div>
-              <p className="text-[11px] text-gray-400 mb-4">
-                На случай, когда на основном сервере закончилось вычислительное время —
-                переключите расчёты на аварийный резервный сервер. Все рабочие места
-                подхватят изменение автоматически.
-              </p>
-
-              {srvCfgLoading ? (
-                <span className="text-[12px] text-gray-400">Загрузка...</span>
-              ) : (
-                <div className="space-y-4">
-                  {/* Выбор активного сервера */}
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-2">Активный сервер</div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setSrvActive("primary")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border transition-colors ${srvActive === "primary" ? "bg-green-600 text-white border-green-600" : "bg-white text-gray-600 border-gray-300 hover:border-green-400"}`}>
-                        <Icon name="CheckCircle2" size={14} />Основной
-                      </button>
-                      <button onClick={() => setSrvActive("backup")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold border transition-colors ${srvActive === "backup" ? "bg-amber-500 text-white border-amber-500" : "bg-white text-gray-600 border-gray-300 hover:border-amber-400"}`}>
-                        <Icon name="LifeBuoy" size={14} />Аварийный резерв
-                      </button>
-                    </div>
-                    {srvActive === "backup" && !srvBackupUrl.trim() && (
-                      <div className="text-[11px] text-red-500 mt-1">Укажите адрес резервного сервера ниже</div>
-                    )}
-                  </div>
-
-                  {/* Адрес резервного сервера */}
-                  <div>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Адрес аварийного сервера (URL)</div>
-                    <input value={srvBackupUrl} onChange={e => setSrvBackupUrl(e.target.value)}
-                      placeholder="https://functions.poehali.dev/..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-blue-400" />
-                    <div className="text-[10px] text-gray-400 mt-1">
-                      Резервная функция расчёта на втором аккаунте/сервере.
-                    </div>
-                  </div>
-
-                  {/* Автопереключение */}
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input type="checkbox" checked={srvAutofail}
-                      onChange={e => setSrvAutofail(e.target.checked)}
-                      className="mt-0.5" />
-                    <span className="text-[12px] text-gray-700">
-                      Автоматически переходить на резерв
-                      <span className="block text-[10px] text-gray-400">
-                        Если основной сервер ответит ошибкой лимита или будет недоступен,
-                        программа сама повторит расчёт на резервном сервере.
-                      </span>
-                    </span>
-                  </label>
-
-                  {srvCfgErr && <div className="text-[12px] text-red-500">{srvCfgErr}</div>}
-                  {srvCfgOk && <div className="text-[12px] text-green-600 flex items-center gap-1"><Icon name="Check" size={14} />Сохранено</div>}
-
-                  <button onClick={saveServerCfg} disabled={srvCfgSaving || (srvActive === "backup" && !srvBackupUrl.trim())}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-                    style={{ background: "#1a3a6b" }}>
-                    {srvCfgSaving ? <><Icon name="Loader" size={14} className="animate-spin" />Сохранение...</> : <><Icon name="Save" size={14} />Сохранить</>}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <ServerTab
+            srvActive={srvActive} setSrvActive={setSrvActive}
+            srvBackupUrl={srvBackupUrl} setSrvBackupUrl={setSrvBackupUrl}
+            srvAutofail={srvAutofail} setSrvAutofail={setSrvAutofail}
+            srvCfgLoading={srvCfgLoading} srvCfgSaving={srvCfgSaving}
+            srvCfgOk={srvCfgOk} srvCfgErr={srvCfgErr}
+            saveServerCfg={saveServerCfg}
+          />
         )}
 
         {/* ── Вкладка: Аварийный оффлайн-ключ ── */}
         {activeTab === "emergency" && (
-          <div className="max-w-xl mx-auto">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon name="LifeBuoy" size={16} className="text-amber-500" />
-                <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Аварийный оффлайн-ключ</span>
-              </div>
-              <p className="text-[11px] text-gray-400 mb-4">
-                Для расчётов без интернета (рудник / ВГСЧ). Ключ подписан криптографически
-                и проверяется программой локально, без связи с сервером. Работает на любом ПК
-                организации до истечения срока. Выдавайте заранее как аварийный запас.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Организация</div>
-                  <input value={emgOrg} onChange={e => { setEmgOrg(e.target.value); setEmgErr(""); }}
-                    placeholder="ВГСЧ / рудник — название"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
-                </div>
-
-                <div>
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Действует до</div>
-                  <input type="date" value={emgExpires} onChange={e => setEmgExpires(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
-                  <div className="text-[10px] text-gray-400 mt-1">
-                    Если не указано — 1 год со дня выдачи. Для продления просто выпустите новый ключ с новой датой.
-                  </div>
-                </div>
-
-                {emgErr && <div className="text-[12px] text-red-500">{emgErr}</div>}
-
-                <button onClick={generateEmergencyKey} disabled={emgLoading || !emgOrg.trim()}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-                  style={{ background: "#d97706" }}>
-                  {emgLoading ? <><Icon name="Loader" size={14} className="animate-spin" />Генерация...</> : <><Icon name="Key" size={14} />Сгенерировать аварийный ключ</>}
-                </button>
-
-                {emgKey && (
-                  <div className="p-3 rounded-lg border border-amber-200 bg-amber-50">
-                    <div className="text-[11px] font-semibold text-amber-800 mb-1">Аварийный ключ (передайте организации):</div>
-                    <textarea readOnly value={emgKey} rows={4}
-                      className="w-full px-2 py-1.5 border border-amber-300 rounded text-[10px] font-mono break-all resize-none bg-white"
-                      onFocus={e => e.currentTarget.select()} />
-                    <button onClick={() => navigator.clipboard?.writeText(emgKey)}
-                      className="mt-2 flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold text-amber-800 border border-amber-300 hover:bg-amber-100">
-                      <Icon name="Copy" size={12} />Скопировать
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Реестр выпущенных аварийных ключей */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Icon name="ListChecks" size={16} className="text-amber-500" />
-                  <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>
-                    Выданные ключи ({offlineKeys.length})
-                  </span>
-                </div>
-                <button onClick={() => loadOfflineKeys(password)}
-                  className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600">
-                  <Icon name="RefreshCw" size={12} className={okLoading ? "animate-spin" : ""} />Обновить
-                </button>
-              </div>
-
-              {offlineKeys.length === 0 && !okLoading && (
-                <div className="text-[12px] text-gray-400 py-6 text-center">Пока не выдано ни одного ключа</div>
-              )}
-
-              <div className="space-y-2">
-                {offlineKeys.map(k => (
-                  <div key={k.id} className={`rounded-lg border p-3 ${k.is_active && !k.expired ? "border-gray-200" : "border-gray-200 bg-gray-50 opacity-70"}`}>
-                    {okEditId === k.id ? (
-                      <div className="space-y-2">
-                        <input value={okEditOrg} onChange={e => setOkEditOrg(e.target.value)}
-                          placeholder="Организация"
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <div className="text-[10px] text-gray-400 mb-0.5">Действует до</div>
-                            <input type="date" value={okEditExp} onChange={e => setOkEditExp(e.target.value)}
-                              className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
-                          </div>
-                          <div className="w-24">
-                            <div className="text-[10px] text-gray-400 mb-0.5">Мест</div>
-                            <input type="number" value={okEditSeats} onChange={e => setOkEditSeats(e.target.value)}
-                              className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
-                          </div>
-                        </div>
-                        <input value={okEditNotes} onChange={e => setOkEditNotes(e.target.value)}
-                          placeholder="Заметка (необязательно)"
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
-                        <div className="text-[10px] text-amber-600">
-                          Изменение срока в реестре не меняет уже выданный ключ. Для нового срока выпустите новый ключ.
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={saveEditOffline} disabled={!okEditOrg.trim()}
-                            className="px-3 py-1 rounded text-[11px] font-semibold text-white disabled:opacity-50" style={{ background: "#16a34a" }}>
-                            Сохранить
-                          </button>
-                          <button onClick={() => setOkEditId(null)}
-                            className="px-3 py-1 rounded text-[11px] font-semibold text-gray-500 border border-gray-300">
-                            Отмена
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-[13px] text-gray-800 truncate">{k.org}</span>
-                              {k.expired
-                                ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-semibold">Просрочен</span>
-                                : !k.is_active
-                                  ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 font-semibold">Отозван</span>
-                                  : <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-semibold">Активен</span>}
-                            </div>
-                            <div className="text-[11px] text-gray-400 mt-0.5">
-                              Действует до: {k.expires_at ? k.expires_at.slice(0, 10) : "—"} · Мест: {k.seats} · Выдан: {k.created_at.slice(0, 10)}
-                            </div>
-                            {k.notes && <div className="text-[11px] text-gray-500 mt-0.5">{k.notes}</div>}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button onClick={() => setOkShowKeyId(okShowKeyId === k.id ? null : k.id)} title="Показать ключ"
-                              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Eye" size={14} /></button>
-                            <button onClick={() => startEditOffline(k)} title="Редактировать"
-                              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Pencil" size={14} /></button>
-                            <button onClick={() => toggleOffline(k)} title={k.is_active ? "Отозвать" : "Активировать"}
-                              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name={k.is_active ? "Ban" : "CircleCheck"} size={14} /></button>
-                            <button onClick={() => deleteOffline(k)} title="Удалить"
-                              className="p-1.5 rounded hover:bg-red-50 text-red-400"><Icon name="Trash2" size={14} /></button>
-                          </div>
-                        </div>
-                        {okShowKeyId === k.id && (
-                          <div className="mt-2 p-2 rounded border border-amber-200 bg-amber-50">
-                            <textarea readOnly value={k.key} rows={3}
-                              className="w-full px-2 py-1.5 border border-amber-300 rounded text-[10px] font-mono break-all resize-none bg-white"
-                              onFocus={e => e.currentTarget.select()} />
-                            <button onClick={() => navigator.clipboard?.writeText(k.key)}
-                              className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold text-amber-800 border border-amber-300 hover:bg-amber-100">
-                              <Icon name="Copy" size={12} />Скопировать ключ
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <EmergencyTab
+            emgOrg={emgOrg} setEmgOrg={setEmgOrg}
+            emgExpires={emgExpires} setEmgExpires={setEmgExpires}
+            emgKey={emgKey} emgErr={emgErr} setEmgErr={setEmgErr}
+            emgLoading={emgLoading} generateEmergencyKey={generateEmergencyKey}
+            offlineKeys={offlineKeys} okLoading={okLoading}
+            okEditId={okEditId} setOkEditId={setOkEditId}
+            okEditOrg={okEditOrg} setOkEditOrg={setOkEditOrg}
+            okEditExp={okEditExp} setOkEditExp={setOkEditExp}
+            okEditSeats={okEditSeats} setOkEditSeats={setOkEditSeats}
+            okEditNotes={okEditNotes} setOkEditNotes={setOkEditNotes}
+            okShowKeyId={okShowKeyId} setOkShowKeyId={setOkShowKeyId}
+            saveEditOffline={saveEditOffline}
+            toggleOffline={toggleOffline} deleteOffline={deleteOffline}
+            startEditOffline={startEditOffline}
+            loadOfflineKeys={loadOfflineKeys} password={password}
+          />
         )}
 
         {/* ── Вкладка: Лицензии ── */}
