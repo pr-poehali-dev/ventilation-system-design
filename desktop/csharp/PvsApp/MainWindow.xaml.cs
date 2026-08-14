@@ -772,6 +772,18 @@ public partial class MainWindow : Window
                 ReportUpdateProgress(100);
             }
 
+            // ВАЖНО: перед запуском установщика ОСТАНАВЛИВАЕМ расчётное ядро.
+            // ПОЧЕМУ. Ядро server.exe — отдельный процесс, запущенный нами.
+            // Раньше мы закрывали только само приложение (Shutdown), а ядро
+            // продолжало работать, держа файл server\server.exe открытым.
+            // Установщик не мог его заменить и показывал ошибку
+            // «DeleteFile: сбой; код 5. Отказано в доступе».
+            // Флаг /CLOSEAPPLICATIONS тут не спасает: Restart Manager видит
+            // только окна приложений, а ядро работает без окна (CreateNoWindow),
+            // поэтому оно оставалось незамеченным. Закрываем его сами и ждём,
+            // пока Windows освободит файл.
+            StopServerForUpdate();
+
             // Запускаем установщик с элевацией (UseShellExecute + runas → UAC).
             // /SILENT — минимум окон; /CLOSEAPPLICATIONS — закрыть текущее
             // приложение перед заменой файлов; RESTARTAPPLICATIONS — перезапуск.
@@ -831,6 +843,55 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         try { _serverProcess?.Kill(entireProcessTree: true); } catch { }
+    }
+
+    /// <summary>
+    /// Останавливает расчётное ядро (server.exe) перед установкой обновления и
+    /// дожидается, пока Windows освободит файл.
+    ///
+    /// Без этого установщик падает с ошибкой «Отказано в доступе» при попытке
+    /// заменить server\server.exe — файл держит работающий процесс ядра.
+    /// Дополнительно снимаем ядра, оставшиеся от прошлых запусков (например,
+    /// если приложение раньше завершилось аварийно и процесс осиротел).
+    /// </summary>
+    private void StopServerForUpdate()
+    {
+        // 1) Наш собственный процесс ядра — со всем деревом дочерних.
+        try { _serverProcess?.Kill(entireProcessTree: true); } catch { }
+        try { _serverProcess?.WaitForExit(5000); } catch { }
+
+        // 2) «Осиротевшие» ядра из нашей папки установки. Сравниваем путь,
+        //    чтобы не задеть чужие процессы с тем же именем.
+        string ourDir = AppDomain.CurrentDomain.BaseDirectory;
+        foreach (var proc in Process.GetProcessesByName("server"))
+        {
+            try
+            {
+                string? exePath = proc.MainModule?.FileName;
+                if (exePath != null &&
+                    exePath.StartsWith(ourDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    proc.Kill(entireProcessTree: true);
+                    proc.WaitForExit(5000);
+                }
+            }
+            catch { /* нет доступа к чужому процессу — пропускаем */ }
+            finally { try { proc.Dispose(); } catch { } }
+        }
+
+        // 3) Ждём, пока файл реально освободится: Windows снимает блокировку
+        //    не мгновенно. Пробуем открыть на запись — до 3 секунд.
+        string serverExe = Path.Combine(ourDir, "server", "server.exe");
+        for (int i = 0; i < 30; i++)
+        {
+            if (!File.Exists(serverExe)) break;
+            try
+            {
+                using var fs = File.Open(serverExe, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                break; // файл свободен — можно обновляться
+            }
+            catch { Thread.Sleep(100); }
+        }
     }
 
     // ── JS-bootstrap (вставляется после загрузки страницы) ───────────────────

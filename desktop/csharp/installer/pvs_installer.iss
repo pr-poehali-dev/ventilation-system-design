@@ -31,6 +31,11 @@ PrivilegesRequired=admin
 DisableProgramGroupPage=yes
 ShowLanguageDialog=no
 LanguageDetectionMethod=none
+; Restart Manager сам закрывает приложения, держащие наши файлы, и не требует
+; перезагрузки. Ниже (в CurStepChanged) дополнительно снимаем расчётное ядро
+; server.exe — оно работает БЕЗ ОКНА, поэтому Restart Manager его не находит.
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -81,3 +86,51 @@ Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser; Check: WizardS
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\PVS\WebView2Cache"
+[Code]
+// ─────────────────────────────────────────────────────────────────────────────
+// Принудительная остановка расчётного ядра перед заменой файлов.
+//
+// ПРОБЛЕМА, которую это решает. На части компьютеров установка обновления
+// прерывалась ошибкой:
+//     C:\Program Files\PVS\server\server.exe
+//     Произошла ошибка при попытке замены существующего файла:
+//     DeleteFile: сбой; код 5. Отказано в доступе.
+// Причина: расчётное ядро server.exe оставалось запущенным и держало свой файл.
+// Оно работает в фоне без окна, поэтому встроенный механизм Windows
+// (Restart Manager) его не обнаруживал и не закрывал.
+//
+// Само приложение теперь останавливает ядро перед обновлением, но установщик
+// могут запустить и вручную — тогда сработает эта подстраховка.
+// ─────────────────────────────────────────────────────────────────────────────
+procedure StopCalcCore();
+var
+  ResultCode: Integer;
+  i: Integer;
+  CorePath: String;
+begin
+  CorePath := ExpandConstant('{app}\server\server.exe');
+
+  // Ядра нет (первая установка) или файл уже свободен — вмешиваться не нужно.
+  if not FileExists(CorePath) then Exit;
+  if DeleteFile(CorePath) then Exit;
+
+  // Файл занят — значит ядро работает. Снимаем процесс.
+  // /F — принудительно, /T — вместе с дочерними процессами.
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM server.exe',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // Ждём до 2 секунд: Windows снимает блокировку файла не мгновенно.
+  for i := 1 to 10 do
+  begin
+    if DeleteFile(CorePath) then Break;
+    if not FileExists(CorePath) then Break;
+    Sleep(200);
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  // ssInstall — момент прямо перед распаковкой файлов.
+  if CurStep = ssInstall then
+    StopCalcCore();
+end;
