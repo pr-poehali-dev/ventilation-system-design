@@ -308,10 +308,6 @@ export const BULKHEAD_TYPE_COLORS: Record<BulkheadType, string> = {
   custom: "#546e7a",
 };
 
-export function getBulkheadById(id: string): BulkheadCatalogItem | undefined {
-  return BULKHEAD_CATALOG.find(b => b.id === id);
-}
-
 // Перевод воздухопроницаемости A → R в Мюрг
 // H = Q² / A² → R = 1/A²  (при A в м²/(с·√Па), R в Па·с²/м⁴ = Мюрг)
 export function airPermToR(A: number): number {
@@ -334,13 +330,6 @@ export function solidBulkheadRkMurg(A: number, area?: number): number {
   const S = area && area > 0 ? area : 1;
   if (A <= 0) return 1e9;
   return 1 / (A * S * A * S) / BULKHEAD_R_SCALE;
-}
-
-// Парус вентиляционный считается по той же формуле, что и глухая перемычка
-// (сечение входит в формулу). Проверка: A=0,09, S=15,5 → R≈0,053 кМюрг.
-// Отдельная функция оставлена для совместимости внешних вызовов.
-export function sailBulkheadRkMurg(A: number, area?: number): number {
-  return solidBulkheadRkMurg(A, area);
 }
 
 // Коэффициент расхода регулируемого окна/проёма (диафрагма с острой кромкой).

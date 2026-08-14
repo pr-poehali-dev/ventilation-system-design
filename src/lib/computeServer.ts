@@ -78,20 +78,10 @@ export function activeComputeUrl(): string {
   return PRIMARY_URL;
 }
 
-/** Есть ли настроенный резервный сервер. */
-export function hasBackup(): boolean {
-  if (isDesktop) return false;
-  return !!cfg.backupUrl;
-}
-
 /** Сейчас расчёт идёт на резервном сервере? */
 export function isOnBackup(): boolean {
   if (isDesktop) return false;
   return activeComputeUrl() === cfg.backupUrl && !!cfg.backupUrl;
-}
-
-export function getComputeConfig(): ComputeConfig {
-  return { ...cfg };
 }
 
 /** Ошибка означает исчерпание лимита/недоступность → стоит уйти на резерв. */

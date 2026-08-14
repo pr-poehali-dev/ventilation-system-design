@@ -370,24 +370,3 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
   };
 }
 
-/** Определяет, похож ли CSV-файл на экспорт Ventsim */
-export function isVentsimCsv(filename: string, firstLines: string): boolean {
-  const fn = filename.toLowerCase();
-  if (/ventsim|ventsym|vent_sim|vs\d/.test(fn)) return true;
-
-  const lines = firstLines.split("\n").filter(l => l.trim().length > 0);
-  if (lines.length < 2) return false;
-
-  const content = firstLines.toLowerCase();
-  // Текстовый формат: заголовок с from/to
-  const hasFrom = /\bfrom\b|\bfrom node/.test(content);
-  const hasTo   = /\bto\b|\bto node/.test(content);
-  if (hasFrom && hasTo) return true;
-
-  // Числовой формат: несколько строк с >15 числовых колонок
-  const numericLines = lines.filter(l => {
-    const parts = l.split(/[,;\t]/);
-    return parts.length >= 15 && parts.filter(p => !isNaN(parseFloat(p.trim()))).length >= 12;
-  });
-  return numericLines.length >= 2;
-}

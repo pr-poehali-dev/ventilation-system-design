@@ -75,9 +75,3 @@ export function zoneFromDensity(smokeDensity: number): SmokeZone {
   return "smoky_high";
 }
 
-/** Коэффициент k3 снижения скорости передвижения в дыму (Инструкция № 520). */
-export function k3FromZone(zone: SmokeZone): number {
-  if (zone === "clean") return 1.0;
-  if (zone === "smoky_low") return 1.43;
-  return 2.0;
-}

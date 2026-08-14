@@ -608,26 +608,10 @@ export function fanHAngle(c: FanCurve, Q: number, angle?: number, rpm?: number):
 // вычисляется своей функцией fan_dH (backend/airflow/index.py).
 
 // ─── Вычисление H(Q) и η(Q) ────────────────────────────────────────────────
-// Масштабирование по оборотам: закон подобия H ~ n², Q ~ n
-export function fanHScaled(curve: FanCurve, Q: number, rpm: number): number {
-  const n0 = curve.rpmNominal || 1;
-  const k = rpm > 0 ? rpm / n0 : 1;
-  const Qn = Math.abs(Q) / k;
-  const H = curve.h0 + curve.h1 * Qn + curve.h2 * Qn * Qn;
-  return Math.max(0, H) * k * k;
-}
-
 export function fanH(curve: FanCurve, Q: number): number {
   const q = Math.abs(Q);
   const H = curve.h0 + curve.h1 * q + curve.h2 * q * q;
   return Math.max(0, H);
-}
-
-// |dH/dQ| — модуль производной (нужен solver-у для устойчивости знаменателя в Кроссе)
-// h2 обычно отрицательная (кривая H убывает с Q), поэтому без |...| знак может быть любым.
-export function fanDH(curve: FanCurve, Q: number): number {
-  const q = Math.abs(Q);
-  return Math.abs(curve.h1 + 2 * curve.h2 * q);
 }
 
 export function fanEfficiency(curve: FanCurve, Q: number): number {

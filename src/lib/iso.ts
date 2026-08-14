@@ -34,12 +34,6 @@ export function project(p: Point3D, origin: Point2D = { x: 0, y: 0 }): Point2D {
   };
 }
 
-// Преобразование плановых координат узла + высоты в 3D
-export function nodeTo3D(planX: number, planY: number, level: number): Point3D {
-  // План в пикселях → метры с учётом масштаба сетки
-  return { x: planX, y: planY, z: level };
-}
-
 // ─── Стандартный набор этажей ────────────────────────────────────────────────
 
 export const DEFAULT_FLOORS: Floor[] = [

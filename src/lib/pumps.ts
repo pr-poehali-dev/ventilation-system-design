@@ -248,33 +248,6 @@ export interface PumpSelection {
   warnings: string[];
 }
 
-export function selectPumps(requiredQ: number, requiredH: number, staticHead: number, pumpType?: PumpType): PumpSelection[] {
-  // S системы: H = Hst + S·Q²  →  S = (H - Hst) / Q²
-  const S = requiredQ > 0 ? Math.max(0, (requiredH - staticHead)) / (requiredQ * requiredQ) : 0;
-
-  const candidates = PUMP_CATALOG.filter((p) => !pumpType || p.type === pumpType);
-
-  return candidates.map((pump) => {
-    const point = findPumpOperatingPoint(pump, S, staticHead, requiredQ, requiredH);
-    const warnings: string[] = [];
-
-    let score = 0;
-    if (!point.found) {
-      score = 0;
-      warnings.push("Рабочая точка вне диапазона");
-    } else {
-      score = 60;
-      if (point.inOptimalZone) score += 20;
-      if (point.marginQ >= 5 && point.marginQ <= 30) score += 10;
-      else if (point.marginQ < 0) { score -= 30; warnings.push(`Подача ниже требуемой на ${Math.abs(point.marginQ)}%`); }
-      else if (point.marginQ > 50) { score -= 20; warnings.push(`Большой избыток подачи (+${point.marginQ}%)`); }
-      score += point.eta * 25;
-      if (point.eta < pump.etaMax * 0.8) warnings.push(`КПД ниже оптимума (${Math.round(point.eta * 100)}% vs ${Math.round(pump.etaMax * 100)}%)`);
-    }
-
-    return { pump, point, score: Math.max(0, Math.min(100, Math.round(score))), warnings };
-  }).sort((a, b) => b.score - a.score);
-}
 
 export const PUMP_TYPE_NAMES: Record<PumpType, string> = {
   sectional: "Секционные (ЦНС)",

@@ -104,10 +104,6 @@ export type StabilityClass = "stable" | "unstable" | "very-unstable";
 
 export const P_U_VERY_UNSTABLE = 0.3;
 
-export function classifyByPu(p_u: number): StabilityClass {
-  if (p_u > 1) return "stable";
-  return p_u < P_U_VERY_UNSTABLE ? "very-unstable" : "unstable";
-}
 
 export const STABILITY_CLASS_LABEL: Record<StabilityClass, string> = {
   "stable": "Устойчиво",

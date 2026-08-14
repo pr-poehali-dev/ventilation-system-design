@@ -234,17 +234,3 @@ export function getUnit(unitsConfig: UnitsConfig, quantityId: string): UnitOptio
   const unitId = unitsConfig[quantityId] ?? q.defaultUnitId;
   return q.units.find(u => u.id === unitId) ?? q.units[0];
 }
-
-// Форматировать значение с переводом единиц
-export function fmtUnit(
-  value: number,
-  quantityId: string,
-  unitsConfig: UnitsConfig,
-  opts?: { noSymbol?: boolean; forceDecimals?: number }
-): string {
-  const unit = getUnit(unitsConfig, quantityId);
-  const converted = unit.fromBase(value);
-  const d = opts?.forceDecimals ?? unit.decimals;
-  const str = converted.toFixed(d);
-  return opts?.noSymbol ? str : `${str} ${unit.symbol}`;
-}

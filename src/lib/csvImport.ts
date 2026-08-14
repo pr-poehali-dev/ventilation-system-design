@@ -625,12 +625,6 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
   return buildResult(allRawNodes, allRawBranches, allRawFans, allRawBulkheads, allRawPositions, warnings, debug, rUnit);
 }
 
-// ── Обратная совместимость: один файл ────────────────────────────────────────
-
-export function parseCsv(content: string, filename = "file.csv"): CsvImportResult {
-  return parseCsvMulti([{ name: filename, content }]);
-}
-
 // ── Импорт CSV из ПО Вентиляция 2.0 с настраиваемым маппингом столбцов ─────
 // Столбцы нумеруются с 1 (как в интерфейсе ПО).
 // Если столбец = 0 — поле не импортируется (не задано).

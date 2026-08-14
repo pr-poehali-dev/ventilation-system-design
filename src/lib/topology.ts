@@ -511,20 +511,6 @@ export interface Horizon {
   printLayer?: HorizonPrintLayer; // слой печати (опционально)
 }
 
-export function makeHorizon(id: string, partial?: Partial<Horizon>): Horizon {
-  return {
-    id,
-    name: id,
-    z: 0,
-    color: "#3b82f6",
-    visible: true,
-    ...partial,
-  };
-}
-
-// Дефолтный набор горизонтов — пустой, пользователь добавляет сам
-export const DEFAULT_HORIZONS: Horizon[] = [];
-
 /** ID специального горизонта "Общий вид" — bounds авто-подстраиваются под всю схему */
 export const OVERVIEW_HORIZON_ID = "H_OVERVIEW";
 
@@ -840,14 +826,6 @@ export function calcBranchLength(from: TopoNode, to: TopoNode): number {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// Барометрическое давление от высотной отметки (упрощённая формула)
-// P(z) = P0 * (1 - 0.0065·z/288)^5.25
-export function pressureAtZ(z: number, p0: number = 101325): number {
-  const ratio = 1 - (0.0065 * z) / 288.15;
-  if (ratio <= 0) return 0;
-  return p0 * Math.pow(ratio, 5.25588);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Камера / проекция X/Y/Z → 2D screen
 //
@@ -1085,22 +1063,6 @@ export const DEMO_BRANCHES: TopoBranch[] = [
 // Функция дёргается при любом изменении схемы (в т.ч. на каждое движение мыши
 // при перетаскивании подписи ветви), поэтому схема ощутимо «залипала».
 // С Map тот же объём считается за ~19 мс (быстрее в 18 раз).
-export function recalcLengths(nodes: TopoNode[], branches: TopoBranch[]): TopoBranch[] {
-  const nodeById = new Map<string, TopoNode>();
-  for (const n of nodes) nodeById.set(n.id, n);
-  return branches.map((b) => {
-    const from = nodeById.get(b.fromId);
-    const to = nodeById.get(b.toId);
-    if (!from || !to) return b;
-    const len = Math.round(calcBranchLength(from, to));
-    const ang = calcBranchAngle(from, to);
-    return {
-      ...b,
-      length: b.manualLength ? b.length : len,
-      angle: b.manualAngle ? b.angle : ang,
-    };
-  });
-}
 
 // ─── Полный пересчёт аэродинамики ветви ─────────────────────────────────────
 // Пересчитывает: геометрию сечения (S, P, Dh), сопротивление R,

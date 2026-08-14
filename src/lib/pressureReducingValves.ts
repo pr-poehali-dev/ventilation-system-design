@@ -111,5 +111,4 @@ export function getValveById(id: string): PressureReducingValve | undefined {
 }
 
 // 1 атм ≈ 0.1 МПа (точнее 0.101325, но в пожарном деле используют 0.1)
-export const ATM_TO_MPA = 0.1;
 export const MPA_TO_ATM = 10;
