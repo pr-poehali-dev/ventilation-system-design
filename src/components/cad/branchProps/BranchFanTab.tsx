@@ -6,7 +6,7 @@
 // Вынесено из BranchPropsPanel.tsx БЕЗ изменений разметки, расчётов и текстов.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
-import { FAN_CATALOG, getFanById, fanQMax } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById, fanQMax, fanHAngle } from "@/lib/fanCurves";
 import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 import { fanWindowRkMurg } from "@/lib/bulkheads";
 import {
@@ -247,21 +247,17 @@ export default function BranchFanTab({
           ? curve.bladeAngles
           : [bladeAngle];
 
-        // Угловой коэф. лопаток (линейная интерполяция по диапазону углов)
-        const angleFactor = (a: number) => {
-          if (curve.bladeAngles.length < 2) return 1;
-          const aMin = curve.bladeAngles[0];
-          const aMax = curve.bladeAngles[curve.bladeAngles.length - 1];
-          return 0.55 + 0.9 * (a - aMin) / Math.max(1, aMax - aMin);
-        };
+        // Напор берём общей функцией fanHAngle — той же, что использует расчёт
+        // сети. Раньше здесь была третья по счёту формула угла лопаток
+        // (0.55 + 0.9·t), из-за чего нарисованная кривая не совпадала ни с
+        // расчётом, ни с графиком в справочнике оборудования.
 
         // Шкала H: максимум по всем углам при номинальных оборотах * k²
         let hMax = 0;
         anglesToDraw.forEach(a => {
-          const af = angleFactor(a);
           for (let i = 0; i <= 20; i++) {
             const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 20;
-            const h = Math.max(0, curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
+            const h = fanHAngle(curve, qn, a) * k * k;
             if (h > hMax) hMax = h;
           }
         });
@@ -272,13 +268,16 @@ export default function BranchFanTab({
         const ty = (h: number) => padT + gH - Math.max(0, Math.min(1, h / hMax)) * gH;
 
         const paths = anglesToDraw.map((a, ai) => {
-          const af = angleFactor(a);
           const pts: string[] = [];
+          // Кривая рисуется до паспортного предела ДЛЯ ЭТОГО угла: при малом
+          // угле вентилятор не выдаёт полный номинальный расход, и рисовать
+          // кривую до общего qMax было бы обманом.
+          const qMaxA = fanQMax(curve, a);
           for (let i = 0; i <= 30; i++) {
             // qn — номинальный расход, q — масштабированный (= qn * k)
-            const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
+            const qn = curve.qMin + (qMaxA - curve.qMin) * i / 30;
             const q = qn * k;
-            const h = Math.max(0, curve.h0 * af + curve.h1 * qn + curve.h2 * qn * qn) * k * k;
+            const h = fanHAngle(curve, qn, a) * k * k;
             pts.push(`${tx(q).toFixed(1)},${ty(h).toFixed(1)}`);
           }
           const isSelected = a === bladeAngle;

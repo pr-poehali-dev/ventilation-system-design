@@ -1,7 +1,7 @@
 // Справочник оборудования — аналог справочников в АэроСети
 import { useState, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { FAN_CATALOG, type FanCurve } from "@/lib/fanCurves";
+import { FAN_CATALOG, fanHAngle, fanQMax, type FanCurve } from "@/lib/fanCurves";
 import {
   BULKHEAD_CATALOG, BULKHEAD_TYPE_LABELS, BULKHEAD_TYPE_COLORS,
   type BulkheadCatalogItem, type BulkheadType, airPermToR,
@@ -90,11 +90,24 @@ interface MineFan {
   note?: string;
 }
 
-function fanCurvePoints(c: FanCurve, angleFactor = 1.0, n = 40): { q: number; h: number; p: number }[] {
+/**
+ * Точки кривой Q-H для графика.
+ *
+ * Считаются ТОЙ ЖЕ функцией, что и расчёт сети (fanHAngle), иначе картинка в
+ * справочнике расходилась бы с рабочей точкой: раньше здесь была своя формула
+ * угла лопаток (0.6 + 0.4·t), а в расчёте — другая, и график показывал одно,
+ * а сеть считала другое.
+ *
+ * Кривая рисуется до паспортного предела для выбранного угла: при малом угле
+ * вентилятор физически не выдаёт полный номинальный расход.
+ */
+function fanCurvePoints(c: FanCurve, angle?: number, n = 40): { q: number; h: number; p: number }[] {
   const pts = [];
+  const qMaxA = fanQMax(c, angle);
+  const qMinA = Math.min(c.qMin, qMaxA * 0.9);
   for (let i = 0; i <= n; i++) {
-    const q = (c.qMin + (c.qMax - c.qMin) * (i / n));
-    const h = Math.max(0, (c.h0 + c.h1 * q + c.h2 * q * q) * angleFactor);
+    const q = qMinA + (qMaxA - qMinA) * (i / n);
+    const h = fanHAngle(c, q, angle);
     const eta = Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * q + c.e2 * q * q));
     const p = eta > 0 ? (h * q) / eta / 1000 : 0;
     pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
@@ -115,15 +128,6 @@ function reverseCurvePoints(c: FanCurve, n = 40): { q: number; h: number; p: num
     pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
   }
   return pts;
-}
-
-function angleFactor(c: FanCurve, angle: number): number {
-  if (!c.bladeAngles || c.bladeAngles.length < 2) return 1;
-  const min = Math.min(...c.bladeAngles);
-  const max = Math.max(...c.bladeAngles);
-  if (max === min) return 1;
-  const t = (angle - min) / (max - min);
-  return 0.6 + 0.4 * t;
 }
 
 // ─── График Q-H / Q-P ─────────────────────────────────────────────────────
@@ -269,7 +273,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                   {(() => {
                     const angles = preview.bladeAngles.length > 0 ? preview.bladeAngles : [0];
                     const curves = angles.map((a, i) => ({
-                      pts: fanCurvePoints(preview, angleFactor(preview, a)),
+                      pts: fanCurvePoints(preview, a),
                       color: CURVE_COLORS[i % CURVE_COLORS.length],
                     }));
                     const reverseCurves = preview.reverseH0 !== undefined ? [{
@@ -344,7 +348,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
   const [opQ, setOpQ] = useState(catalog?.qNominal ?? 0);
   const [opH, setOpH] = useState(catalog?.hNominal ?? 0);
 
-  const preview = catalog ? fanCurvePoints(catalog, angleFactor(catalog, angle)) : [];
+  const preview = catalog ? fanCurvePoints(catalog, angle) : [];
   const revPts = (reverse && catalog?.reverseH0 !== undefined) ? reverseCurvePoints(catalog) : [];
 
   return (
@@ -543,7 +547,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
     return fan.bladeAngles.map(a => ({
       pts: a.reverse && c.reverseH0 !== undefined
         ? reverseCurvePoints(c)
-        : fanCurvePoints(c, angleFactor(c, a.angle)),
+        : fanCurvePoints(c, a.angle),
       color: a.color,
       dash: a.reverse,
     }));
