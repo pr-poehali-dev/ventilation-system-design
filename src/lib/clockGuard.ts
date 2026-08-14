@@ -25,6 +25,10 @@
  */
 
 const MARK_KEY = "pvs_time_mark";
+// Неотправленный сигнал о переводе часов. В момент подмены даты интернета,
+// как правило, нет (в этом и смысл), поэтому случай запоминается и досылается
+// на сервер при первом же выходе в сеть — для отметки в админ-панели.
+const PENDING_KEY = "pvs_clock_report";
 
 // Допуск на отставание часов. Перевод даты назад «на чуть-чуть» может быть
 // и обычной синхронизацией времени (NTP подтянул часы, села батарейка BIOS),
@@ -104,13 +108,33 @@ export function checkClock(): ClockCheck {
   const now = Date.now();
   const back = mark.t - now;
   if (back > ROLLBACK_TOLERANCE_MS) {
+    const daysBack = Math.floor(back / (24 * 60 * 60 * 1000));
+    // Запоминаем случай для отправки на сервер, когда появится связь.
+    try {
+      localStorage.setItem(PENDING_KEY, JSON.stringify({ daysBack, at: now }));
+    } catch { /* ignore */ }
     return {
       ok: false,
-      daysBack: Math.floor(back / (24 * 60 * 60 * 1000)),
+      daysBack,
       lastSeen: new Date(mark.t).toISOString(),
     };
   }
   return { ok: true };
+}
+
+/** Есть ли неотправленный сигнал о переводе часов (и на сколько суток). */
+export function takePendingClockReport(): { daysBack: number } | null {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as { daysBack?: number };
+    return { daysBack: typeof d.daysBack === "number" ? d.daysBack : 0 };
+  } catch { return null; }
+}
+
+/** Сигнал доставлен — больше не досылаем. */
+export function clearPendingClockReport(): void {
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
 }
 
 /**

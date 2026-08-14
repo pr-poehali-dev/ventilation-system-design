@@ -59,6 +59,8 @@ export interface MonitoringData {
   violations: {
     counts: Record<string, number>;
     multi_ip: { owner: string; key: string; ip_count: number }[];
+    /** Рабочие места, где переводили дату назад (обход срока лицензии) */
+    clock_rollbacks?: { hostname: string; key: string; count: number; last_at: string; detail: string | null }[];
   };
   expiring: { id: number; owner: string; key: string; expires_at: string; days_left: number | null }[];
   versions: { version: string; count: number; orgs?: { owner: string; count: number }[] }[];

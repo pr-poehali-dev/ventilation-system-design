@@ -552,6 +552,44 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return resp(200, {"ok": True})
 
+    # ── clock_rollback ─────────────────────────────────────────────────────────
+    # Программа заметила, что системные часы отведены назад: срок аварийного
+    # ключа и сохранённой лицензии проверяется локально, поэтому переводом даты
+    # можно было бы пользоваться просроченной лицензией бесконечно.
+    #
+    # Сигнал приходит ПОСТФАКТУМ — в момент подмены интернета обычно нет.
+    # Клиент запоминает случай и досылает его при первом же выходе в сеть.
+    # Само событие ничего не блокирует: блокировка происходит на рабочем месте,
+    # здесь мы лишь фиксируем факт для админ-панели.
+    if action == "clock_rollback":
+        days_back = body.get("days_back")
+        try:
+            days_back = int(days_back)
+        except (TypeError, ValueError):
+            days_back = 0
+        # Место может быть неизвестным (лицензию так и не активировали) —
+        # тогда пишем событие без привязки к ключу.
+        cur.execute("""
+            SELECT s.id, s.license_id, l.key
+            FROM license_seats s
+            JOIN licenses l ON l.id = s.license_id
+            WHERE s.fingerprint = %s
+            ORDER BY s.last_seen_at DESC LIMIT 1
+        """, (fph,))
+        srow = cur.fetchone()
+        seat_id = srow[0] if srow else None
+        lic_id  = srow[1] if srow else None
+        key     = srow[2] if srow else None
+
+        detail = f"часы отведены назад на ~{days_back} дн." if days_back > 0 else "часы отведены назад"
+        log_event(cur, license_id=lic_id, license_key=key, seat_id=seat_id,
+                  event_type="clock_rollback", fph=fph, hostname=hostname,
+                  platform=platform, app_version=app_version, ip=ip,
+                  detail=detail)
+        conn.commit()
+        conn.close()
+        return resp(200, {"ok": True})
+
     # ── transfer ────────────────────────────────────────────────────────────────
     if action == "transfer":
         license_key = body.get("key", "").strip().upper()

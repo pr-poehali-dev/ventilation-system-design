@@ -62,6 +62,24 @@
       "expectedStatus": 200,
       "expectedBody": {"ok": false},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Clock rollback report from unknown seat is accepted",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "clock_rollback", "fingerprint": "test-unknown-fp-clock-999", "days_back": 365, "hostname": "Chrome / Windows 10", "platform": "Windows 10", "app_version": "2.44.116"},
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Clock rollback with missing days_back still accepted",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "clock_rollback", "fingerprint": "test-unknown-fp-clock-998", "hostname": "Chrome / Windows 10"},
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
     }
   ]
 }

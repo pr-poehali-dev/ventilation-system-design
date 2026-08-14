@@ -73,7 +73,8 @@ export default function MonitoringTab({ data, loading }: Props) {
   }
 
   const v = data.violations.counts;
-  const totalViolations = (v.seats_exhausted || 0) + (v.disabled_attempt || 0) + (v.expired_attempt || 0);
+  const totalViolations = (v.seats_exhausted || 0) + (v.disabled_attempt || 0)
+    + (v.expired_attempt || 0) + (v.clock_rollback || 0);
 
   return (
     <div className="space-y-5">
@@ -260,6 +261,7 @@ export default function MonitoringTab({ data, loading }: Props) {
               { k: "seats_exhausted", label: "Превышение числа мест", icon: "Users" },
               { k: "disabled_attempt", label: "Вход по отозванной лицензии", icon: "Ban" },
               { k: "expired_attempt", label: "Вход по просроченной лицензии", icon: "TimerOff" },
+              { k: "clock_rollback", label: "Перевод даты назад", icon: "CalendarX" },
             ].map(row => (
               <div key={row.k} className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-gray-600">
@@ -279,6 +281,27 @@ export default function MonitoringTab({ data, loading }: Props) {
                 </div>
               ))}
             </div>
+            {/* Перевод даты назад — поимённо: нужно знать, с кем разбираться */}
+            {(data.violations.clock_rollbacks?.length ?? 0) > 0 && (
+              <div className="border-t border-gray-100 pt-2 mt-2">
+                <div className="text-[11px] text-gray-400 mb-1.5">Переводили дату назад (обход срока лицензии):</div>
+                {data.violations.clock_rollbacks!.map((c, i) => (
+                  <div key={`${c.hostname}-${c.key}-${i}`} className="py-0.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-gray-600">{c.hostname}</span>
+                      <span className="text-red-600 font-semibold">
+                        {c.count > 1 ? `${c.count} раз` : "1 раз"}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      {c.key !== "—" ? `${c.key} · ` : ""}
+                      {new Date(c.last_at).toLocaleString("ru-RU")}
+                      {c.detail ? ` · ${c.detail}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </Card>
 

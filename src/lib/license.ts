@@ -1,7 +1,7 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
 import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey } from "@/lib/offlineKey";
-import { checkClock, trustServerTime } from "@/lib/clockGuard";
+import { checkClock, trustServerTime, takePendingClockReport, clearPendingClockReport } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
 
 // ── Версия расчётного ядра (server.exe) ───────────────────────────────────────
@@ -527,6 +527,10 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
   // блокировка, если часы были сбиты, и чинится случайный сдвиг даты вперёд.
   trustServerTime();
 
+  // Появилась связь — досылаем отложенный сигнал о переводе часов, чтобы
+  // случай был виден в админ-панели. Отправка фоновая и ничего не задерживает.
+  reportPendingClockRollback(fingerprint, machineInfo);
+
   // Если сервер обновил fingerprint (восстановление после переустановки) — сбрасываем кэш
   if (data.fingerprint_updated) clearFingerprintCache();
 
@@ -631,6 +635,35 @@ export async function activateLicense(
 // ── Heartbeat: «я жива» ───────────────────────────────────────────────────────
 // Периодический лёгкий пинг для мониторинга онлайн-сессий. modules — какие
 // разделы программы сейчас используются (например "vent" / "water" / "fire").
+/**
+ * Досылает на сервер отложенный сигнал «часы переводили назад».
+ *
+ * В момент подмены даты интернета обычно нет — иначе смысла в подмене мало.
+ * Поэтому случай запоминается на рабочем месте и уходит на сервер при первом
+ * же успешном обращении. В админ-панели видно, на каком компьютере это было.
+ * Ошибки намеренно игнорируем: это уведомление, а не критичная операция.
+ */
+function reportPendingClockRollback(fingerprint: string, machineInfo?: MachineInfo): void {
+  const pending = takePendingClockReport();
+  if (!pending) return;
+  try {
+    fetch(LICENSE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "clock_rollback",
+        fingerprint,
+        days_back:   pending.daysBack,
+        hostname:    machineInfo?.hostname,
+        platform:    machineInfo?.platform,
+        app_version: APP_VERSION,
+      }),
+    })
+      .then(() => clearPendingClockReport())
+      .catch(() => { /* связь пропала — попробуем в следующий раз */ });
+  } catch { /* ignore */ }
+}
+
 export async function sendHeartbeat(
   fingerprint: string,
   machineInfo?: MachineInfo,

@@ -371,7 +371,7 @@ def handler(event: dict, context) -> dict:
             # 3. Нарушения: попытки превышения лимита / доступ к отозв./просроч.
             cur.execute("""
                 SELECT event_type, COUNT(*) FROM license_events
-                WHERE event_type IN ('seats_exhausted','disabled_attempt','expired_attempt')
+                WHERE event_type IN ('seats_exhausted','disabled_attempt','expired_attempt','clock_rollback')
                   AND created_at > NOW() - INTERVAL '30 days'
                 GROUP BY event_type
             """)
@@ -389,6 +389,25 @@ def handler(event: dict, context) -> dict:
                 ORDER BY ips DESC LIMIT 20
             """)
             multi_ip = [{"owner": r[0], "key": r[1], "ip_count": int(r[2])} for r in cur.fetchall()]
+
+            # Рабочие места, где переводили дату назад (обход срока лицензии).
+            # Показываем поимённо: счётчика мало — нужно знать, с кем говорить.
+            cur.execute("""
+                SELECT COALESCE(NULLIF(e.hostname, ''), '—') AS host,
+                       COALESCE(e.license_key, '—')          AS key,
+                       COUNT(*)                              AS cnt,
+                       MAX(e.created_at)                     AS last_at,
+                       MAX(e.detail)                         AS detail
+                FROM license_events e
+                WHERE e.event_type = 'clock_rollback'
+                  AND e.created_at > NOW() - INTERVAL '30 days'
+                GROUP BY host, key
+                ORDER BY last_at DESC LIMIT 20
+            """)
+            clock_rollbacks = [{
+                "hostname": r[0], "key": r[1], "count": int(r[2]),
+                "last_at": str(r[3]), "detail": r[4],
+            } for r in cur.fetchall()]
 
             # 4. Сроки лицензий: скоро истекают / просрочены
             cur.execute("""
@@ -498,7 +517,8 @@ def handler(event: dict, context) -> dict:
                     "daily": usage_daily,
                 },
                 "sessions": {"online": online_seats, "total": total_seats, "list": online_list},
-                "violations": {"counts": violations, "multi_ip": multi_ip},
+                "violations": {"counts": violations, "multi_ip": multi_ip,
+                               "clock_rollbacks": clock_rollbacks},
                 "expiring": expiring,
                 "versions": versions,
                 "core_versions": core_versions,
