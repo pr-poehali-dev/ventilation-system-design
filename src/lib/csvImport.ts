@@ -88,8 +88,31 @@ function detectSep(line: string): ";" | "\t" | "," {
   return ",";
 }
 
+/**
+ * Разбивает строку CSV на ячейки С УЧЁТОМ КАВЫЧЕК.
+ *
+ * Простое разбиение по разделителю ломается на значениях вида
+ * «Сопряжение ЮВС, гор. −130»: запятая внутри названия принималась за границу
+ * ячейки, и ВСЕ последующие столбцы съезжали (цвет читался как вид аварии
+ * и т. д.). Поэтому разделитель внутри кавычек игнорируем, а удвоенные
+ * кавычки («""») понимаем как одну — это стандартное экранирование CSV.
+ */
 function splitRow(line: string, sep: string): string[] {
-  return line.split(sep).map(s => s.trim());
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+      continue;
+    }
+    if (!inQuotes && ch === sep) { out.push(cur.trim()); cur = ""; continue; }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
 }
 
 function normalizeLines(content: string): string[] {
@@ -771,6 +794,17 @@ export interface Vent2ColMap {
   fan_branchId: number; // Ид выработки вентилятора
   fan_offset: number;   // Смещение
   fan_pressure: number; // Напор
+  // Позиции ПЛА
+  pos_id: number;       // Ид позиции
+  pos_x: number;        // Координата X
+  pos_y: number;        // Координата Y
+  pos_z: number;        // Координата Z
+  pos_number: number;   // Номер позиции
+  pos_name: number;     // Название позиции
+  pos_type: number;     // Тип позиции (безреверсивная / реверсивная)
+  pos_accident: number; // Вид аварии
+  pos_color: number;    // Цвет границы маркера
+  pos_branches: number; // Список привязанных выработок
 }
 
 export const VENT2_DEFAULT_COLS: Vent2ColMap = {
@@ -779,6 +813,10 @@ export const VENT2_DEFAULT_COLS: Vent2ColMap = {
   area: 7, perimeter: 8, flow: 9, resistance: 10, sumR: 10, layer: 11,
   bk_branchId: 1, bk_offset: 2, bk_type: 3, bk_resistance: 4,
   fan_branchId: 1, fan_offset: 2, fan_pressure: 4,
+  // Порядок по умолчанию совпадает с positions.csv нашего экспорта:
+  // Ид; X; Y; Z; Номер; Название; Тип; Вид аварии; Цвет границы; Список выработок
+  pos_id: 1, pos_x: 2, pos_y: 3, pos_z: 4, pos_number: 5,
+  pos_name: 6, pos_type: 7, pos_accident: 8, pos_color: 9, pos_branches: 10,
 };
 
 export interface Vent2ParseOptions {
@@ -791,6 +829,8 @@ export interface Vent2ParseOptions {
   bulkheadContent?: string;
   hasFans: boolean;
   fanContent?: string;
+  hasPositions: boolean;
+  positionContent?: string;
 }
 
 function col(row: string[], idx: number): string {
@@ -999,6 +1039,49 @@ export function parseVent2Csv(
     debug.push(`Вентиляторов: ${fans.length}`);
   }
 
+  // ── Позиции ПЛА ──────────────────────────────────────────────────────────
+  const positions: RawPosition[] = [];
+  if (opts.hasPositions && opts.positionContent) {
+    const posLines = opts.positionContent
+      .replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+      .split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    let pStart = 0;
+    if (posLines.length > 0) {
+      // Заголовок определяем так же, как у перемычек/вентиляторов: если первая
+      // ячейка не число — это шапка таблицы.
+      const f = posLines[0].split(sep)[0].trim();
+      if (isNaN(parseFloat(f.replace(",", ".")))) pStart = 1;
+    }
+    for (let i = pStart; i < posLines.length; i++) {
+      const row = splitRow(posLines[i], sep).map(c => c.replace(/"/g, "").trim());
+      const id = cleanId(col(row, cols.pos_id));
+      if (!id) continue;
+      // Список выработок в одной ячейке — через запятую или пробел.
+      const brRaw = cols.pos_branches > 0 ? col(row, cols.pos_branches) : "";
+      const branchIds = brRaw
+        .split(/[,\s]+/)
+        .map(x => x.trim())
+        .filter(x => x.length > 0)
+        // Переводим исходные ID выработок в сгенерированные — иначе привязка
+        // позиции к ветви не найдётся (так же делается для перемычек/вент-ров).
+        .map(x => branchOriginalIdMap[x] ?? x);
+      positions.push({
+        id,
+        number: cols.pos_number > 0 ? Math.round(parseNum(col(row, cols.pos_number))) || 0 : 0,
+        name: cols.pos_name > 0 ? col(row, cols.pos_name) : "",
+        positionType: cols.pos_type > 0 ? col(row, cols.pos_type) : "",
+        accidentType: cols.pos_accident > 0 ? col(row, cols.pos_accident) : "",
+        x: cols.pos_x > 0 ? parseNum(col(row, cols.pos_x)) : 0,
+        y: cols.pos_y > 0 ? parseNum(col(row, cols.pos_y)) : 0,
+        z: cols.pos_z > 0 ? parseNum(col(row, cols.pos_z)) : 0,
+        branchIds,
+        borderColor: cols.pos_color > 0 ? parseCsvColor(col(row, cols.pos_color)) : "",
+      });
+    }
+    const linked = positions.filter(p => p.branchIds.length > 0).length;
+    debug.push(`Позиций: ${positions.length} (с привязкой к выработкам: ${linked})`);
+  }
+
   // Горизонты (слои схемы) — восстанавливаем из столбца «Слой» и сразу
   // привязываем к ним ветви (та же логика, что и при импорте из АэроСети).
   const horizons = buildHorizonsFromLayers(branches, nodeMap.values(), ts, debug);
@@ -1008,7 +1091,7 @@ export function parseVent2Csv(
     branches,
     fans,
     bulkheads,
-    positions: [],
+    positions,
     horizons,
     branchOriginalIdMap,
     warnings,
@@ -1018,7 +1101,7 @@ export function parseVent2Csv(
       nodesWithZ: 0,
       fans: fans.length,
       bulkheads: bulkheads.length,
-      positions: 0,
+      positions: positions.length,
       horizons: horizons.length,
     },
     debug: debug.join("\n"),

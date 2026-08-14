@@ -79,8 +79,10 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
   const [branchFile, setBranchFile] = useState<File | null>(null);
   const [bkFile, setBkFile]         = useState<File | null>(null);
   const [fanFile, setFanFile]       = useState<File | null>(null);
+  const [posFile, setPosFile]       = useState<File | null>(null);
   const [hasBulkheads, setHasBulkheads] = useState(true);
   const [hasFans, setHasFans]           = useState(true);
+  const [hasPositions, setHasPositions] = useState(true);
 
   const [result, setResult] = useState<CsvImportResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,6 +108,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
       const ndContent   = nodeFile ? await readFile(nodeFile) : undefined;
       const bkContent   = (hasBulkheads && bkFile)  ? await readFile(bkFile)  : undefined;
       const fanContent  = (hasFans && fanFile)       ? await readFile(fanFile) : undefined;
+      const posContent  = (hasPositions && posFile)  ? await readFile(posFile) : undefined;
 
       const opts: Vent2ParseOptions = {
         cols, sep, resistanceUnit: rUnit,
@@ -115,6 +118,8 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
         bulkheadContent: bkContent,
         hasFans: hasFans && !!fanFile,
         fanContent,
+        hasPositions: hasPositions && !!posFile,
+        positionContent: posContent,
       };
       const res = parseVent2Csv(brContent, opts);
       setResult(res);
@@ -202,6 +207,16 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
                 {hasFans && (
                   <DropZone label="Источники тяги" fileName={fanFile?.name ?? ""}
                     onFile={setFanFile} />
+                )}
+
+                {/* Позиции ПЛА */}
+                <label className="flex items-center gap-2 text-[11px] text-gray-600 cursor-pointer select-none mt-1">
+                  <input type="checkbox" checked={hasPositions} onChange={e => setHasPositions(e.target.checked)} />
+                  Позиции ПЛА
+                </label>
+                {hasPositions && (
+                  <DropZone label="Позиции ПЛА" fileName={posFile?.name ?? ""}
+                    onFile={setPosFile} />
                 )}
               </div>
             </div>
@@ -316,6 +331,29 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
               </div>
             )}
 
+            {/* Позиции ПЛА */}
+            {hasPositions && (
+              <div className="rounded border overflow-hidden" style={{ borderColor: "#a5b4fc" }}>
+                <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2"
+                  style={{ background: "#e0e7ff", borderBottom: "1px solid #c7d2fe", color: "#312e81" }}>
+                  <Icon name="MapPin" size={13} />
+                  Столбцы в файле позиций ПЛА
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 px-3 py-2">
+                  <ColInput label="Ид позиции *"      value={cols.pos_id}       onChange={setCol("pos_id")} required />
+                  <ColInput label="Номер позиции"      value={cols.pos_number}   onChange={setCol("pos_number")} />
+                  <ColInput label="Координата X"       value={cols.pos_x}        onChange={setCol("pos_x")} />
+                  <ColInput label="Координата Y"       value={cols.pos_y}        onChange={setCol("pos_y")} />
+                  <ColInput label="Координата Z"       value={cols.pos_z}        onChange={setCol("pos_z")} />
+                  <ColInput label="Название"           value={cols.pos_name}     onChange={setCol("pos_name")} />
+                  <ColInput label="Тип позиции"        value={cols.pos_type}     onChange={setCol("pos_type")} />
+                  <ColInput label="Вид аварии"         value={cols.pos_accident} onChange={setCol("pos_accident")} />
+                  <ColInput label="Цвет границы"       value={cols.pos_color}    onChange={setCol("pos_color")} />
+                  <ColInput label="Список выработок"   value={cols.pos_branches} onChange={setCol("pos_branches")} />
+                </div>
+              </div>
+            )}
+
             {/* Результат */}
             {result && (
               <div className="rounded border px-3 py-2 text-[11px] space-y-0.5"
@@ -329,6 +367,9 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
                 )}
                 {result.stats.fans > 0 && (
                   <div className="text-green-700">✓ Вентиляторов: {result.stats.fans}</div>
+                )}
+                {(result.stats.positions ?? 0) > 0 && (
+                  <div className="text-green-700">✓ Позиций ПЛА: {result.stats.positions}</div>
                 )}
                 {(result.stats.horizons ?? 0) > 0 && (
                   <div className="text-green-700">✓ Слоёв (горизонтов): {result.stats.horizons}</div>
