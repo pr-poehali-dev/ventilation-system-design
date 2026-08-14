@@ -204,10 +204,36 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
 
   const proj = useMemo<ProjOptions>(() => activeView, [activeView]);
 
-  const projNodes = useMemo<ProjNode[]>(() => {
+  // ── Проекция узлов ─────────────────────────────────────────────────────────
+  // Проецирование — самая тяжёлая операция предпросмотра: синусы, косинусы и
+  // повороты для каждого узла схемы. На большом руднике это тысячи узлов, а
+  // листов больше сотни, и раньше всё пересчитывалось заново для КАЖДОГО листа
+  // и при каждом сдвиге схемы мышью.
+  //
+  // Ключевое наблюдение: повороты зависят ТОЛЬКО от ракурса (азимут, наклон,
+  // вертикальный масштаб), а масштаб и смещение листа входят в результат
+  // линейно. Поэтому «повёрнутые» координаты считаем ОДИН раз и потом дёшево
+  // пересчитываем под каждый лист обычным умножением и сложением.
+  const baseProjected = useMemo(() => {
     const _xySFN = xyScale ?? 1;
-    return nodes.map(n => ({ node: n, ...project3D({ x: n.x * _xySFN, y: n.y * _xySFN, z: n.z * zScale }, proj), depth: 0 }));
-  }, [nodes, proj, zScale, xyScale]);
+    const unit: ProjOptions = { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
+    return nodes.map(n => project3D({ x: n.x * _xySFN, y: n.y * _xySFN, z: n.z * zScale }, unit));
+  }, [nodes, azimuth, elevation, zScale, xyScale]);
+
+  const projNodes = useMemo<ProjNode[]>(() => {
+    const { scale, offsetX, offsetY } = proj;
+    return nodes.map((n, i) => {
+      const b = baseProjected[i];
+      return {
+        node: n,
+        sx: offsetX + b.sx * scale,
+        sy: offsetY + b.sy * scale,
+        // depth здесь всегда 0 — ровно как было раньше: порядок отрисовки в
+        // печати задаётся сортировкой по горизонтам, а не по глубине.
+        depth: 0,
+      } as ProjNode;
+    });
+  }, [nodes, baseProjected, proj]);
 
   const projNodesMap = useMemo(() => {
     const m = new Map<string, ProjNode>();

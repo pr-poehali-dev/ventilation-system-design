@@ -293,6 +293,44 @@ export default function PrintDialog({
     });
   }, []);
 
+  // ─── Видимая область предпросмотра (для виртуализации листов) ─────────────
+  // ЗАЧЕМ. Схема рудника режется на сотню с лишним листов, и раньше КАЖДЫЙ лист
+  // рисовался сразу при открытии окна. На каждый лист заново проецируются все
+  // узлы схемы: 140 листов × 4500 узлов — сотни тысяч тяжёлых вычислений, и
+  // окно предпросмотра намертво зависало на несколько минут.
+  //
+  // Теперь рисуются только листы, попавшие в видимую область (плюс небольшой
+  // запас вокруг, чтобы при прокрутке не мелькали пустые страницы). Остальные
+  // показываются как пустые белые листы с номером и дорисовываются, когда до
+  // них доскроллят. На печать и экспорт это не влияет — там каждый лист
+  // рисуется отдельно, в полном качестве (renderTileToCanvas).
+  const [viewport, setViewport] = useState({ top: 0, left: 0, w: 0, h: 0 });
+  const viewportRafRef = useRef(0);
+  const syncViewport = useCallback(() => {
+    const el = previewContainerRef.current;
+    if (!el) return;
+    // Через requestAnimationFrame: событие прокрутки приходит десятки раз в
+    // секунду, а пересчёт нужен не чаще кадра.
+    if (viewportRafRef.current) return;
+    viewportRafRef.current = requestAnimationFrame(() => {
+      viewportRafRef.current = 0;
+      const c = previewContainerRef.current;
+      if (!c) return;
+      setViewport({ top: c.scrollTop, left: c.scrollLeft, w: c.clientWidth, h: c.clientHeight });
+    });
+  }, []);
+
+  // Первичный замер контейнера: до него виртуализация не знает, сколько листов
+  // помещается на экран, и рисует лишь стартовую партию.
+  useEffect(() => {
+    syncViewport();
+    const el = previewContainerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(syncViewport);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [syncViewport]);
+
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportFormat, setExportFormat] = useState<"png"|"png-hq"|"jpg"|"bmp"|"tiff"|"svg"|"pdf"|"pdf-vector">("png");
   const [exportDpi, setExportDpi] = useState(300);
@@ -579,6 +617,50 @@ export default function PrintDialog({
   }, [baseView, schemaBbox, hasPrintLayer]);
 
   const totalPages = tiles.list.length;
+
+  // ─── Какие листы реально рисовать (виртуализация) ─────────────────────────
+  // Считаем, какие ячейки сетки попали в видимую область прокрутки. Рисуем их
+  // и один ряд/столбец про запас вокруг — тогда при обычной прокрутке лист
+  // успевает отрисоваться до того, как попадёт в кадр.
+  //
+  // Пока размеры контейнера неизвестны (первый кадр, viewport.w = 0), рисуем
+  // небольшую первую партию: окно должно открыться сразу и не пустым.
+  const visibleTiles = useMemo(() => {
+    const FIRST_BATCH = 8;   // до замера контейнера
+    const OVERSCAN    = 1;   // запас в листах вокруг видимой области
+    // Малую схему виртуализировать незачем — лишние сложности на ровном месте.
+    if (tiles.list.length <= 12) return null;   // null = рисовать все
+
+    const stepX = (prevW + 16) * viewZoom;
+    const stepY = (prevH + 16) * viewZoom;
+    if (!viewport.w || !viewport.h || !stepX || !stepY) {
+      return new Set(tiles.list.slice(0, FIRST_BATCH).map((_, i) => i));
+    }
+    const pad = 20 * viewZoom;   // отступ обёртки предпросмотра
+    const c0 = Math.max(0, Math.floor((viewport.left - pad) / stepX) - OVERSCAN);
+    const c1 = Math.min(tiles.cols - 1, Math.floor((viewport.left + viewport.w - pad) / stepX) + OVERSCAN);
+    const r0 = Math.max(0, Math.floor((viewport.top - pad) / stepY) - OVERSCAN);
+    const r1 = Math.min(tiles.rows - 1, Math.floor((viewport.top + viewport.h - pad) / stepY) + OVERSCAN);
+
+    // Собираем видимые ячейки вместе с расстоянием до центра экрана: если их
+    // окажется слишком много (сильно отдалили — в кадр попадает пол-схемы),
+    // рисуем ближайшие к центру, а дальние оставляем пустыми. Иначе одно
+    // движение колеса снова заставило бы рисовать сотню листов разом.
+    const MAX_AT_ONCE = 30;
+    const ccx = (viewport.left + viewport.w / 2 - pad) / stepX;
+    const ccy = (viewport.top + viewport.h / 2 - pad) / stepY;
+    const cand: { idx: number; d: number }[] = [];
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        cand.push({ idx: r * tiles.cols + c, d: (c - ccx) ** 2 + (r - ccy) ** 2 });
+      }
+    }
+    if (cand.length > MAX_AT_ONCE) cand.sort((a, b) => a.d - b.d);
+    const set = new Set<number>(cand.slice(0, MAX_AT_ONCE).map(x => x.idx));
+    // Первый лист рисуем всегда: на него смотрит «Подобрать масштаб» (previewRef).
+    set.add(0);
+    return set;
+  }, [tiles.list.length, tiles.cols, tiles.rows, viewport, prevW, prevH, viewZoom]);
 
   // ─── Рендер рамки слоя печати на canvas через SVG→Image ─────────────
   // Принимает готовые координаты рамки rx,ry,rw,rh (вычислены тем же алгоритмом что схема)
@@ -1477,6 +1559,7 @@ body{background:white;font-family:Arial,sans-serif}
             ref={previewContainerRef}
             className="flex-1 overflow-scroll"
             style={{ background: "#ffffff", cursor: isDragging ? "grabbing" : "default", position: "relative" }}
+            onScroll={syncViewport}
             onWheel={handlePreviewWheel}
             onClick={closeCtxMenu}
             onMouseMove={handlePreviewMouseMove}
@@ -1505,6 +1588,9 @@ body{background:white;font-family:Arial,sans-serif}
             }}>
               {tiles.list.map((tile, idx) => {
                 const pageNum = idx + 1;
+                // Лист вне видимой области — рисуем пустым (белый лист с номером).
+                // Схема на нём появится, как только до него доскроллят.
+                const tileVisible = !visibleTiles || visibleTiles.has(idx);
 
                 // Проекция конкретного листа для предпросмотра БЕЗ слоя печати.
                 // Повторяет логику renderTileToCanvas: смещаем offset на col*pageW /
@@ -1537,6 +1623,7 @@ body{background:white;font-family:Arial,sans-serif}
 
                     {/* Схема + слой печати */}
                     <div style={{ position: "absolute", top: 0, left: 0, width: prevW, height: prevH }}>
+                      {tileVisible && (
                       <PrintPreviewCanvas
                         ref={idx === 0 ? previewRef : undefined}
                         nodes={nodes}
@@ -1572,6 +1659,7 @@ body{background:white;font-family:Arial,sans-serif}
                         superSample={viewZoom}
                         tileView={tileView}
                       />
+                      )}
                     </div>
 
 
