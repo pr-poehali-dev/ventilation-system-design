@@ -368,6 +368,37 @@ let _sortedNodesOrder: number[] = [];
 let _adjMapCache: Map<string, TopoBranch[]> = new Map();
 let _adjMapKey: TopoBranch[] | null = null;
 
+// Кэш средней толщины ветвей, сходящихся в узле. Величина зависит только от
+// самих ветвей и настройки толщины линий — от масштаба и панорамы не зависит,
+// поэтому пересчитывать её каждый кадр незачем. На схеме в 14 тысяч ветвей это
+// давало десятки тысяч сложений и делений на КАЖДЫЙ кадр.
+let _adjAvgWKey: TopoBranch[] | null = null;
+let _adjAvgWWidth = -1;
+let _adjAvgWThin = false;
+let _adjAvgWCache = new Map<string, number>();
+function getNodeAvgWidths(
+  branches: TopoBranch[],
+  adj: Map<string, TopoBranch[]>,
+  branchWidth: number,
+  thinLines: boolean,
+): Map<string, number> {
+  if (_adjAvgWKey === branches && _adjAvgWWidth === branchWidth && _adjAvgWThin === thinLines) {
+    return _adjAvgWCache;
+  }
+  const m = new Map<string, number>();
+  for (const [nid, arr] of adj) {
+    if (arr.length === 0) { m.set(nid, branchWidth); continue; }
+    let s = 0;
+    for (const b of arr) s += (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth);
+    m.set(nid, s / arr.length);
+  }
+  _adjAvgWKey = branches;
+  _adjAvgWWidth = branchWidth;
+  _adjAvgWThin = thinLines;
+  _adjAvgWCache = m;
+  return m;
+}
+
 function getNodeAdjBranches(branches: TopoBranch[]): Map<string, TopoBranch[]> {
   if (_adjMapKey === branches) return _adjMapCache;
   const m = new Map<string, TopoBranch[]>();
@@ -787,6 +818,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // Для каждого горизонта: сначала border всей группы, затем fill всей группы.
   // Это сохраняет цельные стыки в узлах ВНУТРИ горизонта и одновременно даёт
   // корректный z-order МЕЖДУ горизонтами (верхний слой поверх нижнего).
+  // Накопитель обводок: толщина линии → список ветвей с такой толщиной.
+  // Переиспользуется между слоями (очищается после отрисовки каждого), чтобы
+  // не создавать новый словарь на каждый горизонт в каждом кадре.
+  const borderBatch = new Map<number, BranchP[]>();
+
   for (const group of layerGroups) {
   // ── ПРОХОД 1: только border (обводка) ветвей слоя ─────────────────────────
   for (const { b } of group) {
@@ -825,12 +861,42 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
     }
-    // Border
+    // Border — обычные (сплошные) ветви собираем в общие пути по толщине линии
+    // и рисуем ниже одним вызовом на толщину. Раньше каждая ветвь означала
+    // отдельную установку стиля и отдельную отрисовку: на 14 тысячах ветвей это
+    // десятки тысяч вызовов графики за кадр. Цвет и прозрачность у обводки
+    // одинаковые, поэтому объединение ничего не меняет визуально.
+    // Утечки (штриховая линия) рисуем по-старому, поштучно — их мало.
+    if (p.isLeakage) {
+      ctx.strokeStyle = "#1f2937";
+      ctx.lineWidth = p.w + p.bwBorder * 2;
+      ctx.globalAlpha = 0.85;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      const lw = p.w + p.bwBorder * 2;
+      // Округляем толщину до 0.1px: соседние ветви почти всегда имеют одинаковую
+      // толщину, и без округления групп было бы столько же, сколько ветвей.
+      const key = Math.round(lw * 10) / 10;
+      let arr = borderBatch.get(key);
+      if (!arr) { arr = []; borderBatch.set(key, arr); }
+      arr.push(p);
+    }
+  }
+
+  // Отрисовка накопленных обводок: один путь на каждую толщину линии.
+  if (borderBatch.size > 0) {
     ctx.strokeStyle = "#1f2937";
-    ctx.lineWidth = p.w + p.bwBorder * 2;
     ctx.globalAlpha = 0.85;
-    ctx.setLineDash(p.isLeakage ? [6, 4] : []);
-    ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+    ctx.setLineDash([]);
+    for (const [lw, arr] of borderBatch) {
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      for (const p of arr) { ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); }
+      ctx.stroke();
+    }
+    borderBatch.clear();
   }
   // Сброс после прохода 1 (border) внутри слоя
   ctx.globalAlpha = 1;
@@ -841,18 +907,21 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // colorMode="none") рисуем ПЕРВЫМИ, окрашенные — ПОВЕРХ них. Иначе белые концы
   // (round-cap) соседних ветвей перекрывают окраску (позиции ПЛА, расход воздуха)
   // в общих узлах. Порядок стабильный (не меняем z-order внутри каждой категории).
-  const isPlainWhite = (id: string): boolean => {
-    const c = bParamsMap.get(id)?.color;
-    return c === defaultBranchColor;
-  };
-  const hasColored = group.some(({ b }) => !isPlainWhite(b.id));
-  const group2 = hasColored
-    ? [...group].sort((a, bb) => {
-        const wa = isPlainWhite(a.b.id) ? 0 : 1;
-        const wb = isPlainWhite(bb.b.id) ? 0 : 1;
-        return wa - wb;
-      })
-    : group;
+  // Раньше здесь была полноценная сортировка массива с обращением к словарю
+  // параметров на КАЖДОЕ сравнение: на схеме в 14 тысяч ветвей это сотни тысяч
+  // обращений каждый кадр — самая дорогая операция при панораме и зуме.
+  // Простое разделение на две корзины даёт тот же порядок (белые, затем
+  // окрашенные, внутри каждой категории порядок сохраняется), но за один
+  // проход и без сравнений.
+  let group2 = group;
+  {
+    const white: SortedBranch[] = [];
+    const colored: SortedBranch[] = [];
+    for (const e of group) {
+      (bParamsMap.get(e.b.id)?.color === defaultBranchColor ? white : colored).push(e);
+    }
+    if (colored.length > 0 && white.length > 0) group2 = white.concat(colored);
+  }
   for (const { b } of group2) {
     const p = bParamsMap.get(b.id);
     if (!p) continue;
@@ -1351,6 +1420,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // Кэш: узел → смежные ветви. Строится один раз на список ветвей и
     // переиспользуется между кадрами (см. getNodeAdjBranches).
     const nodeAdjBranchesMap = getNodeAdjBranches(branches);
+    const nodeAvgWMap = getNodeAvgWidths(branches, nodeAdjBranchesMap, branchWidth, thinLines);
     // O(1) при анимации — projNodes не меняется между кадрами
     const nodesSorted = getSortedNodes(projNodes, opts.sortEpoch);
     // Viewport culling для узлов: на больших схемах (>10000 узлов) отрисовка
@@ -1432,11 +1502,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (!_isSpecial) continue;
       }
 
-      // O(1) вместо O(M) filter — берём из предварительно построенного Map
-      const adjBranches = nodeAdjBranchesMap.get(n.id) ?? [];
-      const adjAvgW = adjBranches.length > 0
-        ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
-        : branchWidth;
+      // Средняя толщина соседних ветвей — из кэша (не зависит от масштаба).
+      const adjAvgW = nodeAvgWMap.get(n.id) ?? branchWidth;
       const branchPx = (thinLines ? 1 : adjAvgW) * objSF;
       // Узел = половина ширины ветви, минимум 1.5px
       const baseNodeR = Math.max(1.5, branchPx * 0.55);
