@@ -93,6 +93,73 @@ export const POSITION_COLORS: { label: string; color: string; border: string }[]
   { label: "Серый",     color: "#718096", border: "#4a5568" },
 ];
 
+/**
+ * Подбирает пару «фон + граница» маркера позиции по цвету из импортируемого файла.
+ *
+ * В CSV хранится только ОДИН цвет (граница), а у маркера их два — поэтому
+ * ищем в палитре POSITION_COLORS запись с самым близким цветом и берём её
+ * пару целиком. Так импортированные позиции выглядят как «родные».
+ *
+ * Близость считаем по ОТТЕНКУ (модель HSL), а не по сырым RGB: обычное
+ * расстояние в RGB плохо отражает восприятие — например тёмно-синий #123456
+ * оказывался «ближе» к тёмно-зелёному, чем к синему, и позиция меняла цвет.
+ *
+ * Если цвет не задан, не распознан или ни одна запись палитры не подошла —
+ * возвращаем СЛУЧАЙНУЮ запись палитры: позиции получат разные различимые
+ * цвета вместо одинаковых красных.
+ */
+export function matchPositionColor(rawColor: string): { color: string; border: string } {
+  const rgb = (h: string): [number, number, number] | null => {
+    const m = (h || "").trim().toLowerCase().replace(/^#/, "");
+    if (!/^[0-9a-f]{6}$/.test(m)) return null;
+    return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)];
+  };
+  const toHsl = ([r0, g0, b0]: [number, number, number]): [number, number, number] => {
+    const r = r0 / 255, g = g0 / 255, b = b0 / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const l = (mx + mn) / 2;
+    let h = 0, s = 0;
+    if (mx !== mn) {
+      const d = mx - mn;
+      s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+      h = mx === r ? ((g - b) / d + (g < b ? 6 : 0)) : mx === g ? ((b - r) / d + 2) : ((r - g) / d + 4);
+      h *= 60;
+    }
+    return [h, s, l];
+  };
+  // Чем меньше, тем ближе. Ненасыщенные цвета (серый) сравниваем отдельно —
+  // у них оттенок не несёт смысла.
+  const score = (a: [number, number, number], b: [number, number, number]): number => {
+    const [h1, s1, l1] = toHsl(a), [h2, s2, l2] = toHsl(b);
+    if (s1 < 0.15 || s2 < 0.15) {
+      if (Math.abs(s1 - s2) > 0.25) return Infinity;
+      return Math.abs(s1 - s2) * 200 + Math.abs(l1 - l2) * 100;
+    }
+    let dh = Math.abs(h1 - h2);
+    if (dh > 180) dh = 360 - dh;
+    return dh + Math.abs(s1 - s2) * 60 + Math.abs(l1 - l2) * 60;
+  };
+
+  const want = rgb(rawColor);
+  if (want) {
+    let best: { color: string; border: string } | null = null;
+    let bestScore = Infinity;
+    for (const p of POSITION_COLORS) {
+      // Сверяем и с границей, и с фоном: в файл мог попасть любой из двух.
+      for (const cand of [p.border, p.color]) {
+        const c = rgb(cand);
+        if (!c) continue;
+        const d = score(want, c);
+        if (d < bestScore) { bestScore = d; best = { color: p.color, border: p.border }; }
+      }
+    }
+    // Порог 70: столько «стоит» уже заметно другой оттенок.
+    if (best && bestScore <= 70) return best;
+  }
+  const rnd = POSITION_COLORS[Math.floor(Math.random() * POSITION_COLORS.length)];
+  return { color: rnd.color, border: rnd.border };
+}
+
 export const VENT_MODES = [
   "Режим проветривания 1",
   "Режим проветривания 2",

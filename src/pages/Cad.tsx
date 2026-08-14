@@ -30,7 +30,7 @@ import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import PositionsPanel from "@/components/cad/PositionsPanel";
-import { type Position, makePosition } from "@/lib/positions";
+import { type Position, type AccidentType, makePosition, matchPositionColor, ACCIDENT_TYPES } from "@/lib/positions";
 import { type ExcelImportResult } from "@/lib/excelImport";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
@@ -1940,6 +1940,14 @@ export default function CadPage() {
         ? Math.max(...existingPositions.map(p => p.number)) + 1
         : 1);
       for (const rp of result.positions ?? []) {
+        // Цвет маркера: подбираем пару «фон + граница» по цвету из файла.
+        // Если цвет не задан или не распознан — matchPositionColor вернёт
+        // случайный из палитры, чтобы позиции не были все одинаково красными.
+        const pal = matchPositionColor(rp.borderColor ?? "");
+        // Вид аварии из файла: принимаем только известные значения,
+        // иначе оставляем принятый по умолчанию «Пожар».
+        const accRaw = (rp.accidentType ?? "").trim().toLowerCase();
+        const acc = ACCIDENT_TYPES.find(a => a.toLowerCase() === accRaw);
         newPositions.push(makePosition({
           id: `POS_CSV_${rp.id}_${Date.now()}`,
           number: rp.number || nextNum++,
@@ -1949,6 +1957,9 @@ export default function CadPage() {
           z: rp.z,
           placed: rp.x !== 0 || rp.y !== 0,
           branchIds: rp.branchIds,
+          color: pal.color,
+          borderColor: pal.border,
+          ...(acc ? { accidentType: acc as AccidentType } : {}),
           positionType: (rp.positionType?.toLowerCase().includes("реверс") ? "reverse" : "normal") as "normal" | "reverse",
         }));
       }

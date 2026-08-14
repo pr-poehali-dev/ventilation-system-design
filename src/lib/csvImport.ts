@@ -37,6 +37,8 @@ export interface RawPosition {
   y: number;               // Y
   z: number;               // Z
   branchIds: string[];     // ID привязанных выработок (из АэроСети)
+  /** Цвет границы маркера из файла (HEX, «#c53030») — пусто, если не задан. */
+  borderColor: string;
 }
 
 /**
@@ -309,10 +311,35 @@ function parseBulkheadsFile(lines: string[], sep: string): RawBulkhead[] {
   return result;
 }
 
+/**
+ * Приводит цвет из CSV к виду «#rrggbb».
+ *
+ * В файлах встречаются разные записи цвета, поэтому понимаем все ходовые:
+ *   «#c53030», «c53030», «#C53» (короткая форма), «197,48,48» и «rgb(197,48,48)».
+ * Всё, что распознать не удалось, отдаём пустой строкой — вызывающий код
+ * подберёт цвет сам.
+ */
+function parseCsvColor(raw: string): string {
+  const s = (raw || "").trim().toLowerCase();
+  if (!s) return "";
+  const hex = s.replace(/^#/, "");
+  if (/^[0-9a-f]{6}$/.test(hex)) return `#${hex}`;
+  // Короткая форма #abc → #aabbcc
+  if (/^[0-9a-f]{3}$/.test(hex)) return `#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`;
+  // Формат «197,48,48» или «rgb(197, 48, 48)»
+  const nums = s.match(/\d{1,3}/g);
+  if (nums && nums.length >= 3) {
+    const [r, g, b] = nums.slice(0, 3).map(n => Math.max(0, Math.min(255, parseInt(n, 10))));
+    const h = (v: number) => v.toString(16).padStart(2, "0");
+    return `#${h(r)}${h(g)}${h(b)}`;
+  }
+  return "";
+}
+
 function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
   const result: RawPosition[] = [];
   let headerFound = false;
-  const colIdx = { id: 0, number: 1, name: 2, posType: 3, accType: 4, x: 5, y: 6, z: 7, branches: 8 };
+  const colIdx = { id: 0, number: 1, name: 2, posType: 3, accType: 4, x: 5, y: 6, z: 7, branches: 8, color: -1 };
 
   for (const line of lines) {
     const cols = splitRow(line, sep).map(c => c.replace(/"/g, "").trim());
@@ -333,6 +360,8 @@ function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
         // терялась и все позиции ложились на Z=0.
         const zC   = ci(/^z$|высот|отметк|z.*коорд|коорд.*z/);
         const brC  = ci(/выработ|branch|список/);
+        // «Цвет границы» / «Цвет» / «color» — цвет маркера позиции.
+        const clC  = ci(/цвет|color/);
         if (idC  >= 0) colIdx.id = idC;
         if (nmC  >= 0) colIdx.number = nmC;
         if (naC  >= 0) colIdx.name = naC;
@@ -342,6 +371,7 @@ function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
         if (yC   >= 0) colIdx.y = yC;
         if (zC   >= 0) colIdx.z = zC;
         if (brC  >= 0) colIdx.branches = brC;
+        if (clC  >= 0) colIdx.color = clC;
         headerFound = true;
       }
       continue;
@@ -366,6 +396,7 @@ function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
       y: parseNum(cols[colIdx.y]),
       z: parseNum(cols[colIdx.z]),
       branchIds,
+      borderColor: colIdx.color >= 0 ? parseCsvColor(cols[colIdx.color] ?? "") : "",
     });
   }
   return result;
