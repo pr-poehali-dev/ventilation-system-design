@@ -603,19 +603,9 @@ export function fanHAngle(c: FanCurve, Q: number, angle?: number, rpm?: number):
   return Math.max(0, H) * k * k;
 }
 
-/** Производная |dH/dQ| с учётом угла лопаток — нужна решателю сети */
-export function fanDHAngle(c: FanCurve, Q: number, angle?: number, rpm?: number): number {
-  const af = bladeAngleFactor(c, angle);
-  const k = (rpm && rpm > 0 && c.rpmNominal > 0) ? rpm / c.rpmNominal : 1;
-  const Qn = Math.abs(Q) / k;
-  const qMaxF = c.qMax * af;
-
-  if (Qn <= qMaxF) return Math.abs(c.h1 + 2 * c.h2 * (Qn / af)) * k;
-
-  const slope = c.h1 + 2 * c.h2 * (qMaxF / af);
-  const d = Qn - qMaxF;
-  return Math.abs(slope - 2 * Math.abs(c.h2) * 4 * d) * k;
-}
+// Производная |dH/dQ| здесь не нужна: её использовал только удалённый
+// TypeScript-решатель. Расчёт сети идёт на сервере, где производная
+// вычисляется своей функцией fan_dH (backend/airflow/index.py).
 
 // ─── Вычисление H(Q) и η(Q) ────────────────────────────────────────────────
 // Масштабирование по оборотам: закон подобия H ~ n², Q ~ n

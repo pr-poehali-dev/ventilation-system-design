@@ -10,7 +10,7 @@ import {
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
-import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
+import { type SolveResult } from "@/lib/networkSolver";
 import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower, bladeAngleFactor } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import HQFireDiagram from "@/components/cad/HQFireDiagram";
