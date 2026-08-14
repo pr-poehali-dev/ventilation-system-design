@@ -10,7 +10,6 @@ import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressu
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import {
   SB, SectionHeader, EditInput, ComputedInput, SelectField, CheckField, InlineLabel,
-  PLAST_OPTIONS, PLA_OPTIONS, POLE_OPTIONS,
 } from "@/components/cad/BranchPropsPrimitives";
 // Вкладки панели вынесены в отдельные файлы (перенос 1:1, без правок логики)
 import BranchTopologyTab from "@/components/cad/branchProps/BranchTopologyTab";
@@ -101,7 +100,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, mineTypes, onOpenTypesLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -119,11 +118,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
   };
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
-  const [name, setName] = useState(branch.id);
-  const [plast, setPlast] = useState(PLAST_OPTIONS[0]);
-  const [pla, setPla] = useState(PLA_OPTIONS[0]);
-  const [pole, setPole] = useState(POLE_OPTIONS[0]);
-
   const [visible, setVisible] = useState<Set<string>>(
     () => new Set([
       "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_total_r", "v_geom_r", "v_unit_r", "v_unit_r_100",
@@ -138,8 +132,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-
-  const horizonColor = horizons.find((h) => h.id === branch.horizonId)?.color;
 
   const angle = branch.angle ?? 0;
 
@@ -195,12 +187,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             mineFans={mineFans}
             onOpenFanLibrary={onOpenFanLibrary}
           />
-        )}
-
-        {innerTab === "Переменные" && (
-          <div className="px-2 py-2 text-[11px] text-gray-400 text-center">
-            Нет переменных параметров
-          </div>
         )}
 
         {innerTab === "Перемычка" && (
@@ -499,45 +485,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 )}
               </>
             )}
-          </div>
-        )}
-
-        {innerTab === "Люди" && (
-          <div>
-            <SectionHeader title="Количество людей" />
-            <InlineLabel label="Кол-во людей">
-              <EditInput type="number" step="1" value={0} onChange={() => {}} />
-            </InlineLabel>
-            <InlineLabel label="Норматив воздуха, м³/мин на чел.">
-              <EditInput type="number" step="0.5" value={6} onChange={() => {}} />
-            </InlineLabel>
-            <InlineLabel label="Треб. расход, м³/мин">
-              <ComputedInput value="—" />
-            </InlineLabel>
-          </div>
-        )}
-
-        {innerTab === "Усл.обозначения" && (
-          <div className="px-2 py-2 text-[11px] text-gray-400 text-center">
-            Условные обозначения не заданы
-          </div>
-        )}
-
-        {innerTab === "Датчики" && (
-          <div className="px-2 py-2 text-[11px] text-gray-400 text-center">
-            Датчики не привязаны
-          </div>
-        )}
-
-        {innerTab === "Дегазация" && (
-          <div>
-            <SectionHeader title="Параметры дегазации" />
-            <InlineLabel label="Дегазация активна">
-              <CheckField checked={false} onChange={() => {}} />
-            </InlineLabel>
-            <InlineLabel label="Расход CH4, м³/мин">
-              <ComputedInput value="—" />
-            </InlineLabel>
           </div>
         )}
 
@@ -858,12 +805,6 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
                 </InlineLabel>
               )}
             </>)}
-          </div>
-        )}
-
-        {innerTab === "Трубы: газ" && (
-          <div className="px-2 py-2 text-[11px] text-gray-400 text-center">
-            Газовые трубопроводы не заданы
           </div>
         )}
 
