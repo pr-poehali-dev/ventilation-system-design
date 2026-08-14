@@ -12,8 +12,9 @@ import {
   type LicenseInfo,
   type MachineInfo,
 } from "@/lib/license";
+import { noteTimeMark } from "@/lib/clockGuard";
 
-export type LicenseStatus = "loading" | "demo" | "licensed" | "offline_expired";
+export type LicenseStatus = "loading" | "demo" | "licensed" | "offline_expired" | "clock_rollback";
 
 export interface UseLicenseReturn {
   status: LicenseStatus;
@@ -53,10 +54,24 @@ export function useLicense(): UseLicenseReturn {
       } else if (quickEmergency?.licensed) {
         setInfo(quickEmergency);
         setStatus("licensed");
+      } else if (quick?.clockRollback || quickEmergency?.clockRollback) {
+        // Часы переведены назад — локальным срокам верить нельзя.
+        // Программа не блокируется намертво: подключение к интернету снимает
+        // блокировку автоматически (проверка ниже сходит на сервер).
+        setInfo(quick?.clockRollback ? quick : quickEmergency);
+        setStatus("clock_rollback");
       }
 
       // Дожидаемся восстановления лицензии с диска (десктоп), затем — fingerprint
       await storageReady;
+
+      // Отмечаем текущий момент — ТОЛЬКО ПОСЛЕ восстановления с диска.
+      // Иначе после чистки кэша WebView2 отметка записалась бы поверх пустого
+      // хранилища, и файловая копия (более старая и достоверная) не поднялась
+      // бы вовсе — защиту можно было бы сбросить очисткой данных браузера.
+      // Отметка сдвигается только ВПЕРЁД, поэтому перевод даты назад виден
+      // при следующем запуске.
+      noteTimeMark();
       const mi = await getMachineInfo();
       if (cancelled) return;
       setFingerprint(mi.fingerprint);
@@ -77,6 +92,15 @@ export function useLicense(): UseLicenseReturn {
       if (!cached?.licensed && emergency?.licensed) {
         setInfo(emergency);
         setStatus("licensed");
+      }
+
+      // 1б. Повторная проверка часов — уже с отметкой, поднятой с диска.
+      // Именно здесь ловится случай, когда данные браузера очистили, чтобы
+      // сбросить защиту: файловая копия отметки переживает такую чистку.
+      if (!cached?.licensed && !emergency?.licensed
+        && (cached?.clockRollback || emergency?.clockRollback)) {
+        setInfo(cached?.clockRollback ? cached : emergency);
+        setStatus("clock_rollback");
       }
 
       // 2. ЭКОНОМИЯ ОБРАЩЕНИЙ К СЕРВЕРУ.
@@ -129,6 +153,10 @@ export function useLicense(): UseLicenseReturn {
         } else if (emergency?.licensed) {
           setInfo(emergency);
           setStatus("licensed");
+        } else if (cached?.clockRollback || emergency?.clockRollback) {
+          // Связи нет и часы переведены назад — проверить срок нечем.
+          setInfo(cached?.clockRollback ? cached : emergency);
+          setStatus("clock_rollback");
         } else {
           setStatus("demo");
         }

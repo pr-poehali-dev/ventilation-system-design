@@ -1,6 +1,7 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
 import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey } from "@/lib/offlineKey";
+import { checkClock, trustServerTime } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
 
 // ── Версия расчётного ядра (server.exe) ───────────────────────────────────────
@@ -136,6 +137,13 @@ export interface LicenseInfo {
    * не обращается вовсе — см. isCheckDue().
    */
   nextCheckAt?: number;
+  /**
+   * Системные часы переведены назад — локальная проверка срока не принимается.
+   * Требуется вернуть верную дату или подключиться к интернету.
+   */
+  clockRollback?: boolean;
+  /** На сколько суток отведены часы (для сообщения пользователю) */
+  clockDaysBack?: number;
 }
 
 export interface MachineInfo {
@@ -375,6 +383,13 @@ export function loadCachedLicense(): LicenseInfo | null {
     const raw = storage.get(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as LicenseInfo & { checkedAt?: number };
+    // Часы переведены назад — 14-суточный срок сохранённой лицензии тоже
+    // считается по локальным часам, поэтому кэшу нельзя доверять.
+    // Сообщаем об этом отдельным признаком, чтобы показать понятную причину.
+    const clock = checkClock();
+    if (!clock.ok) {
+      return { licensed: false, clockRollback: true, clockDaysBack: clock.daysBack };
+    }
     if (Date.now() - (data.checkedAt ?? 0) > CACHE_TTL_MS) return null;
     return data;
   } catch { return null; }
@@ -438,6 +453,16 @@ export function checkOfflineEmergency(): LicenseInfo | null {
   const loaded = loadOfflineKey();
   if (!loaded) return null;
   const { key, info } = loaded;
+  // ЗАЩИТА ОТ ПЕРЕВОДА ЧАСОВ. Срок аварийного ключа проверяется локально, по
+  // часам компьютера. Без этой проверки достаточно было отвести дату назад,
+  // чтобы просроченный ключ работал бессрочно (интернета на руднике нет).
+  const clock = checkClock();
+  if (!clock.ok) {
+    return {
+      licensed: false, emergency: true,
+      clockRollback: true, clockDaysBack: clock.daysBack,
+    };
+  }
   if (!info.valid) {
     if (info.expired) return { licensed: false, emergency: true, offlineExpired: true, daysLeft: 0 };
     return null;
@@ -496,6 +521,11 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
     clearTimeout(timer);
   }
   const data = await res.json();
+
+  // Сервер ответил — значит есть связь, и это единственный надёжный источник
+  // времени. Переставляем отметку часов на текущий момент: так снимается
+  // блокировка, если часы были сбиты, и чинится случайный сдвиг даты вперёд.
+  trustServerTime();
 
   // Если сервер обновил fingerprint (восстановление после переустановки) — сбрасываем кэш
   if (data.fingerprint_updated) clearFingerprintCache();

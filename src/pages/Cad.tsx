@@ -96,12 +96,20 @@ import { buildVentPipeLine as buildVentPipeLineImpl } from "./cad/buildVentPipeL
 
 export default function CadPage() {
   const license = useLicenseContext();
-  const isDemo = license.status === "demo";
+  // Демо-ограничения действуют не только при status="demo", но и когда
+  // лицензию нельзя подтвердить: просрочен оффлайн-кэш или переведены назад
+  // системные часы. Иначе такая блокировка, наоборот, СНИМАЛА бы ограничения.
+  const isDemo = license.status === "demo"
+    || license.status === "offline_expired"
+    || license.status === "clock_rollback";
   const [showLicenseDialog, setShowLicenseDialog] = useState(false);
 
-  // При первом запуске без лицензии показываем диалог активации
+  // При первом запуске без лицензии показываем диалог активации.
+  // То же при блокировке — человек должен увидеть причину и способ исправить.
   useEffect(() => {
-    if (license.status === "demo") setShowLicenseDialog(true);
+    if (license.status === "demo"
+      || license.status === "offline_expired"
+      || license.status === "clock_rollback") setShowLicenseDialog(true);
   }, [license.status]);
 
   // ПОЛНЫЙ путь файла на диске — заполняется, когда проект открыт двойным

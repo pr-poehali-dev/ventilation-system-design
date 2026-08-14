@@ -61,6 +61,8 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
 
   const isLicensed       = license.status === "licensed";
   const isExpired        = license.status === "offline_expired";
+  const isClockRollback  = license.status === "clock_rollback";
+  const clockDaysBack    = license.info?.clockDaysBack;
   const daysLeft         = license.info?.daysLeft;
   const isOffline        = license.info?.offline;
   const isEmergency      = license.info?.emergency;   // аварийный оффлайн-ключ
@@ -101,6 +103,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
               <div className="text-blue-200 text-[11px]">
                 {isLicensed ? (isEmergency ? "Аварийный режим (оффлайн)" : isOffline ? "Оффлайн-режим" : "Полная версия активна")
                   : isExpired ? "Требуется интернет"
+                  : isClockRollback ? "Проверьте дату на компьютере"
                   : "Демо-режим"}
               </div>
             </div>
@@ -123,6 +126,26 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
               </div>
               <div className="mt-1.5 text-[12px] text-red-700">
                 Прошло более 14 дней без проверки лицензии. Подключитесь к сети и перезапустите приложение.
+              </div>
+            </div>
+          )}
+
+          {/* Часы переведены назад — локальная проверка срока невозможна */}
+          {isClockRollback && (
+            <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50">
+              <div className="flex items-center gap-2 text-red-800 font-semibold text-[13px]">
+                <Icon name="CalendarX" size={16} className="text-red-600" />
+                Дата на компьютере отведена назад
+              </div>
+              <div className="mt-1.5 text-[12px] text-red-700">
+                {typeof clockDaysBack === "number" && clockDaysBack > 0
+                  ? `Системные часы отстают примерно на ${clockDaysBack} дн. от ранее известной даты. `
+                  : "Системные часы отстают от ранее известной даты. "}
+                Пока дата неверна, срок действия лицензии проверить нельзя.
+              </div>
+              <div className="mt-1.5 text-[11px] text-red-700">
+                Установите правильные дату и время, затем перезапустите программу.
+                Если подключиться к интернету, дата подтвердится автоматически.
               </div>
             </div>
           )}
