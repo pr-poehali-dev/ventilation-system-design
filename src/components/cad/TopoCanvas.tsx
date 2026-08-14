@@ -60,7 +60,7 @@ export default function TopoCanvas(props: Props) {
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
     selectedNodeIds, onNodeMultiSelect,
-    infoConfig, zScale = 1, xyScale = 1,
+    infoConfig, zScale = 1, xyScale = 1, nodeLodThresholds,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
     selectedSymbolIds, onSymbolMultiSelect,
@@ -1567,6 +1567,7 @@ export default function TopoCanvas(props: Props) {
           reversedBranchIds={reversedBranchIds}
           pollutedBranchIds={pollutedBranchIds}
           xyScale={xyScale}
+          nodeLodThresholds={nodeLodThresholds}
           transparentBg={hasActivePrintLayer}
           compareBranchColors={compareBranchColors}
           colorMode={colorMode}

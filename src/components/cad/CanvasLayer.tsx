@@ -72,6 +72,8 @@ interface CanvasLayerProps {
   };
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
+  /** Пороги авто-скрытия узлов при отдалении (настройка «Видимость узлов») */
+  nodeLodThresholds?: { circle: number; label: number };
   transparentBg?: boolean;
   compareBranchColors?: Map<string, string>;
   colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
@@ -223,6 +225,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         scaleLimits: p.scaleLimits,
         pollutedBranchIds: p.pollutedBranchIds,
         xyScale: p.xyScale,
+        nodeLodThresholds: p.nodeLodThresholds,
         transparentBg: p.transparentBg,
         compareBranchColors: p.compareBranchColors,
         colorMode: p.colorMode,
@@ -281,6 +284,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.visibleBranches, props.hiddenBranchIds,
     props.projNodes, props.projNodesMap, props.proj, props.view,
     props.is3D, props.zScale, props.xyScale, props.zLevel,
+    props.nodeLodThresholds,
     props.selectedBranchId, props.selectedBranchIds,
     props.selectedNodeId, props.selectedNodeIds,
     props.hoverBranchId, props.highlightHorizonId,

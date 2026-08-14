@@ -117,6 +117,8 @@ export interface Props {
   zScale?: number;
   /** Масштаб по осям X и Y (горизонтальное растяжение схемы). */
   xyScale?: number;
+  /** Пороги авто-скрытия узлов при отдалении (настройка «Видимость узлов») */
+  nodeLodThresholds?: { circle: number; label: number };
   /** Условные обозначения на схеме */
   schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
     indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;

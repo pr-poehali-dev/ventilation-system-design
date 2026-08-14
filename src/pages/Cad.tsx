@@ -1052,6 +1052,36 @@ export default function CadPage() {
   }, [canvasThreshold]);
   // Свёрнут ли блок «Порог SVG→Canvas» (по умолчанию — свёрнут)
   const [thresholdOpen, setThresholdOpen] = useState(false);
+
+  // ─── Пороги авто-скрытия узлов при отдалении (режим Canvas) ────────────────
+  // На крупных схемах отрисовка кружков и номеров для тысяч узлов тормозит
+  // холст, поэтому при сильном отдалении они скрываются. Значения задаются
+  // в процентах масштаба; 0 = «не скрывать никогда».
+  // -1 в хранилище означает «авто» — пороги подбираются по числу узлов.
+  const [nodeLodAuto, setNodeLodAuto] = useState<boolean>(() => {
+    return localStorage.getItem("vent-cad/node-lod-auto") !== "0";
+  });
+  const [nodeLodCircle, setNodeLodCircle] = useState<number>(() => {
+    const n = parseInt(localStorage.getItem("vent-cad/node-lod-circle") ?? "", 10);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 12;
+  });
+  const [nodeLodLabel, setNodeLodLabel] = useState<number>(() => {
+    const n = parseInt(localStorage.getItem("vent-cad/node-lod-label") ?? "", 10);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 32;
+  });
+  const [nodeLodOpen, setNodeLodOpen] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem("vent-cad/node-lod-auto", nodeLodAuto ? "1" : "0");
+      localStorage.setItem("vent-cad/node-lod-circle", String(nodeLodCircle));
+      localStorage.setItem("vent-cad/node-lod-label", String(nodeLodLabel));
+    } catch { /* ignore */ }
+  }, [nodeLodAuto, nodeLodCircle, nodeLodLabel]);
+  // В режиме «авто» порогов не передаём — рендерер подбирает их по числу узлов.
+  const nodeLodThresholds = useMemo(
+    () => (nodeLodAuto ? undefined : { circle: nodeLodCircle / 100, label: nodeLodLabel / 100 }),
+    [nodeLodAuto, nodeLodCircle, nodeLodLabel],
+  );
   const [scaleTextMin, setScaleTextMin] = useState(80);
   const [scaleTextMax, setScaleTextMax] = useState(150);
   const [scaleBranchMin, setScaleBranchMin] = useState(80);
@@ -10326,6 +10356,7 @@ export default function CadPage() {
               thinLines={thinLines}
               fixedObjectScale={scaleLimitsEnabled}
               canvasThreshold={canvasThreshold}
+              nodeLodThresholds={nodeLodThresholds}
               scaleLimits={scaleLimitsEnabled ? {
                 textMin: scaleTextMin, textMax: scaleTextMax,
                 branchMin: scaleBranchMin, branchMax: scaleBranchMax,
@@ -12092,6 +12123,57 @@ export default function CadPage() {
                       <div className="text-[10px] mt-1" style={{ color: branches.length > canvasThreshold ? "#7c3aed" : "#16a34a" }}>
                         Ветвей: {branches.length} · режим:{" "}
                         <b>{branches.length > canvasThreshold ? "Canvas (быстрый)" : "SVG (детальный)"}</b>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* Скрытие узлов при отдалении (сворачиваемый, по умолчанию свёрнут) */}
+                <div className="border-t border-gray-300 mt-2 pt-2">
+                  <button onClick={() => setNodeLodOpen((v) => !v)}
+                    className="w-full flex items-center gap-1 text-[11px] font-semibold hover:opacity-80"
+                    style={{ color: "#1a3a6b" }}>
+                    <Icon name={nodeLodOpen ? "ChevronDown" : "ChevronRight"} size={12} />
+                    <span>Скрытие узлов: {nodeLodAuto ? "авто" : `${nodeLodCircle}% / ${nodeLodLabel}%`}</span>
+                  </button>
+                  {nodeLodOpen && (
+                    <div className="mt-2">
+                      <div className="text-[10px] text-gray-500 leading-tight mb-1.5">
+                        При сильном отдалении узлы сливаются в точки и тормозят схему,
+                        поэтому кружки и номера скрываются. Ниже — с какого масштаба их показывать.
+                      </div>
+                      <label className="flex items-center gap-1.5 text-[11px] mb-1.5 cursor-pointer">
+                        <input type="checkbox" checked={nodeLodAuto}
+                          onChange={(e) => setNodeLodAuto(e.target.checked)}
+                          style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }} />
+                        <span>Авто (по размеру схемы)</span>
+                      </label>
+                      {!nodeLodAuto && (
+                        <>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-gray-600">Кружки узлов: {nodeLodCircle}%</span>
+                            <button onClick={() => { setNodeLodCircle(12); setNodeLodLabel(32); }}
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200">
+                              Сброс
+                            </button>
+                          </div>
+                          <input type="range" min="0" max="100" step="1"
+                            value={nodeLodCircle}
+                            onChange={(e) => setNodeLodCircle(parseInt(e.target.value, 10))}
+                            className="w-full"
+                            style={{ accentColor: "#7c3aed" }} />
+                          <div className="text-[10px] text-gray-600 mt-1">Номера узлов: {nodeLodLabel}%</div>
+                          <input type="range" min="0" max="100" step="1"
+                            value={nodeLodLabel}
+                            onChange={(e) => setNodeLodLabel(parseInt(e.target.value, 10))}
+                            className="w-full"
+                            style={{ accentColor: "#7c3aed" }} />
+                          <div className="flex justify-between text-[10px] text-gray-400">
+                            <span>0 (не скрывать)</span><span>100%</span>
+                          </div>
+                        </>
+                      )}
+                      <div className="text-[10px] mt-1.5 text-gray-500">
+                        Узлов: {nodes.length} · текущий масштаб: ×{viewScale.toFixed(2)}
                       </div>
                     </div>
                   )}

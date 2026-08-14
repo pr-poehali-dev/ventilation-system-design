@@ -196,6 +196,17 @@ export interface CanvasRenderOptions {
   posOuterColors?: Map<string, string>;
   /** Режим печати: белый фон без сетки */
   printMode?: boolean;
+  /**
+   * Пороги авто-скрытия узлов при отдалении (в долях масштаба, 0 = не скрывать).
+   * Задаются пользователем в панели «Видимость узлов». Если не переданы —
+   * используются автоматические значения, подобранные по числу узлов.
+   */
+  nodeLodThresholds?: {
+    /** Ниже этого масштаба не рисуются кружки рядовых узлов */
+    circle: number;
+    /** Ниже этого масштаба не рисуются номера/подписи узлов */
+    label: number;
+  };
   /** Прозрачный фон: не заливать холст (нужно, когда под canvas виден слой печати) */
   transparentBg?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме */
@@ -495,6 +506,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     colorMode = "none", sectionColors, flowColorMin = 0, flowColorMax = 75, flowColorHue = "red",
     velColorMin = 0, velColorMax = 15, velColorHue = "blue",
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
+    nodeLodThresholds,
     fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     rescuePathNodeIds, rescueNodeLetters,
@@ -1355,8 +1367,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // тем выше масштаб, при котором номера начинают показываться. При печати
     // (printMode) скрытие отключено — там важна полнота, а не скорость.
     const _nodeCount = _nodes?.length ?? nodesSorted.length;
+    // Пороги, заданные вручную в панели «Видимость узлов», имеют приоритет над
+    // автоматическими. 0 = «никогда не скрывать».
     const _labelScaleMin = printMode
       ? 0
+      : nodeLodThresholds
+      ? nodeLodThresholds.label
       : _nodeCount > 20000 ? 0.55
       : _nodeCount > 10000 ? 0.32
       : _nodeCount > 5000  ? 0.16
@@ -1376,6 +1392,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // пропала бы обратная связь при выборе и разметка труб.
     const _circleScaleMin = printMode
       ? 0
+      : nodeLodThresholds
+      ? nodeLodThresholds.circle
       : _nodeCount > 20000 ? 0.20
       : _nodeCount > 10000 ? 0.12
       : _nodeCount > 5000  ? 0.06
