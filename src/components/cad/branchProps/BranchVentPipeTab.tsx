@@ -17,7 +17,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { type VentSection, type VentNorms } from "@/lib/ventSections";
 import { calcFaceDemand } from "@/lib/airDemand";
 import { getDuctBrand, getDuctSize, VENT_DUCT_BRANDS } from "@/lib/ventDucts";
-import { getFanById, fanHScaled } from "@/lib/fanCurves";
+import { getFanById, fanHAngle } from "@/lib/fanCurves";
 import {
   calcVentPipe, calcVentPipeMaxLength, buildDeliveryCurve, solveFanFlow,
   type VpLeakMethod,
@@ -79,18 +79,10 @@ export default function BranchVentPipeTab({
   // трёхстах метрах. На деле подача падает с ростом сопротивления става.
   const fanCurveObj = branch.hasFan ? getFanById(branch.fanCurveId) : undefined;
   const fanCurve = fanCurveObj
-    ? (Q: number) => {
-        const rpm = branch.fanRpm > 0 ? branch.fanRpm : fanCurveObj.rpmNominal;
-        // Угол лопаток масштабирует напор так же, как в карточке вентилятора.
-        let af = 1.0;
-        if (fanCurveObj.bladeAngles.length >= 2) {
-          const lo = fanCurveObj.bladeAngles[0];
-          const hi = fanCurveObj.bladeAngles[fanCurveObj.bladeAngles.length - 1];
-          const a = Math.min(hi, Math.max(lo, branch.fanBladeAngle ?? (lo + hi) / 2));
-          af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-        }
-        return fanHScaled(fanCurveObj, Q / af, rpm) * af;
-      }
+    ? (Q: number) => fanHAngle(
+        fanCurveObj, Q, branch.fanBladeAngle,
+        branch.fanRpm > 0 ? branch.fanRpm : fanCurveObj.rpmNominal,
+      )
     : undefined;
 
   // Плотность стыков: сколько стыков приходится на метр става. При переборе

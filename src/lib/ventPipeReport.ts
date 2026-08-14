@@ -12,7 +12,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { type VentSection, type VentNorms } from "@/lib/ventSections";
 import { calcFaceDemand } from "@/lib/airDemand";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
-import { getFanById, fanHScaled } from "@/lib/fanCurves";
+import { getFanById, fanHAngle } from "@/lib/fanCurves";
 import {
   calcVentPipe, calcVentPipeMaxLength, type VpLeakMethod,
 } from "@/lib/ventPipeCalc";
@@ -77,17 +77,10 @@ export function buildVentPipeReport(
     // при любой длине става, и предельная длина вышла бы завышенной.
     const curveObj = b.hasFan ? getFanById(b.fanCurveId) : undefined;
     const fanCurve = curveObj
-      ? (Q: number) => {
-          const rpm = b.fanRpm > 0 ? b.fanRpm : curveObj.rpmNominal;
-          let af = 1.0;
-          if (curveObj.bladeAngles.length >= 2) {
-            const lo = curveObj.bladeAngles[0];
-            const hi = curveObj.bladeAngles[curveObj.bladeAngles.length - 1];
-            const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
-            af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-          }
-          return fanHScaled(curveObj, Q / af, rpm) * af;
-        }
+      ? (Q: number) => fanHAngle(
+          curveObj, Q, b.fanBladeAngle,
+          b.fanRpm > 0 ? b.fanRpm : curveObj.rpmNominal,
+        )
       : undefined;
 
     const jointsPerMeter = length > 0 && (b.vpJointCount ?? 0) > 0

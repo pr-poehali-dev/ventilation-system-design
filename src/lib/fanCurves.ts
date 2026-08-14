@@ -542,6 +542,81 @@ export const FAN_CATALOG: FanCurve[] = [
   },
 ];
 
+// ─── Угол лопаток и паспортная зона ────────────────────────────────────────
+
+/**
+ * Коэффициент угла лопаток: во сколько раз характеристика отличается от
+ * средней. Крайний минусовой угол — 0,65, крайний плюсовой — 1,35.
+ */
+export function bladeAngleFactor(c: FanCurve, angle?: number): number {
+  if (!c.bladeAngles || c.bladeAngles.length < 2) return 1;
+  const lo = c.bladeAngles[0];
+  const hi = c.bladeAngles[c.bladeAngles.length - 1];
+  const a = Math.min(hi, Math.max(lo, angle ?? (lo + hi) / 2));
+  return 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
+}
+
+/** Максимальный паспортный расход с учётом угла лопаток и оборотов, м³/с */
+export function fanQMax(c: FanCurve, angle?: number, rpm?: number): number {
+  const k = (rpm && rpm > 0 && c.rpmNominal > 0) ? rpm / c.rpmNominal : 1;
+  return c.qMax * bladeAngleFactor(c, angle) * k;
+}
+
+/**
+ * Напор вентилятора с учётом угла лопаток, Па — ЕДИНАЯ формула для всей
+ * программы (решатель сети, расчёт вентстава, карточка вентилятора).
+ *
+ * ПОЧЕМУ ИМЕННО ТАК. Угол лопаток меняет характеристику по ОБЕИМ осям сразу:
+ * прикрывая лопатки, мы снижаем и напор, и производительность. Поэтому
+ * применяется закон подобия:
+ *
+ *     H(Q, af) = af · H_ном(Q / af)
+ *
+ * Раньше коэффициент угла умножался только на свободный член h0, а слагаемые
+ * с Q оставались номинальными. Из-за этого при малом угле кривая оказывалась
+ * неестественно пологой: паспортный предел падал до 19,5 м³/с, а напор при
+ * 26 м³/с всё ещё был заметным — и решатель спокойно прогонял через
+ * вентилятор расход, невозможный по паспорту.
+ *
+ * ЗА ПРЕДЕЛОМ ПАСПОРТНОЙ ЗОНЫ напор падает КВАДРАТИЧНО, а не линейно: реальный
+ * вентилятор за срезом характеристики резко теряет напор и начинает работать
+ * как сопротивление. Линейный спад давал слишком пологое падение, поэтому сеть
+ * продавливала через вентилятор лишний воздух.
+ */
+export function fanHAngle(c: FanCurve, Q: number, angle?: number, rpm?: number): number {
+  const af = bladeAngleFactor(c, angle);
+  const k = (rpm && rpm > 0 && c.rpmNominal > 0) ? rpm / c.rpmNominal : 1;
+  // Приводим расход к номинальным оборотам (закон подобия Q ~ n)
+  const Qn = Math.abs(Q) / k;
+  const qMaxF = c.qMax * af;
+
+  // Напор по подобию угла лопаток
+  const Hraw = (q: number) => af * (c.h0 + c.h1 * (q / af) + c.h2 * (q / af) * (q / af));
+
+  if (Qn <= qMaxF) return Math.max(0, Hraw(Qn)) * k * k;
+
+  // За паспортным пределом — квадратичный завал характеристики.
+  const Hq = Hraw(qMaxF);
+  const slope = af * (c.h1 + 2 * c.h2 * (qMaxF / af)) / af;
+  const d = Qn - qMaxF;
+  const H = Hq + slope * d - Math.abs(c.h2) * 4 * d * d;
+  return Math.max(0, H) * k * k;
+}
+
+/** Производная |dH/dQ| с учётом угла лопаток — нужна решателю сети */
+export function fanDHAngle(c: FanCurve, Q: number, angle?: number, rpm?: number): number {
+  const af = bladeAngleFactor(c, angle);
+  const k = (rpm && rpm > 0 && c.rpmNominal > 0) ? rpm / c.rpmNominal : 1;
+  const Qn = Math.abs(Q) / k;
+  const qMaxF = c.qMax * af;
+
+  if (Qn <= qMaxF) return Math.abs(c.h1 + 2 * c.h2 * (Qn / af)) * k;
+
+  const slope = c.h1 + 2 * c.h2 * (qMaxF / af);
+  const d = Qn - qMaxF;
+  return Math.abs(slope - 2 * Math.abs(c.h2) * 4 * d) * k;
+}
+
 // ─── Вычисление H(Q) и η(Q) ────────────────────────────────────────────────
 // Масштабирование по оборотам: закон подобия H ~ n², Q ~ n
 export function fanHScaled(curve: FanCurve, Q: number, rpm: number): number {

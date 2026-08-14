@@ -6,7 +6,7 @@
 // Вынесено из BranchPropsPanel.tsx БЕЗ изменений разметки, расчётов и текстов.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
-import { FAN_CATALOG, getFanById } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById, fanQMax } from "@/lib/fanCurves";
 import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 import { fanWindowRkMurg } from "@/lib/bulkheads";
 import {
@@ -522,14 +522,9 @@ export default function BranchFanTab({
       const curve = getFanById(branch.fanCurveId);
       if (!curve) return null;
       const Q = Math.abs(branch.flow);
-      const k = (branch.fanRpm > 0 && curve.rpmNominal > 0) ? branch.fanRpm / curve.rpmNominal : 1;
-      let af = 1.0;
-      if (curve.bladeAngles.length >= 2) {
-        const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
-        const a = Math.min(hi, Math.max(lo, branch.fanBladeAngle ?? (lo + hi) / 2));
-        af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-      }
-      const qMaxScaled = curve.qMax * af * k;
+      // Паспортный предел считаем общей функцией — той же, что использует
+      // решатель сети, чтобы предупреждение и расчёт не расходились.
+      const qMaxScaled = fanQMax(curve, branch.fanBladeAngle, branch.fanRpm);
       if (Q <= qMaxScaled * 1.02) return null;
       return (
         <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"

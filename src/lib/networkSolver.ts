@@ -26,7 +26,7 @@
 
 import type { TopoNode, TopoBranch } from "./topology";
 import { recalcBranchAero, calcBranchLength } from "./topology";
-import { getFanById, fanEfficiency, fanShaftPower, type FanCurve } from "./fanCurves";
+import { getFanById, fanEfficiency, fanShaftPower, fanHAngle, fanDHAngle, type FanCurve } from "./fanCurves";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg } from "./bulkheads";
 import { PA_PER_MM_H2O } from "./aerodynamics";
 
@@ -96,14 +96,6 @@ export interface SolveDiagnostic {
 // Вентилятор
 // =============================================================================
 
-function angleFactor(c: FanCurve, angle?: number): number {
-  if (!c.bladeAngles || c.bladeAngles.length < 2) return 1;
-  const lo = c.bladeAngles[0];
-  const hi = c.bladeAngles[c.bladeAngles.length - 1];
-  const a  = Math.min(hi, Math.max(lo, angle ?? (lo + hi) / 2));
-  return 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-}
-
 /**
  * Модуль напора вентилятора H(|Q|) ≥ 0, в Па.
  * Всегда возвращает неотрицательное значение — как в методе Кросса.
@@ -153,16 +145,12 @@ function fanH(e: Edge, Q: number): number {
       return Math.max(0, e.reverseH0 + e.reverseH1 * Qn + e.reverseH2 * Qn * Qn) * k * k * e.fanRhoFactor;
     }
 
-    // Прямая характеристика (или реверс без отдельной кривой)
-    const af = angleFactor(c, e.fanBladeAngle);
-    const qMaxF = c.qMax * af;
-    if (Qn > qMaxF) {
-      const dH = (c.h1 + 2 * c.h2 * qMaxF);
-      const Hq = c.h0 * af + c.h1 * qMaxF + c.h2 * qMaxF * qMaxF;
-      const slope = Math.min(dH, -Math.abs(c.h2) * qMaxF * 4 - 50);
-      return (Hq + slope * (Qn - qMaxF)) * k * k * e.fanRhoFactor;
-    }
-    return Math.max(0, c.h0 * af + c.h1 * Qn + c.h2 * Qn * Qn) * k * k * e.fanRhoFactor;
+    // Прямая характеристика (или реверс без отдельной кривой).
+    // Единая формула fanHAngle: угол лопаток масштабирует кривую по обеим осям
+    // (закон подобия), а за паспортным пределом напор заваливается квадратично.
+    // Qn уже приведён к номинальным оборотам и одному вентилятору, поэтому
+    // обороты в fanHAngle не передаём.
+    return fanHAngle(c, Qn, e.fanBladeAngle) * k * k * e.fanRhoFactor;
   }
 
   return 0;
@@ -196,13 +184,7 @@ function fanDH(e: Edge, Q: number): number {
     return Math.abs((e.reverseH1 + 2 * e.reverseH2 * Qn) * k * e.fanRhoFactor) / N;
   }
   // dH/dQ_total = dH/dQ_one * (1/N) — цепное правило
-  const af = angleFactor(c, e.fanBladeAngle);
-  const qMaxF = c.qMax * af;
-  if (Qn > qMaxF) {
-    const slope = Math.min(c.h1 + 2 * c.h2 * qMaxF, -Math.abs(c.h2) * qMaxF * 4 - 50);
-    return Math.abs(slope * k * e.fanRhoFactor) / N;
-  }
-  return Math.abs((c.h1 + 2 * c.h2 * Qn) * k * e.fanRhoFactor) / N;
+  return Math.abs(fanDHAngle(c, Qn, e.fanBladeAngle) * k * e.fanRhoFactor) / N;
 }
 
 /**
