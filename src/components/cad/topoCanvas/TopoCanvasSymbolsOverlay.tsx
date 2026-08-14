@@ -1,6 +1,6 @@
 import React from "react";
 import { type TopoBranch, project3D } from "@/lib/topology";
-import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
@@ -69,6 +69,7 @@ export interface SymbolsOverlayDeps {
   onSymbolOffset?: Props["onSymbolOffset"];
   onSymbolIndOffset?: Props["onSymbolIndOffset"];
   onSymbolMsIndOffset?: Props["onSymbolMsIndOffset"];
+  onSymbolFanIndOffset?: Props["onSymbolFanIndOffset"];
   onSymbolDragStart?: Props["onSymbolDragStart"];
   onMouseDown: (e: React.MouseEvent<SVGSVGElement>) => void;
   onMouseMove: (e: React.MouseEvent<SVGSVGElement>) => void;
@@ -97,7 +98,7 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
     selectedSymbolId, selectedSymbolIds, selectedNodeId, selectedNodeIds,
     infoConfig, unitsConfig, branchFireColors, xyScale,
     onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
-    onSymbolIndOffset, onSymbolMsIndOffset, onSymbolDragStart,
+    onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
     onMouseDown, onMouseMove, onMouseUp, onWheel,
     onMouseDownCanvas, onMouseMoveCanvas, onMouseUpCanvas, onWheelCanvas,
     onContextMenuCanvas, onDoubleClickCanvas,
@@ -758,6 +759,86 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
                         textAnchor="middle" fontSize={fSize}
                         fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
                         fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}
+                        style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                        {line}
+                      </text>
+                    ))}
+                  </g>
+                </g>
+              );
+            })()}
+
+            {/* ── Индикаторы вентилятора (canvas-режим) ─────────────────
+                Дублирует блок из SVG-рендера. Раньше его здесь не было:
+                в canvas-режиме основной SVG скрыт, символы рисует этот
+                оверлей — и показатели вентилятора просто пропадали со схемы,
+                хотя галочки индикаторов были включены. */}
+            {view.scale > 0.05 && FAN_SYMBOL_IDS.has(sym.typeId) && hasBranchPts && (() => {
+              const brFan = symBr;
+              if (!brFan?.hasFan) return null;
+              const icFan = (brFan.indicators ?? {}) as Record<string, boolean>;
+              const uPresF = getUnit(unitsConfig, "pressure");
+              const uFlowF = getUnit(unitsConfig, "flow");
+              const fanLines: string[] = [];
+              if (icFan.fanNameInd && brFan.fanName) fanLines.push(brFan.fanName);
+              if (icFan.fanFlow) {
+                const qFan = (brFan.fanReverse && brFan.fanType !== "ВМП")
+                  ? -Math.abs(brFan.flow ?? 0)
+                  : Math.abs(brFan.flow ?? 0);
+                fanLines.push(`Qв=${uFlowF.fromBase(qFan).toFixed(uFlowF.decimals)}${uFlowF.symbol}`);
+              }
+              if (icFan.fanPressure)
+                fanLines.push(`Нв=${uPresF.fromBase(Math.abs(brFan.fanPressure ?? 0)).toFixed(uPresF.decimals)}${uPresF.symbol}`);
+              if (icFan.fanShaftPower && (brFan.fanShaftPower ?? 0) > 0)
+                fanLines.push(`Nв=${((brFan.fanShaftPower ?? 0) / 1000).toFixed(1)} кВт`);
+              if (icFan.fanEfficiency && (brFan.fanEfficiency ?? 0) > 0)
+                fanLines.push(`ηв=${((brFan.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
+              if (!fanLines.length) return null;
+
+              // Размер подписи — как у подписей ветвей (по толщине ветви),
+              // чтобы всё на схеме читалось одинаково.
+              const fBwLbl = (thinLines ? 1 : (brFan.lineWidth && brFan.lineWidth > 0 ? brFan.lineWidth : branchWidth)) * _branchObjSF;
+              const fTextSc = Math.max(0.3, fBwLbl * 0.28) * _indZoomSF;
+              const fSizeF = Math.max(3, 8.5 * fTextSc * ((sym.fanIndFontSize ?? 9) / 9));
+              const lineHF = fSizeF + 3 * _indZoomSF;
+              const boxWF = Math.max(...fanLines.map(l => l.length)) * fSizeF * 0.52 + 10 * _indZoomSF;
+              const boxHF = fanLines.length * lineHF + 6 * _indZoomSF;
+              const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
+              const brLenF = Math.hypot(brDxF, brDyF);
+              const perpXF = brLenF > 0 ? -brDyF / brLenF : 0;
+              const perpYF = brLenF > 0 ?  brDxF / brLenF : 0;
+              const gapF = 16 * _branchObjSF * _indZoomSF;
+              const fanDragSF = (_branchObjSF * _indZoomSF) || 1;
+              const bxF = px + perpXF * (gapF + boxWF / 2) + (sym.fanIndOffsetX ?? 0) * fanDragSF;
+              const byF = py + perpYF * (gapF + boxHF / 2) + (sym.fanIndOffsetY ?? 0) * fanDragSF;
+              const opacityF = Math.min(1, (view.scale - 0.05) / 0.06);
+
+              return (
+                <g opacity={opacityF}>
+                  <line x1={px} y1={py} x2={bxF} y2={byF - boxHF / 2}
+                    stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                  <g style={{ cursor: "move" }}
+                    onMouseDown={(e) => {
+                      if (tool !== "select") return;
+                      e.stopPropagation();
+                      const startX = e.clientX, startY = e.clientY;
+                      const origOx = sym.fanIndOffsetX ?? 0;
+                      const origOy = sym.fanIndOffsetY ?? 0;
+                      const onMove = (me: MouseEvent) => {
+                        onSymbolFanIndOffset?.(sym.id, origOx + (me.clientX - startX) / fanDragSF, origOy + (me.clientY - startY) / fanDragSF);
+                      };
+                      const onUp = () => {
+                        window.removeEventListener("mousemove", onMove);
+                        window.removeEventListener("mouseup", onUp);
+                      };
+                      window.addEventListener("mousemove", onMove);
+                      window.addEventListener("mouseup", onUp);
+                    }}>
+                    {fanLines.map((line, i) => (
+                      <text key={i}
+                        x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
+                        textAnchor="middle" fontSize={fSizeF}
+                        fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
                         style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                         {line}
                       </text>
