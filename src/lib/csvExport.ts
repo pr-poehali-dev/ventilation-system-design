@@ -13,7 +13,7 @@
 //   кМюрг = R / 9.81e-3   (обратно к импорту: Н·с²/м⁸ = кМюрг × 9.81e-3)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { type TopoNode, type TopoBranch } from "@/lib/topology";
+import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type Position } from "@/lib/positions";
 
 export type CsvExportSchema = "aeroset" | "vent2";
@@ -96,6 +96,26 @@ function branchResistance(b: TopoBranch): number {
   return b.resistance ?? 0;
 }
 
+// ── Столбец «Слой выработки» ─────────────────────────────────────────────────
+// В программе слой = ГОРИЗОНТ, к которому привязана выработка (список слева
+// на схеме: «Проект», «КТВР +390/+130» и т. д.). Раньше сюда выгружалось поле
+// branch.layer — это другая сущность (группа выработок «Стволы»/«Квершлаги»),
+// из-за чего во всех строках стояло одно и то же значение, а созданные
+// пользователем горизонты в файл не попадали вовсе.
+// Если горизонт не найден (ветвь без привязки) — падаём обратно на layer.
+function layerName(b: TopoBranch, horizonById?: Map<string, Horizon>): string {
+  const hz = b.horizonId ? horizonById?.get(b.horizonId) : undefined;
+  return hz?.name || b.layer || "";
+}
+
+// ── Столбец «Тип выработки» ──────────────────────────────────────────────────
+// Ожидается тип из справочника «Типы выработок» (например «Квершлаг»), а не
+// код формы сечения (rect/arch/round) — его АэроСеть/Вентиляция не понимают.
+// mineTypeName — выбор в справочнике; при его отсутствии берём название.
+function excavationType(b: TopoBranch): string {
+  return b.mineTypeName || b.type || "";
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Экспорт «Вентиляция 2.0» — 5 ОТДЕЛЬНЫХ файлов в ZIP-архиве:
 //   nodes.csv, links.csv, jumpers.csv, fans.csv, positions.csv
@@ -149,8 +169,11 @@ export function buildVent2Files(
   positions: Position[],
   units: CsvExportUnits = DEFAULT_CSV_UNITS,
   bulkheadRByBranch?: Map<string, number>,
+  horizons: Horizon[] = [],
 ): Vent2Files {
   const u = units;
+  // Горизонты (слои схемы) — для столбца «Слой выработки».
+  const horizonById = new Map(horizons.map(h => [h.id, h]));
   // R перемычки берём из карты (реальное R символа на схеме), иначе — из ветви.
   const bkR = (b: TopoBranch) => bulkheadRByBranch?.get(b.id) ?? b.bulkheadR ?? 0;
   const hasBk = (b: TopoBranch) => (bulkheadRByBranch?.has(b.id) ?? false) || b.hasBulkhead;
@@ -192,12 +215,12 @@ export function buildVent2Files(
       b.toId,
       b.type || "",
       v2num((b.length ?? 0) * u.length),
-      b.shape || "",
+      excavationType(b),
       v2num((b.area ?? 0) * u.area),
       v2num((b.perimeter ?? 0) * u.perimeter),
       v2num((b.flow ?? 0) * u.flow),
       v2num(branchResistance(b), 7),
-      b.layer || "",
+      layerName(b, horizonById),
       branchToPos.get(b.id) ?? "",
     ]));
   }
@@ -235,7 +258,8 @@ export function buildVent2Files(
   const posLines: string[] = [
     v2row("Идентификатор позиции", [
       "Координата X, м", "Координата Y, м", "Координата Z, м",
-      "Номер позиции", "Название позиции", "Тип позиции", "Цвет границы",
+      "Номер позиции", "Название позиции", "Тип позиции", "Вид аварии",
+      "Цвет границы", "Список выработок",
     ]),
   ];
   for (const p of positions) {
@@ -246,7 +270,12 @@ export function buildVent2Files(
       String(p.number ?? ""),
       p.name || "",
       p.positionType === "reverse" ? "Реверсивная" : "Безреверсивная",
+      p.accidentType || "",
       p.borderColor || "",
+      // Привязка позиции к выработкам: при импорте читается обратно
+      // (см. parsePositionsFile → branchIds), раньше не выгружалась и
+      // связь «позиция ↔ выработка» терялась.
+      (p.branchIds ?? []).join(" "),
     ]));
   }
 
@@ -285,8 +314,11 @@ export function buildAeroSetFiles(
   positions: Position[],
   units: CsvExportUnits = DEFAULT_CSV_UNITS,
   bulkheadRByBranch?: Map<string, number>,
+  horizons: Horizon[] = [],
 ): AeroSetFiles {
   const u = units;
+  // Горизонты (слои схемы) — для столбца «Слой выработки».
+  const horizonById = new Map(horizons.map(h => [h.id, h]));
   const bkR = (b: TopoBranch) => bulkheadRByBranch?.get(b.id) ?? b.bulkheadR ?? 0;
   const hasBk = (b: TopoBranch) => (bulkheadRByBranch?.has(b.id) ?? false) || b.hasBulkhead;
   const sep: CsvSep = ";";
@@ -335,12 +367,12 @@ export function buildAeroSetFiles(
       txt(b.toId),
       txt(b.type || ""),
       num((b.length ?? 0) * u.length, 2),
-      txt(b.shape || ""),
+      txt(excavationType(b)),
       num((b.area ?? 0) * u.area, 4),
       num((b.perimeter ?? 0) * u.perimeter, 4),
       num((b.flow ?? 0) * u.flow, 4),
       num(branchResistance(b), 6),
-      txt(b.layer || ""),
+      txt(layerName(b, horizonById)),
       txt(branchToPos.get(b.id) ?? ""),
     ].join(sep));
   }
@@ -375,7 +407,8 @@ export function buildAeroSetFiles(
   const posLines: string[] = [
     line([
       "Ид позиции", "Координата X, м", "Координата Y, м", "Координата Z, м",
-      "Номер позиции", "Название позиции", "Тип позиции", "Цвет границы",
+      "Номер позиции", "Название позиции", "Тип позиции", "Вид аварии",
+      "Цвет границы", "Список выработок",
     ]),
   ];
   for (const p of positions) {
@@ -387,7 +420,12 @@ export function buildAeroSetFiles(
       String(p.number ?? ""),
       txt(p.name || ""),
       p.positionType === "reverse" ? "Реверсивная" : "Безреверсивная",
+      txt(p.accidentType || ""),
       txt(p.borderColor || ""),
+      // Привязка позиции к выработкам: при импорте читается обратно
+      // (см. parsePositionsFile → branchIds), раньше не выгружалась и
+      // связь «позиция ↔ выработка» терялась.
+      txt((p.branchIds ?? []).join(" ")),
     ].join(sep));
   }
 

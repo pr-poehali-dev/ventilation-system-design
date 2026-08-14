@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
-import type { TopoBranch, TopoNode } from "@/lib/topology";
+import type { TopoBranch, TopoNode, Horizon } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
 import {
   buildVent2Files,
@@ -18,6 +18,8 @@ interface Props {
   branches: TopoBranch[];
   nodes: TopoNode[];
   positions: Position[];
+  /** Горизонты схемы — выгружаются в столбец «Слой выработки». */
+  horizons?: Horizon[];
   bulkheadRByBranch?: Map<string, number>; // R перемычки по ветвям, кМюрг
   projectName?: string;
   onClose: () => void;
@@ -95,7 +97,7 @@ function UnitsDialog({ units, onSave, onCancel }: {
   );
 }
 
-export default function CsvExportDialog({ branches, nodes, positions, bulkheadRByBranch, projectName = "ПВ-Система", onClose }: Props) {
+export default function CsvExportDialog({ branches, nodes, positions, horizons = [], bulkheadRByBranch, projectName = "ПВ-Система", onClose }: Props) {
   const [schema, setSchema] = useState<CsvExportSchema>("vent2");
   const [fields, setFields] = useState<CsvExportFields>({ ...DEFAULT_CSV_FIELDS });
   const [units, setUnits] = useState<CsvExportUnits>({ ...DEFAULT_CSV_UNITS });
@@ -107,11 +109,11 @@ export default function CsvExportDialog({ branches, nodes, positions, bulkheadRB
   function handleExport() {
     if (schema === "vent2") {
       // «Вентиляция 2.0» — 5 файлов: nodes, links, jumpers, fans, positions.
-      const files = buildVent2Files(nodes, branches, positions, units, bulkheadRByBranch);
+      const files = buildVent2Files(nodes, branches, positions, units, bulkheadRByBranch, horizons);
       void downloadCsvZip(files, `${projectName}_vent2`);
     } else {
       // «АэроСеть» — 5 файлов: nodes, excavations, bulkheads, fans, positions.
-      const files = buildAeroSetFiles(nodes, branches, positions, units, bulkheadRByBranch);
+      const files = buildAeroSetFiles(nodes, branches, positions, units, bulkheadRByBranch, horizons);
       void downloadCsvZip(files, `${projectName}_aeroset`);
     }
     onClose();

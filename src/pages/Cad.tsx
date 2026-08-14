@@ -12169,6 +12169,7 @@ export default function CadPage() {
         nodes={nodes}
         branches={branches}
         positions={positions}
+        horizons={horizons}
         bulkheadRByBranch={bulkheadRByBranch}
         projectName={suggestedFileName().replace(/\.vproj$/, "")}
         onClose={() => setShowCsvExport(false)}

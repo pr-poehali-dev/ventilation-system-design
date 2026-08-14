@@ -308,7 +308,10 @@ function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
         const atC  = ci(/авари|accident/);
         const xC   = ci(/^x$|коорд.*x|x.*коорд/);
         const yC   = ci(/^y$|коорд.*y|y.*коорд/);
-        const zC   = ci(/^z$|высот|отметк|z.*коорд/);
+        // «Координата Z, м» раньше не распознавалась (шаблон требовал Z ПЕРЕД
+        // словом «коорд»), из-за чего высотная отметка позиций при импорте
+        // терялась и все позиции ложились на Z=0.
+        const zC   = ci(/^z$|высот|отметк|z.*коорд|коорд.*z/);
         const brC  = ci(/выработ|branch|список/);
         if (idC  >= 0) colIdx.id = idC;
         if (nmC  >= 0) colIdx.number = nmC;
