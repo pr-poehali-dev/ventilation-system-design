@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength, sectionKind, SECTION_KIND_COLORS } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
-import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "./unitsConfig";
+import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 
 export const CANVAS_THRESHOLD = 800;
@@ -348,6 +348,29 @@ let _sortedNodesKey: ProjNode[] | null = null;
 let _sortedNodesEpoch: number | undefined;
 // Индексы порядка сортировки узлов (для быстрого переупорядочивания при pan).
 let _sortedNodesOrder: number[] = [];
+
+// Кэш «узел → смежные ветви». Раньше карта строилась заново НА КАЖДЫЙ КАДР:
+// при 13 000+ ветвей это ~3 мс, а с анимацией потоков (60 кадров/с) съедало
+// заметную долю времени впустую — список ветвей между кадрами не меняется.
+// Ключ — сам массив branches: при любом изменении схемы React отдаёт новый
+// массив, и карта пересобирается.
+let _adjMapCache: Map<string, TopoBranch[]> = new Map();
+let _adjMapKey: TopoBranch[] | null = null;
+
+function getNodeAdjBranches(branches: TopoBranch[]): Map<string, TopoBranch[]> {
+  if (_adjMapKey === branches) return _adjMapCache;
+  const m = new Map<string, TopoBranch[]>();
+  for (const b of branches) {
+    for (const nid of [b.fromId, b.toId]) {
+      let arr = m.get(nid);
+      if (!arr) { arr = []; m.set(nid, arr); }
+      arr.push(b);
+    }
+  }
+  _adjMapKey = branches;
+  _adjMapCache = m;
+  return m;
+}
 
 function getSortedNodes(projNodes: ProjNode[], sortEpoch?: number): SortedNode[] {
   if (_sortedNodesKey === projNodes) return _sortedNodesCache;
@@ -1313,15 +1336,9 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
   // ─── УЗЛЫ (идентично SVG-рендеру) ────────────────────────────────────────
   if (lodNodes) {
-    // Кэш: узел → смежные ветви, строится за O(M) один раз вместо O(N×M) filter в цикле
-    const nodeAdjBranchesMap = new Map<string, TopoBranch[]>();
-    for (const b of branches) {
-      for (const nid of [b.fromId, b.toId]) {
-        let arr = nodeAdjBranchesMap.get(nid);
-        if (!arr) { arr = []; nodeAdjBranchesMap.set(nid, arr); }
-        arr.push(b);
-      }
-    }
+    // Кэш: узел → смежные ветви. Строится один раз на список ветвей и
+    // переиспользуется между кадрами (см. getNodeAdjBranches).
+    const nodeAdjBranchesMap = getNodeAdjBranches(branches);
     // O(1) при анимации — projNodes не меняется между кадрами
     const nodesSorted = getSortedNodes(projNodes, opts.sortEpoch);
     // Viewport culling для узлов: на больших схемах (>10000 узлов) отрисовка
@@ -1345,6 +1362,30 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : _nodeCount > 5000  ? 0.16
       : 0;
     const _nodeLabelThresh = Math.max(_xyScaleCR * 0.04, _labelScaleMin * _xyScaleCR);
+
+    // ─── Авто-скрытие САМИХ КРУЖКОВ узлов при сильном отдалении ──────────────
+    // Отсечение по видимой области не спасает при обзоре всей схемы: тогда в
+    // кадр попадают ВСЕ узлы, и на 13 000+ узлов это десятки тысяч операций
+    // рисования за кадр. При таком отдалении отдельные узлы всё равно сливаются
+    // в неразличимые точки, поэтому кружки просто не рисуем — линии выработок
+    // остаются, схема читается как раньше.
+    // Порог заметно НИЖЕ, чем у номеров: кружки полезны дольше подписей.
+    // При печати (printMode) скрытие отключено — там важна полнота.
+    // ВАЖНО: скрываются только рядовые узлы. Выделенные, узлы маршрута
+    // горноспасателей и водопроводные (с иконками) рисуются всегда — иначе
+    // пропала бы обратная связь при выборе и разметка труб.
+    const _circleScaleMin = printMode
+      ? 0
+      : _nodeCount > 20000 ? 0.20
+      : _nodeCount > 10000 ? 0.12
+      : _nodeCount > 5000  ? 0.06
+      : 0;
+    const _hideDefaultCircles = _circleScaleMin > 0 && sc < _circleScaleMin * _xyScaleCR;
+
+    // Одна пара save/restore на ВЕСЬ цикл вместо пары на каждый узел:
+    // рядовой узел сам выставляет fillStyle/strokeStyle/lineWidth, а иконки
+    // труб оборачивают свою отрисовку собственными save/restore.
+    ctx.save();
     for (const pn of nodesSorted) {
       const n = pn.node;
       if (n.visible === false) continue;
@@ -1361,6 +1402,18 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const isSel = selectedNodeId === n.id || selectedNodeIds.has(n.id);
       const isMultiSel = selectedNodeIds.has(n.id);
       const isAtm = n.atmosphereLink;
+
+      // При сильном отдалении рядовой узел не рисуем вовсе (см. _hideDefaultCircles).
+      // Пропускаем ДО расчёта радиуса и стилей — иначе экономии бы не было.
+      if (_hideDefaultCircles) {
+        const _isSpecial =
+          isSel ||
+          (n.fireNodeType ?? "none") !== "none" ||
+          rescuePathNodeIds?.has(n.id) ||
+          rescueNodeLetters?.has(n.id);
+        if (!_isSpecial) continue;
+      }
+
       // O(1) вместо O(M) filter — берём из предварительно построенного Map
       const adjBranches = nodeAdjBranchesMap.get(n.id) ?? [];
       const adjAvgW = adjBranches.length > 0
@@ -1372,8 +1425,6 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const r = isSel ? baseNodeR * 1.5 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
       const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
-
-      ctx.save();
 
       // Основной круг
       const rawFireType = n.fireNodeType ?? "none";
@@ -1601,10 +1652,13 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.font = `700 ${Math.round(badgeR * 1.4)}px "Segoe UI",sans-serif`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(rescueLetter, bx, by + badgeR * 0.05);
+        // Подпись меняет выравнивание/шрифт — возвращаем значения по умолчанию,
+        // т.к. общий restore теперь один на весь цикл.
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
       }
-
-      ctx.restore();
     }
+    ctx.restore();
   }
 }
 
