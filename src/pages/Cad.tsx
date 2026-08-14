@@ -63,6 +63,8 @@ import {
 import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { calcVentPipe } from "@/lib/ventPipeCalc";
+import { buildVentPipeReport, buildVentPipeReportHtml } from "@/lib/ventPipeReport";
+import { printViaIframe } from "@/components/cad/printPreview/printDialogParts";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
@@ -1541,6 +1543,22 @@ export default function CadPage() {
   const liveSvgRef = useRef<SVGSVGElement | null>(null);
 
   // Захватывает схему и открывает диалог печати
+  /**
+   * Печать отчёта по вентиляционным ставам: доставка воздуха в забой и
+   * предельная длина става по каждому тупиковому забою.
+   */
+  const handlePrintVentPipeReport = () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
+    const rows = buildVentPipeReport(branches, ventSections, ventNorms);
+    if (rows.length === 0) {
+      addLog("warn", "Отчёт по вентставам: в проекте нет выработок с вентиляционным ставом");
+      return;
+    }
+    const name = suggestedFileName().replace(/\.vproj$/, "");
+    printViaIframe(buildVentPipeReportHtml(rows, name));
+    addLog("info", `Отчёт по вентставам сформирован: ${rows.length} шт.`);
+  };
+
   const openPrintDialog = () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
     // 1) Canvas-режим: читаем живой DOM-canvas напрямую
@@ -4176,6 +4194,18 @@ export default function CadPage() {
                       <div>
                         <div className="text-[13px] font-medium text-gray-800">Просмотр и печать</div>
                         <div className="text-[11px] text-gray-400">Настройка формата, масштаба, экспорт</div>
+                      </div>
+                    </button>
+
+                    <div className="text-[13px] font-semibold mb-2 mt-4 pb-1 border-b border-gray-300">Отчёты</div>
+                    <button onClick={() => { handlePrintVentPipeReport(); setActiveRibbon("home"); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group mb-2">
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                        <Icon name="Wind" size={22} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="text-[13px] font-medium text-gray-800">Отчёт по вентставам</div>
+                        <div className="text-[11px] text-gray-400">Доставка воздуха и предельная длина по забоям</div>
                       </div>
                     </button>
                   </>

@@ -17,8 +17,9 @@ import { type TopoBranch } from "@/lib/topology";
 import { type VentSection, type VentNorms } from "@/lib/ventSections";
 import { calcFaceDemand } from "@/lib/airDemand";
 import { getDuctBrand, getDuctSize, VENT_DUCT_BRANDS } from "@/lib/ventDucts";
+import { getFanById, fanHScaled } from "@/lib/fanCurves";
 import {
-  calcVentPipe, calcVentPipeMaxLength, buildDeliveryCurve,
+  calcVentPipe, calcVentPipeMaxLength, buildDeliveryCurve, solveFanFlow,
   type VpLeakMethod,
 } from "@/lib/ventPipeCalc";
 import {
@@ -70,7 +71,35 @@ export default function BranchVentPipeTab({
   // Напор вентилятора — рабочая точка из расчёта сети.
   const fanPressure = Math.abs(branch.fanPressure ?? 0);
 
-  const input = {
+  const length = branch.vpLength ?? 0;
+
+  // ── Характеристика вентилятора H(Q) ────────────────────────────────────
+  // Без неё расчёт предельной длины врёт в разы: программа считала бы, что
+  // вентилятор и на трёх километрах гонит столько же воздуха, сколько на
+  // трёхстах метрах. На деле подача падает с ростом сопротивления става.
+  const fanCurveObj = branch.hasFan ? getFanById(branch.fanCurveId) : undefined;
+  const fanCurve = fanCurveObj
+    ? (Q: number) => {
+        const rpm = branch.fanRpm > 0 ? branch.fanRpm : fanCurveObj.rpmNominal;
+        // Угол лопаток масштабирует напор так же, как в карточке вентилятора.
+        let af = 1.0;
+        if (fanCurveObj.bladeAngles.length >= 2) {
+          const lo = fanCurveObj.bladeAngles[0];
+          const hi = fanCurveObj.bladeAngles[fanCurveObj.bladeAngles.length - 1];
+          const a = Math.min(hi, Math.max(lo, branch.fanBladeAngle ?? (lo + hi) / 2));
+          af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
+        }
+        return fanHScaled(fanCurveObj, Q / af, rpm) * af;
+      }
+    : undefined;
+
+  // Плотность стыков: сколько стыков приходится на метр става. При переборе
+  // длин число стыков должно расти вместе со ставом.
+  const jointsPerMeter = length > 0 && (branch.vpJointCount ?? 0) > 0
+    ? (branch.vpJointCount ?? 0) / length
+    : (branch.vpLinkLength ?? 20) > 0 ? 1 / (branch.vpLinkLength ?? 20) : 0;
+
+  const baseInput = {
     method,
     diameter: branch.vpDiameter ?? 0,
     alpha: brand?.alpha ?? branch.vpPipeAlpha ?? 0,
@@ -79,10 +108,19 @@ export default function BranchVentPipeTab({
     jointCount: branch.vpJointCount ?? 0,
     localXi: branch.vpLocalXi ?? 0,
     jointLeakK: branch.vpJointLeakK ?? 0,
+    jointsPerMeter,
     fanFlow,
   };
 
-  const length = branch.vpLength ?? 0;
+  // Расход, который даёт паспортная кривая на нынешней длине става. Если он
+  // сильно расходится с расчётом сети — значит, вентилятор работает вне
+  // паспортной зоны, и об этом надо честно предупредить, а не подгонять цифры.
+  const rNow = calcVentPipe({ ...baseInput, length }).R;
+  const qByCurve = fanCurve ? solveFanFlow(fanCurve, rNow) : 0;
+  const curveMismatch = fanCurve !== undefined && length > 0 && fanFlow > 0.01
+    && qByCurve > 0.01 && Math.abs(qByCurve - fanFlow) / fanFlow > 0.15;
+
+  const input = { ...baseInput, fanCurve };
   const res = calcVentPipe({ ...input, length });
 
   // ── Требуемый расход в забое ───────────────────────────────────────────
@@ -222,6 +260,35 @@ export default function BranchVentPipeTab({
       <InlineLabel label="Напор ВМП, Па">
         <ComputedInput value={numFmt(fanPressure, 0)} />
       </InlineLabel>
+      {fanCurve && (
+        <InlineLabel label="Подача по кривой">
+          <ComputedInput value={numFmt(qByCurve, 2)} />
+        </InlineLabel>
+      )}
+      {fanCurve && (
+        <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+          Подача падает с удлинением става: чем выше сопротивление, тем меньше
+          воздуха вентилятор прогоняет по паспортной характеристике.
+        </div>
+      )}
+
+      {curveMismatch && (
+        <Warn>
+          Расчёт сети даёт {numFmt(fanFlow, 2)} м³/с, а по паспортной кривой
+          вентилятора на ставе такой длины должно быть {numFmt(qByCurve, 2)} м³/с.
+          Вентилятор работает вне паспортной зоны — предельная длина посчитана
+          по паспорту и может расходиться с фактом. Проверьте угол лопаток,
+          обороты и сопротивление става.
+        </Warn>
+      )}
+
+      {!fanCurve && (
+        <Warn>
+          Характеристика вентилятора не задана — подача считается неизменной
+          при любой длине става. На деле она падает с удлинением, поэтому
+          предельная длина получится завышенной. Выберите модель вентилятора.
+        </Warn>
+      )}
 
       {fanFlow < 0.01 && (
         <Warn>

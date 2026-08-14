@@ -69,6 +69,25 @@ export interface VentPipeInput {
   fanFlow: number;
   /** Плотность воздуха, кг/м³ (по умолчанию 1.2) */
   density?: number;
+  /**
+   * Плотность стыков — сколько стыков приходится на 1 м става.
+   * Нужна при переборе длин: у става 3 км стыков не столько же, сколько
+   * у става 300 м, их пропорционально больше. Если не задана, берётся
+   * фиксированное jointCount независимо от длины.
+   */
+  jointsPerMeter?: number;
+  /**
+   * Характеристика вентилятора H(Q), Па — напор в зависимости от расхода.
+   *
+   * КЛЮЧЕВОЙ МОМЕНТ. Вентилятор — не насос с постоянной подачей: чем больше
+   * сопротивление става, тем МЕНЬШЕ воздуха он прогоняет. При удлинении става
+   * подача падает по паспортной кривой. Без этого расчёт предельной длины даёт
+   * фантастические километры: программа считает, будто вентилятор и на 3 км
+   * гонит те же 26 м³/с, что и на 300 м.
+   *
+   * Если функция не передана, подача считается постоянной (грубая оценка).
+   */
+  fanCurve?: (Q: number) => number;
 }
 
 /** Результат расчёта става */
@@ -209,6 +228,40 @@ export function deliveryByNormative(
 }
 
 /**
+ * Рабочая точка вентилятора на став сопротивлением R.
+ *
+ * Ищем расход Q, при котором напор вентилятора равен потерям в ставе:
+ *
+ *     H(Q) = R · Q² · 9.81
+ *
+ * Слева напор падает с ростом расхода, справа потери растут — значит,
+ * пересечение единственное и его находит половинное деление.
+ *
+ * Это ответ на вопрос «сколько воздуха вентилятор реально прогонит через
+ * став такой длины»: с удлинением става подача падает по паспортной кривой.
+ */
+export function solveFanFlow(fanCurve: (Q: number) => number, R: number): number {
+  if (R <= 0) return 0;
+  const f = (Q: number) => fanCurve(Q) - depression(R, Q);
+
+  // Если даже при нулевом расходе напора нет — вентилятор не работает.
+  if (f(0.001) <= 0) return 0;
+
+  // Расширяем верхнюю границу, пока потери не перевесят напор.
+  let hi = 1;
+  for (let i = 0; i < 40 && f(hi) > 0; i++) hi *= 1.6;
+  if (f(hi) > 0) return hi;
+
+  let lo = 0.001;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (f(mid) > 0) lo = mid; else hi = mid;
+    if (hi - lo < 1e-4) break;
+  }
+  return (lo + hi) / 2;
+}
+
+/**
  * Полный расчёт вентиляционного става (нагнетательная схема).
  *
  * Возвращает сопротивление, коэффициент доставки, расход в забое, утечки,
@@ -218,11 +271,17 @@ export function calcVentPipe(input: VentPipeInput): VentPipeResult {
   const rho = input.density ?? RHO_DEFAULT;
   const area = ductArea(input.diameter);
 
+  // Число стыков: при переборе длин оно должно расти вместе со ставом,
+  // иначе длинный став выйдет «глаже» короткого, что физически неверно.
+  const joints = (input.jointsPerMeter ?? 0) > 0
+    ? input.jointsPerMeter! * input.length
+    : input.jointCount;
+
   const R = ductResistance(
     input.alpha,
     input.length,
     input.diameter,
-    input.jointCount,
+    joints,
     input.localXi,
     rho,
   );
@@ -231,7 +290,12 @@ export function calcVentPipe(input: VentPipeInput): VentPipeResult {
     ? deliveryByNormative(R, input.length, input.diameter, input.linkLength, input.jointLeakK)
     : deliveryByPassport(input.lossPer100m, input.length);
 
-  const flowFan = Math.max(0, input.fanFlow);
+  // Подача вентилятора на ЭТОЙ длине става. Рабочая точка — пересечение
+  // характеристики вентилятора H(Q) с характеристикой става ΔP = R·Q².
+  // Чем длиннее став, тем выше его сопротивление и тем меньше подача.
+  const flowFan = input.fanCurve
+    ? solveFanFlow(input.fanCurve, R)
+    : Math.max(0, input.fanFlow);
   const flowFace = flowFan * delivery;
   const leakage = flowFan - flowFace;
 
@@ -297,7 +361,7 @@ export function calcVentPipeMaxLength(
   requiredFaceFlow: number,
   maxPressure: number,
   currentLength: number,
-  searchLimit: number = 5000,
+  searchLimit: number = 3000,
 ): VentPipeLimitResult {
   /** Проверяет, годится ли став длиной L: хватает и воздуха, и давления */
   const check = (L: number): { okFlow: boolean; okPressure: boolean; res: VentPipeResult } => {
