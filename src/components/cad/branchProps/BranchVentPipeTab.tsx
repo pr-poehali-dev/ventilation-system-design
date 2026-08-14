@@ -23,7 +23,7 @@ import {
   type VpLeakMethod,
 } from "@/lib/ventPipeCalc";
 import {
-  SectionHeader, EditInput, ComputedInput, SelectField, InlineLabel,
+  SectionHeader, NumberInput, ComputedInput, SelectField, InlineLabel,
 } from "@/components/cad/BranchPropsPrimitives";
 
 interface BranchVentPipeTabProps {
@@ -213,16 +213,19 @@ export default function BranchVentPipeTab({
       {method === "normative" && (
         <>
           <InlineLabel label="Длина звена, м">
-            <EditInput
-              value={String(branch.vpLinkLength ?? 20)}
-              onChange={(v) => onUpdate({ vpLinkLength: Number(v) || 0 })}
+            <NumberInput
+              value={branch.vpLinkLength ?? 20}
+              placeholder="20"
+              min={0}
+              onChange={(v) => onUpdate({ vpLinkLength: v })}
             />
           </InlineLabel>
           <InlineLabel label="Стыковой расход">
-            <EditInput
-              value={(branch.vpJointLeakK ?? 0) > 0 ? String(branch.vpJointLeakK) : ""}
+            <NumberInput
+              value={branch.vpJointLeakK ?? 0}
               placeholder="0.003"
-              onChange={(v) => onUpdate({ vpJointLeakK: Number(v) || 0 })}
+              min={0}
+              onChange={(v) => onUpdate({ vpJointLeakK: v })}
             />
           </InlineLabel>
           <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
@@ -335,10 +338,11 @@ export default function BranchVentPipeTab({
 
       <SectionHeader title="Требуемый расход в забое" />
       <InlineLabel label="Требуется, м³/с">
-        <EditInput
-          value={(branch.vpRequiredFlow ?? 0) > 0 ? String(branch.vpRequiredFlow) : ""}
+        <NumberInput
+          value={branch.vpRequiredFlow ?? 0}
           placeholder={autoRequired > 0 ? numFmt(autoRequired, 2) : "задайте"}
-          onChange={(v) => onUpdate({ vpRequiredFlow: Number(v) || 0 })}
+          min={0}
+          onChange={(v) => onUpdate({ vpRequiredFlow: v })}
         />
       </InlineLabel>
       <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
@@ -539,15 +543,19 @@ export default function BranchVentPipeTab({
         <ComputedInput value={numFmt(input.alpha, 3)} />
       </InlineLabel>
       <InlineLabel label="Стыков, шт">
-        <EditInput
-          value={String(branch.vpJointCount ?? 0)}
-          onChange={(v) => onUpdate({ vpJointCount: Number(v) || 0 })}
+        <NumberInput
+          value={branch.vpJointCount ?? 0}
+          placeholder="0"
+          min={0}
+          onChange={(v) => onUpdate({ vpJointCount: v })}
         />
       </InlineLabel>
       <InlineLabel label="Местные ξ">
-        <EditInput
-          value={String(branch.vpLocalXi ?? 0)}
-          onChange={(v) => onUpdate({ vpLocalXi: Number(v) || 0 })}
+        <NumberInput
+          value={branch.vpLocalXi ?? 0}
+          placeholder="0"
+          min={0}
+          onChange={(v) => onUpdate({ vpLocalXi: v })}
         />
       </InlineLabel>
     </div>

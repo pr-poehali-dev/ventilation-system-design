@@ -1,4 +1,5 @@
 // Базовые UI-примитивы для панелей свойств ветви
+import { useState, useEffect } from "react";
 
 export const SH = "#e8eef8";
 export const SB = "1px solid #c8d4e8";
@@ -139,6 +140,83 @@ export function EditInput({
         outline: "none",
         fontFamily: "inherit",
         color: readOnly ? "#475569" : "#0f172a",
+      }}
+    />
+  );
+}
+
+/**
+ * Поле для ввода ДРОБНЫХ чисел.
+ *
+ * ЗАЧЕМ ОТДЕЛЬНЫЙ КОМПОНЕНТ. Обычное поле сразу превращает набранный текст в
+ * число и кладёт результат обратно в поле. Из-за этого дробное значение ввести
+ * невозможно: как только пользователь печатает «0.», точка отбрасывается
+ * (Number("0.") = 0), поле мгновенно переписывается на «0», и следующая цифра
+ * уже не попадает в дробную часть. Так же теряется промежуточное состояние
+ * «0.00» при наборе «0.003».
+ *
+ * Решение: пока поле в фокусе, показываем ровно то, что напечатал человек, а
+ * наружу отдаём разобранное число. Как только фокус ушёл — показываем
+ * нормализованное значение из модели.
+ */
+export function NumberInput({
+  value,
+  onChange,
+  placeholder,
+  min,
+  max,
+}: {
+  /** Текущее значение из модели */
+  value: number;
+  /** Вызывается с разобранным числом (NaN не отдаётся) */
+  onChange: (v: number) => void;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+}) {
+  // Черновик хранит СЫРОЙ текст пользователя, включая незавершённые «0.» и «1,2»
+  const [draft, setDraft] = useState<string | null>(null);
+  const [focused, setFocused] = useState(false);
+
+  // Пока поле в фокусе, черновик трогать нельзя — иначе набор разваливается на
+  // полпути. Сбрасываем его только когда значение поменяли ИЗВНЕ (выбрали
+  // другую выработку, прошёл пересчёт), то есть при снятом фокусе.
+  useEffect(() => {
+    if (!focused) setDraft(null);
+  }, [value, focused]);
+
+  const shown = draft !== null ? draft : (value === 0 ? "" : String(value));
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={shown}
+      placeholder={placeholder}
+      onChange={(e) => {
+        // Разрешаем только цифры, точку/запятую и минус — буквы игнорируем,
+        // чтобы в числовое поле нельзя было занести мусор.
+        const raw = e.target.value.replace(/[^\d.,-]/g, "");
+        setDraft(raw);
+        const parsed = parseFloat(raw.replace(",", "."));
+        if (!isNaN(parsed)) {
+          const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, parsed));
+          onChange(clamped);
+        } else if (raw === "" ) {
+          onChange(0);
+        }
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => { setFocused(false); setDraft(null); }}
+      className="w-full text-[11px] text-right px-1 cad-edit-input"
+      style={{
+        background: "#ffffff",
+        border: "1px solid #94a3b8",
+        borderRadius: 2,
+        height: 18,
+        outline: "none",
+        fontFamily: "inherit",
+        color: "#0f172a",
       }}
     />
   );
