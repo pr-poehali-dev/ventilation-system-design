@@ -11,7 +11,7 @@ import {
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { solveNetwork, type SolveResult } from "@/lib/networkSolver";
-import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower } from "@/lib/fanCurves";
+import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower, bladeAngleFactor } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
 import HQFireDiagram from "@/components/cad/HQFireDiagram";
 import HQFireDiagramDialog from "@/components/cad/HQFireDiagramDialog";
@@ -2803,12 +2803,9 @@ export default function CadPage() {
     const curve_map = new Map(branchesList.map(b => {
       const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
       const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
-      let af = 1.0;
-      if (curve?.bladeAngles && curve.bladeAngles.length >= 2) {
-        const lo = curve.bladeAngles[0], hi = curve.bladeAngles[curve.bladeAngles.length - 1];
-        const a = Math.min(hi, Math.max(lo, b.fanBladeAngle ?? (lo + hi) / 2));
-        af = 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
-      }
+      // Коэффициент угла лопаток берём общей функцией — той же, что использует
+      // расчёт в программе. Раньше здесь была своя копия формулы.
+      const af = curve ? bladeAngleFactor(curve, b.fanBladeAngle) : 1.0;
       return [b.id, { curve, k, af }];
     }));
 
@@ -2905,9 +2902,17 @@ export default function CadPage() {
         fanParallel: Math.max(1, b.fanParallel ?? 1),
         fireThermalDepression: b.fireThermalDepression ?? 0,
         ...(curve ? {
+          // Угол лопаток масштабирует характеристику по ОБЕИМ осям (закон
+          // подобия): H(Q) = af·H_ном(Q/af). Раскрыв скобки, получаем
+          // коэффициенты, которые понимает расчётный сервер:
+          //   h0' = af·h0,  h1' = h1,  h2' = h2/af
+          // Раньше на af умножался только h0, а h2 уходил номинальным — кривая
+          // выходила слишком пологой, и вентилятор при 26 м³/с всё ещё выдавал
+          // 2049 Па вместо почти нуля. Именно поэтому расчёт возвращал расход
+          // выше паспортного предела.
           h0: curve.h0 * af * k * k,
           h1: curve.h1 * k,
-          h2: curve.h2,
+          h2: curve.h2 / af,
           qMax: curve.qMax * af * k,
           qMin: curve.qMin * af * k,
           ...(curve.reverseH0 !== undefined ? {
