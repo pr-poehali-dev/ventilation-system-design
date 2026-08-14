@@ -62,6 +62,7 @@ import {
 } from "./cad/cadTypes";
 import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
+import { calcVentPipe } from "@/lib/ventPipeCalc";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
@@ -3412,6 +3413,42 @@ export default function CadPage() {
         });
       })();
 
+      // ── Проверка доставки воздуха в забой по вентставу (нагнетание) ──
+      // Вентилятор подаёт в став один расход, а до забоя доходит меньше:
+      // часть воздуха теряется через стыки и мембрану рукава. Проверяем,
+      // хватает ли того, что реально дошло, и не длиннее ли став предела.
+      (() => {
+        const qById = new Map(resultBranches.map(rb => [rb.id, Math.abs(rb.Q ?? 0)]));
+        for (const b of branches) {
+          if (!b.hasVentPipe || !(b.vpLength ?? 0)) continue;
+          const brand = VENT_DUCT_BRANDS.find(x => x.id === b.vpBrandId);
+          const size = brand?.sizes.find(sz => sz.diameter === b.vpDiameter);
+          const fanFlow = qById.get(b.id) ?? 0;
+          if (fanFlow < 0.01) continue;
+
+          const inp = {
+            method: (b.vpLeakMethod ?? "passport") as "passport" | "normative",
+            diameter: b.vpDiameter ?? 0,
+            alpha: brand?.alpha ?? b.vpPipeAlpha ?? 0,
+            lossPer100m: size?.lossPer100m ?? b.vpLeakageCoeff ?? 0,
+            linkLength: b.vpLinkLength ?? 20,
+            jointCount: b.vpJointCount ?? 0,
+            localXi: b.vpLocalXi ?? 0,
+            fanFlow,
+          };
+          const r = calcVentPipe({ ...inp, length: b.vpLength ?? 0 });
+
+          const required = (b.vpRequiredFlow ?? 0) > 0
+            ? b.vpRequiredFlow!
+            : (b.ventComputedTotal ?? 0);
+          if (required > 0 && r.flowFace < required) {
+            addLog("warn",
+              `⚠ Вентстав ${b.id}: в забой приходит ${r.flowFace.toFixed(2)} м³/с ` +
+              `при требуемых ${required.toFixed(2)} м³/с (утечки ${r.leakagePercent.toFixed(0)}%)`);
+          }
+        }
+      })();
+
       // Сохраняем расходы прямого режима (без реверса) для последующей проверки k_rev >= 0.6
       if (!branches.some(b => b.fanReverse) && data.converged) {
         const flows: Record<string, number> = {};
@@ -5851,6 +5888,9 @@ export default function CadPage() {
                 { id: "conveyor", label: "Конвейер" },
                 { id: "fireload", label: "Пож.нагрузка" },
                 { id: "airdemand", label: "Расход воздуха" },
+                // Пункт появляется только когда на выработке построен став —
+                // иначе он был бы пустым и путал бы пользователя.
+                ...(selectedBranch?.hasVentPipe ? [{ id: "ventpipe" as SideTab, label: "Вентстав" }] : []),
 
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
                 ...(selectedBranch?.hasExplosion ? [{ id: "blast" as SideTab, label: "💥 Взрыв" }] : []),
@@ -7549,7 +7589,7 @@ export default function CadPage() {
             })()}
 
             {/* ═══ ВКЛАДКИ ВЕТВИ (Топология / Вентилятор / Трубы: вода / Конвейер) ══ */}
-            {(["topology","fan","waterpipes","conveyor","fireload","params","bulkhead","airdemand"].includes(activeSide)) && !selectedNode && selectedBranch && (
+            {(["topology","fan","waterpipes","conveyor","fireload","params","bulkhead","airdemand","ventpipe"].includes(activeSide)) && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}

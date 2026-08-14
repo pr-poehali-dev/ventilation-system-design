@@ -111,7 +111,7 @@ export interface SchemaSymbol {
 /** Сезон работы шахты — определяет, включены ли калориферы */
 export type HeatingSeason = "winter" | "summer";
 
-export type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "fireload" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "velocityV" | "section" | "ventsections" | "airdemand" | "compare" | "bulkhead";
+export type SideTab = "params" | "measure" | "pipes" | "indicators" | "general" | "vent" | "thermo" | "areas" | "coords" | "horizons" | "topology" | "fan" | "fan-indicators" | "waterpipes" | "conveyor" | "fireload" | "search" | "positions" | "accidents" | "blast" | "rescue" | "workerPath" | "check" | "flowQ" | "velocityV" | "section" | "ventsections" | "airdemand" | "ventpipe" | "compare" | "bulkhead";
 
 export type CompareStatus = "added" | "removed" | "changed" | "unchanged";
 

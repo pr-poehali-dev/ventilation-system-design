@@ -17,6 +17,7 @@ import BranchTopologyTab from "@/components/cad/branchProps/BranchTopologyTab";
 import BranchFanTab from "@/components/cad/branchProps/BranchFanTab";
 import BranchFireLoadTab from "@/components/cad/branchProps/BranchFireLoadTab";
 import BranchAirDemandTab from "@/components/cad/branchProps/BranchAirDemandTab";
+import BranchVentPipeTab from "@/components/cad/branchProps/BranchVentPipeTab";
 
 interface BranchPropsPanelProps {
   branch: TopoBranch;
@@ -83,7 +84,7 @@ interface BranchPropsPanelProps {
 
 const INNER_TABS = [
   "Топология", "Вентилятор", "Трубы: вода", "Конвейер", "Пож.нагрузка", "Перемычка",
-  "Расход воздуха",
+  "Расход воздуха", "Вентстав",
 ] as const;
 type InnerTab = typeof INNER_TABS[number];
 
@@ -114,6 +115,7 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
     fireload: "Пож.нагрузка",
     bulkhead: "Перемычка",
     airdemand: "Расход воздуха",
+    ventpipe: "Вентстав",
   };
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
@@ -893,6 +895,15 @@ export default function BranchPropsPanel({ branch, horizons, onUpdate, defaultIn
             каждому фактору отдельно, в зачёт идёт максимум. */}
         {innerTab === "Расход воздуха" && (
           <BranchAirDemandTab
+            branch={branch}
+            onUpdate={onUpdate}
+            ventSections={ventSections}
+            ventNorms={ventNorms}
+          />
+        )}
+
+        {innerTab === "Вентстав" && (
+          <BranchVentPipeTab
             branch={branch}
             onUpdate={onUpdate}
             ventSections={ventSections}
