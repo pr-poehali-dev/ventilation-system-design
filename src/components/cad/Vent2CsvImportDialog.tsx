@@ -330,6 +330,9 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
                 {result.stats.fans > 0 && (
                   <div className="text-green-700">✓ Вентиляторов: {result.stats.fans}</div>
                 )}
+                {(result.stats.horizons ?? 0) > 0 && (
+                  <div className="text-green-700">✓ Слоёв (горизонтов): {result.stats.horizons}</div>
+                )}
                 {result.warnings.map((w, i) => (
                   <div key={i} className="text-amber-700">⚠ {w}</div>
                 ))}

@@ -185,6 +185,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
                   { label: "Вент-ров",   value: result.stats.fans ?? 0,               hi: (result.stats.fans ?? 0) > 0 },
                   { label: "Перемычек",  value: result.stats.bulkheads ?? 0,          hi: (result.stats.bulkheads ?? 0) > 0 },
                   { label: "Позиций",    value: result.stats.positions ?? 0,          hi: (result.stats.positions ?? 0) > 0 },
+                  { label: "Слоёв",      value: result.stats.horizons ?? 0,           hi: (result.stats.horizons ?? 0) > 0 },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
                     style={{ background: s.hi ? "#dcfce7" : "#f9f9f9", borderColor: s.hi ? "#86efac" : "#e0e0e0" }}>

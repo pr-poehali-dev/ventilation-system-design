@@ -39,16 +39,36 @@ export interface RawPosition {
   branchIds: string[];     // ID привязанных выработок (из АэроСети)
 }
 
+/**
+ * Горизонт (слой схемы), восстановленный из столбца «Слой выработки».
+ *
+ * В CSV слой хранится ТЕКСТОМ («КТВР +390/+130»), без отметки и цвета —
+ * поэтому z вычисляем как среднюю высотную отметку узлов тех выработок,
+ * что попали в этот слой, а цвет назначается уже на схеме.
+ */
+export interface RawHorizon {
+  /** Идентификатор, сгенерированный при импорте. */
+  id: string;
+  /** Название слоя ровно как в файле. */
+  name: string;
+  /** Средняя высотная отметка выработок слоя, м. */
+  z: number;
+  /** Сколько выработок отнесено к слою (для журнала импорта). */
+  branchCount: number;
+}
+
 export interface CsvImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   fans: RawFan[];
   bulkheads: RawBulkhead[];
   positions: RawPosition[];
+  /** Горизонты, восстановленные из столбца «Слой выработки». */
+  horizons: RawHorizon[];
   /** Маппинг: оригинальный ID выработки из АэроСети → сгенерированный ID ветви */
   branchOriginalIdMap: Record<string, string>;
   warnings: string[];
-  stats: { nodes: number; branches: number; nodesWithZ: number; fans: number; bulkheads: number; positions: number };
+  stats: { nodes: number; branches: number; nodesWithZ: number; fans: number; bulkheads: number; positions: number; horizons: number };
   debug: string;
 }
 
@@ -351,6 +371,60 @@ function parsePositionsFile(lines: string[], sep: string): RawPosition[] {
   return result;
 }
 
+// ── Восстановление горизонтов из столбца «Слой выработки» ────────────────────
+//
+// В CSV слой хранится ПРОСТЫМ ТЕКСТОМ («КТВР +390/+130»), без отметки и цвета.
+// Поэтому: собираем уникальные названия → создаём по горизонту на каждое →
+// проставляем ветвям horizonId. Отметку z считаем как среднюю по узлам
+// выработок слоя (у «КТВР +390/+130» получится реальная глубина, а не 0).
+//
+// ВАЖНО: функция МЕНЯЕТ переданные ветви (проставляет horizonId) — это
+// осознанно, ветви только что созданы импортом и никому ещё не отданы.
+//
+// Служебные значения («Выработки» — заглушка парсера, пустая строка) слоями
+// не считаем, иначе на схеме появился бы мусорный горизонт.
+function buildHorizonsFromLayers(
+  branches: TopoBranch[],
+  nodes: Iterable<TopoNode>,
+  ts: number,
+  debug: string[],
+): RawHorizon[] {
+  const nodeById = new Map<string, TopoNode>();
+  for (const n of nodes) nodeById.set(n.id, n);
+
+  const acc = new Map<string, { zSum: number; zCount: number; branchIds: string[] }>();
+  for (const b of branches) {
+    const nm = (b.layer || "").trim();
+    if (!nm || nm === "Выработки") continue;
+    let e = acc.get(nm);
+    if (!e) { e = { zSum: 0, zCount: 0, branchIds: [] }; acc.set(nm, e); }
+    e.branchIds.push(b.id);
+    const fn = nodeById.get(b.fromId);
+    const tn = nodeById.get(b.toId);
+    if (fn) { e.zSum += fn.z; e.zCount++; }
+    if (tn) { e.zSum += tn.z; e.zCount++; }
+  }
+
+  const horizons: RawHorizon[] = [];
+  let hi = 0;
+  for (const [name, e] of acc) {
+    const id = `H_CSV_${ts}_${hi++}`;
+    horizons.push({
+      id,
+      name,
+      z: e.zCount > 0 ? Math.round((e.zSum / e.zCount) * 10) / 10 : 0,
+      branchCount: e.branchIds.length,
+    });
+    const idSet = new Set(e.branchIds);
+    for (const b of branches) if (idSet.has(b.id)) b.horizonId = id;
+  }
+
+  if (horizons.length > 0) {
+    debug.push(`Горизонтов восстановлено из столбца «Слой»: ${horizons.length} (${horizons.map(h => `${h.name}: ${h.branchCount} выр., z=${h.z}`).join("; ")})`);
+  }
+  return horizons;
+}
+
 // ── Сборка результата ─────────────────────────────────────────────────────────
 
 function buildResult(
@@ -452,7 +526,8 @@ function buildResult(
 
     branches.push(makeBranch(newBranchId, fromNode.id, toNode.id, {
       type: branchType,
-      name: rb.name || rb.id,
+      // Поля name у ветви НЕТ — название выработки хранится в type
+      // (branchType выше уже собран как «название → тип → Выработка»).
       layer: rb.layer,
       length: realLen, manualLength: rb.length > 0,
       angle: realAngle, manualAngle: false,
@@ -471,6 +546,10 @@ function buildResult(
       manualSection: rb.area > 0, shape,
     }));
   }
+
+  // Горизонты (слои схемы) — восстанавливаем из столбца «Слой выработки»
+  // и сразу привязываем к ним ветви (см. buildHorizonsFromLayers).
+  const horizons = buildHorizonsFromLayers(branches, nodeMap.values(), ts, debug);
 
   // Убираем из результата узлы без реальных координат (они дают точки в нуле)
   const resultNodes = [...nodeMap.values()].filter(n => !isZeroNode(n));
@@ -513,8 +592,8 @@ function buildResult(
   if (positions.length > 0) debug.push(`Позиций после маппинга: ${positions.length}`);
 
   return {
-    nodes: resultNodes, branches, fans, bulkheads, positions, branchOriginalIdMap, warnings,
-    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: fans.length, bulkheads: bulkheads.length, positions: positions.length },
+    nodes: resultNodes, branches, fans, bulkheads, positions, horizons, branchOriginalIdMap, warnings,
+    stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: fans.length, bulkheads: bulkheads.length, positions: positions.length, horizons: horizons.length },
     debug: debug.join("\n"),
   };
 }
@@ -606,10 +685,10 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
   if (allRawNodes.length === 0 && allRawBranches.length === 0) {
     return {
       nodes: [], branches: [], fans: allRawFans,
-      bulkheads: allRawBulkheads, positions: allRawPositions,
+      bulkheads: allRawBulkheads, positions: allRawPositions, horizons: [],
       branchOriginalIdMap: {},
       warnings: ["Файлы не содержат данных. Убедитесь что выбраны *-nodes.csv и *-excavations.csv из АэроСети."],
-      stats: { nodes: 0, branches: 0, nodesWithZ: 0, fans: allRawFans.length, bulkheads: allRawBulkheads.length, positions: allRawPositions.length },
+      stats: { nodes: 0, branches: 0, nodesWithZ: 0, fans: allRawFans.length, bulkheads: allRawBulkheads.length, positions: allRawPositions.length, horizons: 0 },
       debug: debug.join("\n"),
     };
   }
@@ -889,12 +968,17 @@ export function parseVent2Csv(
     debug.push(`Вентиляторов: ${fans.length}`);
   }
 
+  // Горизонты (слои схемы) — восстанавливаем из столбца «Слой» и сразу
+  // привязываем к ним ветви (та же логика, что и при импорте из АэроСети).
+  const horizons = buildHorizonsFromLayers(branches, nodeMap.values(), ts, debug);
+
   return {
     nodes: [...nodeMap.values()],
     branches,
     fans,
     bulkheads,
     positions: [],
+    horizons,
     branchOriginalIdMap,
     warnings,
     stats: {
@@ -904,6 +988,7 @@ export function parseVent2Csv(
       fans: fans.length,
       bulkheads: bulkheads.length,
       positions: 0,
+      horizons: horizons.length,
     },
     debug: debug.join("\n"),
   };

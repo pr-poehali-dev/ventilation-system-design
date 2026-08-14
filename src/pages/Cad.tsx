@@ -1955,9 +1955,56 @@ export default function CadPage() {
       return newPositions;
     };
 
+    // ── Горизонты (слои схемы) из столбца «Слой выработки» ──
+    // Импорт вернул список слоёв и уже проставил ветвям horizonId. Здесь
+    // создаём сами горизонты в списке слева и раздаём им цвета из палитры.
+    //
+    // При ДОБАВЛЕНии к существующей схеме слой с таким же названием не
+    // дублируем: переиспользуем уже имеющийся горизонт, а ветвям импорта
+    // переписываем horizonId на его id.
+    const applyImportedHorizons = (
+      branches: typeof result.branches,
+      existing: Horizon[],
+    ): { horizons: Horizon[]; branches: typeof result.branches } => {
+      const raw = result.horizons ?? [];
+      if (raw.length === 0) return { horizons: existing, branches };
+
+      const byName = new Map(existing.map(h => [h.name.trim().toLowerCase(), h]));
+      const used = new Set(existing.map(h => (h.color ?? "").toLowerCase()));
+      // Соответствие: id горизонта из импорта → id горизонта на схеме.
+      const idRemap = new Map<string, string>();
+      const added: Horizon[] = [];
+
+      for (const rh of raw) {
+        const key = rh.name.trim().toLowerCase();
+        const same = byName.get(key);
+        if (same) { idRemap.set(rh.id, same.id); continue; }
+        const free = HORIZON_PALETTE.filter(c => !used.has(c.toLowerCase()));
+        const color = free.length > 0
+          ? free[Math.floor(Math.random() * free.length)]
+          : HORIZON_PALETTE[Math.floor(Math.random() * HORIZON_PALETTE.length)];
+        used.add(color.toLowerCase());
+        const hz: Horizon = { id: rh.id, name: rh.name, z: rh.z, color, visible: true };
+        added.push(hz);
+        byName.set(key, hz);
+        idRemap.set(rh.id, rh.id);
+      }
+
+      const remapped = branches.map(b => {
+        const to = b.horizonId ? idRemap.get(b.horizonId) : undefined;
+        return to && to !== b.horizonId ? { ...b, horizonId: to } : b;
+      });
+      return { horizons: [...existing, ...added], branches: remapped };
+    };
+
     if (mode === "replace") {
       const withBulkheads = applyBulkheads(result.branches);
-      const finalBranches = applyFans(withBulkheads);
+      const withFans = applyFans(withBulkheads);
+      // При замене оставляем только «Общий вид» — остальные слои приходят из файла.
+      const baseHorizons = horizons.filter(h => h.id === OVERVIEW_HORIZON_ID);
+      const hzRes = applyImportedHorizons(withFans, baseHorizons);
+      const finalBranches = hzRes.branches;
+      setHorizons(hzRes.horizons);
       setNodes(result.nodes);
       setBranches(finalBranches);
       const fanSyms = ensureFanSymbols(finalBranches, []);
@@ -1966,16 +2013,17 @@ export default function CadPage() {
       setPositions(makeImportedPositions([]));
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
+      // Горизонты считаем ОДИН раз до обновления состояния: и ветви, и список
+      // слоёв должны получить одни и те же id (иначе привязка разъедется).
+      const appendBranches = applyFans(applyBulkheads(result.branches));
+      const hzRes = applyImportedHorizons(appendBranches, horizons);
+      const finalBranches = hzRes.branches;
+      setHorizons(hzRes.horizons);
       setNodes(prev => [...prev, ...result.nodes]);
-      setBranches(prev => {
-        const withBulkheads = applyBulkheads(result.branches);
-        return [...prev, ...applyFans(withBulkheads)];
-      });
+      setBranches(prev => [...prev, ...finalBranches]);
       setSchemaSymbols(prev => {
-        const withBulkheads = applyBulkheads(result.branches);
-        const withFans = applyFans(withBulkheads);
-        const fanSyms = ensureFanSymbols(withFans, prev);
-        const bkSyms  = makeBulkheadSymbols(withFans, [...prev, ...fanSyms]);
+        const fanSyms = ensureFanSymbols(finalBranches, prev);
+        const bkSyms  = makeBulkheadSymbols(finalBranches, [...prev, ...fanSyms]);
         return [...prev, ...fanSyms, ...bkSyms];
       });
       setPositions(prev => [...prev, ...makeImportedPositions(prev)]);
