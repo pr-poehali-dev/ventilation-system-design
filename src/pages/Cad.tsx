@@ -1690,6 +1690,7 @@ export default function CadPage() {
   const {
     searchQuery, setSearchQuery,
     searchScope, setSearchScope,
+    searchObjCat, setSearchObjCat,
     checkThreshold, setCheckThreshold,
     checkTab, setCheckTab,
     checkHighRThreshold, setCheckHighRThreshold,
@@ -6155,6 +6156,73 @@ export default function CadPage() {
                 pos?: { x: number; y: number; z: number };
                 branchId?: string | null;
               };
+              // Виды УО для выпадающего списка группы «Объекты».
+              // Порядок — как в запросе: вентиляторы, перемычки, водопровод,
+              // очаг пожара, взрыв.
+              const OBJ_CATS: { key: string; label: string; icon: string; color: string; ids: Set<string> }[] = [
+                { key: "fan",   label: "УО ГВУ / ВВУ / ВМП",      icon: "Fan",      color: "text-sky-700",     ids: FAN_SYMBOL_IDS },
+                { key: "bulk",  label: "Все перемычки",           icon: "Blocks",   color: "text-stone-700",   ids: BULKHEAD_SYMBOL_IDS },
+                { key: "water", label: "УО водопровода",          icon: "Droplets", color: "text-blue-700",    ids: WATER_SYMBOL_IDS },
+                { key: "fire",  label: "Очаг пожара",             icon: "Flame",    color: "text-red-600",     ids: FIRE_SYMBOL_IDS },
+                { key: "expl",  label: "Взрыв",                   icon: "Zap",      color: "text-orange-600",  ids: EXPLOSION_SYMBOL_IDS },
+              ];
+              const nodeById = new Map(nodes.map(n => [n.id, n]));
+              const brById   = new Map(branches.map(b => [b.id, b]));
+
+              /**
+               * Собирает объекты схемы (УО).
+               * catKey — вид УО из списка выше (null = любой);
+               * text   — текстовый фильтр (пустой = без фильтра).
+               */
+              const findObjects = (catKey: string | null, text: string): Hit[] => {
+                const out: Hit[] = [];
+                for (const s of schemaSymbols) {
+                  const c = OBJ_CATS.find(k => k.ids.has(s.typeId));
+                  if (!c) continue;
+                  if (catKey && c.key !== catKey) continue;
+                  const lt = LEGEND_TYPES.find(l => l.id === s.typeId);
+                  const br = s.branchId ? brById.get(s.branchId) : undefined;
+                  const fN = br ? nodeById.get(br.fromId) : undefined;
+                  const tN = br ? nodeById.get(br.toId)   : undefined;
+                  // Для вентилятора показываем его тип (ГВУ/ВВУ/ВМП) и марку.
+                  const fanInfo = br?.hasFan ? `${br.fanType}${br.fanName ? ` · ${br.fanName}` : ""}` : "";
+                  const where = br
+                    ? `${fN?.number || br.fromId} → ${tN?.number || br.toId}`
+                    : `X=${s.x.toFixed(1)} Y=${s.y.toFixed(1)}`;
+                  if (text) {
+                    const fields = [
+                      c.label, lt?.name, s.label, s.description,
+                      br?.id, br?.type, br?.fanType, br?.fanName,
+                      fN?.number, tN?.number,
+                    ].filter(Boolean).map(String);
+                    if (!fields.some(f => f.toLowerCase().includes(text))) continue;
+                  }
+                  // Точка для центрирования камеры. УО стоит НЕ в середине
+                  // выработки, а в доле t вдоль неё — считаем именно эту точку,
+                  // чтобы объект оказался ровно в центре экрана.
+                  let pos = { x: s.x, y: s.y, z: 0 };
+                  if (br && fN && tN) {
+                    const t = s.t ?? 0.5;
+                    pos = {
+                      x: fN.x + (tN.x - fN.x) * t,
+                      y: fN.y + (tN.y - fN.y) * t,
+                      z: fN.z + (tN.z - fN.z) * t,
+                    };
+                  }
+                  out.push({
+                    kind: "symbol",
+                    id: s.id,
+                    title: lt?.name || c.label,
+                    subtitle: [s.label, fanInfo, where].filter(Boolean).join(" · "),
+                    icon: c.icon,
+                    color: c.color,
+                    pos,
+                    branchId: s.branchId,
+                  });
+                }
+                return out;
+              };
+
               const hits: Hit[] = [];
               if (q.length > 0) {
                 if (searchScope === "all" || searchScope === "nodes") {
@@ -6188,82 +6256,65 @@ export default function CadPage() {
                     }
                   }
                 }
-                // ─── ПОИСК ПО ОБЪЕКТАМ СХЕМЫ ───────────────────────────
-                // Вентиляторы (ГВУ/ВВУ/ВМП), перемычки, оборудование
-                // водопровода, очаги пожара и места взрыва.
-                if (searchScope === "all" || searchScope === "objects") {
-                  const nodeById = new Map(nodes.map(n => [n.id, n]));
-                  const brById   = new Map(branches.map(b => [b.id, b]));
-                  // Категория объекта по типу УО: подпись, иконка, цвет.
-                  const objCat = (typeId: string): { cat: string; icon: string; color: string } | null => {
-                    if (FAN_SYMBOL_IDS.has(typeId))       return { cat: "Вентилятор",  icon: "Fan",       color: "text-sky-700" };
-                    if (BULKHEAD_SYMBOL_IDS.has(typeId))  return { cat: "Перемычка",   icon: "Blocks",    color: "text-stone-700" };
-                    if (WATER_SYMBOL_IDS.has(typeId))     return { cat: "Водопровод",  icon: "Droplets",  color: "text-blue-700" };
-                    if (FIRE_SYMBOL_IDS.has(typeId))      return { cat: "Очаг пожара", icon: "Flame",     color: "text-red-600" };
-                    if (EXPLOSION_SYMBOL_IDS.has(typeId)) return { cat: "Взрыв",       icon: "Zap",       color: "text-orange-600" };
-                    return null;
-                  };
-                  for (const s of schemaSymbols) {
-                    const c = objCat(s.typeId);
-                    if (!c) continue;
-                    const lt = LEGEND_TYPES.find(l => l.id === s.typeId);
-                    const br = s.branchId ? brById.get(s.branchId) : undefined;
-                    const fN = br ? nodeById.get(br.fromId) : undefined;
-                    const tN = br ? nodeById.get(br.toId)   : undefined;
-                    // Для вентилятора на ветви показываем его тип (ГВУ/ВВУ/ВМП) и имя.
-                    const fanInfo = br?.hasFan ? `${br.fanType}${br.fanName ? ` · ${br.fanName}` : ""}` : "";
-                    const where = br
-                      ? `${fN?.number || br.fromId} → ${tN?.number || br.toId}`
-                      : `X=${s.x.toFixed(1)} Y=${s.y.toFixed(1)}`;
-                    // Ищем по категории, названию УО, подписи, номеру ветви,
-                    // типу и имени вентилятора, номерам смежных узлов.
-                    const fields = [
-                      c.cat, lt?.name, s.label, s.description,
-                      br?.id, br?.type, br?.fanType, br?.fanName,
-                      fN?.number, tN?.number,
-                    ].filter(Boolean).map(String);
-                    if (!fields.some(f => f.toLowerCase().includes(q))) continue;
-                    hits.push({
-                      kind: "symbol",
-                      id: s.id,
-                      title: `${c.cat}${lt?.name && lt.name !== c.cat ? ` · ${lt.name}` : ""}`,
-                      subtitle: [s.label, fanInfo, where].filter(Boolean).join(" · "),
-                      icon: c.icon,
-                      color: c.color,
-                      pos: { x: s.x, y: s.y, z: nodeById.get(br?.fromId ?? "")?.z ?? 0 },
-                      branchId: s.branchId,
-                    });
-                  }
+                // В группе «Всё» объекты ищем по введённому тексту.
+                if (searchScope === "all") {
+                  hits.push(...findObjects(null, q));
                 }
+              }
+              // ─── ГРУППА «ОБЪЕКТЫ»: выбор категории из списка ───────────
+              // Здесь текст не вводится: пользователь выбирает вид УО, и сразу
+              // показываются все такие объекты, установленные на схеме.
+              if (searchScope === "objects" && searchObjCat) {
+                hits.push(...findObjects(searchObjCat, ""));
               }
               const maxShow = 200;
               const shown = hits.slice(0, maxShow);
               return (
                 <div className="p-2 text-[11px]">
-                  {/* Поле ввода */}
-                  <div className="relative mb-2">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      autoFocus
-                      placeholder={searchScope === "objects"
-                        ? "Вентилятор, перемычка, ГВУ, пожар…"
-                        : "Введите номер, наименование, ID…"}
-                      className="w-full pl-6 pr-6 py-1 border border-gray-400 rounded text-[12px] outline-none focus:border-blue-500"
-                      style={{ height: 26 }}
-                    />
-                    <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                      <Icon name="Search" size={12} />
-                    </span>
-                    {searchQuery && (
-                      <button onClick={() => setSearchQuery("")}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
-                        title="Очистить">
-                        <Icon name="X" size={12} />
-                      </button>
-                    )}
-                  </div>
+                  {/* В группе «Объекты» — выбор вида УО из списка,
+                      в остальных группах — обычный ввод текста. */}
+                  {searchScope === "objects" ? (
+                    <div className="mb-2">
+                      <select
+                        value={searchObjCat}
+                        onChange={(e) => setSearchObjCat(e.target.value)}
+                        className="w-full px-1.5 border border-gray-400 rounded text-[12px] outline-none focus:border-blue-500 bg-white"
+                        style={{ height: 26 }}>
+                        <option value="">— выберите объект —</option>
+                        {OBJ_CATS.map(c => {
+                          // Показываем, сколько таких объектов есть на схеме.
+                          const cnt = schemaSymbols.reduce((s, sy) => s + (c.ids.has(sy.typeId) ? 1 : 0), 0);
+                          return (
+                            <option key={c.key} value={c.key} disabled={cnt === 0}>
+                              {c.label}{cnt > 0 ? ` (${cnt})` : " — нет на схеме"}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="relative mb-2">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoFocus
+                        placeholder="Введите номер, наименование, ID…"
+                        className="w-full pl-6 pr-6 py-1 border border-gray-400 rounded text-[12px] outline-none focus:border-blue-500"
+                        style={{ height: 26 }}
+                      />
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                        <Icon name="Search" size={12} />
+                      </span>
+                      {searchQuery && (
+                        <button onClick={() => setSearchQuery("")}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                          title="Очистить">
+                          <Icon name="X" size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Фильтр по типу */}
                   <div className="flex gap-1 mb-2">
@@ -6289,9 +6340,13 @@ export default function CadPage() {
                   {/* Статус */}
                   <div className="text-[10px] text-gray-500 mb-1.5 flex items-center justify-between">
                     <span>
-                      {q.length === 0
-                        ? "Начните вводить запрос"
-                        : `Найдено: ${hits.length}${hits.length > maxShow ? ` (показано ${maxShow})` : ""}`}
+                      {searchScope === "objects"
+                        ? (!searchObjCat
+                            ? "Выберите вид объекта из списка"
+                            : `Найдено: ${hits.length}${hits.length > maxShow ? ` (показано ${maxShow})` : ""}`)
+                        : q.length === 0
+                          ? "Начните вводить запрос"
+                          : `Найдено: ${hits.length}${hits.length > maxShow ? ` (показано ${maxShow})` : ""}`}
                     </span>
                   </div>
 
@@ -6318,19 +6373,15 @@ export default function CadPage() {
                               setFocusBranchId(h.id);
                               setFocusNodeId(null);
                             } else {
-                              // Объект схемы: выделяем сам УО. Если он стоит на
-                              // выработке — наводим камеру на неё (так виден
-                              // контекст), иначе — на координаты объекта.
+                              // Объект схемы: выделяем сам УО и ставим его РОВНО
+                              // в центр экрана — по его собственной точке, а не
+                              // по середине выработки, на которой он стоит.
                               setSelectedSymbolId(h.id);
                               setSelectedNodeId(null);
                               setSelectedBranchId(h.branchId ?? null);
                               setFocusNodeId(null);
-                              if (h.branchId) {
-                                setFocusBranchId(h.branchId);
-                              } else {
-                                setFocusBranchId(null);
-                                if (h.pos) setFocusPos(h.pos);
-                              }
+                              setFocusBranchId(null);
+                              if (h.pos) setFocusPos(h.pos);
                             }
                             setFocusNonce(Date.now());
                           }}
@@ -6355,7 +6406,7 @@ export default function CadPage() {
                         </button>
                       );
                     })}
-                    {q.length > 0 && hits.length === 0 && (
+                    {(searchScope === "objects" ? !!searchObjCat : q.length > 0) && hits.length === 0 && (
                       <div className="text-center text-gray-400 text-[11px] py-3">
                         Ничего не найдено
                       </div>

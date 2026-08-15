@@ -34,6 +34,9 @@ export function useCadSchemaCheck(
 ) {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
+  // Выбранная категория УО в группе «Объекты» (пустая строка — ничего не выбрано).
+  // В этой группе поиск идёт не по вводу текста, а выбором из списка.
+  const [searchObjCat, setSearchObjCat] = useState<string>("");
   const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
   const [checkTab, setCheckTab] = useState<CheckTab>("near");
   // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
@@ -54,6 +57,7 @@ export function useCadSchemaCheck(
   return {
     searchQuery, setSearchQuery,
     searchScope, setSearchScope,
+    searchObjCat, setSearchObjCat,
     checkThreshold, setCheckThreshold,
     checkTab, setCheckTab,
     checkHighRThreshold, setCheckHighRThreshold,
