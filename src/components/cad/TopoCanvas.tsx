@@ -2168,17 +2168,27 @@ export default function TopoCanvas(props: Props) {
                 const step = Math.max(70, Math.min(160, (tailLen + tipH) * 3.2));
                 // Держим стрелки внутри ветви: цепочка уезжает вперёд на шаг,
                 // поэтому крайние позиции считаем с запасом на этот сдвиг.
+                // Сама стрелка занимает tailLen+tipH. Раньше требовался ещё и
+                // целый шаг ДО СЛЕДУЮЩЕЙ стрелки, и короткие выработки
+                // оставались вовсе без анимации, хотя одна стрелка на них
+                // помещается. При отдалении схемы таких выработок становилось
+                // всё больше — анимация «пропадала» до приближения.
+                const arrowLen = tailLen + tipH;
+                if (segLen <= arrowLen) return null;
                 const from0 = tailLen, to0 = segLen - tipH - step;
-                if (to0 <= from0) return null;
-                const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                const single = to0 <= from0;
+                // Не хватает места на цепочку — показываем одну бегущую стрелку.
+                const count = single ? 1 : Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                // Одиночная стрелка пробегает всю выработку, цепочка — один шаг.
+                const runLen = single ? Math.max(1, segLen - arrowLen) : step;
                 const pts = `0,-${tipW} ${tipH},0 0,${tipW}`;
                 return (
                   <g>
                     <animateTransform attributeName="transform" type="translate"
-                      from="0 0" to={`${ux * step} ${uy * step}`}
+                      from="0 0" to={`${ux * runLen} ${uy * runLen}`}
                       dur={`${animDur}s`} repeatCount="indefinite" />
                     {Array.from({ length: count }, (_, i) => {
-                      const d0 = from0 + i * step;
+                      const d0 = single ? tailLen : from0 + i * step;
                       const cx = sxA + ux * d0;
                       const cy = syA + uy * d0;
                       return (

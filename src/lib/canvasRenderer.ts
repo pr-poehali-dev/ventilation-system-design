@@ -1037,20 +1037,34 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // Расстояние между стрелками — заметно больше прежнего, чтобы цепочка
       // читалась как отдельные стрелки, а не сплошная лента.
       const step = Math.max(70, Math.min(160, (tailLen + tipH) * 3.2));
-      const from0 = tailLen, to0 = segLen - tipH - step;
-      if (to0 > from0) {
-        const count = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+      // Сама стрелка занимает tailLen+tipH. Раньше условие требовало ещё и
+      // целый шаг ДО СЛЕДУЮЩЕЙ стрелки — из-за этого короткие выработки
+      // оставались без анимации, хотя одна стрелка на них помещалась. При
+      // отдалении схемы всё больше выработок попадало под этот порог, и
+      // анимация «пропадала» на них до тех пор, пока не приблизишь.
+      const arrowLen = tailLen + tipH;
+      if (segLen > arrowLen) {
+        const from0 = tailLen, to0 = segLen - tipH - step;
+        // Если места на цепочку не хватает — рисуем одну стрелку по центру.
+        const count = to0 > from0 ? Math.max(1, Math.floor((to0 - from0) / step) + 1) : 1;
+        const single = to0 <= from0;
         // Скорость бега — своя у каждой ветви, по скорости воздуха V. Та же
         // формула, что в SVG-режиме: V=1 м/с → цикл 4 с, V=10 м/с → 0.4 с.
         // animSpeed — общий множитель из настроек (меньше = медленнее).
         const dur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V))) / Math.max(0.1, animSpeed);
-        const shift = ((animOffset / dur) % 1) * step;
+        // Одиночная стрелка бежит по всей длине выработки, а не на шаг цепочки —
+        // иначе на короткой выработке она почти стояла бы на месте.
+        const runLen = single ? segLen : step;
+        const shift = ((animOffset / dur) % 1) * runLen;
         const ux = dx / segLen, uy = dy / segLen;
         ctx.save();
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
         for (let i = 0; i < count; i++) {
-          const d0 = from0 + i * step + shift;
+          // На короткой выработке стрелка идёт от начала к концу и повторяет цикл.
+          const d0 = single
+            ? (shift % Math.max(1, segLen - arrowLen)) + tailLen
+            : from0 + i * step + shift;
           ctx.save();
           ctx.translate(sxA + ux * d0, syA + uy * d0);
           ctx.rotate(angle);

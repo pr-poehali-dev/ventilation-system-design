@@ -214,18 +214,23 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
                     const oAnimTailLen = ow * 3.0;
                     const oAnimTailW   = Math.max(0.5, ow * 0.15);
                     const step = Math.max(70, Math.min(160, (oAnimTailLen + oAnimTipH) * 3.2));
+                    // Как и на обычных выработках: короткой достаточно места
+                    // под саму стрелку, целый шаг до следующей не требуется.
+                    const oArrowLen = oAnimTailLen + oAnimTipH;
+                    if (oLen <= oArrowLen) return null;
                     const from0 = oAnimTailLen, to0 = oLen - oAnimTipH - step;
-                    if (to0 <= from0) return null;
-                    const cnt = Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                    const oSingle = to0 <= from0;
+                    const cnt = oSingle ? 1 : Math.max(1, Math.floor((to0 - from0) / step) + 1);
+                    const oRunLen = oSingle ? Math.max(1, oLen - oArrowLen) : step;
                     const oux = oDx / oLen, ouy = oDy / oLen;
                     const oAnimPts = `0,-${oAnimTipW} ${oAnimTipH},0 0,${oAnimTipW}`;
                     return (
                       <g>
                         <animateTransform attributeName="transform" type="translate"
-                          from="0 0" to={`${oux * step} ${ouy * step}`}
+                          from="0 0" to={`${oux * oRunLen} ${ouy * oRunLen}`}
                           dur={`${oDur}s`} repeatCount="indefinite" />
                         {Array.from({ length: cnt }, (_, ai) => {
-                          const d0 = from0 + ai * step;
+                          const d0 = oSingle ? oAnimTailLen : from0 + ai * step;
                           return (
                             <g key={`ovarr-${ob.id}-${ai}`}
                               transform={`translate(${(oAx + oux * d0).toFixed(1)},${(oAy + ouy * d0).toFixed(1)}) rotate(${oAng.toFixed(1)})`}>
