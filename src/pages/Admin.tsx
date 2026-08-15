@@ -421,9 +421,14 @@ export default function Admin() {
 
   // ── Основная панель ──
   return (
-    <div className="min-h-screen" style={{ background: "#f1f5f9" }}>
-      {/* Шапка */}
-      <div className="h-14 flex items-center justify-between px-6 shadow-sm"
+    // Прокрутка задана здесь, а не на всей странице: у приложения со схемой
+    // прокрутка окна намеренно отключена (холст занимает весь экран). Поэтому
+    // админка листается внутри себя — иначе длинные вкладки вроде мониторинга
+    // не помещались на экран и нижняя часть была недоступна.
+    <div className="h-screen overflow-y-auto" style={{ background: "#f1f5f9" }}>
+      {/* Шапка. sticky — остаётся на виду при прокрутке длинных вкладок,
+          чтобы переключение разделов и кнопка «Обновить» были всегда под рукой. */}
+      <div className="h-14 flex items-center justify-between px-6 shadow-sm sticky top-0 z-20"
         style={{ background: "#1a3a6b" }}>
         <div className="flex items-center gap-3">
           <Icon name="ShieldCheck" size={20} className="text-blue-300" />
@@ -477,7 +482,8 @@ export default function Admin() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto p-6">
+      {/* pb-10 — запас снизу, чтобы последний блок не упирался в край окна */}
+      <div className="max-w-5xl mx-auto p-6 pb-10">
 
         {/* ── Вкладка: Мониторинг ── */}
         {activeTab === "monitoring" && (
