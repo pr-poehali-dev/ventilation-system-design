@@ -2002,10 +2002,12 @@ export default function TopoCanvas(props: Props) {
           const showDashes = flowVisible && (flowDisplay === "flow" || flowDisplay === "both");
           const showChevrons = flowVisible && (flowDisplay === "chevrons" || flowDisplay === "both");
 
-          // Длительность анимации (с): ~ обратно пропорц. скорости.
-          // V=15 м/с → 0.6 с, V=1 м/с → 4 с, нижняя граница 0.4 с
-          // animSpeed — множитель из настроек (меньше = медленнее анимация)
-          const animDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, V))) / Math.max(0.1, animSpeed);
+          // Скорость бега стрелок в пикселях за секунду — ПРЯМО пропорциональна
+          // скорости воздуха. Именно её глаз воспринимает как «быстрее/медленнее»,
+          // поэтому сравнение выработок между собой становится честным
+          // независимо от их толщины и длины. Диапазон зажат, чтобы при очень
+          // малых V стрелки не замирали, а при больших не мелькали.
+          const animPxPerSec = Math.max(12, Math.min(400, V * 22)) * Math.max(0.1, animSpeed);
 
           // Длина отрезка в px и единичный вектор направления
           const dx = sxB - sxA;
@@ -2181,12 +2183,20 @@ export default function TopoCanvas(props: Props) {
                 const count = single ? 1 : Math.max(1, Math.floor((to0 - from0) / step) + 1);
                 // Одиночная стрелка пробегает всю выработку, цепочка — один шаг.
                 const runLen = single ? Math.max(1, segLen - arrowLen) : step;
+                // ВАЖНО: время цикла считаем от РАССТОЯНИЯ, которое стрелка
+                // проходит. Раньше длительность зависела только от скорости
+                // воздуха, а расстояние — от толщины линии и длины выработки.
+                // Из-за этого толстая выработка с медленным воздухом обгоняла
+                // тонкую с быстрым: глазу скорость читается как «расстояние за
+                // время», а не как время цикла. Теперь пикселей в секунду
+                // пропорционально скорости воздуха — на всех выработках честно.
+                const runDur = Math.max(0.15, runLen / animPxPerSec);
                 const pts = `0,-${tipW} ${tipH},0 0,${tipW}`;
                 return (
                   <g>
                     <animateTransform attributeName="transform" type="translate"
                       from="0 0" to={`${ux * runLen} ${uy * runLen}`}
-                      dur={`${animDur}s`} repeatCount="indefinite" />
+                      dur={`${runDur}s`} repeatCount="indefinite" />
                     {Array.from({ length: count }, (_, i) => {
                       const d0 = single ? tailLen : from0 + i * step;
                       const cx = sxA + ux * d0;

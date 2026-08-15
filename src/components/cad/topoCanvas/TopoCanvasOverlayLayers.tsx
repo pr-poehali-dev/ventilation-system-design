@@ -189,7 +189,11 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
               const oFlowVis = !thinLines && view.scale >= _xySF * 0.25
                 && oQ > 0.1 && flowDisplay !== "off";
               const oDashes = oFlowVis && (flowDisplay === "flow" || flowDisplay === "both");
-              const oDur = Math.max(0.4, Math.min(5, 4 / Math.max(0.5, oV))) / Math.max(0.1, animSpeed);
+              // Скорость бега стрелок в пикселях за секунду — прямо
+              // пропорциональна скорости воздуха (та же формула, что на обычных
+              // выработках). Раньше задавалось время цикла, из-за чего толстые
+              // выработки с медленным воздухом обгоняли тонкие с быстрым.
+              const oPxPerSec = Math.max(12, Math.min(400, oV * 22)) * Math.max(0.1, animSpeed);
               return (
                 <g key={`ovoccl-${ob.id}`}>
                   {bw > 0 && (
@@ -228,7 +232,7 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
                       <g>
                         <animateTransform attributeName="transform" type="translate"
                           from="0 0" to={`${oux * oRunLen} ${ouy * oRunLen}`}
-                          dur={`${oDur}s`} repeatCount="indefinite" />
+                          dur={`${Math.max(0.15, oRunLen / oPxPerSec)}s`} repeatCount="indefinite" />
                         {Array.from({ length: cnt }, (_, ai) => {
                           const d0 = oSingle ? oAnimTailLen : from0 + ai * step;
                           return (
