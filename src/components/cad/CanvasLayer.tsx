@@ -4,6 +4,8 @@ import {
 } from "@/lib/topology";
 import {
   renderCanvas,
+  renderOverlay,
+  computeObjSF,
   setHorizonImageLoadCallback,
   type FlowDisplayMode, type ProjNode,
   CANVAS_THRESHOLD,
@@ -125,6 +127,9 @@ export default function CanvasLayer(props: CanvasLayerProps) {
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Верхний прозрачный холст: на нём рисуется только выделение и подсветка.
+  // Схема лежит на нижнем и при выборе выработки не перерисовывается вовсе.
+  const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef    = useRef<number | null>(null);
   const animOffsetRef = useRef(0);
 
@@ -248,6 +253,36 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     }
   }, []);
 
+  // Отрисовка верхнего слоя — выделение, подсветка, наведение.
+  // Работает мгновенно: рисует единицы объектов вместо всей схемы.
+  const drawOverlay = useCallback(() => {
+    const canvas = overlayRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const p = renderParamsRef.current;
+    try {
+      renderOverlay({
+        ctx,
+        width: p.width,
+        height: p.height,
+        projNodesMap: p.projNodesMap,
+        visibleBranches: p.visibleBranches,
+        branches: p.branches,
+        selectedBranchId: p.selectedBranchId,
+        selectedBranchIds: p.selectedBranchIds,
+        selectedNodeId: p.selectedNodeId,
+        selectedNodeIds: p.selectedNodeIds,
+        hoverBranchId: p.hoverBranchId,
+        branchWidth: p.branchWidth,
+        thinLines: p.thinLines,
+        objSF: computeObjSF(p.view.scale, p.xyScale, false, p.fixedObjectScale, p.scaleLimits),
+      });
+    } catch (err) {
+      console.error("[CanvasLayer] renderOverlay error:", err);
+    }
+  }, []);
+
   // RAF-цикл для анимации потока
   useEffect(() => {
     if (!needsAnim) {
@@ -285,9 +320,11 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.projNodes, props.projNodesMap, props.proj, props.view,
     props.is3D, props.zScale, props.xyScale, props.zLevel,
     props.nodeLodThresholds,
-    props.selectedBranchId, props.selectedBranchIds,
-    props.selectedNodeId, props.selectedNodeIds,
-    props.hoverBranchId, props.highlightHorizonId,
+    // Выделение, множественный выбор и наведение здесь НАМЕРЕННО отсутствуют:
+    // они рисуются на верхнем слое (drawOverlay) и больше не заставляют
+    // перерисовывать всю схему. Раньше выбор одной выработки на схеме в 14
+    // тысяч ветвей означал полную перерисовку и заметное подтормаживание.
+    props.highlightHorizonId,
     props.branchWidth, props.branchBorder, props.thinLines,
     props.colorByHorizon, props.showFlowArrows, props.flowDisplay, props.animSpeed,
     props.infoConfig, props.unitsConfig,
@@ -301,6 +338,20 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.rescuePathNodeIds, props.rescueNodeLetters,
     props.rescuePathBranchIds, props.rescuePathBranchDirs,
     props.width, props.height,
+  ]);
+
+  // Верхний слой перерисовывается при смене выделения/наведения — дёшево,
+  // рисуются единицы объектов. А также при любом изменении вида (панорама,
+  // зум, поворот) — иначе подсветка «отстала» бы от схемы.
+  useEffect(() => {
+    drawOverlay();
+  }, [drawOverlay,
+    props.selectedBranchId, props.selectedBranchIds,
+    props.selectedNodeId, props.selectedNodeIds,
+    props.hoverBranchId,
+    props.projNodesMap, props.view, props.width, props.height,
+    props.branchWidth, props.thinLines, props.branches,
+    props.fixedObjectScale, props.scaleLimits, props.xyScale,
   ]);
 
   // Подложки-планы горизонтов декодируются браузером асинхронно: на первом
@@ -334,24 +385,46 @@ export default function CanvasLayer(props: CanvasLayerProps) {
       canvas.height = height;
       draw(); // перерисовываем сразу после изменения размера
     }
-  }, [width, height, draw]);
+    // Слой выделения держим того же размера, что и схема.
+    const ov = overlayRef.current;
+    if (ov && (ov.width !== width || ov.height !== height)) {
+      ov.width  = width;
+      ov.height = height;
+      drawOverlay();
+    }
+  }, [width, height, draw, drawOverlay]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      style={{ display: "block", touchAction: "none", userSelect: "none",
-        // Когда активен слой печати — поднимаем canvas над SVG рамки (zIndex:0),
-        // чтобы схема была ПОВЕРХ рамки, но прозрачный фон показывал лист.
-        ...(props.transparentBg ? { position: "relative" as const, zIndex: 1 } : {}) }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-      onWheel={onWheel}
-      onContextMenu={onContextMenu}
-    />
+    // Обёртка нужна, чтобы наложить слой выделения точно поверх схемы.
+    // Размер задаём явно — обёртка не должна менять раскладку страницы.
+    <div style={{ position: "relative", width, height,
+      ...(props.transparentBg ? { zIndex: 1 } : {}) }}>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        style={{ display: "block", touchAction: "none", userSelect: "none",
+          // Когда активен слой печати — поднимаем canvas над SVG рамки (zIndex:0),
+          // чтобы схема была ПОВЕРХ рамки, но прозрачный фон показывал лист.
+          ...(props.transparentBg ? { position: "relative" as const, zIndex: 1 } : {}) }}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onWheel={onWheel}
+        onContextMenu={onContextMenu}
+      />
+      {/* Слой выделения. pointerEvents:none — все щелчки и наведение проходят
+          сквозь него на нижний холст, обработка событий не меняется. */}
+      <canvas
+        ref={overlayRef}
+        width={width}
+        height={height}
+        style={{ position: "absolute", top: 0, left: 0,
+          width, height, pointerEvents: "none",
+          zIndex: props.transparentBg ? 2 : 1 }}
+      />
+    </div>
   );
 }
 

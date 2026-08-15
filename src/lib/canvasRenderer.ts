@@ -399,6 +399,38 @@ function getNodeAvgWidths(
   return m;
 }
 
+// Кэш «ветвь по номеру» — для верхнего слоя выделения. Строится один раз на
+// список ветвей, чтобы не искать перебором на каждое движение мыши.
+let _brByIdKey: TopoBranch[] | null = null;
+let _brByIdCache = new Map<string, TopoBranch>();
+/**
+ * Коэффициент размера объектов на экране (толщина линий, радиус узлов).
+ * Вынесен в отдельную функцию, чтобы верхний слой выделения считал его ТОЧНО
+ * так же, как основной рендер — иначе подсветка не совпала бы с выработкой.
+ */
+export function computeObjSF(
+  sc: number,
+  xyScale: number | undefined,
+  printMode: boolean,
+  fixedObjectScale: boolean | undefined,
+  scaleLimits: { branchMin: number; branchMax: number } | undefined,
+): number {
+  if (printMode) return 1;
+  const raw = sc / ((xyScale ?? 1) * 0.4);
+  return fixedObjectScale && scaleLimits
+    ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, raw))
+    : Math.max(raw, 0.25);
+}
+
+function getBranchById(branches: TopoBranch[]): Map<string, TopoBranch> {
+  if (_brByIdKey === branches) return _brByIdCache;
+  const m = new Map<string, TopoBranch>();
+  for (const b of branches) m.set(b.id, b);
+  _brByIdKey = branches;
+  _brByIdCache = m;
+  return m;
+}
+
 function getNodeAdjBranches(branches: TopoBranch[]): Map<string, TopoBranch[]> {
   if (_adjMapKey === branches) return _adjMapCache;
   const m = new Map<string, TopoBranch[]>();
@@ -569,16 +601,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   //   только снизу ограничен 0.25 чтобы ветви были видимы при любом удалении.
   // При наличии xyScale нормируем: «нормальный» scale при xyScale=N в N раз меньше.
   const _xyScaleCR = xyScale ?? 1;
-  const rawObjSF = printMode ? 1 : sc / (_xyScaleCR * 0.4);
-  // Применяем пределы масштабов если включён режим fixedObjectScale
   const _sl = scaleLimits;
-  const objSF = printMode
-    ? 1
-    : fixedObjectScale && _sl
-      // Пределы заданы в % от «нормального» размера (100% = objSF=1)
-      ? Math.min(_sl.branchMax / 100, Math.max(_sl.branchMin / 100, rawObjSF))
-      // Нет ограничений — только минимум чтобы объекты были видимы
-      : Math.max(rawObjSF, 0.25);
+  const objSF = computeObjSF(sc, xyScale, printMode, fixedObjectScale, _sl);
   // LOD: в режиме печати все элементы видны; иначе — только при достаточном масштабе.
   // Используем objSF-скорректированный sc для LOD чтобы учесть минимальный размер объектов.
   const lodChevrons = printMode || sc >= 0.25;
@@ -1826,4 +1850,123 @@ export function hitBranchCanvas(
     }
   }
   return bestId;
+}
+// ─── Верхний слой: выделение, подсветка и наведение ─────────────────────────
+// ЗАЧЕМ. Схема рудника рисуется тяжело: 14 тысяч выработок, узлы, подписи.
+// Раньше выбор одной выработки или наведение мыши перерисовывали ВСЮ схему
+// целиком — из-за одной подсвеченной линии заново рисовались десятки тысяч
+// объектов, и на больших схемах это ощущалось как подтормаживание.
+//
+// Теперь схема лежит на нижнем холсте и при выборе не трогается вовсе, а этот
+// слой рисует поверх неё только выделенное — обычно единицы объектов. Он
+// работает мгновенно независимо от размера схемы.
+export interface OverlayRenderOptions {
+  ctx: CanvasRenderingContext2D;
+  width: number;
+  height: number;
+  projNodesMap: Map<string, ProjNode>;
+  visibleBranches: TopoBranch[];
+  branches: TopoBranch[];
+  selectedBranchId: string | null;
+  selectedBranchIds: Set<string>;
+  selectedNodeId: string | null;
+  selectedNodeIds: Set<string>;
+  hoverBranchId: string | null;
+  branchWidth: number;
+  thinLines: boolean;
+  /** Масштабный коэффициент объектов — тот же, что в основном рендере */
+  objSF: number;
+}
+
+export function renderOverlay(opts: OverlayRenderOptions) {
+  const {
+    ctx, width, height, projNodesMap, branches,
+    selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
+    hoverBranchId, branchWidth, thinLines, objSF,
+  } = opts;
+
+  ctx.clearRect(0, 0, width, height);
+
+  const hasBranchSel = !!selectedBranchId || selectedBranchIds.size > 0;
+  const hasNodeSel   = !!selectedNodeId || selectedNodeIds.size > 0;
+  if (!hasBranchSel && !hasNodeSel && !hoverBranchId) return;
+
+  const brById = getBranchById(branches);
+
+  // ── Ветви: наведение (жёлтая полупрозрачная подсветка) ──
+  if (hoverBranchId) {
+    const b = brById.get(hoverBranchId);
+    const from = b ? projNodesMap.get(b.fromId) : undefined;
+    const to   = b ? projNodesMap.get(b.toId)   : undefined;
+    if (b && from && to) {
+      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const w  = thinLines ? 1 : Math.max(bw * objSF, 1.0);
+      ctx.strokeStyle = "#f59e0b";
+      ctx.lineWidth = w + 8;
+      ctx.globalAlpha = 0.35;
+      ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ── Ветви: выделение (синее — одиночное, оранжевое — множественное) ──
+  if (hasBranchSel) {
+    const ids = new Set<string>(selectedBranchIds);
+    if (selectedBranchId) ids.add(selectedBranchId);
+    ctx.lineCap = "round";
+    for (const id of ids) {
+      const b = brById.get(id);
+      if (!b) continue;
+      const from = projNodesMap.get(b.fromId);
+      const to   = projNodesMap.get(b.toId);
+      if (!from || !to) continue;
+      // Отсечение: выделенная ветвь может быть далеко за экраном.
+      const mnX = Math.min(from.sx, to.sx), mxX = Math.max(from.sx, to.sx);
+      const mnY = Math.min(from.sy, to.sy), mxY = Math.max(from.sy, to.sy);
+      if (mxX < -64 || mnX > width + 64 || mxY < -64 || mnY > height + 64) continue;
+
+      const isMulti = selectedBranchIds.has(id);
+      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const w  = thinLines ? 1 : Math.max((bw + 1) * objSF, 1.0);
+      // Тёмная обводка под цветом — чтобы выделение читалось на любом фоне.
+      ctx.strokeStyle = "#1f2937";
+      ctx.lineWidth = w + 2;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = isMulti ? "#f59e0b" : "#2563eb";
+      ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+    }
+  }
+
+  // ── Узлы: выделение (кружок + пунктирное кольцо) ──
+  if (hasNodeSel) {
+    const ids = new Set<string>(selectedNodeIds);
+    if (selectedNodeId) ids.add(selectedNodeId);
+    const adj = getNodeAdjBranches(branches);
+    const avgW = getNodeAvgWidths(branches, adj, branchWidth, thinLines);
+    for (const id of ids) {
+      const pn = projNodesMap.get(id);
+      if (!pn) continue;
+      if (pn.sx < -80 || pn.sx > width + 80 || pn.sy < -80 || pn.sy > height + 80) continue;
+      const branchPx = (thinLines ? 1 : (avgW.get(id) ?? branchWidth)) * objSF;
+      const baseNodeR = Math.max(1.5, branchPx * 0.55);
+      const r = baseNodeR * 1.5;
+      const ringColor = selectedNodeIds.has(id) ? "#f59e0b" : "#2563eb";
+      // Пунктирное кольцо
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + baseNodeR * 0.5, 0, Math.PI * 2);
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = Math.min(2, Math.max(0.5, baseNodeR * 0.2));
+      ctx.setLineDash([3, 2]); ctx.stroke(); ctx.setLineDash([]);
+      // Сам узел
+      const n = pn.node;
+      ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = n.atmosphereLink ? "#7dd3fc" : "#c8a882";
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = Math.min(2, Math.max(0.5, baseNodeR * 0.25));
+      ctx.fill(); ctx.stroke();
+    }
+  }
 }
