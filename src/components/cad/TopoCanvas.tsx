@@ -226,6 +226,29 @@ export default function TopoCanvas(props: Props) {
     pivot: { x: number; y: number; z: number };
     pivotScreen: { sx: number; sy: number };
   } | null>(null);
+  // Ограничитель частоты для вращения и панорамы. Мышь шлёт события заметно
+  // чаще, чем экран успевает обновиться (у игровых мышей — до 1000 раз в
+  // секунду против 60 обновлений экрана). Без ограничителя схема пересчитывалась
+  // по несколько раз на один показанный кадр: работа впустую, которая на схеме
+  // в 14 тысяч выработок и ощущалась как рывки при вращении.
+  // Копим последнее положение мыши и применяем его один раз за кадр.
+  const moveRafRef = useRef<{ id: number | null; pending: (() => void) | null }>({ id: null, pending: null });
+  const scheduleViewUpdate = useCallback((fn: () => void) => {
+    moveRafRef.current.pending = fn;
+    if (moveRafRef.current.id !== null) return;
+    moveRafRef.current.id = requestAnimationFrame(() => {
+      moveRafRef.current.id = null;
+      const p = moveRafRef.current.pending;
+      moveRafRef.current.pending = null;
+      if (p) p();
+    });
+  }, []);
+  // При размонтировании снимаем отложенный кадр, чтобы не обновлять состояние
+  // уже удалённого компонента.
+  useEffect(() => () => {
+    if (moveRafRef.current.id !== null) cancelAnimationFrame(moveRafRef.current.id);
+  }, []);
+
   const touchRef = useRef<{ x: number; y: number; ox: number; oy: number; dist?: number; scale?: number } | null>(null);
   // Зум: ref для синхронного применения без батчинга
   const wheelAccRef = useRef<{ acc: number; px: number; py: number; rafId: number | null }>({ acc: 0, px: 0, py: 0, rafId: null });
@@ -1229,13 +1252,20 @@ export default function TopoCanvas(props: Props) {
       const newPivotScreen = project3D(scaledPivot, tmpProj);
       const newOx = rotStart.ox + (rotStart.pivotScreen.sx - newPivotScreen.sx);
       const newOy = rotStart.oy + (rotStart.pivotScreen.sy - newPivotScreen.sy);
-      setView((v) => ({ ...v, azimuth: newAz, elevation: newEl, offsetX: newOx, offsetY: newOy }));
+      // Не чаще одного раза на кадр экрана: при вращении заново считается
+      // проекция всех узлов и порядок всех выработок по глубине — самая
+      // тяжёлая операция во всей отрисовке.
+      scheduleViewUpdate(() => {
+        setView((v) => ({ ...v, azimuth: newAz, elevation: newEl, offsetX: newOx, offsetY: newOy }));
+      });
       return;
     }
     if (panStart) {
       const dx = e.clientX - panStart.x;
       const dy = e.clientY - panStart.y;
-      setView((v) => ({ ...v, offsetX: panStart.ox + dx, offsetY: panStart.oy + dy }));
+      scheduleViewUpdate(() => {
+        setView((v) => ({ ...v, offsetX: panStart.ox + dx, offsetY: panStart.oy + dy }));
+      });
       return;
     }
     if (draggingNode) {
