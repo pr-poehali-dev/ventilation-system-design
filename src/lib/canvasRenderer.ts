@@ -1876,6 +1876,13 @@ export interface OverlayRenderOptions {
   thinLines: boolean;
   /** Масштабный коэффициент объектов — тот же, что в основном рендере */
   objSF: number;
+  /**
+   * Линия построения новой выработки: тянется от выбранного узла к курсору.
+   * Раньше рисовалась отдельным SVG-слоем, который React пересоздавал на
+   * каждое движение мыши. Теперь это две линии на уже существующем холсте.
+   */
+  buildFromNodeId?: string | null;
+  buildToPos?: { sx: number; sy: number } | null;
 }
 
 export function renderOverlay(opts: OverlayRenderOptions) {
@@ -1883,9 +1890,34 @@ export function renderOverlay(opts: OverlayRenderOptions) {
     ctx, width, height, projNodesMap, branches,
     selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
     hoverBranchId, branchWidth, thinLines, objSF,
+    buildFromNodeId, buildToPos,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
+
+  // ── Линия построения новой выработки (от узла к курсору) ──
+  // Рисуем ПЕРВОЙ, чтобы выделение оставалось поверх неё.
+  if (buildFromNodeId && buildToPos) {
+    const from = projNodesMap.get(buildFromNodeId);
+    if (from) {
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath();
+      ctx.moveTo(from.sx, from.sy);
+      ctx.lineTo(buildToPos.sx, buildToPos.sy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Кружок на конце — там появится новый узел
+      ctx.beginPath();
+      ctx.arc(buildToPos.sx, buildToPos.sy, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
 
   const hasBranchSel = !!selectedBranchId || selectedBranchIds.size > 0;
   const hasNodeSel   = !!selectedNodeId || selectedNodeIds.size > 0;

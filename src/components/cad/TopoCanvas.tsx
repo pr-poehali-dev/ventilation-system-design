@@ -1178,7 +1178,14 @@ export default function TopoCanvas(props: Props) {
     if (w) setHoverPos({ x: Math.round(w.x), y: Math.round(w.y) });
     else setHoverPos(null);
 
-    setHoverScreenPos({ sx, sy });
+    // Экранная позиция курсора нужна ТОЛЬКО когда тянется линия построения
+    // выработки или ставится оборудование. В остальное время обновлять её на
+    // каждое движение мыши незачем: это лишний перерендер всей схемы.
+    if ((tool === "branch" && branchFrom) || pendingSymbolTypeId) {
+      setHoverScreenPos({ sx, sy });
+    } else if (hoverScreenPos) {
+      setHoverScreenPos(null);
+    }
 
     // Наведение на подпись ветви (canvas-режим) — для курсора «grab».
     if (useCanvas && onBranchLabelOffset && tool === "select"
@@ -1594,24 +1601,16 @@ export default function TopoCanvas(props: Props) {
           onTouchEnd={(e) => { e.preventDefault(); }}
           onRegisterGetCanvas={(fn) => { canvasExportRef.current = fn; }}
           onRegisterCanvasEl={onRegisterCanvasEl}
+          buildFromNodeId={tool === "branch" ? branchFrom : null}
+          buildToPos={tool === "branch" && branchFrom ? hoverScreenPos : null}
         />
         </CanvasErrorBoundary>
       )}
 
-      {/* ── Canvas-режим: overlay SVG для интерактивных элементов (preview ветви, ghost) ── */}
-      {useCanvas && tool === "branch" && branchFrom && hoverScreenPos && (() => {
-        const from = projNodesMap.get(branchFrom);
-        if (!from) return null;
-        return (
-          <svg style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 3 }}
-            width={size.w} height={size.h}>
-            <line x1={from.sx} y1={from.sy} x2={hoverScreenPos.sx} y2={hoverScreenPos.sy}
-              stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.8" />
-            <circle cx={hoverScreenPos.sx} cy={hoverScreenPos.sy} r={4}
-              fill="white" stroke="#2563eb" strokeWidth="1.5" opacity="0.8" />
-          </svg>
-        );
-      })()}
+      {/* Линия построения выработки в canvas-режиме теперь рисуется на слое
+          выделения внутри CanvasLayer (buildFromNodeId / buildToPos). Раньше
+          здесь был отдельный SVG-слой, который React пересоздавал на каждое
+          движение мыши. */}
 
       {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}

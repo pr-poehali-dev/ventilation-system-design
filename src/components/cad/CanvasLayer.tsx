@@ -94,6 +94,10 @@ interface CanvasLayerProps {
   rescuePathBranchIds?: Set<string>;
   rescuePathBranchDirs?: Map<string, boolean>;
 
+  /** Линия построения новой выработки: узел-начало и текущая точка курсора */
+  buildFromNodeId?: string | null;
+  buildToPos?: { sx: number; sy: number } | null;
+
   // события — пробрасываются от TopoCanvas
   onMouseDown: (e: React.MouseEvent<HTMLCanvasElement>) => void;
   onMouseMove: (e: React.MouseEvent<HTMLCanvasElement>) => void;
@@ -277,6 +281,8 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         branchWidth: p.branchWidth,
         thinLines: p.thinLines,
         objSF: computeObjSF(p.view.scale, p.xyScale, false, p.fixedObjectScale, p.scaleLimits),
+        buildFromNodeId: p.buildFromNodeId,
+        buildToPos: p.buildToPos,
       });
     } catch (err) {
       console.error("[CanvasLayer] renderOverlay error:", err);
@@ -352,6 +358,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.projNodesMap, props.view, props.width, props.height,
     props.branchWidth, props.thinLines, props.branches,
     props.fixedObjectScale, props.scaleLimits, props.xyScale,
+    props.buildFromNodeId, props.buildToPos,
   ]);
 
   // Подложки-планы горизонтов декодируются браузером асинхронно: на первом
