@@ -39,7 +39,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -6145,7 +6145,16 @@ export default function CadPage() {
             {/* ═══ ВКЛАДКА: ПОИСК ═════════════════════════════════════ */}
             {activeSide === "search" && (() => {
               const q = searchQuery.trim().toLowerCase();
-              type Hit = { kind: "node" | "branch"; id: string; title: string; subtitle: string };
+              // "symbol" — объект схемы (УО): вентилятор, перемычка, оборудование
+              // водопровода, очаг пожара, место взрыва. У него нет узла/ветви для
+              // фокуса, поэтому храним координаты и наводим камеру по ним.
+              type Hit = {
+                kind: "node" | "branch" | "symbol";
+                id: string; title: string; subtitle: string;
+                icon?: string; color?: string;
+                pos?: { x: number; y: number; z: number };
+                branchId?: string | null;
+              };
               const hits: Hit[] = [];
               if (q.length > 0) {
                 if (searchScope === "all" || searchScope === "nodes") {
@@ -6179,6 +6188,53 @@ export default function CadPage() {
                     }
                   }
                 }
+                // ─── ПОИСК ПО ОБЪЕКТАМ СХЕМЫ ───────────────────────────
+                // Вентиляторы (ГВУ/ВВУ/ВМП), перемычки, оборудование
+                // водопровода, очаги пожара и места взрыва.
+                if (searchScope === "all" || searchScope === "objects") {
+                  const nodeById = new Map(nodes.map(n => [n.id, n]));
+                  const brById   = new Map(branches.map(b => [b.id, b]));
+                  // Категория объекта по типу УО: подпись, иконка, цвет.
+                  const objCat = (typeId: string): { cat: string; icon: string; color: string } | null => {
+                    if (FAN_SYMBOL_IDS.has(typeId))       return { cat: "Вентилятор",  icon: "Fan",       color: "text-sky-700" };
+                    if (BULKHEAD_SYMBOL_IDS.has(typeId))  return { cat: "Перемычка",   icon: "Blocks",    color: "text-stone-700" };
+                    if (WATER_SYMBOL_IDS.has(typeId))     return { cat: "Водопровод",  icon: "Droplets",  color: "text-blue-700" };
+                    if (FIRE_SYMBOL_IDS.has(typeId))      return { cat: "Очаг пожара", icon: "Flame",     color: "text-red-600" };
+                    if (EXPLOSION_SYMBOL_IDS.has(typeId)) return { cat: "Взрыв",       icon: "Zap",       color: "text-orange-600" };
+                    return null;
+                  };
+                  for (const s of schemaSymbols) {
+                    const c = objCat(s.typeId);
+                    if (!c) continue;
+                    const lt = LEGEND_TYPES.find(l => l.id === s.typeId);
+                    const br = s.branchId ? brById.get(s.branchId) : undefined;
+                    const fN = br ? nodeById.get(br.fromId) : undefined;
+                    const tN = br ? nodeById.get(br.toId)   : undefined;
+                    // Для вентилятора на ветви показываем его тип (ГВУ/ВВУ/ВМП) и имя.
+                    const fanInfo = br?.hasFan ? `${br.fanType}${br.fanName ? ` · ${br.fanName}` : ""}` : "";
+                    const where = br
+                      ? `${fN?.number || br.fromId} → ${tN?.number || br.toId}`
+                      : `X=${s.x.toFixed(1)} Y=${s.y.toFixed(1)}`;
+                    // Ищем по категории, названию УО, подписи, номеру ветви,
+                    // типу и имени вентилятора, номерам смежных узлов.
+                    const fields = [
+                      c.cat, lt?.name, s.label, s.description,
+                      br?.id, br?.type, br?.fanType, br?.fanName,
+                      fN?.number, tN?.number,
+                    ].filter(Boolean).map(String);
+                    if (!fields.some(f => f.toLowerCase().includes(q))) continue;
+                    hits.push({
+                      kind: "symbol",
+                      id: s.id,
+                      title: `${c.cat}${lt?.name && lt.name !== c.cat ? ` · ${lt.name}` : ""}`,
+                      subtitle: [s.label, fanInfo, where].filter(Boolean).join(" · "),
+                      icon: c.icon,
+                      color: c.color,
+                      pos: { x: s.x, y: s.y, z: nodeById.get(br?.fromId ?? "")?.z ?? 0 },
+                      branchId: s.branchId,
+                    });
+                  }
+                }
               }
               const maxShow = 200;
               const shown = hits.slice(0, maxShow);
@@ -6191,7 +6247,9 @@ export default function CadPage() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       autoFocus
-                      placeholder="Введите номер, наименование, ID…"
+                      placeholder={searchScope === "objects"
+                        ? "Вентилятор, перемычка, ГВУ, пожар…"
+                        : "Введите номер, наименование, ID…"}
                       className="w-full pl-6 pr-6 py-1 border border-gray-400 rounded text-[12px] outline-none focus:border-blue-500"
                       style={{ height: 26 }}
                     />
@@ -6213,6 +6271,7 @@ export default function CadPage() {
                       { v: "all" as const, l: "Всё" },
                       { v: "nodes" as const, l: "Узлы" },
                       { v: "branches" as const, l: "Ветви" },
+                      { v: "objects" as const, l: "Объекты" },
                     ]).map(opt => (
                       <button key={opt.v}
                         onClick={() => setSearchScope(opt.v)}
@@ -6240,7 +6299,8 @@ export default function CadPage() {
                   <div className="flex flex-col gap-0.5">
                     {shown.map((h) => {
                       const isActive = (h.kind === "node" && selectedNodeId === h.id)
-                        || (h.kind === "branch" && selectedBranchId === h.id);
+                        || (h.kind === "branch" && selectedBranchId === h.id)
+                        || (h.kind === "symbol" && selectedSymbolId === h.id);
                       return (
                         <button key={`${h.kind}-${h.id}`}
                           onClick={() => {
@@ -6248,13 +6308,29 @@ export default function CadPage() {
                             if (h.kind === "node") {
                               setSelectedNodeId(h.id);
                               setSelectedBranchId(null);
+                              setSelectedSymbolId(null);
                               setFocusNodeId(h.id);
                               setFocusBranchId(null);
-                            } else {
+                            } else if (h.kind === "branch") {
                               setSelectedBranchId(h.id);
                               setSelectedNodeId(null);
+                              setSelectedSymbolId(null);
                               setFocusBranchId(h.id);
                               setFocusNodeId(null);
+                            } else {
+                              // Объект схемы: выделяем сам УО. Если он стоит на
+                              // выработке — наводим камеру на неё (так виден
+                              // контекст), иначе — на координаты объекта.
+                              setSelectedSymbolId(h.id);
+                              setSelectedNodeId(null);
+                              setSelectedBranchId(h.branchId ?? null);
+                              setFocusNodeId(null);
+                              if (h.branchId) {
+                                setFocusBranchId(h.branchId);
+                              } else {
+                                setFocusBranchId(null);
+                                if (h.pos) setFocusPos(h.pos);
+                              }
                             }
                             setFocusNonce(Date.now());
                           }}
@@ -6266,9 +6342,11 @@ export default function CadPage() {
                           onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "#f3f4f6"; }}
                           onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
                           <Icon
-                            name={h.kind === "node" ? "CircleDot" : "GitBranch"}
+                            name={h.kind === "symbol" ? (h.icon ?? "Shapes")
+                              : h.kind === "node" ? "CircleDot" : "GitBranch"}
                             size={14}
-                            className={h.kind === "node" ? "text-amber-700 mt-0.5" : "text-blue-700 mt-0.5"}
+                            className={`mt-0.5 ${h.kind === "symbol" ? (h.color ?? "text-gray-700")
+                              : h.kind === "node" ? "text-amber-700" : "text-blue-700"}`}
                           />
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-gray-800 truncate">{h.title}</div>

@@ -18,7 +18,9 @@ export type CheckTab =
   | "near" | "isolated" | "dupes" | "dupbranch" | "zeroR"
   | "zeroLen" | "highR" | "bulkR" | "manualLen" | "isolatedBranch";
 
-export type SearchScope = "all" | "nodes" | "branches";
+// "objects" — поиск по объектам схемы: вентиляторы (ГВУ/ВВУ/ВМП), перемычки,
+// оборудование водопровода, очаги пожара и места взрыва.
+export type SearchScope = "all" | "nodes" | "branches" | "objects";
 
 /**
  * Поиск по схеме и проверка схемы.

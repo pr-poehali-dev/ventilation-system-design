@@ -508,6 +508,11 @@ export const BULKHEAD_SYMBOL_IDS = new Set([
   "bulkhead_barrier", "fire_door", "barrier", "fire_door_pp",
 ]);
 
+// ID символов оборудования водопровода — для поиска по объектам схемы.
+export const WATER_SYMBOL_IDS = new Set([
+  "pump", "pump_station", "valve_reduce", "valve_water",
+]);
+
 /** ID символов вентиляционных струй — рисуются стрелкой ВДОЛЬ ветви
  *  (как расчётные стрелки воздухораспределения): красная — свежая,
  *  синяя — исходящая, пунктир — утечка. Разворот через airDirection. */
