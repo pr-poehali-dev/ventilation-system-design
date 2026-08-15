@@ -108,6 +108,13 @@ def handler(event: dict, context) -> dict:
     # норматив 7.11/9.2). ГОСТ 15°C по умолчанию. Естественная тяга возникает от
     # разности наружной (surface_temp) и рудничной (mine_air_temp) температур.
     mine_air_temp     = float(body.get("mineAirTemp", 15.0))
+    # Барометрическое давление на поверхности, кПа — входит в формулу (9.2)
+    # плотности воздуха. По умолчанию стандартное: тогда при нулевой влажности
+    # формула даёт ровно 353/(273+t), как в прежнем расчёте.
+    surface_pressure  = float(body.get("surfacePressure", 101.325) or 101.325)
+    # Учитывать влажность по форм. (9.2). Выключено — расчёт полностью
+    # идентичен прежнему (прежняя формула 353/(273+t)).
+    use_humidity      = bool(body.get("useHumidity", False))
 
     if not branches_in:
         return ok(empty_result("Нет ветвей"))
@@ -234,10 +241,14 @@ def handler(event: dict, context) -> dict:
                 # сходится за единицы итераций вместо тысяч.
                 if method == "mkr":
                     r = solve_mkr(nodes_sc, br_sc, options, normal_flows, surface_temp,
-                                  initial_flows=normal_flows or None, geo_gradient=geo_gradient)
+                                  initial_flows=normal_flows or None, geo_gradient=geo_gradient,
+                                  surface_pressure=surface_pressure,
+                                  use_humidity=use_humidity)
                 else:
                     r = solve(nodes_sc, br_sc, options, normal_flows, surface_temp,
-                              initial_flows=normal_flows or None, geo_gradient=geo_gradient)
+                              initial_flows=normal_flows or None, geo_gradient=geo_gradient,
+                                  surface_pressure=surface_pressure,
+                                  use_humidity=use_humidity)
                 out.append({
                     "id": tgt,
                     "converged": bool(r.get("converged", False)),
@@ -259,10 +270,14 @@ def handler(event: dict, context) -> dict:
         warm = (normal_flows or None) if is_fire else None
         if method == "mkr":
             result = solve_mkr(nodes_in, branches_in, options, normal_flows, surface_temp,
-                               initial_flows=warm, geo_gradient=geo_gradient)
+                               initial_flows=warm, geo_gradient=geo_gradient,
+                               surface_pressure=surface_pressure,
+                               use_humidity=use_humidity)
         else:
             result = solve(nodes_in, branches_in, options, normal_flows, surface_temp,
-                           initial_flows=warm, geo_gradient=geo_gradient)
+                           initial_flows=warm, geo_gradient=geo_gradient,
+                               surface_pressure=surface_pressure,
+                               use_humidity=use_humidity)
         # Добавляем лог о тяге в начало
         result["log"] = nat_draft_log + result.get("log", [])
     except BaseException as ex:
@@ -432,7 +447,56 @@ def fan_dH(e, Q):
     return 0.0
 
 
-def natural_draft_h(from_z, to_z, from_temp, to_temp, atm_temp=None):
+def sat_pressure_kpa(t_c):
+    """
+    Давление насыщенного водяного пара, кПа, по температуре t (°C).
+    Формула Магнуса — Тетенса. Воспроизводит таблицу 9.2 норматива во всём её
+    диапазоне (−20…+30 °C) с точностью до сотых кПа и, в отличие от таблицы,
+    работает непрерывно и при высоких температурах пожара.
+    """
+    t = max(-60.0, min(200.0, float(t_c)))
+    return 0.61094 * math.exp((17.625 * t) / (t + 243.04))
+
+
+def air_density(t_c, humidity_pc=0.0, pressure_kpa=101.325, use_humidity=False):
+    """
+    Плотность воздуха, кг/м³ — норматив, приложение 9, формула (9.2):
+
+        ρ = (3,48·P − 0,0038·φ·P_нас) / (273 + t)
+
+    где P — абсолютное давление, кПа; φ — относительная влажность, %;
+    P_нас — давление насыщенного пара при t, кПа; t — температура, °C.
+
+    Влажный воздух ЛЕГЧЕ сухого при той же температуре (молярная масса воды
+    меньше, чем у воздуха), поэтому влажность УМЕНЬШАЕТ плотность.
+
+    ВАЖНО про обратную совместимость. Прежняя формула решателя ρ = 353/(273+t)
+    соответствует давлению 353/3,48 = 101,44 кПа, а не стандартным 101,325 —
+    расхождение 0,11 %. Поэтому при ВЫКЛЮЧЕННОМ учёте влажности (use_humidity
+    = False) возвращаем ровно прежнюю формулу: иначе у всех существующих
+    проектов естественная тяга сдвинулась бы на десятые доли процента без
+    ведома пользователя. Формула (9.2) применяется только когда учёт включён
+    явно.
+    """
+    t = max(-60.0, min(1200.0, float(t_c)))
+    if not use_humidity:
+        return 353.0 / (273.0 + t)
+    phi = max(0.0, min(100.0, float(humidity_pc or 0.0)))
+    p = max(1.0, float(pressure_kpa or 101.325))
+    # ГРАНИЦА ПРИМЕНИМОСТИ. Таблица 9.2 норматива задана на −20…+30 °C. Выше
+    # 100 °C давление насыщенного пара превышает атмосферное (при 400 °C — в
+    # 350 раз), относительная влажность теряет смысл, и формула начинает
+    # выдавать бессмыслицу. Физический предел: парциальное давление пара не
+    # может превышать полное давление смеси — им и ограничиваем.
+    p_nas = min(sat_pressure_kpa(t), p)
+    rho = (3.48 * p - 0.0038 * phi * p_nas) / (273.0 + t)
+    return rho if rho > 0.05 else 0.05
+
+
+def natural_draft_h(from_z, to_z, from_temp, to_temp, atm_temp=None,
+                    from_hum=0.0, to_hum=0.0, atm_hum=0.0,
+                    surface_pressure=101.325, z_surface=0.0,
+                    use_humidity=False):
     """
     Естественная тяга ветви (Па) — источник напора по НОРМАТИВНОЙ методике
     (формулы 7.3–7.5 «Методики замера депрессии естественной тяги»).
@@ -483,13 +547,27 @@ def natural_draft_h(from_z, to_z, from_temp, to_temp, atm_temp=None):
     # занижала тепловую тягу почти втрое — опрокинутая струя не могла
     # разогнаться (1,45 м³/с вместо 87 в АэроСети). 1200°C — тот же потолок,
     # что и в calcFireTemp на фронтенде.
-    rho_atm  = 353.0 / (273.0 + max(-60.0, min(1200.0, t_atm)))
-    t_mean   = (from_temp + to_temp) / 2.0
-    rho_mean = 353.0 / (273.0 + max(-60.0, min(1200.0, t_mean)))
+    t_mean = (from_temp + to_temp) / 2.0
+    hum_mean = (float(from_hum or 0.0) + float(to_hum or 0.0)) / 2.0
+    # Плотности по нормативной формуле (9.2). ОБЕ считаются при ОДНОМ и том же
+    # давлении (поверхностном) — это принципиально.
+    #
+    # ПОЧЕМУ НЕ ПОДСТАВЛЯЕМ БАРОМЕТРИЧЕСКОЕ ДАВЛЕНИЕ НА ГЛУБИНЕ. Формула тяги
+    # сравнивает рудничный столб с наружным: g·Δz·(ρ_ветви − ρ_атм). Опорная
+    # ρ_атм постоянна и телескопирует по замкнутому контуру в ноль. Если у
+    # каждой ветви брать своё давление по глубине, ρ_ветви растёт с глубиной
+    # сама по себе — и при ПОЛНОЙ изотермии (t ветви = t наружного) появляется
+    # тяга из ничего: проверка дала +261 Па на стволе 600 м вместо нуля.
+    # Физически это вес самого столба воздуха, который в сеточной форме уже
+    # учтён разностью отметок, и повторно вводить его нельзя.
+    p_ref = float(surface_pressure or 101.325)
+    rho_atm = air_density(t_atm, atm_hum, p_ref, use_humidity)
+    rho_mean = air_density(t_mean, hum_mean, p_ref, use_humidity)
     return g * (from_z - to_z) * (rho_mean - rho_atm)
 
 
-def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
+def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0,
+                surface_pressure=101.325, use_humidity=False):
     """Строит список рёбер, заменяя атмосферные узлы на GND."""
     atm = set()
     for n in nodes_in:
@@ -504,6 +582,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
     # Карта высотных отметок и температур узлов
     node_z    = {}
     node_temp = {}
+    node_hum  = {}
     # z поверхности — самый высокий узел (для расчёта глубины/опорной T рудника)
     _zv = [float(n.get("z", 0) or 0) for n in nodes_in]
     z_surface_ref = max(_zv) if _zv else 0.0
@@ -511,9 +590,17 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
         nid = n["id"]
         node_z[nid]    = float(n.get("z", 0.0) or 0.0)
         node_temp[nid] = float(n.get("airTemp", surface_temp) or surface_temp)
+        # Влажность узла, % (норматив, прил. 9, форм. 9.2). Ноль = сухой воздух,
+        # формула вырождается в 9.1 и расчёт совпадает с прежним.
+        node_hum[nid] = float(n.get("airHumidity", 0.0) or 0.0)
         # Атмосферные узлы: температура = температура поверхности
         if n.get("isAtm") or n.get("atmosphereLink"):
             node_temp[nid] = surface_temp
+
+    # Влажность наружного воздуха — среднее по атмосферным узлам. Она задаёт
+    # плотность опорного столба, с которым сравнивается рудничный воздух.
+    _atm_h = [node_hum.get(i, 0.0) for i in atm]
+    atm_humidity = (sum(_atm_h) / len(_atm_h)) if _atm_h else 0.0
 
     def to_gnd(nid):
         return GND if nid in atm else nid
@@ -536,7 +623,16 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0):
         ft  = node_temp.get(orig_from, surface_temp)
         tt  = node_temp.get(orig_to,   surface_temp)
 
-        h_nat = natural_draft_h(fz, tz, ft, tt, atm_temp=surface_temp)
+        fh  = node_hum.get(orig_from, 0.0)
+        th  = node_hum.get(orig_to,   0.0)
+        # Влажность атмосферы — по атмосферным узлам сети; если их нет,
+        # берём влажность начала ветви (сеть без выхода на поверхность).
+        h_nat = natural_draft_h(
+            fz, tz, ft, tt, atm_temp=surface_temp,
+            from_hum=fh, to_hum=th, atm_hum=atm_humidity,
+            surface_pressure=surface_pressure, z_surface=z_surface_ref,
+            use_humidity=use_humidity,
+        )
 
         # Тепловая депрессия пожара (Па): добавляется к естественной тяге.
         # Передаётся фронтендом при итеративном расчёте аварийного режима.
@@ -789,7 +885,8 @@ def check_kirchhoff(edges, Q_map, diag, tol=0.5, dead_end_ids=None):
 
 
 def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
-          initial_flows=None, geo_gradient=0.0):
+          initial_flows=None, geo_gradient=0.0, surface_pressure=101.325,
+          use_humidity=False):
     """
     Метод Кросса (Андрияшев, «Расчёт вентиляционных сетей шахт», классический алгоритм).
 
@@ -813,7 +910,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
     log  = []
     diag = []
 
-    edges, atm = build_graph(nodes_in, branches_in, surface_temp, geo_gradient)
+    edges, atm = build_graph(nodes_in, branches_in, surface_temp, geo_gradient,
+                             surface_pressure, use_humidity)
 
     # ── Диагностика топологии ────────────────────────────────────────────
     atm_count  = sum(1 for n in nodes_in if n.get("isAtm") or n.get("atmosphereLink"))
@@ -2463,7 +2561,8 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
 
 
 def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
-              initial_flows=None, geo_gradient=0.0):
+              initial_flows=None, geo_gradient=0.0, surface_pressure=101.325,
+          use_humidity=False):
     """
     МКР — Метод контурных расходов.
     Адаптивное демпфирование, двойной критерий: max|ΔH| < eps1 ИЛИ max|δQ| < eps2.
@@ -2485,7 +2584,8 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         _timings[stage] = _timings.get(stage, 0.0) + (now - _t_start) * 1000.0
         _t_start = now
 
-    edges, atm = build_graph(nodes_in, branches_in, surface_temp, geo_gradient)
+    edges, atm = build_graph(nodes_in, branches_in, surface_temp, geo_gradient,
+                             surface_pressure, use_humidity)
     _mark("Построение графа")
 
     # Диагностика топологии

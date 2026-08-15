@@ -61,6 +61,7 @@ import {
   makeTextBlock, DEFAULT_EXC, LAYERS,
 } from "./cad/cadTypes";
 import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
+import { DEFAULT_MINE_HUMIDITY, DEFAULT_SURFACE_HUMIDITY, P_STD_KPA } from "@/lib/airHumidity";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { calcVentPipe } from "@/lib/ventPipeCalc";
 import { buildVentPipeReport, buildVentPipeReportHtml } from "@/lib/ventPipeReport";
@@ -999,6 +1000,16 @@ export default function CadPage() {
   // Комарова, норматив 7.11/9.2). ГОСТ 15°C по умолчанию. Разность surfaceTemp − t_ср
   // задаёт естественную тягу.
   const [mineAirTemp, setMineAirTemp] = useState(15);
+  // ── Влажность воздуха (норматив, прил. 9, форм. 9.2) ────────────────────
+  // Влияет на плотность воздуха: влажный воздух ЛЕГЧЕ сухого при той же
+  // температуре. Норматив требует учитывать влажность при разности отметок
+  // замерных станций более 100 м (пп. 69, 72, 99) — то есть в стволах, где
+  // вес столба воздуха и формирует естественную тягу.
+  const [useHumidity, setUseHumidity] = useState(false);
+  const [surfaceHumidity, setSurfaceHumidity] = useState(DEFAULT_SURFACE_HUMIDITY);
+  const [mineHumidity, setMineHumidity] = useState(DEFAULT_MINE_HUMIDITY);
+  // Барометрическое давление на поверхности, кПа — входит в формулу 9.2.
+  const [surfacePressure, setSurfacePressure] = useState(P_STD_KPA);
   const [showSolverParams, setShowSolverParams] = useState(false);
   // Диалог «Устойчивость при пожаре» (Акт устойчивости)
   const [showFireStability, setShowFireStability] = useState(false);
@@ -1365,6 +1376,29 @@ export default function CadPage() {
     }
     return map;
   }, [nodes, surfaceTemp, mineAirTemp, geoGradient, useNaturalDraft]);
+
+  // ── Влажность узлов, % (норматив, прил. 9, форм. 9.2) ────────────────────
+  // Устроена ТАК ЖЕ, как карта температур выше:
+  //   • атмосферный узел → влажность на поверхности;
+  //   • узел с заданной вручную влажностью → его значение;
+  //   • обычный подземный узел → влажность рудничного воздуха.
+  // Отдельной методики «распространения влажности по сети» норматив не даёт:
+  // влажность там — измеряемый параметр съёмки, а не рассчитываемая величина.
+  // Поэтому по выработке она линейно усредняется между её узлами (см. решатель).
+  const baseNodeHumidity = useMemo(() => {
+    const map: Record<string, number> = {};
+    // Учёт выключен — везде 0: формула 9.2 вырождается в 9.1 (сухой воздух),
+    // и результат совпадает с прежним расчётом до единой цифры.
+    if (!useHumidity) {
+      for (const n of nodes) map[n.id] = 0;
+      return map;
+    }
+    for (const n of nodes) {
+      if (Number.isFinite(n.airHumidity)) { map[n.id] = n.airHumidity as number; continue; }
+      map[n.id] = n.atmosphereLink ? surfaceHumidity : mineHumidity;
+    }
+    return map;
+  }, [nodes, useHumidity, surfaceHumidity, mineHumidity]);
 
   // Ветви с проставленной общей депрессией — передаются в аварийные расчёты
   // (Акт устойчивости, расчёт пожара), где порог опрокидывания должен
@@ -2199,6 +2233,11 @@ export default function CadPage() {
     useNaturalDraft,
     geoGradient,
     mineAirTemp,
+    // Влажность воздуха (норматив, прил. 9, форм. 9.2)
+    useHumidity,
+    surfaceHumidity,
+    mineHumidity,
+    surfacePressure,
     infoConfig,
     unitsConfig,
     branchWidth,
@@ -2697,6 +2736,17 @@ export default function CadPage() {
     if (data.useNaturalDraft !== undefined) setUseNaturalDraft(data.useNaturalDraft as boolean);
     if (data.geoGradient !== undefined) setGeoGradient(data.geoGradient as number);
     if (data.mineAirTemp !== undefined) setMineAirTemp(data.mineAirTemp as number);
+    // Влажность воздуха. В файлах старых версий этих полей нет — тогда
+    // остаются значения по умолчанию (учёт влажности выключен), и расчёт
+    // ведёт себя ровно как раньше.
+    if (data.useHumidity !== undefined) setUseHumidity(data.useHumidity as boolean);
+    else setUseHumidity(false);
+    if (data.surfaceHumidity !== undefined) setSurfaceHumidity(data.surfaceHumidity as number);
+    else setSurfaceHumidity(DEFAULT_SURFACE_HUMIDITY);
+    if (data.mineHumidity !== undefined) setMineHumidity(data.mineHumidity as number);
+    else setMineHumidity(DEFAULT_MINE_HUMIDITY);
+    if (data.surfacePressure !== undefined) setSurfacePressure(data.surfacePressure as number);
+    else setSurfacePressure(P_STD_KPA);
     if (data.infoConfig) setInfoConfig(data.infoConfig as InfoDisplayConfig);
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
@@ -3063,11 +3113,14 @@ export default function CadPage() {
           // hotNode — признак узла пути дыма пожара. Бэкенд НЕ перетирает его
           // температуру геотермическим градиентом при включённой ест.тяге.
           hotNode: isHot,
+          airHumidity: baseNodeHumidity[n.id] ?? 0,
         };
       }),
       surfaceTemp: surfaceTempVal,
       useNaturalDraft,
       geoGradient,
+      useHumidity,
+      surfacePressure,
       mineAirTemp,
       branches: buildBranchPayload(branchesWithFire, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
@@ -3111,10 +3164,13 @@ export default function CadPage() {
         z: n.z ?? 0,
         airTemp: n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal),
         userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
+        airHumidity: baseNodeHumidity[n.id] ?? 0,
       })),
       surfaceTemp: surfaceTempVal,
       useNaturalDraft,
       geoGradient,
+      useHumidity,
+      surfacePressure,
       mineAirTemp,
       branches: buildBranchPayload(baseBranches, surfaceTempVal),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
@@ -3404,12 +3460,17 @@ export default function CadPage() {
               // userTemp=true — температура задана (вручную или калорифером)
               airTemp: useT,
               userTemp: (!n.atmosphereLink && (n.airTemp ?? 20) !== 20) || useT !== baseT,
+              // Влажность узла, % — для плотности по форм. 9.2. При выключенном
+              // учёте здесь 0, и формула вырождается в сухой воздух (9.1).
+              airHumidity: baseNodeHumidity[n.id] ?? 0,
             };
           }),
           surfaceTemp,
           useNaturalDraft,
           geoGradient,
           mineAirTemp,
+          useHumidity,
+          surfacePressure,
           branches: buildBranchPayload(branches, surfaceTemp),
           options: {
             tolerance: solverTolerance,
@@ -5828,6 +5889,56 @@ export default function CadPage() {
                         <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
                           Термодинамический способ (Комаров, 7.11):<br/>
                           h_e = γ·H·(t_н − t_ср)/(273 + t_ср). t_ср по ГОСТ 15°C.
+                        </div>
+
+                        {/* ── Влажность воздуха (норматив, прил. 9, форм. 9.2) ── */}
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <input
+                              id="useHumidity"
+                              type="checkbox"
+                              checked={useHumidity}
+                              onChange={e => setUseHumidity(e.target.checked)}
+                              className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                            />
+                            <label htmlFor="useHumidity" className="text-[11px] font-semibold text-gray-700 cursor-pointer select-none">
+                              Учитывать влажность воздуха
+                            </label>
+                          </div>
+                          {useHumidity ? (
+                            <>
+                              <label className="text-[10px] text-gray-500 block mb-1">
+                                Влажность на поверхности φ_н (%)
+                              </label>
+                              <input type="number" value={surfaceHumidity} step="5" min="0" max="100"
+                                onChange={e => setSurfaceHumidity(Number(e.target.value))}
+                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
+                              <label className="text-[10px] text-gray-500 block mb-1">
+                                Влажность рудничного воздуха φ_р (%)
+                              </label>
+                              <input type="number" value={mineHumidity} step="5" min="0" max="100"
+                                onChange={e => setMineHumidity(Number(e.target.value))}
+                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
+                              <label className="text-[10px] text-gray-500 block mb-1">
+                                Барометрическое давление (кПа)
+                              </label>
+                              <input type="number" value={surfacePressure} step="0.5" min="60" max="120"
+                                onChange={e => setSurfacePressure(Number(e.target.value))}
+                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
+                              <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
+                                Плотность по форм. 9.2:<br/>
+                                ρ = (3,48·P − 0,0038·φ·P_нас)/(273 + t).<br/>
+                                Норматив требует учёта влажности при разности
+                                отметок замерных станций более 100 м (пп. 69, 72).
+                                Влажность отдельных узлов задаётся в их свойствах.
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-[9px] text-gray-400 leading-relaxed">
+                              Воздух считается сухим: ρ = 353/(273 + t).
+                              Результаты полностью совпадают с прежними расчётами.
+                            </div>
+                          )}
                         </div>
                       </>
                     )}

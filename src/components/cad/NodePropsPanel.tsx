@@ -62,8 +62,16 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
         <EditInput type="number" step="0.01" value={node.computedGasConc}
           onChange={(v) => onUpdate({ computedGasConc: parseFloat(v) || 0 })} />
       </Row>
+      {/* Влажность узла (норматив, прил. 9, форм. 9.2). Пусто = значение по
+          умолчанию из параметров расчёта: для атмосферных узлов влажность на
+          поверхности, для подземных — влажность рудничного воздуха. */}
       <Row label="Влажность, %">
-        <ComputedInput value="—" />
+        <EditInput type="number" step="1"
+          value={node.airHumidity ?? ""}
+          placeholder="по умолчанию"
+          onChange={(v) => onUpdate({
+            airHumidity: v.trim() === "" ? undefined : Math.max(0, Math.min(100, parseFloat(v) || 0)),
+          })} />
       </Row>
       <Row label="CO в узле, мг/м³">
         <ComputedInput value="—" />
