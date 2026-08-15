@@ -2105,9 +2105,12 @@ export default function TopoCanvas(props: Props) {
                   stroke="#888" strokeWidth={w + 3} strokeLinecap="round" opacity="0.15"
                   strokeDasharray="6,4" />
               )}
-              {/* Подложка — статичная линия (всегда от fromId к toId, цвет = тип) */}
+              {/* Подложка — статичная линия (всегда от fromId к toId, цвет = тип).
+                  Непрозрачная всегда: под ней лежит тёмная обводка, и при
+                  прозрачности 0.55 (была при анимации потока) она просвечивала —
+                  белые выработки выглядели серыми. */}
               <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                stroke={color} strokeWidth={w} strokeLinecap="round" opacity={flowVisible ? 0.55 : 1}
+                stroke={color} strokeWidth={w} strokeLinecap="round"
                 strokeDasharray={isLeakage ? "6 4" : undefined} />
 
               {/* Задымление (дым) рисуется ОТДЕЛЬНЫМ проходом smokePass ПОВЕРХ

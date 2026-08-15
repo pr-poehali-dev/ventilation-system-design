@@ -1004,10 +1004,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.restore();
     }
 
-    // Основная линия
+    // Основная линия — рисуется НЕПРОЗРАЧНОЙ всегда.
+    // Раньше при включённой анимации потока линия делалась полупрозрачной
+    // (0.55), чтобы бегущие стрелки были заметнее. Но под линией лежит тёмная
+    // обводка (#1f2937), и она просвечивала насквозь: белая выработка на экране
+    // становилась серой (255,255,255 → 154,159,165). Стрелки и так хорошо
+    // читаются — они рисуются поверх линии с собственной белой обводкой.
     ctx.strokeStyle = color;
     ctx.lineWidth = w;
-    ctx.globalAlpha = flowVisible ? 0.55 : 1;
+    ctx.globalAlpha = 1;
     ctx.setLineDash(isLeakage ? [6, 4] : []);
     ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
 

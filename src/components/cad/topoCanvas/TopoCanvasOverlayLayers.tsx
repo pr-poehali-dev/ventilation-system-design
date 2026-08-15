@@ -196,9 +196,11 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
                     <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
                       stroke="#1f2937" strokeWidth={ow + bw * 2} strokeLinecap="round" opacity={0.85} />
                   )}
+                  {/* Непрозрачная всегда: выше рисуется тёмная обводка, и при
+                      прозрачности она просвечивала — выработка серела при
+                      включённой анимации потока. */}
                   <line x1={f.sx} y1={f.sy} x2={tN.sx} y2={tN.sy}
-                    stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round"
-                    opacity={oFlowVis ? 0.55 : 1} />
+                    stroke={occColor(ob)} strokeWidth={ow} strokeLinecap="round" />
                   {/* Стрелки движения воздуха — ТОЧНО ТАКИЕ ЖЕ, как на
                       обычных ветвях. Раньше здесь оставался бегущий
                       пунктир: на ветвях верхнего горизонта, которые
