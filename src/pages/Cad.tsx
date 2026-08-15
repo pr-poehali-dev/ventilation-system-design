@@ -2484,6 +2484,12 @@ export default function CadPage() {
   const applyProjectData = (data: Record<string, unknown>, fileName: string, fromDisk?: boolean) => {
     // Блокируем начальный пресет вида — файл загружен
     initialFileLoadedRef.current = true;
+    // Режим заливки, выбранный до открытия файла. Нужен для схем, сохранённых
+    // старыми версиями: в них режим заливки не записан, и раньше он молча
+    // сбрасывался в «выкл» — большая схема открывалась полностью белой.
+    // Теперь для таких файлов сохраняем текущий выбор пользователя.
+    const prevColorMode = colorMode;
+    const prevColorByHorizon = colorByHorizon;
     // Загружается другая схема — результаты прошлого проекта неактуальны.
     clearAirflowCache();
 
@@ -2536,8 +2542,9 @@ export default function CadPage() {
     setThinLines(false);
     setShowFlowArrows(false);
     setFlowDisplay("off");
-    setColorMode("none");
-    setColorByHorizon(false);
+    // Режим заливки здесь НАМЕРЕННО не сбрасываем: он восстанавливается ниже из
+    // файла, а для файлов старых версий (где его нет) сохраняется выбор
+    // пользователя — иначе схема каждый раз открывалась бы белой.
     setBranchWidth(7);
     setBranchBorder(0.6);
     setZScale(1);
@@ -2694,11 +2701,15 @@ export default function CadPage() {
     if (data.unitsConfig) setUnitsConfig(data.unitsConfig as UnitsConfig);
     if (data.branchWidth !== undefined) setBranchWidth(data.branchWidth as number);
     if (data.branchBorder !== undefined) setBranchBorder(data.branchBorder as number);
-    if (data.colorByHorizon !== undefined) { setColorByHorizon(data.colorByHorizon as boolean); }
-    // colorMode сохраняется явно — восстанавливаем точное значение
+    if (data.colorByHorizon !== undefined) setColorByHorizon(data.colorByHorizon as boolean);
+    else setColorByHorizon(prevColorByHorizon);
+    // Режим заливки восстанавливаем из файла. Если файл сохранён СТАРОЙ версией
+    // и режима в нём нет — оставляем тот, что был выбран до открытия, вместо
+    // сброса в «выкл»: иначе схема открывается белой и цвета приходится
+    // включать вручную при каждом открытии.
     if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon");
     else if (data.colorByHorizon) setColorMode("horizon");
-    else setColorMode("none");
+    else setColorMode(prevColorMode);
     if (data.posColorInner !== undefined) setPosColorInner(data.posColorInner as boolean);
     else setPosColorInner(false);
     if (data.posColorOuter !== undefined) setPosColorOuter(data.posColorOuter as boolean);
