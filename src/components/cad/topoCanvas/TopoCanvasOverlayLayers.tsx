@@ -232,7 +232,7 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
                       <g>
                         <animateTransform attributeName="transform" type="translate"
                           from="0 0" to={`${oux * oRunLen} ${ouy * oRunLen}`}
-                          dur={`${Math.max(0.15, oRunLen / oPxPerSec)}s`} repeatCount="indefinite" />
+                          dur={`${oRunLen / oPxPerSec}s`} repeatCount="indefinite" />
                         {Array.from({ length: cnt }, (_, ai) => {
                           const d0 = oSingle ? oAnimTailLen : from0 + ai * step;
                           return (
