@@ -21,6 +21,7 @@
 // поэтому R·Q² даёт мм вод. ст., а не паскали — перевод делает depression().
 // ─────────────────────────────────────────────────────────────────────────────
 import { resistanceFromPipe, depression } from "@/lib/aerodynamics";
+import { kolaVentLeak } from "@/lib/ventDuctLeakTables";
 
 /**
  * Методика расчёта утечек воздуха в ставе.
@@ -38,11 +39,20 @@ import { resistanceFromPipe, depression } from "@/lib/aerodynamics";
  *   «продавливает» воздух через стыки. Подходит, когда марка рукава неизвестна
  *   или став собран в шахте из разнородных звеньев.
  *
+ * • "kolavent" — по таблицам изготовителя KolaVent Flex («О системе расчётов»).
+ *   Ставы до 200 м считаются по формуле Kу.т = 1 + (L/100)·0,0085, длиннее —
+ *   по таблицам 1.1–1.3, где коэффициент зависит сразу от трёх величин: длины
+ *   става, диаметра рукава и количества воздуха, подаваемого в забой. Это
+ *   самые точные данные для рукава этой марки, потому что они подтверждены
+ *   изготовителем. Там, где в таблице стоит прочерк, сочетание «длина +
+ *   диаметр + расход» изготовителем не подтверждается — расчёт не выдаёт
+ *   число, а прямо говорит, какой диаметр взять.
+ *
  * Какая методика строже — зависит от данных: у нового рукава с хорошим
  * паспортом строже обычно паспортная, у става с плохими стыками — нормативная.
  * Инженер выбирает ту, которой доверяет, и может сравнить обе.
  */
-export type VpLeakMethod = "passport" | "normative";
+export type VpLeakMethod = "passport" | "normative" | "kolavent";
 
 /** Исходные данные для расчёта става */
 export interface VentPipeInput {
@@ -112,6 +122,19 @@ export interface VentPipeResult {
   deltaP: number;
   /** Скорость воздуха на выходе в забой, м/с */
   velocityFace: number;
+  /**
+   * Заполняется только для методики "kolavent": пояснение, откуда взят
+   * коэффициент утечек (формула или конкретная таблица изготовителя).
+   */
+  leakNote?: string;
+  /**
+   * Заполняется только для методики "kolavent": причина, по которой
+   * изготовитель не подтверждает это сочетание длины, диаметра и расхода.
+   * Если поле заполнено, числам расчёта доверять нельзя — нужно менять диаметр.
+   */
+  leakUnsupported?: string;
+  /** Диаметры (мм), при которых у изготовителя данные есть */
+  leakSuggest?: number[];
 }
 
 /** Плотность воздуха по умолчанию, кг/м³ */
@@ -286,16 +309,51 @@ export function calcVentPipe(input: VentPipeInput): VentPipeResult {
     rho,
   );
 
-  const delivery = input.method === "normative"
-    ? deliveryByNormative(R, input.length, input.diameter, input.linkLength, input.jointLeakK)
-    : deliveryByPassport(input.lossPer100m, input.length);
+  // Подача вентилятора нужна заранее: таблицы изготовителя привязаны к
+  // расходу В ЗАБОЕ, а он сам зависит от утечек. Разрываем эту зависимость
+  // ниже — несколькими уточняющими проходами.
+  const fanFlowPre = input.fanCurve ? solveFanFlow(input.fanCurve, R) : Math.max(0, input.fanFlow);
+
+  let leakNote: string | undefined;
+  let leakUnsupported: string | undefined;
+  let leakSuggest: number[] | undefined;
+
+  let delivery: number;
+  if (input.method === "normative") {
+    delivery = deliveryByNormative(R, input.length, input.diameter, input.linkLength, input.jointLeakK);
+  } else if (input.method === "kolavent") {
+    // Таблица выбирается по расходу в забое, а он равен подаче × доставку.
+    // Считаем итерациями: начинаем с подачи вентилятора и три раза уточняем.
+    // Сходится быстро, потому что доставка близка к единице.
+    let q = fanFlowPre;
+    let res = kolaVentLeak(input.length, input.diameter, q);
+    for (let i = 0; i < 3 && res.k != null; i++) {
+      const next = fanFlowPre / res.k;
+      const r2 = kolaVentLeak(input.length, input.diameter, next);
+      if (r2.k == null) { res = r2; break; }
+      if (Math.abs(next - q) < 0.01) { res = r2; q = next; break; }
+      q = next;
+      res = r2;
+    }
+    if (res.k == null) {
+      // Сочетание не подтверждено изготовителем. Чтобы интерфейс не показывал
+      // пустые поля, считаем по паспорту, но помечаем результат как
+      // неподтверждённый — инженер увидит предупреждение, а не молчаливое число.
+      delivery = deliveryByPassport(input.lossPer100m, input.length);
+      leakUnsupported = res.reason;
+      leakSuggest = res.suggest;
+    } else {
+      delivery = res.delivery;
+      leakNote = res.note;
+    }
+  } else {
+    delivery = deliveryByPassport(input.lossPer100m, input.length);
+  }
 
   // Подача вентилятора на ЭТОЙ длине става. Рабочая точка — пересечение
   // характеристики вентилятора H(Q) с характеристикой става ΔP = R·Q².
   // Чем длиннее став, тем выше его сопротивление и тем меньше подача.
-  const flowFan = input.fanCurve
-    ? solveFanFlow(input.fanCurve, R)
-    : Math.max(0, input.fanFlow);
+  const flowFan = fanFlowPre;
   const flowFace = flowFan * delivery;
   const leakage = flowFan - flowFace;
 
@@ -323,6 +381,9 @@ export function calcVentPipe(input: VentPipeInput): VentPipeResult {
     velocity,
     deltaP,
     velocityFace,
+    leakNote,
+    leakUnsupported,
+    leakSuggest,
   };
 }
 

@@ -42,6 +42,7 @@ export interface VentPipeReportRow {
 }
 
 const METHOD_LABEL: Record<VpLeakMethod, string> = {
+  kolavent: "по таблицам KolaVent Flex",
   passport: "по паспорту рукава",
   normative: "по нормативной формуле",
 };

@@ -176,6 +176,7 @@ export default function BranchVentPipeTab({
           value={method}
           onChange={(v) => onUpdate({ vpLeakMethod: v as VpLeakMethod })}
           options={[
+            { value: "kolavent", label: "По таблицам KolaVent Flex" },
             { value: "passport", label: "По паспорту рукава" },
             { value: "normative", label: "По нормативной формуле" },
           ]}
@@ -184,7 +185,12 @@ export default function BranchVentPipeTab({
 
       <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
         style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569" }}>
-        {method === "passport" ? (
+        {method === "kolavent" ? (
+          <>Коэффициент утечек берётся из таблиц изготовителя KolaVent Flex.
+          До 200 м — по формуле, дальше — по таблицам, где значение зависит от
+          длины става, диаметра рукава и подачи в забой. Самые точные данные
+          для этой марки.</>
+        ) : method === "passport" ? (
           <>Потери берутся из паспорта рукава — {numFmt(lossPer100m, 1)} % на
           каждые 100 м става. Точно для нового рукава известной марки.</>
         ) : (
@@ -193,6 +199,24 @@ export default function BranchVentPipeTab({
           (осторожную) оценку для става, собранного из отдельных звеньев.</>
         )}
       </div>
+
+      {method === "kolavent" && res.leakUnsupported && (
+        <Warn>
+          {res.leakUnsupported}
+          {(res.leakSuggest?.length ?? 0) > 0 && (
+            <> Для этих условий изготовитель подтверждает диаметры:{" "}
+            {res.leakSuggest!.map(d => `⌀${d}`).join(", ")} мм. Показанные ниже
+            числа посчитаны по паспорту рукава и носят справочный характер.</>
+          )}
+        </Warn>
+      )}
+
+      {method === "kolavent" && !res.leakUnsupported && res.leakNote && (
+        <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
+          style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
+          {res.leakNote} Коэффициент утечек Kу.т = {numFmt(1 / res.delivery, 3)}.
+        </div>
+      )}
 
       {method === "passport" && !brand && (
         <Warn>
@@ -230,14 +254,28 @@ export default function BranchVentPipeTab({
       {/* Сравнение методик: инженеру важно видеть, насколько расходятся
           оценки, чтобы понимать степень неопределённости. */}
       {fanFlow > 0.01 && length > 0 && (() => {
-        const other: VpLeakMethod = method === "passport" ? "normative" : "passport";
-        const alt = calcVentPipe({ ...input, method: other, length });
+        const titles: Record<VpLeakMethod, string> = {
+          kolavent: "по таблицам KolaVent Flex",
+          passport: "по паспорту рукава",
+          normative: "по нормативной формуле",
+        };
+        const others = (["kolavent", "passport", "normative"] as VpLeakMethod[])
+          .filter(m => m !== method)
+          .map(m => ({ m, r: calcVentPipe({ ...input, method: m, length }) }))
+          // Методику, которую изготовитель не подтверждает на этих условиях,
+          // в сравнении не показываем: её число ничего не значит.
+          .filter(x => !x.r.leakUnsupported);
+        if (!others.length) return null;
         return (
           <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
             style={{ background: "#fafafa", border: "1px solid #e5e7eb", color: "#4b5563" }}>
-            Для сравнения, {other === "passport" ? "по паспорту рукава" : "по нормативной формуле"}:
-            {" "}в забой пришло бы {numFmt(alt.flowFace, 2)} м³/с
-            {" "}(доставка {numFmt(alt.delivery, 3)}).
+            Для сравнения:
+            {others.map(({ m, r }) => (
+              <div key={m}>
+                {titles[m]} — в забой пришло бы {numFmt(r.flowFace, 2)} м³/с
+                {" "}(доставка {numFmt(r.delivery, 3)}).
+              </div>
+            ))}
           </div>
         );
       })()}

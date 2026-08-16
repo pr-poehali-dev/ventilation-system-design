@@ -63,7 +63,7 @@ import {
 import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import { DEFAULT_MINE_HUMIDITY, DEFAULT_SURFACE_HUMIDITY, P_STD_KPA } from "@/lib/airHumidity";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
-import { calcVentPipe } from "@/lib/ventPipeCalc";
+import { calcVentPipe, type VpLeakMethod } from "@/lib/ventPipeCalc";
 import { buildVentPipeReport, buildVentPipeReportHtml } from "@/lib/ventPipeReport";
 import { printViaIframe } from "@/components/cad/printPreview/printDialogParts";
 export type { SchemaSymbol } from "./cad/cadTypes";
@@ -3620,7 +3620,7 @@ export default function CadPage() {
           if (fanFlow < 0.01) continue;
 
           const inp = {
-            method: (b.vpLeakMethod ?? "passport") as "passport" | "normative",
+            method: (b.vpLeakMethod ?? "passport") as VpLeakMethod,
             diameter: b.vpDiameter ?? 0,
             alpha: brand?.alpha ?? b.vpPipeAlpha ?? 0,
             lossPer100m: size?.lossPer100m ?? b.vpLeakageCoeff ?? 0,
