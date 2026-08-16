@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import { type Section } from "@/components/cad/help/HelpPrimitives";
 import { HELP_SECTIONS_BASICS } from "@/components/cad/help/helpSectionsBasics";
 import { HELP_SECTIONS_SCHEMA } from "@/components/cad/help/helpSectionsSchema";
+import { HELP_SECTIONS_VENTPIPE } from "@/components/cad/help/helpSectionsVentPipe";
 import { HELP_SECTIONS_ADVANCED } from "@/components/cad/help/helpSectionsAdvanced";
 
 interface Props {
@@ -12,14 +13,19 @@ interface Props {
 export default function HelpDialog({ onClose }: Props) {
   const [activeSection, setActiveSection] = useState("overview");
 
-  // Порядок разделов сохранён в точности как был в едином файле:
+  // Порядок разделов — от простого к сложному:
   // обзор → быстрый старт → интерфейс → файлы → импорт →
   // топология → свойства ветви → вентиляция → УО →
+  // вентстав → анализ и проверки → маркшейдерские координаты →
   // аварии → ППЗ → горноспасатели → отображение → клавиши →
   // справочники → печать → советы.
+  //
+  // Вентстав, проверки и координаты стоят сразу после базовой вентиляции:
+  // это темы повседневной работы, а не редкие аварийные расчёты.
   const sections: Section[] = [
     ...HELP_SECTIONS_BASICS,
     ...HELP_SECTIONS_SCHEMA,
+    ...HELP_SECTIONS_VENTPIPE,
     ...HELP_SECTIONS_ADVANCED,
   ];
 
