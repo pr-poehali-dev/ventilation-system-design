@@ -110,8 +110,14 @@ export function buildVentPipeReport(
       : (calcFaceDemand(b, ventNorms, section).total ?? 0);
 
     const workPressure = size?.workPressure ?? b.vpWorkPressure ?? 0;
+    // Потолок по давлению — только паспортный предел рукава. Напор вентилятора
+    // сюда не входит, если известна его характеристика: она уже учтена в
+    // рабочей точке (подробнее — в BranchVentPipeTab). Иначе предельная длина
+    // получалась тем меньше, чем мощнее вентилятор.
     const pressureLimit = (() => {
-      const limits = [fanPressure, workPressure].filter(v => v > 0);
+      const limits = fanCurve
+        ? [workPressure].filter(v => v > 0)
+        : [fanPressure, workPressure].filter(v => v > 0);
       return limits.length ? Math.min(...limits) : 0;
     })();
 
