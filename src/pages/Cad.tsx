@@ -89,6 +89,7 @@ import { useCadHotkeys } from "./cad/useCadHotkeys";
 import { useCadSchemaCheck, useCadLeftPanelResize } from "./cad/useCadSchemaCheck";
 import { useCadHeaters } from "./cad/useCadHeaters";
 import { buildVentPipeLine as buildVentPipeLineImpl } from "./cad/buildVentPipeLine";
+import { collectVentPipeLine, removeVentPipeLine } from "./cad/ventPipeLineOps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -802,6 +803,34 @@ export default function CadPage() {
       nodes, branchesRaw, branchWidth, nextNodeId, nextBranchId, pushHistory,
       setNodes, setBranches, setSelectedBranchIds, setSelectedBranchId, setSelectedNodeId,
     });
+  };
+
+  // ─── ОПЕРАЦИИ НАД ВСЕМ ВЕНТСТАВОМ ЦЕЛИКОМ ────────────────────────────
+  // Став состоит из десятков ветвей, и раньше его правка сводилась к тому,
+  // чтобы удалить их по одной и построить став заново. Эти две операции
+  // работают со ставом как с единым объектом.
+
+  /** Выделяет став целиком и открывает диалог его параметров. */
+  const editVentPipeLine = (branchId: string): void => {
+    const line = collectVentPipeLine(branchId, branchesRaw);
+    if (line.length === 0) return;
+    setSelectedBranchIds(new Set(line));
+    setSelectedBranchId(line[0]);
+    setVentPipeBranchIds(line);
+    setShowVentPipeDialog(true);
+  };
+
+  /** Удаляет став целиком вместе с его узлами-дубликатами. */
+  const deleteVentPipeLine = (branchId: string): void => {
+    const line = collectVentPipeLine(branchId, branchesRaw);
+    if (line.length === 0) return;
+    pushHistory();
+    const res = removeVentPipeLine(line, nodes, branchesRaw);
+    setNodes(res.nodes);
+    setBranches(res.branches);
+    setSelectedBranchId(null);
+    setSelectedBranchIds(new Set());
+    setSelectedNodeId(null);
   };
 
   // ─── РАЗДЕЛЕНИЕ ВЕТВИ НОВЫМ УЗЛОМ ───────────────────────────────────
@@ -4066,6 +4095,10 @@ export default function CadPage() {
         }
         break;
       }
+      // Правка и удаление ВСЕГО става одним действием: сегменты собираются
+      // обходом по связи, вручную выделять их больше не нужно.
+      case "edit_vent_pipe_line": if (branchId) editVentPipeLine(branchId); break;
+      case "delete_vent_pipe_line": if (branchId) deleteVentPipeLine(branchId); break;
       case "copy_branch_params": {
         const src = branchId ? branches.find((b) => b.id === branchId) : null;
         if (src) {
@@ -12657,6 +12690,7 @@ export default function CadPage() {
       setShowVentPipeDialog={setShowVentPipeDialog}
       ventPipeBranchIds={ventPipeBranchIds}
       buildVentPipeLine={buildVentPipeLine}
+      deleteVentPipeLine={deleteVentPipeLine}
       showHelpDialog={showHelpDialog}
       setShowHelpDialog={setShowHelpDialog}
     />

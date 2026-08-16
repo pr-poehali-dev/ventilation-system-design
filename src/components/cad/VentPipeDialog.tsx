@@ -68,6 +68,14 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
   const [manualRVal, setManualRVal]   = useState(first.vpManualR ?? 0);
   // Марка рукава из справочника — подставляет паспортные характеристики
   const [brandId, setBrandId]         = useState(first.vpBrandId ?? "");
+  // Длина одного звена рукава и требуемый расход в забое участвуют в расчёте
+  // доставки воздуха. Раньше их можно было задать только в панели свойств
+  // отдельной ветви — при правке всего става это было неудобно.
+  const [linkLength, setLinkLength]   = useState(first.vpLinkLength ?? 20);
+  const [requiredFlow, setRequiredFlow] = useState(first.vpRequiredFlow ?? 0);
+
+  // Правка готовой нити: все выбранные ветви уже являются ветвями става.
+  const editingLine = branches.every(b => b.isVentPipeBranch);
 
   const brand = getDuctBrand(brandId);
   const brandSize = getDuctSize(brand, diameter);
@@ -126,6 +134,8 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       vpManualR: manualR ? manualRVal : 0,
       vpBrandId: brandId,
       vpWorkPressure: brandSize?.workPressure ?? 0,
+      vpLinkLength: linkLength,
+      vpRequiredFlow: requiredFlow,
       vpComputedR: R,
       vpComputedFlow: 0,
       vpComputedVelocity: 0,
@@ -159,9 +169,11 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
           style={{ background: "#1a3a6b" }}>
           <div className="flex items-center gap-2 text-white font-bold text-[14px]">
             <Icon name="Wind" size={16} />
-            {multi
-              ? `Вентрубопровод — ${branches.length} ветв.`
-              : "Вентиляционный трубопровод"}
+            {editingLine
+              ? `Вентстав — правка целиком (${branches.length} сегм.)`
+              : multi
+                ? `Вентрубопровод — ${branches.length} ветв.`
+                : "Вентиляционный трубопровод"}
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white">
             <Icon name="X" size={16} />
@@ -174,8 +186,14 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <div className="text-[11px] font-semibold text-blue-700 mb-1 flex items-center gap-1">
               <Icon name="Route" size={12} />
-              Маршрут трубопровода
+              {editingLine ? "Существующий став" : "Маршрут трубопровода"}
             </div>
+            {editingLine && (
+              <div className="text-[11px] text-blue-800 mb-1">
+                Изменения применятся ко всем {branches.length} сегментам става сразу —
+                удалять и строить его заново не нужно.
+              </div>
+            )}
             <div className="text-[12px] text-blue-900">
               {multi
                 ? `${branches.length} ветвей · Узлы: ${branches[0].fromId.slice(-4)} → … → ${branches[branches.length - 1].toId.slice(-4)}`
@@ -337,7 +355,29 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                 onChange={e => setJoints(Number(e.target.value))}
                 className={inputCls} />
               <div className="text-[10px] text-gray-500 mt-0.5">
-                ξ стыка ≈ 0.05 за шт.
+                ξ стыка ≈ 0.05 за шт. На весь став
+              </div>
+            </div>
+          </div>
+
+          {/* Звено рукава и требуемый расход — участвуют в расчёте доставки */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Длина звена рукава, м</label>
+              <input type="number" min={1} step={1} value={linkLength}
+                onChange={e => setLinkLength(Number(e.target.value))}
+                className={inputCls} />
+              <div className="text-[10px] text-gray-500 mt-0.5">
+                Обычно 5–20 м. Задаёт частоту стыков
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Требуется в забое, м³/с</label>
+              <input type="number" min={0} step={0.1} value={requiredFlow}
+                onChange={e => setRequiredFlow(Number(e.target.value))}
+                className={inputCls} placeholder="0 — по расчёту потребности" />
+              <div className="text-[10px] text-gray-500 mt-0.5">
+                0 — берётся из расчёта потребности воздуха
               </div>
             </div>
           </div>
@@ -429,7 +469,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
           <button onClick={onRemove}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] border border-red-200 text-red-600 hover:bg-red-50">
             <Icon name="Trash2" size={13} />
-            Удалить трубу
+            {editingLine ? "Удалить весь став" : "Удалить трубу"}
           </button>
           <div className="flex-1" />
           <button onClick={onClose}

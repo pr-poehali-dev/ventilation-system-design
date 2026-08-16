@@ -138,6 +138,8 @@ export interface CadToolDialogsProps {
   setShowVentPipeDialog: (v: boolean) => void;
   ventPipeBranchIds: string[];
   buildVentPipeLine: (branchIds: string[], vpPatch: Partial<TopoBranch>) => void;
+  /** Удаление всего става целиком — по любой его ветви */
+  deleteVentPipeLine: (branchId: string) => void;
 
   // Помощь
   showHelpDialog: boolean;
@@ -349,9 +351,16 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
               p.buildVentPipeLine(p.ventPipeBranchIds, patch);
             }}
             onRemove={() => {
-              // Удаляем ранее навешенный флаг-оверлей на выбранных ветвях (legacy).
-              p.ventPipeBranchIds.forEach(id => p.updateBranch(id, { hasVentPipe: false }, false));
-              p.pushHistory();
+              // Если открыта готовая нить — сносим став целиком (ветви + узлы),
+              // иначе пришлось бы удалять сегменты по одному. Для legacy-оверлея
+              // на обычной выработке просто снимаем флаг.
+              const line = vpBranches.filter(b => b.isVentPipeBranch);
+              if (line.length > 0) {
+                p.deleteVentPipeLine(line[0].id);
+              } else {
+                p.ventPipeBranchIds.forEach(id => p.updateBranch(id, { hasVentPipe: false }, false));
+                p.pushHistory();
+              }
               p.setShowVentPipeDialog(false);
             }}
           />

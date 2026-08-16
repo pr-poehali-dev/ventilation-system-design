@@ -64,6 +64,21 @@ export function branchContextItems(branch: TopoBranch | null, hasBuffer: boolean
         : (branch?.hasVentPipe ? "✎ Вентрубопровод (изменить)" : "+ Вентрубопровод"),
       icon: "Wind",
     },
+    // Операции над ВСЕМ ставом: показываем только когда клик пришёлся на его
+    // ветвь. Иначе пришлось бы выделять сегменты по одному, как было раньше.
+    ...(branch?.isVentPipeBranch ? [
+      {
+        id: "edit_vent_pipe_line",
+        label: "✎ Изменить весь став (диаметр, марка, стыки)",
+        icon: "Settings2",
+      },
+      {
+        id: "delete_vent_pipe_line",
+        label: "Удалить весь став",
+        icon: "Trash2",
+        danger: true,
+      },
+    ] : []),
     { id: "align_distribute", label: "Выровнять и распределить ▶", icon: "AlignCenter", disabled: true },
     { id: "div4", label: "", divider: true },
     {
