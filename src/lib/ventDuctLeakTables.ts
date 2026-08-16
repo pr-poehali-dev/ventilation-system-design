@@ -199,11 +199,22 @@ function lerp(x: number, x1: number, y1: number, x2: number, y2: number): number
   return y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
 }
 
-/** Подбирает таблицу по расходу воздуха в забое */
-function pickTable(flow: number): LeakTable {
-  if (flow <= 15) return TABLE_1_1;
-  if (flow <= 50) return TABLE_1_2;
-  return TABLE_1_3;
+/**
+ * Подбирает таблицы по расходу воздуха в забое.
+ *
+ * Обычно подходит ровно одна таблица, но на стыках диапазонов их две: расход
+ * 50 м³/с есть и в таблице 1.2 (как верхняя граница), и в таблице 1.3 (как
+ * первая колонка), а 15 м³/с — граница между 1.1 и 1.2. На стыке возвращаем
+ * обе: у них разные наборы диаметров, и рукав, которого нет в одной, может
+ * быть в другой. Иначе на ровной цифре 50 м³/с расчёт отказывал бы для ⌀1400,
+ * хотя у изготовителя данные для него есть.
+ */
+function pickTables(flow: number): LeakTable[] {
+  if (flow < 15) return [TABLE_1_1];
+  if (flow === 15) return [TABLE_1_1, TABLE_1_2];
+  if (flow < 50) return [TABLE_1_2];
+  if (flow === 50) return [TABLE_1_2, TABLE_1_3];
+  return [TABLE_1_3];
 }
 
 /**
@@ -282,45 +293,52 @@ export function kolaVentLeak(lengthM: number, diameterMm: number, flowFace: numb
     };
   }
 
-  const t = pickTable(q);
+  const tables = pickTables(q);
+
+  // Пробуем каждую подходящую таблицу: на стыке диапазонов их две.
+  for (const t of tables) {
+    const lens = Object.keys(t.rows).map(Number).sort((a, b) => a - b);
+
+    // Точное совпадение по длине
+    const exact = valueAtLength(t, L, dM, q);
+    if (exact != null) {
+      return {
+        k: exact,
+        delivery: 1 / exact,
+        source: "table",
+        table: t.label,
+        note: `Таблица ${t.label} изготовителя: став ${Math.round(L)} м, рукав ⌀${Math.round(diameterMm)} мм, подача в забой ${q.toFixed(1)} м³/с.`,
+      };
+    }
+
+    // Длина между строками таблицы — интерполируем по соседним строкам,
+    // где для этого диаметра значение есть.
+    const below = [...lens].reverse().find(l => l < L && valueAtLength(t, l, dM, q) != null);
+    const above = lens.find(l => l > L && valueAtLength(t, l, dM, q) != null);
+
+    if (below != null && above != null) {
+      const k = lerp(L, below, valueAtLength(t, below, dM, q)!, above, valueAtLength(t, above, dM, q)!);
+      return {
+        k,
+        delivery: 1 / k,
+        source: "table",
+        table: t.label,
+        note: `Таблица ${t.label}: значение получено между строками ${below} и ${above} м для рукава ⌀${Math.round(diameterMm)} мм.`,
+      };
+    }
+  }
+
+  // Ни одна таблица не дала значения — объясняем причину по основной таблице.
+  const t = tables[tables.length - 1];
   const lens = Object.keys(t.rows).map(Number).sort((a, b) => a - b);
-
-  // Точное совпадение по длине
-  const exact = valueAtLength(t, L, dM, q);
-  if (exact != null) {
-    const k = exact;
-    return {
-      k,
-      delivery: 1 / k,
-      source: "table",
-      table: t.label,
-      note: `Таблица ${t.label} изготовителя: став ${Math.round(L)} м, рукав ⌀${Math.round(diameterMm)} мм, подача в забой ${q.toFixed(1)} м³/с.`,
-    };
-  }
-
-  // Длина между строками таблицы — интерполируем по соседним строкам,
-  // где для этого диаметра значение есть.
-  const below = [...lens].reverse().find(l => l < L && valueAtLength(t, l, dM, q) != null);
-  const above = lens.find(l => l > L && valueAtLength(t, l, dM, q) != null);
-
-  if (below != null && above != null) {
-    const k = lerp(L, below, valueAtLength(t, below, dM, q)!, above, valueAtLength(t, above, dM, q)!);
-    return {
-      k,
-      delivery: 1 / k,
-      source: "table",
-      table: t.label,
-      note: `Таблица ${t.label}: значение получено между строками ${below} и ${above} м для рукава ⌀${Math.round(diameterMm)} мм.`,
-    };
-  }
+  const maxLen = lens[lens.length - 1];
 
   // Став длиннее последней строки таблицы — за пределы не экстраполируем:
   // утечки растут нелинейно, и такой прогноз изготовитель не подтверждает.
   // Важно не спутать это с прочерком: если в таблице ЕСТЬ строки длиннее
   // нашего става, значит дело не в длине, а в неподтверждённом сочетании
   // диаметра и расхода — иначе инженер получил бы неверную подсказку.
-  const maxLen = lens[lens.length - 1];
-  if (below != null && above == null && L > maxLen) {
+  if (L > maxLen) {
     return {
       k: null,
       reason: `Став ${Math.round(L)} м длиннее последней строки таблицы ${t.label} (${maxLen} м). Изготовитель такую длину не подтверждает.`,
@@ -328,9 +346,14 @@ export function kolaVentLeak(lengthM: number, diameterMm: number, flowFace: numb
     };
   }
 
+  // Подсказку собираем по всем подходящим таблицам: на стыке диапазонов
+  // нужный диаметр может найтись в соседней.
+  const suggest = [...new Set(tables.flatMap(x => availableDiameters(x, L, q)))]
+    .sort((a, b) => a - b);
+
   return {
     k: null,
     reason: `В таблице ${t.label} нет данных для рукава ⌀${Math.round(diameterMm)} мм при ставе ${Math.round(L)} м и подаче ${q.toFixed(1)} м³/с — изготовитель ставит прочерк.`,
-    suggest: availableDiameters(t, L, q),
+    suggest,
   };
 }

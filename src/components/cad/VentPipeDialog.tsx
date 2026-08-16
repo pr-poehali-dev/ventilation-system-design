@@ -219,7 +219,9 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                       ["Температура эксплуатации", `${brand.tempMin} … +${brand.tempMax} °C`],
                       ["Эл. стат. сопротивление, не более", `${formatStaticResistance(brand.staticResistance)} Ом`],
                       ["Кислородный индекс, не менее", `${brand.oxygenIndex} %`],
-                      ["Рабочее давление (нагнетание), не более", `${(brandSize ?? brand.sizes[0]).workPressure} Па`],
+                      ["Рабочее давление (нагнетание), не более",
+                        `${(brandSize ?? brand.sizes[0]).workPressure} Па`
+                        + ((brandSize ?? brand.sizes[0]).workPressureEstimated ? " (оценка)" : "")],
                     ].map(([k, v], i) => (
                       <tr key={k} style={{ background: i % 2 ? "#fafafa" : "white" }}>
                         <td className="px-3 py-1 text-gray-600 align-top">{k}</td>
@@ -229,7 +231,12 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                   </tbody>
                 </table>
                 <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200 bg-gray-50">
-                  Паспортные утечки и рабочее давление подставлены в расчёт автоматически
+                  Паспортные утечки и рабочее давление подставлены в расчёт автоматически.
+                  {(brandSize ?? brand.sizes[0]).workPressureEstimated && (
+                    <> Изготовитель приводит предельное давление только для ⌀1000 и
+                    ⌀1200 мм. Для этого диаметра оно оценено расчётом в запас —
+                    уточните у изготовителя, если давление в ставе близко к пределу.</>
+                  )}
                 </div>
               </div>
             )}

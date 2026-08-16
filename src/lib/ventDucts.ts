@@ -22,6 +22,21 @@ export interface VentDuctSize {
   lossPer100m: number;
   /** Рабочее давление на нагнетание, не более, Па */
   workPressure: number;
+  /**
+   * Рабочее давление получено расчётом, а не взято из паспорта.
+   *
+   * Изготовитель приводит предельное давление только для ⌀1000 и ⌀1200 мм.
+   * Для остальных типоразмеров оно оценено по закону Лапласа для тонкостенной
+   * оболочки: при одной и той же ткани произведение «давление × диаметр»
+   * постоянно, то есть узкий рукав держит больше, широкий — меньше.
+   * За опорное взято наименьшее из паспортных произведений (18 000 Па × 1 м),
+   * поэтому оценка идёт В ЗАПАС: для ⌀1200 она даёт 15 000 Па против
+   * паспортных 16 000.
+   *
+   * Такие значения помечаются в интерфейсе, чтобы инженер видел разницу между
+   * паспортом и расчётной оценкой и при необходимости уточнил у изготовителя.
+   */
+  workPressureEstimated?: boolean;
 }
 
 export interface VentDuctBrand {
@@ -67,9 +82,25 @@ export const VENT_DUCT_BRANDS: VentDuctBrand[] = [
     id: "kolavent_flex_as",
     name: "KolaVent Flex AS",
     maker: "Вентиляционный рукав",
+    // Типоразмеры. ⌀1000 и ⌀1200 — полностью паспортные. Остальные диаметры
+    // взяты из таблиц утечек изготовителя (таблицы 1.1–1.3 «О системе
+    // расчётов»): там фигурируют рукава от 600 до 2400 мм.
+    //
+    // Про потери 1,2 % на 100 м: это паспортная величина мембраны, она задана
+    // свойствами ткани и стыков, а не диаметром, поэтому распространена на все
+    // типоразмеры. При расчёте по методике «По таблицам KolaVent Flex» она
+    // вообще не используется — там утечки берутся напрямую из таблиц, где
+    // диаметр учтён. Величина работает только в запасной паспортной методике.
     sizes: [
+      { diameter: 600,  lossPer100m: 1.2, workPressure: 30000, workPressureEstimated: true },
+      { diameter: 800,  lossPer100m: 1.2, workPressure: 22500, workPressureEstimated: true },
       { diameter: 1000, lossPer100m: 1.2, workPressure: 18000 },
       { diameter: 1200, lossPer100m: 1.2, workPressure: 16000 },
+      { diameter: 1400, lossPer100m: 1.2, workPressure: 13000, workPressureEstimated: true },
+      { diameter: 1600, lossPer100m: 1.2, workPressure: 11000, workPressureEstimated: true },
+      { diameter: 1800, lossPer100m: 1.2, workPressure: 10000, workPressureEstimated: true },
+      { diameter: 2000, lossPer100m: 1.2, workPressure: 9000,  workPressureEstimated: true },
+      { diameter: 2400, lossPer100m: 1.2, workPressure: 7500,  workPressureEstimated: true },
     ],
     density: 730,
     densityTol: 5,

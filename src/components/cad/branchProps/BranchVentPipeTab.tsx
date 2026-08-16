@@ -411,8 +411,14 @@ export default function BranchVentPipeTab({
       </InlineLabel>
       {workPressure > 0 && (
         <InlineLabel label="Предел рукава, Па">
-          <ComputedInput value={numFmt(workPressure, 0)} />
+          <ComputedInput value={numFmt(workPressure, 0) + (size?.workPressureEstimated ? " (оценка)" : "")} />
         </InlineLabel>
+      )}
+      {size?.workPressureEstimated && (
+        <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+          Изготовитель даёт предельное давление только для ⌀1000 и ⌀1200 мм.
+          Для этого диаметра оно оценено расчётом в запас.
+        </div>
       )}
       <InlineLabel label="Скорость, м/с">
         <ComputedInput value={numFmt(res.velocity, 1)} />
