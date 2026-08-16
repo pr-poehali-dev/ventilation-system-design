@@ -294,6 +294,8 @@ export default function CadPage() {
   const [surveyEditMode, setSurveyEditMode] = useState(false);
   // Сколько узлов сдвинуто с маркшейдерских мест — счётчик в статусной строке.
   const movedNodeCount = useMemo(() => nodes.filter(isNodeMoved).length, [nodes]);
+  // Окно подтверждения возврата схемы к маркшейдерским координатам (F5).
+  const [resetSurveyDialog, setResetSurveyDialog] = useState(false);
 
   // Авто-пересчёт длин и аэродинамики по координатам/параметрам
   const branches = useMemo(() => recalcAll(nodes, branchesRaw), [nodes, branchesRaw]);
@@ -941,6 +943,16 @@ export default function CadPage() {
       const s = surveyXYZ(n);
       return { ...n, x: s.x, y: s.y, z: s.z };
     }));
+  };
+
+  /**
+   * Запрос возврата схемы к маркшейдерским координатам (клавиша F5).
+   * Показывает окно подтверждения — операция затрагивает всю схему сразу.
+   * Если ничего не сдвинуто, возвращать нечего: окно не открываем.
+   */
+  const requestResetToSurvey = () => {
+    if (movedNodeCount === 0) return;
+    setResetSurveyDialog(true);
   };
 
   /**
@@ -4134,7 +4146,8 @@ export default function CadPage() {
     handleReverseBranch, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
-    setThinLines, setSurveyEditMode, setPositions, setLeaderDrawMode, setLeaderExtraMode,
+    setThinLines, setSurveyEditMode, requestResetToSurvey,
+    setPositions, setLeaderDrawMode, setLeaderExtraMode,
     setLeaderCursorScreen, setLeaderSnapBranch, setShowSelectSimilar,
     setSelectedNodeId, setSelectedBranchId, setTool,
   });
@@ -12877,6 +12890,11 @@ export default function CadPage() {
       fanScale={fanScale}
       setFanScale={setFanScale}
       setScaleLimitsEnabled={setScaleLimitsEnabled}
+      resetSurveyDialog={resetSurveyDialog}
+      setResetSurveyDialog={setResetSurveyDialog}
+      resetAllNodesToSurvey={resetAllNodesToSurvey}
+      movedNodeCount={movedNodeCount}
+      nodeCount={nodes.length}
       deleteBranchDialog={deleteBranchDialog}
       setDeleteBranchDialog={setDeleteBranchDialog}
       confirmDeleteBranches={confirmDeleteBranches}

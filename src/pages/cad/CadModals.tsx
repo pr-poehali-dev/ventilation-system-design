@@ -40,6 +40,13 @@ export interface CadModalsProps {
   fanScale: number; setFanScale: (v: number) => void;
   setScaleLimitsEnabled: (v: boolean) => void;
 
+  // Возврат схемы к маркшейдерским координатам (F5)
+  resetSurveyDialog: boolean;
+  setResetSurveyDialog: (v: boolean) => void;
+  resetAllNodesToSurvey: () => void;
+  movedNodeCount: number;
+  nodeCount: number;
+
   // Подтверждение удаления ветвей (УО и осиротевшие узлы)
   deleteBranchDialog: DeleteBranchPlan | null;
   setDeleteBranchDialog: (v: DeleteBranchPlan | null) => void;
@@ -301,6 +308,59 @@ export default function CadModals(p: CadModalsProps) {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ ДИАЛОГ: ВЕРНУТЬ СХЕМУ К МАРКШЕЙДЕРСКИМ КООРДИНАТАМ (F5) ════════ */}
+      {p.resetSurveyDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
+          <div className="flex flex-col shadow-2xl border border-gray-400"
+            style={{ width: 400, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+            <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
+              style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+              <span className="text-[12px] font-semibold text-gray-800">
+                Вернуть схему к маркшейдерским координатам
+              </span>
+              <button onClick={() => p.setResetSurveyDialog(false)}
+                className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
+                <Icon name="X" size={12} />
+              </button>
+            </div>
+
+            <div className="p-4 flex flex-col gap-3">
+              <div className="rounded text-[11px] px-3 py-2"
+                style={{ background: "#eff6ff", border: "1px solid #93c5fd" }}>
+                <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
+                  <Icon name="MapPin" size={12} />
+                  Будет возвращено на место: {p.movedNodeCount} узл. из {p.nodeCount}
+                </div>
+                <div className="text-[11px] text-blue-900 leading-relaxed">
+                  Узлы встанут туда, где выработки находятся на самом деле.
+                  Сдвиги, сделанные для читаемости схемы, будут отменены.
+                </div>
+              </div>
+              <div className="text-[11px] text-gray-600 leading-relaxed">
+                На расчёт это не влияет: длины выработок и воздухораспределение
+                и так считались по маркшейдерским координатам. Меняется только
+                вид схемы. Действие отменяется через Ctrl+Z.
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
+              style={{ background: "#f8f8f8" }}>
+              <button onClick={() => p.setResetSurveyDialog(false)}
+                className="text-[11px] px-3 py-1 rounded"
+                style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}>
+                Отмена
+              </button>
+              <button
+                onClick={() => { p.resetAllNodesToSurvey(); p.setResetSurveyDialog(false); }}
+                className="text-[11px] px-3 py-1 rounded font-semibold"
+                style={{ background: "#1d4ed8", border: "1px solid #1d4ed8", color: "white", cursor: "pointer" }}>
+                Вернуть на место
+              </button>
             </div>
           </div>
         </div>

@@ -52,6 +52,8 @@ export interface CadHotkeysDeps {
   setThinLines: (fn: (v: boolean) => boolean) => void;
   /** Переключение режима правки маркшейдерских координат (F2) */
   setSurveyEditMode?: (fn: (v: boolean) => boolean) => void;
+  /** Запрос возврата схемы к маркшейдерским координатам (F5) */
+  requestResetToSurvey?: () => void;
   setPositions: (fn: (prev: Position[]) => Position[]) => void;
   setLeaderDrawMode: (v: string | null) => void;
   setLeaderExtraMode: (v: boolean) => void;
@@ -78,7 +80,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
     handleReverseBranch, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
-    setThinLines, setSurveyEditMode, setPositions, setLeaderDrawMode, setLeaderExtraMode,
+    setThinLines, setSurveyEditMode, requestResetToSurvey, setPositions, setLeaderDrawMode, setLeaderExtraMode,
     setLeaderCursorScreen, setLeaderSnapBranch, setShowSelectSimilar,
     setSelectedNodeId, setSelectedBranchId, setTool,
   } = d;
@@ -180,6 +182,15 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
       if (e.key === "F2") {
         e.preventDefault();
         setSurveyEditMode?.((v) => !v);
+        return;
+      }
+      // F5 — вернуть схему к маркшейдерским координатам (через подтверждение).
+      // Браузерное «обновить страницу» здесь перехватывается намеренно: в CAD
+      // перезагрузка означала бы потерю несохранённой схемы, а F5 привычна как
+      // «освежить вид». Работает и в браузере, и в десктопной оболочке.
+      if (e.key === "F5") {
+        e.preventDefault();
+        requestResetToSurvey?.();
         return;
       }
       // F6, F9 — всегда работают
