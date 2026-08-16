@@ -69,11 +69,29 @@ export function planBranchDeletion(
   }
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  /** Номер узла для подписи. У импортированных схем id — длинный UUID,
+   *  поэтому показываем именно номер, а голый id не показываем никогда. */
+  const nodeLabel = (id: string): string => {
+    const n = nodeMap.get(id);
+    return n?.number || n?.name || "?";
+  };
+
+  /**
+   * Подпись выработки для списка. Название выработки хранится в поле type
+   * («Уклон КТВР гор. +390/+130 м»), поле name используется редко. Раньше при
+   * пустом названии в окно попадал внутренний идентификатор вида
+   * 944f65d8-e6f1-…, который пользователю ничего не говорит. Теперь вместо
+   * него показываем узлы, между которыми идёт выработка, и её длину.
+   */
   const branchName = (b: TopoBranch): string => {
     const nm = (b as TopoBranch & { name?: string }).name;
-    if (nm) return nm;
-    if (b.type) return b.type;
-    return `Ветвь ${b.id.slice(-4)}`;
+    const title = (b.type || nm || "").trim();
+    const route = `${nodeLabel(b.fromId)} → ${nodeLabel(b.toId)}`;
+    const len = b.length > 0 ? `, L=${Math.round(b.length)} м` : "";
+    return title
+      ? `${title} (узлы ${route}${len})`
+      : `Без названия · узлы ${route}${len}`;
   };
 
   return {
@@ -83,7 +101,10 @@ export function planBranchDeletion(
     orphanNodeIds: orphanIds,
     orphanNodeLabels: orphanIds.map(id => {
       const n = nodeMap.get(id);
-      return n ? `Узел ${n.number || n.name || id.slice(-4)}` : `Узел ${id.slice(-4)}`;
+      if (!n) return `Узел ${nodeLabel(id)}`;
+      // Номер узла плюс название, если оно задано: «Узел 6 — Сопряжение СВС».
+      const num = n.number || n.name || "?";
+      return n.number && n.name ? `Узел ${n.number} — ${n.name}` : `Узел ${num}`;
     }),
   };
 }
