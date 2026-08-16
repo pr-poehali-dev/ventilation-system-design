@@ -10,10 +10,24 @@ export interface TopoNode {
   number: string;
   // Видимость на схеме (управляется из панели информации). undefined = видим
   visible?: boolean;
-  // Физические координаты (метры)
+  // Координаты ОТРИСОВКИ на схеме (метры). Их меняет перетаскивание узла
+  // мышью: схему часто нужно раздвинуть, чтобы подписи не наезжали друг на
+  // друга. На расчёт эти координаты не влияют.
   x: number;
   y: number;
   z: number;        // высотная отметка
+
+  // ─── Маркшейдерские (эталонные) координаты ──────────────────────────
+  // Настоящее положение узла в горных выработках. Именно по ним считаются
+  // длины ветвей, а значит и аэродинамическое сопротивление, и всё
+  // воздухораспределение. Перетаскивание узла мышью их НЕ меняет — иначе
+  // сдвиг узла ради читаемости схемы молча искажал бы расчёт.
+  //
+  // undefined = эталон ещё не зафиксирован; тогда за маркшейдерские
+  // принимаются координаты отрисовки (см. surveyXYZ ниже).
+  surveyX?: number;
+  surveyY?: number;
+  surveyZ?: number;
   // Вентиляция
   airTemp: number;       // °C
   // Относительная влажность воздуха, % (норматив, прил. 9, форм. 9.2).
@@ -814,10 +828,15 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
 // Угол наклона ветви в градусах (-90..+90) из координат узлов
 // +90 — вертикально вверх (to выше from), -90 — вертикально вниз (to ниже from), 0 — горизонтально
 // Знак критичен для расчёта тепловой депрессии пожара: нисходящая = отрицательный угол
+// Как и длина, считается по МАРКШЕЙДЕРСКИМ координатам: от угла зависят
+// естественная тяга и тепловая депрессия пожара, и сдвиг узла на схеме
+// не должен их менять.
 export function calcBranchAngle(from: TopoNode, to: TopoNode): number {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dz = to.z - from.z;
+  const a = surveyXYZ(from);
+  const b = surveyXYZ(to);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dz = b.z - a.z;
   const horizLen = Math.sqrt(dx * dx + dy * dy);
   const len3d = Math.sqrt(horizLen * horizLen + dz * dz);
   if (len3d < 0.001) return 0;
@@ -825,11 +844,42 @@ export function calcBranchAngle(from: TopoNode, to: TopoNode): number {
   return Math.round(Math.asin(dz / len3d) * (180 / Math.PI) * 10) / 10;
 }
 
-// Длина ветви в 3D пространстве по координатам узлов
+/**
+ * Маркшейдерские координаты узла — то, где выработка находится на самом деле.
+ * Если эталон ещё не зафиксирован, за него принимаются координаты отрисовки:
+ * так старые проекты, сохранённые до появления эталона, считаются как прежде.
+ */
+export function surveyXYZ(n: TopoNode): { x: number; y: number; z: number } {
+  return {
+    x: n.surveyX ?? n.x,
+    y: n.surveyY ?? n.y,
+    z: n.surveyZ ?? n.z,
+  };
+}
+
+/** Насколько узел сдвинут от своего маркшейдерского положения, м. */
+export function nodeSurveyOffset(n: TopoNode): number {
+  const s = surveyXYZ(n);
+  return Math.hypot(n.x - s.x, n.y - s.y, n.z - s.z);
+}
+
+/** Сдвинут ли узел с маркшейдерского места (порог — 1 см, чтобы не ловить шум). */
+export function isNodeMoved(n: TopoNode): boolean {
+  return nodeSurveyOffset(n) > 0.01;
+}
+
+/**
+ * Длина ветви в 3D. Считается по МАРКШЕЙДЕРСКИМ координатам: длина входит в
+ * сопротивление выработки, поэтому сдвиг узла ради читаемости схемы не должен
+ * её менять. Раньше длина бралась с координат отрисовки, и подвинутый на 20 м
+ * узел молча менял сопротивление и всё воздухораспределение.
+ */
 export function calcBranchLength(from: TopoNode, to: TopoNode): number {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dz = to.z - from.z;
+  const a = surveyXYZ(from);
+  const b = surveyXYZ(to);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dz = b.z - a.z;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 

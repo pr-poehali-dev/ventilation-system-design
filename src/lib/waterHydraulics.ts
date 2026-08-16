@@ -15,7 +15,7 @@
 // Для сложных кольцевых сетей выполняем несколько итераций до сходимости.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { type TopoNode, type TopoBranch } from "@/lib/topology";
+import { type TopoNode, type TopoBranch, surveyXYZ } from "@/lib/topology";
 
 export interface WaterNodeResult {
   nodeId: string;
@@ -454,7 +454,11 @@ export function calcWaterNetwork(
         // Высотная поправка
         const fromNode = nodes.find(n => n.id === br.fromId);
         const toNode   = nodes.find(n => n.id === br.toId);
-        const dz = fromNode && toNode ? (toNode.z - fromNode.z) : 0;
+        // Перепад высот берём с МАРКШЕЙДЕРСКИХ отметок: сдвиг узла на схеме
+        // ради читаемости не должен менять гидростатический напор.
+        const dz = fromNode && toNode
+          ? (surveyXYZ(toNode).z - surveyXYZ(fromNode).z)
+          : 0;
         const isFrom = br.fromId === nid;
         const deltaPh = 1000 * 9.81 * (isFrom ? dz : -dz) / 1e6;
 

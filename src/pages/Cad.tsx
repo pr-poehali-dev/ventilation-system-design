@@ -7,6 +7,7 @@ import {
   type TopoNode, type TopoBranch, type Horizon,
   DEMO_NODES, DEMO_BRANCHES, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane, calcBranchLength,
+  surveyXYZ, isNodeMoved,
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
@@ -287,6 +288,12 @@ export default function CadPage() {
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [tool, setTool] = useState<CadTool>("select");
   const [zLevel, setZLevel] = useState(0);
+
+  // Режим правки маркшейдерских координат (F2). Выключен — перетаскивание
+  // узлов меняет только отрисовку, расчёт остаётся привязан к эталону.
+  const [surveyEditMode, setSurveyEditMode] = useState(false);
+  // Сколько узлов сдвинуто с маркшейдерских мест — счётчик в статусной строке.
+  const movedNodeCount = useMemo(() => nodes.filter(isNodeMoved).length, [nodes]);
 
   // Авто-пересчёт длин и аэродинамики по координатам/параметрам
   const branches = useMemo(() => recalcAll(nodes, branchesRaw), [nodes, branchesRaw]);
@@ -899,8 +906,50 @@ export default function CadPage() {
   // на КАЖДОЕ движение мыши — копирование всех узлов/ветвей/символов десятки
   // раз в секунду тормозило большие схемы, а стек отмены (50 шагов) целиком
   // забивался одним перетаскиванием, и откатить прошлые действия было нельзя.
+  //
+  // РЕЖИМ ПРАВКИ КООРДИНАТ (F2). По умолчанию перетаскивание меняет только
+  // ОТРИСОВКУ: схему нужно раздвигать, чтобы подписи не наезжали, и это не
+  // должно искажать расчёт. Маркшейдерские координаты при этом стоят на месте,
+  // длины ветвей и сопротивления не меняются.
+  //
+  // В режиме F2 перетаскивание правит НАСТОЯЩИЕ координаты: узел переносится
+  // вместе с эталоном, длины ветвей пересчитываются. Это осознанное действие
+  // маркшейдера, поэтому режим включается явно и заметен на экране.
   const handleNodeMove = (id: string, x: number, y: number, z?: number) => {
-    updateNode(id, z !== undefined ? { x, y, z } : { x, y }, false);
+    const patch: Partial<TopoNode> = z !== undefined ? { x, y, z } : { x, y };
+    if (surveyEditMode) {
+      patch.surveyX = x;
+      patch.surveyY = y;
+      if (z !== undefined) patch.surveyZ = z;
+    }
+    updateNode(id, patch, false);
+  };
+
+  /** Возвращает узел на его маркшейдерское место. */
+  const resetNodeToSurvey = (id: string) => {
+    const n = nodes.find(v => v.id === id);
+    if (!n) return;
+    const s = surveyXYZ(n);
+    pushHistory();
+    updateNode(id, { x: s.x, y: s.y, z: s.z }, false);
+  };
+
+  /** Возвращает на маркшейдерские места всю схему. */
+  const resetAllNodesToSurvey = () => {
+    pushHistory();
+    setNodes(prev => prev.map(n => {
+      const s = surveyXYZ(n);
+      return { ...n, x: s.x, y: s.y, z: s.z };
+    }));
+  };
+
+  /**
+   * Фиксирует текущее положение узлов как маркшейдерский эталон. Нужно, когда
+   * схему выверили и хотят считать её новое состояние правильным.
+   */
+  const fixCurrentAsSurvey = () => {
+    pushHistory();
+    setNodes(prev => prev.map(n => ({ ...n, surveyX: n.x, surveyY: n.y, surveyZ: n.z })));
   };
 
   // ─── Результат расчёта пожара ───────────────────────────────────────
@@ -1568,6 +1617,23 @@ export default function CadPage() {
     });
     return newSymbols;
   };
+
+  // ── Фиксация маркшейдерского эталона ──────────────────────────────────────
+  // У узлов, пришедших из старых проектов и из импорта, эталона ещё нет. При
+  // первом появлении такого узла его нынешние координаты записываются как
+  // маркшейдерские: именно они считаются выверенными, а всё, что пользователь
+  // подвинет мышью позже, будет отклонением от них.
+  //
+  // Делается эффектом, а не в каждом месте загрузки: путей появления узлов
+  // много (открытие файла, импорт CSV/DXF/Excel/Ventsim, вставка, построение
+  // вентстава), и любой пропущенный оставил бы узел без эталона.
+  useEffect(() => {
+    const needsBaseline = nodes.some(n => n.surveyX === undefined);
+    if (!needsBaseline) return;
+    setNodes(prev => prev.map(n => n.surveyX === undefined
+      ? { ...n, surveyX: n.x, surveyY: n.y, surveyZ: n.z }
+      : n));
+  }, [nodes]);
 
   // Сброс «пожарного» состояния УЗЛОВ: расчётные температуры воздуха и стенок
   // возвращаются к фоновой (температура поверхности), концентрации CO/CO₂ — к
@@ -3143,7 +3209,9 @@ export default function CadPage() {
         return {
           id: n.id,
           isAtm: n.atmosphereLink,
-          z: n.z ?? 0,
+          // Высотная отметка для естественной тяги — МАРКШЕЙДЕРСКАЯ:
+          // сдвиг узла на схеме не должен менять тягу.
+          z: surveyXYZ(n).z,
           airTemp: n.atmosphereLink ? surfaceTempVal : (isHot ? hotT : (n.airTemp ?? surfaceTempVal)),
           userTemp: isHot ? true : (!n.atmosphereLink && (n.airTemp ?? 20) !== 20),
           // hotNode — признак узла пути дыма пожара. Бэкенд НЕ перетирает его
@@ -3197,7 +3265,8 @@ export default function CadPage() {
       nodes: nodes.map(n => ({
         id: n.id,
         isAtm: n.atmosphereLink,
-        z: n.z ?? 0,
+        // Маркшейдерская отметка (см. выше)
+        z: surveyXYZ(n).z,
         airTemp: n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal),
         userTemp: !n.atmosphereLink && (n.airTemp ?? 20) !== 20,
         airHumidity: baseNodeHumidity[n.id] ?? 0,
@@ -3492,7 +3561,9 @@ export default function CadPage() {
             return {
               id: n.id,
               isAtm: n.atmosphereLink,
-              z: n.z ?? 0,
+              // Высотная отметка для естественной тяги — МАРКШЕЙДЕРСКАЯ:
+          // сдвиг узла на схеме не должен менять тягу.
+          z: surveyXYZ(n).z,
               // userTemp=true — температура задана (вручную или калорифером)
               airTemp: useT,
               userTemp: (!n.atmosphereLink && (n.airTemp ?? 20) !== 20) || useT !== baseT,
@@ -4063,7 +4134,7 @@ export default function CadPage() {
     handleReverseBranch, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
-    setThinLines, setPositions, setLeaderDrawMode, setLeaderExtraMode,
+    setThinLines, setSurveyEditMode, setPositions, setLeaderDrawMode, setLeaderExtraMode,
     setLeaderCursorScreen, setLeaderSnapBranch, setShowSelectSimilar,
     setSelectedNodeId, setSelectedBranchId, setTool,
   });
@@ -7223,6 +7294,7 @@ export default function CadPage() {
               <NodePropsPanel
                 node={selectedNode}
                 onUpdate={(patch) => updateNode(selectedNode.id, patch)}
+                onResetToSurvey={() => resetNodeToSurvey(selectedNode.id)}
               />
             )}
 
@@ -9031,6 +9103,51 @@ export default function CadPage() {
                   </div>
                 </FrameGroup>
 
+                {/* Маркшейдерские координаты: сдвиг узлов по схеме нужен для
+                    читаемости, но расчёт должен опираться на реальные отметки.
+                    Здесь видно расхождение и можно им управлять. */}
+                <FrameGroup title="Маркшейдерские координаты">
+                  <div className="text-[10px] text-gray-500 px-1 pb-1 leading-snug">
+                    Длины выработок и весь расчёт идут по маркшейдерским
+                    координатам. Перетаскивание узлов мышью двигает только
+                    изображение и на расчёт не влияет.
+                  </div>
+                  <div className="px-1 py-1">
+                    <CadCheckbox checked={surveyEditMode} onChange={setSurveyEditMode}
+                      label="Править настоящие координаты (F2)" />
+                  </div>
+                  {surveyEditMode && (
+                    <div className="mx-1 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
+                      style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b" }}>
+                      Режим правки включён. Перетаскивание узла меняет его
+                      настоящие координаты, а значит длины выработок,
+                      сопротивление и результат расчёта.
+                    </div>
+                  )}
+                  <div className="px-1 py-1 text-[11px] text-gray-700">
+                    Сдвинуто узлов: <b>{movedNodeCount}</b> из {nodes.length}
+                  </div>
+                  <div className="flex flex-col gap-1 px-1 pb-1">
+                    <button onClick={resetAllNodesToSurvey}
+                      disabled={movedNodeCount === 0}
+                      className="px-2 py-1 rounded text-[11px]"
+                      style={{
+                        background: movedNodeCount ? "#fff" : "#f3f4f6",
+                        border: "1px solid #d1d5db",
+                        color: movedNodeCount ? "#374151" : "#9ca3af",
+                        cursor: movedNodeCount ? "pointer" : "default",
+                      }}>
+                      Вернуть всю схему к маркшейдерским
+                    </button>
+                    <button onClick={fixCurrentAsSurvey}
+                      className="px-2 py-1 rounded text-[11px]"
+                      style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}
+                      title="Считать нынешнее положение узлов выверенным и записать его как маркшейдерское">
+                      Зафиксировать текущее как эталон
+                    </button>
+                  </div>
+                </FrameGroup>
+
                 {selectedBranch && (
                   <FrameGroup title="Поворот индикаторов">
                     <div className="text-[10px] text-gray-500 px-1 pb-1">
@@ -10436,7 +10553,12 @@ export default function CadPage() {
               // Мягкая внутренняя тень по краям: схема визуально «лежит» в окне,
               // а не сливается с панелями. На печать не влияет — это только рамка
               // контейнера, сам холст остаётся белым.
-              boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.08), inset 0 1px 6px rgba(15,23,42,0.06)",
+              // В режиме правки координат (F2) рамка становится красной: в нём
+              // перетаскивание меняет длины выработок и результат расчёта,
+              // поэтому режим должно быть невозможно не заметить.
+              boxShadow: surveyEditMode
+                ? "inset 0 0 0 3px #dc2626, inset 0 1px 6px rgba(15,23,42,0.06)"
+                : "inset 0 0 0 1px rgba(15,23,42,0.08), inset 0 1px 6px rgba(15,23,42,0.06)",
             }}
             onMouseMove={(e) => {
               const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
@@ -12542,6 +12664,8 @@ export default function CadPage() {
         showLogPanel={showLogPanel}
         setShowLogPanel={setShowLogPanel}
         logEntries={logEntries}
+        surveyEditMode={surveyEditMode}
+        movedNodeCount={movedNodeCount}
       />
     </div>
 

@@ -50,6 +50,8 @@ export interface CadHotkeysDeps {
   setSymbolClipboard: (v: SchemaSymbol) => void;
   setPosBranchBindMode: (fn: (v: boolean) => boolean) => void;
   setThinLines: (fn: (v: boolean) => boolean) => void;
+  /** Переключение режима правки маркшейдерских координат (F2) */
+  setSurveyEditMode?: (fn: (v: boolean) => boolean) => void;
   setPositions: (fn: (prev: Position[]) => Position[]) => void;
   setLeaderDrawMode: (v: string | null) => void;
   setLeaderExtraMode: (v: boolean) => void;
@@ -76,7 +78,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
     handleReverseBranch, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
-    setThinLines, setPositions, setLeaderDrawMode, setLeaderExtraMode,
+    setThinLines, setSurveyEditMode, setPositions, setLeaderDrawMode, setLeaderExtraMode,
     setLeaderCursorScreen, setLeaderSnapBranch, setShowSelectSimilar,
     setSelectedNodeId, setSelectedBranchId, setTool,
   } = d;
@@ -170,6 +172,14 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
       if (e.key === "F3") {
         e.preventDefault();
         if (selectedPositionId) setPosBranchBindMode((v) => !v);
+        return;
+      }
+      // F2 — режим правки маркшейдерских координат. Вне режима перетаскивание
+      // узла двигает только его изображение на схеме; в режиме — настоящие
+      // координаты, от которых зависят длины ветвей и весь расчёт.
+      if (e.key === "F2") {
+        e.preventDefault();
+        setSurveyEditMode?.((v) => !v);
         return;
       }
       // F6, F9 — всегда работают

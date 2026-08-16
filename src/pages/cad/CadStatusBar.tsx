@@ -21,18 +21,41 @@ interface CadStatusBarProps {
   showLogPanel: boolean;
   setShowLogPanel: (fn: (v: boolean) => boolean) => void;
   logEntries: LogEntry[];
+  /** Включён ли режим правки маркшейдерских координат (F2) */
+  surveyEditMode?: boolean;
+  /** Сколько узлов сдвинуто с маркшейдерских мест */
+  movedNodeCount?: number;
 }
 
 export default function CadStatusBar({
   selectedNode, selectedBranch, tool, viewInfo, zLevel,
   solveResult, branches, showLogPanel, setShowLogPanel, logEntries,
+  surveyEditMode, movedNodeCount = 0,
 }: CadStatusBarProps) {
   return (
   <div className="h-5 flex items-center justify-between px-2 text-[11px]"
     style={{ background: "#f0f0f0", borderTop: "1px solid #b8b8b8", color: "#444" }}>
     <div className="flex items-center gap-3">
-      <span>Готово</span>
+      {/* Режим правки координат должно быть невозможно не заметить: в нём
+          перетаскивание меняет длины выработок и результат расчёта. */}
+      {surveyEditMode ? (
+        <span className="px-1.5 rounded font-bold"
+          style={{ background: "#dc2626", color: "#fff" }}>
+          ПРАВКА КООРДИНАТ (F2)
+        </span>
+      ) : (
+        <span>Готово</span>
+      )}
       <span className="text-gray-400">|</span>
+      {movedNodeCount > 0 && (
+        <>
+          <span title="Узлы сдвинуты для читаемости схемы. Расчёт идёт по маркшейдерским координатам."
+            style={{ color: "#b45309" }}>
+            Сдвинуто узлов: <b>{movedNodeCount}</b>
+          </span>
+          <span className="text-gray-400">|</span>
+        </>
+      )}
       {selectedNode && <span>Узел: <b>{selectedNode.number || selectedNode.id}</b> · X={selectedNode.x} Y={selectedNode.y} Z={selectedNode.z}</span>}
       {selectedBranch && <span>Ветвь: <b>{selectedBranch.id}</b> ({selectedBranch.fromId} → {selectedBranch.toId}) · L={selectedBranch.length} м</span>}
       {!selectedNode && !selectedBranch && <span>Выделите узел или ветвь</span>}

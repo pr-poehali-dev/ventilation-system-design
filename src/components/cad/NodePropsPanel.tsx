@@ -1,4 +1,4 @@
-import { type TopoNode } from "@/lib/topology";
+import { type TopoNode, surveyXYZ, nodeSurveyOffset, isNodeMoved } from "@/lib/topology";
 import { SectionHeader, EditInput, ComputedInput, CheckField } from "@/components/cad/BranchPropsPrimitives";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -16,10 +16,17 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 interface NodePropsPanelProps {
   node: TopoNode;
   onUpdate: (patch: Partial<TopoNode>) => void;
+  /** Вернуть узел на его маркшейдерское место */
+  onResetToSurvey?: () => void;
 }
 
-export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) {
+export default function NodePropsPanel({ node, onUpdate, onResetToSurvey }: NodePropsPanelProps) {
   const numVal = (v: number | undefined, d = 2) => v === undefined || isNaN(v) ? "—" : v.toFixed(d);
+
+  // Маркшейдерские координаты и величина сдвига изображения узла от них.
+  const survey = surveyXYZ(node);
+  const offset = nodeSurveyOffset(node);
+  const moved = isNodeMoved(node);
 
   return (
     <div className="flex flex-col" style={{ fontSize: 11 }}>
@@ -32,15 +39,43 @@ export default function NodePropsPanel({ node, onUpdate }: NodePropsPanelProps) 
       <Row label="Название">
         <EditInput value={node.name} onChange={(v) => onUpdate({ name: v })} />
       </Row>
+      {/* Ручной ввод координат — это ввод МАРКШЕЙДЕРСКИХ значений, поэтому
+          двигаем и эталон, и изображение узла: пользователь уточняет, где
+          выработка находится на самом деле, а не двигает картинку. */}
       <Row label="X, м">
-        <EditInput type="number" step="0.1" value={node.x} onChange={(v) => onUpdate({ x: parseFloat(v) || 0 })} />
+        <EditInput type="number" step="0.1" value={survey.x}
+          onChange={(v) => { const x = parseFloat(v) || 0; onUpdate({ x, surveyX: x }); }} />
       </Row>
       <Row label="Y, м">
-        <EditInput type="number" step="0.1" value={node.y} onChange={(v) => onUpdate({ y: parseFloat(v) || 0 })} />
+        <EditInput type="number" step="0.1" value={survey.y}
+          onChange={(v) => { const y = parseFloat(v) || 0; onUpdate({ y, surveyY: y }); }} />
       </Row>
       <Row label="Z, м (высотная отм.)">
-        <EditInput type="number" step="1" value={node.z} onChange={(v) => onUpdate({ z: parseFloat(v) || 0 })} />
+        <EditInput type="number" step="1" value={survey.z}
+          onChange={(v) => { const z = parseFloat(v) || 0; onUpdate({ z, surveyZ: z }); }} />
       </Row>
+
+      {/* Узел сдвинут для читаемости схемы. Показываем, насколько именно, и
+          даём вернуть его на место — раньше исходные координаты терялись. */}
+      {moved && (
+        <div className="mx-1 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
+          style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+          <div className="font-semibold mb-0.5">
+            Узел сдвинут на {offset < 10 ? offset.toFixed(1) : Math.round(offset)} м
+          </div>
+          <div>
+            Это сдвиг только по схеме, для читаемости. Расчёт длин выработок
+            идёт по маркшейдерским координатам выше — они не изменились.
+          </div>
+          {onResetToSurvey && (
+            <button onClick={onResetToSurvey}
+              className="mt-1 px-2 py-0.5 rounded text-[10px] font-semibold"
+              style={{ background: "#fff", border: "1px solid #d97706", color: "#92400e", cursor: "pointer" }}>
+              Вернуть на маркшейдерское место
+            </button>
+          )}
+        </div>
+      )}
       <Row label="Z поверхности, м">
         <ComputedInput value="0" />
       </Row>
