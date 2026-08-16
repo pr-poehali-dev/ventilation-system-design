@@ -18,6 +18,11 @@ export interface License {
   expires_at: string | null;
   notes: string | null;
   last_activity: string | null;
+  /**
+   * Сколько мест лицензии задвоено: один компьютер занял несколько мест.
+   * Такие места можно освобождать — работа идёт на более свежем.
+   */
+  stale_duplicates?: number;
 }
 
 export interface OfflineKey {
@@ -48,6 +53,13 @@ export interface Seat {
   core_version?: string | null;
   /** Сколько разных адресов в интернете обращалось под этим местом за 30 дней */
   ip_count?: number;
+  /**
+   * Задвоенное место: тот же компьютер занимает ещё одно, более свежее место.
+   * Возникало из-за прежней формулы аппаратного отпечатка (утилита wmic
+   * удалена в Windows 11 24H2). Такое место можно освобождать — работа идёт
+   * на более новом.
+   */
+  stale_duplicate?: boolean;
 }
 
 export interface MonitoringData {

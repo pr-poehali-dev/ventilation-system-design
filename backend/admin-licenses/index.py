@@ -172,7 +172,21 @@ def handler(event: dict, context) -> dict:
                 SELECT l.id, l.key, l.owner_name, l.owner_email,
                        l.max_seats, l.is_active, l.created_at, l.expires_at, l.notes,
                        COUNT(s.id) AS used_seats,
-                       MAX(s.last_seen_at) AS last_activity
+                       MAX(s.last_seen_at) AS last_activity,
+                       -- Сколько мест лицензии задвоено: один компьютер занял
+                       -- несколько мест (см. подробный комментарий в list_seats).
+                       -- Показываем в общем списке, чтобы такие лицензии было
+                       -- видно сразу, не открывая карточку и не дожидаясь
+                       -- обращения клиента.
+                       COUNT(s.id) FILTER (WHERE s.hostname LIKE '%%десктоп%%'
+                           AND EXISTS (
+                               SELECT 1 FROM license_seats d
+                               WHERE d.license_id = s.license_id AND d.id <> s.id
+                                 AND d.hostname = s.hostname
+                                 AND d.platform IS NOT DISTINCT FROM s.platform
+                                 AND d.screen_info IS NOT DISTINCT FROM s.screen_info
+                                 AND d.last_seen_at > s.last_seen_at
+                           )) AS stale_duplicates
                 FROM licenses l
                 LEFT JOIN license_seats s ON s.license_id = l.id
                 GROUP BY l.id
@@ -188,6 +202,7 @@ def handler(event: dict, context) -> dict:
                     "expires_at": str(r[7]) if r[7] else None,
                     "notes": r[8], "used_seats": int(r[9]),
                     "last_activity": str(r[10]) if r[10] else None,
+                    "stale_duplicates": int(r[11] or 0),
                 })
             return resp(200, {"licenses": licenses})
 
@@ -284,7 +299,34 @@ def handler(event: dict, context) -> dict:
                        (SELECT COUNT(DISTINCT e.ip) FROM license_events e
                         WHERE e.seat_id = license_seats.id
                           AND e.ip IS NOT NULL AND e.ip <> ''
-                          AND e.created_at > NOW() - INTERVAL '30 days') AS ip_count
+                          AND e.created_at > NOW() - INTERVAL '30 days') AS ip_count,
+                       -- ЗАДВОЕННОЕ МЕСТО: тот же самый компьютер занял больше
+                       -- одного места. Так бывало из-за прежней формулы
+                       -- аппаратного отпечатка (в неё входил серийный номер
+                       -- материнской платы, читавшийся утилитой wmic — она
+                       -- удалена в Windows 11 24H2 и не всегда отвечала в срок).
+                       -- Один и тот же ПК давал разные отпечатки, и сервер
+                       -- создавал новое место вместо переиспользования старого.
+                       --
+                       -- Признак считаем ТОЛЬКО для десктопных мест с известным
+                       -- именем компьютера: у браузерных запусков имя вида
+                       -- «Edge / Windows» совпадает у разных людей, и пометка
+                       -- была бы ложной. Совпадать должны имя ПК, платформа и
+                       -- разрешение экрана.
+                       --
+                       -- Помечаем УСТАРЕВШИЕ копии: то место группы, которое
+                       -- выходило на связь последним, остаётся рабочим и метки
+                       -- не получает — освобождать нужно именно старые.
+                       (hostname LIKE '%%десктоп%%'
+                        AND EXISTS (
+                            SELECT 1 FROM license_seats d
+                            WHERE d.license_id = license_seats.license_id
+                              AND d.id <> license_seats.id
+                              AND d.hostname = license_seats.hostname
+                              AND d.platform IS NOT DISTINCT FROM license_seats.platform
+                              AND d.screen_info IS NOT DISTINCT FROM license_seats.screen_info
+                              AND d.last_seen_at > license_seats.last_seen_at
+                        )) AS stale_duplicate
                 FROM license_seats WHERE license_id = %s
                 ORDER BY last_seen_at DESC
             """, (lic_id,))
@@ -305,6 +347,7 @@ def handler(event: dict, context) -> dict:
                     "online":      bool(r[11]),
                     "core_version": r[12],
                     "ip_count":    int(r[13] or 0),
+                    "stale_duplicate": bool(r[14]),
                 })
             return resp(200, {"seats": seats})
 

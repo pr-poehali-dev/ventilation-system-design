@@ -75,6 +75,14 @@ export default function LicensesTab({
                       <div className="font-mono text-[11px] text-blue-600 mt-0.5">{lic.key}</div>
                       <div className="mt-1 flex items-center gap-4 text-[11px] text-gray-500 flex-wrap">
                         <span>Мест: <b className={lic.used_seats >= lic.max_seats ? "text-red-600" : "text-green-600"}>{lic.used_seats}/{lic.max_seats}</b></span>
+                        {(lic.stale_duplicates ?? 0) > 0 && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-medium inline-flex items-center gap-1"
+                            title="Один и тот же компьютер занимает несколько мест. Откройте список мест — задвоенные помечены и их можно освободить.">
+                            <Icon name="Copy" size={11} />
+                            задвоено мест: {lic.stale_duplicates}
+                          </span>
+                        )}
                         <span>Создана: {fmtDate(lic.created_at)}</span>
                         {lic.expires_at && <span>Действует до: {fmtDate(lic.expires_at)}</span>}
                         {lic.last_activity && <span>Активность: {fmtDate(lic.last_activity)}</span>}
@@ -174,6 +182,14 @@ export default function LicensesTab({
                                         title="Под этим местом работали с разных адресов в интернете — возможно, им пользуются несколько компьютеров">
                                         <Icon name="TriangleAlert" size={11} />
                                         замечено с {seat.ip_count} адресов
+                                      </span>
+                                    )}
+                                    {seat.stale_duplicate && (
+                                      <span
+                                        className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-medium inline-flex items-center gap-1"
+                                        title="Тот же компьютер занимает ещё одно, более свежее место. Обычно это следствие обновления программы со старой версии: место можно освободить — работа идёт на новом.">
+                                        <Icon name="Copy" size={11} />
+                                        задвоено — можно освободить
                                       </span>
                                     )}
                                     {seat.app_version && (
