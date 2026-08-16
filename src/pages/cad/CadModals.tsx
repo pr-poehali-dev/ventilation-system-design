@@ -13,6 +13,7 @@ import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
 import { compareBranches, compareNodes } from "./cadUtils";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type CompareResult } from "./cadTypes";
+import { type DeleteBranchPlan } from "./deleteBranchPlan";
 
 type MergeNodeState = { nodeId: string; branchA: string; branchB: string };
 // t — доля длины ветви (точка клика курсором), чтобы отделение встало
@@ -38,6 +39,11 @@ export interface CadModalsProps {
   bulkheadScale: number; setBulkheadScale: (v: number) => void;
   fanScale: number; setFanScale: (v: number) => void;
   setScaleLimitsEnabled: (v: boolean) => void;
+
+  // Подтверждение удаления ветвей (УО и осиротевшие узлы)
+  deleteBranchDialog: DeleteBranchPlan | null;
+  setDeleteBranchDialog: (v: DeleteBranchPlan | null) => void;
+  confirmDeleteBranches: (plan: DeleteBranchPlan, removeOrphanNodes: boolean) => void;
 
   // Объединение ветвей при удалении промежуточного узла
   mergeNodeDialog: MergeNodeState | null;
@@ -299,6 +305,114 @@ export default function CadModals(p: CadModalsProps) {
           </div>
         </div>
       )}
+
+      {/* ═══ ДИАЛОГ: ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ВЕТВЕЙ ══════════════════════════ */}
+      {p.deleteBranchDialog && (() => {
+        const plan = p.deleteBranchDialog;
+        const hasSymbols = plan.symbols.length > 0;
+        const hasOrphans = plan.orphanNodeIds.length > 0;
+        const listCls = "text-[11px] text-gray-700 leading-relaxed";
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
+            <div className="flex flex-col shadow-2xl border border-gray-400"
+              style={{ width: 420, maxHeight: "85vh", background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+              <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300 flex-shrink-0"
+                style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+                <span className="text-[12px] font-semibold text-gray-800">
+                  {plan.branchIds.length > 1
+                    ? `Удаление выработок (${plan.branchIds.length})`
+                    : "Удаление выработки"}
+                </span>
+                <button onClick={() => p.setDeleteBranchDialog(null)}
+                  className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
+                  <Icon name="X" size={12} />
+                </button>
+              </div>
+
+              <div className="p-4 flex flex-col gap-3 overflow-y-auto">
+                <div className="rounded text-[11px] px-3 py-2"
+                  style={{ background: "#fef2f2", border: "1px solid #fca5a5" }}>
+                  <div className="font-semibold text-red-800 mb-1">
+                    Будет удалено: {plan.branchIds.length} выраб.
+                  </div>
+                  <div className={listCls} style={{ maxHeight: 90, overflowY: "auto" }}>
+                    {plan.branchLabels.slice(0, 12).map((n, i) => (
+                      <div key={i}>· {n}</div>
+                    ))}
+                    {plan.branchLabels.length > 12 && (
+                      <div className="text-gray-500">…и ещё {plan.branchLabels.length - 12}</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* УО на удаляемых ветвях — вентиляторы, перемычки и т.п. */}
+                {hasSymbols && (
+                  <div className="rounded text-[11px] px-3 py-2"
+                    style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                    <div className="font-semibold text-amber-800 mb-1 flex items-center gap-1">
+                      <Icon name="TriangleAlert" size={12} />
+                      Вместе с ними исчезнут УО ({plan.symbols.length})
+                    </div>
+                    <div className={listCls} style={{ maxHeight: 90, overflowY: "auto" }}>
+                      {plan.symbols.slice(0, 12).map(s => (
+                        <div key={s.id}>· {s.label}</div>
+                      ))}
+                      {plan.symbols.length > 12 && (
+                        <div className="text-gray-500">…и ещё {plan.symbols.length - 12}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Изолированные узлы: главная причина, по которой расчёт сети
+                    переставал сходиться после молчаливого удаления ветви. */}
+                {hasOrphans && (
+                  <div className="rounded text-[11px] px-3 py-2"
+                    style={{ background: "#eff6ff", border: "1px solid #93c5fd" }}>
+                    <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
+                      <Icon name="Unlink" size={12} />
+                      Останутся без выработок ({plan.orphanNodeIds.length} узл.)
+                    </div>
+                    <div className={listCls} style={{ maxHeight: 70, overflowY: "auto" }}>
+                      {plan.orphanNodeLabels.slice(0, 12).map((n, i) => (
+                        <div key={i}>· {n}</div>
+                      ))}
+                      {plan.orphanNodeLabels.length > 12 && (
+                        <div className="text-gray-500">…и ещё {plan.orphanNodeLabels.length - 12}</div>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-blue-700 mt-1">
+                      Такие узлы ни к чему не подключены и мешают расчёту
+                      воздухораспределения. Рекомендуется удалить их вместе с выработками.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200 flex-shrink-0"
+                style={{ background: "#f8f8f8" }}>
+                <button onClick={() => p.setDeleteBranchDialog(null)}
+                  className="text-[11px] px-3 py-1 rounded"
+                  style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}>
+                  Отмена
+                </button>
+                {hasOrphans && (
+                  <button onClick={() => p.confirmDeleteBranches(plan, false)}
+                    className="text-[11px] px-3 py-1 rounded"
+                    style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}>
+                    Оставить узлы
+                  </button>
+                )}
+                <button onClick={() => p.confirmDeleteBranches(plan, true)}
+                  className="text-[11px] px-3 py-1 rounded font-semibold"
+                  style={{ background: "#dc2626", border: "1px solid #dc2626", color: "white", cursor: "pointer" }}>
+                  {hasOrphans ? "Удалить с узлами" : "Удалить"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══ ДИАЛОГ: ОБЪЕДИНИТЬ ВЕТВИ ПРИ УДАЛЕНИИ ПРОМЕЖУТОЧНОГО УЗЛА ══════ */}
       {p.mergeNodeDialog && (() => {

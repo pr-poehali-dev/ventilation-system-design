@@ -90,6 +90,7 @@ import { useCadSchemaCheck, useCadLeftPanelResize } from "./cad/useCadSchemaChec
 import { useCadHeaters } from "./cad/useCadHeaters";
 import { buildVentPipeLine as buildVentPipeLineImpl } from "./cad/buildVentPipeLine";
 import { collectVentPipeLine, removeVentPipeLine } from "./cad/ventPipeLineOps";
+import { planBranchDeletion, type DeleteBranchPlan } from "./cad/deleteBranchPlan";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -1782,7 +1783,13 @@ export default function CadPage() {
   // ─── ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ─────────────────────────────────────
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
+  // ─── ДИАЛОГ ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ ВЕТВЕЙ ───────────────────────────
+  // Показывает, какие УО исчезнут вместе с ветвями и какие узлы останутся
+  // изолированными (они ломают расчёт воздухораспределения).
+  const [deleteBranchDialog, setDeleteBranchDialog] = useState<DeleteBranchPlan | null>(null);
+
   // ─── ДИАЛОГ ОБЪЕДИНЕНИЯ ВЕТВЕЙ ПРИ УДАЛЕНИИ УЗЛА ────────────────────
+
   const [mergeNodeDialog, setMergeNodeDialog] = useState<{
     nodeId: string;
     branchA: string; // id первой ветви
@@ -3808,6 +3815,40 @@ export default function CadPage() {
     }
   };
 
+  // ─── УДАЛЕНИЕ ВЕТВЕЙ С ПОДТВЕРЖДЕНИЕМ ────────────────────────────────
+  // Молчаливое удаление ветви уносило со схемы вентиляторы и перемычки, а узлы
+  // на её концах оставались висеть ни к чему не привязанными и ломали расчёт
+  // воздухораспределения. Теперь последствия сначала показываются.
+
+  /** Готовит план удаления и открывает окно подтверждения. */
+  const requestDeleteBranches = (branchIds: string[]) => {
+    if (branchIds.length === 0) return;
+    const plan = planBranchDeletion(
+      branchIds, nodes, branchesRaw, schemaSymbols,
+      (typeId) => LEGEND_TYPES.find(t => t.id === typeId)?.name ?? typeId,
+    );
+    setDeleteBranchDialog(plan);
+  };
+
+  /** Выполняет удаление: ветви, их УО и осиротевшие узлы. */
+  const confirmDeleteBranches = (plan: DeleteBranchPlan, removeOrphanNodes: boolean) => {
+    pushHistory();
+    const killBranches = new Set(plan.branchIds);
+    const killSymbols = new Set(plan.symbols.map(s => s.id));
+    setSchemaSymbols(prev => prev.filter(s => !killSymbols.has(s.id)));
+    setBranches(prev => prev.filter(b => !killBranches.has(b.id)));
+    if (removeOrphanNodes && plan.orphanNodeIds.length > 0) {
+      const killNodes = new Set(plan.orphanNodeIds);
+      setNodes(prev => prev.filter(n => !killNodes.has(n.id)));
+    }
+    setSelectedBranchId(null);
+    setSelectedBranchIds(new Set());
+    setSelectedSymbolId(null);
+    setSelectedSymbolIds(new Set());
+    setSelectedNodeId(null);
+    setDeleteBranchDialog(null);
+  };
+
   const handleDeleteSelected = () => {
     if (selectedSymbolIds.size > 1) {
       // Мульти-удаление символов (перемычки, вентиляторы и др.)
@@ -3884,15 +3925,9 @@ export default function CadPage() {
       setSelectedSymbolId(null);
       setSelectedSymbolIds(new Set());
     } else if (selectedBranchIds.size > 1) {
-      pushHistory();
-      setBranches((p) => p.filter((b) => !selectedBranchIds.has(b.id)));
-      setSelectedBranchId(null);
-      setSelectedBranchIds(new Set());
+      requestDeleteBranches([...selectedBranchIds]);
     } else if (selectedBranchId) {
-      pushHistory();
-      setBranches((p) => p.filter((b) => b.id !== selectedBranchId));
-      setSelectedBranchId(null);
-      setSelectedBranchIds(new Set());
+      requestDeleteBranches([selectedBranchId]);
     } else if (selectedNodeId) {
       requestDeleteNode(selectedNodeId);
     }
@@ -4040,15 +4075,12 @@ export default function CadPage() {
       case "delete_node": if (nodeId) handleDeleteNode(nodeId); break;
       case "delete_branch": {
         // Удаляем все выделенные ветви (или одну из контекстного меню)
+        // Идём через окно подтверждения — оно покажет, какие УО исчезнут
+        // вместе с ветвями и какие узлы останутся изолированными.
         const targets = selectedBranchIds.size > 1
-          ? new Set(selectedBranchIds)
-          : branchId ? new Set([branchId]) : new Set<string>();
-        if (targets.size > 0) {
-          pushHistory();
-          setBranches(p => p.filter(b => !targets.has(b.id)));
-          if (branchId && targets.has(branchId)) setSelectedBranchId(null);
-          setSelectedBranchIds(new Set());
-        }
+          ? [...selectedBranchIds]
+          : branchId ? [branchId] : [];
+        requestDeleteBranches(targets);
         break;
       }
       case "split_connections": if (nodeId) handleSplitNodeConnections(nodeId); break;
@@ -12721,6 +12753,9 @@ export default function CadPage() {
       fanScale={fanScale}
       setFanScale={setFanScale}
       setScaleLimitsEnabled={setScaleLimitsEnabled}
+      deleteBranchDialog={deleteBranchDialog}
+      setDeleteBranchDialog={setDeleteBranchDialog}
+      confirmDeleteBranches={confirmDeleteBranches}
       mergeNodeDialog={mergeNodeDialog}
       setMergeNodeDialog={setMergeNodeDialog}
       doDeleteNode={doDeleteNode}
