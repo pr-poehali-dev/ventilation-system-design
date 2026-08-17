@@ -6086,7 +6086,9 @@ export default function CadPage() {
                 <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#6b7280", marginTop: 2 }}>Параметры</div>
               </button>
               {showSolverParams && (
-                <div className="fixed top-[160px] right-4 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 min-w-[240px]">
+                <div
+                  className="fixed top-[160px] right-4 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 overflow-y-auto"
+                  style={{ width: 300, minWidth: 300, maxWidth: 300, maxHeight: "calc(100vh - 200px)", boxSizing: "border-box" }}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-semibold text-gray-700">Параметры расчёта</span>
                     <button onClick={() => setShowSolverParams(false)} className="text-gray-400 hover:text-gray-600">
