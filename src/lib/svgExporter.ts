@@ -12,6 +12,7 @@ import { buildPrintLayerSvgString } from "./printLayerSvgString";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
+import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -766,11 +767,19 @@ export function generateSvg(opts: SvgExportOptions): string {
           const boxHMs = msLines.length * lhMs + 6;
           const bxMs = px + perpXms * (16 + boxWMs / 2) + (sym.msIndOffsetX ?? 0);
           const byMs = py + perpYms * (16 + boxHMs / 2) + (sym.msIndOffsetY ?? 0);
-          parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bxMs)}" y2="${n(byMs - boxHMs/2)}" stroke="#555555" stroke-width="0.4" stroke-dasharray="2 3"/>`);
+          // Подложка под индикаторами — та же, что на экране и на печати.
+          const bgMs = msIndBg(sym.msIndBgColor);
+          const fgMs = msIndTextColor(bgMs);
+          parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bxMs)}" y2="${n(byMs - boxHMs/2)}" stroke="${bgMs ?? "#555555"}" stroke-width="0.4" stroke-dasharray="2 3"/>`);
+          if (bgMs) {
+            parts.push(`<rect x="${n(bxMs - boxWMs/2)}" y="${n(byMs - boxHMs/2)}" width="${n(boxWMs)}" height="${n(boxHMs)}" rx="${n(Math.min(4, boxHMs/3), 1)}" fill="${bgMs}" stroke="white" stroke-width="1.2"/>`);
+          }
           msLines.forEach((line, i) => {
             const tyMs = byMs - boxHMs/2 + i * lhMs + 3;
             const fwMs = i === 0 && sym.msIndNumber ? "700" : "400";
-            parts.push(`<text x="${n(bxMs)}" y="${n(tyMs)}" text-anchor="middle" dominant-baseline="auto" font-size="${n(fsMs, 1)}" font-weight="${fwMs}" stroke="white" stroke-width="2" paint-order="stroke" fill="#1a2a4a">${esc(line)}</text>`);
+            // Белая обводка текста нужна только без плашки.
+            const strokeAttr = bgMs ? "" : ` stroke="white" stroke-width="2" paint-order="stroke"`;
+            parts.push(`<text x="${n(bxMs)}" y="${n(tyMs)}" text-anchor="middle" dominant-baseline="auto" font-size="${n(fsMs, 1)}" font-weight="${fwMs}"${strokeAttr} fill="${fgMs}">${esc(line)}</text>`);
           });
         }
       } else if (isBulkhead && hasBranchPts) {

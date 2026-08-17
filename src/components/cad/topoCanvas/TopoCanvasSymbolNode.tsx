@@ -3,6 +3,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
+import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -828,11 +829,14 @@ export function renderSymbolNode(
         const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF * _indZoomSF;
         const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF * _indZoomSF;
         const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+        // Подложка под индикаторами: без неё подписи ЗС теряются на схеме.
+        const msBg = msIndBg(sym.msIndBgColor);
+        const msFg = msIndTextColor(msBg);
 
         return (
           <g opacity={opacity}>
             <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
-              stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+              stroke={msBg ?? "#8899bb"} strokeWidth={0.7} strokeDasharray="3 2" />
             <g style={{ cursor: "move" }}
               onMouseDown={(e) => {
                 if (tool !== "select") return;
@@ -851,13 +855,25 @@ export function renderSymbolNode(
                 window.addEventListener("mousemove", onMove);
                 window.addEventListener("mouseup", onUp);
               }}>
+              {/* Цветная плашка под текстом — делает ЗС заметной на схеме.
+                  Прозрачный прямоугольник под текстом нужен и без фона:
+                  за него удобно перетаскивать блок индикаторов. */}
+              <rect
+                x={bx - boxW / 2} y={by - boxH / 2}
+                width={boxW} height={boxH}
+                rx={Math.min(4 * _indZoomSF, boxH / 3)}
+                fill={msBg ?? "transparent"}
+                stroke={msBg ? "white" : "none"}
+                strokeWidth={msBg ? Math.max(0.5, 1.2 * _indZoomSF) : 0} />
               {msLines.map((line, i) => (
                 <text key={i}
                   x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                   textAnchor="middle" fontSize={fSize}
-                  fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                  fill={msFg} fontFamily="Segoe UI, sans-serif"
                   fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
-                  style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                  style={msBg
+                    ? undefined
+                    : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                   {line}
                 </text>
               ))}

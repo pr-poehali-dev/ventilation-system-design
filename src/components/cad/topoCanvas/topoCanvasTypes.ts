@@ -125,6 +125,13 @@ export interface Props {
     bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
     /** Подпись вентилятора: смещение перетаскиванием и размер шрифта */
     fanIndOffsetX?: number; fanIndOffsetY?: number; fanIndFontSize?: number;
+    /** Замерная станция: данные замера и настройки её индикаторов */
+    msNumber?: string; msLocation?: string; msArea?: number; msFlow?: number; msVelocity?: number;
+    msIndNumber?: boolean; msIndLocation?: boolean; msIndFlow?: boolean;
+    msIndArea?: boolean; msIndVelocity?: boolean;
+    msIndOffsetX?: number; msIndOffsetY?: number; msIndFontSize?: number;
+    /** Цвет подложки индикаторов ЗС ("none" — без фона) */
+    msIndBgColor?: string;
   }[];
   /** Перетаскивание подписи вентилятора мышью */
   onSymbolFanIndOffset?: (id: string, ox: number, oy: number) => void;

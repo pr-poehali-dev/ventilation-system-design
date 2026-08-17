@@ -7,6 +7,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
+import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 
 // Кэш SVG-иконок, преобразованных в Image (по svgContent)
 const svgImageCache = new Map<string, HTMLImageElement>();
@@ -304,20 +305,41 @@ export async function drawSymbolsToCanvas(
         const bxMs = px + perpXms * (16 + boxWMs / 2) + (sym.msIndOffsetX ?? 0);
         const byMs = py + perpYms * (16 + boxHMs / 2) + (sym.msIndOffsetY ?? 0);
 
+        // Подложка под индикаторами — на печати ЗС так же теряется среди
+        // выработок, как и на экране, поэтому плашка нужна и здесь.
+        const bgMs = msIndBg(sym.msIndBgColor);
+        const fgMs = msIndTextColor(bgMs);
+
         ctx.save();
-        ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4;
+        ctx.strokeStyle = bgMs ?? "#555555"; ctx.lineWidth = 0.4;
         ctx.setLineDash([2, 3]);
         ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bxMs, byMs - boxHMs / 2); ctx.stroke();
         ctx.setLineDash([]);
+        if (bgMs) {
+          const rx = Math.min(4, boxHMs / 3);
+          const x0 = bxMs - boxWMs / 2, y0 = byMs - boxHMs / 2;
+          ctx.beginPath();
+          ctx.moveTo(x0 + rx, y0);
+          ctx.arcTo(x0 + boxWMs, y0, x0 + boxWMs, y0 + boxHMs, rx);
+          ctx.arcTo(x0 + boxWMs, y0 + boxHMs, x0, y0 + boxHMs, rx);
+          ctx.arcTo(x0, y0 + boxHMs, x0, y0, rx);
+          ctx.arcTo(x0, y0, x0 + boxWMs, y0, rx);
+          ctx.closePath();
+          ctx.fillStyle = bgMs; ctx.fill();
+          ctx.strokeStyle = "white"; ctx.lineWidth = 1.2; ctx.stroke();
+        }
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         msLines.forEach((line, i) => {
           const tyMs = byMs - boxHMs / 2 + i * lhMs + 3;
           const fw = i === 0 && sym.msIndNumber ? "700" : "400";
           ctx.font = `${fw} ${fsMs}px "Segoe UI", sans-serif`;
-          ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
-          ctx.strokeText(line, bxMs, tyMs);
-          ctx.fillStyle = "#1a2a4a";
+          // Обводка нужна только без подложки: на плашке она размывает буквы.
+          if (!bgMs) {
+            ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
+            ctx.strokeText(line, bxMs, tyMs);
+          }
+          ctx.fillStyle = fgMs;
           ctx.fillText(line, bxMs, tyMs);
         });
         ctx.restore();

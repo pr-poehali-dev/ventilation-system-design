@@ -5,6 +5,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
+import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 
 interface Props {
   symbols: SchemaSymbol[];
@@ -347,17 +348,27 @@ export default function SchemaSymbolsOverlay({
           const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
           const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
 
+          // Подложка под индикаторами — чтобы ЗС не терялась на схеме.
+          const msBg = msIndBg(sym.msIndBgColor);
+          const msFg = msIndTextColor(msBg);
+
           return (
             <g>
               <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
-                stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                stroke={msBg ?? "#8899bb"} strokeWidth={0.7} strokeDasharray="3 2" />
+              {msBg && (
+                <rect x={bx - boxW / 2} y={by - boxH / 2} width={boxW} height={boxH}
+                  rx={Math.min(4, boxH / 3)} fill={msBg} stroke="white" strokeWidth={1.2} />
+              )}
               {lines.map((line, i) => (
                 <text key={i}
                   x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                   textAnchor="middle" fontSize={fSize}
-                  fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                  fill={msFg} fontFamily="Segoe UI, sans-serif"
                   fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
-                  style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                  style={msBg
+                    ? undefined
+                    : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                   {line}
                 </text>
               ))}
