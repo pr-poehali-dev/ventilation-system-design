@@ -52,11 +52,19 @@ export default function ServerTab({
       }
     } catch {
       setPingState("fail");
-      setPingMsg("Нет ответа. Проверьте адрес, питание ПК и порт в брандмауэре");
+      setPingMsg(mixedContent
+        ? "Браузер заблокировал запрос: страница открыта по https, а сервер по http"
+        : "Нет ответа. Проверьте адрес, питание ПК и порт в брандмауэре");
     }
   };
 
   const onBackup = srvActive === "backup";
+
+  // Главная причина «не подключается»: программа открыта по https, а резервный
+  // сервер в локальной сети работает по http — браузер режет такие запросы.
+  const pageIsHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  const urlIsHttp = /^http:\/\//i.test(srvBackupUrl.trim());
+  const mixedContent = pageIsHttps && urlIsHttp;
 
   return (
   <div className="max-w-xl mx-auto">
@@ -132,6 +140,26 @@ export default function ServerTab({
               скопируйте её сюда целиком (например <span className="font-mono">http://192.168.1.50:8800/</span>).
             </div>
 
+            {mixedContent && (
+              <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[11.5px] font-semibold text-red-700 mb-1">
+                  <Icon name="ShieldAlert" size={14} />
+                  Браузер не пропустит этот адрес
+                </div>
+                <div className="text-[10.5px] text-red-700/90 leading-relaxed">
+                  Программа открыта по защищённому адресу (https), а резервный сервер
+                  работает по обычному http. Браузер блокирует такие запросы —
+                  и «Проверить связь» всегда покажет «нет ответа», даже если сервер работает.
+                  <br /><br />
+                  <span className="font-semibold">Что делать (любой из вариантов):</span>
+                  <br />1. Работать с резервом из <span className="font-semibold">десктопной версии</span> программы —
+                  там ограничения нет, ничего настраивать не нужно.
+                  <br />2. Открыть саму программу по локальному адресу http.
+                  <br />3. Поставить перед резервным сервером https-прокси с сертификатом.
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mt-2">
               <button onClick={pingBackup} disabled={!srvBackupUrl.trim() || pingState === "run"}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-300 text-gray-600 hover:border-blue-400 disabled:opacity-50">
@@ -148,6 +176,13 @@ export default function ServerTab({
                 <span className="text-[11px] text-red-500 flex items-center gap-1">
                   <Icon name="CircleAlert" size={13} />{pingMsg}
                 </span>
+              )}
+              {srvBackupUrl.trim() && (
+                <a href={`${srvBackupUrl.trim().replace(/\/+$/, "")}/health`}
+                  target="_blank" rel="noreferrer"
+                  className="text-[11px] text-blue-600 hover:underline flex items-center gap-1">
+                  <Icon name="ExternalLink" size={12} />Открыть в браузере
+                </a>
               )}
             </div>
           </div>
