@@ -202,15 +202,79 @@ def lan_ip() -> str:
             return "127.0.0.1"
 
 
+def ensure_cert(ip: str):
+    """Готовит самоподписанный сертификат для режима --https.
+
+    Нужен, когда программа открыта по https, а интернет-туннель недоступен
+    (закрытая сеть предприятия). Сертификат выписывается на IP этого ПК.
+    """
+    here = _script_dir()
+    cert = os.path.join(here, "cert.pem")
+    key = os.path.join(here, "key.pem")
+    if os.path.exists(cert) and os.path.exists(key):
+        return cert, key
+
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        import datetime
+        import ipaddress
+    except ImportError:
+        print("\n[!] Для режима --https нужен пакет cryptography.")
+        print("    Установите:  .venv\\Scripts\\python.exe -m pip install cryptography\n")
+        return None, None
+
+    pk = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, ip),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "PVS Backup Compute Server"),
+    ])
+    now = datetime.datetime.utcnow()
+    san = [x509.DNSName("localhost")]
+    try:
+        san.append(x509.IPAddress(ipaddress.ip_address(ip)))
+        san.append(x509.IPAddress(ipaddress.ip_address("127.0.0.1")))
+    except Exception:
+        pass
+
+    crt = (
+        x509.CertificateBuilder()
+        .subject_name(name).issuer_name(name)
+        .public_key(pk.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(x509.SubjectAlternativeName(san), critical=False)
+        .sign(pk, hashes.SHA256())
+    )
+
+    with open(key, "wb") as f:
+        f.write(pk.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        ))
+    with open(cert, "wb") as f:
+        f.write(crt.public_bytes(serialization.Encoding.PEM))
+
+    print(f"Создан сертификат на 10 лет для {ip}")
+    return cert, key
+
+
 def main():
     parser = argparse.ArgumentParser(description=APP_NAME)
     parser.add_argument("--host", default="0.0.0.0", help="Адрес прослушивания")
     parser.add_argument("--port", type=int, default=8800, help="Порт (по умолчанию 8800)")
+    parser.add_argument("--https", action="store_true",
+                        help="Защищённый режим со своим сертификатом (для браузерной версии)")
     args = parser.parse_args()
 
     state = health_payload()
     ip = lan_ip()
-    addr = f"http://{ip}:{args.port}/"
+    scheme = "https" if args.https else "http"
+    addr = f"{scheme}://{ip}:{args.port}/"
 
     print(f"\n{APP_NAME}")
     for name, ok in state["functions"].items():
@@ -223,7 +287,25 @@ def main():
     print(f"\n      {addr}\n")
     print(f"  Проверка в браузере: {addr}health")
     print("=" * 62)
+
+    if args.https:
+        print("\n  ЗАЩИЩЁННЫЙ РЕЖИМ. Один раз на каждом рабочем ПК откройте адрес")
+        print("  проверки в браузере и разрешите переход («Дополнительно» →")
+        print("  «Перейти на сайт»). После этого резерв заработает в программе.")
+
     print("\nОкно не закрывать — пока оно открыто, сервер работает.\n")
+
+    ssl_ctx = None
+    if args.https:
+        cert, key = ensure_cert(ip)
+        if not cert:
+            return 1
+        ssl_ctx = (cert, key)
+
+    if ssl_ctx:
+        app.run(host=args.host, port=args.port, threaded=True,
+                debug=False, ssl_context=ssl_ctx)
+        return 0
 
     try:
         from waitress import serve

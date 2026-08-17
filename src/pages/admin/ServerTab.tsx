@@ -52,9 +52,12 @@ export default function ServerTab({
       }
     } catch {
       setPingState("fail");
+      const isLocalHttps = /^https:\/\/(\d{1,3}\.){3}\d{1,3}/.test(srvBackupUrl.trim());
       setPingMsg(mixedContent
         ? "Браузер заблокировал запрос: страница открыта по https, а сервер по http"
-        : "Нет ответа. Проверьте адрес, питание ПК и порт в брандмауэре");
+        : isLocalHttps
+          ? "Сертификат сервера ещё не принят. Нажмите «Открыть в браузере» и разрешите переход"
+          : "Нет ответа. Проверьте адрес, питание ПК и порт в брандмауэре");
     }
   };
 
@@ -151,15 +154,18 @@ export default function ServerTab({
                   работает по обычному http. Браузер блокирует такие запросы —
                   и «Проверить связь» всегда покажет «нет ответа», даже если сервер работает.
                   <br /><br />
-                  <span className="font-semibold">Решение за 1 минуту:</span> на резервном ПК,
-                  в папке <span className="font-mono">backup-server/https</span>, запустите
-                  файл <span className="font-mono">tunnel.bat</span>. Он выдаст защищённый
-                  адрес вида <span className="font-mono">https://…trycloudflare.com</span> —
-                  вставьте его в поле выше вместо текущего.
+                  <span className="font-semibold">Решение для закрытой сети:</span> на резервном
+                  ПК остановите сервер и запустите <span className="font-mono">https\secure.bat</span>.
+                  Он выдаст защищённый адрес вида <span className="font-mono">https://192.168.х.х:8800/</span> —
+                  вставьте его в поле выше. Затем один раз откройте ссылку
+                  «Открыть в браузере» и разрешите переход («Дополнительно» → «Перейти на сайт»).
                   <br /><br />
-                  Другие варианты: работать с резервом из <span className="font-semibold">десктопной
-                  версии</span> (ограничения нет) либо поставить свой https-прокси —
-                  образец настройки лежит в той же папке.
+                  <span className="font-semibold">Если интернет на резервном ПК открыт:</span> проще
+                  запустить <span className="font-mono">https\tunnel.bat</span> — он выдаст готовый
+                  адрес, настраивать браузеры не нужно.
+                  <br /><br />
+                  В <span className="font-semibold">десктопной версии</span> программы ничего этого
+                  не требуется — обычный адрес работает сразу.
                 </div>
               </div>
             )}

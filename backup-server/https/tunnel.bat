@@ -14,9 +14,13 @@ echo ============================================================
 echo   Waiting for HTTPS address...
 echo   Look for a line like:  https://xxxx-yyyy.trycloudflare.com
 echo   Copy it into admin panel field "Address of backup server".
+echo.
+echo   Mode: http2 (works behind corporate firewalls)
 echo ============================================================
 echo.
-cloudflared.exe tunnel --url http://127.0.0.1:8800
+cloudflared.exe tunnel --url http://127.0.0.1:8800 --protocol http2 --no-autoupdate
+echo.
+echo Tunnel stopped.
 pause
 exit /b 0
 
