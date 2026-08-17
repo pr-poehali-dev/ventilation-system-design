@@ -303,6 +303,17 @@ def main():
         ssl_ctx = (cert, key)
 
     if ssl_ctx:
+        # Гасим служебное предупреждение Flask про «development server»:
+        # для расчётного узла в локальной сети это штатный режим работы,
+        # а красный текст в окне пугает пользователей.
+        import logging
+        logging.getLogger("werkzeug").setLevel(logging.ERROR)
+        try:
+            import flask.cli
+            flask.cli.show_server_banner = lambda *a, **k: None
+        except Exception:
+            pass
+        print("Сервер запущен в защищённом режиме. Ожидаю расчёты...\n")
         app.run(host=args.host, port=args.port, threaded=True,
                 debug=False, ssl_context=ssl_ctx)
         return 0
