@@ -52,11 +52,10 @@ export default function ServerTab({
       }
     } catch {
       setPingState("fail");
-      const isLocalHttps = /^https:\/\/(\d{1,3}\.){3}\d{1,3}/.test(srvBackupUrl.trim());
       setPingMsg(mixedContent
         ? "Браузер заблокировал запрос: страница открыта по https, а сервер по http"
-        : isLocalHttps
-          ? "Сертификат сервера ещё не принят. Нажмите «Открыть в браузере» и разрешите переход"
+        : isPrivateIp
+          ? "Адрес недоступен с этого компьютера — см. пояснение ниже"
           : "Нет ответа. Проверьте адрес, питание ПК и порт в брандмауэре");
     }
   };
@@ -68,6 +67,12 @@ export default function ServerTab({
   const pageIsHttps = typeof window !== "undefined" && window.location.protocol === "https:";
   const urlIsHttp = /^http:\/\//i.test(srvBackupUrl.trim());
   const mixedContent = pageIsHttps && urlIsHttp;
+
+  // Адрес вида 192.168.x.x / 10.x.x.x / 172.16-31.x.x виден ТОЛЬКО внутри той же
+  // локальной сети. Если сервер стоит на удалённом ПК (другой офис, подключение
+  // по удалённому рабочему столу) — такой адрес недостижим в принципе.
+  const isPrivateIp = /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/i
+    .test(srvBackupUrl.trim());
 
   return (
   <div className="max-w-xl mx-auto">
@@ -151,17 +156,23 @@ export default function ServerTab({
               </div>
             )}
 
-            {/^https:\/\/(\d{1,3}\.){3}\d{1,3}/.test(srvBackupUrl.trim()) && pingState !== "ok" && (
+            {isPrivateIp && pingState !== "ok" && (
               <div className="text-[10.5px] text-blue-800 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
                 <div className="font-semibold mb-1 flex items-center gap-1.5">
-                  <Icon name="Info" size={13} />Обязательный шаг перед проверкой
+                  <Icon name="Info" size={13} />Это внутренний адрес локальной сети
                 </div>
-                Нажмите «Открыть в браузере» → браузер покажет предупреждение о защите →
-                «Дополнительно» → «Перейти на сайт». Когда увидите ответ со словом
-                <span className="font-mono"> ok</span> — вернитесь сюда и нажмите
-                «Проверить связь».
+                Он работает <span className="font-semibold">только на компьютерах, стоящих
+                в одной сети с резервным сервером</span>. Если вы подключаетесь к тому ПК
+                удалённо, ваш компьютер до этого адреса не достанет — проверка связи
+                всегда будет неуспешной, даже когда сервер исправен.
                 <br /><br />
-                Это делается один раз на каждом ПК, где работают с программой.
+                <span className="font-semibold">Как быть:</span>
+                <br />• Рабочие места находятся в той же сети, что и сервер? Тогда всё верно:
+                просто откройте адрес в браузере <span className="font-semibold">на одном
+                из них</span>, примите защиту и проверьте связь оттуда.
+                <br />• Сервер в другой сети? Нужен адрес, доступный извне —
+                запустите на нём <span className="font-mono">https\tunnel.bat</span> и
+                используйте выданный адрес <span className="font-mono">https://…trycloudflare.com</span>.
               </div>
             )}
 
