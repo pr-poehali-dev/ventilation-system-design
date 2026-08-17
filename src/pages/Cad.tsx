@@ -1073,9 +1073,9 @@ export default function CadPage() {
   // Метод расчёта: cross = Кросс, mkr = МКР
   const [calcMode, setCalcMode] = useState<"cross" | "mkr">("cross");
   // Параметры расчёта
-  const [solverTolerance, setSolverTolerance] = useState(0.01);
-  const [solverMaxIter, setSolverMaxIter] = useState(2000);
-  const [solverAlpha, setSolverAlpha] = useState(0.8);
+  const [solverTolerance, setSolverTolerance] = useState(0.0001);
+  const [solverMaxIter, setSolverMaxIter] = useState(5000);
+  const [solverAlpha, setSolverAlpha] = useState(0.5);
   // Температура воздуха на поверхности (для расчёта естественной тяги)
   const [surfaceTemp, setSurfaceTemp] = useState(20);
   // Сезон работы шахты. От него зависит, включены ли калориферы: в режиме
@@ -2727,9 +2727,9 @@ export default function CadPage() {
     setInfoConfig(DEFAULT_INFO_CONFIG);
     setUnitsConfig(DEFAULT_UNITS_CONFIG);
     setCalcMode("cross");
-    setSolverTolerance(0.01);
-    setSolverMaxIter(2000);
-    setSolverAlpha(0.8);
+    setSolverTolerance(0.0001);
+    setSolverMaxIter(5000);
+    setSolverAlpha(0.5);
     setSurfaceTemp(20);
     setUseNaturalDraft(true);
     setGeoGradient(3.0);
@@ -3021,9 +3021,9 @@ export default function CadPage() {
 
     // ── Параметры расчёта — сброс к дефолтам ──
     setCalcMode("cross");
-    setSolverTolerance(0.01);
-    setSolverMaxIter(2000);
-    setSolverAlpha(0.8);
+    setSolverTolerance(0.0001);
+    setSolverMaxIter(5000);
+    setSolverAlpha(0.5);
     setSurfaceTemp(20);
 
     // ── Справочники — сброс к заводским значениям ──
