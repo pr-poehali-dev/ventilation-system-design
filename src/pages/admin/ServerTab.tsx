@@ -124,11 +124,12 @@ export default function ServerTab({
           <div>
             <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Адрес аварийного сервера (URL)</div>
             <input value={srvBackupUrl} onChange={e => setSrvBackupUrl(e.target.value)}
-              placeholder="https://functions.poehali.dev/..."
+              placeholder="http://192.168.1.50:8800/"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-blue-400" />
-            <div className="text-[10px] text-gray-400 mt-1">
-              Резервная функция расчёта на втором аккаунте/сервере.
-              Свой ПК в сети: <span className="font-mono">http://IP-второго-ПК:8800/</span>
+            <div className="text-[10px] text-gray-500 mt-1.5 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-2">
+              Точный адрес показывает сам резервный сервер: в его окне после запуска
+              есть строка <span className="font-mono">АДРЕС ДЛЯ АДМИН-ПАНЕЛИ</span> —
+              скопируйте её сюда целиком (например <span className="font-mono">http://192.168.1.50:8800/</span>).
             </div>
 
             <div className="flex items-center gap-2 mt-2">

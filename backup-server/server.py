@@ -186,6 +186,22 @@ def health_payload() -> dict:
     }
 
 
+def lan_ip() -> str:
+    """IP этого ПК в локальной сети — его вписывают в админ-панели."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+
+
 def main():
     parser = argparse.ArgumentParser(description=APP_NAME)
     parser.add_argument("--host", default="0.0.0.0", help="Адрес прослушивания")
@@ -193,13 +209,21 @@ def main():
     args = parser.parse_args()
 
     state = health_payload()
+    ip = lan_ip()
+    addr = f"http://{ip}:{args.port}/"
+
     print(f"\n{APP_NAME}")
-    print(f"Слушаю: http://{args.host}:{args.port}")
     for name, ok in state["functions"].items():
-        print(f"  {'OK ' if ok else '—  '} {name}")
+        print(f"  {'OK ' if ok else '-- '} {name}")
     if not state["ok"]:
         print("\nВНИМАНИЕ: часть расчётных модулей не найдена — скопируйте их в папку functions/")
-    print()
+
+    print("\n" + "=" * 62)
+    print("  АДРЕС ДЛЯ АДМИН-ПАНЕЛИ (скопируйте в поле «Адрес аварийного сервера»):")
+    print(f"\n      {addr}\n")
+    print(f"  Проверка в браузере: {addr}health")
+    print("=" * 62)
+    print("\nОкно не закрывать — пока оно открыто, сервер работает.\n")
 
     try:
         from waitress import serve
