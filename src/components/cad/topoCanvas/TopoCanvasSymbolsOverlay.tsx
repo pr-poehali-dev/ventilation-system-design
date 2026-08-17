@@ -166,7 +166,7 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
       // Отрисовщик создаётся заново на каждый проход: он помнит, для каких
       // ветвей стрелка уже нарисована (одна стрелка на ветвь).
       const renderArrowOv = createFlowArrowRenderer({
-        view, projNodesMap, branchById, pollutedBranchIds,
+        view, projNodesMap, branchById, hiddenBranchIds, pollutedBranchIds,
         _branchObjSF, branchWidth, thinLines, showFlowArrows,
       });
 

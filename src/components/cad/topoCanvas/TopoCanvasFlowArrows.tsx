@@ -20,6 +20,8 @@ export interface FlowArrowDeps {
   view: ViewState;
   projNodesMap: Map<string, ProjNodeEntry>;
   branchById: Map<string, TopoBranch>;
+  /** ID ветвей, скрытых вместе со своим горизонтом */
+  hiddenBranchIds: Set<string>;
   pollutedBranchIds: Set<string>;
   _branchObjSF: number;
   branchWidth: number;
@@ -30,7 +32,7 @@ export interface FlowArrowDeps {
 /** Создаёт отрисовщик стрелок для ОДНОГО прохода рендера. */
 export function createFlowArrowRenderer(d: FlowArrowDeps) {
   const {
-    view, projNodesMap, branchById, pollutedBranchIds,
+    view, projNodesMap, branchById, hiddenBranchIds, pollutedBranchIds,
     _branchObjSF, branchWidth, thinLines, showFlowArrows,
   } = d;
 
@@ -40,6 +42,11 @@ export function createFlowArrowRenderer(d: FlowArrowDeps) {
   const arrowSeenBrOv = new Set<string>();
   return (sym: SymbolItem): React.ReactNode => {
     if (!sym.branchId || sym.typeId === "valve_reduce") return null;
+    // Горизонт ветви скрыт — стрелки быть не должно. Без этой проверки в
+    // canvas-режиме сама выработка и её символы пропадали, а красная стрелка
+    // направления воздуха оставалась висеть на пустом месте: символы УО
+    // фильтруются по hiddenBranchIds, а этот проход рисовался мимо фильтра.
+    if (hiddenBranchIds.has(sym.branchId)) return null;
     // Одна стрелка на ветвь (не дублируем для каждого символа на ветви).
     if (arrowSeenBrOv.has(sym.branchId)) return null;
     const brBody = branchById.get(sym.branchId);
