@@ -135,13 +135,35 @@ export default function ServerTab({
           <div>
             <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Адрес аварийного сервера (URL)</div>
             <input value={srvBackupUrl} onChange={e => setSrvBackupUrl(e.target.value)}
-              placeholder="http://192.168.1.50:8800/"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-blue-400" />
-            <div className="text-[10px] text-gray-500 mt-1.5 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-2">
-              Точный адрес показывает сам резервный сервер: в его окне после запуска
-              есть строка <span className="font-mono">АДРЕС ДЛЯ АДМИН-ПАНЕЛИ</span> —
-              скопируйте её сюда целиком (например <span className="font-mono">http://192.168.1.50:8800/</span>).
-            </div>
+              placeholder="https://192.168.0.179:8800/"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono text-gray-900 focus:outline-none focus:border-blue-400" />
+            {!srvBackupUrl.trim() ? (
+              <div className="text-[11px] text-amber-800 mt-1.5 bg-amber-50 border border-amber-300 rounded-lg px-2.5 py-2">
+                <span className="font-semibold">Поле пустое.</span> Серый текст выше — это только
+                пример, а не введённый адрес. Впишите сюда строку, которую показал
+                резервный сервер в своём окне (раздел «АДРЕС ДЛЯ АДМИН-ПАНЕЛИ»).
+              </div>
+            ) : (
+              <div className="text-[10px] text-gray-500 mt-1.5 bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-2">
+                Адрес берётся из окна резервного сервера — строка
+                «АДРЕС ДЛЯ АДМИН-ПАНЕЛИ», копируется целиком, вместе с
+                <span className="font-mono"> https://</span> и портом.
+              </div>
+            )}
+
+            {/^https:\/\/(\d{1,3}\.){3}\d{1,3}/.test(srvBackupUrl.trim()) && pingState !== "ok" && (
+              <div className="text-[10.5px] text-blue-800 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+                <div className="font-semibold mb-1 flex items-center gap-1.5">
+                  <Icon name="Info" size={13} />Обязательный шаг перед проверкой
+                </div>
+                Нажмите «Открыть в браузере» → браузер покажет предупреждение о защите →
+                «Дополнительно» → «Перейти на сайт». Когда увидите ответ со словом
+                <span className="font-mono"> ok</span> — вернитесь сюда и нажмите
+                «Проверить связь».
+                <br /><br />
+                Это делается один раз на каждом ПК, где работают с программой.
+              </div>
+            )}
 
             {mixedContent && (
               <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
@@ -172,7 +194,8 @@ export default function ServerTab({
 
             <div className="flex items-center gap-2 mt-2">
               <button onClick={pingBackup} disabled={!srvBackupUrl.trim() || pingState === "run"}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-300 text-gray-600 hover:border-blue-400 disabled:opacity-50">
+                title={!srvBackupUrl.trim() ? "Сначала впишите адрес резервного сервера" : ""}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-300 text-gray-600 hover:border-blue-400 disabled:opacity-40 disabled:cursor-not-allowed">
                 {pingState === "run"
                   ? <><Icon name="Loader" size={13} className="animate-spin" />Проверка...</>
                   : <><Icon name="Activity" size={13} />Проверить связь</>}
@@ -240,7 +263,7 @@ export default function ServerTab({
           всё нужное и покажет список расчётов со статусом OK. Окно не закрывать.</li>
         <li>Откройте порт 8800 в брандмауэре Windows
           (Правила для входящих → Порт → TCP 8800 → Разрешить).</li>
-        <li>Впишите сюда адрес <span className="font-mono">http://IP-второго-ПК:8800/</span> и
+        <li>Скопируйте адрес из окна сервера (строка «АДРЕС ДЛЯ АДМИН-ПАНЕЛИ») в поле выше,
           нажмите «Проверить связь», затем «Сохранить».</li>
       </ol>
       <div className="text-[11px] text-gray-600 mt-3 space-y-1 border-t border-gray-100 pt-3">
