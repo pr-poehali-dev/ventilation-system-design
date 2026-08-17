@@ -11,7 +11,8 @@ import {
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
 } from "@/lib/topology";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
-import { MS_IND_BG_PRESETS, MS_IND_BG_DEFAULT, MS_IND_BG_NONE } from "@/lib/msIndicatorStyle";
+import { MS_IND_BG_DEFAULT, FAN_IND_BG_DEFAULT } from "@/lib/msIndicatorStyle";
+import IndicatorBgPicker from "@/components/cad/IndicatorBgPicker";
 import { type SolveResult } from "@/lib/networkSolver";
 import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower, bladeAngleFactor } from "@/lib/fanCurves";
 import FanCurveChart from "@/components/cad/FanCurveChart";
@@ -8571,41 +8572,10 @@ export default function CadPage() {
                           {/* Фон под индикаторами: на крупных схемах подписи ЗС
                               теряются среди выработок, поэтому по умолчанию
                               подкладывается зелёная плашка. */}
-                          <div className="flex items-start gap-1 mb-1.5">
-                            <span className="text-gray-500 w-20 flex-shrink-0 pt-0.5">Фон</span>
-                            <div className="flex-1">
-                              <div className="flex flex-wrap gap-1">
-                                {MS_IND_BG_PRESETS.map(({ color, title }) => {
-                                  const cur = sym.msIndBgColor ?? MS_IND_BG_DEFAULT;
-                                  return (
-                                    <button key={color} title={title}
-                                      onClick={() => updSym({ msIndBgColor: color })}
-                                      style={{
-                                        width: 18, height: 18, borderRadius: 3, background: color,
-                                        border: cur === color ? "2px solid #1a3a6b" : "1px solid #c8c8c8",
-                                        cursor: "pointer", flexShrink: 0,
-                                      }} />
-                                  );
-                                })}
-                                <button title="Без фона"
-                                  onClick={() => updSym({ msIndBgColor: MS_IND_BG_NONE })}
-                                  style={{
-                                    width: 18, height: 18, borderRadius: 3, background: "white",
-                                    border: (sym.msIndBgColor ?? MS_IND_BG_DEFAULT) === MS_IND_BG_NONE
-                                      ? "2px solid #1a3a6b" : "1px solid #c8c8c8",
-                                    cursor: "pointer", flexShrink: 0,
-                                    color: "#dc2626", fontSize: 12, lineHeight: 1, fontWeight: 700,
-                                  }}>×</button>
-                              </div>
-                              <input type="color"
-                                value={(sym.msIndBgColor ?? MS_IND_BG_DEFAULT) === MS_IND_BG_NONE
-                                  ? MS_IND_BG_DEFAULT : (sym.msIndBgColor ?? MS_IND_BG_DEFAULT)}
-                                onChange={(e) => updSym({ msIndBgColor: e.target.value })}
-                                title="Свой цвет"
-                                className="mt-1 w-full h-5 cursor-pointer"
-                                style={{ border: "1px solid #c8c8c8", borderRadius: 2, padding: 0, background: "white" }} />
-                            </div>
-                          </div>
+                          <IndicatorBgPicker
+                            value={sym.msIndBgColor}
+                            defaultColor={MS_IND_BG_DEFAULT}
+                            onChange={(c) => updSym({ msIndBgColor: c })} />
                         </div>
                       )}
                     </>
@@ -8629,6 +8599,14 @@ export default function CadPage() {
                           className="w-16 border border-gray-300 rounded px-1 text-right"
                           style={{ fontSize: 11 }} />
                       </div>
+
+                      {/* Фон под подписью вентилятора. По умолчанию синий —
+                          чтобы оборудование отличалось от зелёных замерных
+                          станций и не терялось на крупной схеме. */}
+                      <IndicatorBgPicker
+                        value={sym.fanIndBgColor}
+                        defaultColor={FAN_IND_BG_DEFAULT}
+                        onChange={(c) => updSym({ fanIndBgColor: c })} />
                       <div className="flex items-center gap-2 mb-1.5">
                         <button
                           onClick={() => updSym({ fanIndOffsetX: 0, fanIndOffsetY: 0 })}

@@ -3,7 +3,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
-import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,11 +749,15 @@ export function renderSymbolNode(
         const bxF = px + perpXF * (gapF + boxWF / 2) + (sym.fanIndOffsetX ?? 0) * fanDragSF;
         const byF = py + perpYF * (gapF + boxHF / 2) + (sym.fanIndOffsetY ?? 0) * fanDragSF;
         const opacityF = Math.min(1, (view.scale - 0.05) / 0.06);
+        // Подложка под подписью вентилятора (по умолчанию синяя) — иначе
+        // показатели оборудования теряются на крупной схеме.
+        const fanBg = fanIndBg(sym.fanIndBgColor);
+        const fanFg = msIndTextColor(fanBg);
 
         return (
           <g opacity={opacityF}>
             <line x1={px} y1={py} x2={bxF} y2={byF - boxHF / 2}
-              stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+              stroke={fanBg ?? "#8899bb"} strokeWidth={0.7} strokeDasharray="3 2" />
             <g style={{ cursor: "move" }}
               onMouseDown={(e) => {
                 if (tool !== "select") return;
@@ -771,12 +775,23 @@ export function renderSymbolNode(
                 window.addEventListener("mousemove", onMove);
                 window.addEventListener("mouseup", onUp);
               }}>
+              {/* Плашка под текстом. Прозрачный прямоугольник нужен и без
+                  фона — за него удобно перетаскивать подпись. */}
+              <rect
+                x={bxF - boxWF / 2} y={byF - boxHF / 2}
+                width={boxWF} height={boxHF}
+                rx={Math.min(4 * _indZoomSF, boxHF / 3)}
+                fill={fanBg ?? "transparent"}
+                stroke={fanBg ? "white" : "none"}
+                strokeWidth={fanBg ? Math.max(0.5, 1.2 * _indZoomSF) : 0} />
               {fanLines.map((line, i) => (
                 <text key={i}
                   x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
                   textAnchor="middle" fontSize={fSizeF}
-                  fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
-                  style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                  fill={fanFg} fontFamily="Segoe UI, sans-serif"
+                  style={fanBg
+                    ? undefined
+                    : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                   {line}
                 </text>
               ))}

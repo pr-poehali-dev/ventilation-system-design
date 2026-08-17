@@ -125,6 +125,8 @@ export interface Props {
     bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
     /** Подпись вентилятора: смещение перетаскиванием и размер шрифта */
     fanIndOffsetX?: number; fanIndOffsetY?: number; fanIndFontSize?: number;
+    /** Цвет подложки подписи вентилятора ("none" — без фона) */
+    fanIndBgColor?: string;
     /** Замерная станция: данные замера и настройки её индикаторов */
     msNumber?: string; msLocation?: string; msArea?: number; msFlow?: number; msVelocity?: number;
     msIndNumber?: boolean; msIndLocation?: boolean; msIndFlow?: boolean;

@@ -7,7 +7,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
-import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 
 // Кэш SVG-иконок, преобразованных в Image (по svgContent)
 const svgImageCache = new Map<string, HTMLImageElement>();
@@ -397,19 +397,39 @@ export async function drawSymbolsToCanvas(
         const bxF = px + perpXf * (16 + boxWF / 2) + fanOffX;
         const byF = py + perpYf * (16 + boxHF / 2) + fanOffY;
 
+        // Подложка под подписью — как на экране (по умолчанию синяя).
+        const bgF = fanIndBg((sym as { fanIndBgColor?: string }).fanIndBgColor);
+        const fgF = msIndTextColor(bgF);
+
         ctx.save();
-        ctx.strokeStyle = "#555555"; ctx.lineWidth = 0.4;
+        ctx.strokeStyle = bgF ?? "#555555"; ctx.lineWidth = 0.4;
         ctx.setLineDash([2, 3]);
         ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bxF, byF - boxHF / 2); ctx.stroke();
         ctx.setLineDash([]);
+        if (bgF) {
+          const rxF = Math.min(4, boxHF / 3);
+          const xF = bxF - boxWF / 2, yF = byF - boxHF / 2;
+          ctx.beginPath();
+          ctx.moveTo(xF + rxF, yF);
+          ctx.arcTo(xF + boxWF, yF, xF + boxWF, yF + boxHF, rxF);
+          ctx.arcTo(xF + boxWF, yF + boxHF, xF, yF + boxHF, rxF);
+          ctx.arcTo(xF, yF + boxHF, xF, yF, rxF);
+          ctx.arcTo(xF, yF, xF + boxWF, yF, rxF);
+          ctx.closePath();
+          ctx.fillStyle = bgF; ctx.fill();
+          ctx.strokeStyle = "white"; ctx.lineWidth = 1.2; ctx.stroke();
+        }
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         fanLines.forEach((line, i) => {
           const tyF = byF - boxHF / 2 + i * lhF + 3;
           ctx.font = `400 ${fsF}px "Segoe UI", sans-serif`;
-          ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
-          ctx.strokeText(line, bxF, tyF);
-          ctx.fillStyle = "#1a2a4a";
+          // Обводка только без плашки: на фоне она размывает буквы.
+          if (!bgF) {
+            ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
+            ctx.strokeText(line, bxF, tyF);
+          }
+          ctx.fillStyle = fgF;
           ctx.fillText(line, bxF, tyF);
         });
         ctx.restore();
