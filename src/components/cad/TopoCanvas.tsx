@@ -601,8 +601,23 @@ export default function TopoCanvas(props: Props) {
     return visited;
   }, [branches]);
 
+  // ВАЖНО: попадание (кликом и тапом) ищем только среди ВИДИМЫХ объектов.
+  // Раньше hit-тест шёл по полному списку branches/projNodes, и клик по месту,
+  // где проходит выработка скрытого горизонта, выделял её: невидимый объект
+  // попадал в панель свойств и мог быть случайно изменён или удалён.
+  const hitNodeVisible = useMemo(
+    () => projNodes.filter((p) => !hiddenNodeIds.has(p.node.id)),
+    [projNodes, hiddenNodeIds]
+  );
+
   // Обновляем ref для touch hit-test (всегда актуальные данные без пересоздания listeners)
-  touchHitRef.current = { projNodes, projNodesMap, branches, onSelectNode, onSelectBranch, onScaleChange, view, xyScale: xyScale ?? 1, branchWidth: branchWidth ?? 2.5 };
+  touchHitRef.current = {
+    projNodes: hitNodeVisible,
+    projNodesMap,
+    branches: visibleBranches,
+    onSelectNode, onSelectBranch, onScaleChange, view,
+    xyScale: xyScale ?? 1, branchWidth: branchWidth ?? 2.5,
+  };
 
   // Нативные touch-listeners на SVG с {passive:false}
   useEffect(() => {
@@ -800,7 +815,7 @@ export default function TopoCanvas(props: Props) {
     const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    const hitN = hitNode(sx, sy, projNodes);
+    const hitN = hitNode(sx, sy, hitNodeVisible);
     if (hitN) {
       // При правом клике НЕ сбрасываем мультивыбор — передаём только контекстное меню.
       // onSelectNode сбросил бы selectedNodeIds, поэтому вызываем его только если узел ещё не выбран.
@@ -811,7 +826,7 @@ export default function TopoCanvas(props: Props) {
       onNodeContextMenu?.(hitN, e.clientX, e.clientY);
       return;
     }
-    const hitB = hitBranch(sx, sy, projNodesMap, branches);
+    const hitB = hitBranch(sx, sy, projNodesMap, visibleBranches);
     if (hitB) {
       // При правом клике НЕ сбрасываем мультивыбор ветвей — если ветвь уже
       // выделена, оставляем весь Set (иначе, например, вентрубопровод строился
@@ -938,13 +953,13 @@ export default function TopoCanvas(props: Props) {
     // по [data-sym], то в canvas-режиме по такому узлу невозможно попасть.
     // Поэтому в режиме pick сразу делаем hit-тест по узлам/ветвям схемы.
     if (rescuePickMode && e.button === 0) {
-      const hitNp = hitNode(sx, sy, projNodes);
+      const hitNp = hitNode(sx, sy, hitNodeVisible);
       if (hitNp && onRescueNodePick) {
         onRescueNodePick(hitNp);
         e.stopPropagation();
         return;
       }
-      const hitBp = !hitNp ? hitBranch(sx, sy, projNodesMap, branches) : null;
+      const hitBp = !hitNp ? hitBranch(sx, sy, projNodesMap, visibleBranches) : null;
       if (hitBp && onRescueBranchPick) {
         onRescueBranchPick(hitBp);
         e.stopPropagation();
@@ -959,8 +974,8 @@ export default function TopoCanvas(props: Props) {
     // Если клик произошёл внутри g[data-sym] — это символ УО, не трогаем ветвь/узел
     if ((e.target as Element).closest?.("[data-sym]")) return;
 
-    const hitN = hitNode(sx, sy, projNodes);
-    const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, branches) : null;
+    const hitN = hitNode(sx, sy, hitNodeVisible);
+    const hitB = !hitN ? hitBranch(sx, sy, projNodesMap, visibleBranches) : null;
 
     // ─── РЕЖИМ ПРИВЯЗКИ ВЕТВЕЙ К ПОЗИЦИИ (F3) ──────────────────────────
     if (branchBindMode && hitB) {
@@ -1221,7 +1236,7 @@ export default function TopoCanvas(props: Props) {
 
     // Подсветка ветви при tool=symbol или pendingSymbol
     if (tool === "symbol" || pendingSymbolTypeId) {
-      const hb = hitBranchR(sx, sy, projNodesMap, branches, 10);
+      const hb = hitBranchR(sx, sy, projNodesMap, visibleBranches, 10);
       setHoverBranchId(hb ?? null);
     } else if (hoverBranchId) {
       setHoverBranchId(null);
