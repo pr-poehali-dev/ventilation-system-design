@@ -5,6 +5,7 @@
 //
 // Вынесено из Admin.tsx БЕЗ изменений разметки, текстов и обработчиков.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
 
 interface ServerTabProps {
@@ -26,6 +27,34 @@ export default function ServerTab({
   srvAutofail, setSrvAutofail, srvCfgLoading, srvCfgSaving,
   srvCfgOk, srvCfgErr, saveServerCfg,
 }: ServerTabProps) {
+  const [pingState, setPingState] = useState<"idle" | "run" | "ok" | "fail">("idle");
+  const [pingMsg, setPingMsg] = useState("");
+
+  const pingBackup = async () => {
+    const base = srvBackupUrl.trim().replace(/\/+$/, "");
+    if (!base) return;
+    setPingState("run");
+    setPingMsg("");
+    try {
+      const res = await fetch(`${base}/health`, { method: "GET" });
+      const j = await res.json();
+      if (res.ok && j?.ok) {
+        setPingState("ok");
+        setPingMsg("Резервный сервер отвечает, все расчёты загружены");
+      } else {
+        setPingState("fail");
+        const miss = Object.entries(j?.functions ?? {})
+          .filter(([, v]) => !v).map(([k]) => k).join(", ");
+        setPingMsg(miss
+          ? `Сервер отвечает, но не найдены расчёты: ${miss}`
+          : "Сервер ответил ошибкой");
+      }
+    } catch {
+      setPingState("fail");
+      setPingMsg("Нет ответа. Проверьте адрес, питание ПК и порт в брандмауэре");
+    }
+  };
+
   return (
   <div className="max-w-xl mx-auto">
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
@@ -69,6 +98,26 @@ export default function ServerTab({
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-blue-400" />
             <div className="text-[10px] text-gray-400 mt-1">
               Резервная функция расчёта на втором аккаунте/сервере.
+              Свой ПК в сети: <span className="font-mono">http://IP-второго-ПК:8800/</span>
+            </div>
+
+            <div className="flex items-center gap-2 mt-2">
+              <button onClick={pingBackup} disabled={!srvBackupUrl.trim() || pingState === "run"}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-gray-300 text-gray-600 hover:border-blue-400 disabled:opacity-50">
+                {pingState === "run"
+                  ? <><Icon name="Loader" size={13} className="animate-spin" />Проверка...</>
+                  : <><Icon name="Activity" size={13} />Проверить связь</>}
+              </button>
+              {pingState === "ok" && (
+                <span className="text-[11px] text-green-600 flex items-center gap-1">
+                  <Icon name="Check" size={13} />{pingMsg}
+                </span>
+              )}
+              {pingState === "fail" && (
+                <span className="text-[11px] text-red-500 flex items-center gap-1">
+                  <Icon name="CircleAlert" size={13} />{pingMsg}
+                </span>
+              )}
             </div>
           </div>
 
@@ -96,6 +145,33 @@ export default function ServerTab({
           </button>
         </div>
       )}
+    </div>
+
+    {/* Инструкция по развёртыванию резерва на своём ПК */}
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
+      <div className="flex items-center gap-2 mb-3">
+        <Icon name="BookOpen" size={16} className="text-blue-500" />
+        <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>
+          Как поднять резерв на своём втором ПК
+        </span>
+      </div>
+      <ol className="text-[11.5px] text-gray-600 space-y-2 list-decimal pl-4">
+        <li>Скопируйте на второй ПК папку <span className="font-mono">backup-server</span> из
+          комплекта программы (в ней уже лежат все расчётные модули).</li>
+        <li>Установите Python 3.11 с python.org, отметив галочку
+          «Add python.exe to PATH».</li>
+        <li>Запустите <span className="font-mono">start.bat</span> — окно само поставит
+          всё нужное и покажет список расчётов со статусом OK. Окно не закрывать.</li>
+        <li>Откройте порт 8800 в брандмауэре Windows
+          (Правила для входящих → Порт → TCP 8800 → Разрешить).</li>
+        <li>Впишите сюда адрес <span className="font-mono">http://IP-второго-ПК:8800/</span> и
+          нажмите «Проверить связь», затем «Сохранить».</li>
+      </ol>
+      <div className="text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+        Если программа открыта по защищённому адресу (https), браузер не пустит запрос
+        на обычный http-сервер. В этом случае используйте резерв из десктопной версии
+        или поставьте перед сервером https-прокси.
+      </div>
     </div>
   </div>
   );
