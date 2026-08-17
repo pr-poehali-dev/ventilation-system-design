@@ -1,0 +1,46 @@
+# HTTPS-прокси перед аварийным расчётным сервером ПВ-Системы.
+# Ставится на том же ПК, где работает резерв (или на любом сервере в сети).
+#
+# 1. Положите сертификат и ключ предприятия в указанные пути.
+# 2. Скопируйте этот блок в конфигурацию nginx.
+# 3. Перезапустите nginx.
+# 4. В админ-панели укажите: https://calc.mine.local/
+
+server {
+    listen 443 ssl;
+    server_name calc.mine.local;          # <-- имя резервного сервера в сети
+
+    ssl_certificate     C:/certs/mine.crt; # <-- сертификат предприятия
+    ssl_certificate_key C:/certs/mine.key; # <-- закрытый ключ
+
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    # Схемы вентиляции бывают большими — снимаем ограничение на размер запроса
+    client_max_body_size 64m;
+
+    # Расчёт крупной схемы может идти несколько минут
+    proxy_read_timeout   600s;
+    proxy_send_timeout   600s;
+    proxy_connect_timeout 30s;
+
+    location / {
+        proxy_pass http://127.0.0.1:8800;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Ответы уже содержат заголовки доступа от самого сервера —
+        # дублировать их здесь не нужно.
+    }
+}
+
+# Необязательно: перенаправление с http на https
+server {
+    listen 80;
+    server_name calc.mine.local;
+    return 301 https://$host$request_uri;
+}

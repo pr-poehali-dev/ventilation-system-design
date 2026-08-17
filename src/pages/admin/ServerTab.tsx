@@ -151,11 +151,15 @@ export default function ServerTab({
                   работает по обычному http. Браузер блокирует такие запросы —
                   и «Проверить связь» всегда покажет «нет ответа», даже если сервер работает.
                   <br /><br />
-                  <span className="font-semibold">Что делать (любой из вариантов):</span>
-                  <br />1. Работать с резервом из <span className="font-semibold">десктопной версии</span> программы —
-                  там ограничения нет, ничего настраивать не нужно.
-                  <br />2. Открыть саму программу по локальному адресу http.
-                  <br />3. Поставить перед резервным сервером https-прокси с сертификатом.
+                  <span className="font-semibold">Решение за 1 минуту:</span> на резервном ПК,
+                  в папке <span className="font-mono">backup-server/https</span>, запустите
+                  файл <span className="font-mono">tunnel.bat</span>. Он выдаст защищённый
+                  адрес вида <span className="font-mono">https://…trycloudflare.com</span> —
+                  вставьте его в поле выше вместо текущего.
+                  <br /><br />
+                  Другие варианты: работать с резервом из <span className="font-semibold">десктопной
+                  версии</span> (ограничения нет) либо поставить свой https-прокси —
+                  образец настройки лежит в той же папке.
                 </div>
               </div>
             )}
@@ -240,9 +244,10 @@ export default function ServerTab({
         <div><span className="font-mono">autostart.bat</span> — включить/выключить автозапуск вместе с Windows</div>
       </div>
       <div className="text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-        Если программа открыта по защищённому адресу (https), браузер не пустит запрос
-        на обычный http-сервер. В этом случае используйте резерв из десктопной версии
-        или поставьте перед сервером https-прокси.
+        Работаете через браузер по защищённому адресу (https)? Тогда после шага 3
+        запустите ещё <span className="font-mono">https\tunnel.bat</span> — он выдаст
+        защищённый адрес, который нужно вписать сюда вместо обычного.
+        В десктопной версии это не требуется.
       </div>
     </div>
   </div>
