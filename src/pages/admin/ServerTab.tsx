@@ -20,12 +20,13 @@ interface ServerTabProps {
   srvCfgOk: boolean;
   srvCfgErr: string;
   saveServerCfg: () => void;
+  switchServer: (target: "primary" | "backup") => void;
 }
 
 export default function ServerTab({
   srvActive, setSrvActive, srvBackupUrl, setSrvBackupUrl,
   srvAutofail, setSrvAutofail, srvCfgLoading, srvCfgSaving,
-  srvCfgOk, srvCfgErr, saveServerCfg,
+  srvCfgOk, srvCfgErr, saveServerCfg, switchServer,
 }: ServerTabProps) {
   const [pingState, setPingState] = useState<"idle" | "run" | "ok" | "fail">("idle");
   const [pingMsg, setPingMsg] = useState("");
@@ -55,8 +56,37 @@ export default function ServerTab({
     }
   };
 
+  const onBackup = srvActive === "backup";
+
   return (
   <div className="max-w-xl mx-auto">
+    {/* Текущий сервер + мгновенное ручное переключение */}
+    <div className={`rounded-xl shadow-sm border p-4 mb-5 ${onBackup ? "bg-amber-50 border-amber-300" : "bg-green-50 border-green-300"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className={`w-2.5 h-2.5 rounded-full ${onBackup ? "bg-amber-500" : "bg-green-500"} animate-pulse`} />
+          <div>
+            <div className="text-[10px] font-semibold text-gray-400 uppercase">Расчёты идут через</div>
+            <div className={`text-[14px] font-bold ${onBackup ? "text-amber-700" : "text-green-700"}`}>
+              {onBackup ? "Аварийный резервный сервер" : "Основной сервер"}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={() => switchServer(onBackup ? "primary" : "backup")}
+          disabled={srvCfgSaving || srvCfgLoading || (!onBackup && !srvBackupUrl.trim())}
+          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[12px] font-bold text-white shadow-sm disabled:opacity-50 transition-colors ${onBackup ? "bg-green-600 hover:bg-green-700" : "bg-amber-500 hover:bg-amber-600"}`}>
+          {srvCfgSaving
+            ? <><Icon name="Loader" size={14} className="animate-spin" />Переключаю...</>
+            : <><Icon name="RefreshCw" size={14} />
+                {onBackup ? "Вернуть на основной" : "Переключить на резерв"}</>}
+        </button>
+      </div>
+      <div className="text-[10.5px] text-gray-500 mt-2">
+        Переключение применяется сразу — все рабочие места подхватят его автоматически.
+      </div>
+    </div>
+
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
       <div className="flex items-center gap-2 mb-1">
         <Icon name="Server" size={16} className="text-blue-500" />
@@ -167,6 +197,12 @@ export default function ServerTab({
         <li>Впишите сюда адрес <span className="font-mono">http://IP-второго-ПК:8800/</span> и
           нажмите «Проверить связь», затем «Сохранить».</li>
       </ol>
+      <div className="text-[11px] text-gray-600 mt-3 space-y-1 border-t border-gray-100 pt-3">
+        <div className="font-semibold text-[11.5px]" style={{ color: "#1a3a6b" }}>Управление сервером на втором ПК</div>
+        <div><span className="font-mono">run.bat</span> — обычный запуск (после первой установки)</div>
+        <div><span className="font-mono">stop.bat</span> — остановить сервер</div>
+        <div><span className="font-mono">autostart.bat</span> — включить/выключить автозапуск вместе с Windows</div>
+      </div>
       <div className="text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
         Если программа открыта по защищённому адресу (https), браузер не пустит запрос
         на обычный http-сервер. В этом случае используйте резерв из десктопной версии

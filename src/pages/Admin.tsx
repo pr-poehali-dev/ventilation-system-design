@@ -159,6 +159,33 @@ export default function Admin() {
     }
   };
 
+  // Мгновенное ручное переключение расчётов между серверами: меняет активный
+  // сервер и СРАЗУ сохраняет — без отдельного нажатия «Сохранить».
+  const switchServer = async (target: "primary" | "backup") => {
+    if (target === "backup" && !srvBackupUrl.trim()) {
+      setSrvCfgErr("Сначала укажите адрес аварийного сервера");
+      return;
+    }
+    setSrvActive(target);
+    setSrvCfgSaving(true);
+    setSrvCfgErr("");
+    setSrvCfgOk(false);
+    try {
+      await adminApi(password, {
+        action: "set_compute_config",
+        active: target,
+        backup_url: srvBackupUrl.trim(),
+        autofailover: srvAutofail,
+      });
+      setSrvCfgOk(true);
+      setTimeout(() => setSrvCfgOk(false), 2000);
+    } catch (e: unknown) {
+      setSrvCfgErr(e instanceof Error ? e.message : "Ошибка переключения");
+    } finally {
+      setSrvCfgSaving(false);
+    }
+  };
+
   const loadOfflineKeys = useCallback(async (pwd: string) => {
     setOkLoading(true);
     try {
@@ -516,6 +543,7 @@ export default function Admin() {
             srvCfgLoading={srvCfgLoading} srvCfgSaving={srvCfgSaving}
             srvCfgOk={srvCfgOk} srvCfgErr={srvCfgErr}
             saveServerCfg={saveServerCfg}
+            switchServer={switchServer}
           />
         )}
 
