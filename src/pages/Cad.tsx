@@ -3817,6 +3817,42 @@ export default function CadPage() {
     // на поверхность (нет пути к атмосферному узлу) не дают корректно рассчитать
     // воздухораспределение. Предупреждаем и открываем вкладку «Изолир.».
     const check = checkSchema(nodes, branches);
+    // Обрыв связи проверяем ПЕРВЫМ: ветвь, привязанная к удалённому узлу, —
+    // причина, а «сеть распадается на несвязные части» и обнулённый расчёт —
+    // лишь следствие. Раньше такой обрыв нигде не показывался, и пользователю
+    // приходилось искать причину вручную по всей схеме.
+    if (check.brokenBranches.length > 0) {
+      setActiveSide("check");
+      setCheckTab("brokenBranch");
+      const brokenIds = check.brokenBranches.map(x => x.branch.id);
+      setSelectedBranchIds(new Set(brokenIds));
+      setSelectedNodeId(null);
+      setSelectedBranchId(brokenIds[0]);
+      setFocusPos(null);
+      setFocusBranchId(brokenIds[0]);
+      setFocusNonce(Date.now());
+
+      // Показываем первые несколько ветвей с номерами отсутствующих узлов —
+      // так пользователь сразу видит, где именно порвана связь.
+      const sample = check.brokenBranches.slice(0, 5)
+        .map(x => `  • ветвь ${x.branch.id} → нет узла ${x.missingIds.join(", ")}`)
+        .join("\n");
+      const more = check.brokenBranches.length > 5
+        ? `\n  … и ещё ${check.brokenBranches.length - 5}`
+        : "";
+      addLog("error", `Обрыв связи: ветвей с ссылкой на несуществующий узел — ${check.brokenBranches.length}. `
+        + `Расчёт воздухораспределения обнулится, пока связь не восстановлена.`);
+      check.brokenBranches.forEach(x => {
+        addLog("error", `  Ветвь ${x.branch.id}: не найден узел ${x.missingIds.join(", ")}`);
+      });
+      if (!window.confirm(
+        `Найдено ветвей с оборванной связью: ${check.brokenBranches.length}.\n\n`
+        + `Эти ветви привязаны к узлам, которых в схеме больше нет (узлы удалены или перенумерованы):\n${sample}${more}\n\n`
+        + `Из-за этого сеть распадается на несвязные части и расчёт воздухораспределения обнуляется.\n`
+        + `Ветви отмечены на схеме и открыты во вкладке «Обрыв» — восстановите привязку к существующим узлам.\n\n`
+        + `Запустить расчёт всё равно?`
+      )) return;
+    }
     if (check.noAtmosphere || check.isolatedBranches.length > 0) {
       setActiveSide("check");
       setCheckTab("isolatedBranch");
@@ -6695,7 +6731,7 @@ export default function CadPage() {
               const {
                 nearPairs, isolated, dupes, dupBranches,
                 zeroRBranches, zeroLenBranches, highRBranches, bulkBranches, manualLenBranches,
-                isolatedBranches, noAtmosphere,
+                isolatedBranches, noAtmosphere, brokenBranches,
                 tabCounts, totalIssues, truncated,
               } = schemaCheckResult;
 
@@ -6816,6 +6852,7 @@ export default function CadPage() {
                     {navBtn("bulkR",          "Перем.",  tabCounts.bulkR,         "DoorClosed")}
                     {navBtn("manualLen",      "L ручн.", tabCounts.manualLen,     "Ruler")}
                     {navBtn("isolatedBranch", "Изолир.", tabCounts.isolatedBranch, "Network")}
+                    {navBtn("brokenBranch",   "Обрыв",   tabCounts.brokenBranch,   "Unlink")}
                   </div>
 
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
@@ -7289,6 +7326,71 @@ export default function CadPage() {
                                     {branchBtn(b)}
                                     <div className="text-[10px] text-gray-400 mt-0.5">
                                       Нет связи с поверхностью · L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м²
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Обрыв связи (ветвь ссылается на удалённый узел) ── */}
+                  {checkTab === "brokenBranch" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1.5">
+                          У ветви оборван конец: она ссылается на узел, которого в схеме
+                          больше нет. Обычно так получается после удаления или
+                          перенумерации узлов. Длина и сопротивление такой ветви не
+                          пересчитываются, а сеть распадается на несвязные части —
+                          расчёт воздухораспределения обнуляется.
+                        </div>
+                        {brokenBranches.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const ids = brokenBranches.map(x => x.branch.id);
+                              setSelectedBranchIds(new Set(ids));
+                              setSelectedNodeId(null);
+                              setSelectedBranchId(ids[0]);
+                              setFocusPos(null);
+                              setFocusBranchId(ids[0]);
+                              setFocusNonce(Date.now());
+                            }}
+                            className="mt-1.5 text-[10px] font-medium px-2 py-1 rounded border"
+                            style={{ borderColor: "#fca5a5", background: "#fef2f2", color: "#b91c1c" }}
+                          >
+                            Выделить все на схеме
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {brokenBranches.length === 0 ? (
+                          <EmptyOk text="Обрывов не найдено — все ветви привязаны к существующим узлам" />
+                        ) : (
+                          <div className="flex flex-col">
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              Ветвей: <b className="text-red-600">{brokenBranches.length}</b>
+                            </div>
+                            {brokenBranches.map(({ branch: b, missing, missingIds }) => {
+                              const isSel = selectedBranchId === b.id;
+                              const what = missing === "both" ? "оба узла" : missing === "from" ? "начальный узел" : "конечный узел";
+                              return (
+                                <div key={b.id}
+                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                  onClick={() => focusBranch(b.id)}
+                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                >
+                                  <Icon name="Unlink" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    {branchBtn(b)}
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                      Не найден {what}: <b className="text-red-600">{missingIds.join(", ")}</b>
                                     </div>
                                   </div>
                                 </div>

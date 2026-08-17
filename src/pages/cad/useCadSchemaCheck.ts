@@ -16,7 +16,8 @@ import type { SideTab } from "./cadTypes";
 
 export type CheckTab =
   | "near" | "isolated" | "dupes" | "dupbranch" | "zeroR"
-  | "zeroLen" | "highR" | "bulkR" | "manualLen" | "isolatedBranch";
+  | "zeroLen" | "highR" | "bulkR" | "manualLen" | "isolatedBranch"
+  | "brokenBranch";
 
 // "objects" — поиск по объектам схемы: вентиляторы (ГВУ/ВВУ/ВМП), перемычки,
 // оборудование водопровода, очаги пожара и места взрыва.

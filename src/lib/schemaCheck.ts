@@ -11,6 +11,18 @@ import type { TopoNode, TopoBranch } from "./topology";
 import { branchBulkheadRkMurg } from "./bulkheads";
 
 export interface NearPair { a: TopoNode; b: TopoNode; dist: number }
+/**
+ * Ветвь с «оборванным» концом: её fromId/toId ссылается на узел, которого
+ * в схеме больше нет (узел удалён или перенумерован, а ветвь осталась).
+ * Такая ветвь физически ни к чему не присоединена — расчёт по ней невозможен.
+ */
+export interface BrokenBranch {
+  branch: TopoBranch;
+  /** Какой конец оборван: начало, конец или оба */
+  missing: "from" | "to" | "both";
+  /** id отсутствующих узлов (для показа пользователю) */
+  missingIds: string[];
+}
 export interface DupePair { a: TopoNode; b: TopoNode }
 export interface DupBranchGroup { branches: TopoBranch[]; key: string }
 export interface BulkCheck { branch: TopoBranch; rKmu: number }
@@ -32,10 +44,12 @@ export interface SchemaCheckResult {
   isolatedBranches: TopoBranch[];
   /** true — в схеме вообще нет атмосферных узлов (выхода на поверхность). */
   noAtmosphere: boolean;
+  /** Ветви, ссылающиеся на несуществующие узлы — «разорванная» связь. */
+  brokenBranches: BrokenBranch[];
   tabCounts: {
     near: number; isolated: number; dupes: number;
     dupbranch: number; zeroR: number; zeroLen: number; highR: number; bulkR: number; manualLen: number;
-    isolatedBranch: number;
+    isolatedBranch: number; brokenBranch: number;
   };
   totalIssues: number;
   /** true — списки обрезаны до maxItems (схема очень большая) */
@@ -197,6 +211,32 @@ export function checkSchema(
   highRBranches.sort((a, b) => (b.resistance ?? 0) - (a.resistance ?? 0));
   bulkBranches.sort((a, b) => b.rKmu - a.rKmu);
 
+  // ── Ветви с оборванной связью (ссылка на несуществующий узел) ───────────────
+  // Самая коварная ошибка: ветвь есть в списке и даже рисуется, но один из её
+  // концов ссылается на узел, которого в схеме нет. Обычно так получается при
+  // перенумерации или удалении узлов (в т.ч. при работе с горизонтами): узел
+  // исчез, а ветвь осталась висеть на его прежнем номере.
+  //
+  // Последствия: длина и сопротивление такой ветви не пересчитываются, а в
+  // расчёте её узел становится «висячим» — сеть распадается на несвязные части
+  // и воздухораспределение обнуляется. Раньше в проверке схемы этого не было
+  // видно, и пользователю приходилось искать причину вручную.
+  const nodeIdSet = new Set<string>();
+  for (const n of nodes) nodeIdSet.add(n.id);
+
+  const brokenBranches: BrokenBranch[] = [];
+  for (const b of branches) {
+    const noFrom = !nodeIdSet.has(b.fromId);
+    const noTo   = !nodeIdSet.has(b.toId);
+    if (!noFrom && !noTo) continue;
+    if (capReached(brokenBranches.length)) { truncated = true; break; }
+    brokenBranches.push({
+      branch: b,
+      missing: noFrom && noTo ? "both" : noFrom ? "from" : "to",
+      missingIds: [...(noFrom ? [b.fromId] : []), ...(noTo ? [b.toId] : [])],
+    });
+  }
+
   // ── Изолированные ветви (нет пути на поверхность / к атмосфере) ─────────────
   // Расчёт воздухораспределения возможен только для сети, связанной с атмосферой
   // (хотя бы один выход на поверхность). Ветви подсети, из которой НЕЛЬЗЯ дойти
@@ -243,17 +283,18 @@ export function checkSchema(
     highR: highRBranches.length, bulkR: bulkBranches.length,
     manualLen: manualLenBranches.length,
     isolatedBranch: isolatedBranches.length,
+    brokenBranch: brokenBranches.length,
   };
   // Ветви с ручной длиной — информационная пометка, не критичная ошибка,
   // поэтому в totalIssues не включаем (чтобы «схема без ошибок» оставалась зелёной).
   const totalIssues = nearPairs.length + isolated.length + dupes.length
     + dupBranches.length + zeroRBranches.length + zeroLenBranches.length
     + highRBranches.length + bulkBranches.length
-    + isolatedBranches.length;
+    + isolatedBranches.length + brokenBranches.length;
 
   return {
     nearPairs, isolated, dupes, dupBranches, zeroRBranches, zeroLenBranches, highRBranches, bulkBranches,
-    manualLenBranches, isolatedBranches, noAtmosphere,
+    manualLenBranches, isolatedBranches, noAtmosphere, brokenBranches,
     tabCounts, totalIssues, truncated,
   };
 }
