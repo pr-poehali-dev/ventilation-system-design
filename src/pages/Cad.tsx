@@ -1863,6 +1863,17 @@ export default function CadPage() {
   // ─── ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ─────────────────────────────────────
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
+  // Участки, из-за которых расчёт не прошёл — приходят от расчёта сети в
+  // диагностике (nodeIds/branchIds). Раньше в журнале был только номер узла,
+  // и на схеме в тысячи ветвей найти его вручную было практически невозможно.
+  // Теперь эти узлы и ветви попадают в проверку схемы во вкладку «Расчёт»,
+  // выделяются на схеме, а вид центрируется на первом из них.
+  const [solveBlockers, setSolveBlockers] = useState<{
+    nodeIds: string[];
+    branchIds: string[];
+    message: string;
+  } | null>(null);
+
   // ─── ДИАЛОГ ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ ВЕТВЕЙ ───────────────────────────
   // Показывает, какие УО исчезнут вместе с ветвями и какие узлы останутся
   // изолированными (они ломают расчёт воздухораспределения).
@@ -3532,6 +3543,48 @@ export default function CadPage() {
     window.setTimeout(() => setFireCalcProgress(null), 400);
   };
 
+  /**
+   * Выделяет проблемный участок и центрирует на нём схему.
+   * Приоритет — узел: именно он «оторван» от сети, а ветвь лишь примыкает.
+   * Если узла в списке нет (например, изолированы только ветви), центрируем
+   * по первой ветви.
+   */
+  const focusSolveBlocker = (nodeIds: string[], branchIds: string[]) => {
+    // Участок может лежать на скрытом горизонте — тогда центрировать вид
+    // бессмысленно, пользователь увидит пустое место. Включаем видимость
+    // горизонтов, к которым относятся проблемные ветви.
+    const nodeIdSet = new Set(nodeIds);
+    const needHorizons = new Set<string>();
+    for (const b of branches) {
+      if (!b.horizonId) continue;
+      if (branchIds.includes(b.id) || nodeIdSet.has(b.fromId) || nodeIdSet.has(b.toId)) {
+        needHorizons.add(b.horizonId);
+      }
+    }
+    if (needHorizons.size > 0) {
+      setHorizons(prev => prev.map(h =>
+        (needHorizons.has(h.id) && !h.visible) ? { ...h, visible: true } : h));
+    }
+
+    setSelectedNodeIds(new Set(nodeIds));
+    setSelectedBranchIds(new Set(branchIds));
+    const firstNode = nodeIds.length > 0 ? nodes.find(n => n.id === nodeIds[0]) : undefined;
+    if (firstNode) {
+      setSelectedNodeId(firstNode.id);
+      setSelectedBranchId(branchIds[0] ?? null);
+      setFocusBranchId(null);
+      setFocusPos({ x: firstNode.x, y: firstNode.y, z: firstNode.z });
+    } else if (branchIds.length > 0) {
+      setSelectedNodeId(null);
+      setSelectedBranchId(branchIds[0]);
+      setFocusPos(null);
+      setFocusBranchId(branchIds[0]);
+    } else {
+      return;
+    }
+    setFocusNonce(Date.now());
+  };
+
   // Расчёт воздухораспределения (Кросс или МКР)
   const handleSolveLocal = async () => {
     setVcSolving(true);
@@ -3801,6 +3854,38 @@ export default function CadPage() {
       }
       if (data.diagnostics?.some((d: { level: string }) => d.level === "error")) {
         setShowDiagnostics(true);
+      }
+
+      // ── Участки, из-за которых расчёт не прошёл ────────────────────────
+      // Расчёт присылает адрес проблемы (узлы/ветви). Показываем их в проверке
+      // схемы, выделяем на схеме и центрируем вид — иначе пользователь видит
+      // в журнале только номер узла и ищет его вручную по всей схеме.
+      const errDiags = ((data.diagnostics ?? []) as {
+        level: string; message: string; nodeIds?: string[]; branchIds?: string[];
+      }[]).filter(d => d.level === "error" && ((d.nodeIds?.length ?? 0) > 0 || (d.branchIds?.length ?? 0) > 0));
+
+      if (errDiags.length > 0) {
+        const nodeIdSet = new Set(nodes.map(n => n.id));
+        const branchIdSet = new Set(branches.map(b => b.id));
+        // Берём только те id, что реально есть в схеме: расчёт заменяет
+        // атмосферные узлы служебным GND, его на схеме не выделить.
+        const badNodes = [...new Set(errDiags.flatMap(d => d.nodeIds ?? []))].filter(id => nodeIdSet.has(id));
+        const badBranches = [...new Set(errDiags.flatMap(d => d.branchIds ?? []))].filter(id => branchIdSet.has(id));
+
+        if (badNodes.length > 0 || badBranches.length > 0) {
+          setSolveBlockers({
+            nodeIds: badNodes,
+            branchIds: badBranches,
+            message: errDiags[0].message,
+          });
+          setActiveSide("check");
+          setCheckTab("solveBlock");
+          focusSolveBlocker(badNodes, badBranches);
+          addLog("warn", `Проблемные участки показаны в «Проверка → Расчёт»: узлов ${badNodes.length}, ветвей ${badBranches.length}.`);
+        }
+      } else if (!data.diagnostics?.some((d: { level: string }) => d.level === "error")) {
+        // Расчёт прошёл без топологических ошибок — снимаем прежние отметки.
+        setSolveBlockers(null);
       }
     } catch (e) {
       const msg = `Ошибка соединения: ${e instanceof Error ? e.message : String(e)}`;
@@ -6853,6 +6938,9 @@ export default function CadPage() {
                     {navBtn("manualLen",      "L ручн.", tabCounts.manualLen,     "Ruler")}
                     {navBtn("isolatedBranch", "Изолир.", tabCounts.isolatedBranch, "Network")}
                     {navBtn("brokenBranch",   "Обрыв",   tabCounts.brokenBranch,   "Unlink")}
+                    {navBtn("solveBlock",     "Расчёт",
+                      (solveBlockers?.nodeIds.length ?? 0) + (solveBlockers?.branchIds.length ?? 0),
+                      "CircleAlert")}
                   </div>
 
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
@@ -7396,6 +7484,108 @@ export default function CadPage() {
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Вкладка: Расчёт — участки, о которые споткнулся расчёт ──
+                      Эти ошибки находит не проверка схемы, а сам расчёт сети:
+                      он сообщает узлы и ветви, из-за которых сеть распалась.
+                      Раньше в журнале был только номер узла, и найти его на
+                      схеме в тысячи ветвей было практически невозможно. */}
+                  {checkTab === "solveBlock" && (
+                    <div className="flex flex-col flex-1 overflow-hidden">
+                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                        <div className="text-[10px] text-gray-500 mb-1.5">
+                          Участки, из-за которых расчёт воздухораспределения не прошёл.
+                          Определяются при расчёте сети (F9): сеть распадается на
+                          несвязные части, и результат обнуляется целиком.
+                        </div>
+                        {solveBlockers && (
+                          <>
+                            <div className="text-[10px] px-2 py-1 rounded flex items-start gap-1 mb-1.5"
+                              style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}>
+                              <Icon name="CircleAlert" size={12} className="flex-shrink-0 mt-0.5" />
+                              <span>{solveBlockers.message}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => focusSolveBlocker(solveBlockers.nodeIds, solveBlockers.branchIds)}
+                              className="text-[10px] font-medium px-2 py-1 rounded border"
+                              style={{ borderColor: "#fca5a5", background: "#fef2f2", color: "#b91c1c" }}
+                            >
+                              Показать на схеме
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {!solveBlockers ? (
+                          <EmptyOk text="Расчёт не сообщал о проблемных участках — запустите расчёт сети (F9)" />
+                        ) : (
+                          <div className="flex flex-col">
+                            {solveBlockers.nodeIds.length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                                  Узлов: <b className="text-red-600">{solveBlockers.nodeIds.length}</b> — не связаны с выходом на поверхность
+                                </div>
+                                {solveBlockers.nodeIds.map(id => {
+                                  const n = nodeById.get(id);
+                                  if (!n) return null;
+                                  const isSel = selectedNodeId === id;
+                                  return (
+                                    <div key={`n-${id}`}
+                                      className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                      style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                      onClick={() => focusSolveBlocker([id], [])}
+                                      onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                      onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                    >
+                                      <Icon name="CircleAlert" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-[11px] font-medium text-gray-700">
+                                          Узел {n.number || n.id}
+                                        </div>
+                                        <div className="text-[10px] text-gray-400">
+                                          X={n.x.toFixed(0)} · Y={n.y.toFixed(0)} · Z={n.z.toFixed(0)}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            )}
+                            {solveBlockers.branchIds.length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0", background: "#fafafa" }}>
+                                  Ветвей: <b className="text-red-600">{solveBlockers.branchIds.length}</b>
+                                </div>
+                                {solveBlockers.branchIds.map(id => {
+                                  const b = branches.find(x => x.id === id);
+                                  if (!b) return null;
+                                  const isSel = selectedBranchId === id;
+                                  return (
+                                    <div key={`b-${id}`}
+                                      className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
+                                      style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "#fef3c7" : "transparent" }}
+                                      onClick={() => focusBranch(id)}
+                                      onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
+                                      onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                    >
+                                      <Icon name="Network" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
+                                      <div className="flex-1 min-w-0">
+                                        {branchBtn(b)}
+                                        <div className="text-[10px] text-gray-400 mt-0.5">
+                                          Горизонт: {horizons.find(h => h.id === b.horizonId)?.name ?? "не задан"}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </>
+                            )}
                           </div>
                         )}
                       </div>

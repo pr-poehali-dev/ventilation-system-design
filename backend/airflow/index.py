@@ -1087,13 +1087,17 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
         try:
             path = _tree_path(ce["b"], ce["a"], active_edges, parent_map_c)
         except ValueError as ex:
+            # Прикладываем адрес разрыва: саму ветвь и узлы, между которыми
+            # порвалась связь — программа выделит их и центрирует схему.
             diag.append({"level": "error", "category": "topology",
                          "message": (
                              f"Не удалось построить контур для ветви {ce['id']}: {ex} "
                              "Что сделать: проверьте связность сети — соедините "
                              "изолированный участок с основной сетью или удалите "
                              "лишние узлы/ветви, затем повторите расчёт."
-                         )})
+                         ),
+                         "branchIds": [str(ce["id"])],
+                         "nodeIds": list(getattr(ex, "break_nodes", []) or [])})
             return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
         loop_local = [(ci, +1)] + path
         loops_global.append([(id_to_global_idx[active_edges[ai]["id"]], sign)
@@ -2340,10 +2344,14 @@ def _tree_path(src, dst, edges, parent):
         # Нет общего предка → узлы в разных компонентах связности.
         # Должно быть отсечено проверкой связности в solve_mkr; здесь —
         # страховка, чтобы не ронять расчёт непонятным KeyError.
-        raise ValueError(
+        # Узлы разрыва кладём в аргументы исключения: вызывающий код передаёт
+        # их в диагностику, чтобы программа показала участок на схеме.
+        err = ValueError(
             f"Узлы {src} и {dst} не связаны общим деревом "
             f"(сеть распадается на несвязные части)."
         )
+        err.break_nodes = [str(src), str(dst)]
+        raise err
     idx_src = set_src[lca]
 
     result = []
@@ -2697,8 +2705,13 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
             f"узел {worst_node} и другие, оставшиеся после импорта. "
             "Затем повторите расчёт."
         )
+        # nodeIds/branchIds — машиночитаемые адреса проблемы. Программа по ним
+        # выделяет участок на схеме и центрирует вид, чтобы пользователь не
+        # искал узел вручную по номеру на схеме в тысячи ветвей.
         diag.append({"level": "error", "category": "topology",
-                     "message": " ".join(parts)})
+                     "message": " ".join(parts),
+                     "nodeIds": [str(n) for n in unreachable[:200]],
+                     "branchIds": [str(i) for i in iso_branch_ids[:200]]})
         return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
 
     # Активные индексы: active_edges_list → edges (по id)
@@ -2714,13 +2727,17 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         try:
             path = _tree_path(ce["b"], ce["a"], active_edges_list, parent_map)
         except ValueError as ex:
+            # Прикладываем адрес разрыва: саму ветвь и узлы, между которыми
+            # порвалась связь — программа выделит их и центрирует схему.
             diag.append({"level": "error", "category": "topology",
                          "message": (
                              f"Не удалось построить контур для ветви {ce['id']}: {ex} "
                              "Что сделать: проверьте связность сети — соедините "
                              "изолированный участок с основной сетью или удалите "
                              "лишние узлы/ветви, затем повторите расчёт."
-                         )})
+                         ),
+                         "branchIds": [str(ce["id"])],
+                         "nodeIds": list(getattr(ex, "break_nodes", []) or [])})
             return make_result(edges, {e["id"]: 0.0 for e in edges}, 0, False, 0.0, log, diag, force_zero=True)
         contours_local.append([(ci, +1)] + path)
         _contour_edges_total += len(path) + 1
