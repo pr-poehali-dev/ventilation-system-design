@@ -36,6 +36,30 @@ export default function ServerTab({
     if (!base) return;
     setPingState("run");
     setPingMsg("");
+
+    // Облачная расчётная функция (второй аккаунт) не имеет страницы /health —
+    // проверяем её пробным расчётом на пустой схеме: важен сам факт ответа.
+    if (isCloudFunction) {
+      try {
+        const res = await fetch(base, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ method: "cross", nodes: [], branches: [] }),
+        });
+        if (res.ok) {
+          setPingState("ok");
+          setPingMsg("Облачный резерв отвечает — расчёты примет");
+        } else {
+          setPingState("fail");
+          setPingMsg(`Сервер ответил ошибкой (код ${res.status}). Проверьте адрес функции`);
+        }
+      } catch {
+        setPingState("fail");
+        setPingMsg("Нет ответа. Проверьте, что адрес скопирован целиком и проект опубликован");
+      }
+      return;
+    }
+
     try {
       const res = await fetch(`${base}/health`, { method: "GET" });
       const j = await res.json();
@@ -73,6 +97,9 @@ export default function ServerTab({
   // по удалённому рабочему столу) — такой адрес недостижим в принципе.
   const isPrivateIp = /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.)/i
     .test(srvBackupUrl.trim());
+
+  // Адрес облачной расчётной функции второго аккаунта.
+  const isCloudFunction = /functions\.poehali\.dev/i.test(srvBackupUrl.trim());
 
   return (
   <div className="max-w-xl mx-auto">
@@ -156,6 +183,16 @@ export default function ServerTab({
               </div>
             )}
 
+            {isCloudFunction && (
+              <div className="text-[10.5px] text-green-800 mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <span className="font-semibold flex items-center gap-1.5 mb-0.5">
+                  <Icon name="CloudCheck" size={13} />Облачный резерв
+                </span>
+                Верный тип адреса: доступен из любой точки, настройка сети и
+                сертификаты не нужны. Нажмите «Проверить связь» и сохраните.
+              </div>
+            )}
+
             {isPrivateIp && pingState !== "ok" && (
               <div className="text-[10.5px] text-blue-800 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
                 <div className="font-semibold mb-1 flex items-center gap-1.5">
@@ -219,7 +256,7 @@ export default function ServerTab({
                   <Icon name="CircleAlert" size={13} />{pingMsg}
                 </span>
               )}
-              {srvBackupUrl.trim() && (
+              {srvBackupUrl.trim() && !isCloudFunction && (
                 <a href={`${srvBackupUrl.trim().replace(/\/+$/, "")}/health`}
                   target="_blank" rel="noreferrer"
                   className="text-[11px] text-blue-600 hover:underline flex items-center gap-1">
@@ -272,12 +309,26 @@ export default function ServerTab({
           Резервом делается вторая копия программы в облаке на отдельном аккаунте.
           Адрес доступен из любой точки России, дежурный ПК и настройка сети
           не нужны, вычислительное время считается отдельно от основного.
-          <br /><br />
-          Порядок: завести второй аккаунт с этой же программой → скопировать адрес
-          его расчётной функции → вставить в поле выше. Всё.
-          <br /><br />
-          <span className="font-semibold">Это самый надёжный вариант</span> — именно
-          под него сделано поле «Адрес аварийного сервера».
+        </div>
+
+        <ol className="text-[11px] text-green-900/90 leading-relaxed mt-2.5 space-y-1.5 list-decimal pl-4">
+          <li>Зарегистрируйте <span className="font-semibold">второй аккаунт</span> на
+            платформе (другая почта — это важно, лимит времени считается по аккаунту).</li>
+          <li>Создайте в нём новый проект и скажите ассистенту:
+            <span className="italic"> «сделай копию расчётного сервера ПВ-Системы»</span> —
+            либо перенесите код через GitHub из основного проекта.</li>
+          <li>Дождитесь публикации. Расчётные функции получат свои адреса вида
+            <span className="font-mono"> https://functions.poehali.dev/…</span></li>
+          <li>Скопируйте адрес функции <span className="font-mono">airflow</span> —
+            это и есть расчётный сервер.</li>
+          <li>Вставьте его в поле «Адрес аварийного сервера» выше →
+            «Проверить связь» → «Сохранить».</li>
+        </ol>
+
+        <div className="text-[10.5px] text-green-900/70 mt-2.5 pt-2 border-t border-green-200">
+          Дальше ничего делать не нужно: при исчерпании лимита или сбое основного
+          расчёты уйдут на резерв автоматически. Обновлять вторую копию достаточно
+          раз в несколько месяцев, вместе с обновлением основной программы.
         </div>
       </div>
 
