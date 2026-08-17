@@ -167,12 +167,10 @@ export default function ServerTab({
                 всегда будет неуспешной, даже когда сервер исправен.
                 <br /><br />
                 <span className="font-semibold">Как быть:</span>
-                <br />• Рабочие места находятся в той же сети, что и сервер? Тогда всё верно:
-                просто откройте адрес в браузере <span className="font-semibold">на одном
-                из них</span>, примите защиту и проверьте связь оттуда.
-                <br />• Сервер в другой сети? Нужен адрес, доступный извне —
-                запустите на нём <span className="font-mono">https\tunnel.bat</span> и
-                используйте выданный адрес <span className="font-mono">https://…trycloudflare.com</span>.
+                <br />• Все инженеры работают в той же сети, что и сервер — всё верно,
+                проверьте связь с их компьютера.
+                <br />• Пользователи по всей стране — внутренний адрес не подойдёт,
+                нужен облачный резерв или внешний адрес (см. блок ниже).
               </div>
             )}
 
@@ -257,11 +255,47 @@ export default function ServerTab({
       )}
     </div>
 
-    {/* Инструкция по развёртыванию резерва на своём ПК */}
+    {/* Выбор сценария резервирования */}
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
       <div className="flex items-center gap-2 mb-3">
-        <Icon name="BookOpen" size={16} className="text-blue-500" />
+        <Icon name="Route" size={16} className="text-blue-500" />
         <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>
+          Какой резерв вам нужен
+        </span>
+      </div>
+
+      <div className="rounded-lg border-2 border-green-300 bg-green-50 px-3.5 py-3 mb-3">
+        <div className="text-[12px] font-bold text-green-800 mb-1">
+          Пользователи по всей стране — второй облачный сервер
+        </div>
+        <div className="text-[11px] text-green-900/80 leading-relaxed">
+          Резервом делается вторая копия программы в облаке на отдельном аккаунте.
+          Адрес доступен из любой точки России, дежурный ПК и настройка сети
+          не нужны, вычислительное время считается отдельно от основного.
+          <br /><br />
+          Порядок: завести второй аккаунт с этой же программой → скопировать адрес
+          его расчётной функции → вставить в поле выше. Всё.
+          <br /><br />
+          <span className="font-semibold">Это самый надёжный вариант</span> — именно
+          под него сделано поле «Адрес аварийного сервера».
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 px-3.5 py-3 mb-4">
+        <div className="text-[12px] font-semibold text-gray-700 mb-1">
+          Все инженеры в одной сети с сервером — свой ПК
+        </div>
+        <div className="text-[11px] text-gray-600 leading-relaxed">
+          Подходит для предприятия с общей локальной сетью или закрытого контура
+          без интернета. Инструкция ниже. Чтобы такой сервер стал доступен
+          снаружи, нужен проброс порта на роутере или туннель —
+          подробности в файле <span className="font-mono">backup-server\https\README.md</span>.
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-3 pt-1 border-t border-gray-100">
+        <Icon name="BookOpen" size={16} className="text-blue-500 mt-3" />
+        <span className="font-semibold text-[13px] mt-3" style={{ color: "#1a3a6b" }}>
           Как поднять резерв на своём втором ПК
         </span>
       </div>
@@ -284,10 +318,12 @@ export default function ServerTab({
         <div><span className="font-mono">autostart.bat</span> — включить/выключить автозапуск вместе с Windows</div>
       </div>
       <div className="text-[10.5px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-        Работаете через браузер по защищённому адресу (https)? Тогда после шага 3
-        запустите ещё <span className="font-mono">https\tunnel.bat</span> — он выдаст
-        защищённый адрес, который нужно вписать сюда вместо обычного.
-        В десктопной версии это не требуется.
+        Нужен доступ к этому серверу из других городов? Внутренний адрес не подойдёт.
+        Варианты внешнего адреса — в файле
+        <span className="font-mono"> backup-server\https\README.md</span>:
+        проброс порта на роутере (постоянный адрес),
+        <span className="font-mono"> tunnel-ngrok.bat</span> (работает через обычный порт 443,
+        когда обычный туннель блокируется сетью).
       </div>
     </div>
   </div>
