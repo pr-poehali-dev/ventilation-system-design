@@ -301,9 +301,40 @@ export default function ServerTab({
         </span>
       </div>
 
-      <div className="rounded-lg border-2 border-green-300 bg-green-50 px-3.5 py-3 mb-3">
+      <div className="rounded-lg border-2 border-blue-300 bg-blue-50 px-3.5 py-3 mb-3">
+        <div className="text-[12px] font-bold text-blue-800 mb-1">
+          Свой хостинг (Beget и подобные) — лучший вариант
+        </div>
+        <div className="text-[11px] text-blue-900/80 leading-relaxed">
+          Постоянный адрес, доступный из любой точки России, настоящий SSL,
+          без лимитов вычислительного времени и без зависимости от офисного ПК.
+          Обновление — одной командой или автоматически по расписанию.
+        </div>
+        <ol className="text-[11px] text-blue-900/90 leading-relaxed mt-2.5 space-y-1.5 list-decimal pl-4">
+          <li>Подключите проект к GitHub: «Скачать» → «Подключить GitHub».</li>
+          <li>В панели Beget создайте сайт и включите ему приложение
+            <span className="font-semibold"> Python 3.11</span>.</li>
+          <li>По SSH выполните:
+            <span className="font-mono block mt-1 text-[10px] bg-white/70 rounded px-2 py-1">
+              git clone ВАШ-РЕПОЗИТОРИЙ pvs-backup
+            </span>
+          </li>
+          <li>Включите бесплатный SSL (Let's Encrypt) в разделе «Домены».</li>
+          <li>Впишите сюда <span className="font-mono">https://ваш-домен/</span> →
+            «Проверить связь» → «Сохранить».</li>
+        </ol>
+        <div className="text-[10.5px] text-blue-900/70 mt-2.5 pt-2 border-t border-blue-200">
+          Полная пошаговая инструкция со всеми командами, настройкой
+          автообновления и разбором ошибок — в файле
+          <span className="font-mono"> backup-server\beget\README.md</span>.
+          Обновление резерва после правок:
+          <span className="font-mono"> bash ~/pvs-backup/update.sh</span>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-green-300 bg-green-50 px-3.5 py-3 mb-3">
         <div className="text-[12px] font-bold text-green-800 mb-1">
-          Пользователи по всей стране — второй облачный сервер
+          Второй облачный аккаунт — если хостинга нет
         </div>
         <div className="text-[11px] text-green-900/80 leading-relaxed">
           Резервом делается вторая копия программы в облаке на отдельном аккаунте.
